@@ -563,19 +563,38 @@ def _proactive_gap_min(freq: str = "moderate") -> int:
 
 
 async def _within_proactive_budget(db, user_id, slot_key: str) -> bool:
-    """Rolling-24h budget over ALL proactive sends for this user. Fail-open:
-    a budget-query error must never block the send path."""
+    """Rolling-24h budget over proactive sends that ACTUALLY REACHED this user.
+    Fail-open: a budget-query error must never block the send path.
+
+    Counts `delivery_attempts` with a TERMINAL_SUCCESS status, not
+    `conversation_logs`. `DeliveryAttempt` was built precisely to end this
+    ambiguity (see its model docstring): a `conversation_logs` proactive row
+    once meant "we reached the send function", covering a delivered push, a
+    provider rejection, and a user with no device alike, so a user whose pushes
+    all FAIL was rate-limited into silence as though they were being reached.
+    The budget kept reading that table; it was correct only because those rows
+    are now written on acceptance, which couples this gate to an unrelated
+    write's timing. This reads the table that means what it says — only reached
+    sends count against the cadence, so failing delivery can no longer silence a
+    user. `delivery_attempts` is written only by the proactive path
+    (`_record_delivery`), so no proactive filter is needed."""
     try:
         from sqlalchemy import text as _sql
+        from core.delivery import TERMINAL_SUCCESS
+        _status_ph = ", ".join(f":s{i}" for i in range(len(TERMINAL_SUCCESS)))
+        _params = {"u": user_id,
+                   "cutoff": datetime.utcnow() - timedelta(hours=24)}
+        _params.update({f"s{i}": s for i, s in enumerate(TERMINAL_SUCCESS)})
         row = (await db.execute(_sql(
-            "select count(*) as n, max(timestamp) as last from conversation_logs "
-            "where user_id = :u and source_type = 'proactive' "
-            "and timestamp > :cutoff"),
-            {"u": user_id,
-             "cutoff": datetime.utcnow() - timedelta(hours=24)})).one()
+            "select count(*) as n, max(attempted_at) as last from delivery_attempts "
+            f"where user_id = :u and status in ({_status_ph}) "
+            "and attempted_at > :cutoff"), _params)).one()
         minutes = None
         if row.last is not None:
-            minutes = (datetime.utcnow() - row.last).total_seconds() / 60.0
+            _last = row.last
+            if isinstance(_last, str):   # SQLite hands raw-SQL datetimes back as text
+                _last = datetime.fromisoformat(_last)
+            minutes = (datetime.utcnow() - _last).total_seconds() / 60.0
         # Cadence scales with the user's reminder_frequency ('moderate' → 3/day, 180-min
         # gaps). Fail-open to 'moderate' if the pref can't be read.
         _freq = "moderate"

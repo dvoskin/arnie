@@ -72,10 +72,19 @@ ownership is spread across prompts, composers and deterministic fallbacks.
 
 ## 9. Proactive delivery
 
-**FAIL.** `_send` swallows channel errors and returns no result, so a
-conversation row means "we tried", not "it arrived". Generated / attempted /
-accepted / delivered / failed are indistinguishable, and cadence is computed
-from generated messages.
+**PASS** (was FAIL — the FAIL text below described the pre-B3 state and was
+never refreshed).
+
+| check | state | evidence |
+|---|---|---|
+| Sent is distinguishable from failed | **PASS** | `_send` returns a `DeliveryResult` — suppressed / accepted / failed / invalid-destination — not a swallowed error (core/delivery, B3) |
+| Every attempt is recorded | **PASS** | `_record_delivery` writes one `delivery_attempts` row per send, statuses per `core/delivery`; `test_a_proactive_row_means_it_arrived` |
+| History means it arrived | **PASS** | the `conversation_logs` proactive row is gated on acceptance (B3) |
+| Cadence counts DELIVERIES, not generated messages | **PASS (this branch)** | `_within_proactive_budget` read `conversation_logs`; it now counts `delivery_attempts` with a TERMINAL_SUCCESS status, so a user whose pushes ALL fail is no longer rate-limited into silence — the exact incident `DeliveryAttempt` was built to end but the budget had never been migrated to. Branch `dvoskin/proactive-budget-delivery-attempts`, `test_proactive_budget_counts_deliveries.py` |
+
+The budget was the last open question the 2026-07-31 handoff left on this
+surface ("it reads the wrong table for the right answer"). Also hardened the
+SQLite datetime-string case the query shared with `_user_spoke_recently`.
 
 ## 10. Administration and security
 
@@ -112,7 +121,7 @@ from generated messages.
 |---|---|---|---|
 | B1 | Deployed != main | FAIL | Danny (manual deploy) |
 | B2 | 57 of 60 user-visible mutations off the contract | FAIL | backend |
-| B3 | Proactive delivery cannot distinguish sent from failed | FAIL | backend |
+| ~~B3~~ | ~~Proactive delivery cannot distinguish sent from failed~~ | **CLOSED** — DeliveryResult + delivery_attempts (B3); cadence now counts delivered sends (`dvoskin/proactive-budget-delivery-attempts`) | — |
 | B4 | `turn_id` missing on web + proactive | FAIL | backend |
 | B5 | Latency unmeasured and unbudgeted | UNKNOWN | backend |
 | B6 | Voice unevaluated, no single renderer | UNKNOWN | backend |
