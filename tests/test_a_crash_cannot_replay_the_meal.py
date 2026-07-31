@@ -240,3 +240,170 @@ async def test_weight_is_not_reconciled_by_guesswork(db, make_user):
     await db.commit()
 
     assert await committed_result(db, rec) is None
+
+
+# ── the same guarantee on the other two write surfaces ───────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_crash_after_an_exercise_commit_does_not_replay_the_set(
+    patched_session_local, db, make_user, monkeypatch,
+):
+    """Directive case 3. Exercise commits its row, its `created` event and its
+    claim in one transaction, so the crash window that duplicated a meal cannot
+    duplicate a set either."""
+    from api import quick_log as QL
+    from api.quick_log import ExerciseLogBody, log_exercise_entry
+    from db.models import ExerciseEntry
+
+    await make_user(telegram_id="ios:ex-crash")
+    monkeypatch.setattr(QL, "complete_claim",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("died")))
+    try:
+        await log_exercise_entry(
+            ExerciseLogBody(exercise_name="Deadlift", sets=3, reps="5,5,5",
+                            weight=140.0),
+            identity="ios:ex-crash", client_request_id="EX-CRASH")
+    except RuntimeError:
+        pass
+
+    rec = (await db.execute(select(IdempotencyRecord))).scalars().one()
+    rows = (await db.execute(
+        select(ExerciseEntry).where(ExerciseEntry.exercise_name == "Deadlift")
+    )).scalars().all()
+
+    assert len(rows) == 1
+    assert rec.status == "completed", (
+        "the set committed but its claim did not — a retry would log it twice"
+    )
+    assert rec.result_entry_id == rows[0].id
+
+
+@pytest.mark.asyncio
+async def test_a_weight_retry_after_a_crash_returns_the_original(
+    patched_session_local, db, make_user, monkeypatch,
+):
+    """Directive case 4. Weight had no durable result link at all until it
+    gained a ledger event; without one there was nothing to reconcile against
+    and a retry could only guess."""
+    from api import quick_log as QL
+    from api.quick_log import WeightLogBody, log_weight
+    from db.models import BodyMetric, LedgerEvent
+
+    await make_user(telegram_id="ios:wt-crash")
+    monkeypatch.setattr(QL, "complete_claim",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("died")))
+    try:
+        await log_weight(WeightLogBody(weight_kg=84.2, context="morning"),
+                         identity="ios:wt-crash", client_request_id="WT-CRASH")
+    except RuntimeError:
+        pass
+
+    rec = (await db.execute(select(IdempotencyRecord))).scalars().one()
+    metrics = (await db.execute(select(BodyMetric))).scalars().all()
+    events = (await db.execute(
+        select(LedgerEvent).where(LedgerEvent.domain == "weight")
+    )).scalars().all()
+
+    assert len(metrics) == 1
+    assert len(events) == 1, "weight must leave an auditable event like food does"
+    assert rec.status == "completed"
+    assert rec.result_entry_id == metrics[0].id
+
+
+@pytest.mark.asyncio
+async def test_a_weight_correction_keeps_the_reading_it_replaced(
+    patched_session_local, db, make_user,
+):
+    """A same-day re-weigh UPSERTS one row, so the event is the only place the
+    prior number survives. Without it a correction is unundoable."""
+    from api.quick_log import WeightLogBody, log_weight
+    from db.models import LedgerEvent
+    import json
+
+    await make_user(telegram_id="ios:wt-correct")
+    await log_weight(WeightLogBody(weight_kg=84.2), identity="ios:wt-correct",
+                     client_request_id="WT-1")
+    await log_weight(WeightLogBody(weight_kg=83.9), identity="ios:wt-correct",
+                     client_request_id="WT-2")
+
+    updated = (await db.execute(
+        select(LedgerEvent).where(LedgerEvent.domain == "weight",
+                                  LedgerEvent.event_type == "updated")
+    )).scalars().all()
+    assert len(updated) == 1
+    payload = json.loads(updated[0].payload_json or "{}")
+    assert payload.get("previous_weight_kg") == 84.2, (
+        "the replaced reading is gone — a correction cannot be undone"
+    )
+    assert payload.get("weight_kg") == 83.9
+
+
+# ── the edges the directive named ────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_reused_key_with_a_different_payload_still_conflicts_after_a_crash(
+    patched_session_local, db, make_user, monkeypatch,
+):
+    """Directive case 6. Reconciliation must never paper over a client bug:
+    a key replayed with DIFFERENT food is a conflict, not a replay, even when
+    the original claim is unfinished and its work committed."""
+    from fastapi import HTTPException
+
+    from api import quick_log as QL
+
+    await make_user(telegram_id="ios:conflict-crash")
+    monkeypatch.setattr(QL, "complete_claim",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("died")))
+    try:
+        await log_food_entry(BODY, identity="ios:conflict-crash",
+                             client_request_id="SAME")
+    except RuntimeError:
+        pass
+
+    rec = (await db.execute(select(IdempotencyRecord))).scalars().one()
+    rec.status, rec.result_entry_id = "in_progress", None
+    await db.commit()
+    monkeypatch.setattr(idempotency, "STALE_CLAIM_SECONDS", 0)
+
+    with pytest.raises(HTTPException) as excinfo:
+        await log_food_entry(
+            FoodLogBody(food_name="Pizza", calories=900, protein=35,
+                        carbs=90, fats=40),
+            identity="ios:conflict-crash", client_request_id="SAME")
+
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.detail["error"] == "idempotency_conflict", (
+        "a different payload reconciled to the first request's result instead "
+        "of failing — the client bug is now invisible AND the answer is wrong"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_completed_claim_missing_its_result_is_rebuilt_from_the_ledger(
+    patched_session_local, db, make_user,
+):
+    """Directive case 7. `entry_id: None` on a replay reads as success while
+    telling the client nothing. The ledger still knows which row was written."""
+    await make_user(telegram_id="ios:no-result")
+    first = await log_food_entry(BODY, identity="ios:no-result",
+                                 client_request_id="NORESULT")
+
+    rec = (await db.execute(select(IdempotencyRecord))).scalars().one()
+    rec.result_entry_id = None            # completed, but the reference is gone
+    rec.result_daily_log_id = None
+    await db.commit()
+
+    replay = await log_food_entry(BODY, identity="ios:no-result",
+                                  client_request_id="NORESULT")
+
+    assert replay["entry_id"] == first["entry_id"], (
+        "the replay could not name the row it was replaying"
+    )
+    # The heal committed in the HANDLER's session. This session still holds the
+    # row it loaded a moment ago, so without expiring it the assertion reads a
+    # stale object and reports a failure that did not happen.
+    db.expire_all()
+    healed = (await db.execute(select(IdempotencyRecord))).scalars().one()
+    assert healed.result_entry_id == first["entry_id"], "the claim was not healed"

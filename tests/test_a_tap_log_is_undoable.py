@@ -156,12 +156,16 @@ def test_both_tap_log_surfaces_record_their_writes():
     import inspect
     import api.app as APP
     import api.quick_log as QL
-    for module in (QL, APP):
+    # One provenance label per mutating surface the module owns. quick_log has
+    # three — food, exercise and weight, which joined the contract once it
+    # gained a ledger event of its own. api/app.py has two. The counts are
+    # per-module rather than shared, because a single number silently absorbed
+    # a surface being added or dropped.
+    for module, expected in ((QL, 3), (APP, 2)):
         source = inspect.getsource(module)
         assert source.count("record_created_from_row(db, user.id, entry") == 0, \
             f"{module.__name__}: a tap-log records history at the call site " \
             f"again — that is the second commit this consolidation removed"
-        # food + exercise, one provenance label each.
-        assert source.count("ledger_source=") == 2, \
-            f"{module.__name__}: both tap-log surfaces must pass provenance " \
+        assert source.count("ledger_source=") == expected, \
+            f"{module.__name__}: every tap-log surface must pass provenance " \
             f"through the add_* helper, not record a second event"

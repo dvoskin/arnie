@@ -16,6 +16,24 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A REAL POSTGRES, because one thing cannot be tested without it. The suite
+    # runs on sqlite behind a StaticPool, where two sessions share a single
+    # connection — so every "concurrent" test is really testing async
+    # interleaving, and the cross-process guarantee (the unique index actually
+    # rejecting a second claim from a second connection) has never been
+    # exercised anywhere. That guarantee is the whole basis for saying a retry
+    # cannot log a meal twice; it deserves better than an argument.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -62,6 +80,10 @@ jobs:
         env:
           LINKING_ENABLED: "true"
           PROACTIVE_MESSAGING_ENABLED: "false"
+          # Unlocks the concurrency tests that need two genuine connections.
+          # Absent locally, where those tests SKIP with a reason rather than
+          # passing quietly and implying a guarantee nobody checked.
+          TEST_POSTGRES_URL: "postgresql+psycopg://ci:ci@localhost:5432/ci"
         # The seed is echoed by pytest-randomly on every run. Order is shuffled
         # deliberately — it is what surfaces the cross-test cache leaks that
         # made behaviour depend on which test ran first — so a red run must

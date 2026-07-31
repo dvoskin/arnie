@@ -97,9 +97,12 @@ def _result_of(record) -> dict:
 #: Which ledger domain a command's write lands in. Only commands whose write
 #: commits its `created` event ATOMICALLY with the row belong here — the event
 #: is then proof the row exists, which is what makes reconciliation sound.
-#: Weight is deliberately absent: it emits no ledger event, so there is nothing
-#: to reconcile against and it must not be guessed at.
-_COMMAND_DOMAIN = {"log_food": "food", "log_exercise": "exercise"}
+#: Weight joined once it gained a ledger event of its own; before that there
+#: was nothing to reconcile against and guessing would have been worse than
+#: declining. Its event is `created` on first write and `updated` on a
+#: same-day correction, so reconciliation accepts either.
+_COMMAND_DOMAIN = {"log_food": "food", "log_exercise": "exercise",
+                   "log_weight": "weight"}
 
 
 class IdempotencyCorrupt(Exception):
@@ -131,7 +134,9 @@ async def committed_result(db, record) -> Optional[dict]:
         select(LedgerEvent)
         .where(LedgerEvent.turn_id == record.turn_id,
                LedgerEvent.domain == domain,
-               LedgerEvent.event_type == "created")
+               # Weight upserts one row per (user, day, source), so a repeat
+               # weigh-in is an `updated` event — still proof the write landed.
+               LedgerEvent.event_type.in_(("created", "updated")))
         .order_by(LedgerEvent.id)
     )).scalars().first()
     if ev is None or ev.entry_id is None:
@@ -221,6 +226,20 @@ async def claim_request(
             raise IdempotencyConflict(key)
 
         if existing.status == "completed":
+            # A completed claim with no result reference cannot answer the one
+            # question a replay exists to answer — "which row was written?" —
+            # and handing back `entry_id: None` reads as success while telling
+            # the client nothing. Rebuild it from the ledger and heal the row.
+            if existing.result_entry_id is None:
+                landed = await committed_result(db, existing)
+                if landed is not None:
+                    logger.warning(
+                        f"event=idempotency_healed key={key} command={command} "
+                        f"entry={landed.get('entry_id')} — completed claim was "
+                        f"missing its result reference")
+                    existing.result_entry_id = landed.get("entry_id")
+                    existing.result_daily_log_id = landed.get("daily_log_id")
+                    await db.commit()
             logger.info(f"event=idempotency_replay key={key} command={command}")
             return Claim(key=key, turn_id=existing.turn_id or turn_id,
                          replay=True, record_id=existing.id,

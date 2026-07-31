@@ -264,11 +264,10 @@ async def log_exercise_entry(
                 daily_log_id=log.id,
                 is_cardio=payload.is_cardio,
                 ledger_source="quick_log:ios",
+                claim_id=claim.record_id,
                 **kwargs,
             )
 
-        await complete_claim(db, claim, entry_id=entry.id,
-                             daily_log_id=log.id)
         return {
             "ok": True,
             "entry_id": entry.id,
@@ -331,9 +330,13 @@ async def log_weight(
                 weight_kg=payload.weight_kg,
                 context=payload.context,
                 source=(payload.source or "manual"),
+                # Weight now carries the same audit contract as food and
+                # exercise: a ledger event in the write's own transaction,
+                # holding the PRIOR reading so a correction stays undoable.
+                ledger_source="quick_log:ios",
+                claim_id=claim.record_id,
             )
 
-        await complete_claim(db, claim, entry_id=metric.id)
         return {
             "ok": True,
             "metric_id": metric.id,

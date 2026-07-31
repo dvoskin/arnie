@@ -878,6 +878,7 @@ async def get_workout_session(db: AsyncSession, user_id: int,
 async def add_exercise_entry(db: AsyncSession, daily_log_id: int,
                               is_cardio: bool = False,
                               ledger_source: Optional[str] = None,
+                              claim_id: Optional[int] = None,
                               **kwargs) -> ExerciseEntry:
     # If caller signals cardio but didn't set cardio_type, mark it so the derived
     # flags (recompute_log_totals) classify this entry correctly.
@@ -899,8 +900,11 @@ async def add_exercise_entry(db: AsyncSession, daily_log_id: int,
     db.add(entry)
     await db.flush()  # entry must be visible to the recompute query
     await recompute_log_totals(db, daily_log_id)
-    await db.commit()
-    await db.refresh(entry)
+    # NO COMMIT HERE. The row, its `created` event and the idempotency claim
+    # commit together below. Committing the row first left the same window food
+    # had: a crash before the event produced a set with no history, and a crash
+    # before the claim left a committed set behind an unfinished claim that a
+    # retry would write a second time.
     # HISTORY, on the same contract food already rides — and THIS IS THE ONLY
     # WRITER of the exercise `created` event. The master audit (2026-07-30)
     # found every exercise creation recorded twice, 0s apart: once here under
@@ -923,9 +927,17 @@ async def add_exercise_entry(db: AsyncSession, daily_log_id: int,
                          "weight_kg": entry.weight,
                          "duration_minutes": entry.duration_minutes,
                          "is_cardio": bool(entry.cardio_type),
-                         "workout_group_id": entry.workout_group_id})
+                         "workout_group_id": entry.workout_group_id},
+                commit=False)
         except Exception as e:
             logger.debug(f"exercise ledger event not recorded: {e}")
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, entry.id, daily_log_id)
+    # ONE commit for the row, its event and the claim. They used to be three,
+    # and a crash between them left an exercise with no history, or a committed
+    # set behind an unfinished claim that a retry would write again.
+    await db.commit()
+    await db.refresh(entry)
     try:
         if _log: _invalidate_briefing_for_log(_log.user_id, by_user=True)
     except Exception:
@@ -933,9 +945,28 @@ async def add_exercise_entry(db: AsyncSession, daily_log_id: int,
     return entry
 
 
+async def _complete_claim_in_txn(db, claim_id, entry_id, daily_log_id) -> None:
+    """Mark an idempotency claim completed WITHOUT committing.
+
+    The caller owns the transaction, so the claim lands with the row it
+    describes. Completing it in a later commit left a window where the write
+    was durable and the claim was not, and a retry took the stale claim over
+    and executed the command a second time.
+    """
+    from db.models import IdempotencyRecord
+    rec = await db.get(IdempotencyRecord, claim_id)
+    if rec is not None:
+        rec.status = "completed"
+        rec.result_entry_id = entry_id
+        rec.result_daily_log_id = daily_log_id
+        rec.completed_at = datetime.utcnow()
+
+
 async def add_body_metric(db: AsyncSession, user_id: int,
                           weight_kg: float, source: str = "manual",
                           when: Optional[datetime] = None,
+                          ledger_source: Optional[str] = None,
+                          claim_id: Optional[int] = None,
                           **kwargs) -> BodyMetric:
     # Source-aware, ONE-row-per-(user, calendar-day, source) UPSERT.
     #
@@ -1015,6 +1046,7 @@ async def add_body_metric(db: AsyncSession, user_id: int,
 
     if existing is not None:
         # Same source, same day → update in place (correction or re-deliver).
+        _prior_weight = existing.weight_kg
         existing.weight_kg = weight_kg
         existing.timestamp = ts
         if kwargs.get("context") is not None:
@@ -1026,6 +1058,21 @@ async def add_body_metric(db: AsyncSession, user_id: int,
         if kwargs.get("photo_reference") is not None:
             existing.photo_reference = kwargs["photo_reference"]
         _sync_current_weight()
+        if ledger_source is not None:
+            # An UPSERT is a correction, and undo needs what it replaced —
+            # `previous_weight_kg` is the whole reason this is an event and not
+            # just a mutated row. Same transaction as the write, so weight gets
+            # the audit contract food and exercise already have.
+            await record_ledger_event(
+                db, user_id=user_id, event_type="updated", domain="weight",
+                entry_id=existing.id,
+                payload={"weight_kg": weight_kg,
+                         "previous_weight_kg": _prior_weight,
+                         "source": source,
+                         "context": kwargs.get("context")},
+                source=ledger_source, commit=False)
+        if claim_id is not None:
+            await _complete_claim_in_txn(db, claim_id, existing.id, None)
         await db.commit()
         await db.refresh(existing)
         _invalidate_briefing_for_log(user_id, by_user=True)
@@ -1035,6 +1082,17 @@ async def add_body_metric(db: AsyncSession, user_id: int,
                         timestamp=ts, **kwargs)
     db.add(metric)
     _sync_current_weight()
+    if ledger_source is not None or claim_id is not None:
+        await db.flush()          # the event needs the metric's id
+    if ledger_source is not None:
+        await record_ledger_event(
+            db, user_id=user_id, event_type="created", domain="weight",
+            entry_id=metric.id,
+            payload={"weight_kg": weight_kg, "source": source,
+                     "context": kwargs.get("context")},
+            source=ledger_source, commit=False)
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, metric.id, None)
 
     await db.commit()
     await db.refresh(metric)
