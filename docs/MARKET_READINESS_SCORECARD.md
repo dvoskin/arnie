@@ -60,8 +60,9 @@ user-visible mutations have no idempotency policy at all.
 
 ## 7. Latency
 
-**MEASURABLE (was UNKNOWN).** B5, branch `dvoskin/b5-latency-budgets`. The
-instrumentation now exists; the numbers still need a week of production rows.
+**MEASURABLE (was UNKNOWN).** B5, branch `dvoskin/b5-latency-budgets` @
+`472e8e6` (committed, not deployed). The instrumentation now exists; the numbers
+still need a week of production rows. Full suite green at the SHA.
 
 | check | state | evidence |
 |---|---|---|

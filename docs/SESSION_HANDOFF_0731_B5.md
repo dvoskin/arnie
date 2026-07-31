@@ -7,10 +7,10 @@ Everything below was proven by a test, not remembered.
 
 ## Where the work is
 
-Branch `dvoskin/b5-latency-budgets`, cut from `origin/main` @ `50ba640`.
-**Committed locally, not pushed, not deployed.** Independent of the B6/B7
-branches (different code, different scorecard section → merge cleanly). Full
-shuffled suite green at the tip.
+Branch `dvoskin/b5-latency-budgets` @ `472e8e6`, cut from `origin/main` @
+`50ba640`. **Committed locally, not pushed, not deployed.** Independent of the
+B6/B7 branches (different code, different scorecard section → merge cleanly).
+Full shuffled suite green at the tip (6407 tests, exit 0).
 
 ```bash
 pytest tests/test_request_trace_ambient.py tests/test_latency_report.py -q
