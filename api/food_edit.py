@@ -70,10 +70,19 @@ async def update_food(
         # 2026-07-23: "don't reiterate edited foods in the chat").
         # LEDGER EVENT (P0.6): a dashboard edit is a ledger mutation like any
         # other — same history, same undo reach. `before` makes it invertible.
+        # ONE ID, BOTH WRITES (I1). This set the contextvar to
+        # `ios_edit:update:{entry_id}` — an id derived from the ENTRY, which no
+        # conversation row has ever carried, so the operation could never be
+        # joined to the turn that caused it. Worse than a null: it looks
+        # joined. Measured over 7 days, all 28 `ios_edit` operations were
+        # unjoinable, the single largest hole in the turn⋈operation join.
+        # Being entry-derived it also collided with itself — the dashboard's
+        # double-edit produced two `ios_edit:update:2587` rows 18s apart.
+        _turn_id = _edit_turn_id(user.id, entry_id, changes)
         try:
             from db.queries import record_ledger_event
             from core.turn_identity import CURRENT_TURN_ID
-            CURRENT_TURN_ID.set(f"ios_edit:update:{entry_id}")
+            CURRENT_TURN_ID.set(_turn_id)
             await record_ledger_event(
                 db, user.id, "updated", domain="food", entry_id=entry_id,
                 daily_log_id=before.get("daily_log_id"),
@@ -93,6 +102,9 @@ async def update_food(
                 parsed_intent="dashboard_edit",
                 source_type="dashboard_edit",
                 platform="ios",   # iOS inline editor — without this it defaults to telegram
+                # The same id the ledger event above carries, which is what
+                # makes this edit's operation joinable to this edit's turn.
+                turn_id=_turn_id,
             )
 
         return {
@@ -129,10 +141,12 @@ async def delete_food(
         if not ok:
             raise HTTPException(status_code=403, detail="not your entry")
 
+        # One id, both writes — see the update path above.
+        _turn_id = _edit_turn_id(user.id, entry_id, {"delete": True})
         try:
             from db.queries import record_ledger_event
             from core.turn_identity import CURRENT_TURN_ID
-            CURRENT_TURN_ID.set(f"ios_edit:delete:{entry_id}")
+            CURRENT_TURN_ID.set(_turn_id)
             await record_ledger_event(
                 db, user.id, "deleted", domain="food", entry_id=entry_id,
                 daily_log_id=before.get("daily_log_id"),
@@ -149,12 +163,26 @@ async def delete_food(
             parsed_intent="dashboard_delete",
             source_type="dashboard_edit",
             platform="ios",   # iOS inline editor — without this it defaults to telegram
+            turn_id=_turn_id,
         )
 
         return {"status": "ok", "arnie_message": None}
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
+
+def _edit_turn_id(user_id: int, entry_id: int, changes: dict) -> str:
+    """The canonical turn id for one dashboard edit, shared by both writes.
+
+    Built with `make_turn_id` rather than by hand so this path cannot invent a
+    fourth id format — the audit already had three, none of which joined. The
+    dashboard sends no client message id, so it takes the content-hash
+    fallback: an immediate retry of the SAME edit collapses onto one turn,
+    while a genuinely different edit (or the same one later) is its own.
+    """
+    from core.turn_identity import make_turn_id
+    fields = ",".join(sorted(str(k) for k in (changes or {})))
+    return make_turn_id("ios_edit", None, user_id, f"{entry_id}|{fields}")
 
 def _bust_briefing(user_id: int) -> None:
     """A dashboard/card edit changes the day the coach brief describes — drop
