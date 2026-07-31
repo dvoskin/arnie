@@ -1885,23 +1885,41 @@ async def post_chat(token: str, body: ChatBody):
                                           user_message=text)
         system = f"{build_arnie_system(platform='web')}\n\n{context_str}"
 
+        # THE WEB TURN GETS AN IDENTITY. This endpoint calls run_turn and
+        # log_conversation directly rather than going through
+        # `core.chat_service`, which does mint one — so every web turn landed
+        # with turn_id NULL and any ledger event it produced was unjoinable.
+        # Measured over an 18h production window: 5 of 77 turns, all web.
+        #
+        # The browser sends no stable message id, so this takes make_turn_id's
+        # documented hash fallback: same text from the same user inside the
+        # hour is the same turn, tomorrow's identical message is a new one.
+        from core.turn_identity import CURRENT_TURN_ID, make_turn_id
+        _turn_id = make_turn_id("web", None, user.id, text)
+        _tok = CURRENT_TURN_ID.set(_turn_id)
         try:
-            turn = await run_turn(
-                user, db, messages, system, platform="web",
-                in_onboarding=False, was_onboarding=False,
-                today_log=today_log, source_type="web",
-            )
-        except Exception as e:
-            logging.getLogger(__name__).error(f"web chat run_turn failed: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail="Coach hiccup, resend that")
+            try:
+                turn = await run_turn(
+                    user, db, messages, system, platform="web",
+                    in_onboarding=False, was_onboarding=False,
+                    today_log=today_log, source_type="web",
+                )
+            except Exception as e:
+                logging.getLogger(__name__).error(f"web chat run_turn failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail="Coach hiccup, resend that")
 
-        bubbles = [b for b in (turn.response.bubbles or []) if b and b.strip()]
-        reply = "|||".join(bubbles)
-        await log_conversation(
-            db, user.id, text, reply, source_type="web", platform="web",
-            parsed_intent=(",".join(turn.health_flags) or None),
-            skills_fired=turn.skills_fired,
-        )
+            bubbles = [b for b in (turn.response.bubbles or []) if b and b.strip()]
+            reply = "|||".join(bubbles)
+            await log_conversation(
+                db, user.id, text, reply, source_type="web", platform="web",
+                parsed_intent=(",".join(turn.health_flags) or None),
+                skills_fired=turn.skills_fired,
+                turn_id=_turn_id,
+            )
+        finally:
+            # Reset in `finally` — the endpoint runs on a shared worker task and
+            # a leaked contextvar would stamp the NEXT request's writes.
+            CURRENT_TURN_ID.reset(_tok)
 
     return {"bubbles": bubbles, "ts": datetime.utcnow().isoformat()}
 

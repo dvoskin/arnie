@@ -17,6 +17,7 @@ Touchpoints (all relative to user local time):
 Whoop sync runs every 2 hours.
 """
 import collections
+import contextlib
 import logging
 from core.delivery import DeliveryResult
 import os
@@ -514,10 +515,15 @@ async def _log_proactive(db, user_id, text: str, slot_key: str,
     the send path.
     """
     try:
+        from core.turn_identity import current_turn_id
         from db.queries import log_conversation
         await log_conversation(
             db, user_id, raw_message="", response=text,
             source_type="proactive", skills_fired=slot_key, platform=platform,
+            # The turn bound by the sender. Without it a proactive row was
+            # unjoinable to anything it caused — 4 of 77 turns over an 18h
+            # window, and the same gap left every delivery_attempt turn-less.
+            turn_id=current_turn_id(),
         )
     except Exception as e:
         logger.error(f"Proactive log failed (user {user_id}, slot {slot_key}): {e}")
@@ -593,6 +599,30 @@ async def _within_proactive_budget(db, user_id, slot_key: str) -> bool:
         return True
 
 
+@contextlib.contextmanager
+def _proactive_turn(user_id: int, slot_key: str, text: str):
+    """Bind a canonical turn identity for one proactive send.
+
+    A proactive message is a turn Arnie starts. It had no id, so its history
+    row, its delivery attempt and any write it triggered could not be joined to
+    each other or to anything else — the 79 unreasoned proactive turns in the
+    07-30 audit are this gap.
+
+    The id is deterministic per (user, slot, day): re-running the same slot on
+    the same day is the SAME turn, which is what makes a redelivery idempotent
+    rather than a second identity for one nudge. `make_turn_id` treats it as a
+    client message id, so the shape matches every other surface.
+    """
+    from core.turn_identity import CURRENT_TURN_ID, make_turn_id
+    day = datetime.utcnow().date().isoformat()
+    tid = make_turn_id("proactive", f"{slot_key}:{user_id}:{day}", user_id, text)
+    token = CURRENT_TURN_ID.set(tid)
+    try:
+        yield tid
+    finally:
+        CURRENT_TURN_ID.reset(token)
+
+
 async def _record_delivery(db, user_id, result, slot_key: str) -> None:
     """Persist what actually happened. Best-effort — a bookkeeping failure must
     not break a send that already succeeded."""
@@ -631,21 +661,27 @@ async def _send_logged(db, user_id, telegram_id: str, text: str, slot_key: str) 
     text = _clean_proactive_text(text)
     if not text:
         return
-    result = await _send(telegram_id, text, slot_key=slot_key)
-    await _record_delivery(db, user_id, result, slot_key)
-    # HISTORY ONLY ON ACCEPTANCE. This row is what the cadence budget, the
-    # silence streak and engagement analysis all read. Writing it for a
-    # suppressed or refused send made "we tried" indistinguishable from "we
-    # reached them" — and rate-limited a user whose pushes were all failing as
-    # though they were being reached, so the failure suppressed its own retry.
-    if result is not None and result.reached_user:
-        await _log_proactive(db, user_id, text, slot_key,
-                             platform=_channel_for(telegram_id))
-    else:
-        logger.info(
-            f"event=proactive_not_delivered user={user_id} slot={slot_key} "
-            f"status={getattr(result, 'status', 'unknown')} "
-            f"reason={getattr(result, 'detail', '')[:80]}")
+    # The history write is INSIDE the turn scope. `_log_proactive` reads the
+    # ambient turn id, so closing the scope before it ran gave the delivery
+    # attempt an id and the conversation row NULL — the two records describing
+    # one send disagreeing about whether it had an identity.
+    with _proactive_turn(user_id, slot_key, text):
+        result = await _send(telegram_id, text, slot_key=slot_key)
+        await _record_delivery(db, user_id, result, slot_key)
+        # HISTORY ONLY ON ACCEPTANCE. This row is what the cadence budget, the
+        # silence streak and engagement analysis all read. Writing it for a
+        # suppressed or refused send made "we tried" indistinguishable from "we
+        # reached them" — and rate-limited a user whose pushes were all failing
+        # as though they were being reached, so the failure suppressed its own
+        # retry.
+        if result is not None and result.reached_user:
+            await _log_proactive(db, user_id, text, slot_key,
+                                 platform=_channel_for(telegram_id))
+        else:
+            logger.info(
+                f"event=proactive_not_delivered user={user_id} slot={slot_key} "
+                f"status={getattr(result, 'status', 'unknown')} "
+                f"reason={getattr(result, 'detail', '')[:80]}")
 
 
 async def _send_logged_with_voice(db, user_id, telegram_id: str, text: str,
@@ -658,16 +694,17 @@ async def _send_logged_with_voice(db, user_id, telegram_id: str, text: str,
     text = _clean_proactive_text(text)
     if not text:
         return
-    result = await _send_with_voice(telegram_id, text, name=name,
-                                    language=language, slot_key=slot_key)
-    await _record_delivery(db, user_id, result, slot_key)
-    if result is not None and result.reached_user:
-        await _log_proactive(db, user_id, text, slot_key,
-                             platform=_channel_for(telegram_id))
-    else:
-        logger.info(
-            f"event=proactive_not_delivered user={user_id} slot={slot_key} "
-            f"status={getattr(result, 'status', 'unknown')}")
+    with _proactive_turn(user_id, slot_key, text):
+        result = await _send_with_voice(telegram_id, text, name=name,
+                                        language=language, slot_key=slot_key)
+        await _record_delivery(db, user_id, result, slot_key)
+        if result is not None and result.reached_user:
+            await _log_proactive(db, user_id, text, slot_key,
+                                 platform=_channel_for(telegram_id))
+        else:
+            logger.info(
+                f"event=proactive_not_delivered user={user_id} slot={slot_key} "
+                f"status={getattr(result, 'status', 'unknown')}")
 
 
 def _clean_proactive_text(text: str) -> str:
