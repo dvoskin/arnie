@@ -3623,8 +3623,15 @@ async def api_log_food(body: FoodLogBody, token: str = Query(...)):
             log = await get_or_create_log_for_date(db, user.id, date.fromisoformat(body.log_date))
         else:
             log = await get_or_create_today_log(db, user.id, tz)
+        # Audit O-1: without a `created` event, "undo that" inverts whatever
+        # was logged before this. `ledger_source` has `add_food_entry` write
+        # that event inside the row's own transaction — the endpoint used to
+        # commit it in a second call, and a crash in between left a food row
+        # with no history at all.
         entry = await add_food_entry(
             db, log.id,
+            user_id=user.id,
+            ledger_source="dashboard:food_log",
             parsed_food_name=body.name,
             quantity=body.quantity,
             calories=round(body.calories),
@@ -3633,11 +3640,6 @@ async def api_log_food(body: FoodLogBody, token: str = Query(...)):
             fats=round(body.fats, 1),
             estimated_flag=body.estimated,
         )
-        # Audit O-1: without a `created` event, "undo that" inverts whatever
-        # was logged before this — see db.queries.record_created_from_row.
-        from db.queries import record_created_from_row
-        await record_created_from_row(db, user.id, entry, "food", log.id,
-                                      source="dashboard:food_log")
     return {"status": "ok", "id": entry.id}
 
 

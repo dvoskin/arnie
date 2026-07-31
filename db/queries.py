@@ -718,11 +718,48 @@ def _invalidate_briefing_for_log(daily_log_id_or_user: int, by_user: bool = Fals
         pass
 
 
-async def add_food_entry(db: AsyncSession, daily_log_id: int, **kwargs) -> FoodEntry:
+async def add_food_entry(db: AsyncSession, daily_log_id: int,
+                         ledger_source: Optional[str] = None,
+                         user_id: Optional[int] = None,
+                         **kwargs) -> FoodEntry:
+    """Write one food row, and — when the caller names a `ledger_source` — its
+    `created` event, in ONE transaction.
+
+    The row used to commit here and the event to commit in a second call by the
+    caller. Between those two commits the process can die (a deploy restart, an
+    OOM, a dropped connection) and what survives is a food row with no history:
+    `ledger_undo` cannot invert it, so "undo that" reaches past it to a row the
+    user never mentioned, and the turn↔operation join is missing the operation
+    so the turn reads as a reply that claimed a log it never made. Both silent,
+    and nothing in the schema says the event was owed.
+
+    `ledger_source` mirrors `add_exercise_entry`, which already carries the
+    caller's provenance label instead of letting the caller write a second
+    event — the fix the master audit (2026-07-30) landed after finding every
+    exercise creation recorded twice by two writers.
+
+    Callers that do NOT pass `ledger_source` keep the old shape exactly: the
+    row commits and history is the caller's business. That is what makes this
+    safe to adopt one call site at a time.
+    """
     entry = FoodEntry(daily_log_id=daily_log_id, **kwargs)
     db.add(entry)
     await db.flush()  # entry must be visible to the recompute query
     await recompute_log_totals(db, daily_log_id)
+    if ledger_source is not None:
+        # BEFORE the commit, deliberately. `commit=False` keeps the duplicate
+        # guard's savepoint (a rejected duplicate still soft-fails to None)
+        # while leaving the transaction open, so the row and its history land
+        # together or not at all.
+        if user_id is None:
+            log = await db.get(DailyLog, daily_log_id)
+            user_id = getattr(log, "user_id", None)
+        if user_id is not None:
+            await record_ledger_event(
+                db, user_id=user_id, event_type="created", domain="food",
+                entry_id=entry.id, daily_log_id=daily_log_id,
+                payload=_entry_event_payload(entry), source=ledger_source,
+                commit=False)
     await db.commit()
     await db.refresh(entry)
     # Drop cached briefing so the next Coach open regenerates against the new
@@ -2992,6 +3029,7 @@ async def record_ledger_event(
     db: AsyncSession, user_id: int, event_type: str, domain: str = "food",
     entry_id: Optional[int] = None, daily_log_id: Optional[int] = None,
     payload: Optional[dict] = None, source: Optional[str] = None,
+    commit: bool = True,
 ):
     """Append one row to the ledger's event history and return it (the id is
     the undo token cards surface). The canonical turn identity is stamped
@@ -3027,8 +3065,38 @@ async def record_ledger_event(
             f"entry_id={entry_id} type={event_type} source={source!r} — "
             f"a second writer attempted a duplicate created event")
         return None
-    await db.commit()
+    # `commit=False` lets a caller that is mid-transaction fold this event into
+    # ITS commit, so a domain row and its history land together instead of in
+    # two commits with a crash window between them. The savepoint above is
+    # unaffected either way — a duplicate is still rejected softly.
+    if commit:
+        await db.commit()
     return ev
+
+
+def _entry_event_payload(entry) -> dict:
+    """The entry's state at event time, in the ledger's vocabulary.
+
+    Shared by both writers of a `created` event — `add_food_entry` (inside the
+    row's own transaction) and `record_created_from_row` (for callers that
+    still write history separately). One builder because a `deleted` event
+    restores from this payload: two vocabularies would mean undo could rebuild
+    a row the recorder never described.
+    """
+    payload = {}
+    for key, attr in (("food_name", "parsed_food_name"),
+                      ("exercise_name", "exercise_name"),
+                      ("quantity", "quantity"), ("calories", "calories"),
+                      ("protein", "protein"), ("carbs", "carbs"),
+                      ("fats", "fats"), ("meal_type", "meal_type"),
+                      ("sets", "sets"), ("reps", "reps"),
+                      ("weight_kg", "weight"),
+                      ("duration_minutes", "duration_minutes"),
+                      ("is_cardio", "is_cardio")):
+        value = getattr(entry, attr, None)
+        if value is not None:
+            payload[key] = value
+    return payload
 
 
 async def record_created_from_row(
@@ -3055,19 +3123,7 @@ async def record_created_from_row(
     Best-effort, like every other call site — history must never break the
     write it describes.
     """
-    payload = {}
-    for key, attr in (("food_name", "parsed_food_name"),
-                      ("exercise_name", "exercise_name"),
-                      ("quantity", "quantity"), ("calories", "calories"),
-                      ("protein", "protein"), ("carbs", "carbs"),
-                      ("fats", "fats"), ("meal_type", "meal_type"),
-                      ("sets", "sets"), ("reps", "reps"),
-                      ("weight_kg", "weight"),
-                      ("duration_minutes", "duration_minutes"),
-                      ("is_cardio", "is_cardio")):
-        value = getattr(entry, attr, None)
-        if value is not None:
-            payload[key] = value
+    payload = _entry_event_payload(entry)
     try:
         return await record_ledger_event(
             db, user_id, "created", domain=domain,

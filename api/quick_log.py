@@ -50,7 +50,6 @@ from db.queries import (
     add_exercise_entry,
     add_food_entry,
     get_or_create_today_log,
-    record_created_from_row,
     resolve_user,
 )
 
@@ -147,9 +146,21 @@ async def log_food_entry(
         with _turn_scope(turn_id):
             log = await get_or_create_today_log(db, user.id,
                                                 user.timezone or "UTC")
+            # A TAP IS A TURN (audit O-1). Without the `created` event
+            # `ledger_undo` takes the last one unconditionally, so "undo that"
+            # after a tap-log removed the previous CHAT-logged item — a row the
+            # user never mentioned.
+            #
+            # `ledger_source` makes `add_food_entry` write that event inside
+            # the row's OWN transaction, rather than this endpoint committing
+            # it separately afterwards: two commits meant a crash between them
+            # left a food row with no history at all. Written inside the turn
+            # scope either way, so the event carries the turn id.
             entry = await add_food_entry(
                 db,
                 daily_log_id=log.id,
+                user_id=user.id,
+                ledger_source="quick_log:ios",
                 raw_input=payload.food_name,
                 parsed_food_name=payload.food_name,
                 quantity=payload.quantity,
@@ -160,13 +171,6 @@ async def log_food_entry(
                 meal_type=payload.meal_type,
                 source_type="ios",
             )
-            # A TAP IS A TURN (audit O-1). Without this event `ledger_undo`
-            # takes the last one unconditionally, so "undo that" after a
-            # tap-log removed the previous CHAT-logged item — a row the user
-            # never mentioned. It is recorded INSIDE the turn scope so the
-            # event carries the turn id, which is what makes it joinable.
-            await record_created_from_row(db, user.id, entry, "food", log.id,
-                                          source="quick_log:ios")
 
         await complete_claim(db, claim, entry_id=entry.id,
                              daily_log_id=log.id)
