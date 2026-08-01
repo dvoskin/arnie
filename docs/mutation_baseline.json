@@ -52,7 +52,7 @@
   "POST /api/v1/groups/{group_id}/leave": "gap",
   "POST /api/v1/groups/{group_id}/messages": "gap",
   "POST /api/v1/groups/{group_id}/messages/{message_id}/react": "gap",
-  "POST /api/v1/health/snapshot": "gap",
+  "POST /api/v1/health/snapshot": "compliant",
   "POST /api/v1/health/weights": "gap",
   "POST /api/v1/ledger/undo": "gap",
   "POST /api/v1/location": "gap",

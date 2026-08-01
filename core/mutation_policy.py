@@ -227,15 +227,22 @@ POLICIES: tuple[Policy, ...] = (
              "claim would otherwise provide, so requiring one here would be "
              "redundant machinery. The property that actually needs proving "
              "is the tombstone: without it a deleted import comes back."),
-    _p("POST", "/api/v1/health/weights", "A", _SESSION, "natural", _ROW_TXN,
-       "created/updated per imported reading",
-       "add_body_metric upserts one row per (user, day, source)",
+    _p("POST", "/api/v1/health/weights", "A", _SESSION, "claim_required",
+       _ROW_TXN, "one health_import event per sync",
+       "returns the original ingest count",
        "a manual weigh-in outranks a passive import; the tombstone covers "
        "deletes", "api/health_sync.py",
-       notes="Naturally idempotent because the upsert key is (user, logging "
-             "day, source), so a re-imported reading replaces rather than "
-             "adds. A claim would deduplicate deliveries the upsert already "
-             "collapses."),
+       notes="DECLARED `natural` UNTIL A TEST DISPROVED IT. The per-day dedup "
+             "is a read-then-write — it SELECTs the days already covered, "
+             "then inserts the rest — with no constraint behind it, so two "
+             "concurrent syncs both read an empty set and both insert "
+             "(`test_two_concurrent_weight_backfills_ingest_each_day_once` "
+             "failed with 2 rows for one day). The claim closes the common "
+             "case, a retried sync. The RESIDUAL race, two syncs with "
+             "different keys submitting overlapping history, is still open; "
+             "the root fix is a uniqueness constraint on (user, source, "
+             "logging day), which needs a stored day column and a migration. "
+             "Tracked by the xfail in that test file."),
     _p("POST", "/health/apple", "A", _TOKEN, "natural", _ROW_TXN,
        "created/updated per imported row",
        "upsert on source_ref", "HealthImportTombstone", "api/app.py",

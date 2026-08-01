@@ -69,7 +69,8 @@ MARKERS = {
     "idempotency": ("claim_request", "idempotency_key", "Idempotency-Key",
                     "claim=True"),
     "ledger_event": ("ledger_source", "record_ledger_event",
-                     "record_created_from_row", "record_surface_mutation"),
+                     "record_created_from_row", "record_surface_mutation",
+                     "turn.audit"),
     "request_trace": ("RequestTrace", "trace.stage", "mutation_turn"),
     "durable_result": ("claim_id=", "complete_claim", "turn.claim_id"),
     # A persisted trace row carries `build_sha` (core/request_trace._sha), so
@@ -248,8 +249,20 @@ def build_rows() -> list:
             # ignore the gate.
             if policy is not None and policy.auth == "public":
                 found["authorized"] = True
-            required = CLASS_REQUIREMENTS.get(
-                policy.mutation_class if policy else "", ())
+            required = list(CLASS_REQUIREMENTS.get(
+                policy.mutation_class if policy else "", ()))
+            # THE REQUIREMENTS FOLLOW THE DECLARED POLICY, not the class alone.
+            # `durable_result` is where a CLAIM stores its committed answer, so
+            # it only means anything on a route that takes one. A Class A route
+            # whose declared policy is `natural` — the health imports, which
+            # upsert on a stable per-sample identity — has no claim and no
+            # stored result to replay, and demanding both would report a route
+            # as non-compliant for correctly implementing the policy it
+            # declared. Its idempotency is proven by test instead, which is
+            # what `notes` on those declarations commits it to.
+            if policy is not None and policy.idempotency != "claim_required":
+                required = [g for g in required
+                            if g not in ("idempotency", "durable_result")]
             missing = [g for g in required if found.get(g) is not True]
 
             if policy is None:
