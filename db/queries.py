@@ -1102,11 +1102,26 @@ async def add_body_metric(db: AsyncSession, user_id: int,
 
 async def add_water_entry(db: AsyncSession, user_id: int, daily_log_id: int,
                           amount_ml: float, context: Optional[str] = None,
-                          source_type: str = "text"):
+                          source_type: str = "text",
+                          ledger_source: Optional[str] = None,
+                          claim_id: Optional[int] = None):
     """T2.4 — Persist a timestamped water log. DailyLog.total_water_ml stays
     as the cached aggregate (updated by the caller alongside) for backward
     compat with existing dashboards; the WaterEntry row is the canonical
-    source for hydration timing coaching and future per-event analytics."""
+    source for hydration timing coaching and future per-event analytics.
+
+    `ledger_source` / `claim_id` mirror `add_food_entry` exactly — see its
+    docstring for why both belong in the row's OWN transaction. Water had
+    THREE writers and each handled history differently: the dashboard
+    (`api/app.py`) and the chat lane (`handlers/tool_executor.py`) each wrote
+    the `created` event in a second commit, and `api/water.py` — the iOS tap
+    surface — wrote no event at all, so a tap-logged pour was invisible to
+    `ledger_undo` and to the turn↔operation join. Passing `ledger_source`
+    makes this function the one writer.
+
+    Callers that do NOT pass `ledger_source` keep the old shape exactly, so
+    the two existing second-commit call sites stay correct until they move.
+    """
     from db.models import WaterEntry
     entry = WaterEntry(
         user_id=user_id,
@@ -1116,6 +1131,20 @@ async def add_water_entry(db: AsyncSession, user_id: int, daily_log_id: int,
         source_type=source_type,
     )
     db.add(entry)
+    if ledger_source is not None:
+        # BEFORE the commit. `commit=False` folds the event into this
+        # transaction, so the pour and its history land together or not at
+        # all — a crash between two commits used to leave a WaterEntry that
+        # `ledger_undo` could not invert.
+        await db.flush()   # the event needs the row's id
+        await record_ledger_event(
+            db, user_id=user_id, event_type="created", domain="water",
+            entry_id=entry.id, daily_log_id=daily_log_id,
+            # The shape `core.ledger_undo._invert` reads for domain="water".
+            payload={"amount_ml": amount_ml, "context": context},
+            source=ledger_source, commit=False)
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, entry.id, daily_log_id)
     await db.commit()
     await db.refresh(entry)
     _invalidate_briefing_for_log(user_id, by_user=True)
@@ -1141,16 +1170,33 @@ async def recompute_water_total(db: AsyncSession, daily_log_id: int) -> float:
 
 
 async def update_water_entry(db: AsyncSession, entry_id: int, user_id: int,
-                             amount_ml: float):
+                             amount_ml: float,
+                             ledger_source: Optional[str] = None,
+                             claim_id: Optional[int] = None):
     """Update a single WaterEntry's amount, then resync the day total.
 
     Scoped by user_id so a token can only touch its own rows. Returns the
-    refreshed entry, or None if not found / not owned."""
+    refreshed entry, or None if not found / not owned.
+
+    With `ledger_source`, the `updated` event carries the BEFORE state in the
+    same transaction as the edit — the shape food and exercise already use, so
+    a correction stays reversible rather than overwriting the only record of
+    what the amount used to be.
+    """
     from db.models import WaterEntry
     entry = await db.get(WaterEntry, entry_id)
     if entry is None or entry.user_id != user_id:
         return None
+    before = {"amount_ml": entry.amount_ml, "context": entry.context}
     entry.amount_ml = amount_ml
+    if ledger_source is not None:
+        await record_ledger_event(
+            db, user_id=user_id, event_type="updated", domain="water",
+            entry_id=entry.id, daily_log_id=entry.daily_log_id,
+            payload={"amount_ml": amount_ml, "before": before},
+            source=ledger_source, commit=False)
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, entry.id, entry.daily_log_id)
     await db.commit()
     if entry.daily_log_id:
         await recompute_water_total(db, entry.daily_log_id)
@@ -1158,16 +1204,40 @@ async def update_water_entry(db: AsyncSession, entry_id: int, user_id: int,
     return entry
 
 
-async def delete_water_entry(db: AsyncSession, entry_id: int, user_id: int) -> bool:
+async def delete_water_entry(db: AsyncSession, entry_id: int, user_id: int,
+                             ledger_source: Optional[str] = None,
+                             claim_id: Optional[int] = None) -> bool:
     """Delete a single WaterEntry, then resync the day total.
 
-    Scoped by user_id. Returns True if a row was removed."""
+    Scoped by user_id. Returns True if a row was removed.
+
+    With `ledger_source`, the `deleted` event is captured from the row BEFORE
+    it goes and committed in the same transaction as the delete — the same
+    payload shape `api/app.py` already records, so a pour deleted from any
+    surface leaves one restorable history entry rather than none.
+    """
     from db.models import WaterEntry
     entry = await db.get(WaterEntry, entry_id)
     if entry is None or entry.user_id != user_id:
         return False
     daily_log_id = entry.daily_log_id
+    # Read the state off the row while it still exists — after the delete
+    # there is nothing left to describe, and a `deleted` event with no payload
+    # cannot be restored from.
+    before = {"amount_ml": entry.amount_ml, "context": entry.context,
+              "daily_log_id": daily_log_id}
     await db.delete(entry)
+    if ledger_source is not None:
+        # Flushed so the row is gone before the event references it; the
+        # event still names `entry_id` because that is the token undo and the
+        # turn↔operation join look the row up by.
+        await db.flush()
+        await record_ledger_event(
+            db, user_id=user_id, event_type="deleted", domain="water",
+            entry_id=entry_id, daily_log_id=daily_log_id, payload=before,
+            source=ledger_source, commit=False)
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, entry_id, daily_log_id)
     await db.commit()
     if daily_log_id:
         await recompute_water_total(db, daily_log_id)
