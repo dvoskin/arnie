@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from api.auth import current_identity
+from core.mutation_contract import mutation_turn
 from api.whoop import build_auth_url
 from db.database import AsyncSessionLocal
 from db.models import WearableDevice
@@ -95,5 +96,15 @@ async def disconnect(identity: str = Depends(current_identity)):
     row via /connect-url."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
-        await clear_whoop_tokens(db, user.id)
+        # Disconnecting an already-disconnected integration is a no-op, so no
+        # claim. The audit row is the point: "when did my wearable stop
+        # syncing" is asked later and the answer has to exist.
+        async with mutation_turn(
+            db, channel="ios", command="whoop_disconnect", user_id=user.id,
+            dedup="whoop_disconnect", claim=False,
+        ) as turn:
+            await clear_whoop_tokens(db, user.id)
+            await turn.audit(db, "deleted", domain="integration",
+                             payload={"integration": "whoop"},
+                             surface="ios:settings")
     return DisconnectAck(ok=True)

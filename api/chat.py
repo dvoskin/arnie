@@ -25,6 +25,7 @@ from db.queries import resolve_user, get_recent_conversations, get_recent_conver
 from core.chat_service import run_chat_turn
 from core.platform import Response, serialize_response, WIRE_VERSION
 from api.auth import current_identity, verify_session_token
+from core.mutation_contract import mutation_turn
 # Shared with the Telegram and iMessage handlers — the coalescing rules and
 # their concurrency guarantees are one implementation, not three. The module
 # imports only asyncio and logging, so this pulls in no bot dependencies.
@@ -558,6 +559,14 @@ async def chat_feedback(req: FeedbackRequest, identity: str = Depends(current_id
             )
         )
         ids = set(id_rows.scalars().all()) or {user.id}
+        async with mutation_turn(
+            db, channel="ios", command="chat_feedback", user_id=user.id,
+            dedup=f"rate:{req.log_id}", claim=False,
+        ) as turn:
+            await turn.audit(db, "updated", domain="chat_feedback",
+                             entry_id=req.log_id,
+                             payload={"rating": req.rating},
+                             surface="ios:chat")
         row = await db.get(ConversationLog, req.log_id)
         if row is None or row.user_id not in ids:
             raise HTTPException(status_code=404, detail="turn not found")

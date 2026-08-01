@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
 from api.auth import current_identity
+from core.mutation_contract import mutation_turn
 from db.database import AsyncSessionLocal
 from db.queries import (
     resolve_user,
@@ -29,6 +30,13 @@ from db.queries import (
 )
 
 router = APIRouter(prefix="/api/v1/devices", tags=["devices"])
+
+CHANNEL = "ios"
+
+#: Class B. Both routes are naturally idempotent — the register is an upsert on
+#: the token, and revoking an already-revoked token is a no-op — so neither
+#: takes an idempotency claim. What they owe is attributability: which request
+#: registered this device, and when was it revoked.
 
 
 class APNSTokenBody(BaseModel):
@@ -63,14 +71,25 @@ async def post_apns_token(
     """
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
-        await upsert_device_token(
-            db,
-            user_id=user.id,
-            token=payload.token,
-            platform=payload.platform,
-            environment=payload.environment,
-        )
-        return {"status": "ok"}
+        async with mutation_turn(
+            db, channel=CHANNEL, command="register_device", user_id=user.id,
+            dedup=f"apns:{payload.token[-12:]}", claim=False,
+        ) as turn:
+            await upsert_device_token(
+                db,
+                user_id=user.id,
+                token=payload.token,
+                platform=payload.platform,
+                environment=payload.environment,
+            )
+            # The token itself is never logged — it is a device credential.
+            # The suffix is enough to tell two devices apart in an audit.
+            await turn.audit(db, "updated", domain="device",
+                             payload={"platform": payload.platform,
+                                      "environment": payload.environment,
+                                      "token_suffix": payload.token[-6:]},
+                             surface="ios:devices")
+            return {"status": "ok", "turn_id": turn.turn_id}
 
 
 @router.delete("/apns-token/{token}")
@@ -87,7 +106,14 @@ async def delete_apns_token(
     """
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
-        revoked = await revoke_device_token(db, user.id, token)
-        if not revoked:
-            raise HTTPException(status_code=404, detail="token not found for this user")
-        return {"status": "revoked"}
+        async with mutation_turn(
+            db, channel=CHANNEL, command="revoke_device", user_id=user.id,
+            dedup=f"apns_revoke:{token[-12:]}", claim=False,
+        ) as turn:
+            revoked = await revoke_device_token(db, user.id, token)
+            if not revoked:
+                raise HTTPException(status_code=404, detail="token not found for this user")
+            await turn.audit(db, "deleted", domain="device",
+                             payload={"token_suffix": token[-6:]},
+                             surface="ios:devices")
+            return {"status": "revoked", "turn_id": turn.turn_id}
