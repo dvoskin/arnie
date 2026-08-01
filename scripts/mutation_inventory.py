@@ -56,25 +56,33 @@ BASELINE = ROOT / "docs" / "mutation_baseline.json"
 #: What proves each guarantee, by the names a handler would call. Deliberately
 #: narrow — a loose match reports coverage that is not there, and an inventory
 #: that overstates completeness is worse than none.
+#
+#: `mutation_turn` (core/mutation_contract) counts for turn identity, trace and
+#: build attribution because it provably provides all three — it is the ONE
+#: implementation of that shape and is pinned by
+#: `tests/test_the_mutation_contract_helper.py`. Crediting a named, tested
+#: helper is not the same as a loose match: what it credits is verified
+#: elsewhere, which is the only reason a static read can trust it.
 MARKERS = {
     "canonical_turn_id": ("make_turn_id", "_turn_scope", "CURRENT_TURN_ID",
-                          "turn_id="),
-    "idempotency": ("claim_request", "idempotency_key", "Idempotency-Key"),
+                          "turn_id=", "mutation_turn"),
+    "idempotency": ("claim_request", "idempotency_key", "Idempotency-Key",
+                    "claim=True"),
     "ledger_event": ("ledger_source", "record_ledger_event",
                      "record_created_from_row", "record_surface_mutation"),
-    "request_trace": ("RequestTrace", "trace.stage"),
-    "durable_result": ("claim_id=", "complete_claim"),
+    "request_trace": ("RequestTrace", "trace.stage", "mutation_turn"),
+    "durable_result": ("claim_id=", "complete_claim", "turn.claim_id"),
     # A persisted trace row carries `build_sha` (core/request_trace._sha), so
     # build attribution is what persisting buys — not a separate mechanism.
     "build_attribution": ("trace.persist", "persist_isolated", "build_sha",
-                          "_build_stamp"),
+                          "_build_stamp", "mutation_turn"),
     # Class B owes an audit trail rather than a ledger event: the question
     # asked of a settings change later is "when did this change, and to what".
     # A RequestTrace is deliberately NOT evidence here — it is already its own
     # required guarantee, and counting it twice would let a route satisfy two
     # requirements with one mechanism and look complete on neither.
     "audit_trail": ("record_ledger_event", "record_surface_mutation",
-                    "log_conversation", "ledger_source"),
+                    "log_conversation", "ledger_source", "turn.audit"),
     # Includes the webhook shapes: signature verification IS authorization,
     # and B7 made these fail closed. Reading only for a `Depends(...)`
     # identity would have called every signed webhook unauthorized.
