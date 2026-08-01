@@ -76,6 +76,21 @@ jobs:
           DATABASE_URL='postgresql://ci:ci@localhost/ci' \
             python -m alembic upgrade "$range" --sql > /dev/null
 
+      # B2. Every mutating route must declare its contract in
+      # core/mutation_policy.py — including, explicitly, "idempotency not
+      # required, this operation is naturally idempotent". An UNDECLARED route
+      # fails here, and so does a route that regresses from compliant.
+      #
+      # Class A gaps are RATCHETED against docs/mutation_baseline.json rather
+      # than enforced outright: 24 are already open, and a gate that is red the
+      # day it lands teaches everyone to ignore it. New Class A gaps fail
+      # immediately and the recorded list may only shrink.
+      #
+      # `--strict` drops the ratchet and is the LAUNCH gate — B2 is complete
+      # when it passes. Run it deliberately; it is not wired to block merges.
+      - name: Mutation policy — no undeclared surfaces, no regressions
+        run: python scripts/mutation_inventory.py --check
+
       - name: Run tests
         env:
           LINKING_ENABLED: "true"
