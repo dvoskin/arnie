@@ -113,13 +113,15 @@ def true_cal(c: dict) -> float:
 
 
 # ── Deterministic lookups: record once, replay forever ───────────────────────
-# The only non-determinism is the network — `_fetch_usda_off` (USDA + Open Food
-# Facts) and `_web_lookup_packaged`. Recording their real output per food once
-# and replaying it makes this a GATE, not a weather report: the same code always
-# scores the same, and a change in the number means the resolver changed, not
-# that USDA re-indexed or the rate limiter fired. Recording is INCREMENTAL — it
-# fetches only foods the fixture is missing — so it fills in across runs even on
-# the throttled public DEMO_KEY, and `--record` on the prod key refreshes it.
+# The only non-determinism is the NETWORK, and it is fixtured at the DEEPEST
+# seam that still leaves the resolver real: the raw candidate lists from
+# `api.usda.search_food` and `skills.nutrition.off.search`, plus the branded
+# `_web_lookup_packaged`. Everything ABOVE those — `best_candidate` (the
+# matcher), the authority ladder, portion x density, the cooked/prep logic —
+# runs live against the fixtured candidates. So a change to the MATCHER is
+# measurable here; fixturing one layer up (`_fetch_usda_off`, post-matcher)
+# would have baked the old matcher's verdict into the fixture and made Part 1
+# untestable. Recording is incremental; `--record` on the prod key fills it.
 
 _FIXTURE = pathlib.Path(__file__).resolve().parent.parent / "tests" / "corpus" / "food_lookup_fixtures.json"
 
@@ -132,19 +134,24 @@ def _load_fixture() -> dict:
 
 
 def _install_replay(fx: dict) -> None:
-    """Patch the two network seams to read the fixture, no network. A food the
-    fixture doesn't cover returns nothing — which shows up as the estimate path,
-    honestly flagged, rather than a silent live call."""
+    """Patch the raw lookup seams to read the fixture, no network — leaving the
+    matcher and the whole resolver live. A food the fixture doesn't cover
+    returns nothing, which surfaces as the estimate path, honestly flagged."""
+    import api.usda as _usda
+    import skills.nutrition.off as _off
     import handlers.tool_executor as TE
 
-    async def _replay_usda_off(food_name, is_packaged):
-        e = fx.get(food_name) or {}
-        return e.get("usda"), e.get("off")
+    async def _replay_search(query, page_size=5):
+        return list((fx.get(query) or {}).get("usda_raw") or [])
+
+    async def _replay_off(query):
+        return (fx.get(query) or {}).get("off")
 
     async def _replay_web(food_name, quantity):
         return (fx.get(food_name) or {}).get("web")
 
-    TE._fetch_usda_off = _replay_usda_off
+    _usda.search_food = _replay_search
+    _off.search = _replay_off
     TE._web_lookup_packaged = _replay_web
 
 
@@ -152,6 +159,8 @@ async def _record(cases: list[dict]) -> int:
     """Fill the fixture with the REAL lookups for any gold food it is missing.
     Incremental + idempotent; needs a working USDA key. Never overwrites a
     captured entry, so a good capture is never lost to a later throttled run."""
+    import api.usda as _usda
+    import skills.nutrition.off as _off
     import handlers.tool_executor as TE
     fx = _load_fixture()
     got = new = 0
@@ -161,21 +170,24 @@ async def _record(cases: list[dict]) -> int:
             got += 1
             continue
         try:
-            usda, off = await TE._fetch_usda_off(food, c["axis"] == "branded")
-            web = await TE._web_lookup_packaged(food, c["qty"] or None) if c["axis"] == "branded" else None
-            # NEVER store an empty capture: on a throttled key `_fetch_usda_off`
-            # swallows the 429 and returns (None, None), indistinguishable from a
-            # real no-match. Storing that would poison the fixture — the food is
-            # marked captured and never re-fetched. Every gold food has a match,
-            # so "nothing came back" means "try again with a real key", not
-            # "this food has no data". Left uncached → retried next --record.
-            if not (usda or off or web):
-                print(f"  EMPTY {food!r} (throttled or no-match) — left uncached")
+            usda_raw = await _usda.search_food(food, 8)          # RAW candidate list
+            branded = c["axis"] == "branded"
+            off = await _off.search(food) if branded else None
+            web = await TE._web_lookup_packaged(food, c["qty"] or None) if branded else None
+            # NEVER store an empty capture: a throttled search returns [] here,
+            # indistinguishable from a real no-match. Storing that poisons the
+            # fixture (food marked captured, never re-fetched). Every gold food
+            # returns SOME candidates from USDA, so "nothing came back" means
+            # "retry with a real key". Left uncached → retried next --record.
+            # (A food best_candidate later REJECTS still has raw candidates here;
+            # that rejection is the resolver's job, tested live on replay.)
+            if not (usda_raw or off or web):
+                print(f"  EMPTY {food!r} (throttled) — left uncached")
                 continue
-            fx[food] = {"usda": usda, "off": off, "web": web,
+            fx[food] = {"usda_raw": usda_raw, "off": off, "web": web,
                         "_captured_for": c["id"]}
             new += 1
-            print(f"  captured {food!r} (usda={'y' if usda else '-'} off={'y' if off else '-'})")
+            print(f"  captured {food!r} (usda_raw={len(usda_raw or [])} off={'y' if off else '-'})")
         except Exception as e:
             print(f"  MISS {food!r}: {type(e).__name__}: {str(e)[:60]}")
         await asyncio.sleep(float(os.getenv("EVAL_ACCURACY_DELAY", "3")))
