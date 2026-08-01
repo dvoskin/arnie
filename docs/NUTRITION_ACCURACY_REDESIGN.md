@@ -18,6 +18,33 @@ trimmed ("meat and skin", not "meat only"), and a complete cooked-marker list
 v2-gated, magnitudes derived from the existing constants — see
 `tests/test_food_matcher_v2.py`.
 
+## Readiness posture (2026-08-01) — canary, NOT global
+
+The 6/11 → 9/11 leap is REAL: matcher defects fixed, not gold numbers
+manipulated. But the eval proves only the COMMITTED NUMBER on 10 fixtured foods.
+V2 is therefore ready for a **dark merge** (land with the flag off) and an
+**internal canary** (flag on for the team only) — **not global enablement.**
+
+Global is gated on validating V2 across the COMPLETE CONVERSATIONAL PATH, none of
+which the committed eval touches:
+- Part 5's ask → answer → apply loop end-to-end (real interpreter, multi-turn),
+  not just the decision functions in isolation.
+- Ask-RATE on real traffic — Part 5 promotes log→ask and could over-ask (every
+  fat-prone food on strict, every vague unit); unmeasured.
+- The branded `plan_turn` / variant-spread path, which the new matcher feeds.
+- Non-English: every V2 token set (prep, vague units, species, added fat) is
+  English; the RU lane gets none of it — a silent gap (see
+  [[feedback_arnie_russian_safety_nets]]).
+- Interaction with correction / update / delete turns.
+
+The internal canary is what produces the ask-rate and correction-rate reads that
+should decide global enablement — not the committed eval alone.
+
+**Backend readiness (unchanged by V2):** controlled-BETA ready. BROAD market
+launch stays blocked by — correction/delete proof (B2 mutation contract),
+production latency evidence (B5, needs a week of prod rows), operational recovery
+(B9/B10 backup + rollback), and the V2 conversational-path validation above.
+
 **Landed:** Part 1 (identity matcher), Part 2a/b/c (cooked-preference, cooking
 yield, trust full-coverage), Part 3 (portion prior). Part 4 (added fat) is
 partial — applied only on a seated base so it never double-counts, but the
