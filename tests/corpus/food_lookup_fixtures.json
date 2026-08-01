@@ -1,0 +1,9 @@
+{
+ "skirt steak": {
+  "usda": null,
+  "off": null,
+  "web": null,
+  "_captured_for": "port-skirt-steak",
+  "_note": "REAL result: best_candidate rejects USDA fdc 172159 (score ~1.05 < 1.2 gate, length penalty) -> no density -> estimate path. Verified offline. Other foods: run --record with a working USDA key."
+ }
+}

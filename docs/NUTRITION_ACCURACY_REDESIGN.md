@@ -1,0 +1,111 @@
+# Nutrition accuracy — one designed capability
+
+**Status: design, 2026-07-31.** Branch `dvoskin/nutrition-accuracy-redesign`.
+Gated by `scripts/eval_accuracy.py`. Behind `NUTRITION_ACCURACY_V2` (default
+off) until every gold row this document names is green.
+
+## The problem, stated once
+
+A committed calorie is `PORTION(g) x DENSITY(per-100g)`, and DENSITY is
+`base food x preparation x added fat`. Today each factor is estimated badly, and
+the errors compound in one direction — down. Measured by `eval_accuracy` on the
+real committed path (`_analyze_food`), every un-weighed whole food undercounts
+20-47%. This is not a per-food bug; it is four estimators with no ground truth
+and a pile of guards patching their symptoms one incident at a time.
+
+Three roots, all verified:
+
+1. **The USDA matcher rejects legitimate whole-food rows.** `best_candidate`
+   penalizes description LENGTH (−0.15/token). "skirt steak" vs USDA's *"Beef,
+   plate steak, boneless, inside skirt, separable lean and fat… raw"* scores 1.05
+   against a 1.2 gate despite a PERFECT token match — so it returns `None`, no
+   density, and the LLM's low guess stands. Verified offline.
+2. **Raw beats cooked.** When a row IS seated it is USDA's raw entry (ribeye 195
+   vs ~291 cooked). A logged food was eaten; raw is the wrong basis.
+3. **Portion comes from the guess, preparation from nowhere.** No stated mass →
+   grams are backed out of the model's ~19%-low calories. Grilled vs fried, plain
+   vs marinated/buttered/dressed resolve to the SAME density. The clarification
+   that could ask runs BEFORE the lookup, scored on the guess, so it never sees
+   the spread — and nothing re-checks after (`fetch_candidates` docstring: "8x…
+   nothing anywhere re-checking").
+
+## The capability (five parts, one flow)
+
+The new resolution path, all behind `NUTRITION_ACCURACY_V2`:
+
+1. **Identity — match on meaning, not brevity.** Replace the length penalty with
+   a COMPOSITE penalty: punish tokens that name a DIFFERENT food (`_FORM_PENALTY`
+   composite markers — gravy, meal, frozen, sandwich…), never descriptive tokens
+   of the SAME food (cut/grade/trim — boneless, separable, lean, choice). A full
+   token-overlap match is strong regardless of how verbose USDA's description is.
+   *Guard preserved:* "turkey breast" still must not seat "turkey breast and
+   gravy, frozen meal" — that is a composite token, and it still loses.
+
+2. **Preparation as a resolution input.** A `Preparation` value
+   (raw|grilled|roasted|pan-fried|deep-fried|braised|…) carried from the log,
+   defaulting to **cooked** for anything a person eats cooked (meats, eggs,
+   grains, vegetables that aren't obviously raw). It selects the cooked USDA row
+   over raw and biases the matcher toward the stated method's row.
+
+3. **Added fat / marinade as an explicit term.** Oil, butter, marinade, dressing
+   are not in the base food and USDA will never carry them. A small, auditable
+   `ADDED_FAT_G` table (1 tbsp oil/butter ≈ 100-120 cal, 2 tbsp dressing ≈ 145)
+   adds a term to the committed calories when the log or the clarification names
+   one. Not a fudge factor — a named, quantified addition with its own provenance
+   line.
+
+4. **Portion prior.** A per-food typical serving (grams) for un-weighed whole
+   foods, sourced in priority: the user's own logged history for THIS food →
+   USDA/OFF serving size → a curated `SERVING_PRIOR_G` table (steak ~200g cooked,
+   nuts 28g, cooked grains 200g…). Replaces "grams from the guess." Extends the
+   existing `core/portions.py` engine, which already knows units but has no bare-
+   name default.
+
+5. **Resolve, then ask (like Google).** Move the clarification decision AFTER
+   `fetch_candidates`, so it scores against the RESOLVED spread. When a food's
+   candidates span a wide preparation/portion range (raw vs cooked, lean vs fat,
+   or the portion prior is uncertain) AND the swing is calorie-material, ask —
+   "grilled or pan-fried? any oil or marinade?" — and apply the answer via #2/#3.
+   The ask stays surgical (the existing `spread x prior` policy), just fed the
+   real spread instead of the guess.
+
+## Why this is not more heuristics
+
+Each part reaches a capability the system lacks, and DELETES a guard that patched
+its absence: the length penalty (a heuristic) goes; the disagreement-demotion and
+profile-flip guards exist because the matcher seats wrong rows — a matcher that
+seats the RIGHT row needs them less. The measure of success is the guard count
+falling while `eval_accuracy` rises.
+
+## The gate
+
+`scripts/eval_accuracy.py` — committed number vs ground truth, decomposed into
+portion / density, plus preparation-pair capture. Each capability names the rows
+it must turn green (below). `NUTRITION_ACCURACY_V2` flips on only when the eval,
+run on the full fixture, shows the un-weighed / preparation / added-fat axes
+passing without regressing control or branded.
+
+| part | rows that must go green |
+|---|---|
+| 1 identity | skirt steak, ribeye seat a USDA density (not estimate) |
+| 2 cooked-default | ribeye/steak density within tolerance of cooked truth |
+| 3 added fat | steak-in-butter, salad-with-ranch |
+| 4 portion prior | almonds, un-weighed meats |
+| 5 resolve-then-ask | preparation pairs diverge in committed density |
+
+## Staged rollout (each stage its own commit, eval-gated)
+
+1. Land `eval_accuracy` + record/replay fixture (this branch). Complete the
+   fixture with `--record` on the prod USDA key.
+2. Part 1 (identity/matcher) — offline-verifiable via `best_candidate`.
+3. Part 2 (cooked-default) + Part 4 (portion prior) — table + selection.
+4. Part 3 (added fat) — table + provenance term.
+5. Part 5 (resolve-then-ask) — the ordering change; the largest, landed last.
+6. Flip `NUTRITION_ACCURACY_V2` on after the full eval passes; delete the guards
+   the new path makes redundant.
+
+## What needs Danny
+
+Complete the eval fixture: `USDA_API_KEY=<prod> python scripts/eval_accuracy.py
+--record` (once, on Render or with the real key). Everything else is code + the
+curated tables above, which are auditable and correctable.
