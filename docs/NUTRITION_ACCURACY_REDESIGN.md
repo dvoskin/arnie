@@ -18,12 +18,27 @@ trimmed ("meat and skin", not "meat only"), and a complete cooked-marker list
 v2-gated, magnitudes derived from the existing constants — see
 `tests/test_food_matcher_v2.py`.
 
-## Readiness posture (2026-08-01) — canary, NOT global
+## Readiness posture
+
+**UPDATE 2026-08-01 (retraction) — NOT canary-ready.** Prod screenshots surfaced
+confirmed SILENT DATA-LOSS in the food pipeline, independent of this flag:
+- a co-mentioned food is DROPPED when another item triggers a clarification
+  (`scripts/invariant_sweep.py`: 3 of 7 realistic ask shapes lose a food);
+- an unsizable unit ("1 ear" of corn) commits **0 cal** — no floor;
+- macros commit inconsistent (sugar 22g > carbs 6g, ≠ the calorie total).
+These are the SAME class — the pipeline asserts no invariants after resolution —
+and they are in the flag-OFF path, so they are PROD bugs, not V2 regressions.
+**Dark merge stays safe** (the flag is off; this changes nothing live). But
+"internal canary" is withdrawn until a UNIVERSAL invariant layer
+(leave-no-food-behind, zero-floor, macro-consistency) + a hole-hunt close them.
+That work is a separate, non-flag-gated workstream.
+
+--- earlier posture (still true for the resolver committed number) ---
 
 The 6/11 → 9/11 leap is REAL: matcher defects fixed, not gold numbers
 manipulated. But the eval proves only the COMMITTED NUMBER on 10 fixtured foods.
-V2 is therefore ready for a **dark merge** (land with the flag off) and an
-**internal canary** (flag on for the team only) — **not global enablement.**
+V2 is therefore safe for a **dark merge** (land with the flag off); the
+**internal canary** is on hold per the retraction above — **not global.**
 
 Global is gated on validating V2 across the COMPLETE CONVERSATIONAL PATH, none of
 which the committed eval touches:
