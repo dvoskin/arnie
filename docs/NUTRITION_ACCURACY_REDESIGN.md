@@ -1,11 +1,12 @@
 # Nutrition accuracy — one designed capability
 
-**Status: Parts 1-3 landed + measured, 2026-07-31.** Branch
+**Status: Parts 1-5 landed, 2026-08-01.** Branch
 `dvoskin/nutrition-accuracy-redesign`. Behind `NUTRITION_ACCURACY_V2` (default
-off). Gate `scripts/eval_accuracy.py`: **4/11 → 6/11**, and the flag's passes are
-honest (baseline's leaned on portion/density errors cancelling). Headline: the
-food that started this, **skirt steak, went −41% → −1%**; almonds −26% → 0%;
-sirloin −20% → −4%.
+off). Gate `scripts/eval_accuracy.py` (committed-number axes): **4/11 → 6/11**,
+honest passes — skirt steak −41% → −1%, almonds −26% → 0%, sirloin −20% → −4%.
+Part 5 (resolve-then-ask) is the ask-path half and is not committed-number
+measurable; it is covered by `tests/test_food_turn_resolve_then_ask.py`. Full
+suite green with the flag off (v1 unchanged).
 
 **Landed:** Part 1 (identity matcher), Part 2a/b/c (cooked-preference, cooking
 yield, trust full-coverage), Part 3 (portion prior). Part 4 (added fat) is
@@ -121,9 +122,51 @@ passing without regressing control or branded.
 6. Flip `NUTRITION_ACCURACY_V2` on after the full eval passes; delete the guards
    the new path makes redundant.
 
-## Part 5 — resolve-then-ask (the focused-session plan)
+## Part 5 — resolve-then-ask (LANDED 2026-08-01)
 
-Scoped 2026-07-31. The asker already EXISTS and is mature — do not rebuild it:
+**What shipped (behind the flag):** the symmetric half of the ask gate. The gate
+had one direction — `_proposed_ask_is_material` DEMOTES an ask the model proposed
+but nothing sizes as material. Its blind spot was the ask the model never
+proposed: a "spoon" of something dense committed at 350 nobody established (the
+production case that prompted this), a steak logged with its oil uncounted.
+
+`core/food_turn._resolved_ambiguities(data, message)` now states the doubt the
+overconfident `log` omitted, SIZED from the portion ontology, in the exact
+`ambiguity` shape the model emits, so the SAME consequence engine scores it:
+- QUANTITY — a vague unit (`core.portions.is_vague_unit`: spoon/scoop/handful…)
+  names no definite mass, so the portion is unresolved and the whole item is in
+  doubt; the span is the item's own calories. A 7-cal handful of spinach sizes to
+  7 and the gate drops it; a 350-cal spoon sizes to 350 and the gate keeps it.
+- PREPARATION — a fat-prone food (`core.portions.prep_fat_span`: protein 100,
+  salad 145, eggs 90) that has not addressed added fat (`mentions_fat` — named OR
+  denied) carries that added-fat doubt. This is the "ask about prep/marinade like
+  Google" gap Danny named.
+
+The call site (`run`, at `action=="log" and not prior`) merges the synthesized
+doubt, re-runs `_proposed_ask_is_material`, and on a MATERIAL result promotes
+`log→ask` — the doubted item waits, the settled ones commit as `ready`, and the
+existing renderer voices it ("How much peanut butter — one spoon or more?"). A
+promotion is earned by a sized spread, never a new threshold; mode is the only
+dial (350-cal spoon asks on moderate, 100-cal prep only on strict). Inert unless
+`NUTRITION_ACCURACY_V2` is on and the model chose to log on a first turn.
+
+Tests: `tests/test_food_turn_resolve_then_ask.py` (11, deterministic, no LLM/flag
+— they size the doubt through the same call the turn makes). Answer application
+needs no new code: the reply turn re-parses with the prep/amount now stated and
+Parts 2/4 refine it.
+
+**Residual (the deeper reorder, not shipped):** the ask is still sized from the
+interpreter's guess-derived calories, not from a LIVE candidate spread fetched
+before the decision. For a whole food the portion ontology stands in for that;
+for a genuinely confused branded lookup (the spoon's product identity), scoring
+against the resolved OFF/USDA shelf is the remaining depth — it belongs with the
+ribeye cut/species and salad-category matcher work.
+
+---
+
+### Original scoping notes (kept for context)
+
+The asker already EXISTS and is mature — do not rebuild it:
 `skills.nutrition.materiality` (calorie-swing vs % of day's target),
 `skills.nutrition.ambiguity` (`AmbiguityType.PREPARATION`, `CONSUMED_QUANTITY`,
 `build_ambiguity`), `core/food_pipeline.derive_variant_ambiguity(items, spreads)`,

@@ -245,3 +245,50 @@ def added_fat_calories(text: str) -> tuple[int, str]:
         if phrase in t and (best is None or len(phrase) > len(best[0])):
             best = (phrase, cal)
     return (best[1], best[0]) if best else (0, "")
+
+
+def mentions_fat(text: str) -> bool:
+    """Whether the text has ADDRESSED added fat at all — named one ('in butter')
+    OR denied one ('no oil', 'plain', 'dry'). Either way there is nothing to ask
+    about; only silence is a doubt. Part 5's gate for the preparation ask."""
+    t = (text or "").lower()
+    if any(neg in t for neg in _ADDED_FAT_NEGATIONS):
+        return True
+    return any(phrase in t for phrase in _ADDED_FAT_CAL)
+
+
+# The added-fat calorie SPREAD to weigh when a fat-prone food names no fat. Not a
+# figure to log — a doubt to SIZE, so materiality can decide if it is worth a
+# question. Family medians: a pat of butter/splash of oil on a pan-cooked protein
+# (~100), dressing on a salad (~145), the fat eggs are usually fried in (~90).
+# Foods absent here (fruit, grains, most veg) carry no material added-fat doubt.
+_PREP_FAT_SPAN = {
+    "salad": 145, "greens": 145, "lettuce": 145,
+    "steak": 100, "beef": 100, "sirloin": 100, "ribeye": 100, "skirt": 100,
+    "chicken": 100, "pork": 100, "lamb": 100, "turkey": 100,
+    "fish": 100, "salmon": 100, "shrimp": 100, "tuna": 100,
+    "egg": 90, "eggs": 90, "tofu": 80,
+}
+
+# Units that name no definite mass — a "spoon" is a teaspoon or a heaping serving
+# spoon, a "scoop" depends on the scoop. A definite measure (g, oz, ml, cup, tbsp)
+# is NOT here: it resolves to grams on its own and carries no portion doubt.
+VAGUE_UNITS = frozenset({
+    "spoon", "spoonful", "spoonfuls", "spoons", "scoop", "scoops",
+    "handful", "handfuls", "piece", "pieces", "some", "bit", "bits",
+    "serving", "servings", "glass", "glasses", "bowl", "bowls", "plate",
+    "plateful", "dollop", "dollops", "splash", "drizzle", "pinch",
+    "chunk", "chunks", "few", "portion", "helping",
+})
+
+
+def prep_fat_span(food_name: str) -> int:
+    """The added-fat calorie doubt (spread) to weigh for a fat-prone food that
+    names no fat, or 0 for a food where added fat is not a material question."""
+    return int(_lookup(_PREP_FAT_SPAN, food_name) or 0)
+
+
+def is_vague_unit(unit: str) -> bool:
+    """Whether a unit names no definite mass, so the portion is unresolved and
+    the amount is a genuine question ('a spoon' of what size?)."""
+    return (unit or "").strip().lower().rstrip(".") in VAGUE_UNITS
