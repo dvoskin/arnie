@@ -103,11 +103,17 @@ def test_the_ios_and_dashboard_water_surfaces_are_distinct_rows(rows):
     ios = _by_route(rows, "/api/v1/water", "POST")
     dashboard = _by_route(rows, "/api/water/log", "POST")
     assert len(ios) == 1 and len(dashboard) == 1
-    assert ios[0]["surface"] != dashboard[0]["surface"]
-    assert ios[0]["status"] == "compliant"
-    assert dashboard[0]["status"] == "gap", (
-        "the dashboard water surface has not been migrated; reporting it as "
-        "compliant would be the collapse this test exists to catch")
+    assert ios[0]["surface"] != dashboard[0]["surface"], (
+        "both water log routes resolved to one handler — a migration of "
+        "either would report as covering the other")
+    assert ios[0]["surface"].startswith("api/water.py")
+    assert dashboard[0]["surface"].startswith("api/app.py")
+    # Both are migrated now. Asserting on their STATUS is what this test used
+    # to do, and it broke the moment the dashboard one was migrated — the
+    # property is that the rows are separate, not that they disagree.
+    assert ios[0]["auth"] != dashboard[0]["auth"], (
+        "the two surfaces have different authentication and the inventory "
+        "must say so")
 
 
 # ── a migrated surface is observed as compliant ──────────────────────────────

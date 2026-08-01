@@ -206,8 +206,16 @@ def concurrency_tested() -> set:
         except SyntaxError:
             continue
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-                names.add(node.func.id)
+            if isinstance(node, ast.Call):
+                f = node.func
+                if isinstance(f, ast.Name):
+                    names.add(f.id)
+                elif isinstance(f, ast.Attribute):
+                    # `import api.app as A` then `A.api_log_food(...)`. Missing
+                    # this reported every module-qualified concurrency test as
+                    # absent, which is the coverage-understating direction but
+                    # still wrong.
+                    names.add(f.attr)
             elif isinstance(node, ast.ImportFrom):
                 names.update(a.name for a in node.names)
     return names

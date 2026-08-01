@@ -161,11 +161,22 @@ def test_both_tap_log_surfaces_record_their_writes():
     # gained a ledger event of its own. api/app.py has two. The counts are
     # per-module rather than shared, because a single number silently absorbed
     # a surface being added or dropped.
+    # A FLOOR, not an exact count. These were exact so that a surface being
+    # added or dropped could not be silently absorbed — but under B2 surfaces
+    # are MIGRATED onto `ledger_source` continuously, and an exact count fails
+    # every time one more starts recording its history properly. That is a
+    # test punishing the change it exists to encourage.
+    #
+    # The job it was doing is now done better by
+    # `scripts/mutation_inventory.py --check`, which fails on any mutating
+    # route with no declared policy — a real census, against every route,
+    # rather than a substring tally in two modules. This survives as the cheap
+    # local tripwire it was always described as.
     for module, expected in ((QL, 3), (APP, 2)):
         source = inspect.getsource(module)
         assert source.count("record_created_from_row(db, user.id, entry") == 0, \
             f"{module.__name__}: a tap-log records history at the call site " \
             f"again — that is the second commit this consolidation removed"
-        assert source.count("ledger_source=") == expected, \
+        assert source.count("ledger_source=") >= expected, \
             f"{module.__name__}: every tap-log surface must pass provenance " \
             f"through the add_* helper, not record a second event"

@@ -15,7 +15,7 @@ from datetime import date, timedelta, datetime
 from typing import Optional
 
 import stripe
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
 from api.templates import _dashboard_html, _apple_guide_html
 from api.brain_page import _brain_html
@@ -23,7 +23,13 @@ from api.brain_insights import generate_lobe_insight
 from core.urls import dashboard_url
 from pydantic import BaseModel, field_validator
 
+from core.mutation_contract import client_key as mc_client_key, mutation_turn
 from db.database import AsyncSessionLocal
+
+#: Turn-identity channel for the token-authenticated dashboard surfaces. Kept
+#: distinct from "ios" so a dashboard edit and a tap-log can never collide on
+#: one turn id even if a client reuses an Idempotency-Key across both.
+DASHBOARD = "dashboard"
 from db.queries import (
     get_user_by_webhook_token, upsert_health_snapshot,
     get_today_log, get_log_by_date, get_recent_logs, get_recent_weights,
@@ -2143,7 +2149,8 @@ async def _record_food_event(db, user_id: int, event_type: str, entry_id: int,
 
 
 @app.patch("/api/food/{entry_id}")
-async def api_edit_food(entry_id: int, patch: FoodPatch, token: str = Query(...)):
+async def api_edit_food(entry_id: int, patch: FoodPatch, token: str = Query(...),
+                        client_request_id: str = Header(None, alias="Idempotency-Key")):
     import asyncio
     notify: dict = {}
     async with AsyncSessionLocal() as db:
@@ -2153,32 +2160,38 @@ async def api_edit_food(entry_id: int, patch: FoodPatch, token: str = Query(...)
         changes = patch.model_dump(exclude_none=True)
         if "food_name" in changes:
             changes["parsed_food_name"] = changes.pop("food_name")
-        # WHAT IT WAS, read before the write so the event can be inverted.
-        _before = await _food_row_state(db, entry_id)
-        entry = await update_food_entry(db, entry_id, user.id, **changes)
-        if not entry:
-            raise HTTPException(status_code=404, detail="Entry not found")
-        # A DASHBOARD EDIT IS A LEDGER MUTATION (audit N-2). `api/food_edit.py`
-        # records one for the same row through the iOS path; this webhook one
-        # did not, so `ledger_undo.build_plan` — which takes the last event
-        # unconditionally — still pointed at whatever preceded the edit. "undo
-        # that" then reverted a row the user had not touched.
-        await _record_food_event(db, user.id, "updated", entry_id,
-                                 _before.get("daily_log_id"),
-                                 {"changes": changes, "before": _before},
-                                 f"dashboard_edit:update:{entry_id}")
-        from sqlalchemy import select as _sel
-        from db.models import DailyLog
-        log = (await db.execute(_sel(DailyLog).where(DailyLog.id == entry.daily_log_id))).scalar_one()
-        prefs = user.preferences
-        notify = dict(
-            send_target=await resolve_send_target(db, user),
-            text=_dashboard_msg("food_edit", label=entry.parsed_food_name or "entry",
-                                cal=round(log.total_calories or 0),
-                                cal_target=prefs.calorie_target if prefs else None),
-        )
+        # A DASHBOARD EDIT IS A LEDGER MUTATION (audit N-2), and it is the same
+        # data as the iOS editor's, so it owes the same contract. The event now
+        # rides inside the write's transaction instead of a second commit, and
+        # carries this request's real turn id rather than the entry-derived
+        # `dashboard_edit:update:{id}` — which was stable, not unique, so every
+        # edit of one row shared it.
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="update_food", user_id=user.id,
+            client_key=mc_client_key(client_request_id), payload=patch,
+            dedup=f"{entry_id}|{','.join(sorted(changes))}", claim=True,
+        ) as turn:
+            if turn.replay:
+                return {"status": "ok", "id": entry_id,
+                        "idempotent_replay": True, "turn_id": turn.turn_id}
+            entry = await update_food_entry(
+                db, entry_id, user.id, ledger_source="dashboard_edit",
+                claim_id=turn.claim_id, **changes)
+            if not entry:
+                raise HTTPException(status_code=404, detail="Entry not found")
+            turn.note(entry=entry_id)
+            from sqlalchemy import select as _sel
+            from db.models import DailyLog
+            log = (await db.execute(_sel(DailyLog).where(DailyLog.id == entry.daily_log_id))).scalar_one()
+            prefs = user.preferences
+            notify = dict(
+                send_target=await resolve_send_target(db, user),
+                text=_dashboard_msg("food_edit", label=entry.parsed_food_name or "entry",
+                                    cal=round(log.total_calories or 0),
+                                    cal_target=prefs.calorie_target if prefs else None),
+            )
     asyncio.create_task(_send_dashboard_notification(**notify))
-    return {"status": "ok", "id": entry_id}
+    return {"status": "ok", "id": entry_id, "turn_id": turn.turn_id}
 
 
 class AttrHide(BaseModel):
@@ -2205,7 +2218,8 @@ async def api_hide_attribute(body: AttrHide, token: str = Query(...)):
 
 
 @app.delete("/api/food/{entry_id}")
-async def api_delete_food(entry_id: int, token: str = Query(...)):
+async def api_delete_food(entry_id: int, token: str = Query(...),
+                          client_request_id: str = Header(None, alias="Idempotency-Key")):
     import asyncio
     notify: dict = {}
     async with AsyncSessionLocal() as db:
@@ -2214,28 +2228,39 @@ async def api_delete_food(entry_id: int, token: str = Query(...)):
             raise HTTPException(status_code=401, detail="Invalid token")
         from sqlalchemy import select as _sel
         from db.models import FoodEntry, DailyLog
-        entry = (await db.execute(_sel(FoodEntry).where(FoodEntry.id == entry_id))).scalar_one_or_none()
-        food_name = entry.parsed_food_name if entry else "entry"
-        log_id = entry.daily_log_id if entry else None
-        # The whole row BEFORE it dies — a delete event without it cannot be
-        # restored, and "bring it back" is the half of undo that needs a body.
-        _before = await _food_row_state(db, entry_id)
-        ok = await delete_food_entry(db, entry_id, user.id)
-        if not ok:
-            raise HTTPException(status_code=404, detail="Entry not found")
-        await _record_food_event(db, user.id, "deleted", entry_id, log_id,
-                                 _before,
-                                 f"dashboard_edit:delete:{entry_id}")
-        log = (await db.execute(_sel(DailyLog).where(DailyLog.id == log_id))).scalar_one()
-        prefs = user.preferences
-        notify = dict(
-            send_target=await resolve_send_target(db, user),
-            text=_dashboard_msg("food_delete", label=food_name,
-                                cal=round(log.total_calories or 0),
-                                cal_target=prefs.calorie_target if prefs else None),
-        )
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="delete_food", user_id=user.id,
+            client_key=mc_client_key(client_request_id),
+            payload={"entry_id": entry_id}, dedup=f"delete:{entry_id}",
+            claim=True,
+        ) as turn:
+            if turn.replay:
+                # The row is already gone — the outcome the caller asked for.
+                return {"status": "ok", "idempotent_replay": True,
+                        "turn_id": turn.turn_id}
+            entry = (await db.execute(_sel(FoodEntry).where(FoodEntry.id == entry_id))).scalar_one_or_none()
+            food_name = entry.parsed_food_name if entry else "entry"
+            log_id = entry.daily_log_id if entry else None
+            # `delete_food_entry` reads the whole row BEFORE it dies and writes
+            # the `deleted` event in the same transaction — a delete event
+            # without a body cannot be restored, and "bring it back" is the
+            # half of undo that needs one.
+            ok = await delete_food_entry(db, entry_id, user.id,
+                                         ledger_source="dashboard_edit",
+                                         claim_id=turn.claim_id)
+            if not ok:
+                raise HTTPException(status_code=404, detail="Entry not found")
+            turn.note(entry=entry_id)
+            log = (await db.execute(_sel(DailyLog).where(DailyLog.id == log_id))).scalar_one()
+            prefs = user.preferences
+            notify = dict(
+                send_target=await resolve_send_target(db, user),
+                text=_dashboard_msg("food_delete", label=food_name,
+                                    cal=round(log.total_calories or 0),
+                                    cal_target=prefs.calorie_target if prefs else None),
+            )
     asyncio.create_task(_send_dashboard_notification(**notify))
-    return {"status": "ok"}
+    return {"status": "ok", "turn_id": turn.turn_id}
 
 
 class WaterPatch(BaseModel):
@@ -2243,49 +2268,69 @@ class WaterPatch(BaseModel):
 
 
 @app.patch("/api/water/{entry_id}")
-async def api_edit_water(entry_id: int, patch: WaterPatch, token: str = Query(...)):
-    """Edit a single hydration entry from the dashboard, resyncing the day total."""
+async def api_edit_water(entry_id: int, patch: WaterPatch, token: str = Query(...),
+                         client_request_id: str = Header(None, alias="Idempotency-Key")):
+    """Edit a single hydration entry from the dashboard, resyncing the day total.
+
+    This surface wrote NO ledger event at all — the same defect as the iOS
+    water lane, where "undo that" after an untracked mutation reached past it
+    to a row the user never mentioned.
+    """
     from db.queries import update_water_entry
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
-        entry = await update_water_entry(db, entry_id, user.id, max(0.0, patch.amount_ml))
-        if not entry:
-            raise HTTPException(status_code=404, detail="Entry not found")
-    return {"status": "ok", "id": entry_id}
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="update_water", user_id=user.id,
+            client_key=mc_client_key(client_request_id), payload=patch,
+            dedup=f"water_edit:{entry_id}:{patch.amount_ml}", claim=True,
+        ) as turn:
+            if turn.replay:
+                return {"status": "ok", "id": entry_id,
+                        "idempotent_replay": True, "turn_id": turn.turn_id}
+            entry = await update_water_entry(
+                db, entry_id, user.id, max(0.0, patch.amount_ml),
+                ledger_source="dashboard_edit", claim_id=turn.claim_id)
+            if not entry:
+                raise HTTPException(status_code=404, detail="Entry not found")
+            turn.note(entry=entry_id)
+    return {"status": "ok", "id": entry_id, "turn_id": turn.turn_id}
 
 
 @app.delete("/api/water/{entry_id}")
-async def api_delete_water(entry_id: int, token: str = Query(...)):
+async def api_delete_water(entry_id: int, token: str = Query(...),
+                           client_request_id: str = Header(None, alias="Idempotency-Key")):
     """Delete a single hydration entry from the dashboard, resyncing the day total."""
-    from db.queries import delete_water_entry, record_surface_mutation
+    from db.queries import delete_water_entry
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
-        # Capture before the delete so the event is restorable (P0.6).
-        _before = None
-        try:
-            from sqlalchemy import select as _sel_w
-            from db.models import WaterEntry as _WE
-            _row = (await db.execute(_sel_w(_WE).where(_WE.id == entry_id))).scalar_one_or_none()
-            if _row is not None:
-                _before = {"amount_ml": _row.amount_ml,
-                           "daily_log_id": _row.daily_log_id}
-        except Exception:
-            _before = None
-        ok = await delete_water_entry(db, entry_id, user.id)
-        if not ok:
-            raise HTTPException(status_code=404, detail="Entry not found")
-        await record_surface_mutation(
-            db, user.id, "deleted", domain="water", entry_id=entry_id,
-            daily_log_id=(_before or {}).get("daily_log_id"), payload=_before)
-    return {"status": "ok"}
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="delete_water", user_id=user.id,
+            client_key=mc_client_key(client_request_id),
+            payload={"entry_id": entry_id}, dedup=f"water_delete:{entry_id}",
+            claim=True,
+        ) as turn:
+            if turn.replay:
+                return {"status": "ok", "idempotent_replay": True,
+                        "turn_id": turn.turn_id}
+            # `delete_water_entry` captures the row's state before it goes and
+            # writes the `deleted` event in the same transaction — this used to
+            # read the row here and record the event in a second commit.
+            ok = await delete_water_entry(db, entry_id, user.id,
+                                          ledger_source="dashboard_edit",
+                                          claim_id=turn.claim_id)
+            if not ok:
+                raise HTTPException(status_code=404, detail="Entry not found")
+            turn.note(entry=entry_id)
+    return {"status": "ok", "turn_id": turn.turn_id}
 
 
 @app.patch("/api/exercise/{entry_id}")
-async def api_edit_exercise(entry_id: int, patch: ExercisePatch, token: str = Query(...)):
+async def api_edit_exercise(entry_id: int, patch: ExercisePatch, token: str = Query(...),
+                            client_request_id: str = Header(None, alias="Idempotency-Key")):
     import asyncio
     notify: dict = {}
     async with AsyncSessionLocal() as db:
@@ -2295,34 +2340,32 @@ async def api_edit_exercise(entry_id: int, patch: ExercisePatch, token: str = Qu
         changes = patch.model_dump(exclude_none=True)
         if "weight" in changes:
             changes["weight"] = changes["weight"] * 0.453592
-        # Before-state so the event is invertible (P0.6).
-        _before_ex = None
-        try:
-            from sqlalchemy import select as _sel_bx
-            from db.models import ExerciseEntry as _EEb
-            _rb = (await db.execute(_sel_bx(_EEb).where(_EEb.id == entry_id))).scalar_one_or_none()
-            if _rb is not None:
-                _before_ex = {"exercise_name": _rb.exercise_name, "sets": _rb.sets,
-                              "reps": _rb.reps, "weight": _rb.weight,
-                              "duration_minutes": getattr(_rb, "duration_minutes", None),
-                              "daily_log_id": _rb.daily_log_id}
-        except Exception:
-            _before_ex = None
-        entry = await update_exercise_entry(db, entry_id, user.id, **changes)
-        if not entry:
-            raise HTTPException(status_code=404, detail="Entry not found")
-        from db.queries import record_surface_mutation as _rsm
-        await _rsm(db, user.id, "updated", domain="exercise", entry_id=entry_id,
-                   daily_log_id=(_before_ex or {}).get("daily_log_id"),
-                   payload={"changes": changes, "before": _before_ex})
-        notify = dict(send_target=await resolve_send_target(db, user),
-                      text=_dashboard_msg("exercise_edit", label=entry.exercise_name or ""))
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="update_exercise", user_id=user.id,
+            client_key=mc_client_key(client_request_id), payload=patch,
+            dedup=f"{entry_id}|{','.join(sorted(changes))}", claim=True,
+        ) as turn:
+            if turn.replay:
+                return {"status": "ok", "id": entry_id,
+                        "idempotent_replay": True, "turn_id": turn.turn_id}
+            # The before-state is captured inside `update_exercise_entry` now,
+            # and its `updated` event commits with the row — this read it here
+            # and recorded the event in a second commit afterwards.
+            entry = await update_exercise_entry(
+                db, entry_id, user.id, ledger_source="dashboard_edit",
+                claim_id=turn.claim_id, **changes)
+            if not entry:
+                raise HTTPException(status_code=404, detail="Entry not found")
+            turn.note(entry=entry_id)
+            notify = dict(send_target=await resolve_send_target(db, user),
+                          text=_dashboard_msg("exercise_edit", label=entry.exercise_name or ""))
     asyncio.create_task(_send_dashboard_notification(**notify))
-    return {"status": "ok", "id": entry_id}
+    return {"status": "ok", "id": entry_id, "turn_id": turn.turn_id}
 
 
 @app.delete("/api/exercise/{entry_id}")
-async def api_delete_exercise(entry_id: int, token: str = Query(...)):
+async def api_delete_exercise(entry_id: int, token: str = Query(...),
+                              client_request_id: str = Header(None, alias="Idempotency-Key")):
     import asyncio
     notify: dict = {}
     async with AsyncSessionLocal() as db:
@@ -2331,23 +2374,29 @@ async def api_delete_exercise(entry_id: int, token: str = Query(...)):
             raise HTTPException(status_code=401, detail="Invalid token")
         from sqlalchemy import select as _sel
         from db.models import ExerciseEntry
-        entry = (await db.execute(_sel(ExerciseEntry).where(ExerciseEntry.id == entry_id))).scalar_one_or_none()
-        exercise_name = entry.exercise_name if entry else ""
-        _before_del = ({"exercise_name": entry.exercise_name, "sets": entry.sets,
-                        "reps": entry.reps, "weight": entry.weight,
-                        "duration_minutes": getattr(entry, "duration_minutes", None),
-                        "daily_log_id": entry.daily_log_id} if entry else None)
-        ok = await delete_exercise_entry(db, entry_id, user.id)
-        if not ok:
-            raise HTTPException(status_code=404, detail="Entry not found")
-        from db.queries import record_surface_mutation as _rsm_d
-        await _rsm_d(db, user.id, "deleted", domain="exercise", entry_id=entry_id,
-                     daily_log_id=(_before_del or {}).get("daily_log_id"),
-                     payload=_before_del)
-        notify = dict(send_target=await resolve_send_target(db, user),
-                      text=_dashboard_msg("exercise_delete", label=exercise_name))
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="delete_exercise", user_id=user.id,
+            client_key=mc_client_key(client_request_id),
+            payload={"entry_id": entry_id}, dedup=f"ex_delete:{entry_id}",
+            claim=True,
+        ) as turn:
+            if turn.replay:
+                return {"status": "ok", "idempotent_replay": True,
+                        "turn_id": turn.turn_id}
+            entry = (await db.execute(_sel(ExerciseEntry).where(ExerciseEntry.id == entry_id))).scalar_one_or_none()
+            exercise_name = entry.exercise_name if entry else ""
+            # The row's state is read inside `delete_exercise_entry`, while it
+            # still exists, and its `deleted` event commits with the delete.
+            ok = await delete_exercise_entry(db, entry_id, user.id,
+                                             ledger_source="dashboard_edit",
+                                             claim_id=turn.claim_id)
+            if not ok:
+                raise HTTPException(status_code=404, detail="Entry not found")
+            turn.note(entry=entry_id)
+            notify = dict(send_target=await resolve_send_target(db, user),
+                          text=_dashboard_msg("exercise_delete", label=exercise_name))
     asyncio.create_task(_send_dashboard_notification(**notify))
-    return {"status": "ok"}
+    return {"status": "ok", "turn_id": turn.turn_id}
 
 
 # ── Profile edit from dashboard ────────────────────────────────────────────────
@@ -3716,34 +3765,47 @@ class FoodLogBody(BaseModel):
 
 
 @app.post("/api/food/log")
-async def api_log_food(body: FoodLogBody, token: str = Query(...)):
+async def api_log_food(body: FoodLogBody, token: str = Query(...),
+                       client_request_id: str = Header(None, alias="Idempotency-Key")):
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
         tz = getattr(user, "timezone", None) or "UTC"
-        if body.log_date:
-            log = await get_or_create_log_for_date(db, user.id, date.fromisoformat(body.log_date))
-        else:
-            log = await get_or_create_today_log(db, user.id, tz)
-        # Audit O-1: without a `created` event, "undo that" inverts whatever
-        # was logged before this. `ledger_source` has `add_food_entry` write
-        # that event inside the row's own transaction — the endpoint used to
-        # commit it in a second call, and a crash in between left a food row
-        # with no history at all.
-        entry = await add_food_entry(
-            db, log.id,
-            user_id=user.id,
-            ledger_source="dashboard:food_log",
-            parsed_food_name=body.name,
-            quantity=body.quantity,
-            calories=round(body.calories),
-            protein=round(body.protein, 1),
-            carbs=round(body.carbs, 1),
-            fats=round(body.fats, 1),
-            estimated_flag=body.estimated,
-        )
-    return {"status": "ok", "id": entry.id}
+        # The dedup signature must separate two genuinely different logs, or a
+        # second helping an hour later replays the first instead of writing.
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="log_food", user_id=user.id,
+            client_key=mc_client_key(client_request_id), payload=body,
+            dedup=f"{body.name}|{body.quantity or ''}", claim=True,
+        ) as turn:
+            if turn.replay:
+                return {"status": "ok", "id": turn.stored.get("entry_id"),
+                        "idempotent_replay": True, "turn_id": turn.turn_id}
+            if body.log_date:
+                log = await get_or_create_log_for_date(db, user.id, date.fromisoformat(body.log_date))
+            else:
+                log = await get_or_create_today_log(db, user.id, tz)
+            # Audit O-1: without a `created` event, "undo that" inverts whatever
+            # was logged before this. `ledger_source` has `add_food_entry` write
+            # that event inside the row's own transaction — the endpoint used to
+            # commit it in a second call, and a crash in between left a food row
+            # with no history at all.
+            entry = await add_food_entry(
+                db, log.id,
+                user_id=user.id,
+                ledger_source="dashboard:food_log",
+                claim_id=turn.claim_id,
+                parsed_food_name=body.name,
+                quantity=body.quantity,
+                calories=round(body.calories),
+                protein=round(body.protein, 1),
+                carbs=round(body.carbs, 1),
+                fats=round(body.fats, 1),
+                estimated_flag=body.estimated,
+            )
+            turn.note(entry=entry.id)
+    return {"status": "ok", "id": entry.id, "turn_id": turn.turn_id}
 
 
 class WaterLogBody(BaseModel):
@@ -3752,7 +3814,8 @@ class WaterLogBody(BaseModel):
 
 
 @app.post("/api/water/log")
-async def api_log_water(body: WaterLogBody, token: str = Query(...)):
+async def api_log_water(body: WaterLogBody, token: str = Query(...),
+                        client_request_id: str = Header(None, alias="Idempotency-Key")):
     """Manual hydration log from the dashboard. Adds a canonical WaterEntry row
     and bumps the cached DailyLog.total_water_ml aggregate (the tile/context read
     it)."""
@@ -3762,25 +3825,34 @@ async def api_log_water(body: WaterLogBody, token: str = Query(...)):
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
         tz = getattr(user, "timezone", None) or "UTC"
-        if body.log_date:
-            log = await get_or_create_log_for_date(db, user.id, date.fromisoformat(body.log_date))
-        else:
-            log = await get_or_create_today_log(db, user.id, tz)
-        amount = max(0.0, body.amount_ml)
-        entry = await add_water_entry(
-            db, user.id, log.id, amount_ml=amount, source_type="dashboard",
-        )
-        # Derive the aggregate authoritatively by re-summing the rows, never an
-        # in-place += that can drift from the canonical WaterEntry rows (mirrors
-        # the chat log_water path). recompute_water_total commits.
-        from db.queries import recompute_water_total, record_surface_mutation
-        await recompute_water_total(db, log.id)
-        # entry_id makes the pour undoable from any surface (P0.6).
-        await record_surface_mutation(
-            db, user.id, "created", domain="water",
-            entry_id=getattr(entry, "id", None), daily_log_id=log.id,
-            payload={"amount_ml": amount})
-    return {"status": "ok", "id": entry.id}
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="log_water", user_id=user.id,
+            client_key=mc_client_key(client_request_id), payload=body,
+            dedup=f"water:{body.amount_ml}", claim=True,
+        ) as turn:
+            if turn.replay:
+                return {"status": "ok", "id": turn.stored.get("entry_id"),
+                        "idempotent_replay": True, "turn_id": turn.turn_id}
+            if body.log_date:
+                log = await get_or_create_log_for_date(db, user.id, date.fromisoformat(body.log_date))
+            else:
+                log = await get_or_create_today_log(db, user.id, tz)
+            amount = max(0.0, body.amount_ml)
+            # `ledger_source` makes `add_water_entry` the ONE writer of the
+            # created event, inside the row's transaction — this recorded it
+            # in a second commit through `record_surface_mutation`, which also
+            # minted a synthetic turn id of its own.
+            entry = await add_water_entry(
+                db, user.id, log.id, amount_ml=amount, source_type="dashboard",
+                ledger_source="dashboard:water_log", claim_id=turn.claim_id,
+            )
+            # Derive the aggregate authoritatively by re-summing the rows, never an
+            # in-place += that can drift from the canonical WaterEntry rows (mirrors
+            # the chat log_water path). recompute_water_total commits.
+            from db.queries import recompute_water_total
+            await recompute_water_total(db, log.id)
+            turn.note(entry=entry.id)
+    return {"status": "ok", "id": entry.id, "turn_id": turn.turn_id}
 
 
 class ExerciseLogBody(BaseModel):
@@ -3799,7 +3871,8 @@ class WeightLogBody(BaseModel):
 
 
 @app.post("/api/weight/log")
-async def api_log_weight(body: WeightLogBody, token: str = Query(...)):
+async def api_log_weight(body: WeightLogBody, token: str = Query(...),
+                         client_request_id: str = Header(None, alias="Idempotency-Key")):
     """Persist a dashboard weigh-in and ping the user's chat with a short,
     goal-aware Arnie reaction. Same reactive-confirmation pattern as the
     food/exercise edit endpoints — no proactive gate."""
@@ -3817,76 +3890,107 @@ async def api_log_weight(body: WeightLogBody, token: str = Query(...)):
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
 
-        prior = await get_recent_weights(db, user.id, days=120)
-        # get_recent_weights returns newest-first; pick the most recent prior
-        # reading BEFORE we insert this one.
-        prev_lbs = None
-        if prior:
-            prev_lbs = round(prior[0].weight_kg * 2.20462, 1)
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="log_weight", user_id=user.id,
+            client_key=mc_client_key(client_request_id), payload=body,
+            dedup=f"weight:{weight_kg:.3f}", claim=True,
+        ) as turn:
+            current_lbs = round(weight_kg * 2.20462, 1)
+            if turn.replay:
+                return {"status": "ok", "id": turn.stored.get("entry_id"),
+                        "idempotent_replay": True, "turn_id": turn.turn_id,
+                        "weight_lbs": current_lbs,
+                        "weight_kg": round(weight_kg, 2)}
 
-        # Web/webhook weigh-in is a deliberate user-entered number → "manual".
-        metric = await add_body_metric(db, user.id, weight_kg=weight_kg, source="manual")
-        from db.queries import record_surface_mutation as _rsm_w
-        await _rsm_w(db, user.id, "created", domain="weight",
-                     entry_id=getattr(metric, "id", None),
-                     payload={"weight_kg": weight_kg, "source": "manual"})
+            prior = await get_recent_weights(db, user.id, days=120)
+            # get_recent_weights returns newest-first; pick the most recent prior
+            # reading BEFORE we insert this one.
+            prev_lbs = None
+            if prior:
+                prev_lbs = round(prior[0].weight_kg * 2.20462, 1)
 
-        current_lbs = round(weight_kg * 2.20462, 1)
-        delta_lbs = round(current_lbs - prev_lbs, 1) if prev_lbs is not None else None
+            # Web/webhook weigh-in is a deliberate user-entered number → "manual".
+            # `ledger_source` writes the event inside `add_body_metric`'s own
+            # transaction; this recorded it in a second commit through
+            # `record_surface_mutation`, which also minted its own turn id.
+            metric = await add_body_metric(
+                db, user.id, weight_kg=weight_kg, source="manual",
+                ledger_source="dashboard:weight_log", claim_id=turn.claim_id)
+            turn.note(entry=metric.id)
 
-        goal_kg = getattr(user, "goal_weight_kg", None)
-        to_goal_lbs = None
-        if goal_kg:
-            to_goal_lbs = round(abs(weight_kg - goal_kg) * 2.20462, 1)
+            delta_lbs = round(current_lbs - prev_lbs, 1) if prev_lbs is not None else None
 
-        goal_v = (user.primary_goal or "").strip()
+            goal_kg = getattr(user, "goal_weight_kg", None)
+            to_goal_lbs = None
+            if goal_kg:
+                to_goal_lbs = round(abs(weight_kg - goal_kg) * 2.20462, 1)
 
-        # Show the weight in the unit the user entered — feels native.
-        label = f"{body.weight:.1f} {unit}"
-        text = _dashboard_msg(
-            "weight_log",
-            label=label,
-            goal=goal_v,
-            prev_lbs=prev_lbs,
-            delta_lbs=delta_lbs,
-            to_goal=to_goal_lbs,
-        )
-        notify = dict(
-            send_target=await resolve_send_target(db, user),
-            text=text,
-        )
-        entry_id = metric.id
+            goal_v = (user.primary_goal or "").strip()
+
+            # Show the weight in the unit the user entered — feels native.
+            label = f"{body.weight:.1f} {unit}"
+            text = _dashboard_msg(
+                "weight_log",
+                label=label,
+                goal=goal_v,
+                prev_lbs=prev_lbs,
+                delta_lbs=delta_lbs,
+                to_goal=to_goal_lbs,
+            )
+            notify = dict(
+                send_target=await resolve_send_target(db, user),
+                text=text,
+            )
+            entry_id = metric.id
 
     asyncio.create_task(_send_dashboard_notification(**notify))
-    return {"status": "ok", "id": entry_id,
+    return {"status": "ok", "id": entry_id, "turn_id": turn.turn_id,
             "weight_lbs": current_lbs, "weight_kg": round(weight_kg, 2)}
 
 
 @app.post("/api/exercise/log")
-async def api_log_exercise(body: ExerciseLogBody, token: str = Query(...)):
+async def api_log_exercise(body: ExerciseLogBody, token: str = Query(...),
+                           client_request_id: str = Header(None, alias="Idempotency-Key")):
     async with AsyncSessionLocal() as db:
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
         tz = getattr(user, "timezone", None) or "UTC"
-        if body.log_date:
-            log = await get_or_create_log_for_date(db, user.id, date.fromisoformat(body.log_date))
-        else:
-            log = await get_or_create_today_log(db, user.id, tz)
-        weight_kg = body.weight_lbs * 0.453592 if body.weight_lbs else None
-        # ONE ledger writer — `add_exercise_entry` records the `created` event
-        # itself; the provenance label rides through (master audit 2026-07-30).
-        entry = await add_exercise_entry(
-            db, log.id,
-            is_cardio=body.is_cardio,
-            parsed_exercise_name=body.name,
-            sets=body.sets,
-            reps=body.reps,
-            weight_kg=weight_kg,
-            duration_minutes=body.duration_minutes,
-            ledger_source="dashboard:exercise_log",
-        )
-    return {"status": "ok", "id": entry.id}
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="log_exercise", user_id=user.id,
+            client_key=mc_client_key(client_request_id), payload=body,
+            dedup=body.name, claim=True,
+        ) as turn:
+            if turn.replay:
+                return {"status": "ok", "id": turn.stored.get("entry_id"),
+                        "idempotent_replay": True, "turn_id": turn.turn_id}
+            if body.log_date:
+                log = await get_or_create_log_for_date(db, user.id, date.fromisoformat(body.log_date))
+            else:
+                log = await get_or_create_today_log(db, user.id, tz)
+            weight_kg = body.weight_lbs * 0.453592 if body.weight_lbs else None
+            # ONE ledger writer — `add_exercise_entry` records the `created` event
+            # itself; the provenance label rides through (master audit 2026-07-30).
+            # `exercise_name` / `weight`, NOT `parsed_exercise_name` /
+            # `weight_kg`. `add_exercise_entry` forwards **kwargs straight to
+            # the ExerciseEntry constructor, which has no such columns, so
+            # this endpoint raised TypeError on EVERY call — the dashboard's
+            # "log exercise" button has never worked. Nothing caught it
+            # because nothing called it: it had no test, and a route that
+            # always 500s looks the same as one nobody uses.
+            entry = await add_exercise_entry(
+                db, log.id,
+                is_cardio=body.is_cardio,
+                exercise_name=body.name,
+                sets=body.sets,
+                reps=body.reps,
+                weight=weight_kg,
+                duration_minutes=body.duration_minutes,
+                ledger_source="dashboard:exercise_log",
+                claim_id=turn.claim_id,
+            )
+            turn.note(entry=entry.id)
+    return {"status": "ok", "id": entry.id, "turn_id": turn.turn_id}
 
 
 # ── Whoop sync (dashboard-triggered) ──────────────────────────────────────────

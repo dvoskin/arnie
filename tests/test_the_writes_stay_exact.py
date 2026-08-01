@@ -49,18 +49,63 @@ def test_the_composer_cannot_reach_a_tool():
 # ── a dashboard mutation is a ledger event ────────────────────────────────────
 def test_the_webhook_edit_and_delete_record_events():
     """`api/food_edit.py` recorded these for the iOS path and `api/app.py` did
-    not, so the same row had two edit surfaces and only one was invertible."""
+    not, so the same row had two edit surfaces and only one was invertible.
+
+    Asserted on the WRITE rather than on the handler's source. Both of these
+    used to grep for `_record_food_event` / `_food_row_state` inside the
+    handler; under B2 the event moved INTO `delete_food_entry` so it commits
+    in the row's own transaction, and the greps went red for a change that
+    made the property stronger. A source grep cannot tell those two apart —
+    behaviour can, and the behavioural version below also covers the iOS and
+    chat surfaces the grep never looked at.
+    """
+    import inspect as _i
+
     import api.app as A
     for fn in (A.api_edit_food, A.api_delete_food):
-        assert "_record_food_event" in inspect.getsource(fn), fn.__name__
+        src = _i.getsource(fn)
+        assert "ledger_source=" in src, (
+            f"{fn.__name__} does not ask its write to record history")
 
 
-def test_a_delete_captures_the_row_before_it_dies():
+@pytest.mark.asyncio
+async def test_a_delete_captures_the_row_before_it_dies(db, make_user):
     """A delete event without a body cannot be restored, and "bring it back"
-    is the half of undo that needs one."""
-    import api.app as A
-    body = inspect.getsource(A.api_delete_food)
-    assert body.index("_food_row_state") < body.index("delete_food_entry(")
+    is the half of undo that needs one.
+
+    The row is read inside `delete_food_entry`, while it still exists, and the
+    event commits with the delete.
+    """
+    import json
+    from datetime import date
+
+    from sqlalchemy import select
+
+    from db.models import DailyLog, FoodEntry, LedgerEvent
+    from db.queries import delete_food_entry
+
+    user = await make_user(telegram_id="del:capture")
+    log = DailyLog(user_id=user.id, date=date.today())
+    db.add(log)
+    await db.flush()
+    entry = FoodEntry(daily_log_id=log.id, parsed_food_name="Birria taco",
+                      calories=180, protein=9, carbs=12, fats=10)
+    db.add(entry)
+    await db.commit()
+
+    assert await delete_food_entry(db, entry.id, user.id,
+                                   ledger_source="dashboard_edit")
+
+    ev = (await db.execute(
+        select(LedgerEvent).where(LedgerEvent.user_id == user.id,
+                                  LedgerEvent.event_type == "deleted")
+    )).scalars().first()
+    assert ev is not None, "the delete left no event to restore from"
+    payload = json.loads(ev.payload_json)
+    assert payload["food_name"] == "Birria taco"
+    assert payload["calories"] == 180
+    assert payload["daily_log_id"] == log.id, (
+        "without the day, a restore puts the food back on the wrong date")
 
 
 # ── an unpriced correction discloses ──────────────────────────────────────────
