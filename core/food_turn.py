@@ -2087,6 +2087,77 @@ def _carry_assumptions(items, ambiguities) -> list:
     return out
 
 
+def _v2_accuracy() -> bool:
+    """NUTRITION_ACCURACY_V2 gate, read through food_intelligence so there is one
+    switch. Any import trouble reads as OFF — Part 5 can only ever add an ask it
+    can also stand down from, never remove a guarantee the lane already makes."""
+    try:
+        from core.food_intelligence import _nutrition_accuracy_v2
+        return _nutrition_accuracy_v2()
+    except Exception:                                        # pragma: no cover
+        return False
+
+
+def _resolved_ambiguities(data: dict, *, message: str = "") -> dict:
+    """Part 5 (resolve-then-ask): the ambiguities an overconfident `log` OMITTED.
+
+    `_proposed_ask_is_material` decides whether an ask the model PROPOSED is worth
+    interrupting for. Its blind spot is the ask the model never proposed — a
+    "spoon" of something dense committed at a number nobody sized, a steak logged
+    with the oil it was cooked in uncounted. The interpreter recommends the ask
+    and here it recommended none, so nothing downstream ever reconsidered, and a
+    wrong 350 went to the board with a confident receipt on top of it.
+
+    This reads the same portion ontology the resolver uses and states the doubt
+    the model left out — as an `ambiguity` with a SIZED `impact_cal`, in the exact
+    shape the model emits — so the SAME consequence engine can score it. It does
+    not decide to ask; it gives the gate something to weigh. Two doubts, both
+    sized from data, never a fixed threshold:
+
+    * QUANTITY — a vague unit ('a spoon', 'a scoop') names no definite mass, so
+      the portion is unresolved and the whole item is in doubt: the span is the
+      item's own calories (the ceiling `_spread_could_matter` already reasons
+      with). A vague unit on a 7-calorie handful of spinach sizes to 7 and the
+      gate drops it; on a 350-calorie spoon it sizes to 350 and the gate keeps it.
+    * PREPARATION — a fat-prone food (protein, salad, eggs) that names no fat and
+      denies none carries an added-fat doubt worth `prep_fat_span`. Naming a fat
+      or denying one ('grilled, no oil') has ADDRESSED it and asks nothing.
+
+    Returns `{"ambiguities": [...], "points": [...]}`, both empty when the log
+    left nothing material unsaid. Pure — no user, no I/O, no flag — so the gate
+    and the tests can size the doubt the same way.
+    """
+    from core.portions import is_vague_unit, prep_fat_span, mentions_fat
+    ambiguities, points = [], []
+    msg = message or ""
+    for it in (data.get("items") or []):
+        if not isinstance(it, dict):
+            continue
+        food = str(it.get("food") or "").strip()
+        if not food:
+            continue
+        try:
+            cal = float(it["calories"]) if it.get("calories") is not None else None
+        except (TypeError, ValueError):
+            cal = None
+        unit = str(it.get("unit") or "").strip()
+        qs = []
+        # (1) QUANTITY — a vague unit leaves the portion unresolved.
+        if cal and cal > 0 and is_vague_unit(unit):
+            ambiguities.append({"item": food, "field": "quantity",
+                                "impact_cal": int(round(cal))})
+            qs.append(f"how much {food.lower()} — one {unit.rstrip('s')} or more?")
+        # (2) PREPARATION — a fat-prone food that has not addressed added fat.
+        span = prep_fat_span(food)
+        if span > 0 and not mentions_fat(f"{food} {msg}"):
+            ambiguities.append({"item": food, "field": "prep",
+                                "impact_cal": int(span)})
+            qs.append("any oil, butter, or dressing?")
+        if qs:
+            points.append({"label": food, "qs": qs})
+    return {"ambiguities": ambiguities, "points": points}
+
+
 def _proposed_ask_is_material(data, *, mode: str, user) -> bool:
     """Whether the model's PROPOSED question survives the consequence engine.
 
@@ -3709,6 +3780,44 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
     if not isinstance(data, dict):
         return None
     action = data.get("action")
+
+    # ── Part 5: resolve, then ask (NUTRITION_ACCURACY_V2) ───────────────────
+    # The symmetric half of the gate below. That one DEMOTES an ask the model
+    # proposed but nothing sizes as material; this one PROMOTES a log the model
+    # committed while leaving a material doubt unsaid — the "spoon" logged at a
+    # number nobody established, the steak whose oil went uncounted. The doubt is
+    # synthesized from the portion ontology and scored by the SAME engine, so a
+    # promotion is earned by a sized spread, never granted by a heuristic. The
+    # foods NOT in doubt commit as `ready` while the doubted one waits — the
+    # partial commit the ask path already makes. Inert unless the flag is on, the
+    # model chose to log, and this is the first turn (never mid-clarification).
+    if _v2_accuracy() and action == "log" and not prior:
+        _syn = _resolved_ambiguities(data, message=message)
+        if _syn["ambiguities"]:
+            _probe = dict(data)
+            _probe["ambiguities"] = list(data.get("ambiguities") or []) \
+                + _syn["ambiguities"]
+            if _proposed_ask_is_material(_probe, mode=mode, user=user):
+                # THE ASK CONTRACT the model itself uses: the doubted foods go to
+                # `items` with their question in `points`, the rest to `ready` to
+                # commit now — never both, or a settled food logs twice.
+                _doubted = {str(a["item"]).strip().lower()
+                            for a in _syn["ambiguities"]}
+                _items = [it for it in (data.get("items") or [])
+                          if isinstance(it, dict)]
+                _asked = [it for it in _items
+                          if str(it.get("food") or "").strip().lower() in _doubted]
+                _settled = [it for it in _items
+                            if str(it.get("food") or "").strip().lower()
+                            not in _doubted]
+                data = _probe
+                data["items"] = _asked
+                data["points"] = list(data.get("points") or []) + _syn["points"]
+                data["ready"] = list(data.get("ready") or []) + _settled
+                data["action"] = action = "ask"
+                logger.info("event=resolve_then_ask promoted=log->ask "
+                            "doubted=%d settled=%d",
+                            len(_asked), len(_settled))
 
     if action == "ask" and not prior and not _proposed_ask_is_material(
             data, mode=mode, user=user) and (data.get("items")
