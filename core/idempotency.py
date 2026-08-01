@@ -94,15 +94,33 @@ def _result_of(record) -> dict:
     }
 
 
-#: Which ledger domain a command's write lands in. Only commands whose write
-#: commits its `created` event ATOMICALLY with the row belong here — the event
-#: is then proof the row exists, which is what makes reconciliation sound.
+#: Which ledger domain a command's write lands in, and which event types are
+#: proof that write committed. Only commands whose write commits its event
+#: ATOMICALLY with the row belong here — the event is then proof the row
+#: reached durable storage, which is what makes reconciliation sound.
+#:
 #: Weight joined once it gained a ledger event of its own; before that there
 #: was nothing to reconcile against and guessing would have been worse than
 #: declining. Its event is `created` on first write and `updated` on a
 #: same-day correction, so reconciliation accepts either.
-_COMMAND_DOMAIN = {"log_food": "food", "log_exercise": "exercise",
-                   "log_weight": "weight"}
+#:
+#: THE EVENT TYPES ARE PER COMMAND, not shared. A delete's proof is a
+#: `deleted` event, and accepting `created` for it would let the ORIGINAL log
+#: of a row stand as evidence that a later delete of that row committed —
+#: which would report a delete as already done when it never ran. Each
+#: command names only the events its own write can produce.
+_COMMAND_DOMAIN = {
+    "log_food": ("food", ("created",)),
+    "log_exercise": ("exercise", ("created",)),
+    "log_weight": ("weight", ("created", "updated")),
+    "log_water": ("water", ("created",)),
+    "update_food": ("food", ("updated",)),
+    "delete_food": ("food", ("deleted",)),
+    "update_exercise": ("exercise", ("updated",)),
+    "delete_exercise": ("exercise", ("deleted",)),
+    "update_water": ("water", ("updated",)),
+    "delete_water": ("water", ("deleted",)),
+}
 
 
 class IdempotencyCorrupt(Exception):
@@ -125,24 +143,26 @@ async def committed_result(db, record) -> Optional[dict]:
     is not a replay and not a fresh request; reporting either would be a lie
     about the user's data, so it fails loudly instead.
     """
-    domain = _COMMAND_DOMAIN.get(record.command or "")
-    if not domain or not record.turn_id:
+    mapped = _COMMAND_DOMAIN.get(record.command or "")
+    if not mapped or not record.turn_id:
         return None
+    domain, event_types = mapped
     from db.models import FoodEntry, LedgerEvent
 
     ev = (await db.execute(
         select(LedgerEvent)
         .where(LedgerEvent.turn_id == record.turn_id,
                LedgerEvent.domain == domain,
-               # Weight upserts one row per (user, day, source), so a repeat
-               # weigh-in is an `updated` event — still proof the write landed.
-               LedgerEvent.event_type.in_(("created", "updated")))
+               LedgerEvent.event_type.in_(event_types))
         .order_by(LedgerEvent.id)
     )).scalars().first()
     if ev is None or ev.entry_id is None:
         return None
 
-    if domain == "food":
+    # The row-existence cross-check only applies where the write was supposed
+    # to LEAVE a row. For a delete the row being gone is the success case, and
+    # demanding it exist would report every completed delete as corrupt.
+    if domain == "food" and "deleted" not in event_types:
         row = await db.get(FoodEntry, ev.entry_id)
         if row is None:
             logger.error(
