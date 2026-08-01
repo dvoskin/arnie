@@ -27,8 +27,13 @@ V2 is therefore ready for a **dark merge** (land with the flag off) and an
 
 Global is gated on validating V2 across the COMPLETE CONVERSATIONAL PATH, none of
 which the committed eval touches:
-- Part 5's ask → answer → apply loop end-to-end (real interpreter, multi-turn),
-  not just the decision functions in isolation.
+- Part 5's ask → answer → apply loop. **PROMOTION half now validated end-to-end**
+  (`tests/test_food_turn_resolve_then_ask_e2e.py`): a mocked-interpreter `log`
+  becomes a rendered ask through the real turn, thresholded by mode (spoon asks;
+  a 7-cal handful and an explicit-mass log commit; steak fat asks on strict, not
+  moderate), inert flag-off, partial commit intact. STILL OPEN: the ANSWER →
+  apply half (the follow-up turn re-parses and applies via P2/P4) with a real
+  multi-turn exchange.
 - Ask-RATE on real traffic — Part 5 promotes log→ask and could over-ask (every
   fat-prone food on strict, every vague unit); unmeasured.
 - The branded `plan_turn` / variant-spread path, which the new matcher feeds.
