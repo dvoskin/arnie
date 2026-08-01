@@ -167,7 +167,7 @@ Still open (scope, not this pass):
 | # | blocker | state | owner |
 |---|---|---|---|
 | ~~B1~~ | ~~Deployed != main~~ | **CLOSED** — `b4ff66d` deployed 2026-07-31; `/health.commit` == `origin/main`. B7 posture confirmed LIVE by probe: unsigned `/imessage`→403, `/admin` no-creds→401. ⚠ verify real inbound iMessage still works (BLUEBUBBLES_WEBHOOK_SECRET on both sides) | — |
-| B2 | 57 of 60 user-visible mutations off the contract | FAIL | backend |
+| B2 | Mutation contract coverage | **RESCOPED — 0 UNKNOWN, 20 Class A gaps left.** The old row ("57 of 60 off the contract") measured conformance to ONE contract and could only be improved by bolting claims and ledger events onto routes that should have neither. All 75 mutating routes now declare their class and policy in `core/mutation_policy.py`; `scripts/mutation_inventory.py --check` is a CI gate. Exit criterion is `--check --strict`. See `docs/SESSION_HANDOFF_0801_B2.md` | backend |
 | ~~B3~~ | ~~Proactive delivery cannot distinguish sent from failed~~ | **CLOSED** — DeliveryResult + delivery_attempts (B3); cadence now counts delivered sends (`dvoskin/proactive-budget-delivery-attempts`) | — |
 | ~~B4~~ | ~~`turn_id` missing on web + proactive~~ | **CLOSED** — closed on main before this session (parent handoff: "10/77 → 0"); pinned by `test_every_surface_names_its_turn.py`, green in the merged suite. Row was stale | — |
 | B5 | Latency | **MEASURABLE** — main turns write turn_metrics with a stage breakdown, isolated from the turn; report scores p95 vs budgets. Numbers need a week of prod rows | backend + Danny (deploy + read) |
@@ -182,10 +182,22 @@ Still open (scope, not this pass):
 logging surfaces is the part that corrupts user data, and it is now PASS.
 
 **Broad launch: closer.** B3/B4/B5/B6/B7/B11 are all closed or measured and, as
-of 2026-07-31, **deployed** (`b4ff66d`). **B2 is now the single remaining
-user-visible correctness gap** — 57 of 60 mutations off the traceability
-contract; the three logging surfaces that actually corrupt data are already
-PASS, so this is completeness, not a data-loss bug. Remaining beyond B2: B5's
+of 2026-07-31, **deployed** (`b4ff66d`). **B2 is the remaining user-visible
+correctness gap**, now measured properly: every mutating route declares the
+contract it owes, zero are UNKNOWN, and 20 Class A routes are still short of
+theirs.
+
+⚠ **Correction to the previous entry, which called B2 "completeness, not a
+data-loss bug".** That was wrong for at least one surface. A water entry
+logged from the iOS Today tile wrote no ledger event, and `ledger_undo` takes
+the last event unconditionally — so "undo that" after tapping the water tile
+**deleted the user's previous meal**, a row they never mentioned. Silent, and
+reachable from the primary iOS surface. Fixed in `b587fd8` and pinned by
+`test_undo_after_a_pour_takes_back_the_pour_not_the_meal`, which fails on the
+parent commit by planning `delete_food_entry`. Treat the remaining Class A
+gaps as potential data-loss until each is checked, not as bookkeeping.
+
+Remaining beyond B2: B5's
 numbers need a week of prod rows to read; B9/B10 (backup restore, rollback) are
 untested ops; and B7 left 36 capability tokens in URLs (scope) plus Danny env
 confirmations (`BLUEBUBBLES_WEBHOOK_SECRET` — **verify real iMessage still
