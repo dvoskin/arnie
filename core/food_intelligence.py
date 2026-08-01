@@ -189,31 +189,59 @@ _FORM_PENALTY = (
 )
 
 
+def _nutrition_accuracy_v2() -> bool:
+    """The unified accuracy capability (docs/NUTRITION_ACCURACY_REDESIGN.md).
+    Default OFF until scripts/eval_accuracy.py passes on the full fixture."""
+    import os
+    return os.getenv("NUTRITION_ACCURACY_V2", "").lower() in ("1", "true", "yes")
+
+
 def best_candidate(query: str, candidates: list[dict]) -> tuple[Optional[dict], str]:
     """
     Pick the most canonical USDA match for a query and return (candidate, confidence).
-    Favors high token-overlap + short/simple descriptions; penalizes processed
-    forms not named in the query. Returns (None, 'estimated') if nothing is a
-    good enough match (caller should then fall back to the LLM estimate).
+    Favors high token-overlap; penalizes processed/composite forms not named in
+    the query. Returns (None, 'estimated') if nothing is a good enough match
+    (caller then falls back to the LLM estimate).
+
+    V2 (NUTRITION_ACCURACY_V2, Part 1): the gate is IDENTITY, not brevity. The
+    legacy path subtracts 0.15 per extra description token, which rejects USDA's
+    own verbose rows — "skirt steak" vs "Beef, plate steak, boneless, inside
+    skirt, separable lean and fat, trimmed to 0\" fat, choice, raw" scores 1.05
+    against a 1.2 gate despite a PERFECT token match, so it seats nothing and the
+    LLM's low guess stands. V2 keeps the length term only as a tiny tie-break
+    (concise still wins ties), and gates on QUERY COVERAGE: accept when the
+    query's tokens are (nearly) all present — the same food, described verbosely
+    — and reject when one is missing (a different food / wrong cousin). Composite
+    dishes are still rejected by `_FORM_PENALTY` (gravy, frozen, meal…) dragging
+    the score under the floor, so "turkey breast" never seats a gravy meal.
     """
     if not candidates:
         return None, "estimated"
+    v2 = _nutrition_accuracy_v2()
     q = normalize_name(query)
     qa = set(q.split())
-    best, best_score = None, -999.0
+    best, best_score, best_overlap = None, -999.0, 0.0
     for c in candidates:
         d = normalize_name(c.get("description", ""))
         da = set(d.split())
         overlap = len(qa & da) / max(1, len(qa))
         score = overlap * 3.0
-        score -= 0.15 * max(0, len(da) - len(qa))          # prefer concise descriptions
+        # Length term: a tie-break in v2 (0.02), the rejection lever in v1 (0.15).
+        score -= (0.02 if v2 else 0.15) * max(0, len(da) - len(qa))
         for w in _FORM_PENALTY:
             if w in da and w not in qa:
-                score -= 1.2                                # processed form not asked for
+                score -= 1.2                                # processed/composite form not asked for
         if score > best_score:
-            best, best_score = c, score
+            best, best_score, best_overlap = c, score, overlap
     conf = score_match(query, best.get("description", "")) if best else "estimated"
-    # Gate: if even the best match is weak, don't trust USDA — fall back to estimate.
+    if v2:
+        # Identity gate: the query must be (nearly) fully covered — a descriptive
+        # row for the SAME food — AND survive the composite penalty. A missing
+        # query token means a different food; a tanked score means a composite.
+        if best_overlap < 0.75 or best_score < 1.2:
+            return None, "estimated"
+        return best, conf
+    # Legacy gate: if even the best match is weak, don't trust USDA.
     if best_score < 1.2:
         return None, "estimated"
     return best, conf
