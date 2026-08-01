@@ -4019,10 +4019,22 @@ async def dashboard_whoop_sync(token: str):
         else:
             whoop_user = user
 
-        # Save snapshots to canonical user so stats API finds them
-        synced = await sync_user_whoop(db, whoop_user, days=30,
-                                       snapshot_user_id=user.id)
-        return {"status": "ok", "days": synced}
+        # Naturally idempotent on Whoop's own activity id — a poll-based sync
+        # re-reads the same window every run, so duplicate delivery is the
+        # normal case. No claim; what this adds is turn identity and a trace,
+        # so an imported workout can be joined to the sync that pulled it.
+        async with mutation_turn(
+            db, channel="whoop", command="whoop_sync", user_id=user.id,
+            dedup="whoop:30d", claim=False,
+        ) as turn:
+            # Save snapshots to canonical user so stats API finds them
+            synced = await sync_user_whoop(db, whoop_user, days=30,
+                                           snapshot_user_id=user.id)
+            await turn.audit(db, "created", domain="health_import",
+                             payload={"days": synced, "source": "whoop"},
+                             surface="whoop:sync")
+            turn.note(days=synced)
+            return {"status": "ok", "days": synced, "turn_id": turn.turn_id}
 
 
 # ── Workout Program ────────────────────────────────────────────────────────────
@@ -4647,30 +4659,46 @@ async def _process_apple_health(payload: "AppleHealthPayload", token: str) -> di
             except ValueError:
                 raise HTTPException(status_code=400, detail="Use YYYY-MM-DD")
 
-        # Snapshot fields only — exclude date, workouts, and sleep_seconds (handled below)
-        data = payload.model_dump(
-            exclude={"date", "workouts", "sleep_seconds"}, exclude_none=True
-        )
-        # Auto-convert sleep_seconds → sleep_hours so users never have to divide by 3600
-        if payload.sleep_seconds is not None and payload.sleep_hours is None:
-            data["sleep_hours"] = round(payload.sleep_seconds / 3600, 2)
-        data.setdefault("source", "apple_health")
-        await upsert_health_snapshot(db, user.id, snap_date, **data)
+        # Naturally idempotent on each sample's `source_ref` (the upsert IS the
+        # constraint), so no claim — see core/mutation_policy.py. What this
+        # gained is identity: the sync now carries a canonical turn id, so the
+        # rows it writes are joinable to the request that wrote them.
+        async with mutation_turn(
+            db, channel="healthkit", command="apple_health_sync",
+            user_id=user.id, dedup=f"apple:{snap_date}", claim=False,
+        ) as turn:
+            # Snapshot fields only — exclude date, workouts, and sleep_seconds (handled below)
+            data = payload.model_dump(
+                exclude={"date", "workouts", "sleep_seconds"}, exclude_none=True
+            )
+            # Auto-convert sleep_seconds → sleep_hours so users never have to divide by 3600
+            if payload.sleep_seconds is not None and payload.sleep_hours is None:
+                data["sleep_hours"] = round(payload.sleep_seconds / 3600, 2)
+            data.setdefault("source", "apple_health")
+            await upsert_health_snapshot(db, user.id, snap_date, **data)
 
-        if payload.workouts:
-            # Workouts date themselves (own start time + user tz + 4am rollover),
-            # so the snapshot's date no longer decides which day they land on.
-            await _process_apple_workouts(db, user, payload.workouts)
+            if payload.workouts:
+                # Workouts date themselves (own start time + user tz + 4am rollover),
+                # so the snapshot's date no longer decides which day they land on.
+                await _process_apple_workouts(db, user, payload.workouts)
 
-        # First-sync detection — fire a Telegram notification exactly once
-        is_first = "apple_health_connected" not in (user.nudges_sent or "").split(",")
-        if is_first:
-            marks = set(s for s in (user.nudges_sent or "").split(",") if s)
-            marks.add("apple_health_connected")
-            user.nudges_sent = ",".join(sorted(marks))
-            await db.commit()
-            _notify_tg_id = user.telegram_id
-            _notify_data = dict(data)
+            # One event per sync, matching api/health_sync.py.
+            await turn.audit(db, "created", domain="health_import",
+                             payload={"date": str(snap_date),
+                                      "source": "apple_health",
+                                      "workouts": len(payload.workouts or [])},
+                             surface="healthkit:shortcut")
+            turn.note(date=str(snap_date))
+
+            # First-sync detection — fire a Telegram notification exactly once
+            is_first = "apple_health_connected" not in (user.nudges_sent or "").split(",")
+            if is_first:
+                marks = set(s for s in (user.nudges_sent or "").split(",") if s)
+                marks.add("apple_health_connected")
+                user.nudges_sent = ",".join(sorted(marks))
+                await db.commit()
+                _notify_tg_id = user.telegram_id
+                _notify_data = dict(data)
 
     if _notify_tg_id:
         _asyncio.create_task(

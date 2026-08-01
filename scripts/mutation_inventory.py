@@ -63,20 +63,47 @@ BASELINE = ROOT / "docs" / "mutation_baseline.json"
 #: `tests/test_the_mutation_contract_helper.py`. Crediting a named, tested
 #: helper is not the same as a loose match: what it credits is verified
 #: elsewhere, which is the only reason a static read can trust it.
+
+#: Entering the chat turn pipeline. VERIFIED, not assumed — the four chat
+#: routes hand off to it and it owns all of the contract they are credited
+#: with:
+#:   * `core.conversation.run_turn` opens a RequestTrace for the whole turn and
+#:     persists it on an isolated session, carrying `build_sha` (B5).
+#:   * it sets the canonical `CURRENT_TURN_ID`, which `record_ledger_event`
+#:     stamps on every write the turn makes.
+#:   * the executor (`execute_tool_calls`) appends a ledger event per operation.
+#:   * the structured food stage claims the turn via `claim_processed_turn`,
+#:     so a redelivered message cannot double-log — the `claim_write_only`
+#:     policy those routes declare.
+#: All of that is three levels below the handler, so a one-level static read
+#: reported the best-traced surface in the codebase as having nothing.
+_CHAT_LANE = ("run_turn", "run_chat_turn")
+
 MARKERS = {
     "canonical_turn_id": ("make_turn_id", "_turn_scope", "CURRENT_TURN_ID",
-                          "turn_id=", "mutation_turn"),
+                          "turn_id=", "mutation_turn") + _CHAT_LANE,
     "idempotency": ("claim_request", "idempotency_key", "Idempotency-Key",
-                    "claim=True"),
+                    "claim=True") + _CHAT_LANE,
+    # `execute_tool_calls` is the chat lane's ledger writer — it appends an
+    # event per operation it runs. Routes that hand off to the executor own
+    # the turn's identity, not the write, so this is where their history comes
+    # from and reading only the handler reported them as leaving none.
     "ledger_event": ("ledger_source", "record_ledger_event",
                      "record_created_from_row", "record_surface_mutation",
-                     "turn.audit"),
-    "request_trace": ("RequestTrace", "trace.stage", "mutation_turn"),
-    "durable_result": ("claim_id=", "complete_claim", "turn.claim_id"),
+                     "turn.audit", "execute_tool_calls") + _CHAT_LANE,
+    "request_trace": ("RequestTrace", "trace.stage", "mutation_turn")
+                     + _CHAT_LANE,
+    # `turn.complete` counts, but it is the WEAKER form — a second commit, with
+    # a crash window the in-transaction `claim_id=` does not have. The gate
+    # cannot express "compliant but weaker", so the distinction lives in
+    # `MutationTurn.complete`'s docstring and in each route's declared
+    # transaction owner.
+    "durable_result": ("claim_id=", "complete_claim", "turn.claim_id",
+                       "turn.complete"),
     # A persisted trace row carries `build_sha` (core/request_trace._sha), so
     # build attribution is what persisting buys — not a separate mechanism.
     "build_attribution": ("trace.persist", "persist_isolated", "build_sha",
-                          "_build_stamp", "mutation_turn"),
+                          "_build_stamp", "mutation_turn") + _CHAT_LANE,
     # Class B owes an audit trail rather than a ledger event: the question
     # asked of a settings change later is "when did this change, and to what".
     # A RequestTrace is deliberately NOT evidence here — it is already its own
@@ -261,8 +288,13 @@ def build_rows() -> list:
             # declared. Its idempotency is proven by test instead, which is
             # what `notes` on those declarations commits it to.
             if policy is not None and policy.idempotency != "claim_required":
-                required = [g for g in required
-                            if g not in ("idempotency", "durable_result")]
+                drop = ["durable_result"]
+                # `claim_write_only` still takes a claim — it just stores no
+                # replayable result — so it keeps the `idempotency` guarantee
+                # and loses only `durable_result`.
+                if policy.idempotency != "claim_write_only":
+                    drop.append("idempotency")
+                required = [g for g in required if g not in drop]
             missing = [g for g in required if found.get(g) is not True]
 
             if policy is None:
@@ -329,18 +361,28 @@ def check(rows: list, strict: bool = False) -> list:
             f"STALE       {key[0]} {key[1]} — declared in mutation_policy.py "
             f"but no such route exists")
 
-    # 2. A Class A route missing one of its required guarantees. New gaps fail
-    #    always; the ones the baseline already records are tracked debt.
+    # 2. A route missing one of its class's required guarantees.
+    #
+    # Normally this is enforced for Class A only and ratcheted: new Class A
+    # gaps fail immediately, the ones the baseline records are tracked debt.
+    # `--strict` enforces EVERY class, because B2's exit criteria are not just
+    # about Class A — "every Class B route authenticated, traced and
+    # auditable; every Class C route authorized and logged". A strict gate
+    # that passed while 29 Class B routes were untraced would report B2 as
+    # finished when a third of it was outstanding.
     known_gap = 0
     for r in rows:
-        if r["mutation_class"] != "A" or not r["missing_guarantees"]:
+        if not r["missing_guarantees"]:
+            continue
+        cls = r["mutation_class"]
+        if cls != "A" and not strict:
             continue
         key = f"{r['method']} {r['route']}"
         if strict or base.get(key) != "gap":
             failures.append(
-                f"CLASS A GAP {r['method']} {r['route']} — missing "
+                f"CLASS {cls} GAP {r['method']} {r['route']} — missing "
                 f"{', '.join(r['missing_guarantees'])}")
-        else:
+        elif cls == "A":
             known_gap += 1
 
     # 3. A previously covered route that regressed.

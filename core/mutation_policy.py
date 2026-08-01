@@ -65,6 +65,13 @@ IDEMPOTENCY = {
     # A client key is required and enforced by a claim. Replay returns the
     # ORIGINAL committed result.
     "claim_required",
+    # A durable claim prevents the duplicate WRITE, but no replayable result is
+    # stored — the response is recomputed. The chat lane: `claim_processed_turn`
+    # returns a bool ("first" or "already claimed"), so a redelivered message
+    # cannot double-log the food, while the reply itself is generated again.
+    # Distinct from `claim_required` because there is no stored result to
+    # return, and declaring one would be a promise the code does not keep.
+    "claim_write_only",
     # Applying the request twice leaves the same state as applying it once —
     # last-write-wins settings, toggles that carry their target state,
     # deletes-by-id, upserts keyed on natural identity. No claim needed.
@@ -266,23 +273,33 @@ POLICIES: tuple[Policy, ...] = (
 
     # The conversational lane. It mutates logged history through the executor,
     # which owns the turn contract; these routes own the turn's IDENTITY.
-    _p("POST", "/api/v1/chat", "A", _SESSION, "claim_required", "the turn "
+    # THE CHAT LANE'S CLAIM PROTECTS THE WRITE, NOT THE REPLY. These declared
+    # `claim_required` and "ProcessedTurn returns the original reply" until
+    # the code was read: `claim_processed_turn` returns a BOOL — first, or
+    # already claimed inside the window — and it scopes the structured food
+    # COMMIT. A redelivered message therefore cannot double-log the food, but
+    # the turn runs again and the reply is generated afresh. There is no
+    # stored result to hand back, and claiming otherwise was a promise the
+    # code does not keep.
+    _p("POST", "/api/v1/chat", "A", _SESSION, "claim_write_only", "the turn "
        "coordinator (core/turns) — the executor owns the write transaction",
        "written by the tool executor per operation",
-       "ProcessedTurn returns the original reply",
-       "ledger undo reaches every write the turn made", "api/chat.py"),
-    _p("POST", "/api/v1/chat/photo", "A", _SESSION, "claim_required",
+       "the food commit is claimed on the turn id, so a redelivery does not "
+       "double-log; the reply is regenerated",
+       "ledger undo reaches every write the turn made", "api/chat.py",
+       notes="The claim covers the food COMMIT, not the reply: `claim_processed_turn` returns a bool, so a redelivered message cannot double-log while the turn runs again. No stored result to replay."),
+    _p("POST", "/api/v1/chat/photo", "A", _SESSION, "claim_write_only",
        "the turn coordinator", "written by the tool executor per operation",
-       "ProcessedTurn returns the original reply", "ledger undo",
-       "api/chat.py"),
-    _p("POST", "/api/v1/chat/voice", "A", _SESSION, "claim_required",
+       "the food commit is claimed; the reply is regenerated", "ledger undo",
+       "api/chat.py", notes="The claim covers the food COMMIT, not the reply: `claim_processed_turn` returns a bool, so a redelivered message cannot double-log while the turn runs again. No stored result to replay."),
+    _p("POST", "/api/v1/chat/voice", "A", _SESSION, "claim_write_only",
        "the turn coordinator", "written by the tool executor per operation",
-       "ProcessedTurn returns the original reply", "ledger undo",
-       "api/chat.py"),
-    _p("POST", "/api/chat/{token}", "A", _TOKEN, "claim_required",
+       "the food commit is claimed; the reply is regenerated", "ledger undo",
+       "api/chat.py", notes="The claim covers the food COMMIT, not the reply: `claim_processed_turn` returns a bool, so a redelivered message cannot double-log while the turn runs again. No stored result to replay."),
+    _p("POST", "/api/chat/{token}", "A", _TOKEN, "claim_write_only",
        "the turn coordinator", "written by the tool executor per operation",
-       "ProcessedTurn returns the original reply", "ledger undo",
-       "api/app.py"),
+       "the food commit is claimed; the reply is regenerated", "ledger undo",
+       "api/app.py", notes="The claim covers the food COMMIT, not the reply: `claim_processed_turn` returns a bool, so a redelivered message cannot double-log while the turn runs again. No stored result to replay."),
 
     # ── Class B: user-scoped state, naturally idempotent ────────────────────
     _p("PATCH", "/api/v1/profile", "B", _SESSION, "natural", _HANDLER_TXN,

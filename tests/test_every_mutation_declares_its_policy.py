@@ -94,17 +94,31 @@ def test_the_ratcheted_gate_passes_today():
         f"the ratcheted gate is failing:\n{proc.stdout[-2000:]}")
 
 
-def test_the_strict_gate_still_fails_and_names_the_work():
-    """The launch gate. B2 is complete when this passes — so while Class A
-    routes are still short of the contract it MUST fail, or the criterion is
-    not measuring anything."""
+def test_every_class_a_route_is_compliant():
+    """Class A is DONE — all 29 carry the full contract with a concurrency
+    proof. Pinned so it cannot quietly regress; the ratchet in `--check` would
+    catch a regression too, but only against whatever the baseline last
+    recorded."""
+    proc = _run("--check")
+    assert proc.returncode == 0, proc.stdout[-2000:]
+    assert "CLASS A GAP" not in proc.stdout, (
+        f"a Class A route fell off the contract:\n{proc.stdout[-2000:]}")
+
+
+def test_the_strict_gate_names_the_remaining_work():
+    """The launch gate: `--strict` enforces EVERY class, not just A.
+
+    B2's exit criteria include "every Class B route authenticated, traced and
+    auditable" and "every Class C route authorized and logged". While those
+    are outstanding this MUST fail — a strict gate that passed on Class A
+    alone would report B2 finished with a third of it open."""
     proc = _run("--check", "--strict")
-    open_a = [r for r in POLICIES if r.mutation_class == "A"]
-    assert open_a, "no Class A routes declared"
     if proc.returncode == 0:
-        pytest.skip("every Class A route is compliant — B2 is done; delete "
-                    "this test and make --strict the CI gate")
-    assert "CLASS A GAP" in proc.stdout
+        pytest.skip("every class is compliant — B2 is done; make --strict the "
+                    "CI gate and delete this test")
+    assert "CLASS A GAP" not in proc.stdout, (
+        "Class A is supposed to be complete")
+    assert ("CLASS B GAP" in proc.stdout or "CLASS C GAP" in proc.stdout)
 
 
 def test_an_undeclared_route_fails_the_gate(tmp_path, monkeypatch):
