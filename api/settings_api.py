@@ -23,6 +23,7 @@ Settings tab UX:
                               revocation-checked has a clear migration
                               path.
 """
+import logging
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -31,6 +32,8 @@ from pydantic import BaseModel, Field
 from api.auth import current_identity
 from db.database import AsyncSessionLocal
 from db.queries import add_feedback, resolve_user
+
+logger = logging.getLogger(__name__)
 
 
 # ── Preferences ─────────────────────────────────────────────────────────────
@@ -161,4 +164,5 @@ async def signout(identity: str = Depends(current_identity)) -> dict:
     the iOS UX can ship; a follow-up slice should add the actual
     revocation pipeline.
     """
+    logger.info(f"event=signout identity={identity}")
     return {"ok": True, "identity": identity}

@@ -187,12 +187,28 @@ def _local_defs(tree) -> dict:
 
 
 def _called_names(node) -> set:
+    """Every name this handler's body invokes, plus its FastAPI dependencies.
+
+    A `Depends(require_admin)` passes the function as an ARGUMENT, so it never
+    appears as a call and a plain read of the body misses it entirely. It runs
+    on every request to the route regardless — which is exactly why the admin
+    audit line lives in `require_admin` and not repeated in seven handlers —
+    so a dependency is part of the route's effective behaviour and is read as
+    such.
+    """
     names = set()
     for sub in ast.walk(node):
         if isinstance(sub, ast.Call):
             f = sub.func
             if isinstance(f, ast.Name):
                 names.add(f.id)
+                # Depends(x) / Security(x): the callable is the argument.
+                if f.id in ("Depends", "Security"):
+                    for a in sub.args:
+                        if isinstance(a, ast.Name):
+                            names.add(a.id)
+                        elif isinstance(a, ast.Attribute):
+                            names.add(a.attr)
             elif isinstance(f, ast.Attribute):
                 names.add(f.attr)
     return names

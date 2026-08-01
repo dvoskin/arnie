@@ -108,6 +108,7 @@ async def create_session(
     so older TestFlight builds that don't pass the new Authorization header
     keep working — they just take branch (3) instead of (2).
     """
+    logger.info("event=auth_session_issued")
     # Sign-in is unauthenticated by definition and, for Apple, reaches out to
     # Apple's JWKS — so an unbounded caller is both a credential-stuffing surface
     # and a way to hammer a third party through us. 30/min per IP is far above a
@@ -369,6 +370,7 @@ async def create_link_code(
     canonical: the code OWNER is always the brain, so nothing migrates and
     proactive routing keeps following wherever they actually talk.
     """
+    logger.info("event=auth_link_code_issued")
     import os as _os
     from db.queries import generate_link_code, linking_enabled, resolve_user
 

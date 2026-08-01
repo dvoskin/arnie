@@ -139,6 +139,16 @@ async def require_admin(request: Request) -> _AdminAuth:
     from core import ratelimit
     ratelimit.check_request(request, "admin", **_ADMIN_RL)
 
+    # EVERY ADMIN ACTION LEAVES A LINE (B2, Class C: "authorized and logged").
+    # Logged HERE rather than in each handler because this is the one place
+    # every admin route passes through — seven handlers each remembering to
+    # log is seven chances to forget, and the one that forgets is the one
+    # whose action nobody can account for afterwards. Method and path only:
+    # the query string can carry the deprecated `?token=`, and an audit line
+    # that leaks the credential it is auditing is worse than none.
+    logger.info(f"event=admin_action method={request.method} "
+                f"path={request.url.path}")
+
     expected = os.getenv("ADMIN_TOKEN")
     if not expected:
         raise HTTPException(status_code=503, detail="Admin disabled (ADMIN_TOKEN unset)")
@@ -1077,6 +1087,11 @@ async def imessage_start(payload: IMessageSignup, request: Request):
     """
     from core import ratelimit
     ratelimit.check_request(request, "imessage_start", limit=5, window_seconds=600)
+
+    # A public surface that sends a real message to a real phone leaves a
+    # line. The phone number is NOT logged: this is the one field the request
+    # carries and it identifies a person who has not signed up yet.
+    logger.info("event=imessage_signup_attempt")
 
     from bot.imessage_handler import start_imessage_outreach
     result = await start_imessage_outreach(payload.phone)

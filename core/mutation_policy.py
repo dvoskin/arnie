@@ -478,9 +478,14 @@ POLICIES: tuple[Policy, ...] = (
     _p("POST", "/imessage", "C", _HMAC, "delegated", "the turn coordinator",
        "delegated to the chat lane", "the chat lane's ProcessedTurn claim",
        "ledger undo", "api/app.py"),
-    _p("POST", "/imessage/start", "C", _HMAC, "natural", _HANDLER_TXN,
-       "conversation start log", "starting an active thread is a no-op",
-       "n/a", "api/app.py"),
+    _p("POST", "/imessage/start", "C", _PUBLIC, "natural", _HANDLER_TXN,
+       "signup attempt log", "starting an active thread is a no-op",
+       "n/a", "api/app.py",
+       notes="PUBLIC by design — a landing-page signup, reachable before the "
+             "person has any credential to present. Declared _HMAC at first, "
+             "which was wrong: it is not a webhook. What stands in for "
+             "authorization is the per-IP rate limit, so that is the control "
+             "worth pointing at rather than a credential that cannot exist."),
     _p("POST", "/stripe-webhook", "C", _HMAC, "natural", _HANDLER_TXN,
        "subscription state audit row",
        "Stripe redelivers; the event id makes it an upsert", "n/a",
