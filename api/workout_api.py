@@ -35,6 +35,7 @@ from db.workout_program_queries import (
 from sqlalchemy import update, select
 from db.models import GeneratedWorkoutProgram, WorkoutProgram
 from api.auth import current_identity
+from core.mutation_contract import mutation_turn
 from skills.fitness.program_builder import build_program
 
 logger = logging.getLogger(__name__)
@@ -183,6 +184,18 @@ async def build_workout_program(
     """
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        # Rebuilding replaces the active program rather than stacking one, so
+        # no claim. The audit row records which build produced the program the
+        # user is now training against.
+        async with mutation_turn(
+            db, channel="ios", command="build_program", user_id=user.id,
+            dedup=f"program:{body.goal}:{body.days_per_week or 4}", claim=False,
+        ) as turn:
+            await turn.audit(db, "created", domain="workout_program",
+                             payload={"goal": body.goal,
+                                      "days_per_week": body.days_per_week or 4,
+                                      "split": body.split},
+                             surface="ios:program")
         try:
             spec = build_program(
                 goal=body.goal,
@@ -221,13 +234,22 @@ async def deactivate_workout_program(identity: str = Depends(current_identity)):
     flipped."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
-        await db.execute(
-            update(GeneratedWorkoutProgram)
-            .where(
-                GeneratedWorkoutProgram.user_id == user.id,
-                GeneratedWorkoutProgram.active == True,  # noqa: E712
+        # Deactivating an inactive program is a no-op, so no claim. The audit
+        # row is what answers "where did my program go" — a soft-deactivate
+        # leaves no other trace the user can see.
+        async with mutation_turn(
+            db, channel="ios", command="deactivate_program", user_id=user.id,
+            dedup="program:deactivate", claim=False,
+        ) as turn:
+            await db.execute(
+                update(GeneratedWorkoutProgram)
+                .where(
+                    GeneratedWorkoutProgram.user_id == user.id,
+                    GeneratedWorkoutProgram.active == True,  # noqa: E712
+                )
+                .values(active=False)
             )
-            .values(active=False)
-        )
-        await db.commit()
-    return {"program": None, "status": "ok"}
+            await db.commit()
+            await turn.audit(db, "deleted", domain="workout_program",
+                             surface="ios:program")
+            return {"program": None, "status": "ok", "turn_id": turn.turn_id}

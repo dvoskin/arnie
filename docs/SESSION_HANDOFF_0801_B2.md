@@ -1,8 +1,13 @@
 # B2 — mutation contract. Session handoff, 2026-08-01
 
 Branch `dvoskin/b2-mutation-contract`, from `origin/main` @ `fca59a4`.
-Full suite green at every commit. `python scripts/mutation_inventory.py --check`
-passes; `--check --strict` is the exit criterion and still fails.
+Full suite green at every commit.
+
+    UNKNOWN mutation surfaces: 0
+    class A 29/29 · class B 29/29 · class C 17/17
+    python scripts/mutation_inventory.py --check --strict   → pass (CI gate)
+
+**B2 is closed.** Not deployed — deploys are manual.
 
 ## What changed about B2 itself
 
@@ -19,8 +24,8 @@ the contract it owes, including — explicitly, with a stated reason — the pol
 "not required" is a decision on the record. An absent declaration is the thing
 B2 exists to eliminate.
 
-    UNKNOWN mutation surfaces: 0        ← achieved
-    Class A routes short of contract: 20 ← the remaining work
+    UNKNOWN mutation surfaces: 0
+    every route satisfies the contract it declares
 
 ## The pieces
 
@@ -44,21 +49,31 @@ source and fails on the gap. Neither half is trusted alone: a declaration with
 no implementation is a wish, an implementation with no declaration is an
 accident nobody reviewed. `--json` emits all thirteen fields per route.
 
-**The gate, wired into `.github/workflows/ci.yml`.** Fails on an undeclared
-route, a stale declaration, and any route regressing from compliant. Class A
-gaps are **ratcheted** against `docs/mutation_baseline.json` rather than
-enforced outright — 20 are open, and a gate that is red the day it lands
-teaches everyone to ignore it. New Class A gaps fail immediately; the recorded
-list may only shrink. `--check --strict` drops the ratchet and is the B2 exit
-criterion.
+**`core/mutation_contract.py`** — ONE implementation of the shape, so 43 routes
+adopted it rather than copying a forty-line block. It owns the turn id, the
+ambient `CURRENT_TURN_ID` (reset in `finally`), the trace and its persistence
+(which is what carries build attribution), and the claim when `claim=True`. The
+caller still passes `ledger_source=` and `claim_id=turn.claim_id` INTO the
+domain write, because that is what puts the row, its event and the claim in one
+transaction — and a helper that owned the write would be the thing these routes
+are trying to stop having.
 
-## Migrated this session (Class A, fully compliant)
+**The gate, wired into `.github/workflows/ci.yml` as `--check --strict`.** Fails
+on an undeclared route, a stale declaration, a route regressing from compliant,
+and any route short of its class's guarantees. It was ratcheted against
+`docs/mutation_baseline.json` while 24 Class A routes were open — a gate that is
+red the day it lands teaches everyone to ignore it — and the ratchet came off
+once every class closed.
 
-`/api/v1/water` POST · `/api/v1/water/{id}` PATCH+DELETE ·
-`/api/v1/food/{id}` PATCH+DELETE · `/api/v1/exercise/{id}` PATCH+DELETE
-(joining the three `quick_log` routes that were already done).
+## Migrated this session (all 75 routes)
 
-All ten required properties are proven for these in
+Class A: the iOS water lane, the iOS food and exercise editors, all ten
+dashboard write surfaces, both HealthKit imports, `/health/apple`, the Whoop
+sync, `/api/v1/ledger/undo`, and the four chat routes.
+Class B: 29 settings / profile / device / group / integration routes.
+Class C: 17 admin, auth and transport routes.
+
+All ten required properties are proven for the Class A edit/delete routes in
 `tests/test_class_a_update_delete_properties.py`: repeated identical request ·
 same key different payload · crash before commit · crash after commit · two
 concurrent workers · deleting an already deleted row · retry reconstruction
@@ -105,41 +120,83 @@ turn + build attribution.
    the restore ran. Caught by the existing
    `test_rest_delete_leaves_a_restorable_event`.
 
+6. **`POST /api/exercise/log` HAS NEVER WORKED.** It passed
+   `parsed_exercise_name=` and `weight_kg=` to `add_exercise_entry`, which
+   forwards `**kwargs` to the `ExerciseEntry` constructor — whose columns are
+   `exercise_name` and `weight`. Every call raised TypeError; the dashboard's
+   "log exercise" button 500s and has for as long as the kwargs have been
+   wrong. Nothing caught it because nothing called it: no test, and a route
+   that always fails looks exactly like a route nobody uses. Found only
+   because the Class A `concurrency_test` requirement forced a test to exist —
+   which is the argument for that requirement in its own right.
+
+7. **The HealthKit delete-tombstone had ZERO coverage.**
+   `dead_code_report.jsonl` recorded `HealthImportTombstone` as
+   `test_call_files: 0, test_runtime_hit: false`. It is the property that
+   matters most on the import routes: replace-on-sync rewrites the day from
+   whatever the device sent, and the device has no idea the user deleted
+   anything, so without the tombstone a deleted workout returns on every sync
+   — silent, repeating, and un-fixable by the user. Now pinned end to end and
+   verified to have teeth (disabling the filter fails exactly those tests).
+
+8. **Two declarations were wrong and the code corrected them.**
+   `/api/v1/health/weights` declared `natural` idempotency until a concurrency
+   test wrote two rows for one day. The chat routes declared `claim_required`
+   and "ProcessedTurn returns the original reply" until reading
+   `claim_processed_turn` showed it returns a BOOL scoped to the food commit —
+   the reply is regenerated, and there is no stored result to hand back. That
+   is what declaring intent separately from observing reality is for.
+
 ## What is left
 
-Run `python scripts/mutation_inventory.py` for the live list. In the priority
-order Danny set:
+**Nothing in B2.** `--check --strict` passes: 0 UNKNOWN, A 29/29, B 29/29,
+C 17/17, and it is what CI runs, so a route that stops satisfying its declared
+contract now blocks the merge.
 
-1. **Dashboard edits** (`/api/food|exercise|water/{id}`, `/api/*/log`,
-   `/api/weight/log`) — Class A, token-auth twins of the iOS routes already
-   done. Same data, same contract owed. Largest single block.
-2. **Health-import reconciliation** (`/api/v1/health/snapshot|weights`,
-   `/health/apple`, `/api/whoop/sync/{token}`) — declared naturally idempotent
-   on `source_ref`, so the property that needs proving is the **tombstone**:
-   a user's delete must survive the next sync or the row resurrects.
-   `HealthImportTombstone` exists; it is untested from these routes.
-3. **`/api/v1/ledger/undo`** — Class A, currently zero guarantees. Undoing
-   twice must not undo two things.
-4. **Chat lane** (`/api/v1/chat`, `/photo`, `/voice`, `/api/chat/{token}`) —
-   has turn id + claim, needs the trace and durable result. Its ledger events
-   are written by the executor per operation, so `ledger_event` reads as
-   unknown from a static read of the handler; verify before "fixing" it.
-5. **Class B: 0 of 29 compliant.** They mostly need a `RequestTrace` and a
-   canonical turn id — cheap and mechanical, no claim required. Goal/target
-   changes (`/api/v1/targets`, `/auto-targets`) matter most: they steer every
-   later coaching decision, so the audit trail is the point.
-6. **Class C: 7 of 17.** Six admin routes lack an audit log line; the auth
-   routes lack one too.
+Carried forward, declared rather than hidden:
+
+1. **The weight-backfill race.** Two CONCURRENT `/api/v1/health/weights` syncs
+   with DIFFERENT keys can both insert for one local day — the per-day dedup is
+   a read-then-write with no uniqueness constraint. The claim closes the common
+   case (a retried sync). Recorded as a `strict=True` xfail in
+   `tests/test_a_deleted_import_stays_deleted.py`, so when the constraint lands
+   it fails as XPASS and forces the policy note to be corrected. Root fix: a
+   unique constraint on (user, source, logging day), needing a stored day
+   column and a migration.
+2. **`turn.complete()` call sites.** `/api/v1/ledger/undo` and
+   `/api/v1/health/weights` complete their claim in a SECOND commit, because
+   the executor and the import loop own their transactions. That leaves the
+   crash window the in-transaction `claim_id=` closes. Documented on
+   `MutationTurn.complete`; reconciliation (`committed_result`) recovers the
+   commands listed in `_COMMAND_DOMAIN`.
+3. **A pre-existing suite flake**, not from this work:
+   `test_ask_authority::test_the_lane_is_never_lost_to_a_failing_model` fails
+   intermittently under shuffle (a `food_relevance` cache leak) and passes
+   deterministically. Worth its own session.
+4. **NOT DEPLOYED.** Deploys are manual. Run `python scripts/release_check.py`
+   first.
+
+## Adding a route after this
+
+Put a line in `core/mutation_policy.py` naming its class and policy. CI fails
+otherwise — that is the gate, and it is the whole reason the count stays at
+zero as the codebase grows.
+
+For a Class A route, `core.mutation_contract.mutation_turn` is the one
+implementation of the shape; pass `ledger_source=` and `claim_id=turn.claim_id`
+into the domain write so the row, its event and the claim land in one
+transaction. Do not re-declare `_turn_scope` / `_client_key` — the contextvar
+leak and the keyless-collision trap are both real past incidents.
 
 ## Gotchas for whoever picks this up
 
 - `_turn_scope`, `_client_key` and `_claim_failed` live in `api/quick_log.py`
-  and are **imported**, not re-declared. The contextvar leak and the
-  keyless-collision trap are real past incidents; a second copy of either is a
-  second chance to reintroduce them.
-- Adding a route without a line in `core/mutation_policy.py` fails CI. That is
-  the point.
-- Re-run `--write-baseline` after closing gaps so the ratchet tightens.
+  and are **imported**, not re-declared.
+- Re-run `--write-baseline` after any deliberate status change.
 - The concurrency-test observation is coarse: a handler name counts if it
   appears in a test module that also uses `asyncio.gather`. It is evidence a
   concurrency test exists, not proof it is a good one.
+- The inventory credits named helpers (`mutation_turn`, `run_turn`,
+  `execute_tool_calls`, `turn.audit`) for guarantees that live below the
+  handler. Each was VERIFIED before being credited, and the verification is
+  written next to the marker. Do not add one without doing the same.

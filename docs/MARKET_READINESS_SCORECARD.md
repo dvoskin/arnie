@@ -41,22 +41,41 @@ that produced it — an assertion in a commit message is not a check.
 
 ## 4. Corrections and deletion
 
-**UNKNOWN.** `PATCH/DELETE /{entry_id}` show turn id and ledger event but no
-idempotency and no trace. Not evaluated for replay safety.
+**PASS.** Every food / exercise / water edit and delete, on BOTH the iOS and
+dashboard surfaces, carries the full Class A contract, and all ten required
+properties are proven per route in
+`tests/test_class_a_update_delete_properties.py`: repeated identical request,
+same key with a different payload, crash before commit, crash after commit,
+two concurrent workers, deleting an already-deleted row, retry reconstruction
+from durable history, exactly one ledger effect, correct undo, and canonical
+turn + build attribution.
 
 ## 5. Turn traceability
 
 | check | state | evidence |
 |---|---|---|
 | Quick-log surfaces traceable | **PASS** | 3/3 complete |
-| All user-visible mutations traceable | **FAIL** | **3 of 60** on the full contract |
+| All user-visible mutations traceable | **PASS** | all 75 mutating routes declare a policy and satisfy it — **0 UNKNOWN**, A 29/29, B 29/29, C 17/17. `mutation_inventory.py --check --strict` in CI |
 | Production turns carry a build stamp | **PASS** | 18h trace: 1/77 missing reasoning |
 | Production turns carry a turn id | **FAIL** | **10/77 missing** — web (5), proactive (4), ios/text (1) |
 
 ## 6. Idempotency and replay
 
-**PASS for food, exercise, weight.** **UNKNOWN elsewhere** — 48 of 60
-user-visible mutations have no idempotency policy at all.
+**PASS.** Every mutating route declares an idempotency policy and implements
+it. The policy is not the same everywhere on purpose — that was the error in
+the original framing. `claim_required` where a duplicate write corrupts a
+record; `claim_write_only` for the chat lane, whose claim protects the write
+while the reply is regenerated; `natural` where the write upserts on a stable
+identity (health imports on `source_ref`, settings last-write-wins);
+`operator_initiated` for admin tools. Each non-claim choice states its reason
+in `core/mutation_policy.py`, and a Class A route that declines a claim
+without one fails a test.
+
+One residual, declared and tracked rather than hidden: two CONCURRENT weight
+backfills with different keys can both insert for the same local day — the
+per-day dedup is a read-then-write with no uniqueness constraint. Recorded as
+a strict xfail; the root fix is a unique constraint on (user, source, logging
+day), which needs a stored day column and a migration.
 
 ## 7. Latency
 
@@ -167,7 +186,7 @@ Still open (scope, not this pass):
 | # | blocker | state | owner |
 |---|---|---|---|
 | ~~B1~~ | ~~Deployed != main~~ | **CLOSED** — `b4ff66d` deployed 2026-07-31; `/health.commit` == `origin/main`. B7 posture confirmed LIVE by probe: unsigned `/imessage`→403, `/admin` no-creds→401. ⚠ verify real inbound iMessage still works (BLUEBUBBLES_WEBHOOK_SECRET on both sides) | — |
-| B2 | Mutation contract coverage | **RESCOPED — 0 UNKNOWN, 20 Class A gaps left.** The old row ("57 of 60 off the contract") measured conformance to ONE contract and could only be improved by bolting claims and ledger events onto routes that should have neither. All 75 mutating routes now declare their class and policy in `core/mutation_policy.py`; `scripts/mutation_inventory.py --check` is a CI gate. Exit criterion is `--check --strict`. See `docs/SESSION_HANDOFF_0801_B2.md` | backend |
+| ~~B2~~ | ~~Mutation contract coverage~~ | **CLOSED** — all 75 mutating routes declare their class and policy in `core/mutation_policy.py`; **0 UNKNOWN, A 29/29, B 29/29, C 17/17**. `scripts/mutation_inventory.py --check --strict` is the CI gate. See `docs/SESSION_HANDOFF_0801_B2.md` | — |
 | ~~B3~~ | ~~Proactive delivery cannot distinguish sent from failed~~ | **CLOSED** — DeliveryResult + delivery_attempts (B3); cadence now counts delivered sends (`dvoskin/proactive-budget-delivery-attempts`) | — |
 | ~~B4~~ | ~~`turn_id` missing on web + proactive~~ | **CLOSED** — closed on main before this session (parent handoff: "10/77 → 0"); pinned by `test_every_surface_names_its_turn.py`, green in the merged suite. Row was stale | — |
 | B5 | Latency | **MEASURABLE** — main turns write turn_metrics with a stage breakdown, isolated from the turn; report scores p95 vs budgets. Numbers need a week of prod rows | backend + Danny (deploy + read) |
@@ -182,13 +201,12 @@ Still open (scope, not this pass):
 logging surfaces is the part that corrupts user data, and it is now PASS.
 
 **Broad launch: closer.** B3/B4/B5/B6/B7/B11 are all closed or measured and, as
-of 2026-07-31, **deployed** (`b4ff66d`). **B2 is the remaining user-visible
-correctness gap**, now measured properly: every mutating route declares the
-contract it owes, zero are UNKNOWN, and 20 Class A routes are still short of
-theirs.
+of 2026-07-31, **deployed** (`b4ff66d`). **B2 is now CLOSED** — every mutating
+route declares the contract it owes and satisfies it, enforced by CI. NOT YET
+DEPLOYED: the branch is `dvoskin/b2-mutation-contract`.
 
-⚠ **Correction to the previous entry, which called B2 "completeness, not a
-data-loss bug".** That was wrong for at least one surface. A water entry
+⚠ **Correction to the earlier entry, which called B2 "completeness, not a
+data-loss bug".** That was wrong. A water entry
 logged from the iOS Today tile wrote no ledger event, and `ledger_undo` takes
 the last event unconditionally — so "undo that" after tapping the water tile
 **deleted the user's previous meal**, a row they never mentioned. Silent, and

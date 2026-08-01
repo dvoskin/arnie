@@ -105,20 +105,25 @@ def test_every_class_a_route_is_compliant():
         f"a Class A route fell off the contract:\n{proc.stdout[-2000:]}")
 
 
-def test_the_strict_gate_names_the_remaining_work():
-    """The launch gate: `--strict` enforces EVERY class, not just A.
+def test_the_strict_gate_passes():
+    """B2's exit criterion, asserted rather than described.
 
-    B2's exit criteria include "every Class B route authenticated, traced and
-    auditable" and "every Class C route authorized and logged". While those
-    are outstanding this MUST fail — a strict gate that passed on Class A
-    alone would report B2 finished with a third of it open."""
+    `--strict` enforces every class: Class A's full contract, Class B
+    authenticated + traced + auditable, Class C authorized + logged. It is
+    what CI runs, so this failing means a route stopped satisfying the
+    contract it declares — which is the whole point of having declared it.
+    """
     proc = _run("--check", "--strict")
-    if proc.returncode == 0:
-        pytest.skip("every class is compliant — B2 is done; make --strict the "
-                    "CI gate and delete this test")
-    assert "CLASS A GAP" not in proc.stdout, (
-        "Class A is supposed to be complete")
-    assert ("CLASS B GAP" in proc.stdout or "CLASS C GAP" in proc.stdout)
+    assert proc.returncode == 0, (
+        f"the strict gate is failing:\n{proc.stdout[-3000:]}")
+
+
+def test_every_class_is_fully_compliant(rows):
+    """The same property read off the data, so a failure names the route."""
+    gaps = [f"{r['mutation_class']} {r['method']} {r['route']} — missing "
+            f"{', '.join(r['missing_guarantees'])}"
+            for r in rows if r["missing_guarantees"]]
+    assert gaps == [], "\n".join(gaps)
 
 
 def test_an_undeclared_route_fails_the_gate(tmp_path, monkeypatch):

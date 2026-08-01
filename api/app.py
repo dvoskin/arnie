@@ -2226,6 +2226,14 @@ async def api_hide_attribute(body: AttrHide, token: str = Query(...)):
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
+        # Class B, hide_attribute. A soft-hide: hiding an already-hidden attribute is a no-op. Audited because
+        # 'Arnie forgot that I'm vegetarian' is answered by when it was hidden.
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="hide_attribute", user_id=user.id,
+            dedup=f"hide:{body.attribute_key}", claim=False,
+        ) as _turn:
+            await _turn.audit(db, "deleted", domain="profile_attribute",
+                              surface="dashboard")
         ok = await set_attribute_status(db, user.id, body.attribute_key, "discontinued")
         if not ok:
             raise HTTPException(status_code=404, detail="Attribute not found")
@@ -2427,6 +2435,14 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
+        # Class B, patch_profile_web. Last-write-wins. Same audit as the iOS profile PATCH — these are the inputs
+        # every later coaching decision is computed from.
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="patch_profile_web", user_id=user.id,
+            dedup=f"profile:{patch.field}", claim=False,
+        ) as _turn:
+            await _turn.audit(db, "updated", domain="profile",
+                              surface="dashboard")
 
         field, raw = patch.field, patch.value
 
@@ -2590,6 +2606,14 @@ async def api_auto_targets(token: str):
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
+        # Class B, auto_targets_web. Deterministic recompute, but it MOVES the targets, so it owes the same
+        # audit as an explicit edit.
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="auto_targets_web", user_id=user.id,
+            dedup="auto_targets", claim=False,
+        ) as _turn:
+            await _turn.audit(db, "updated", domain="targets",
+                              surface="dashboard")
 
         targets = compute_auto_macro_targets(user)
         if not targets:
@@ -4087,6 +4111,13 @@ async def parse_and_save_workout(token: str, body: WorkoutParseBody):
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
+        # Class B, parse_program_web. Re-parsing the same text replaces the same program.
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="parse_program_web", user_id=user.id,
+            dedup="program:parse", claim=False,
+        ) as _turn:
+            await _turn.audit(db, "created", domain="workout_program",
+                              surface="dashboard")
 
         if not ANTHROPIC_API_KEY():
             raise HTTPException(status_code=503, detail="AI unavailable")
@@ -4170,6 +4201,13 @@ async def auto_fill_workout_program(token: str):
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
+        # Class B, autofill_program_web. Deterministic from the program itself.
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="autofill_program_web", user_id=user.id,
+            dedup="program:autofill", claim=False,
+        ) as _turn:
+            await _turn.audit(db, "updated", domain="workout_program",
+                              surface="dashboard")
 
         if not ANTHROPIC_API_KEY():
             raise HTTPException(status_code=503, detail="AI unavailable")
@@ -4301,6 +4339,14 @@ async def delete_workout_program(token: str):
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
+        # Class B, deactivate_program_web. Deactivating an inactive program is a no-op. The audit row is what answers
+        # 'where did my program go' — a soft-deactivate leaves no other trace.
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="deactivate_program_web", user_id=user.id,
+            dedup="program:deactivate", claim=False,
+        ) as _turn:
+            await _turn.audit(db, "deleted", domain="workout_program",
+                              surface="dashboard")
         from db.models import WorkoutProgram
         from sqlalchemy import select, delete as sql_delete
         from memory.attribute_store import clear_program_attributes
@@ -4376,6 +4422,14 @@ async def brain_insight(token: str, payload: _BrainInsightRequest):
         user = await get_user_by_webhook_token(db, token)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
+        # Class B, brain_insight. Regenerates derived insight from the same source rows, so repeating it is
+        # harmless; the audit row says who asked and when.
+        async with mutation_turn(
+            db, channel=DASHBOARD, command="brain_insight", user_id=user.id,
+            dedup="insight", claim=False,
+        ) as _turn:
+            await _turn.audit(db, "created", domain="brain",
+                              surface="dashboard")
 
     result = await generate_lobe_insight(
         user_id=user.id,

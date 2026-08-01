@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from api.auth import current_identity
+from core.mutation_contract import mutation_turn
 from core.prompts.onboarding import build_ios_landing_intro
 from db.database import AsyncSessionLocal
 from db.queries import resolve_user, log_conversation
@@ -97,6 +98,17 @@ async def patch_profile(
 
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        # Last-write-wins, so no claim. The audit row matters because these
+        # fields (weight, goal, timezone) are the inputs every later coaching
+        # decision is computed from — "why did my targets change" is answered
+        # by knowing when the profile behind them moved.
+        async with mutation_turn(
+            db, channel="ios", command="patch_profile", user_id=user.id,
+            dedup=f"profile:{','.join(sorted(updates))}", claim=False,
+        ) as turn:
+            await turn.audit(db, "updated", domain="profile",
+                             payload={"fields": sorted(updates)},
+                             surface="ios:profile")
 
         if updates.get("goal_weight_kg") is not None:
             # Intake gate: a goal weight that contradicts the goal direction is
@@ -197,11 +209,25 @@ async def auto_compute_targets(
                 status_code=422,
                 detail="missing stats — need current weight, height, age, and sex",
             )
-        user.preferences.calorie_target = computed["calorie_target"]
-        user.preferences.protein_target = computed["protein_target"]
-        user.preferences.carb_target = computed["carb_target"]
-        user.preferences.fat_target = computed["fat_target"]
-        await db.commit()
+        # Deterministic from the same stats, so recomputing is a no-op and no
+        # claim is warranted — but this MOVES the targets, so it owes the same
+        # before/after audit as an explicit edit.
+        async with mutation_turn(
+            db, channel="ios", command="auto_targets", user_id=user.id,
+            dedup="auto_targets", claim=False,
+        ) as turn:
+            before = {k: getattr(user.preferences, k, None)
+                      for k in ("calorie_target", "protein_target",
+                                "carb_target", "fat_target")}
+            user.preferences.calorie_target = computed["calorie_target"]
+            user.preferences.protein_target = computed["protein_target"]
+            user.preferences.carb_target = computed["carb_target"]
+            user.preferences.fat_target = computed["fat_target"]
+            await db.commit()
+            await turn.audit(db, "updated", domain="targets",
+                             payload={"before": before, "after": computed,
+                                      "source": "auto"},
+                             surface="ios:targets")
         return {
             "ok": True,
             "calorie_target": computed["calorie_target"],
@@ -231,12 +257,26 @@ async def patch_targets(
             raise HTTPException(
                 status_code=404, detail="user has no preferences row",
             )
-        applied: list[str] = []
-        for field, value in updates.items():
-            setattr(user.preferences, field, value)
-            applied.append(field)
-        await db.commit()
-        return {"ok": True, "updated_fields": applied}
+        # TARGETS STEER EVERY LATER COACHING DECISION, so the before-state is
+        # recorded, not just the field names: "when did my calorie target
+        # change and from what" is the question, and the new value alone
+        # cannot answer it.
+        async with mutation_turn(
+            db, channel="ios", command="patch_targets", user_id=user.id,
+            dedup=f"targets:{','.join(sorted(updates))}", claim=False,
+        ) as turn:
+            before = {f: getattr(user.preferences, f, None) for f in updates}
+            applied: list[str] = []
+            for field, value in updates.items():
+                setattr(user.preferences, field, value)
+                applied.append(field)
+            await db.commit()
+            await turn.audit(db, "updated", domain="targets",
+                             payload={"fields": applied, "before": before,
+                                      "after": {k: updates[k] for k in applied}},
+                             surface="ios:targets")
+            return {"ok": True, "updated_fields": applied,
+                    "turn_id": turn.turn_id}
 
 
 # ── Onboarding completion ───────────────────────────────────────────────────
@@ -366,6 +406,14 @@ async def complete_onboarding(
     """
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        # A one-way flag: completing twice leaves it set. No claim; the turn id
+        # and trace are what tie the flip to the request that made it, which is
+        # the only record that onboarding finished at all.
+        async with mutation_turn(
+            db, channel="ios", command="complete_onboarding", user_id=user.id,
+            dedup="onboarding:complete", claim=False,
+        ) as turn:
+            turn.note(stage="onboarding_complete")
         result = await _complete_if_ready(db, user)
         if not result["ok"]:
             # Nothing flipped — leave the session clean for the caller.

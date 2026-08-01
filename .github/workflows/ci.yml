@@ -81,15 +81,13 @@ jobs:
       # required, this operation is naturally idempotent". An UNDECLARED route
       # fails here, and so does a route that regresses from compliant.
       #
-      # Class A gaps are RATCHETED against docs/mutation_baseline.json rather
-      # than enforced outright: 24 are already open, and a gate that is red the
-      # day it lands teaches everyone to ignore it. New Class A gaps fail
-      # immediately and the recorded list may only shrink.
-      #
-      # `--strict` drops the ratchet and is the LAUNCH gate — B2 is complete
-      # when it passes. Run it deliberately; it is not wired to block merges.
-      - name: Mutation policy — no undeclared surfaces, no regressions
-        run: python scripts/mutation_inventory.py --check
+      # `--strict` enforces every class outright. It was ratcheted against
+      # docs/mutation_baseline.json while 24 Class A routes were open — a gate
+      # that is red the day it lands teaches everyone to ignore it — but all
+      # 75 routes now satisfy their class, so the ratchet is gone and the
+      # full rule blocks merges.
+      - name: Mutation policy — every route satisfies its declared contract
+        run: python scripts/mutation_inventory.py --check --strict
 
       - name: Run tests
         env:
