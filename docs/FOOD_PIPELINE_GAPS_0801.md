@@ -49,27 +49,48 @@ a Haiku extraction pass) but is blocked THREE ways:
 - **Gate B — `_worth_web_meal` (substantial composites only).** Simple foods
   (corn, a bun, parmesan, 2 shots whiskey) skip it.
 
-## Plan — "employ web enrichment" + make it accurate
+## Web enrichment — TESTED with a real Tavily key (2026-08-02)
 
-1. **ENABLE web (Danny/Render):** `SEARCH_ENABLED=true`, `TAVILY_API_KEY`. Nothing
-   below helps until this is on.
-2. **Loosen the web trigger (code, `handlers/tool_executor._analyze_food` ~2572):**
-   fire web enrichment on a WEAK resolution — `source=="estimate"` OR a
-   low-confidence / weak-overlap USDA/OFF seat OR an implausible committed number
-   — for ANY food, not just composites. Keep the existing sanity guard (only a
-   confident, in-bounds web hit overrides).
-3. **Serving→grams coverage:** ear/shot/clove/slice/bun → grams, so a seated
-   density is usable instead of discarded (fixes the "1 ear"/"2 shots" collapse).
-4. **Matcher identity:** reject wrong cousins (corn grain for corn; whiskey sour
+`_web_lookup_meal` run live against the misses. It is helpful but NOT a silver
+bullet, and a naive loosening would regress:
+- FIXES: burger bun 3in → **120** (truth ~120); turkey deli 3 slices → **88**
+  (~90). Real wins over the DB (84 / 142).
+- WRONG SERVING: parmesan **2 oz → 85** (~1 serving, truth ~220); ground turkey
+  **200 g → 160** (per-serving, truth ~350). Web ignores the stated quantity too.
+- NONE: whiskey 2 shots, corn 1 ear — no confident web hit.
+- The `_worth_web_meal` gate is deliberate: web returns garbage for drinks /
+  single ingredients (past incident). So: expand it for foods web handles, keep
+  it off where web is unreliable, and NEVER override a trusted (non-weak) DB seat
+  (parmesan seated "likely" at 180 — web must not replace it with 85).
+
+**Common root under DB AND web: the stated serving isn't respected.** That is the
+highest-leverage fix; web sits on top of it.
+
+## Plan — serving-first, then guarded web
+
+1. **Serving→grams coverage (THE ROOT, do first):** ear/shot/clove/slice/bun and
+   respect stated mass (oz/g), so a seated density is USED not discarded. Fixes
+   the "1 ear"/"2 shots"/"2 oz"/"200 g" collapse — the common cause under BOTH
+   the DB and the web results. Highest leverage, deterministic, testable offline.
+2. **Matcher identity:** reject wrong cousins (corn grain for corn; whiskey sour
    for whiskey) — extends the V2 species/cut work.
-5. **Invariants (deterministic safety net, universal/non-flag-gated):**
+3. **Invariants (deterministic safety net, universal/non-flag-gated):**
    I1 leave-no-food-behind (extend to the answer-turn), macro-consistency
    (sugar≤carbs, Atwater reconcile), zero-floor.
-6. **Reply-voicing:** reply calorie numbers must come from committed values.
-7. **Voice:** fix the clarification question template.
+4. **Web as a GUARDED rung (employ, don't just loosen):** enable it
+   (Danny/Render: `SEARCH_ENABLED=true` + `TAVILY_API_KEY`), then fire only on a
+   WEAK resolution (estimate/low-confidence — NOT over a trusted seat like the
+   parmesan 180), expand `_worth_web_meal` to the foods web handles (bun, deli),
+   and accept the web number ONLY if it's plausible FOR THE STATED SERVING (so
+   parmesan 2oz can't be overwritten with an 85-cal single serving). Keep off for
+   drinks/ambiguous where web returns garbage.
+5. **Reply-voicing:** reply calorie numbers must come from committed values.
+6. **Voice:** fix the clarification question template.
 
 ## Status
 - `I1` (first-turn leave-no-food-behind) landed on `dvoskin/food-invariants`
   @2d26ba6. Everything else is open.
-- **Highest leverage: enable web (1) + loosen the trigger (2).** That's the
+- **Highest leverage: serving→grams (1) — it fixes the common root and makes web
+  (4) usable. Web tested helpful but partial; employ it guarded, on top of (1).**
+- Old framing "just loosen the web gate" is WRONG — tested to regress. That's the
   "like Google" accuracy fix Danny asked for; it is blocked on the env first.
