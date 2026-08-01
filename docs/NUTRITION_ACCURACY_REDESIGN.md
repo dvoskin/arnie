@@ -1,26 +1,49 @@
 # Nutrition accuracy — one designed capability
 
-**Status: Parts 1-5 landed, 2026-08-01.** Branch
+**Status: Parts 1-5 landed + matcher identity pass, 2026-08-01.** Branch
 `dvoskin/nutrition-accuracy-redesign`. Behind `NUTRITION_ACCURACY_V2` (default
-off). Gate `scripts/eval_accuracy.py` (committed-number axes): **4/11 → 6/11**,
-honest passes — skirt steak −41% → −1%, almonds −26% → 0%, sirloin −20% → −4%.
-Part 5 (resolve-then-ask) is the ask-path half and is not committed-number
-measurable; it is covered by `tests/test_food_turn_resolve_then_ask.py`. Full
-suite green with the flag off (v1 unchanged).
+off). Gate `scripts/eval_accuracy.py` (committed-number axes): **4/11 → 9/11**,
+honest passes — skirt steak −41% → −1%, almonds −26% → 0%, sirloin −20% → −4%,
+**ribeye −39% → −3%**, **grilled thigh +15% → +8%**, **fried thigh −19% → +2%**.
+The two rows still red are BY CONSTRUCTION, not density bugs: `fat-steak-butter`
+(the butter is elicited by Part 5's ask, invisible to a commit-path eval) and
+`fat-salad-plain` (the salad-category estimate). Part 5 (resolve-then-ask) is the
+ask-path half, covered by `tests/test_food_turn_resolve_then_ask.py`. Full suite
+green with the flag off (v1 unchanged).
+
+The matcher now treats identity as identity: species (no bison for beef), cut
+(no ribeye-cap for ribeye), separators (split "steak/roast"), as-eaten over
+trimmed ("meat and skin", not "meat only"), and a complete cooked-marker list
+(rotisserie/BBQ are cooked, so a cooked row is not yielded a second time). All
+v2-gated, magnitudes derived from the existing constants — see
+`tests/test_food_matcher_v2.py`.
 
 **Landed:** Part 1 (identity matcher), Part 2a/b/c (cooked-preference, cooking
 yield, trust full-coverage), Part 3 (portion prior). Part 4 (added fat) is
 partial — applied only on a seated base so it never double-counts, but the
 common case (fat not named in the food) needs Part 5.
 
-**Remaining, and exactly what each residual row needs:**
-- `port-ribeye` −39% — USDA returns *bison* and *ribeye cap* (a different cut);
-  needs species/cut-aware matching, deeper than Part 1's noun coverage.
-- `fat-steak-butter`, `fat-salad-ranch` — the fat is not in the food name, so it
-  can only be **elicited** (Part 5), then added (Part 4).
-- `fat-salad-plain` — "green salad" matches a dressing row at full noun coverage;
-  needs a food-category signal (a salad is not a dressing).
-- `prep-thigh-*` — cooking-yield tuning; principled constants, not gold-fitted.
+**The two rows still red — both by construction, not density bugs:**
+- `fat-steak-butter` −14% — the butter is not in the food name, so the commit
+  path cannot see it; it is **elicited** by Part 5 (the ask fires in a real chat)
+  then added by Part 4. The committed-number eval runs the commit path with no
+  answer, so this is red HERE and green in conversation.
+- `fat-salad-plain` +20% — "green salad" seats no USDA row and estimates; needs a
+  food-category signal (a salad is not a dressing) to seat a leafy-greens density.
+  Small absolute (10 cal); the +1608% micro is a separate fibre artifact.
+
+**Fixed 2026-08-01 (matcher identity pass), all v2-gated in `best_candidate` /
+`normalize_name`, magnitudes derived from the existing constants, not the gold
+numbers — tests in `test_food_matcher_v2.py`:**
+- `port-ribeye` −39% → −3%. USDA returned *bison* (wrong animal) and *ribeye cap*
+  rows (a leaner sub-cut), and the real beef ribeye read "ribeye steak/roast" so
+  the `/` hid the token "steak". Fixes: split separators; reject an unrequested
+  species (−2.5, below the trust floor even alone); deprioritise an unrequested
+  sub-cut (−1.5, above the cooked/raw swing).
+- `prep-thigh` grilled +15% → +8%, fried −19% → +2%. Two bugs: it seated "meat
+  ONLY" over "meat and skin" (added the as-eaten preference, +0.4), and it read
+  the cooked "rotisserie/BBQ" row as raw and yielded it a second time (completed
+  the cooked-marker list, shared by matcher and analyze).
 
 ## The problem, stated once
 

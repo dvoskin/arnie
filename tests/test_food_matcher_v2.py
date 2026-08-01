@@ -64,3 +64,88 @@ def test_default_is_v1(monkeypatch):
     # Flag unset → legacy behavior, so the change ships dark until the eval passes.
     monkeypatch.delenv("NUTRITION_ACCURACY_V2", raising=False)
     assert best_candidate("skirt steak", SKIRT)[0] is None
+
+
+# ── cut/species identity (the ribeye residual) ───────────────────────────────
+#
+# USDA returns, for "ribeye steak": a BISON ribeye (wrong animal), five ribeye
+# CAP rows (a different sub-cut, leaner), and the real beef ribeye — whose
+# description reads "ribeye steak/roast", so the "/" hid the token "steak" and
+# dropped it below the identity gate. Three fixes, one row: split separators,
+# reject the wrong animal, deprioritise the wrong cut.
+RIBEYE = [
+    {"description": 'Game meat, bison, ribeye, separable lean only, 1" steak, '
+     'cooked, broiled', "fdc_id": 20, "per100g": {"calories": 177}},
+    {"description": 'Beef, ribeye cap steak, boneless, separable lean only, '
+     'choice, cooked, grilled', "fdc_id": 21, "per100g": {"calories": 259}},
+    {"description": 'Beef, Australian, grass-fed, rib, ribeye steak/roast lip-on, '
+     'separable lean and fat, raw', "fdc_id": 22, "per100g": {"calories": 217}},
+]
+
+
+def test_v2_seats_the_real_cut_over_wrong_species_and_sub_cut(v2):
+    # Not the bison (20), not the ribeye cap (21) — the actual beef ribeye (22).
+    cand, conf = best_candidate("ribeye steak", RIBEYE)
+    assert cand is not None and cand["fdc_id"] == 22
+
+
+def test_v2_separator_splits_recover_the_hidden_token(v2):
+    # "ribeye steak/roast" must cover the query token "steak"; without the split
+    # it reads as "steakroast" and the row fails the 0.75 identity gate.
+    only_real = [RIBEYE[2]]
+    assert best_candidate("ribeye steak", only_real)[0]["fdc_id"] == 22
+
+
+def test_v2_rejects_a_lone_wrong_species_row(v2):
+    # If bison is all USDA offers for a beef cut, log an estimate — never a bison
+    # density for beef. (A cap, same animal, may still seat: next test.)
+    assert best_candidate("ribeye steak", [RIBEYE[0]])[0] is None
+
+
+def test_v2_seats_a_sub_cut_only_when_it_is_the_only_option(v2):
+    # A ribeye cap is leaner but still beef ribeye — better than an estimate when
+    # nothing else is on the shelf.
+    assert best_candidate("ribeye steak", [RIBEYE[1]])[0]["fdc_id"] == 21
+
+
+def test_v2_keeps_the_species_when_the_query_asks_for_it(v2):
+    # "bison ribeye" NAMES bison, so its bison row is the right food, not penalised.
+    cand, _ = best_candidate("bison ribeye", [RIBEYE[0]])
+    assert cand is not None and cand["fdc_id"] == 20
+
+
+def test_v1_unaffected_by_species_and_cut_rules(v1):
+    # The penalties and separator split are v2-only; v1 seats by the old logic
+    # (its glued tokenisation makes the "/" row miss, so it takes the bison).
+    cand, _ = best_candidate("ribeye steak", RIBEYE)
+    assert cand is None or cand["fdc_id"] != 22
+
+
+# ── as-eaten over trimmed, and a COMPLETE cooked-marker list (thigh) ──────────
+#
+# USDA offers the thigh both "meat only" (the lab sample) and "meat and skin"
+# (the meal). A person eats the skin unless they say otherwise, so the second is
+# the right basis. And "rotisserie"/"BBQ" are cooked — omitting them from the
+# marker list made a cooked row read as raw and take the raw->cooked yield twice.
+from core.food_intelligence import _COOKED_MARKERS  # noqa: E402
+
+THIGH = [
+    {"description": "Chicken, broiler, rotisserie, BBQ, thigh, meat only",
+     "fdc_id": 30, "per100g": {"calories": 193}},
+    {"description": "Chicken, broiler, rotisserie, BBQ, thigh, meat and skin",
+     "fdc_id": 31, "per100g": {"calories": 226}},
+]
+
+
+def test_v2_prefers_meat_and_skin_over_meat_only(v2):
+    assert best_candidate("chicken thigh", THIGH)[0]["fdc_id"] == 31
+
+
+def test_v1_keeps_the_trimmed_row(v1):
+    # As-eaten is v2-only; v1's length tie-break takes the shorter "meat only".
+    assert best_candidate("chicken thigh", THIGH)[0]["fdc_id"] == 30
+
+
+def test_rotisserie_and_bbq_are_recognised_as_cooked():
+    # Pins the fix: the marker list must be complete, or cooked rows get yielded.
+    assert {"rotisserie", "bbq", "smoked", "seared"} <= _COOKED_MARKERS

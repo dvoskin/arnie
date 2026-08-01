@@ -87,10 +87,19 @@ def normalize_food_logging_mode(value, current: str = "moderate") -> str:
     return "moderate"
 
 
-def normalize_name(name: str) -> str:
+def normalize_name(name: str, split_separators: bool = False) -> str:
     n = (name or "").lower().strip()
     n = re.sub(r"\b(\d+\s*(g|oz|cups?|tbsp|tsp|ml|servings?|slices?|pieces?))\b", "", n)
-    n = re.sub(r"[^a-z0-9 ]", "", n).strip()
+    if split_separators:
+        # V2 tokenisation: a separator is a word BOUNDARY, not deletable. The
+        # legacy branch strips punctuation in place, gluing "steak/roast" into
+        # "steakroast" and "grass-fed" into "grassfed" — so USDA's own "ribeye
+        # steak/roast" loses the token "steak" and its real ribeye row fell below
+        # the identity gate. Splitting recovers it. Kept behind the flag so v1's
+        # token sets are byte-identical.
+        n = re.sub(r"[^a-z0-9]+", " ", n).strip()
+    else:
+        n = re.sub(r"[^a-z0-9 ]", "", n).strip()
     return re.sub(r"\s+", " ", n)
 
 
@@ -207,6 +216,35 @@ _PREP_TOKENS = frozenset({
     "poached", "smoked", "cured", "fresh", "frozen",
 })
 
+# SPECIES is identity. A bare meat query implies its default animal; a candidate
+# naming a DIFFERENT animal is a different food however well its cut and prep line
+# up — "ribeye steak" must not seat "Game meat, bison, ribeye". Only penalised
+# when the animal is NOT in the query (so "bison ribeye" the query still matches
+# its bison row, and "beef", the default, is never penalised).
+# NB: not "game" — it is USDA's CATEGORY prefix ("Game meat, bison, ..."), not a
+# species, so it fires falsely on a query that names the animal ("bison ribeye").
+# The specific animals below already catch every game row that matters.
+_SPECIES_TOKENS = frozenset({
+    "bison", "buffalo", "venison", "elk", "deer", "goat", "mutton",
+    "lamb", "veal", "pork", "chicken", "turkey", "duck", "ostrich", "emu",
+    "rabbit", "boar", "horse", "kangaroo",
+})
+
+# CUT NARROWERS: a sub-cut that is not the cut asked for. "ribeye cap" (spinalis)
+# and "sirloin cap" (picanha) are distinct cuts, leaner and priced differently,
+# from the "ribeye"/"sirloin" a person means. Penalised like a species mismatch.
+_CUT_NARROWERS = frozenset({"cap", "tip"})
+
+# Words that mean a row is already COOKED. One list, read by the matcher (prefer
+# a cooked row) and by analyze (don't apply cooking-yield to it). It must be
+# COMPLETE: "rotisserie" and "bbq" were missing, so USDA's cooked rotisserie
+# thigh read as raw and took the raw->cooked yield a second time (+35%).
+_COOKED_MARKERS = frozenset({
+    "cooked", "grilled", "roasted", "broiled", "braised", "baked", "fried",
+    "rotisserie", "bbq", "barbecue", "barbecued", "smoked", "seared",
+    "sauteed", "steamed", "boiled", "poached", "stewed", "griddled",
+})
+
 
 def best_candidate(query: str, candidates: list[dict]) -> tuple[Optional[dict], str]:
     """
@@ -230,7 +268,7 @@ def best_candidate(query: str, candidates: list[dict]) -> tuple[Optional[dict], 
     if not candidates:
         return None, "estimated"
     v2 = _nutrition_accuracy_v2()
-    q = normalize_name(query)
+    q = normalize_name(query, split_separators=v2)
     qa = set(q.split())
     # Identity tokens = the food nouns, prep words removed. The v2 gate measures
     # coverage of THESE, so a prep word in the query ("grilled") that USDA spells
@@ -246,9 +284,15 @@ def best_candidate(query: str, candidates: list[dict]) -> tuple[Optional[dict], 
     if v2 and "raw" not in qa:
         from core.portions import cooking_yield as _cy
         _cooked_pref = _cy(query) > 1.0
+    # As-eaten over trimmed (v2): a person eats the thigh with its skin and the
+    # steak with its fat unless they say otherwise, so "meat and skin" / "lean
+    # and fat" is the right basis and "meat only" / "lean only" / "skinless" is a
+    # reference sample, not the meal — the same "as logged" principle as cooked-
+    # default. Suppressed when the query itself asks for the trimmed form.
+    _as_eaten = v2 and not (qa & {"skinless", "lean", "trimmed"})
     best, best_score, best_overlap = None, -999.0, 0.0
     for c in candidates:
-        d = normalize_name(c.get("description", ""))
+        d = normalize_name(c.get("description", ""), split_separators=v2)
         da = set(d.split())
         overlap = len(qa & da) / max(1, len(qa))
         id_overlap = len(qa_id & da) / max(1, len(qa_id))
@@ -258,11 +302,34 @@ def best_candidate(query: str, candidates: list[dict]) -> tuple[Optional[dict], 
         for w in _FORM_PENALTY:
             if w in da and w not in qa:
                 score -= 1.2                                # processed/composite form not asked for
+        if v2:
+            # IDENTITY BEFORE PREPARATION, sized from the constants already here.
+            # A different ANIMAL is not the food: 2.5 drops even a perfect-overlap
+            # cooked row (3.0 + 0.6) below the 1.2 trust floor, so a lone bison row
+            # for "ribeye" falls back to an estimate rather than logging a bison
+            # density for beef. A different SUB-CUT is the same animal, so 1.5 —
+            # above the cooked/raw swing (±0.6), so a cooked ribeye-CAP never
+            # outranks the raw ribeye that cooking-yield corrects, but low enough
+            # that a cap still seats if it is the only ribeye on the shelf. Counted
+            # once per axis — "game meat, bison" is one wrong species, not three.
+            if any(w in da and w not in qa for w in _SPECIES_TOKENS):
+                score -= 2.5
+            if any(w in da and w not in qa for w in _CUT_NARROWERS):
+                score -= 1.5
         if _cooked_pref:
-            if any(w in da for w in ("cooked", "grilled", "roasted", "broiled", "braised")):
+            if da & _COOKED_MARKERS:
                 score += 0.6                                # a cooked row for a cooked food
             if "raw" in da:
                 score -= 0.6                                # avoid the raw reference row
+        if _as_eaten:
+            # A secondary preference (0.4 < the 0.6 cooked swing): the eaten form
+            # over the trimmed reference. Phrase checks on the normalized string —
+            # "meat and skin" is as-eaten, "meat only" the lab sample.
+            if "meat and skin" in d or "lean and fat" in d:
+                score += 0.4
+            if ("meat only" in d or "lean only" in d or "skinless" in d
+                    or "skin removed" in d):
+                score -= 0.4
         if score > best_score:
             best, best_score, best_overlap = c, score, id_overlap
     conf = score_match(query, best.get("description", "")) if best else "estimated"
@@ -755,9 +822,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         if _v2 and src is usda_candidate and cal100:
             from core.portions import cooking_yield as _cook_yield
             _desc = (src.get("description") or "").lower()
-            _is_raw = "raw" in _desc or not any(
-                w in _desc for w in ("cooked", "grilled", "roasted", "broiled",
-                                     "braised", "baked", "fried"))
+            _is_raw = "raw" in _desc or not any(w in _desc for w in _COOKED_MARKERS)
             _y = _cook_yield(name)
             if _is_raw and _y > 1.0:
                 per100 = {k: (round(v * _y, 3) if isinstance(v, (int, float)) else v)
