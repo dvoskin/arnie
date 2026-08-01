@@ -49,11 +49,66 @@ MARKERS = {
 #: listed so the count is honest, and excluded from the launch-blocking set —
 #: the directive's own rule that low-risk internal operations must not block a
 #: launch once their behaviour is documented.
-NON_USER_STATE = (
-    "/health", "/webhook", "/stripe-webhook", "/disconnect", "/session",
-    "/link", "/link-code", "/exchange-pairing-code", "/apns-token",
-    "/onboarding/complete", "/preregister", "/imessage",
-)
+#:
+#: FULL PATHS, MATCHED EXACTLY. These used to be path FRAGMENTS tested with
+#: `p in route`, which was survivable only while the routes it matched against
+#: were the bare decorator arguments. Against a real path the fragment
+#: `"/health"` silently swallowed `/api/v1/health/snapshot` and
+#: `/api/v1/health/weights` — the HealthKit writes that record the user's BODY
+#: WEIGHT, and two of the surfaces this migration exists to fix. An inventory
+#: that quietly drops user-data writes out of the launch-blocking set is the
+#: overstated-completeness failure this file's docstring warns about, so the
+#: match is exact and every entry names one route.
+#:
+#: `/health` itself never appears here: the liveness endpoint is a GET, and
+#: this inventory only walks mutating verbs.
+NON_USER_STATE = frozenset((
+    "/api/preregister",
+    "/api/v1/auth/exchange-pairing-code",
+    "/api/v1/auth/link",
+    "/api/v1/auth/link-code",
+    "/api/v1/auth/session",
+    "/api/v1/devices/apns-token",
+    "/api/v1/devices/apns-token/{token}",
+    "/api/v1/onboarding/complete",
+    "/api/v1/oura/disconnect",
+    "/api/v1/whoop/disconnect",
+    "/imessage",
+    "/imessage/start",
+    "/stripe-webhook",
+    # Chat ingress. Mutates plenty, but through the conversational lane, which
+    # carries the contract at `/chat` rather than at the transport edge.
+    "/webhook/{token}",
+))
+
+
+def _router_prefixes(tree) -> dict:
+    """`{variable_name: prefix}` for every APIRouter declared in the module.
+
+    The decorator argument is only the tail of the path: `api/water.py` mounts
+    at `/api/v1/water` and declares `@router.post("")`, so a naive read
+    reported that surface as route `""`. Three of them collapsed onto one
+    blank label, and `/{entry_id}` appeared four times across different files
+    — which makes the inventory unusable as a scoreboard exactly when it
+    starts having rows to track. The prefix is part of the route's identity.
+    """
+    out = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        call = node.value
+        if not (isinstance(call, ast.Call)
+                and getattr(call.func, "id", getattr(call.func, "attr", ""))
+                == "APIRouter"):
+            continue
+        prefix = ""
+        for kw in call.keywords:
+            if kw.arg == "prefix" and isinstance(kw.value, ast.Constant):
+                prefix = str(kw.value.value)
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                out[target.id] = prefix
+    return out
 
 
 def handlers(path: pathlib.Path):
@@ -62,6 +117,7 @@ def handlers(path: pathlib.Path):
         tree = ast.parse(path.read_text())
     except SyntaxError:
         return
+    prefixes = _router_prefixes(tree)
     for node in ast.walk(tree):
         if not isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)):
             continue
@@ -73,7 +129,11 @@ def handlers(path: pathlib.Path):
             route = ""
             if dec.args and isinstance(dec.args[0], ast.Constant):
                 route = str(dec.args[0].value)
-            yield route, dec.func.attr, node
+            # `@router.post(...)` carries its router's mount prefix;
+            # `@app.post(...)` already spells the full path.
+            holder = getattr(dec.func.value, "id", "")
+            route = prefixes.get(holder, "") + route
+            yield route or "/", dec.func.attr, node
 
 
 def _local_defs(tree) -> dict:
@@ -141,8 +201,7 @@ def main() -> int:
         for route, method, node in handlers(path):
             found = classify(effective_source(node, lines, local))
             complete = all(v is True for v in found.values())
-            user_state = not any(route.startswith(p) or p in route
-                                 for p in NON_USER_STATE)
+            user_state = route not in NON_USER_STATE
             rows.append({
                 "surface": f"{path.relative_to(ROOT)}::{node.name}",
                 "route": route,
