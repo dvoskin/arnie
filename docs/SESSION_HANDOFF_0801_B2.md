@@ -200,3 +200,64 @@ leak and the keyless-collision trap are both real past incidents.
   `execute_tool_calls`, `turn.audit`) for guarantees that live below the
   handler. Each was VERIFIED before being credited, and the verification is
   written next to the marker. Do not add one without doing the same.
+
+---
+
+## Getting this to main safely
+
+**What makes this lower-risk than its size suggests (40 files, +5.9k lines):**
+
+- **No schema change.** `git diff origin/main..HEAD` touches no `db/models.py`
+  and adds no migration; `alembic heads` is a single `metrics001`. Nothing has
+  to run before the code, so there is no migration/deploy ordering to get
+  wrong — which is the failure mode that bit the turn-footer deploy.
+- **Shipped clients send no `Idempotency-Key`, and a keyless request behaves
+  exactly as it did.** `claim_request` returns an empty claim with no key: no
+  dedup, no claim row, nothing threaded into the write. That is the whole
+  backward-compatibility argument, so it is now asserted rather than reasoned
+  about — `tests/test_the_shipped_clients_are_unaffected.py` pins that a
+  keyless write takes no claim, two keyless pours both land, a keyless edit
+  never 409s, the write is still traceable via the hash fallback, and no
+  response field was removed (only `turn_id` added, which Codable ignores).
+- **The dedup only switches on when a client opts in** by sending the header.
+  iOS and the dashboard have to be changed deliberately for behaviour to
+  change at all.
+- **Roughly 2,000 of those lines are tests.**
+
+**Order of operations:**
+
+1. Open the PR. `--check --strict` runs in CI *before* the suite, so a policy
+   violation fails fast and cheap.
+2. **Read the CI run, do not just look at the tick.** CI runs against real
+   Postgres; this branch's concurrency tests were written on sqlite behind a
+   StaticPool, where two sessions share one connection. The row/event
+   invariants must hold on both, but the LOSING delivery's failure mode
+   legitimately differs (409 vs a driver error), and Postgres is the backend
+   that decides it.
+3. Merge to main. **Merging is not deploying** — deploys are manual in Render.
+4. `python scripts/release_check.py <sha>` before deploying, then `/health`
+   after.
+
+**Deploy this on its own.** Production is on `fca59a4`; main is already ~13
+commits ahead from the nutrition V2 merge (`eef4953`), which is itself
+undeployed. Shipping both at once means any regression has two candidate
+causes and the bisect is over a merge commit. The nutrition work is flag-gated
+(`NUTRITION_ACCURACY_V2` default off) and this is not, so ship them
+separately in whichever order — just not together.
+
+**What to watch after deploy:**
+
+- `event=idempotency_unavailable` in the logs. `claim_request` degrades to NO
+  duplicate protection if the `idempotency_records` table is missing, rather
+  than failing the user's write. It is present (`idem001`), but many more
+  routes take claims now, so this line firing means the degradation is live
+  and silent.
+- `event=idempotency_conflict` / `request_in_progress` (409s). Should be ~zero
+  until a client starts sending the header. A spike means a client is reusing
+  one key across different payloads.
+- `POST /api/exercise/log` should stop 500ing. It has never worked; if it is
+  still erroring, the fix did not reach production.
+
+**If it goes wrong:** nothing here is a data migration, so a revert is a
+straight redeploy of the previous SHA. The ledger events and idempotency rows
+written in the meantime are additive and harmless to leave behind.
