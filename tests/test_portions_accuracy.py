@@ -3,7 +3,7 @@
 These are the named, auditable tables that replace three silent failures —
 grams from the model's low guess, a raw density for a cooked food, and an added
 fat nobody counted. Pure functions, no flag: the flag gates whether analyze()
-CONSULTS them, tested by scripts/eval_accuracy.py; here we pin the tables.
+CONSULTS them, tested by scripts/eval_resolver.py; here we pin the tables.
 """
 from core.portions import portion_prior, cooking_yield, added_fat_calories
 

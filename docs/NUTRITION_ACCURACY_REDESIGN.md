@@ -2,7 +2,7 @@
 
 **Status: Parts 1-5 landed + matcher identity pass, 2026-08-01.** Branch
 `dvoskin/nutrition-accuracy-redesign`. Behind `NUTRITION_ACCURACY_V2` (default
-off). Gate `scripts/eval_accuracy.py` (committed-number axes): **4/11 → 9/11**,
+off). Gate `scripts/eval_resolver.py` (committed-number axes): **4/11 → 9/11**,
 honest passes — skirt steak −41% → −1%, almonds −26% → 0%, sirloin −20% → −4%,
 **ribeye −39% → −3%**, **grilled thigh +15% → +8%**, **fried thigh −19% → +2%**.
 The two rows still red are BY CONSTRUCTION, not density bugs: `fat-steak-butter`
@@ -81,7 +81,7 @@ numbers — tests in `test_food_matcher_v2.py`:**
 
 A committed calorie is `PORTION(g) x DENSITY(per-100g)`, and DENSITY is
 `base food x preparation x added fat`. Today each factor is estimated badly, and
-the errors compound in one direction — down. Measured by `eval_accuracy` on the
+the errors compound in one direction — down. Measured by `eval_resolver` on the
 real committed path (`_analyze_food`), every un-weighed whole food undercounts
 20-47%. This is not a per-food bug; it is four estimators with no ground truth
 and a pile of guards patching their symptoms one incident at a time.
@@ -148,15 +148,35 @@ Each part reaches a capability the system lacks, and DELETES a guard that patche
 its absence: the length penalty (a heuristic) goes; the disagreement-demotion and
 profile-flip guards exist because the matcher seats wrong rows — a matcher that
 seats the RIGHT row needs them less. The measure of success is the guard count
-falling while `eval_accuracy` rises.
+falling while `eval_resolver` rises.
 
-## The gate
+## The gate — TWO evals, deliberately separate (2026-08-01)
 
-`scripts/eval_accuracy.py` — committed number vs ground truth, decomposed into
-portion / density, plus preparation-pair capture. Each capability names the rows
-it must turn green (below). `NUTRITION_ACCURACY_V2` flips on only when the eval,
-run on the full fixture, shows the un-weighed / preparation / added-fat axes
-passing without regressing control or branded.
+The two systems are judged apart, so a clarification success is never scored as a
+resolver failure and the resolver is never distorted to pass a conversational
+test (the butter-steak lesson):
+
+* **`scripts/eval_resolver.py`** — given a FULLY-SPECIFIED food, is the committed
+  number right? Runs `_analyze_food`, decomposes portion / density, calls out
+  preparation pairs. Every case states everything the resolver needs; anything
+  that can only be learned by ASKING is not here. **9/10, scored by category.**
+* **`scripts/eval_conversation.py`** — does the FLOW detect uncertainty, ask the
+  right question, apply the answer, and avoid unnecessary questions? Drives the
+  real turn with a mocked interpreter. **6/6** on detect / right-question /
+  no-over-ask; apply / corrected-commit await the two-turn harness.
+
+Both **score by category, not one aggregate**, and both print a COVERAGE report
+naming the release categories still empty — the current cases are development
+controls, not broad validation. Populating the empty categories (branded
+multipacks, restaurants, raw-vs-cooked, cooking-fat-stated, repeated personal
+foods; and the conversational apply/partial/correction harnesses) needs real
+captures + sourced ground truth, NOT fabricated numbers.
+
+`NUTRITION_ACCURACY_V2` flips on only when the resolver eval passes its populated
+categories without regressing control/branded AND the conversational eval's
+detect/no-over-ask hold — see the readiness posture: canary, not global.
+
+Legacy part→row map (pre-split, kept for reference):
 
 | part | rows that must go green |
 |---|---|
@@ -168,7 +188,7 @@ passing without regressing control or branded.
 
 ## Staged rollout (each stage its own commit, eval-gated)
 
-1. Land `eval_accuracy` + record/replay fixture (this branch). Complete the
+1. Land `eval_resolver` + record/replay fixture (this branch). Complete the
    fixture with `--record` on the prod USDA key.
 2. Part 1 (identity/matcher) — offline-verifiable via `best_candidate`.
 3. Part 2 (cooked-default) + Part 4 (portion prior) — table + selection.
@@ -253,11 +273,11 @@ The change, behind `NUTRITION_ACCURACY_V2`:
 
 Why its own session: it reorders the clarify pipeline inside a mature,
 incident-guarded subsystem and is NOT scored by a single committed number, so
-`eval_accuracy` can't gate it the way it gated Parts 1-4 — it needs its own
+`eval_resolver` can't gate it the way it gated Parts 1-4 — it needs its own
 conversation-level tests. Land it alone, not on this branch's tail.
 
 ## What needs Danny
 
-Complete the eval fixture: `USDA_API_KEY=<prod> python scripts/eval_accuracy.py
+Complete the eval fixture: `USDA_API_KEY=<prod> python scripts/eval_resolver.py
 --record` (once, on Render or with the real key). Everything else is code + the
 curated tables above, which are auditable and correctable.

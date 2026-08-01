@@ -200,7 +200,7 @@ _FORM_PENALTY = (
 
 def _nutrition_accuracy_v2() -> bool:
     """The unified accuracy capability (docs/NUTRITION_ACCURACY_REDESIGN.md).
-    Default OFF until scripts/eval_accuracy.py passes on the full fixture."""
+    Default OFF until scripts/eval_resolver.py passes on the full fixture."""
     import os
     return os.getenv("NUTRITION_ACCURACY_V2", "").lower() in ("1", "true", "yes")
 
