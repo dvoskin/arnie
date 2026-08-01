@@ -2172,11 +2172,19 @@ async def resolve_pending_questions_for_logged_items(
 # ── Food/Exercise edit + delete (with auto totals recalc) ─────────────────────
 
 async def update_food_entry(
-    db: AsyncSession, entry_id: int, user_id: int, **changes
+    db: AsyncSession, entry_id: int, user_id: int,
+    ledger_source: Optional[str] = None, claim_id: Optional[int] = None,
+    **changes
 ) -> Optional[FoodEntry]:
     """
     Update a food entry and adjust the daily log totals by the delta.
     Returns None if entry doesn't exist or doesn't belong to user_id.
+
+    With `ledger_source`, the `updated` event and the caller's idempotency
+    claim commit in THIS transaction — see `add_food_entry` for the crash
+    window that closes. The edit surfaces wrote the event in a second commit,
+    so a process dying in between left a rescaled entry whose original macros
+    existed nowhere.
     """
     result = await db.execute(select(FoodEntry).where(FoodEntry.id == entry_id))
     entry = result.scalar_one_or_none()
@@ -2187,6 +2195,11 @@ async def update_food_entry(
     log = log_result.scalar_one()
     if log.user_id != user_id:
         return None
+
+    # Captured before any setattr below. A portion edit rescales fiber, sugar,
+    # sodium and the micro panel too, so "what it was" is more than the four
+    # macros the client sent.
+    before_state = _entry_event_payload(entry) if ledger_source is not None else None
 
     old_log_id = entry.daily_log_id
     # Day move: reassigning the entry to another date's log (passed as new_daily_log_id).
@@ -2254,12 +2267,30 @@ async def update_food_entry(
     await recompute_log_totals(db, entry.daily_log_id)
     if moved:
         await recompute_log_totals(db, old_log_id)
+    if ledger_source is not None:
+        await record_ledger_event(
+            db, user_id=user_id, event_type="updated", domain="food",
+            entry_id=entry.id, daily_log_id=entry.daily_log_id,
+            # `before` is the key `core.ledger_undo._invert` reads to roll a
+            # food edit back.
+            payload={"changes": {k: v for k, v in changes.items()
+                                 if v is not None},
+                     "before": before_state},
+            source=ledger_source, commit=False)
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, entry.id, entry.daily_log_id)
     await db.commit()
     await db.refresh(entry)
     return entry
 
 
-async def delete_food_entry(db: AsyncSession, entry_id: int, user_id: int) -> bool:
+async def delete_food_entry(db: AsyncSession, entry_id: int, user_id: int,
+                            ledger_source: Optional[str] = None,
+                            claim_id: Optional[int] = None) -> bool:
+    """Delete a food row, and — with `ledger_source` — its `deleted` event and
+    the caller's claim, in ONE transaction. The payload is read off the row
+    while it exists: `ledger_undo._restore_plan` rebuilds the entry from it,
+    so a `deleted` event without it is a delete that cannot be taken back."""
     result = await db.execute(select(FoodEntry).where(FoodEntry.id == entry_id))
     entry = result.scalar_one_or_none()
     if not entry:
@@ -2270,10 +2301,22 @@ async def delete_food_entry(db: AsyncSession, entry_id: int, user_id: int) -> bo
         return False
 
     daily_log_id = entry.daily_log_id
+    # `daily_log_id` rides in the PAYLOAD, not just the event column: restore
+    # rebuilds the row from the payload alone, and without it a food deleted
+    # from Tuesday comes back on whatever day the restore happens to run.
+    before_state = ({**_entry_event_payload(entry), "daily_log_id": daily_log_id}
+                    if ledger_source is not None else None)
     await db.delete(entry)
     await db.flush()
     # Totals are derived from entries — recompute so they can never drift.
     await recompute_log_totals(db, daily_log_id)
+    if ledger_source is not None:
+        await record_ledger_event(
+            db, user_id=user_id, event_type="deleted", domain="food",
+            entry_id=entry_id, daily_log_id=daily_log_id,
+            payload=before_state, source=ledger_source, commit=False)
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, entry_id, daily_log_id)
     await db.commit()
     return True
 
@@ -2370,7 +2413,10 @@ async def delete_exercise_entry(db: AsyncSession, entry_id: int, user_id: int,
     daily_log_id = entry.daily_log_id
     # Read while the row exists. A `deleted` event with no payload names
     # something that can no longer be described, so it cannot be restored.
-    before_state = _entry_event_payload(entry) if ledger_source is not None else None
+    # `daily_log_id` is part of it for the same reason as food: restore reads
+    # the payload, and without it the set returns on the wrong day.
+    before_state = ({**_entry_event_payload(entry), "daily_log_id": daily_log_id}
+                    if ledger_source is not None else None)
     # Auto-imported rows (apple_health replace-on-sync, whoop ref-upsert) would
     # resurrect on the next sync — tombstone the ref so a delete is FINAL.
     if entry.source_ref:
