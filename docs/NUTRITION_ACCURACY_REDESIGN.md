@@ -121,6 +121,43 @@ passing without regressing control or branded.
 6. Flip `NUTRITION_ACCURACY_V2` on after the full eval passes; delete the guards
    the new path makes redundant.
 
+## Part 5 — resolve-then-ask (the focused-session plan)
+
+Scoped 2026-07-31. The asker already EXISTS and is mature — do not rebuild it:
+`skills.nutrition.materiality` (calorie-swing vs % of day's target),
+`skills.nutrition.ambiguity` (`AmbiguityType.PREPARATION`, `CONSUMED_QUANTITY`,
+`build_ambiguity`), `core/food_pipeline.derive_variant_ambiguity(items, spreads)`,
+and food_turn's prompt already teaches a CUT ask ("sirloin vs ribeye, ~100 cal").
+Variant/identity spreads are already fetched from real candidates (Phase 4).
+
+The gap is ONE thing: the ask-materiality decision is scored on the
+INTERPRETER'S GUESSED calories, BEFORE the lookup — `fetch_candidates`' own
+docstring: "the ask is settled before anything is resolved… measured at 8x,
+nothing anywhere re-checking." So for an un-weighed whole food the swing looks
+small against the guess and no prep/portion question fires, then enrichment moves
+the number out from under the (already-made) decision.
+
+The change, behind `NUTRITION_ACCURACY_V2`:
+1. Feed the RESOLVED spread to materiality — the raw candidate set from
+   `fetch_candidates` (which now runs before `plan_turn`) already knows the
+   cooked-vs-raw, lean-vs-fat, cut span. Score "worth asking?" against THAT
+   span, not the guess.
+2. Enable the two dimensions that never fire for a bare whole food:
+   `CONSUMED_QUANTITY` when there's no stated mass and the portion prior is
+   uncertain, and `PREPARATION` / added-fat when the candidate span is wide
+   (skirt steak's raw/cooked, a steak's plain/buttered).
+3. Apply the answer through the machinery Parts 2-4 already built: a prep answer
+   selects the cooked/method row + yield; an added-fat answer adds the term; a
+   portion answer overrides the prior.
+4. Add a post-resolution re-check: if the committed number moved > Nx from the
+   number the ask decision saw, that is the "8x, nothing re-checking" hole —
+   flag or re-ask.
+
+Why its own session: it reorders the clarify pipeline inside a mature,
+incident-guarded subsystem and is NOT scored by a single committed number, so
+`eval_accuracy` can't gate it the way it gated Parts 1-4 — it needs its own
+conversation-level tests. Land it alone, not on this branch's tail.
+
 ## What needs Danny
 
 Complete the eval fixture: `USDA_API_KEY=<prod> python scripts/eval_accuracy.py
