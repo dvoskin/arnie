@@ -289,11 +289,6 @@ async def main() -> int:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     async with AsyncSessionLocal() as db:
-        user = models.User(telegram_id="eval-accuracy", name="Eval",
-                           onboarding_completed=True)
-        db.add(user)
-        await db.commit()
-
         rows = []
         for i, c in enumerate(cases):
             if i and args.live:
@@ -302,6 +297,15 @@ async def main() -> int:
                 # The fixture replay is offline, so it needs no wait.
                 await asyncio.sleep(float(os.getenv("EVAL_ACCURACY_DELAY", "2")))
             try:
+                # A FRESH user per case: `_analyze_food` re-caches a confident hit
+                # into user_food_match, so a shared user turns the second log of a
+                # food ("sirloin steak" plain, then in butter) into a MEMORY hit —
+                # contaminating the resolver measurement with a prior case. Each
+                # case must resolve from scratch.
+                user = models.User(telegram_id=f"eval-{i}", name="Eval",
+                                   onboarding_completed=True)
+                db.add(user)
+                await db.commit()
                 fa = await committed(db, user, c)
                 rows.append(decompose(c, fa))
             except Exception as e:

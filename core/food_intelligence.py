@@ -196,6 +196,18 @@ def _nutrition_accuracy_v2() -> bool:
     return os.getenv("NUTRITION_ACCURACY_V2", "").lower() in ("1", "true", "yes")
 
 
+# Preparation / cooking-method words. They describe HOW a food was made, not
+# WHAT it is, so the identity gate ignores them: "grilled chicken thigh" is the
+# same food as USDA's "chicken thigh, cooked, roasted" — the prep is handled by
+# cooking-yield and the prep logic, not by demanding "grilled" appear in USDA's
+# text (it says "roasted", and the mismatch was dropping coverage below the gate).
+_PREP_TOKENS = frozenset({
+    "raw", "cooked", "grilled", "fried", "roasted", "baked", "broiled",
+    "braised", "steamed", "boiled", "sauteed", "seared", "pan", "grill",
+    "poached", "smoked", "cured", "fresh", "frozen",
+})
+
+
 def best_candidate(query: str, candidates: list[dict]) -> tuple[Optional[dict], str]:
     """
     Pick the most canonical USDA match for a query and return (candidate, confidence).
@@ -220,24 +232,45 @@ def best_candidate(query: str, candidates: list[dict]) -> tuple[Optional[dict], 
     v2 = _nutrition_accuracy_v2()
     q = normalize_name(query)
     qa = set(q.split())
+    # Identity tokens = the food nouns, prep words removed. The v2 gate measures
+    # coverage of THESE, so a prep word in the query ("grilled") that USDA spells
+    # differently ("roasted") can't drop a real match below the gate.
+    qa_id = (qa - _PREP_TOKENS) or qa
+    # Cooked-by-default (v2, Part 2a): only for foods normally eaten cooked (a
+    # non-1.0 cooking yield — meats/fish, never nuts or salad) and only when the
+    # user didn't say "raw". Prefer a cooked row so the density is right at the
+    # source, and cooking-yield only has to rescue foods USDA carries raw-only
+    # (skirt steak). Without this, yield was applied to a raw row when a cooked
+    # one existed, and overshot.
+    _cooked_pref = False
+    if v2 and "raw" not in qa:
+        from core.portions import cooking_yield as _cy
+        _cooked_pref = _cy(query) > 1.0
     best, best_score, best_overlap = None, -999.0, 0.0
     for c in candidates:
         d = normalize_name(c.get("description", ""))
         da = set(d.split())
         overlap = len(qa & da) / max(1, len(qa))
+        id_overlap = len(qa_id & da) / max(1, len(qa_id))
         score = overlap * 3.0
         # Length term: a tie-break in v2 (0.02), the rejection lever in v1 (0.15).
         score -= (0.02 if v2 else 0.15) * max(0, len(da) - len(qa))
         for w in _FORM_PENALTY:
             if w in da and w not in qa:
                 score -= 1.2                                # processed/composite form not asked for
+        if _cooked_pref:
+            if any(w in da for w in ("cooked", "grilled", "roasted", "broiled", "braised")):
+                score += 0.6                                # a cooked row for a cooked food
+            if "raw" in da:
+                score -= 0.6                                # avoid the raw reference row
         if score > best_score:
-            best, best_score, best_overlap = c, score, overlap
+            best, best_score, best_overlap = c, score, id_overlap
     conf = score_match(query, best.get("description", "")) if best else "estimated"
     if v2:
-        # Identity gate: the query must be (nearly) fully covered — a descriptive
-        # row for the SAME food — AND survive the composite penalty. A missing
-        # query token means a different food; a tanked score means a composite.
+        # Identity gate: the food nouns must be (nearly) fully covered — a
+        # descriptive row for the SAME food — AND survive the composite penalty.
+        # A missing IDENTITY token means a different food; a tanked score means a
+        # composite. Prep words never gate (see _PREP_TOKENS).
         if best_overlap < 0.75 or best_score < 1.2:
             return None, "estimated"
         return best, conf
@@ -703,6 +736,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         "branded_exact" if src is off_candidate else
         "manufacturer" if src is web_candidate else "")
     computed_forward = False
+    _v2 = _nutrition_accuracy_v2()
     if src is not None:
         per100 = src.get("per100g") or {
             "calories": src.get("cal_100"), "protein": src.get("protein_100"),
@@ -712,6 +746,23 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         }
         cal100 = per100.get("calories")
         fdc_id = src.get("fdc_id")
+        # COOKING YIELD (v2, Part 2b): USDA often carries only a RAW reference
+        # row for a cut eaten cooked (all 8 "skirt steak" rows are raw). Cooking
+        # drives off water, so per-100g calories rise; apply the family yield to
+        # the density when the seated row reads raw and no cooked row was
+        # available. A concentration factor with provenance, not a blanket
+        # multiplier — it fires only on a raw row for a normally-cooked food.
+        if _v2 and src is usda_candidate and cal100:
+            from core.portions import cooking_yield as _cook_yield
+            _desc = (src.get("description") or "").lower()
+            _is_raw = "raw" in _desc or not any(
+                w in _desc for w in ("cooked", "grilled", "roasted", "broiled",
+                                     "braised", "baked", "fried"))
+            _y = _cook_yield(name)
+            if _is_raw and _y > 1.0:
+                per100 = {k: (round(v * _y, 3) if isinstance(v, (int, float)) else v)
+                          for k, v in per100.items()}
+                cal100 = per100.get("calories")
         # Identity-based so the label matches the winner under the new priority.
         if src is memory_match:
             source = "memory"
@@ -748,6 +799,17 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         if not _mg:
             _mg = _mass_from_serving_panel(quantity, src, name)
             _from_panel = _mg is not None
+        # PORTION PRIOR (v2, Part 3): an un-weighed whole food with no serving
+        # panel had its grams backed out of the model's ~19%-low calorie guess.
+        # A typical as-eaten serving is a better prior than that guess — use it,
+        # so the portion stops inheriting the undercount. Only when we still have
+        # no mass, so a stated weight or a label serving always wins.
+        _from_prior = False
+        if _v2 and not _mg:
+            from core.portions import portion_prior as _portion_prior
+            _pp = _portion_prior(name)
+            if _pp:
+                _mg, _from_prior = _pp, True
         # USDA text-matches must be NEAR-IDENTICAL to override the model (Danny
         # 2026-07-23: "don't use USDA unless there's an almost identical name
         # match") — a "likely" 0.6-token-overlap hit is exactly the wrong-cousin
@@ -757,7 +819,13 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         # calories) and stays eligible for the web-label lane.
         _trustworthy = macros_from_source and (
             confidence in ("exact", "user-confirmed")
-            or (confidence == "likely" and src is not usda_candidate))
+            or (confidence == "likely" and src is not usda_candidate)
+            # v2 (Part 1/2): best_candidate's identity gate already required full
+            # query coverage before seating a USDA row, so a covered "likely"
+            # USDA match is trustworthy for the density. The legacy clause
+            # demanded exact name equality — which rejected every verbose USDA
+            # whole-food row and let the guess stand.
+            or (_v2 and src is usda_candidate))
         # ── N SERVINGS OF A PRODUCT THAT PUBLISHES ITS SERVING ──────────────
         #
         # Checked FIRST, because when it applies there is nothing to compute.
@@ -1117,10 +1185,31 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     except Exception as _se:
         logger.warning(f"sanity check skipped for {name!r}: {_se}")
 
+    # ADDED FAT / MARINADE (v2, Part 4): oil, butter, marinade, dressing NAMED in
+    # the food are not in any base-food row and USDA never carries them. Add an
+    # explicit, quantified term (and its fat grams) to the committed calories.
+    # The phrase keys target ADDITIONS ("in butter", "with ranch"), not cooking
+    # methods, so a base row that already includes the fat is not double-counted.
+    _added_fat_note = ""
+    if _v2 and source != "estimate":
+        # Only add on a SEATED base density: the base row is the plain food, so a
+        # named fat is genuinely on top. On the estimate path the model's guess
+        # already folds the whole dish in, and adding again double-counts. The
+        # common case — butter/marinade NOT in the food name at all — is Part 5's
+        # job to ELICIT; this only catches a fat the name happens to state.
+        from core.portions import added_fat_calories as _added_fat
+        _afc, _afl = _added_fat(name)
+        if _afc:
+            cal = round((cal or 0) + _afc)
+            fat = round((fat or 0) + _afc / 9.0, 1)
+            _added_fat_note = f"added {_afl} (+{_afc} cal)"
+
     pd, satiety, quality = _derive(cal, protein, carbs, fat, fiber, sugar)
 
     # Build the coaching note the LLM uses to actually coach (not just acknowledge)
     bits = []
+    if _added_fat_note:
+        bits.append(_added_fat_note)
     if pd is not None:
         bits.append(f"protein density {pd:.0f}% of cals ({'strong' if pd>=30 else 'moderate' if pd>=18 else 'low'})")
     if fiber is not None:

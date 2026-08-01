@@ -177,3 +177,71 @@ def portion_check(food_name: str, quantity: str,
                 f"'{quantity}' is typically ~{exp:.0f}g — double-check the "
                 f"amount or calorie estimate")
     return None
+
+
+# ── V2 accuracy capability (NUTRITION_ACCURACY_V2) ───────────────────────────
+# Portion PRIOR, cooking YIELD, added FAT. Three named, auditable tables that
+# replace three silent failures: grams from the model's low guess, a raw density
+# for a cooked food, and an added fat nobody counted. Family-level medians, never
+# per-food fudge; longest-keyword-wins like the tables above.
+
+# Typical AS-EATEN serving mass (g) for a bare food name with no stated amount.
+SERVING_PRIOR_G = {
+    "skirt steak": 200, "ribeye": 225, "sirloin": 225, "steak": 200,
+    "chicken breast": 170, "chicken thigh": 150, "chicken": 140,
+    "salmon": 170, "tuna": 140, "shrimp": 85, "pork chop": 170,
+    "ground beef": 113, "turkey": 120, "fish": 150,
+    "almond": 28, "nut": 28, "peanut": 28, "walnut": 28, "cashew": 28,
+    "rice": 200, "pasta": 200, "quinoa": 185, "potato": 173, "bean": 130,
+    "salad": 200, "broccoli": 90, "vegetable": 90,
+    "egg": 100, "oatmeal": 234, "yogurt": 170, "cheese": 30,
+}
+
+# Raw -> cooked per-100g CONCENTRATION (cooking drives off water). Applied only
+# to a RAW reference density when the food is normally eaten cooked and no cooked
+# row was seated. USDA raw-vs-cooked family medians.
+_COOKING_YIELD = {
+    "beef": 1.30, "steak": 1.30, "ribeye": 1.30, "sirloin": 1.30,
+    "skirt": 1.30, "pork": 1.28, "lamb": 1.28,
+    "chicken": 1.25, "turkey": 1.25, "poultry": 1.25,
+    "fish": 1.20, "salmon": 1.20, "shrimp": 1.20,
+}
+
+# Calories a NAMED added fat / sauce / marinade contributes — not in any base
+# row, and USDA never carries it. An explicit, quantified term, not a multiplier.
+_ADDED_FAT_CAL = {
+    "in butter": 100, "with butter": 100, "butter": 100,
+    "olive oil": 120, "in oil": 120, "with oil": 120, "fried in": 120,
+    "with ranch": 145, "ranch": 145, "blue cheese": 150, "caesar": 160,
+    "vinaigrette": 90, "with dressing": 120, "dressing": 120,
+    "with mayo": 90, "mayo": 90, "aioli": 100, "marinated": 60, "marinade": 60,
+    "teriyaki": 70, "bbq sauce": 70, "gravy": 80, "cream sauce": 130, "alfredo": 180,
+}
+
+_ADDED_FAT_NEGATIONS = ("no dressing", "without", "undressed", "no sauce",
+                        "no butter", "no oil", "dry", "plain")
+
+
+def portion_prior(food_name: str) -> Optional[float]:
+    """Typical as-eaten serving mass (g) for a bare food name, or None. The
+    prior that replaces the model's calorie guess as the portion of an
+    un-weighed whole food."""
+    return _lookup(SERVING_PRIOR_G, food_name)
+
+
+def cooking_yield(food_name: str) -> float:
+    """Raw->cooked per-100g factor for a food eaten cooked, else 1.0."""
+    return _lookup({**_COOKING_YIELD, "default": 1.0}, food_name) or 1.0
+
+
+def added_fat_calories(text: str) -> tuple[int, str]:
+    """(calories, label) for a NAMED added fat/sauce in the food text, else
+    (0, ''). Longest phrase wins; a stated omission ('no dressing') scores 0."""
+    t = (text or "").lower()
+    if any(neg in t for neg in _ADDED_FAT_NEGATIONS):
+        return 0, ""
+    best = None
+    for phrase, cal in _ADDED_FAT_CAL.items():
+        if phrase in t and (best is None or len(phrase) > len(best[0])):
+            best = (phrase, cal)
+    return (best[1], best[0]) if best else (0, "")

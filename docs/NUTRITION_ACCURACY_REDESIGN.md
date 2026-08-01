@@ -1,8 +1,25 @@
 # Nutrition accuracy — one designed capability
 
-**Status: design, 2026-07-31.** Branch `dvoskin/nutrition-accuracy-redesign`.
-Gated by `scripts/eval_accuracy.py`. Behind `NUTRITION_ACCURACY_V2` (default
-off) until every gold row this document names is green.
+**Status: Parts 1-3 landed + measured, 2026-07-31.** Branch
+`dvoskin/nutrition-accuracy-redesign`. Behind `NUTRITION_ACCURACY_V2` (default
+off). Gate `scripts/eval_accuracy.py`: **4/11 → 6/11**, and the flag's passes are
+honest (baseline's leaned on portion/density errors cancelling). Headline: the
+food that started this, **skirt steak, went −41% → −1%**; almonds −26% → 0%;
+sirloin −20% → −4%.
+
+**Landed:** Part 1 (identity matcher), Part 2a/b/c (cooked-preference, cooking
+yield, trust full-coverage), Part 3 (portion prior). Part 4 (added fat) is
+partial — applied only on a seated base so it never double-counts, but the
+common case (fat not named in the food) needs Part 5.
+
+**Remaining, and exactly what each residual row needs:**
+- `port-ribeye` −39% — USDA returns *bison* and *ribeye cap* (a different cut);
+  needs species/cut-aware matching, deeper than Part 1's noun coverage.
+- `fat-steak-butter`, `fat-salad-ranch` — the fat is not in the food name, so it
+  can only be **elicited** (Part 5), then added (Part 4).
+- `fat-salad-plain` — "green salad" matches a dressing row at full noun coverage;
+  needs a food-category signal (a salad is not a dressing).
+- `prep-thigh-*` — cooking-yield tuning; principled constants, not gold-fitted.
 
 ## The problem, stated once
 
