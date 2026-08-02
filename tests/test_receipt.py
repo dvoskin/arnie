@@ -1,4 +1,4 @@
-"""Decision-receipt engine — the seven card states, pinned.
+"""Decision-receipt engine, the seven card states, pinned.
 
 The verdict must be specific and priority-ordered (over-calories beats
 strong-protein, vague beats everything), the next move must appear ONLY when
@@ -27,7 +27,7 @@ def test_strong_protein_midday_points_at_dinner():
 
 def test_strong_protein_evening_closes_clean():
     out = r(calories=550, protein=52, total_cal=1900, total_protein=150, local_hour=19)
-    assert out["verdict"] == "Strong protein hit — the day closes clean from here."
+    assert out["verdict"] == "Strong protein hit, the day closes clean from here."
 
 
 # ── 2. low-protein calorie-heavy ────────────────────────────────────────────
@@ -74,18 +74,18 @@ def test_over_calories_protein_short_gets_light_next():
 
 def test_protein_hit_calories_open_stays_flexible():
     out = r(calories=200, protein=30, total_cal=1000, total_protein=185, local_hour=15)
-    assert out["verdict"] == "Protein's handled for the day — calories are the thing to watch now."
+    assert out["verdict"] == "Protein's handled for the day, calories are the thing to watch now."
 
 
 def test_protein_already_hit_goes_quiet():
-    # Protein was banked BEFORE this snack — announcing it again is noise.
+    # Protein was banked BEFORE this snack, announcing it again is noise.
     out = r(calories=200, protein=8, total_cal=1000, total_protein=195, local_hour=17)
     assert out["verdict"] == "You're on pace, so there's nothing to correct."
 
 
 def test_day_already_over_never_claims_to_be_on_pace():
     """The repeat state used to fall to "You're on pace, so there's nothing to
-    correct." — a quiet default, but a false one. A shipped card read "Protein
+    correct.", a quiet default, but a false one. A shipped card read "Protein
     covered · 2,320 cal over" with exactly that sentence underneath it.
 
     Quiet is fine. Claiming to be on pace while 340 calories over is not.
@@ -120,7 +120,7 @@ def test_protein_completion_never_overrides_an_adverse_calorie_state():
 def test_vague_estimate_shows_ranges_not_precision():
     out = r(calories=750, protein=42, total_cal=900, total_protein=50,
             local_hour=12, confidence=0.5, estimated=True)
-    assert out["verdict"] == "I logged that as a range — a portion size would tighten it up."
+    assert out["verdict"] == "I logged that as a range, a portion size would tighten it up."
     assert out["cal_low"] == 640 and out["cal_high"] == 850
     assert out["protein_low"] < 42 < out["protein_high"]
 
@@ -179,20 +179,20 @@ def test_trained_today_points_at_carbs():
 def test_fat_heavy_day_caps_added_fats():
     out = r(calories=208, protein=28, total_cal=1200, total_protein=90,
             local_hour=15, total_fats=62, fat_target=70)
-    assert out["verdict"] == "Protein moved nicely — keep fats low through the rest of the day."
+    assert out["verdict"] == "Protein moved nicely, keep fats low through the rest of the day."
 
 
 def test_carb_add_names_the_missing_anchor():
     # 100g rice mid-day: carbs did the work, protein gap untouched.
     out = r(calories=130, protein=3, total_cal=1812, total_protein=140,
             local_hour=13, carbs=28)
-    assert out["verdict"] == "That was mostly carbs — protein still needs an anchor today."
+    assert out["verdict"] == "That was mostly carbs, protein still needs an anchor today."
 
 
 def test_carb_add_requires_open_protein_gap():
     out = r(calories=130, protein=3, total_cal=1400, total_protein=170,
             local_hour=13, carbs=28)
-    assert out["verdict"] != "That was mostly carbs — protein still needs an anchor today."
+    assert out["verdict"] != "That was mostly carbs, protein still needs an anchor today."
 
 
 def test_efficient_protein_names_the_anchor_gap():
@@ -212,7 +212,7 @@ def test_small_snack_asks_for_a_real_meal():
 
 def test_good_anchor_moves_protein_without_burning_the_day():
     out = r(calories=380, protein=32, total_cal=1400, total_protein=95, local_hour=12)
-    assert out["verdict"] == "That's a solid anchor — protein is moving without burning through your day."
+    assert out["verdict"] == "That's a solid anchor, protein is moving without burning through your day."
 
 
 def test_light_first_meal_points_at_dinner():

@@ -27,9 +27,13 @@ def _join_lanes(names: list, conj: str = "or") -> str:
 
 
 def _step(icon: str, label: str, detail: str = "") -> dict:
-    out = {"icon": icon, "label": _shorten(label, 70)}
+    # The reasoning receipt ships in Response.reasoning, which never passes through
+    # the voice seam (platform._sanitize_bubble runs on bubbles, not this payload),
+    # so hand-written em dashes/tildes in labels reached iOS raw. Voice them here.
+    from core.voice import normalize
+    out = {"icon": icon, "label": _shorten(normalize(label), 70)}
     if detail:
-        out["detail"] = _shorten(detail, 90)
+        out["detail"] = _shorten(normalize(detail), 90)
     return out
 
 

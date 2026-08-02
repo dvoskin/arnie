@@ -241,6 +241,31 @@ def _exercise_phantom_enabled() -> bool:
 
 _FOOD_LOG_TOOLS = frozenset({"log_food", "update_food_entry"})
 
+
+def _food_heads_up_subject(tool_calls) -> Optional[str]:
+    """The food name to put in a slow-lookup heads-up, or None.
+
+    One logged food -> its name; two -> "a and b"; three or more (or a name that
+    would read too long) -> None, so the heads-up falls to the neutral pool
+    rather than a clumsy list. The interpreter has already returned by the time
+    this is read, so the name is a fact, not a guess.
+    """
+    names = []
+    for tc in (tool_calls or []):
+        if tc.get("name") in _FOOD_LOG_TOOLS:
+            fn = ((tc.get("input") or {}).get("food_name") or "").strip()
+            if fn:
+                names.append(fn)
+    seen = set()
+    uniq = [n for n in names if not (n.lower() in seen or seen.add(n.lower()))]
+    if len(uniq) == 1:
+        subject = uniq[0]
+    elif len(uniq) == 2:
+        subject = f"{uniq[0]} and {uniq[1]}"
+    else:
+        return None
+    return subject if 0 < len(subject) <= 40 else None
+
 #: How long a food turn may run before its lookup earns a heads-up bubble.
 #: Read where the tools dispatch, so the interpreter pass is already spent and
 #: the wait is measured rather than predicted — a turn that arrives faster than
@@ -1695,7 +1720,9 @@ async def _run_turn(
             # has no model first pass at all (`result["text"]` is ""), so this
             # line is not a fallback here, it is what the user always sees.
             needs_heads_up_tc = {"name": FOOD_LOOKUP_HEADS_UP,
-                                 "input": {"query": _user_text or ""}}
+                                 "input": {"query": _user_text or "",
+                                           "subject": _food_heads_up_subject(
+                                               tool_calls)}}
         if needs_heads_up_tc:
             _model_wrote_text = bool(response_text and response_text.strip())
             if _streamer:
@@ -1709,6 +1736,7 @@ async def _run_turn(
                     fallback = tool_heads_up(
                         needs_heads_up_tc["name"],
                         _heads_up_seed(needs_heads_up_tc),
+                        subject=(needs_heads_up_tc.get("input") or {}).get("subject"),
                     )
                     try:
                         await on_text_bubble(fallback)
@@ -1730,6 +1758,7 @@ async def _run_turn(
                     else tool_heads_up(
                         needs_heads_up_tc["name"],
                         _heads_up_seed(needs_heads_up_tc),
+                        subject=(needs_heads_up_tc.get("input") or {}).get("subject"),
                     )
                 )
                 _interim = _sanitize_bubble(_interim_raw)
