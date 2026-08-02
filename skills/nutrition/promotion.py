@@ -277,6 +277,22 @@ def promote(resolution, *, food_name: str, quantity: str, legacy,
             f"food={food_name!r} outcome=declined "
             f"reason={'no_resolution' if resolution is None else getattr(resolution, 'source', '-')}")
         return legacy
+    # A GUESS DOES NOT BEAT A LOOKUP. A `provisional` resolution is the model's own
+    # calorie guess wearing a resolver label — it carries no source. It must not
+    # overwrite a legacy that already resolved to REAL data. In prod (resolver
+    # live) this was silently discarding web hits: a shawarma bowl web-enriched to
+    # 950, then a provisional resolution overwrote it back to the guess (550).
+    # When the resolver found nothing better than the guess but the legacy DID find
+    # a source, keep the source.
+    if str(getattr(resolution, "source", "") or "").lower() == "provisional":
+        _leg = str(getattr(legacy, "enrichment_source", None)
+                   or getattr(legacy, "source", "") or "").lower()
+        if _leg in ("web_label", "web", "usda", "off", "memory", "user_label"):
+            logger.info(
+                f"event=nutrition_promotion turn={turn_id or '-'} "
+                f"food={food_name!r} outcome=declined "
+                f"reason=provisional_would_override_{_leg}")
+            return legacy
     try:
         promoted = to_food_analysis(resolution, food_name=food_name,
                                    quantity=quantity, legacy=legacy)
