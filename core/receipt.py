@@ -38,6 +38,17 @@ RECONCILE_TOLERANCE_FRAC = 0.02
 RECONCILE_GUARD_OVER_CAL = 500
 
 
+def _voiced(out: dict) -> dict:
+    """`verdict`/`next` ship in the card payload, which never crosses the voice
+    seam (platform._sanitize_bubble runs on bubbles, not cards), so hand-written
+    em dashes/tildes in these sentences reached iOS raw. Voice them here."""
+    from core.voice import normalize
+    for _k in ("verdict", "next"):
+        if out.get(_k):
+            out[_k] = normalize(out[_k])
+    return out
+
+
 def build_receipt(
     *,
     calories: float,
@@ -172,7 +183,7 @@ def build_receipt(
                        "against your entries — I'd rather re-check it than "
                        "tell you something wrong about the day.")
             out["verdict"] = verdict
-            return out
+            return _voiced(out)
         if over >= SUBSTANTIALLY_OVER_CAL:
             verdict = (f"That puts you about {int(over)} calories over for the "
                        f"day — worth knowing rather than fixing tonight.")
@@ -246,7 +257,7 @@ def build_receipt(
     out["verdict"] = verdict
     if nxt:
         out["next"] = nxt
-    return out
+    return _voiced(out)
 
 
 # ── the model's coach line may not contradict the committed snapshot ──────────

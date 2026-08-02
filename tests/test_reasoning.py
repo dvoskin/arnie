@@ -1,4 +1,4 @@
-"""Reasoning receipts — deterministic, humanized, honest."""
+"""Reasoning receipts, deterministic, humanized, honest."""
 from core.reasoning import build_reasoning
 
 
@@ -29,7 +29,7 @@ def test_exercise_scheme_and_silent_tools():
          {"name": "note_food_clarification", "input": {}}],
         {"log_exercise": "Logged"}, None, None)
     assert len(r["steps"]) == 1
-    assert "Bench — 3×8" in r["steps"][0]["label"]
+    assert "Bench, 3×8" in r["steps"][0]["label"]
 
 
 def test_single_food_shows_full_sourcing_trace():
@@ -45,13 +45,13 @@ def test_single_food_shows_full_sourcing_trace():
     labels = [s["label"] for s in r["steps"]]
     assert any("Searched for Barebells" in l for l in labels)
     assert any("product label" in l for l in labels)          # web_label source
-    assert any("Serving checked — 1 bar" in l for l in labels)
+    assert any("Serving checked, 1 bar" in l for l in labels)
     assert any("Logged Barebells" in l and "200 cal" in l and "20g protein" in l
                for l in labels)
 
 
 def test_estimate_source_is_flagged_in_trace():
-    # A low-confidence estimate (no exact match) reads as such — the signal that
+    # A low-confidence estimate (no exact match) reads as such, the signal that
     # this item is a web-enrich candidate.
     r = build_reasoning(
         [{"name": "log_food", "input": {
@@ -61,7 +61,7 @@ def test_estimate_source_is_flagged_in_trace():
                           "calories": 750, "protein": 42}}}],
         {"log_food": "Logged: poke bowl 750 cal"}, None, None)
     labels = [s["label"] for s in r["steps"]]
-    # "No exact match — estimated from the description" became "Estimated from
+    # "No exact match, estimated from the description" became "Estimated from
     # what you described": same fact, said the way a person would.
     assert any("Estimated from what you described" in l for l in labels)
 
@@ -82,7 +82,7 @@ def test_multi_food_stays_condensed_with_source_detail():
 
 
 def test_pure_chat_turn_gets_context_receipt_and_cap():
-    # Every reply carries a receipt — a no-tool turn shows the honest
+    # Every reply carries a receipt, a no-tool turn shows the honest
     # context-read steps (Danny: thoughts on every reply, like Claude).
     r = build_reasoning([], {}, None, 500)
     assert r["duration_ms"] == 500
@@ -95,7 +95,7 @@ def test_pure_chat_turn_gets_context_receipt_and_cap():
 
 def test_per_call_result_truth_blocked_item_never_says_logged():
     """Danny 2026-07-23 (IMG_8601): the receipts said BOTH Quest bags logged when
-    one was dedup-blocked — tool_results is keyed by tool NAME so a batch shares
+    one was dedup-blocked, tool_results is keyed by tool NAME so a batch shares
     the LAST result. Per-call truth now rides the typed execution view (P0.3c/e:
     the command carries no execution state at all), and the receipt must render
     the blocked item honestly."""
