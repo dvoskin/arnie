@@ -2487,6 +2487,30 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
                           candidate_map=_cands_pre)
 
 
+def _enforce_macro_consistency(result, food_name=""):
+    """Universal invariant on the COMMITTED macros, whatever source won (estimator,
+    label, USDA, resolver): sugar and fibre are COMPONENTS of carbs, so neither can
+    exceed the carb count. Violated in prod 0801 — whiskey sugar 39g against 0
+    carbs, Drizzlicious sugar 22g against 6g carbs — because the only cap lived in
+    the estimator branch and BYPASSED itself when carbs==0
+    (`min(sug, carbs) if carbs else sug`). Enforced on the FINAL result so an
+    impossible macro never reaches the log. Never raises — the log stands without it."""
+    try:
+        c = result.carbs
+        if c is None:
+            return result
+        c = max(0.0, float(c))
+        for attr in ("sugar", "fiber"):
+            v = getattr(result, attr, None)
+            if v is not None and float(v) > c:
+                logger.info("macro-consistency: %s=%.1f > carbs=%.1f for %r — capped",
+                            attr, float(v), c, food_name)
+                setattr(result, attr, round(c, 1))
+    except Exception:
+        pass
+    return result
+
+
 async def _analyze_food(db, user, food_name, inp):
     """
     Enrich a logged food with the right data source, returning a FoodAnalysis.
@@ -2662,6 +2686,9 @@ async def _analyze_food(db, user, food_name, inp):
         # committed anyway.
         logger.warning(f"nutrition resolution layer skipped: {e}")
 
+    # INVARIANT, whatever source won: sugar and fibre are components of carbs and
+    # cannot exceed them. An impossible macro must never reach the log.
+    _enforce_macro_consistency(result, food_name)
     return result
 
 
