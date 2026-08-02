@@ -23,6 +23,8 @@ import pytest
 
 from handlers.tool_executor import (FOOD_LOOKUP_HEADS_UP,
                                     _FOOD_LOOKUP_BUBBLES,
+                                    _FOOD_LOOKUP_TEMPLATES,
+                                    _FOOD_LOOKUP_TEMPLATES_BRANDED,
                                     _TOOL_HEADS_UP_BUBBLES, tool_heads_up)
 
 FOODS = ["cheez doodles", "takis fuego", "legendary protein roll",
@@ -110,14 +112,13 @@ def test_a_packaged_product_does_get_the_label_line():
     when handed a brand or `is_packaged` — from a bare product name it never
     does, so the branded pool was dead code wearing the shape of a fix.
     """
-    from handlers.tool_executor import (FOOD_LOOKUP_HEADS_UP,
-                                        _FOOD_LOOKUP_BUBBLES_BRANDED,
-                                        tool_heads_up)
+    from handlers.tool_executor import FOOD_LOOKUP_HEADS_UP, tool_heads_up
 
     line = tool_heads_up(FOOD_LOOKUP_HEADS_UP, "quest chips",
                          subject="Quest Tortilla Style Protein Chips")
-    assert line.lower().rstrip(".") in [
-        b.lower().rstrip(".") for b in _FOOD_LOOKUP_BUBBLES_BRANDED], line
+    # Branded -> label wording, and it names the product (brand case preserved).
+    assert "label" in line.lower(), line
+    assert "quest" in line.lower(), line
 
 
 def test_a_dish_never_gets_the_label_line():

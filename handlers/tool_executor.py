@@ -1290,19 +1290,50 @@ def _deep_research_allow(user_id: int) -> bool:
 # already exists (`staging.classify_food`) rather than a new word list.
 
 #: A packaged product genuinely has a label to read.
-_FOOD_LOOKUP_BUBBLES_BRANDED = (
-    "checking the label on that one.",
-    "reading the label rather than guessing.",
-    "pulling the brand's own numbers.",
-    "seeing what the label actually says.",
-    "looking up the label for this one.",
-    "getting the numbers off the packet.",
-    "checking the published label.",
+# Templated pools name the extracted {food} so the wait reads as "Arnie is
+# getting me the real numbers for THIS", not a canned filler. 10-15 words,
+# accuracy-reassuring; ~18 generic / 10 branded so a run of logs never repeats a
+# line (Danny 0802: 15-20 variations so it isn't noticeable). Lowercase-lead by
+# convention (sentence_case lifts on output); NEVER an em dash. Like the neutral
+# pool they describe a LOOKUP and NEVER a write — no "log", "land", "save": a
+# bubble that claims the row is down duplicates the indicator and reads as a
+# stall. Generic {food} is lowercased in-sentence; branded {food} keeps its case.
+_FOOD_LOOKUP_TEMPLATES_BRANDED = (
+    "reading the label on that {food} so the macros are exact.",
+    "pulling {food}'s own label numbers so this is spot on.",
+    "checking the published label for {food} so your macros are exact.",
+    "getting the numbers straight off the {food} label right now.",
+    "let me read the {food} label so it's exactly what's in it.",
+    "checking what the {food} label actually says so nothing's a guess.",
+    "pulling the real label macros for {food} so your total is right.",
+    "reading the {food} packaging so you get the exact numbers.",
+    "let me grab the label macros on {food} so they're precise.",
+    "checking the official {food} label so your day stays accurate.",
+)
+_FOOD_LOOKUP_TEMPLATES = (
+    "let me pull the real calories on that {food} so it's exactly right.",
+    "checking what's actually in that {food} so your numbers come out accurate.",
+    "getting the real macros on that {food} now, not a guess.",
+    "let me get the proper numbers for that {food} so your day stays accurate.",
+    "digging up the real macros on that {food} so it's precise.",
+    "checking that {food} against real data so the totals are honest.",
+    "working out that {food} properly so the numbers match what you ate.",
+    "finding the actual numbers for that {food}, not just an estimate.",
+    "let me get the real macros on that {food} rather than guess.",
+    "pulling accurate numbers for that {food} so your totals hold up.",
+    "getting that {food} right, checking the real macros rather than guessing.",
+    "let me check the true calories on that {food} so you can trust the total.",
+    "sorting out exactly what that {food} comes to so your day is accurate.",
+    "checking the real numbers on that {food} so you get the exact macros.",
+    "let me nail down the macros on that {food} so it's precise, one moment.",
+    "verifying the numbers on that {food} so what you see is right.",
+    "getting you accurate macros on that {food}, checking a real source now.",
+    "let me confirm the real calories in that {food} so nothing's off.",
 )
 
-#: Everything else — a dish, a whole food, a restaurant item. True regardless
-#: of where the numbers end up coming from, which is the point: at heads-up
-#: time the lookup has not run and we do not know.
+#: No-food fallback — no single food was extracted (multi-item over budget, or a
+#: bare turn). Terse (<=44 chars), describes a lookup, claims no label. Pinned by
+#: test_the_food_heads_up_is_not_an_emergency.
 _FOOD_LOOKUP_BUBBLES = (
     "checking the real numbers on that.",
     "pulling the actual macros, not a guess.",
@@ -1409,25 +1440,35 @@ def sentence_case(s: str) -> str:
 FOOD_LOOKUP_HEADS_UP = "food_lookup"
 
 
+def _clean_food_subject(subject: str | None) -> str | None:
+    """A usable, in-sentence food name, or None. Trims, collapses whitespace and
+    drops trailing punctuation, and rejects anything empty or too long to read
+    naturally mid-line — the raw interpreter name can run long, and a template
+    that names the food is only better than the neutral pool when it stays short.
+    """
+    s = " ".join((subject or "").split()).rstrip(".!?,;:")
+    return s if 0 < len(s) <= 40 else None
+
+
 def _food_lookup_bubbles(subject: str | None) -> tuple:
-    """Label lines only when a label lookup is actually going to run.
+    """Which heads-up pool to draw from.
 
-    THE SAME PREDICATE DECIDES BOTH. `_looks_branded` is what gates the Open
-    Food Facts and web-label lanes, so keying the wording on it makes the line
-    true exactly when the thing it describes happens — rather than true one
-    time in four by luck of a hash.
+    A usable food subject earns a TEMPLATED pool that names it — branded (label
+    wording) when `_looks_branded` says a label lookup is the truthful thing to
+    mention, generic ("the real numbers") otherwise. `_looks_branded` is the
+    same predicate that gates the OFF/web-label lanes, so the wording is true
+    exactly when the thing it describes happens rather than one-in-four by luck
+    of a hash.
 
-    The first version of this asked `classify_food`, which only returns BRANDED
-    when it is HANDED a brand or `is_packaged`. From a bare string it never
-    does, so the branded pool was unreachable — dead code wearing the shape of
-    a fix, which is the pattern this codebase keeps having to dig back out.
-
-    Falls back to the neutral pool on any failure. Being vague is a much
-    smaller error than promising a label that does not exist.
+    No usable subject (multi-item over budget, a bare turn) falls to the neutral
+    pool. Being vague is a much smaller error than naming the wrong food or
+    promising a label that does not exist.
     """
     try:
-        if subject and _looks_branded(subject.strip()):
-            return _FOOD_LOOKUP_BUBBLES_BRANDED
+        food = _clean_food_subject(subject)
+        if food:
+            return (_FOOD_LOOKUP_TEMPLATES_BRANDED if _looks_branded(food)
+                    else _FOOD_LOOKUP_TEMPLATES)
     except Exception:
         pass
     return _FOOD_LOOKUP_BUBBLES
@@ -1445,16 +1486,28 @@ def tool_heads_up(tool_name: str, seed: str | None = None,
     (HEADSUP_VOICE) — the pinned literals stay lowercase, only the output lifts.
     """
     if tool_name == FOOD_LOOKUP_HEADS_UP:
-        # `subject` is the FOOD; `seed` is usually the whole user message and
-        # is only ever a hash input. Classifying the sentence instead of the
-        # food is how "checking the label" ends up on a bowl of rice.
-        bubbles = _food_lookup_bubbles(subject or seed)
+        # `subject` is the FOOD (and the only thing a {food} template may name);
+        # `seed` is the whole user message and is ONLY a hash input. Never let the
+        # raw sentence stand in for the food — that puts "checking the label" on a
+        # bowl of rice, or the whole message inside the template.
+        bubbles = _food_lookup_bubbles(subject)
     else:
         bubbles = (_TOOL_HEADS_UP_BUBBLES.get(tool_name)
                    or _TOOL_HEADS_UP_BUBBLES["web_search"])
-    key = (seed or tool_name).strip().lower()
+    key = (seed or subject or tool_name).strip().lower()
     idx = int(hashlib.sha1(key.encode("utf-8")).hexdigest()[:8], 16) % len(bubbles)
     line = bubbles[idx]
+    if "{food}" in line:
+        food = _clean_food_subject(subject)
+        if food:
+            # A generic food reads better lowercased in-sentence ("that skirt
+            # steak"); a brand keeps its case ("that Barebells bar").
+            if bubbles is not _FOOD_LOOKUP_TEMPLATES_BRANDED:
+                food = food.lower()
+            line = line.format(food=food)
+        else:
+            # Defensive: subject dropped out between pool pick and format.
+            line = _FOOD_LOOKUP_BUBBLES[idx % len(_FOOD_LOOKUP_BUBBLES)]
     return sentence_case(line) if headsup_voice_enabled() else line
 
 
