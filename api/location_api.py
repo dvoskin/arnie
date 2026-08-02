@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.auth import current_identity
+from core.mutation_contract import mutation_turn
 from db.database import AsyncSessionLocal
 from db.queries import resolve_user, save_user_location
 
@@ -56,6 +57,15 @@ async def post_location(
     coords still save."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        # Class B: last-write-wins, so no claim. What it owes is attribution —
+        # a location is a fact about the user that steers coaching answers.
+        async with mutation_turn(
+            db, channel="ios", command="set_location", user_id=user.id,
+            dedup=f"loc:{payload.lat:.4f},{payload.lng:.4f}", claim=False,
+        ) as turn:
+            await turn.audit(db, "updated", domain="location",
+                             payload={"city": payload.city},
+                             surface="ios:location")
 
         # Reverse-geocode coords → city (only when client didn't pass one
         # AND user hasn't manually set one). Uses GOOGLE_PLACES_API_KEY +
@@ -86,8 +96,14 @@ async def clear_location(identity: str = Depends(current_identity)):
     coordinates)."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
-        user.lat = None
-        user.lng = None
-        user.location_updated_at = None
-        await db.commit()
-        return LocationAck(ok=True, lat=0.0, lng=0.0, city=user.city)
+        async with mutation_turn(
+            db, channel="ios", command="clear_location", user_id=user.id,
+            dedup="loc:clear", claim=False,
+        ) as turn:
+            user.lat = None
+            user.lng = None
+            user.location_updated_at = None
+            await db.commit()
+            await turn.audit(db, "deleted", domain="location",
+                             surface="ios:location")
+            return LocationAck(ok=True, lat=0.0, lng=0.0, city=user.city)

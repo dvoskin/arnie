@@ -23,6 +23,7 @@ from db.database import AsyncSessionLocal
 from db.queries import resolve_user, _user_today
 from db.models import UserAttribute, SupplementIntake
 from api.auth import current_identity
+from core.mutation_contract import mutation_turn
 
 logger = logging.getLogger("arnie.supplements")
 router = APIRouter(prefix="/api/v1", tags=["supplements"])
@@ -127,6 +128,17 @@ async def toggle_supplement(body: ToggleBody, identity: str = Depends(current_id
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
         today = _user_today(getattr(user, "timezone", None))
+        # Idempotent per day BECAUSE the row is keyed on
+        # (user, supplement, date) — a repeat toggles back, which is the
+        # user's intent, not a duplicate. No claim; an audit row so a
+        # streak dispute has something to read.
+        async with mutation_turn(
+            db, channel="ios", command="toggle_supplement", user_id=user.id,
+            dedup=f"supp:{body.key}:{today}", claim=False,
+        ) as turn:
+            await turn.audit(db, "updated", domain="supplement",
+                             payload={"key": body.key, "date": str(today)},
+                             surface="ios:supplements")
         existing = (await db.execute(
             select(SupplementIntake).where(and_(
                 SupplementIntake.user_id == user.id,

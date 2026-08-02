@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from db.database import AsyncSessionLocal
 from db.queries import resolve_user
 from api.auth import current_identity
+from core.mutation_contract import mutation_turn
 
 logger = logging.getLogger(__name__)
 
@@ -438,6 +439,15 @@ async def force_brain_resync(identity: str = Depends(current_identity)):
 
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        # Operator-initiated: it recomputes derived state from the same source
+        # rows, so repeating it is harmless and no claim is warranted. The
+        # audit row says who forced a resync and when.
+        async with mutation_turn(
+            db, channel="ios", command="brain_resync", user_id=user.id,
+            dedup="brain_resync", claim=False,
+        ) as turn:
+            await turn.audit(db, "updated", domain="brain",
+                             surface="ios:brain")
         try:
             updated = await maybe_update_profile(user, db, force=True)
         except Exception as e:

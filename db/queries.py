@@ -1102,11 +1102,26 @@ async def add_body_metric(db: AsyncSession, user_id: int,
 
 async def add_water_entry(db: AsyncSession, user_id: int, daily_log_id: int,
                           amount_ml: float, context: Optional[str] = None,
-                          source_type: str = "text"):
+                          source_type: str = "text",
+                          ledger_source: Optional[str] = None,
+                          claim_id: Optional[int] = None):
     """T2.4 — Persist a timestamped water log. DailyLog.total_water_ml stays
     as the cached aggregate (updated by the caller alongside) for backward
     compat with existing dashboards; the WaterEntry row is the canonical
-    source for hydration timing coaching and future per-event analytics."""
+    source for hydration timing coaching and future per-event analytics.
+
+    `ledger_source` / `claim_id` mirror `add_food_entry` exactly — see its
+    docstring for why both belong in the row's OWN transaction. Water had
+    THREE writers and each handled history differently: the dashboard
+    (`api/app.py`) and the chat lane (`handlers/tool_executor.py`) each wrote
+    the `created` event in a second commit, and `api/water.py` — the iOS tap
+    surface — wrote no event at all, so a tap-logged pour was invisible to
+    `ledger_undo` and to the turn↔operation join. Passing `ledger_source`
+    makes this function the one writer.
+
+    Callers that do NOT pass `ledger_source` keep the old shape exactly, so
+    the two existing second-commit call sites stay correct until they move.
+    """
     from db.models import WaterEntry
     entry = WaterEntry(
         user_id=user_id,
@@ -1116,6 +1131,20 @@ async def add_water_entry(db: AsyncSession, user_id: int, daily_log_id: int,
         source_type=source_type,
     )
     db.add(entry)
+    if ledger_source is not None:
+        # BEFORE the commit. `commit=False` folds the event into this
+        # transaction, so the pour and its history land together or not at
+        # all — a crash between two commits used to leave a WaterEntry that
+        # `ledger_undo` could not invert.
+        await db.flush()   # the event needs the row's id
+        await record_ledger_event(
+            db, user_id=user_id, event_type="created", domain="water",
+            entry_id=entry.id, daily_log_id=daily_log_id,
+            # The shape `core.ledger_undo._invert` reads for domain="water".
+            payload={"amount_ml": amount_ml, "context": context},
+            source=ledger_source, commit=False)
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, entry.id, daily_log_id)
     await db.commit()
     await db.refresh(entry)
     _invalidate_briefing_for_log(user_id, by_user=True)
@@ -1141,16 +1170,33 @@ async def recompute_water_total(db: AsyncSession, daily_log_id: int) -> float:
 
 
 async def update_water_entry(db: AsyncSession, entry_id: int, user_id: int,
-                             amount_ml: float):
+                             amount_ml: float,
+                             ledger_source: Optional[str] = None,
+                             claim_id: Optional[int] = None):
     """Update a single WaterEntry's amount, then resync the day total.
 
     Scoped by user_id so a token can only touch its own rows. Returns the
-    refreshed entry, or None if not found / not owned."""
+    refreshed entry, or None if not found / not owned.
+
+    With `ledger_source`, the `updated` event carries the BEFORE state in the
+    same transaction as the edit — the shape food and exercise already use, so
+    a correction stays reversible rather than overwriting the only record of
+    what the amount used to be.
+    """
     from db.models import WaterEntry
     entry = await db.get(WaterEntry, entry_id)
     if entry is None or entry.user_id != user_id:
         return None
+    before = {"amount_ml": entry.amount_ml, "context": entry.context}
     entry.amount_ml = amount_ml
+    if ledger_source is not None:
+        await record_ledger_event(
+            db, user_id=user_id, event_type="updated", domain="water",
+            entry_id=entry.id, daily_log_id=entry.daily_log_id,
+            payload={"amount_ml": amount_ml, "before": before},
+            source=ledger_source, commit=False)
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, entry.id, entry.daily_log_id)
     await db.commit()
     if entry.daily_log_id:
         await recompute_water_total(db, entry.daily_log_id)
@@ -1158,16 +1204,40 @@ async def update_water_entry(db: AsyncSession, entry_id: int, user_id: int,
     return entry
 
 
-async def delete_water_entry(db: AsyncSession, entry_id: int, user_id: int) -> bool:
+async def delete_water_entry(db: AsyncSession, entry_id: int, user_id: int,
+                             ledger_source: Optional[str] = None,
+                             claim_id: Optional[int] = None) -> bool:
     """Delete a single WaterEntry, then resync the day total.
 
-    Scoped by user_id. Returns True if a row was removed."""
+    Scoped by user_id. Returns True if a row was removed.
+
+    With `ledger_source`, the `deleted` event is captured from the row BEFORE
+    it goes and committed in the same transaction as the delete — the same
+    payload shape `api/app.py` already records, so a pour deleted from any
+    surface leaves one restorable history entry rather than none.
+    """
     from db.models import WaterEntry
     entry = await db.get(WaterEntry, entry_id)
     if entry is None or entry.user_id != user_id:
         return False
     daily_log_id = entry.daily_log_id
+    # Read the state off the row while it still exists — after the delete
+    # there is nothing left to describe, and a `deleted` event with no payload
+    # cannot be restored from.
+    before = {"amount_ml": entry.amount_ml, "context": entry.context,
+              "daily_log_id": daily_log_id}
     await db.delete(entry)
+    if ledger_source is not None:
+        # Flushed so the row is gone before the event references it; the
+        # event still names `entry_id` because that is the token undo and the
+        # turn↔operation join look the row up by.
+        await db.flush()
+        await record_ledger_event(
+            db, user_id=user_id, event_type="deleted", domain="water",
+            entry_id=entry_id, daily_log_id=daily_log_id, payload=before,
+            source=ledger_source, commit=False)
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, entry_id, daily_log_id)
     await db.commit()
     if daily_log_id:
         await recompute_water_total(db, daily_log_id)
@@ -2102,11 +2172,19 @@ async def resolve_pending_questions_for_logged_items(
 # ── Food/Exercise edit + delete (with auto totals recalc) ─────────────────────
 
 async def update_food_entry(
-    db: AsyncSession, entry_id: int, user_id: int, **changes
+    db: AsyncSession, entry_id: int, user_id: int,
+    ledger_source: Optional[str] = None, claim_id: Optional[int] = None,
+    **changes
 ) -> Optional[FoodEntry]:
     """
     Update a food entry and adjust the daily log totals by the delta.
     Returns None if entry doesn't exist or doesn't belong to user_id.
+
+    With `ledger_source`, the `updated` event and the caller's idempotency
+    claim commit in THIS transaction — see `add_food_entry` for the crash
+    window that closes. The edit surfaces wrote the event in a second commit,
+    so a process dying in between left a rescaled entry whose original macros
+    existed nowhere.
     """
     result = await db.execute(select(FoodEntry).where(FoodEntry.id == entry_id))
     entry = result.scalar_one_or_none()
@@ -2117,6 +2195,11 @@ async def update_food_entry(
     log = log_result.scalar_one()
     if log.user_id != user_id:
         return None
+
+    # Captured before any setattr below. A portion edit rescales fiber, sugar,
+    # sodium and the micro panel too, so "what it was" is more than the four
+    # macros the client sent.
+    before_state = _entry_event_payload(entry) if ledger_source is not None else None
 
     old_log_id = entry.daily_log_id
     # Day move: reassigning the entry to another date's log (passed as new_daily_log_id).
@@ -2184,12 +2267,30 @@ async def update_food_entry(
     await recompute_log_totals(db, entry.daily_log_id)
     if moved:
         await recompute_log_totals(db, old_log_id)
+    if ledger_source is not None:
+        await record_ledger_event(
+            db, user_id=user_id, event_type="updated", domain="food",
+            entry_id=entry.id, daily_log_id=entry.daily_log_id,
+            # `before` is the key `core.ledger_undo._invert` reads to roll a
+            # food edit back.
+            payload={"changes": {k: v for k, v in changes.items()
+                                 if v is not None},
+                     "before": before_state},
+            source=ledger_source, commit=False)
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, entry.id, entry.daily_log_id)
     await db.commit()
     await db.refresh(entry)
     return entry
 
 
-async def delete_food_entry(db: AsyncSession, entry_id: int, user_id: int) -> bool:
+async def delete_food_entry(db: AsyncSession, entry_id: int, user_id: int,
+                            ledger_source: Optional[str] = None,
+                            claim_id: Optional[int] = None) -> bool:
+    """Delete a food row, and — with `ledger_source` — its `deleted` event and
+    the caller's claim, in ONE transaction. The payload is read off the row
+    while it exists: `ledger_undo._restore_plan` rebuilds the entry from it,
+    so a `deleted` event without it is a delete that cannot be taken back."""
     result = await db.execute(select(FoodEntry).where(FoodEntry.id == entry_id))
     entry = result.scalar_one_or_none()
     if not entry:
@@ -2200,17 +2301,40 @@ async def delete_food_entry(db: AsyncSession, entry_id: int, user_id: int) -> bo
         return False
 
     daily_log_id = entry.daily_log_id
+    # `daily_log_id` rides in the PAYLOAD, not just the event column: restore
+    # rebuilds the row from the payload alone, and without it a food deleted
+    # from Tuesday comes back on whatever day the restore happens to run.
+    before_state = ({**_entry_event_payload(entry), "daily_log_id": daily_log_id}
+                    if ledger_source is not None else None)
     await db.delete(entry)
     await db.flush()
     # Totals are derived from entries — recompute so they can never drift.
     await recompute_log_totals(db, daily_log_id)
+    if ledger_source is not None:
+        await record_ledger_event(
+            db, user_id=user_id, event_type="deleted", domain="food",
+            entry_id=entry_id, daily_log_id=daily_log_id,
+            payload=before_state, source=ledger_source, commit=False)
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, entry_id, daily_log_id)
     await db.commit()
     return True
 
 
 async def update_exercise_entry(
-    db: AsyncSession, entry_id: int, user_id: int, **changes
+    db: AsyncSession, entry_id: int, user_id: int,
+    ledger_source: Optional[str] = None, claim_id: Optional[int] = None,
+    **changes
 ) -> Optional[ExerciseEntry]:
+    """Edit one exercise row, and — with `ledger_source` — its `updated` event
+    and the caller's idempotency claim, in ONE transaction.
+
+    Mirrors `add_food_entry`; see its docstring for the crash window this
+    closes. The edit surfaces recorded their event in a SECOND commit after
+    this one returned, so a process that died in between left a changed row
+    whose previous values existed nowhere — an edit that cannot be rolled back
+    and does not appear in the audit trail.
+    """
     result = await db.execute(select(ExerciseEntry).where(ExerciseEntry.id == entry_id))
     entry = result.scalar_one_or_none()
     if not entry:
@@ -2222,6 +2346,15 @@ async def update_exercise_entry(
 
     old_log_id = entry.daily_log_id
     new_log_id = changes.pop("new_daily_log_id", None)  # day move (same primitive as edit)
+
+    # Captured before the setattr loop — after it there is no record of what
+    # the row used to be, which is exactly what an `updated` event is for.
+    before_state = {
+        "exercise_name": entry.exercise_name, "sets": entry.sets,
+        "reps": entry.reps, "weight": entry.weight,
+        "duration_minutes": entry.duration_minutes,
+        "cardio_type": entry.cardio_type, "rir": entry.rir,
+    } if ledger_source is not None else None
 
     # `timestamp` marks last-logged-at — the incremental-append path bumps it so
     # a growing session row reflects its latest set (and the refire guard works).
@@ -2241,12 +2374,29 @@ async def update_exercise_entry(
     await recompute_log_totals(db, entry.daily_log_id)
     if moved:
         await recompute_log_totals(db, old_log_id)
+    if ledger_source is not None:
+        await record_ledger_event(
+            db, user_id=user_id, event_type="updated", domain="exercise",
+            entry_id=entry.id, daily_log_id=entry.daily_log_id,
+            # `before` is the key `core.ledger_undo._invert` reads to roll an
+            # exercise edit back.
+            payload={"changes": {k: v for k, v in changes.items()
+                                 if v is not None},
+                     "before": before_state},
+            source=ledger_source, commit=False)
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, entry.id, entry.daily_log_id)
     await db.commit()
     await db.refresh(entry)
     return entry
 
 
-async def delete_exercise_entry(db: AsyncSession, entry_id: int, user_id: int) -> bool:
+async def delete_exercise_entry(db: AsyncSession, entry_id: int, user_id: int,
+                                ledger_source: Optional[str] = None,
+                                claim_id: Optional[int] = None) -> bool:
+    """Delete one exercise row, and — with `ledger_source` — its `deleted`
+    event and the caller's claim, in ONE transaction. The event's payload is
+    read off the row while it still exists, so a delete stays restorable."""
     result = await db.execute(select(ExerciseEntry).where(ExerciseEntry.id == entry_id))
     entry = result.scalar_one_or_none()
     if not entry:
@@ -2261,6 +2411,12 @@ async def delete_exercise_entry(db: AsyncSession, entry_id: int, user_id: int) -
         return False
 
     daily_log_id = entry.daily_log_id
+    # Read while the row exists. A `deleted` event with no payload names
+    # something that can no longer be described, so it cannot be restored.
+    # `daily_log_id` is part of it for the same reason as food: restore reads
+    # the payload, and without it the set returns on the wrong day.
+    before_state = ({**_entry_event_payload(entry), "daily_log_id": daily_log_id}
+                    if ledger_source is not None else None)
     # Auto-imported rows (apple_health replace-on-sync, whoop ref-upsert) would
     # resurrect on the next sync — tombstone the ref so a delete is FINAL.
     if entry.source_ref:
@@ -2277,6 +2433,13 @@ async def delete_exercise_entry(db: AsyncSession, entry_id: int, user_id: int) -
     await db.flush()
     # Re-derive flags from whatever remains (single source of truth).
     await recompute_log_totals(db, daily_log_id)
+    if ledger_source is not None:
+        await record_ledger_event(
+            db, user_id=user_id, event_type="deleted", domain="exercise",
+            entry_id=entry_id, daily_log_id=daily_log_id,
+            payload=before_state, source=ledger_source, commit=False)
+    if claim_id is not None:
+        await _complete_claim_in_txn(db, claim_id, entry_id, daily_log_id)
     await db.commit()
     return True
 
@@ -3314,15 +3477,40 @@ async def record_surface_mutation(
 
     Same events, same payload shapes as the chat executor, so undo/restore and
     the audit trail reach every surface rather than just the chat lane.
+
+    A CANONICAL TURN ID ALWAYS WINS. The synthetic id below is a fallback for
+    surfaces that have no turn identity of their own — it is derived from
+    `(surface, event_type, entry_id)`, so it is stable rather than unique: two
+    edits of the same row a day apart produce the SAME id, and the
+    turn↔operation join cannot tell them apart. That is acceptable as a floor
+    and wrong as an override, so a handler that has already opened a real turn
+    scope (B2's `_turn_scope`) keeps its id and this function only supplies the
+    provenance label.
+
+    Overwriting it was not hypothetical: as each surface moves onto the
+    mutation contract, its handler sets the canonical id and then calls a
+    helper that reaches here — and the event would have been stamped
+    `ios_edit:updated:41` instead of the turn the request actually was, so the
+    surface would look migrated while its events stayed unjoinable.
+
+    The previous value is restored in `finally` for the same reason
+    `_turn_scope` does it: this runs mid-request, and leaving a synthetic id
+    set behind would stamp every LATER write in the same request with it.
     """
+    from core.turn_identity import CURRENT_TURN_ID
+    token = None
     try:
-        from core.turn_identity import CURRENT_TURN_ID
-        CURRENT_TURN_ID.set(f"{surface}:{event_type}:{entry_id or '-'}")
+        if CURRENT_TURN_ID.get() is None:
+            token = CURRENT_TURN_ID.set(
+                f"{surface}:{event_type}:{entry_id or '-'}")
         await record_ledger_event(
             db, user_id, event_type, domain=domain, entry_id=entry_id,
             daily_log_id=daily_log_id, payload=payload, source=surface)
     except Exception as e:
         logger.warning(f"surface ledger event skipped ({surface}/{domain}/{event_type}): {e}")
+    finally:
+        if token is not None:
+            CURRENT_TURN_ID.reset(token)
 
 
 # ── durable background jobs (P0.7) ────────────────────────────────────────────

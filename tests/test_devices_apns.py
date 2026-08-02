@@ -45,7 +45,11 @@ async def test_post_registers_new_token(
         APNSTokenBody(token="hex-token-a", environment="production"),
         identity="ios:user-a",
     )
-    assert resp == {"status": "ok"}
+    # Subset, not equality: B2 added `turn_id` to every mutating response so a
+    # support question ("which request registered this device?") is answerable.
+    # An exact-match assertion makes any additive field a failure.
+    assert resp["status"] == "ok"
+    assert resp["turn_id"]
 
     rows = await active_device_tokens_for_user(db, user.id)
     assert len(rows) == 1
@@ -131,7 +135,8 @@ async def test_delete_revokes_token_so_sender_filters_it(
     )
 
     resp = await delete_apns_token("to-revoke", identity="ios:revoker")
-    assert resp == {"status": "revoked"}
+    assert resp["status"] == "revoked"
+    assert resp["turn_id"]
 
     active = await active_device_tokens_for_user(db, user.id)
     assert len(active) == 0

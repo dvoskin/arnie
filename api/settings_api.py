@@ -23,14 +23,18 @@ Settings tab UX:
                               revocation-checked has a clear migration
                               path.
 """
+import logging
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.auth import current_identity
+from core.mutation_contract import mutation_turn
 from db.database import AsyncSessionLocal
 from db.queries import add_feedback, resolve_user
+
+logger = logging.getLogger(__name__)
 
 
 # ── Preferences ─────────────────────────────────────────────────────────────
@@ -107,12 +111,25 @@ async def patch_preferences(
         user = await resolve_user(db, identity)
         if user.preferences is None:
             raise HTTPException(status_code=404, detail="user has no preferences row")
-        applied: list[str] = []
-        for field, value in updates.items():
-            setattr(user.preferences, field, value)
-            applied.append(field)
-        await db.commit()
-        return {"ok": True, "updated_fields": applied}
+        # Last-write-wins, so no claim. The audit row answers "when did my
+        # reminder settings change" — the question a user asks when a nudge
+        # stops arriving.
+        async with mutation_turn(
+            db, channel="ios", command="patch_preferences", user_id=user.id,
+            dedup=f"prefs:{','.join(sorted(updates))}", claim=False,
+        ) as turn:
+            applied: list[str] = []
+            before = {f: getattr(user.preferences, f, None) for f in updates}
+            for field, value in updates.items():
+                setattr(user.preferences, field, value)
+                applied.append(field)
+            await db.commit()
+            await turn.audit(db, "updated", domain="preferences",
+                             payload={"fields": applied,
+                                      "before": {k: str(v) for k, v in before.items()}},
+                             surface="ios:settings")
+            return {"ok": True, "updated_fields": applied,
+                    "turn_id": turn.turn_id}
 
 
 # ── Feedback ────────────────────────────────────────────────────────────────
@@ -138,8 +155,21 @@ async def post_feedback(
     """Record a feedback entry tied to the authenticated user."""
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
-        entry = await add_feedback(db, user_id=user.id, kind=payload.kind, text=payload.text)
-        return {"ok": True, "feedback_id": entry.id}
+        # The feedback row IS its own record, so no separate ledger entry is
+        # owed — but the turn id makes it joinable to the session it came from,
+        # which is what turns "the app is broken" into something diagnosable.
+        async with mutation_turn(
+            db, channel="ios", command="post_feedback", user_id=user.id,
+            dedup=f"feedback:{payload.kind}", claim=False,
+        ) as turn:
+            entry = await add_feedback(db, user_id=user.id, kind=payload.kind,
+                                       text=payload.text)
+            await turn.audit(db, "created", domain="feedback",
+                             entry_id=entry.id,
+                             payload={"kind": payload.kind},
+                             surface="ios:settings")
+            return {"ok": True, "feedback_id": entry.id,
+                    "turn_id": turn.turn_id}
 
 
 # ── Sign-out ────────────────────────────────────────────────────────────────
@@ -161,4 +191,5 @@ async def signout(identity: str = Depends(current_identity)) -> dict:
     the iOS UX can ship; a follow-up slice should add the actual
     revocation pipeline.
     """
+    logger.info(f"event=signout identity={identity}")
     return {"ok": True, "identity": identity}

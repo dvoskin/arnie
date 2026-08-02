@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from api.auth import current_identity
+from core.mutation_contract import mutation_turn
 from db.database import AsyncSessionLocal
 from db.models import (
     Group, GroupMember, GroupMessage, GroupMessageReaction, User,
@@ -308,9 +309,18 @@ async def group_leaderboard(
 async def join_group(group_id: int, identity: str = Depends(current_identity)) -> dict:
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
-        await _get_group(db, group_id)
-        await _ensure_member(db, group_id, user.id)
-        return {"ok": True}
+        # Joining twice is a no-op, so no claim. Membership changes are
+        # audited because a leaderboard dispute is settled by knowing who was
+        # in the group and from when.
+        async with mutation_turn(
+            db, channel="ios", command="join_group", user_id=user.id,
+            dedup=f"join:{group_id}", claim=False,
+        ) as turn:
+            await _get_group(db, group_id)
+            await _ensure_member(db, group_id, user.id)
+            await turn.audit(db, "created", domain="group_membership",
+                             entry_id=group_id, surface="ios:groups")
+            return {"ok": True, "turn_id": turn.turn_id}
 
 
 @router.post("/{group_id}/leave")
@@ -318,10 +328,16 @@ async def leave_group(group_id: int, identity: str = Depends(current_identity)) 
     from sqlalchemy import delete as _delete
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
-        await db.execute(_delete(GroupMember).where(
-            GroupMember.group_id == group_id, GroupMember.user_id == user.id))
-        await db.commit()
-        return {"ok": True}
+        async with mutation_turn(
+            db, channel="ios", command="leave_group", user_id=user.id,
+            dedup=f"leave:{group_id}", claim=False,
+        ) as turn:
+            await db.execute(_delete(GroupMember).where(
+                GroupMember.group_id == group_id, GroupMember.user_id == user.id))
+            await db.commit()
+            await turn.audit(db, "deleted", domain="group_membership",
+                             entry_id=group_id, surface="ios:groups")
+            return {"ok": True, "turn_id": turn.turn_id}
 
 
 @router.get("/{group_id}/messages")
@@ -467,6 +483,14 @@ async def post_message(
 ) -> MessageOut:
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        # Class B: a duplicate here is visible to the user and undoable by
+        # them (unsend), which is what keeps group content out of Class A.
+        async with mutation_turn(
+            db, channel="ios", command="post_group_message", user_id=user.id,
+            dedup=f"post:{group_id}", claim=False,
+        ) as _turn:
+            await _turn.audit(db, "created", domain="group_message",
+                              surface="ios:groups")
         group = await _get_group(db, group_id)
         # Posting implies membership — auto-join keeps the flow one-tap smooth.
         await _ensure_member(db, group_id, user.id)
@@ -523,6 +547,14 @@ async def toggle_reaction(
     from sqlalchemy import delete as _delete
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        # Class B: a duplicate here is visible to the user and undoable by
+        # them (unsend), which is what keeps group content out of Class A.
+        async with mutation_turn(
+            db, channel="ios", command="react_group_message", user_id=user.id,
+            dedup=f"react:{message_id}", claim=False,
+        ) as _turn:
+            await _turn.audit(db, "updated", domain="group_reaction",
+                              surface="ios:groups")
         group = await _get_group(db, group_id)
         msg = (await db.execute(
             select(GroupMessage).where(
@@ -583,6 +615,14 @@ async def unsend_message(
     from sqlalchemy import delete as _delete, update as _update
     async with AsyncSessionLocal() as db:
         user = await resolve_user(db, identity)
+        # Class B: a duplicate here is visible to the user and undoable by
+        # them (unsend), which is what keeps group content out of Class A.
+        async with mutation_turn(
+            db, channel="ios", command="unsend_group_message", user_id=user.id,
+            dedup=f"unsend:{message_id}", claim=False,
+        ) as _turn:
+            await _turn.audit(db, "deleted", domain="group_message",
+                              surface="ios:groups")
         msg = (await db.execute(
             select(GroupMessage).where(
                 GroupMessage.id == message_id, GroupMessage.group_id == group_id)

@@ -123,11 +123,23 @@ def _isolate_turn_scoped_caches():
     turn a silent log into a question. Same for the in-flight enrichment
     registry, which is keyed by turn id and would otherwise hand a stale future
     to a test that never started one.
+
+    `_RELEVANCE_CACHE` is the same hazard and was missed. It memoizes the
+    food-relevance verdict by message text, so a test that classified
+    "Oh and a bag of quest chips" normally left a True behind, and a LATER
+    test asserting that a broken classifier yields False got the earlier
+    test's answer instead. That is the intermittent
+    `test_ask_authority::test_the_lane_is_never_lost_to_a_failing_model`
+    failure — it only appeared when the shuffle happened to order those two
+    the wrong way round, which is exactly the class of bug shuffling exists
+    to surface and exactly the kind that gets written off as flakiness.
     """
     import core.food_turn as _FT
     import handlers.tool_executor as _TE
-    _FT._SPREAD_CACHE.clear()
-    _TE._INFLIGHT_FETCHES.clear()
+    for cache in (_FT._SPREAD_CACHE, _FT._RELEVANCE_CACHE,
+                  _TE._INFLIGHT_FETCHES):
+        cache.clear()
     yield
-    _FT._SPREAD_CACHE.clear()
-    _TE._INFLIGHT_FETCHES.clear()
+    for cache in (_FT._SPREAD_CACHE, _FT._RELEVANCE_CACHE,
+                  _TE._INFLIGHT_FETCHES):
+        cache.clear()
