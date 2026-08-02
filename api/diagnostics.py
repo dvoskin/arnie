@@ -141,6 +141,25 @@ def _food_pipeline(user_id: Optional[int] = None) -> dict:
     except Exception as e:                           # pragma: no cover
         out["NUTRITION_RESOLVER_MODE"] = {"error": str(e)}
 
+    # The accuracy matcher's gate was invisible here — the redesign flag could be
+    # on or off and /health said nothing, so "is V2 actually live for the canary
+    # user?" had to be answered by log-grep. `effective` is the cohort shape
+    # (global | allowlist | off); the authed view also carries the allowlist and,
+    # for the user asked about, whether V2 resolves ON for them.
+    try:
+        from skills.nutrition.v2_gate import (_allowlist, cohort_label,
+                                              for_user, v2_active)
+        _v2_set = (os.getenv("NUTRITION_ACCURACY_V2") is not None
+                   or os.getenv("NUTRITION_ACCURACY_V2_ALLOWLIST") is not None)
+        entry = {"effective": cohort_label(), "env_set": _v2_set,
+                 "allowlist": sorted(_allowlist())}
+        if user_id is not None:
+            with for_user(user_id):
+                entry["active_for_user"] = v2_active()
+        out["NUTRITION_ACCURACY_V2"] = entry
+    except Exception as e:                           # pragma: no cover
+        out["NUTRITION_ACCURACY_V2"] = {"error": str(e)}
+
     try:
         from core.food_response import _composer_model, composer_enabled
         out["FOOD_COMPOSER"] = _flag("FOOD_COMPOSER", composer_enabled())

@@ -200,9 +200,17 @@ _FORM_PENALTY = (
 
 def _nutrition_accuracy_v2() -> bool:
     """The unified accuracy capability (docs/NUTRITION_ACCURACY_REDESIGN.md).
-    Default OFF until scripts/eval_resolver.py passes on the full fixture."""
-    import os
-    return os.getenv("NUTRITION_ACCURACY_V2", "").lower() in ("1", "true", "yes")
+
+    Off unless the global flag `NUTRITION_ACCURACY_V2` is set (everyone) OR the
+    ambient turn user is in `NUTRITION_ACCURACY_V2_ALLOWLIST` — the per-user
+    canary, so V2 can be trialled on one account before the whole fleet. Decision
+    lives in skills/nutrition/v2_gate; run_turn binds the user for the turn."""
+    try:
+        from skills.nutrition.v2_gate import v2_active
+        return v2_active()
+    except Exception:                                        # pragma: no cover
+        import os
+        return os.getenv("NUTRITION_ACCURACY_V2", "").lower() in ("1", "true", "yes")
 
 
 # Preparation / cooking-method words. They describe HOW a food was made, not

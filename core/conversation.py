@@ -669,6 +669,7 @@ async def run_turn(*args, **kwargs) -> TurnResult:
     """
     from core import food_trace
     from core.request_trace import RequestTrace, active as _trace_active
+    from skills.nutrition.v2_gate import for_user as _v2_for_user
 
     fields = {}
     try:
@@ -694,7 +695,8 @@ async def run_turn(*args, **kwargs) -> TurnResult:
     try:
         # Trace outside the budget: a turn that runs out of time is exactly the
         # turn whose trace has to survive to say so.
-        with food_trace.span(**fields), deadline.budget(), _trace_active(_rt):
+        with food_trace.span(**fields), deadline.budget(), _trace_active(_rt), \
+                _v2_for_user(fields.get("user_id")):
             _result = await _run_turn(*args, **kwargs)
         return _result
     except Exception as e:
