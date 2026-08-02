@@ -1680,6 +1680,73 @@ def web_meal_enrich_enabled() -> bool:
     return os.getenv("WEB_MEAL_ENRICH", "true").lower() in ("true", "1", "yes")
 
 
+def micros_deferred_enabled() -> bool:
+    """Move micro-panel + fiber/sugar/sodium ESTIMATION off the reply critical
+    path to a post-commit task. It is a ~2.5s haiku call whose output is not in
+    the reply, so on a composite-food turn (interpreter + web + micro + composer)
+    it is the one serial call that can leave the path the user waits on.
+
+    Dark by default and a kill switch: FOOD_MICROS_DEFERRED=true opts in, unset or
+    false keeps the synchronous behaviour exactly. When on, the row commits with
+    NULL micros and `_deferred_micro_fill` fills them a moment later; the card
+    reloads to pick them up. A real source (USDA/OFF/web/label) that already
+    carried micros is untouched either way — this only defers the ESTIMATE."""
+    return os.getenv("FOOD_MICROS_DEFERRED", "false").lower() in ("true", "1", "yes")
+
+
+async def _deferred_micro_fill(entry_id: int, food_name: str, quantity,
+                               calories, protein, carbs, fat) -> None:
+    """Estimate the micro panel + fiber/sugar/sodium AFTER the row is committed
+    and the reply is sent (FOOD_MICROS_DEFERRED). Runs on its OWN session so it
+    can never commit or roll back with the turn, and NEVER raises into the task:
+    a failure leaves the row with NULL micros — exactly the pre-existing state
+    when synchronous estimation failed. Only fills columns still NULL, so a
+    correction/delete or a real source that landed in between is never clobbered.
+    """
+    try:
+        from core.micro_estimator import estimate_micros
+        est = await estimate_micros(food_name, quantity, calories, protein, carbs, fat)
+        if not est:
+            return
+        # fiber/sugar/sodium live in dedicated columns; the rest is the panel.
+        fss = {k: est.pop(k) for k in ("fiber", "sugar", "sodium") if k in est}
+        carbs_v = carbs or 0
+        fib, sug = fss.get("fiber"), fss.get("sugar")
+        # Same invariant as the synchronous path: fibre/sugar are carbs, so they
+        # cannot exceed the carb count.
+        fiber = (round(min(fib, carbs_v) if carbs_v else fib, 1)
+                 if fib is not None else None)
+        sugar = (round(min(sug, carbs_v) if carbs_v else sug, 1)
+                 if sug is not None else None)
+        sodium = round(fss["sodium"], 0) if fss.get("sodium") is not None else None
+
+        from db.database import AsyncSessionLocal
+        import asyncio as _aio
+        import db.models as _models
+        # The turn commits the row AFTER this task is scheduled, so retry with a
+        # FRESH session (each sees the latest committed state) until it appears.
+        # If it never does (a fast correct/delete, or a very slow commit) we drop
+        # it — the row simply keeps NULL micros, the pre-existing fallback.
+        for _attempt in range(5):
+            async with AsyncSessionLocal() as s:
+                row = await s.get(_models.FoodEntry, entry_id)
+                if row is not None:
+                    if row.micronutrients_json is None and est:
+                        row.micronutrients_json = json.dumps(est)
+                        row.micros_estimated = True
+                    if row.fiber is None and fiber is not None:
+                        row.fiber = fiber
+                    if row.sugar is None and sugar is not None:
+                        row.sugar = sugar
+                    if row.sodium is None and sodium is not None:
+                        row.sodium = sodium
+                    await s.commit()
+                    return
+            await _aio.sleep(0.4)
+    except Exception as e:                                   # pragma: no cover
+        logger.warning(f"deferred micro fill failed for entry {entry_id}: {e}")
+
+
 def enrich_prefetch_enabled() -> bool:
     """Kill switch for the multi-item enrichment prewarm (fan out USDA+OFF across
     the foods in one paste). ENRICH_PREFETCH=false falls back to per-item serial
@@ -2707,7 +2774,7 @@ async def _analyze_food(db, user, food_name, inp):
     needs_micros = not result.micros
     needs_fss = (result.fiber is None and result.sugar is None
                  and result.sodium is None)
-    if (needs_micros or needs_fss) and result.calories:
+    if (needs_micros or needs_fss) and result.calories and not micros_deferred_enabled():
         try:
             from core.micro_estimator import estimate_micros
             est = await estimate_micros(
@@ -3547,6 +3614,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             inp["protein"] = analysis.protein
             inp["carbs"] = analysis.carbs
             inp["fats"] = analysis.fat
+            # Deferred micro/fss estimation (FOOD_MICROS_DEFERRED): the row was
+            # written with NULL micros; fill them off the reply path so the ~2.5s
+            # haiku call is not in what the user waits on. Fire-and-forget, same
+            # idiom as the USDA prewarm; its own session, retries until the row
+            # commits. Only when we actually skipped the synchronous estimate.
+            if micros_deferred_enabled() and getattr(analysis, "micros", None) is None:
+                _aio.ensure_future(_deferred_micro_fill(
+                    _new_food.id, food_name, inp.get("quantity"),
+                    analysis.calories, analysis.protein, analysis.carbs,
+                    analysis.fat))
         await db.refresh(target_log)
         _stash_receipt(inp, target_log, user, analysis.calories, analysis.protein,
                        confidence=_conf,
