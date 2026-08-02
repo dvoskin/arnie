@@ -55,6 +55,10 @@ _COUNT_UNITS = {
     # it never reached `piece_weight`, had no mass, and left a zero-calorie
     # read with nothing to correct it.
     "pat", "pats", "stick", "sticks",
+    # Common serving units that returned NO mass (prod 0801): "1 ear" of corn,
+    # "1 clove" of garlic, "1 bun" all fell through, so a seated density was
+    # discarded and the model's guess (0/low) stood.
+    "ear", "ears", "clove", "cloves", "bun", "buns",
 }
 
 #: Count units that name a container or a rough helping rather than a discrete
@@ -203,6 +207,11 @@ PIECE_WEIGHTS_G = {
     "banana": (118.0, 20.0),
     "apple": (182.0, 35.0),
     "orange": (131.0, 25.0),
+    # Serving units that priced to nothing in prod (0801). Unit-first keys because
+    # `piece_weight` matches f"{unit} {food}"; bare keys catch the food alone.
+    "ear corn": (90.0, 20.0), "ear": (90.0, 20.0),        # 1 medium ear ~90 g kernels
+    "clove garlic": (3.0, 1.0), "clove": (3.0, 1.0),      # 1 garlic clove ~3 g
+    "burger bun": (50.0, 15.0), "bun": (50.0, 15.0),      # standard bun ~50 g
     "slice": (28.0, 10.0),          # last resort for an unqualified "slice"
 }
 

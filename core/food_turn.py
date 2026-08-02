@@ -2427,6 +2427,42 @@ def _calls_for_ready(ready) -> list:
     return calls
 
 
+def _orphan_calls(data: dict) -> list:
+    """LEAVE NO FOOD BEHIND. On an ask, only `ready` commits and the asked item
+    waits — but a food the interpreter parsed into `items` yet neither asked
+    about (`points`) nor marked `ready` is SILENTLY DROPPED. Measured:
+    `scripts/invariant_sweep.py` finds it in 3/7 ask shapes, and it reproduces
+    live ("a Quest bar and an apple" lost the apple). The interpreter's sorting
+    of items/ready/points is not reliable enough to trust with data integrity, so
+    the PATH commits any such orphan on its own best estimate rather than losing
+    it. Worst case is a recoverable over-commit (the answer turn updates it),
+    never a silent drop. An orphan with no number can't be written, so it is
+    surfaced at warning rather than dropped in silence.
+
+    A universal guard, not flag-gated: dropping a food a user reported is data
+    loss in every mode. See [[feedback_arnie_fix_at_the_root]] — the invariant,
+    not the interpreter, owns "every reported food is logged or asked".
+    """
+    points = {str(p.get("label") or "").strip().lower()
+              for p in (data.get("points") or []) if isinstance(p, dict)}
+    ready = {str(it.get("food") or it.get("food_name") or "").strip().lower()
+             for it in (data.get("ready") or []) if isinstance(it, dict)}
+    orphans = []
+    for it in (data.get("items") or []):
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("food") or "").strip()
+        key = name.lower()
+        if not name or key in points or key in ready:
+            continue
+        if it.get("calories") in (None, ""):
+            logger.warning("leave-no-food-behind: orphan %r carries no calories; "
+                           "surfaced, not committed", name)
+            continue
+        orphans.append(it)
+    return _calls_for_ready(orphans)
+
+
 def clarify_text_from_points(points: list, ready: list | None = None, *,
                              user_message: str = "") -> str:
     """The deterministic floor for `clarify_plan_from_points`.
@@ -3881,7 +3917,10 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # Safe for the same reason the other branch is: the answer turn now
         # sees these rows on the board with their age, so refining them is an
         # update rather than a second write.
-        _ready_now = _calls_for_ready(data.get("ready"))
+        # `ready` commits AND any orphan the interpreter dropped (leave-no-food-
+        # behind) — a co-item parsed but neither asked nor marked ready is lost
+        # otherwise (invariant_sweep 3/7; reproduced live).
+        _ready_now = _calls_for_ready(data.get("ready")) + _orphan_calls(data)
         if text:
             return {"action": "ask", "text": text, "tool_calls": _ready_now}
         # A QUESTION WE CANNOT PHRASE IS NOT A REASON TO LEAVE THE LANE.
