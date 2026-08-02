@@ -1870,6 +1870,34 @@ def _worth_web_meal(food_name: str, cal) -> bool:
     return bool(_MEAL_WORD_RE.search(n))
 
 
+#: Beverages remain OUT — the one class web reliably fabricates a branded label
+#: for (Anya's "3 coffee" → 420-cal cappuccino, 2026-07-21).
+_BEVERAGE_RE = __import__("re").compile(
+    r"\b(coffee|cappuccino|latte|espresso|mocha|macchiato|americano|coke|cola|"
+    r"soda|pop|tea|juice|smoothie|shake|lemonade|beer|wine|whiskey|whisky|vodka|"
+    r"rum|gin|tequila|cocktail|margarita|seltzer|kombucha|cider|milk|water)\b",
+    __import__("re").I,
+)
+
+
+def _web_enrich_candidate(food_name: str) -> bool:
+    """Whether an ESTIMATE-path food should try web enrichment (2026-08-02).
+
+    Broadened beyond composite MEAL words: a diverse live test showed the
+    confidence + sanity guards below now make web fail SAFE — drinks/generics
+    return None, not the bogus inflated 'product' the meal-word gate was built to
+    stop. So allow any non-trivial food EXCEPT beverages (still the one class web
+    fabricates a label for). Fires ONLY on the estimate path, so a trusted DB seat
+    is never overridden — corn's DB density, parmesan's 180, all stand untouched.
+    A meal word ALWAYS qualifies (the original composite case)."""
+    n = (food_name or "").strip()
+    if len(n) < 4:
+        return False
+    if _MEAL_WORD_RE.search(n):
+        return True
+    return not _BEVERAGE_RE.search(n)
+
+
 async def _web_lookup_meal(food_name: str, quantity) -> dict | None:
     """Web lookup for the ABSOLUTE calories+macros of a composite/restaurant meal
     the databases miss. Unlike _web_lookup_packaged (a per-100g density anchored
@@ -2594,7 +2622,7 @@ async def _analyze_food(db, user, food_name, inp):
     # otherwise the estimate stands untouched. A user-stated label never
     # reaches here — it returns above. Kill switch: WEB_MEAL_ENRICH=false.
     if (web_meal_enrich_enabled() and result.source == "estimate"
-            and _worth_web_meal(food_name, result.calories)):
+            and _web_enrich_candidate(food_name)):
         try:
             meal = await _web_lookup_meal(food_name, inp.get("quantity"))
         except Exception as e:
