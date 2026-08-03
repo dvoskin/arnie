@@ -3667,6 +3667,17 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 f"one emoji if it fits. Never invent numbers."
             )
 
+        # ESTIMATION HONESTY (root fix 0803): derive the flag from the
+        # provenance VERDICT, not the display-confidence vocabulary. Promotion
+        # rewrites `confidence` from the tier table ("exact"/"likely"), so
+        # `confidence == "estimated"` was False for every promoted row — prod
+        # fe#2703/2705 committed estimated_flag=False while their own raw_input
+        # said estimated:True. Provenance was computed against the real
+        # candidate set and knows whether the macros were estimated; the string
+        # check remains only for analyses that carry no provenance.
+        _prov = getattr(analysis, "provenance", None)
+        _est = (bool(getattr(_prov, "macros_are_estimated", False)) if _prov is not None
+                else (analysis.confidence == "estimated"))
         _new_food = await add_food_entry(
             db,
             target_log.id,
@@ -3682,7 +3693,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             sodium=analysis.sodium,
             micronutrients_json=(json.dumps(analysis.micros) if getattr(analysis, "micros", None) else None),
             micros_estimated=bool(getattr(analysis, "micros_estimated", False)),
-            estimated_flag=(analysis.confidence == "estimated") or from_photo,
+            estimated_flag=_est or from_photo,
             confidence_score=_conf,
             source_type=source_type,
             meal_type=inp.get("meal_type") or _inherit_or_default_meal_type(
