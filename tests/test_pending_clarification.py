@@ -232,3 +232,70 @@ def test_prompt_teaches_clarification_tool_and_context_block():
     # Voice-preservation example must be present — this is what prevents
     # the "Need to confirm the calories on that" clinical regression.
     assert "challah" in s.lower() or "in your normal voice" in s.lower()
+
+
+# ── serialize_pending_clarifications — the same rows, for the chat wire ──────
+#
+# The client shows "still asking about X" under a macro card so a partial log
+# doesn't read as a finished one. It MUST agree with the prompt block: if the
+# model thinks a question is live, the user has to see the same thing.
+
+
+def test_wire_carries_the_open_clarification():
+    from core.context_builder import serialize_pending_clarifications
+    out = serialize_pending_clarifications([_stub_row(asked_minutes_ago=5)])
+    assert out == [{"item": "chicken sandwich", "question": "grilled or fried?"}]
+
+
+def test_wire_is_empty_when_nothing_is_open():
+    from core.context_builder import serialize_pending_clarifications
+    assert serialize_pending_clarifications([]) == []
+    assert serialize_pending_clarifications(None) == []
+
+
+def test_wire_drops_answered_and_stale_rows():
+    from core.context_builder import serialize_pending_clarifications
+    assert serialize_pending_clarifications([_stub_row(answered=True)]) == []
+    assert serialize_pending_clarifications([_stub_row(asked_minutes_ago=999)]) == []
+
+
+def test_wire_ignores_other_question_kinds():
+    from core.context_builder import serialize_pending_clarifications
+    assert serialize_pending_clarifications([_stub_row(kind="profile_stats")]) == []
+
+
+def test_wire_and_prompt_block_agree():
+    """The invariant that matters: same rows in, same verdict out."""
+    from core.context_builder import (
+        serialize_pending_clarifications, render_pending_clarification_block,
+    )
+    for rows in ([_stub_row(asked_minutes_ago=5)],
+                 [_stub_row(answered=True)],
+                 [_stub_row(asked_minutes_ago=999)],
+                 [_stub_row(kind="profile_stats")],
+                 []):
+        wire = serialize_pending_clarifications(rows)
+        block = render_pending_clarification_block(rows)
+        assert bool(wire) == bool(block), f"wire/prompt disagree for {rows}"
+
+
+def test_wire_respects_the_food_mode_freshness_window():
+    """quick=15 / moderate=30 / strict=60 — same scaling the prompt block uses."""
+    from core.context_builder import serialize_pending_clarifications
+    row = [_stub_row(asked_minutes_ago=20)]
+    assert serialize_pending_clarifications(row, food_mode="quick") == []
+    assert len(serialize_pending_clarifications(row, food_mode="moderate")) == 1
+    assert len(serialize_pending_clarifications(row, food_mode="strict")) == 1
+
+
+def test_wire_caps_at_three_newest_first():
+    from core.context_builder import serialize_pending_clarifications
+    rows = [_stub_row(item=f"item{i}", asked_minutes_ago=i + 1) for i in range(5)]
+    out = serialize_pending_clarifications(rows)
+    assert len(out) == 3
+    assert out[0]["item"] == "item0"     # most recently asked leads
+
+
+def test_wire_skips_a_row_with_neither_item_nor_question():
+    from core.context_builder import serialize_pending_clarifications
+    assert serialize_pending_clarifications([_stub_row(item="", question="")]) == []
