@@ -44,6 +44,7 @@ from handlers.tool_executor import (
     tool_heads_up, _heads_up_seed, NEEDS_HEADS_UP_TOOLS,
     FOOD_LOOKUP_HEADS_UP, blocked_log_reply,
     headsup_voice_enabled, sentence_case,
+    deep_food_heads_up, late_heads_up_enabled, late_heads_up_delay_s,
 )
 # Module level rather than per-call: the model calls below consult it, and
 # core.deadline imports nothing but the stdlib, so there is no cycle to dodge.
@@ -767,6 +768,15 @@ async def _run_turn(
     #: as the lane stuttering, not as reassurance.
     _early_heads_up_sent = False
 
+    #: SECOND-TIER heads-up (P1 felt-latency). When the first heads-up speaks it
+    #: schedules a self-guarding timer that, ~6s in, adds a fuller "still here,
+    #: here's what's taking the time" line — only if the reply is not yet ready.
+    #: `_reply_ready` flips the instant the food reply is final, so the timer
+    #: no-ops on every one of run_turn's exits without needing a cancel;
+    #: `_late_task` is held only to keep the task off the GC while it sleeps.
+    _reply_ready = False
+    _late_task = None
+
     #: Routing is one decision, so it contributes ONE stage record however many
     #: exits reach it. `stage_ms` sums, so a turn that declines twice would
     #: otherwise report double the time it spent deciding.
@@ -1172,7 +1182,7 @@ async def _run_turn(
                 # "checking the macros" there reads as the question being
                 # re-asked.
                 async def _early_heads_up(_food_name: str) -> None:
-                    nonlocal _early_heads_up_sent
+                    nonlocal _early_heads_up_sent, _late_task
                     if _early_heads_up_sent or _sft_prior is not None:
                         return
                     # The message seeds the hash (so two foods in a row do
@@ -1190,6 +1200,37 @@ async def _run_turn(
                         return
                     _early_heads_up_sent = True
                     _ft_vis.mark("first_visible")
+
+                    # SECOND-TIER heads-up (P1 felt-latency). If the turn is
+                    # still running a few seconds on, add a fuller "still on it,
+                    # here's what's taking the time" line — the way a good
+                    # assistant narrates a long step. Self-guards on
+                    # `_reply_ready`, so it no-ops the moment the reply is final
+                    # and needs no cancel on run_turn's many exits. Never writes.
+                    if late_heads_up_enabled() and _late_task is None:
+                        async def _late_heads_up() -> None:
+                            try:
+                                import asyncio as _aio
+                                await _aio.sleep(late_heads_up_delay_s())
+                                if _reply_ready or not _early_heads_up_sent:
+                                    return
+                                _dline = deep_food_heads_up(
+                                    _food_name, seed=_user_text or _food_name)
+                                if _streamer and on_text_bubble:
+                                    await on_text_bubble(_dline)
+                                    _streamer.flushed_count += 1
+                                elif on_interim:
+                                    await on_interim(_dline)
+                                else:
+                                    return
+                                _ft_vis.mark("late_heads_up")
+                            except Exception:
+                                pass
+                        try:
+                            import asyncio as _aio
+                            _late_task = _aio.ensure_future(_late_heads_up())
+                        except Exception:
+                            _late_task = None
 
                 _sft = await _sft_run(_photo_food or _user_text or "", user,
                                       prior=_sft_prior, history=messages,
@@ -1623,6 +1664,7 @@ async def _run_turn(
         # silence or a vague "try again later" — that reads as broken; this
         # reads as "we had a sec, send it again." Retention play.
         resp = Response.from_text(recovery_message("llm_error", seed=_user_text))
+        _reply_ready = True  # turn is ending — mute any pending second heads-up
         return TurnResult(
             response=resp, tool_calls=[], just_completed=False,
             in_onboarding=in_onboarding, onboarding_field_saved=None,
@@ -2623,6 +2665,15 @@ async def _run_turn(
                 # lands within a few ms of `complete_ms`, and that equality IS
                 # the finding rather than a measurement bug.
                 _ft_vis.mark("commit_visible")
+                # The food reply is final here — release the second-tier heads-up
+                # guard (and stop its timer sleeping) so it can never speak over
+                # the answer it was covering for.
+                _reply_ready = True
+                if _late_task is not None:
+                    try:
+                        _late_task.cancel()
+                    except Exception:
+                        pass
                 # Hold notice AFTER the contract/render: held names come from
                 # the system's own stash, and their digits ("Fage 0%") must
                 # never vaporize the notice (Dove bar incident class).
@@ -3863,6 +3914,15 @@ user_message=_user_text or "")
                 interpretation=locals().get("_sft"))
     except Exception:
         pass
+
+    # Every non-error path converges here — release the second-tier heads-up
+    # guard so a still-sleeping timer can never speak after the reply has landed.
+    _reply_ready = True
+    if _late_task is not None:
+        try:
+            _late_task.cancel()
+        except Exception:
+            pass
 
     return TurnResult(
         response=resp,

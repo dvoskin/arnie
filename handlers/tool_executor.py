@@ -1348,6 +1348,48 @@ _FOOD_LOOKUP_BUBBLES = (
     "checking that one against real data.",
 )
 
+#: SECOND-TIER heads-up (P1). Fires ONLY when a turn is still running ~6s in,
+#: appended after the first line — the "still here, and here's what's taking the
+#: time" continuation, the way Claude narrates a long step. A turn is slow at 6s
+#: because the meal has real depth (composite, restaurant, multi-source), so the
+#: wording leans on THAT truthfully — a bit more to it, cross-checking, one more
+#: moment — without claiming a specific stage that might not be running. Longer
+#: than tier-1 (this one has earned a fuller sentence) and drawn from its own
+#: pool so it never reads as the first line repeated.
+_FOOD_DEEP_TEMPLATES_BRANDED = (
+    "still cross-checking {food}'s label so every macro lands exact.",
+    "one more moment with {food}, matching it to the real product data.",
+    "still on {food}, confirming the label numbers so nothing's a guess.",
+    "almost there, verifying {food}'s published macros before it lands.",
+    "that {food}'s taking a closer read, getting the label numbers spot on.",
+    "still lining {food} up against its real label so your total's exact.",
+    "nearly done, double-checking {food}'s official numbers so they're right.",
+    "confirming {food}'s product data now so your day stays precise.",
+)
+_FOOD_DEEP_TEMPLATES = (
+    "still working through that {food}, cross-checking so the total holds up.",
+    "this {food}'s got a bit more to it, making sure each part's counted.",
+    "one more moment on that {food}, want it exact rather than close.",
+    "still on that {food}, lining up the numbers so your day stays accurate.",
+    "taking a closer look at that {food} so nothing in it gets missed.",
+    "almost there on that {food}, double-checking the macros before it lands.",
+    "that {food}'s a bit involved, getting each piece right rather than rounding.",
+    "still sorting that {food} out properly so the totals actually hold up.",
+    "one more sec on that {food}, cross-referencing so you can trust the number.",
+    "still pulling that {food} together so the whole thing adds up right.",
+)
+#: No-food fallback for tier-2 (multi-item over budget, or no clean subject).
+_FOOD_DEEP_BUBBLES = (
+    "still on it, cross-checking so the numbers actually hold up.",
+    "this one's got a few parts, making sure each is counted.",
+    "one more moment to get this exact.",
+    "still working it out properly so nothing's off.",
+    "almost there, just confirming the macros before it lands.",
+    "taking a closer look so the total comes out right.",
+    "still lining up the numbers on this one.",
+    "nearly done, double-checking before it lands.",
+)
+
 _TOOL_HEADS_UP_BUBBLES = {
     "web_search": (
         "checking that.",
@@ -1509,6 +1551,64 @@ def tool_heads_up(tool_name: str, seed: str | None = None,
             # Defensive: subject dropped out between pool pick and format.
             line = _FOOD_LOOKUP_BUBBLES[idx % len(_FOOD_LOOKUP_BUBBLES)]
     return sentence_case(line) if headsup_voice_enabled() else line
+
+
+FOOD_DEEP_HEADS_UP = "food_deep"
+
+
+def _food_deep_bubbles(subject: str | None) -> tuple:
+    """Which SECOND-TIER pool — same branded/generic/neutral split as tier-1, so
+    the label claim is made only when a label lookup is the truthful mention."""
+    try:
+        food = _clean_food_subject(subject)
+        if food:
+            return (_FOOD_DEEP_TEMPLATES_BRANDED if _looks_branded(food)
+                    else _FOOD_DEEP_TEMPLATES)
+    except Exception:
+        pass
+    return _FOOD_DEEP_BUBBLES
+
+
+def deep_food_heads_up(subject: str | None = None, seed: str | None = None) -> str:
+    """The second, more-specific reassurance for a turn still running ~6s in.
+
+    Same deterministic hash-select as `tool_heads_up`, but from the tier-2 pool
+    and SALTED (`|deep`) so the pick is independent of the first line — the same
+    food must not draw line 1 and line 2 at the same index and echo itself.
+    Never empty; sentence-cased for voice like tier-1.
+    """
+    bubbles = _food_deep_bubbles(subject)
+    key = (seed or subject or "deep").strip().lower() + "|deep"
+    idx = int(hashlib.sha1(key.encode("utf-8")).hexdigest()[:8], 16) % len(bubbles)
+    line = bubbles[idx]
+    if "{food}" in line:
+        food = _clean_food_subject(subject)
+        if food:
+            if bubbles is not _FOOD_DEEP_TEMPLATES_BRANDED:
+                food = food.lower()
+            line = line.format(food=food)
+        else:
+            line = _FOOD_DEEP_BUBBLES[idx % len(_FOOD_DEEP_BUBBLES)]
+    return sentence_case(line) if headsup_voice_enabled() else line
+
+
+def late_heads_up_enabled() -> bool:
+    """Second-tier heads-up is ON by default; FOOD_LATE_HEADSUP=false kills it with
+    no deploy. It never touches the log — a pure reassurance bubble — so a bad fire
+    costs one extra line, never a wrong number."""
+    return (os.getenv("FOOD_LATE_HEADSUP", "true") or "").strip().lower() in (
+        "1", "true", "on", "yes")
+
+
+def late_heads_up_delay_s() -> float:
+    """Seconds AFTER the first heads-up before the second fires. The first lands
+    ~2.5s in (first food name off the interpreter stream), so ~3.5s puts the second
+    around 6s total — the point a turn stops feeling responsive. Env
+    FOOD_LATE_HEADSUP_DELAY_S overrides."""
+    try:
+        return max(0.5, float(os.getenv("FOOD_LATE_HEADSUP_DELAY_S", "3.5")))
+    except (TypeError, ValueError):
+        return 3.5
 
 
 def search_heads_up(query: str | None = None) -> str:

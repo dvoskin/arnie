@@ -94,6 +94,16 @@ services:
       # =false reverts to inline without a deploy.
       - key: FOOD_MICROS_DEFERRED
         value: "true"
+      # SECOND-TIER HEADS-UP (P1 felt-latency). When a food turn is still running
+      # ~6s in, it appends a fuller "still on it, here's what's taking the time"
+      # line after the first heads-up — the way Claude narrates a long step. Pure
+      # reassurance; it never touches the log. FOOD_LATE_HEADSUP=false kills it
+      # with no deploy; FOOD_LATE_HEADSUP_DELAY_S tunes how long after the first
+      # line (≈2.5s in) it waits, so 3.5 puts the second around the 6s mark.
+      - key: FOOD_LATE_HEADSUP
+        value: "true"
+      - key: FOOD_LATE_HEADSUP_DELAY_S
+        value: "3.5"
       # THE FAST PATH, MEASURED BUT NOT TRUSTED.
       #
       # `core/food_fast_path.py` is a deterministic parser that produces the
