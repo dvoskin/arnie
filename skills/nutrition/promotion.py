@@ -277,22 +277,28 @@ def promote(resolution, *, food_name: str, quantity: str, legacy,
             f"food={food_name!r} outcome=declined "
             f"reason={'no_resolution' if resolution is None else getattr(resolution, 'source', '-')}")
         return legacy
-    # A GUESS DOES NOT BEAT A LOOKUP. A `provisional` resolution is the model's own
-    # calorie guess wearing a resolver label — it carries no source. It must not
-    # overwrite a legacy that already resolved to REAL data. In prod (resolver
-    # live) this was silently discarding web hits: a shawarma bowl web-enriched to
-    # 950, then a provisional resolution overwrote it back to the guess (550).
-    # When the resolver found nothing better than the guess but the legacy DID find
-    # a source, keep the source.
-    if str(getattr(resolution, "source", "") or "").lower() == "provisional":
-        _leg = str(getattr(legacy, "enrichment_source", None)
-                   or getattr(legacy, "source", "") or "").lower()
-        if _leg in ("web_label", "web", "usda", "off", "memory", "user_label"):
-            logger.info(
-                f"event=nutrition_promotion turn={turn_id or '-'} "
-                f"food={food_name!r} outcome=declined "
-                f"reason=provisional_would_override_{_leg}")
-            return legacy
+    # OWNERSHIP: the interpreter's reasoned value is the committed BASELINE (it
+    # carries the legacy here); a lookup overrides it ONLY on a VERIFIED IDENTITY
+    # match. A weak/CATEGORY resolution — or a `provisional` guess — has not
+    # actually identified the food, so it must not overwrite the baseline. The
+    # user's OWN data (memory / a label they confirmed) is trusted regardless of
+    # grade; every other source must be EXACT or CLOSE.
+    #
+    # Root fix 0802 (project_arnie_resolver_override_rootcause_0802): the resolver,
+    # live and owning committed values, was overriding CORRECT interpreter numbers
+    # on ~19% of logs — shrimp 150->2450 (357g carbs), eggplant 33->1650, RU foods
+    # 20-50x — by promoting weak/category matches. A lookup now earns the override
+    # by proving identity, not by merely existing.
+    _src = str(getattr(resolution, "source", "") or "").lower()
+    _grade = str(getattr(resolution, "match_grade", "") or "").lower()
+    _trusted = _src in ("user_label", "user_regular", "memory", "history")
+    _verified = _trusted or ("exact" in _grade) or ("close" in _grade)
+    if not _verified:
+        logger.info(
+            f"event=nutrition_promotion turn={turn_id or '-'} "
+            f"food={food_name!r} outcome=declined "
+            f"reason=unverified_identity src={_src or '-'} grade={_grade or '-'}")
+        return legacy
     try:
         promoted = to_food_analysis(resolution, food_name=food_name,
                                    quantity=quantity, legacy=legacy)

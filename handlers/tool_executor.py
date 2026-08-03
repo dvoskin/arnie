@@ -2748,7 +2748,12 @@ async def _analyze_food(db, user, food_name, inp):
         except Exception as e:
             logger.warning(f"web meal enrich errored for {food_name!r}: {e}")
             meal = None
-        if meal:
+        # OWNERSHIP (root fix 0802): web overrides the interpreter's estimate ONLY
+        # on a HIGH-confidence identity match. A "medium" hit has not verified it
+        # is THIS food, and overriding on medium corrupted logs — "grilled shrimp"
+        # matched a carb-heavy dish and committed 2450 cal / 357g carbs over the
+        # interpreter's correct 150. Medium -> keep the interpreter's number.
+        if meal and str(meal.get("confidence", "")).lower() == "high":
             logger.info(
                 f"web meal enrich: {food_name!r} {result.calories}→"
                 f"{round(meal['calories'])} cal (conf={meal['confidence']})")
@@ -2763,6 +2768,11 @@ async def _analyze_food(db, user, food_name, inp):
             result.source = "web_label"
             result.confidence = "likely"
             result.enrichment_source = "web_label"
+        elif meal:
+            logger.info(
+                f"web meal enrich DECLINED (conf={meal['confidence']}, need high): "
+                f"{food_name!r} keeping interpreter {result.calories} cal vs web "
+                f"{round(meal['calories'])}")
 
     # Nutrient fallback: no database (USDA/web/memory) data — common for
     # restaurant/branded/composite foods USDA has no entry for. Estimate the

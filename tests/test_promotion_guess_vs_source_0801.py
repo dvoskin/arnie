@@ -74,9 +74,34 @@ def test_provisional_never_overrides_a_sourced_legacy(legacy_source):
     assert out is leg and out.calories == 950
 
 
-def test_provisional_still_promotes_over_a_bare_estimate(_owns_and_sentinel):
-    """Two guesses — the resolver's provisional may still win over an estimate."""
-    out = _promote(_resolution("provisional", cal=550), _legacy("estimate", 400))
+def test_provisional_defers_to_the_interpreter_estimate():
+    """OWNERSHIP (root fix 0802): a provisional guess has not verified identity, so
+    it does NOT override even a bare interpreter estimate — the estimate is the
+    committed baseline. (Was: provisional promoted over estimate. New rule: a
+    lookup earns the override only by proving identity.)"""
+    leg = _legacy("estimate", 400)
+    out = _promote(_resolution("provisional", cal=550), leg)
+    assert out is leg
+
+
+def test_category_grade_lookup_defers_to_the_baseline():
+    """The shrimp/eggplant class: a real source (usda) but a WEAK CATEGORY match is
+    not a verified identity, so it must not override the interpreter's baseline."""
+    leg = _legacy("estimate", 150)
+    out = _promote(_resolution("usda", cal=2450, grade="category"), leg)
+    assert out is leg
+
+
+def test_close_grade_lookup_still_promotes(_owns_and_sentinel):
+    """A CLOSE identity match is verified — it overrides as before (no regression
+    to the cases the resolver was built for)."""
+    out = _promote(_resolution("off", cal=210, grade="close"), _legacy("estimate", 150))
+    assert out is _owns_and_sentinel
+
+
+def test_users_own_data_promotes_regardless_of_grade(_owns_and_sentinel):
+    """The user's confirmed memory is trusted even without an EXACT/CLOSE grade."""
+    out = _promote(_resolution("memory", cal=300, grade="category"), _legacy("estimate", 250))
     assert out is _owns_and_sentinel
 
 
