@@ -459,8 +459,14 @@ _SET_REPORT_RE = re.compile(
 # catch a phantom FOOD log the same way _SET_REPORT_RE catches a phantom set.
 # The screenshot bug: "I had quest chips and caramel cashew" → "logged, 340 cal"
 # with NO log_food call → nothing written, false confirmation.
+#: PRESENT TENSE COUNTS. "I'm having some chicken and rice" is a food report and
+#: this regex did not say so (prod phantom 2026-08-03, fe#2711 window): it listed
+#: `had|ate|eating` but not `having`, so the guard below never looked at the turn.
+#: `core.food_turn._EATEN_RE` already had `having` — the two lists disagreeing IS
+#: the bug, so keep them aligned when either changes.
 _FOOD_REPORT_RE = re.compile(
-    r"\b(had|ate|eating|grabbed|just\s+had|for\s+(?:breakfast|lunch|dinner|a\s+snack))\b"
+    r"\b(had|ate|eaten|eating|having|have|drank|drinking|finished|snacked|"
+    r"downed|grabbed|just\s+had|for\s+(?:breakfast|lunch|dinner|a\s+snack))\b"
     r"|\b(bar|shake|chips|bagel|meal|snack|smoothie|protein|coffee|latte)\b",
     re.IGNORECASE,
 )
@@ -716,11 +722,21 @@ _TOTAL_CLAIM_RE = re.compile(
 # the total idiom BEFORE the number AND a calorie unit AFTER it, so a per-item
 # figure ("180 cal") or a remaining-budget figure ("470 left") is never mistaken
 # for the day total.
+#: THE HEDGE AND THE UNIT BOTH MOVE. The 2026-08-03 phantom stated "puts you
+#: AROUND 970 FOR THE DAY" and this pattern saw nothing: the preposition was
+#: pinned to `at|to` (so the hedge "around" broke it) and the number had to be
+#: followed by a calorie word (so "for the day" broke it). Both are ordinary
+#: voice, and the same reply's regenerate said "puts you at 970 calories" —
+#: i.e. the guard fired or not on phrasing the model varies freely. The
+#: preposition/hedge is now one optional run, and "for the day" counts as the
+#: unit, because it names the total more explicitly than "cal" does.
+_DAY_TOTAL_HEDGE = r"(?:\s+(?:at|to|around|about|roughly|near|approximately|up))*"
 _DAY_TOTAL_PHRASE_RE = re.compile(
     rf"\b(?:you'?re\s+(?:now\s+)?(?:sitting\s+)?at|you\s+are\s+(?:now\s+)?at|"
-    rf"sitting\s+at|puts?\s+you\s+(?:at|to)|brings?\s+you\s+(?:to|up\s+to)|"
-    rf"now\s+at|that'?s\s+you\s+at|has\s+you\s+at)\s+"
-    rf"(\d[\d,]{{2,5}})\s*{_CAL_UNIT}\b",
+    rf"sitting\s+at|puts?\s+you|brings?\s+you|"
+    rf"now\s+at|that'?s\s+you\s+at|has\s+you\s+at)"
+    rf"{_DAY_TOTAL_HEDGE}\s+"
+    rf"(\d[\d,]{{2,5}})\s*(?:{_CAL_UNIT}\b|for\s+the\s+day\b)",
     re.IGNORECASE)
 
 

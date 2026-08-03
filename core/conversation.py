@@ -3005,17 +3005,24 @@ user_message=_user_text or "")
     # was never written. On a no-write food-report turn, a stated total that
     # exceeds the DB total beyond tolerance is fabricated arithmetic → same
     # blocking rescue as a worded claim.
+    # THE ARITHMETIC IS SELF-VALIDATING, SO IT NEEDS NO PERMISSION FROM THE USER'S
+    # WORDING. This guard used to also require `_FOOD_REPORT_RE` to match the user
+    # message, and that conjunction is what let the 2026-08-03 phantom through: an
+    # ANSWER turn ("6 oz of chicken and like a cup of rice") carries no eating verb
+    # at all — the report lives in the prior — so no widening of a food-report
+    # regex can be relied on to cover answer turns. Dropping the precondition
+    # cannot create a false positive, because a reply that states the day total
+    # CORRECTLY never exceeds the DB by more than the tolerance; only a fabricated
+    # total does. A stated total is checkable against the ledger on its own terms.
     if not _phantom and not tool_calls:
         try:
             from core.turn_health import (
                 claimed_day_total as _claimed_total,
-                _FOOD_REPORT_RE as _food_report_re,
                 DAY_TOTAL_TOLERANCE as _day_tol,
             )
             _claim = _claimed_total(response_text)
             _db_total = round(getattr(today_log, "total_calories", 0) or 0)
             if (_claim is not None
-                    and _food_report_re.search(_gate_user_message or "")
                     and _claim > _db_total + _day_tol):
                 logger.warning(
                     f"event=total_claim_phantom user={getattr(user, 'id', None)} "
