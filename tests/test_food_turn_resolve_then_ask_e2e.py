@@ -102,8 +102,34 @@ async def test_moderate_does_not_ask_about_the_steak_fat(v2, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_the_settled_food_commits_while_the_doubtful_one_waits(v2, monkeypatch):
-    # Partial commit: the banana logs now, the spoon is asked about.
+async def test_the_settled_food_waits_with_the_doubtful_one(v2, monkeypatch):
+    """AN ASK WRITES NOTHING — be65fb6's decision, restored 2026-08-03.
+
+    This asserted the opposite until now: the banana committed while the spoon
+    was asked about. That is right in principle and wrong in practice, because
+    an ask carrying writes loses its own question — `discard_held` bins the
+    held bubble whenever a logging tool fires, and the structured-narration
+    gate has no "ask" in its action tuple. Live symptom: "Had some chicken and
+    rice" wrote the rice, never mentioned it, and asked about the chicken.
+
+    Nothing is lost by waiting: the answer turn re-reads the whole message.
+    """
+    monkeypatch.setattr(FT, "chat", _fake_chat(_log([
+        SPOON,
+        {"food": "Banana", "amount": 1, "unit": "medium", "calories": 105,
+         "protein": 1, "carbs": 27, "fats": 0}])))
+    out = await FT.run("a spoon of peanut butter and a banana", _user())
+    assert out["action"] == "ask"
+    assert not (out.get("tool_calls") or []), (
+        "an ask must carry no writes — the whole meal waits for the answer")
+
+
+@pytest.mark.asyncio
+async def test_the_switch_still_commits_the_settled_food(v2, monkeypatch):
+    """The old behaviour, kept under FOOD_PARTIAL_COMMIT. Coverage stays so the
+    switch is a real way back rather than a dead flag — and so the narration
+    guards that make it safe to flip keep being exercised."""
+    monkeypatch.setenv("FOOD_PARTIAL_COMMIT", "true")
     monkeypatch.setattr(FT, "chat", _fake_chat(_log([
         SPOON,
         {"food": "Banana", "amount": 1, "unit": "medium", "calories": 105,

@@ -67,6 +67,41 @@ def structured_food_enabled() -> bool:
     return os.getenv("STRUCTURED_FOOD", "true").lower() in ("true", "1", "yes")
 
 
+def partial_commit_enabled() -> bool:
+    """Whether an ASK turn may also write the foods it is NOT asking about.
+
+    OFF. Restored from be65fb6 (2026-07-27), which withdrew the write for
+    reasons that were never addressed and then never merged — so the behaviour
+    it turned off has been live ever since 553a365 re-landed the writes as a
+    WIRING fix for the native path. Both narration faults it named are still
+    exactly as described:
+
+      • core/conversation.py `discard_held()` drops the streamed bubble
+        whenever a logging tool fired, on the assumption that held text is the
+        model confirming prematurely. On an ask-with-writes it is the system's
+        QUESTION being dropped.
+      • the structured-narration branch gates on
+        `_sft["action"] in ("log","update","delete","commit")` — "ask" is not
+        in that tuple — so an ask-with-writes falls through to `voice_log`,
+        whose signature carries neither the user message nor the question.
+
+    Measured then: three foods reported, one committed, the question destroyed
+    twice over, the reply coaching about items it had never heard of. Measured
+    again 2026-08-03 (Danny): "Had some chicken and rice" silently wrote the
+    rice, said nothing about it, and asked about the chicken — a card that
+    looks finished above a question that says it is not.
+
+    Holding here is a DECISION, not the wiring loss 553a365 fixed: the
+    coordinator still separates what to SAY from what may be WRITTEN, and
+    still executes `approved_operations`. It simply is not handed any on an
+    ask. Nothing is lost by holding — the answer turn re-reads the whole meal,
+    which is how held items have always come back.
+
+    FOOD_PARTIAL_COMMIT=true restores the old behaviour without a deploy."""
+    return os.getenv("FOOD_PARTIAL_COMMIT", "false").lower() in (
+        "true", "1", "yes")
+
+
 def _logger_model() -> str:
     # Sonnet by default: the logger also estimates macros, which Haiku fumbles.
     # Tiny prompt, so it's still fast. Env-tunable.
@@ -3939,7 +3974,12 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # `ready` commits AND any orphan the interpreter dropped (leave-no-food-
         # behind) — a co-item parsed but neither asked nor marked ready is lost
         # otherwise (invariant_sweep 3/7; reproduced live).
-        _ready_now = _calls_for_ready(data.get("ready")) + _orphan_calls(data)
+        # AN ASK WRITES NOTHING (be65fb6, restored). The ready foods wait with
+        # the held one: a card that reads as finished above a question that
+        # says it is not is worse than a meal that lands a turn later, and the
+        # answer turn re-reads the whole message anyway.
+        _ready_now = ((_calls_for_ready(data.get("ready")) + _orphan_calls(data))
+                      if partial_commit_enabled() else [])
         if text:
             # THE QUESTIONS, STILL QUESTIONS. The composer voices them and the
             # voicing is one string — but a two-question ask rendered as prose
@@ -4161,23 +4201,29 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             #
             # Built with the same `_build_calls` the commit path uses, so there
             # is one definition of what a write is.
+            # AN ASK WRITES NOTHING (be65fb6, restored) — the same decision as
+            # the interpreter branch above, made in both places because either
+            # can raise the question. With the switch off there is nothing to
+            # build and nothing for the veto to filter.
             _ready_calls = []
-            try:
-                _board_by_id = {}
-                for _b in (board or []):
-                    try:
-                        _board_by_id[int(_b["id"])] = _b
-                    except Exception:
-                        continue
-                _c, _k, _il = _build_calls(ops, _board_by_id)
-                _ready_calls, _, _, _ = _apply_clarification_veto(
-                    _decision, _c, _k, _il)
-            except Exception as _ve:
-                # A partial commit is an improvement, never a precondition —
-                # losing it costs an extra turn, losing the QUESTION loses the
-                # meal.
-                logger.warning(f"partial-commit calls unavailable: {_ve}")
-                _ready_calls = []
+            if partial_commit_enabled():
+                try:
+                    _board_by_id = {}
+                    for _b in (board or []):
+                        try:
+                            _board_by_id[int(_b["id"])] = _b
+                        except Exception:
+                            continue
+                    _c, _k, _il = _build_calls(ops, _board_by_id)
+                    _ready_calls, _, _, _ = _apply_clarification_veto(
+                        _decision, _c, _k, _il)
+                except Exception as _ve:
+                    # A partial commit is an improvement, never a
+                    # precondition — losing it costs an extra turn, losing the
+                    # QUESTION loses the meal.
+                    logger.warning(
+                        f"partial-commit calls unavailable: {_ve}")
+                    _ready_calls = []
             # THE RESOLUTION TRAVELS, NOT JUST A REFERENCE TO IT (cause A).
             #
             # `staged_item_id` below is a pointer, and by the time the answer

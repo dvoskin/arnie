@@ -2093,7 +2093,16 @@ async def _run_turn(
     # Placed OUTSIDE `if tool_calls:` so a no-tool chat turn still releases.
     if _streamer and _streamer.held:
         _fired_logging = any(tc["name"] in _LOGGING_TOOLS for tc in tool_calls)
-        if _fired_logging:
+        # A QUESTION IS NOT A PREMATURE CONFIRMATION. `discard_held` exists to
+        # bin pass-1 text that claims a write before the write happened — but
+        # it keys on "a logging tool fired", and on an ASK turn that also wrote
+        # the held bubble is the system's own QUESTION. Dropping it is how a
+        # partial commit lost its question twice over (be65fb6, 2026-07-27).
+        # The write is held now, so this is belt-and-braces; it stays because
+        # FOOD_PARTIAL_COMMIT=true can put the writes back, and this guard is
+        # what makes that switch safe to flip.
+        if _fired_logging and not (_sft is not None
+                                   and _sft.get("action") == "ask"):
             _streamer.discard_held()
             # Keep HOLDING for the follow-up voicing: its running total must be
             # verified against the DB before a single bubble reaches the user, so a
