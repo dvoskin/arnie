@@ -346,13 +346,32 @@ def check_i1(payload):
         f"tools={chips_of(payload)} pending={pending_of(payload)}")
 
 
-def check_i5(entries):
-    """No row may sit outside a two-sided energy-density band.
+#: Two-sided energy-density band, kcal/g, against the STATED portion.
+#:
+#: The FLOOR is 0.05, not the 0.2 this started at. 0.2 looked defensible and
+#: false-positived immediately on jalapenos (5 cal / 35 g = 0.14) — and it
+#: would also have failed lettuce (~0.15), celery (~0.16) and cucumber (~0.15),
+#: which are real foods that really are that thin. 0.05 still separates the
+#: production defect by a wide margin: one cup of rice priced at 1 cal is
+#: 0.006 kcal/g, thirty times under the floor and twenty times under the
+#: thinnest vegetable. A bound that only holds when you pick the examples is
+#: not a bound.
+#:
+#: The CEILING is `sanity.MAX_KCAL_PER_G`, and it is honestly not the whole
+#: story. The other half of the rice defect — 528 cal for one cup — is
+#: 3.3 kcal/g: a DRY-grain density on a portion the user described as cooked.
+#: No universal ceiling can catch that, because 3.3 is perfectly ordinary for
+#: something else. Catching it needs the food's OWN expected density, which is
+#: what routing `normalize_quantity().grams` into pricing gives us, and it is
+#: gated separately once that lands. Stating the gap here rather than choosing
+#: a ceiling low enough to look like it covers the case.
+DENSITY_FLOOR = 0.05
+DENSITY_CEILING = 9.0
 
-    One cup of cooked white rice is ~158 g. At 1 cal that is 0.006 kcal/g; at
-    528 it is 3.3 kcal/g, a DRY-grain density on a portion the user described
-    as cooked. `sanity.py` has only ceilings, so both committed.
-    """
+
+def check_i5(entries):
+    """No row may sit outside the band. See DENSITY_FLOOR for what it does and
+    does not cover."""
     from skills.nutrition.normalize import normalize_quantity
     bad = []
     for e in entries:
@@ -365,10 +384,81 @@ def check_i5(entries):
         if not grams or grams <= 20:
             continue                      # no stated mass to judge it against
         d = cal / grams
-        if d < 0.2 or d > 9.0:
+        if d < DENSITY_FLOOR or d > DENSITY_CEILING:
             bad.append(f"{e.parsed_food_name!r} {e.quantity!r} "
                        f"{cal:g} cal / {grams:g} g = {d:.3f} kcal/g")
     assert not bad, "I5: implausible energy density — " + "; ".join(bad)
+
+
+HOLD_RE = re.compile(r"holding the (.+?)(?:\s*[-—.]|$)", re.I)
+
+
+def check_i3(text, entries, payload):
+    """Nothing may be named as HELD while its own receipt says it landed.
+
+    What shipped: "Holding the Challah bread and Honey turkey slices and
+    Jalapenos - tell me which kind and it goes on too", one inch under a
+    receipt panel reading "Logged Challah bread, 140 cal". `note_held_items`
+    diffs the prior turn's FULL parse against THIS turn's commits and has no
+    notion of the board, so a row written a turn ago reads as missing.
+
+    The canned tail is the tell: blueberries and fries have no "kind".
+    """
+    m = HOLD_RE.search(text or "")
+    if not m:
+        return
+    held = [h.strip().lower() for h in re.split(r"\band\b", m.group(1)) if h.strip()]
+    on_board = [(e.parsed_food_name or "").lower() for e in entries]
+    receipts = " ".join(
+        s.get("label", "") for s in
+        ((payload.get("reasoning") or {}).get("steps") or [])).lower()
+    for h in held:
+        clash = [b for b in on_board if h in b or b in h]
+        assert not clash, (
+            f"I3: {h!r} is named as held but is already on the board as "
+            f"{clash!r} — reply={text!r}")
+        assert f"logged {h}" not in receipts, (
+            f"I3: {h!r} is named as held but its own receipt says Logged — "
+            f"receipts={receipts!r}")
+
+
+#: What `build_prompt` calls the day block it hands the composer.
+DAY_STANDS_RE = re.compile(
+    r"so\s+(-?[\d,]+)\s+calories\s+and\s+(-?[\d,]+)g?\s+protein\s+left", re.I)
+
+
+def check_i6(composer_prompts, payload):
+    """The number the composer is TOLD and the number the card computes must
+    be the same number.
+
+    The shipped turn read "789 cal still in the tank" above a card saying
+    "788 cal left". Two independent computations over the same day:
+    `TransactionSnapshot.cal_left` is `max(0, target - int(day_cal))` —
+    truncate, floor at zero — while the card's `rem_c` is
+    `int(round(target - total_cal))` — half-even, negatives allowed. The
+    reconciler that was meant to join them writes to `inp["_receipt"]`, a key
+    the executor stopped populating when command input became immutable, so it
+    has been dead code.
+
+    This asserts the INPUTS rather than the prose, because the prose is a
+    model's and the defect is not.
+    """
+    told = None
+    for p in composer_prompts:
+        m = DAY_STANDS_RE.search(p or "")
+        if m:
+            told = (int(m.group(1).replace(",", "")),
+                    int(m.group(2).replace(",", "")))
+    if told is None:
+        return
+    for card in cards_of(payload):
+        pay = card.get("payload") or {}
+        rem_c, rem_p = pay.get("remaining_cal"), pay.get("remaining_protein")
+        if rem_c is None and rem_p is None:
+            continue
+        assert (rem_c, rem_p) == told, (
+            f"I6: composer told {told} but the card says "
+            f"{(rem_c, rem_p)} — two owners for one day")
 
 
 def check_i9(text):
@@ -470,3 +560,161 @@ async def test_every_food_survives_the_exchange(client, seeded, edges):
     assert_turn_ran(edges, r2, expect_plans_used=2)
 
     check_i4(await rows(seeded), ["Turkey", "Corn"])
+
+
+# ── The session that prompted all of this ─────────────────────────────────────
+
+#: The 2026-08-03 transcript, verbatim, as (message, interpreter reply) pairs.
+#: The interpreter replies are what the model actually decided that evening —
+#: including the parts it got wrong, because the invariants are about what the
+#: SYSTEM does with a fallible interpreter, not about making the model better.
+THE_DAY = [
+    ("I just had some ground beef and rice",
+     {"action": "ask",
+      "points": [{"label": "Ground beef", "qs": ["how much, and what fat %?"]}],
+      "items": [item("Ground beef", 240, unit="cup"),
+                item("White rice", 205, unit="cup")]}),
+    ("Like a cup of each",
+     {"action": "log",
+      "items": [item("Ground beef, 85/15, cooked", 240, unit="cup"),
+                item("White rice, cooked", 205, unit="cup")]}),
+    ("I also some chicken and rice",
+     {"action": "ask",
+      "points": [{"label": "Chicken", "qs": ["grilled or fried, and how much?"]}],
+      "items": [item("Chicken", 230, unit="cup")]}),
+    ("Grilled like a cup",
+     {"action": "log",
+      "items": [item("Grilled Chicken", 230, unit="cup")]}),
+    ("I also had 3 blueberries 5 French fries and a burger",
+     {"action": "ask",
+      "points": [{"label": "Burger", "qs": ["fast food or homemade?"]}],
+      "items": [item("Blueberries", 3, amount=3, unit="piece"),
+                item("French fries", 25, amount=5, unit="piece"),
+                item("Burger", 500, unit="burger")]}),
+    ("Home made",
+     {"action": "log",
+      "items": [item("Homemade Burger", 500, unit="burger")]}),
+    ("I am also eating a piece of challah with 3 slice honey turkey "
+     "and some mayo and jalapaenos",
+     {"action": "ask",
+      "points": [{"label": "Mayo", "qs": ["a light scrape or a real spread?"]}],
+      "items": [item("Challah bread", 140, unit="slice"),
+                item("Honey turkey slices", 68, amount=3, unit="slice"),
+                item("Jalapenos", 5, unit="handful"),
+                item("Mayo", 280, amount=3, unit="tbsp")]}),
+    ("Like a few tbsp",
+     {"action": "log",
+      "items": [item("Mayo", 280, amount=3, unit="tbsp")]}),
+]
+
+#: Every food the user reported across the day, once each.
+THE_DAYS_FOODS = ["Ground beef", "rice", "Chicken", "Blueberries",
+                  "French fries", "Burger", "Challah", "turkey", "Jalapenos",
+                  "Mayo"]
+
+
+@pytest.mark.asyncio
+async def test_the_day_that_started_this(client, seeded, edges):
+    """The whole exchange, turn by turn, with every applicable invariant.
+
+    This is the regression gate for the session itself. It is deliberately one
+    test rather than eight: the defects were in the JOIN between turns, and a
+    per-turn test is exactly the shape that missed them the first time.
+    """
+    board_before = []
+    for i, (message, plan) in enumerate(THE_DAY):
+        edges.plans.append(plan)
+        edges.composer_prompts.clear()
+        r = await client.post("/api/v1/chat", json={"message": message})
+        assert_turn_ran(edges, r, expect_plans_used=i + 1)
+        payload = r.json()
+        text = " ".join(payload.get("bubbles") or [])
+        board = await rows(seeded)
+
+        where = f"turn {i + 1}/{len(THE_DAY)} ({message[:40]!r})"
+        try:
+            check_i1(payload)
+            check_i3(text, board_before, payload)
+            check_i5(board)
+            check_i6(edges.composer_prompts, payload)
+            check_i9(text)
+        except AssertionError as e:
+            raise AssertionError(f"{where}: {e}") from None
+        board_before = board
+
+    # I4 last: conservation is a claim about the EXCHANGE, not any one turn.
+    check_i4(await rows(seeded), THE_DAYS_FOODS)
+
+
+@pytest.mark.asyncio
+async def test_the_card_and_the_sentence_round_the_day_the_same_way(
+        client, seeded, edges):
+    """I6, forced onto the boundary instead of left to luck.
+
+    The day has two owners with different arithmetic:
+
+      prose  `TransactionSnapshot.protein_left` = max(0, target - day_protein)
+             where `day_protein` is an INT FIELD, so the total truncates on the
+             way in                                    (core/food_ledger.py)
+      card   `rem_p = int(round(protein_target - total_protein))` over a float,
+             so it rounds at the end, half-to-even       (core/receipt.py)
+
+    They agree on most numbers, which is why this shipped: the first version of
+    this test caught the divergence only because an unrelated duplicate row
+    happened to put the day on a .5. Remove the duplicate and it went quiet
+    while the bug was untouched.
+
+    So put it on the boundary deliberately. 22.75g + 22.75g = 45.5g against a
+    180g target: truncate gives 180-45 = 135, round gives round(134.5) = 134.
+    """
+    edges.plans.append({"action": "log", "items": [
+        dict(item("Cottage cheese", 200), protein=22.75),
+        dict(item("Greek yogurt", 150), protein=22.75),
+    ]})
+    r = await client.post("/api/v1/chat",
+                          json={"message": "cottage cheese and greek yogurt"})
+    assert_turn_ran(edges, r, expect_plans_used=1)
+    payload = r.json()
+
+    told = None
+    for p in edges.composer_prompts:
+        m = DAY_STANDS_RE.search(p or "")
+        if m:
+            told = (int(m.group(1).replace(",", "")),
+                    int(m.group(2).replace(",", "")))
+    assert told is not None, (
+        "the composer was never told where the day stands — this test cannot "
+        "see the divergence it exists for")
+    seen = [((c.get("payload") or {}).get("remaining_cal"),
+             (c.get("payload") or {}).get("remaining_protein"))
+            for c in cards_of(payload)
+            if (c.get("payload") or {}).get("remaining_protein") is not None]
+    assert seen, "no card carried remaining figures — nothing to compare"
+    for card_vals in seen:
+        assert card_vals == told, (
+            f"I6: composer told {told}, card says {card_vals} — the day has "
+            f"two owners with different rounding")
+
+
+@pytest.mark.asyncio
+async def test_the_days_totals_agree_across_endpoints(client, seeded, edges):
+    """I10. The card, the reply and GET /api/v1/day are three readers of one
+    day; a user who scrolls up must not see a fourth number."""
+    for message, plan in THE_DAY:
+        edges.plans.append(plan)
+        r = await client.post("/api/v1/chat", json={"message": message})
+        assert r.status_code == 200, r.text
+
+    board = await rows(seeded)
+    day = await client.get("/api/v1/day")
+    assert day.status_code == 200, day.text
+    body = day.json()
+
+    from_rows = sum(int(e.calories or 0) for e in board)
+    from_day = int((body.get("totals") or {}).get("calories") or 0)
+    assert from_day == from_rows, (
+        f"I10: /api/v1/day reports {from_day} cal, the rows total "
+        f"{from_rows} — {[(e.parsed_food_name, e.calories) for e in board]}")
+    assert len(body.get("food_entries") or []) == len(board), (
+        f"I10: /api/v1/day lists {len(body.get('food_entries') or [])} entries, "
+        f"the board has {len(board)}")

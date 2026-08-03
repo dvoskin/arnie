@@ -2577,6 +2577,49 @@ def _call_name_key(call: dict) -> str:
     return normalize_food_name((call.get("input") or {}).get("food_name"))
 
 
+def _name_tokens(key: str) -> frozenset:
+    """Content tokens of a normalized food name, punctuation stripped.
+
+    `normalize_food_name` lowercases and collapses whitespace and nothing else,
+    so "white rice, cooked" keeps the comma glued to "rice".
+    """
+    return frozenset(
+        t for t in (re.sub(r"[^a-z0-9]+", "", w) for w in (key or "").split())
+        if t)
+
+
+def _same_food(a: str, b: str) -> bool:
+    """Whether two names from ONE message denote the same food.
+
+    Equality is what `_undeferred` used, and it is why the rice doubled. The
+    ask turn stashed "White rice"; the answer turn re-read the same sentence
+    and called it "White rice, cooked". Those are one cup of rice, and they
+    committed as two rows — the production symptom "the rice already got
+    logged (that second cup on your board is it)". `normalize_food_name` is
+    exact-match by construction ("no fuzzy matching, no token splitting"), so
+    it could never join them.
+
+    Subset in EITHER direction, because the elaboration can land on either
+    side: the stash may be the vaguer name or the more specific one depending
+    on which turn the interpreter chose to be precise on.
+
+    This is deliberately narrower than it looks. Both names came from the SAME
+    user message a turn apart, so "chicken" beside "chicken salad" is an
+    elaboration of one report, not a coincidence of two — which is exactly the
+    inference `note_held_items` already makes one function over, with plain
+    substring matching. Token subset is stricter than that: "rice" and "fried
+    rice balls" join, "rice" and "ricotta" do not, where substring joins both.
+    """
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    ta, tb = _name_tokens(a), _name_tokens(b)
+    if not ta or not tb:
+        return False
+    return ta <= tb or tb <= ta
+
+
 def _undeferred(held: list, plan_calls: list) -> list:
     """The held writes the turn's own plan does NOT already cover.
 
@@ -2594,14 +2637,20 @@ def _undeferred(held: list, plan_calls: list) -> list:
     the case `tests/test_leave_no_food_behind.py` is made of and the one the
     interpreter's sorting cannot be trusted with.
     """
-    seen = {_call_name_key(c) for c in (plan_calls or [])
-            if isinstance(c, dict) and c.get("name") == "log_food"}
-    out, kept = [], set()
+    seen = [_call_name_key(c) for c in (plan_calls or [])
+            if isinstance(c, dict) and c.get("name") == "log_food"]
+    out, kept = [], []
     for call in held:
         key = _call_name_key(call)
-        if not key or key in seen or key in kept:
+        # `_same_food`, not equality: the answer turn re-reads the original
+        # sentence and routinely names the food more precisely than the ask did
+        # ("White rice" -> "White rice, cooked"). Under equality that is a
+        # second row, in the same batch, where the executor's dedup cannot see
+        # it — see the docstring above for why it cannot.
+        if not key or any(_same_food(key, s) for s in seen) \
+                or any(_same_food(key, k) for k in kept):
             continue
-        kept.add(key)
+        kept.append(key)
         out.append(call)
     return out
 

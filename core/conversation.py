@@ -2450,12 +2450,28 @@ async def _run_turn(
                         # Deliberately only the DAY figures. The item's own
                         # macros are its own and must keep coming from what was
                         # committed for that row.
+                        #
+                        # THIS LOOP WAS DEAD (found 2026-08-03 by
+                        # tests/test_a_full_day_of_food.py::check_i6). It wrote
+                        # to `inp["_receipt"]`, and `execution_result.stash`
+                        # stopped writing execution state onto the command at
+                        # P0.3e — "The command input is NEVER written". The
+                        # card reads `call.receipt` FIRST and only falls back to
+                        # `inp["_receipt"]` (see `_logged_entry_card`), so the
+                        # one thing this could reach was the branch that no
+                        # longer runs. `ok_tool_calls()` also rebuilds its dicts
+                        # on every call, so even the fallback was a copy.
+                        #
+                        # Reconcile the receipt the card ACTUALLY reads.
+                        # `CallResult` is frozen, but `receipt` is a dict and is
+                        # the same object the card renders from.
                         try:
-                            for _c in (_ok_calls or []):
-                                _r = (_c.get("input") or {}).get("_receipt")
-                                if isinstance(_r, dict):
-                                    _r["remaining_cal"] = _snap.cal_left
-                                    _r["remaining_protein"] = _snap.protein_left
+                            for _cr in (_execution.successful
+                                        if _execution is not None else ()):
+                                if isinstance(_cr.receipt, dict):
+                                    _cr.receipt["remaining_cal"] = _snap.cal_left
+                                    _cr.receipt["remaining_protein"] = \
+                                        _snap.protein_left
                         except Exception:
                             pass    # a card with a stale number beats no card
                         # The committed item NAMES travel with the plan, and
