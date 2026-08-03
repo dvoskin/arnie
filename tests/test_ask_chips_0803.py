@@ -80,6 +80,42 @@ def test_ungrouped_button_stays_backward_compatible():
     assert serialize_response(resp)["buttons"][0]["group"] is None
 
 
+# ── an option is its LABEL, never its repr ───────────────────────────────────
+
+def test_a_clarification_option_ships_its_label_not_its_repr():
+    """Prod PQ#2029 stored, verbatim:
+
+        "ClarificationOption(label='one tablespoon', value=None,
+         candidate_id=None, field_name='consumed_fraction')"
+
+    — `str(o)` on the dataclass. As a chip that renders as
+    "ClarificationOption(la..." after truncation: one unreadable button where
+    two real answers belonged. The label is the part a person taps.
+    """
+    from core.food_turn import _option_labels
+    from skills.nutrition.clarify_policy import ClarificationOption
+
+    opts = [ClarificationOption(label="one tablespoon"),
+            ClarificationOption(label="two tablespoons")]
+    assert _option_labels(opts) == ["one tablespoon", "two tablespoons"]
+    # And through the chip phrasing, which is what actually reaches the row.
+    assert chip_labels(_option_labels(opts)) == ["one tablespoon",
+                                                 "two tablespoons"]
+
+
+def test_option_labels_tolerate_bare_strings_and_holes():
+    """The interpreter branch builds its options as plain strings, so both
+    shapes reach this. A None or an empty label is dropped, not rendered as
+    the string "None"."""
+    from core.food_turn import _option_labels
+    from skills.nutrition.clarify_policy import ClarificationOption
+
+    assert _option_labels(["Salty Peanut", "BBQ"]) == ["Salty Peanut", "BBQ"]
+    assert _option_labels([ClarificationOption(label=""), "BBQ", None]) == ["BBQ"]
+    assert _option_labels([]) == []
+    assert _option_labels(None) == []
+
+
 # ── the clarification wire replays the same structure ────────────────────────
 
 def _pq(payload: dict, question="Which flavor?", item="Barebells bar"):

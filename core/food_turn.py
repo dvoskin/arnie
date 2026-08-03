@@ -67,6 +67,31 @@ def structured_food_enabled() -> bool:
     return os.getenv("STRUCTURED_FOOD", "true").lower() in ("true", "1", "yes")
 
 
+def _option_labels(options, limit: int = 6) -> list:
+    """The offered answers as LABELS, not as their repr.
+
+    `str(o)` on a `ClarificationOption` yields
+    "ClarificationOption(label='one tablespoon', value=None, ...)" — which is
+    what prod PQ#2029 actually stored, and what a chip would have rendered
+    before `chip_label` truncated it to "ClarificationOption(la...". The label
+    is the thing a person taps; everything else on the option is plumbing.
+
+    Tolerant of a bare string, because the interpreter branch already builds
+    its options that way.
+    """
+    out = []
+    for o in (options or ()):
+        if o is None:
+            continue
+        label = getattr(o, "label", None)
+        text = str(label if label is not None else o).strip()
+        if text:
+            out.append(text)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def partial_commit_enabled() -> bool:
     """Whether an ASK turn may also write the foods it is NOT asking about.
 
@@ -4289,8 +4314,8 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     "questions": [{
                         "item": (getattr(_q, "item_name", "") or None),
                         "text": _q.prompt,
-                        "options": [str(o) for o in
-                                    (getattr(_q, "options", ()) or ())][:4],
+                        "options": _option_labels(
+                            getattr(_q, "options", ()), 4),
                     }],
                     "requested_fields": list(_q.requested_fields),
                     # THE SHAPE WE ASKED FOR travels too. `parse_answer`
@@ -4298,8 +4323,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     # parsers cannot run at all, which is why they sat unwired
                     # while the answer turn re-ran the whole interpreter.
                     "response_schema": getattr(_q, "response_schema", "") or "",
-                    "options": [str(o) for o in
-                                (getattr(_q, "options", ()) or ())][:6],
+                    "options": _option_labels(getattr(_q, "options", ())),
                     # THE PRIOR INTERPRETATION TRAVELS WITH THE QUESTION (§2).
                     # An answer turn has to rebuild the affected item from the
                     # user's original wording, what we made of it, and what
