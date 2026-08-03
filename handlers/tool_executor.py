@@ -449,7 +449,8 @@ async def _apply_portion_correction(db, user, entry_id: int, inp: dict,
     try:
         from db.models import FoodEntry as _FE_p
         from skills.nutrition.correction_application import (
-            apply_count_correction, apply_portion)
+            apply_count_correction, apply_portion,
+            apply_serving_count_correction)
 
         row = await db.get(_FE_p, int(entry_id))
         if row is None:
@@ -481,9 +482,21 @@ async def _apply_portion_correction(db, user, entry_id: int, inp: dict,
                 food_name=name, old_quantity=old_quantity,
                 new_quantity=new_quantity, committed=committed)
         if not scaled:
+            # THE PANEL COUNTS WHAT THE CORRECTION NAMES. Different objects at
+            # the two ends, no mass anywhere — but the source's own panel says
+            # how many pieces a serving holds, and the new unit is the
+            # product's own noun, so the ratio is readable off numbers already
+            # here. This is the arm fe#2721 needed and the reason the guard
+            # below fires less often than it did.
+            scaled = apply_serving_count_correction(
+                food_name=name, old_quantity=old_quantity,
+                new_quantity=new_quantity, committed=committed,
+                serving_text=str((resolution or {}).get("serving_text") or ""),
+                per100=(resolution or {}).get("per100"))
+        if not scaled:
             # THE PAIR MUST AGREE, OR THE CHANGE MUST NOT LAND SILENTLY.
             #
-            # Both arms declined and the caller supplied no macros of its own,
+            # Every arm declined and the caller supplied no macros of its own,
             # so applying the new quantity here writes a portion beside numbers
             # computed for a DIFFERENT portion. That is how fe#2721 ended up
             # reading "1 burger" over the 15-piece bag's 140 cal: the changes
