@@ -312,10 +312,18 @@ MASS_UNKNOWN = "portion mass unknown"
 
 
 def _serving_count(serving_text: str) -> Optional[tuple]:
-    """(count, singular_unit) named by a serving panel, or None."""
+    """(count, singular_unit) named by a serving panel, or None.
+
+    LOWERCASED BEFORE COMPARING. The regex is case-insensitive but `_singular`
+    is not, so "15 PIECES" became "PIECE" and missed a `_COUNT_UNITS` set that
+    is lowercase — and USDA writes its panels in caps, which is where the
+    uppercase ones come from. Prod 2026-08-03: the gummy-burger row carried
+    serving_text "15 PIECES" and nothing could read it, so a correction to one
+    burger had no count to price against.
+    """
     for match in re.finditer(r"(\d+(?:\.\d+)?)\s*([a-z]+)", serving_text or "",
                              re.I):
-        unit = _singular(match.group(2))
+        unit = _singular(match.group(2).lower())
         if unit in {_singular(u) for u in _COUNT_UNITS}:
             try:
                 count = float(match.group(1))

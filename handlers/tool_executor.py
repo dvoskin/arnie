@@ -481,6 +481,28 @@ async def _apply_portion_correction(db, user, entry_id: int, inp: dict,
                 food_name=name, old_quantity=old_quantity,
                 new_quantity=new_quantity, committed=committed)
         if not scaled:
+            # THE PAIR MUST AGREE, OR THE CHANGE MUST NOT LAND SILENTLY.
+            #
+            # Both arms declined and the caller supplied no macros of its own,
+            # so applying the new quantity here writes a portion beside numbers
+            # computed for a DIFFERENT portion. That is how fe#2721 ended up
+            # reading "1 burger" over the 15-piece bag's 140 cal: the changes
+            # dict carried quantity and name and no calorie key at all, and
+            # this function's silent return let it through.
+            #
+            # Every accuracy failure on 2026-08-03 was this same shape — a
+            # portion and a value allowed to disagree. The row is still
+            # corrected, because the user's words are not in doubt, but it is
+            # marked estimated so nothing downstream treats those macros as
+            # derived, and the mismatch is logged rather than absorbed.
+            if not any(k in changes for k in
+                       ("calories", "protein", "carbs", "fats")):
+                changes["estimated_flag"] = True
+                logger.warning(
+                    "event=unpriced_portion_change entry=%s food=%r "
+                    "old=%r new=%r — macros were computed for the old "
+                    "portion and could not be re-derived",
+                    entry_id, name, old_quantity, new_quantity)
             return
         # THE ARITHMETIC REPLACES THE GUESS, and only for the macros it could
         # compute. A nutrient the basis did not know stays as it was rather
