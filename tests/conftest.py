@@ -133,13 +133,25 @@ def _isolate_turn_scoped_caches():
     failure — it only appeared when the shuffle happened to order those two
     the wrong way round, which is exactly the class of bug shuffling exists
     to surface and exactly the kind that gets written off as flakiness.
+
+    `core.food_ledger._SEEN` is the same hazard again and was also missed. It
+    is the exactly-once registry, keyed by turn id — which for a client that
+    sends no message id is sha1(channel, USER_ID, text, hour bucket). Every
+    test seeds user id 1, so two tests in one process that send the same words
+    an hour apart or less produce the SAME key, and the second one is answered
+    "Already got that one - it's on the board from a moment ago" having written
+    nothing. Found 2026-08-03 building `test_a_full_day_of_food.py`: a two-turn
+    exchange answering "deli" silently became a duplicate turn because an
+    earlier test in the file had already said "deli". Nothing failed at the
+    seam — the turn returned 200 with a plausible reply and an empty board.
     """
     import core.food_turn as _FT
     import handlers.tool_executor as _TE
+    import core.food_ledger as _FL
     for cache in (_FT._SPREAD_CACHE, _FT._RELEVANCE_CACHE,
-                  _TE._INFLIGHT_FETCHES):
+                  _TE._INFLIGHT_FETCHES, _FL._SEEN):
         cache.clear()
     yield
     for cache in (_FT._SPREAD_CACHE, _FT._RELEVANCE_CACHE,
-                  _TE._INFLIGHT_FETCHES):
+                  _TE._INFLIGHT_FETCHES, _FL._SEEN):
         cache.clear()
