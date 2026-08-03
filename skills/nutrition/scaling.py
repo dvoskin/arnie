@@ -134,8 +134,26 @@ def _factor(basis: SourceBasis, consumed: NormalizedQuantity) -> float:
             return grams / float(basis.serving_mass_g)
         if ml is not None and basis.serving_ml:
             return ml / float(basis.serving_ml)
-        if countable:
+        # A FRACTION OF THE DISH IS NOT ONE OF THE DISH. `countable` asks
+        # whether the count may multiply this source's serving, and both of its
+        # inputs answer about the COUNT alone — neither can see that the source
+        # has no idea how many pieces the thing came in. Prod 2026-08-03
+        # fe#2719: a restaurant lookup for a special roll, no serving panel,
+        # count=1 unit="piece" — multiplied the WHOLE ROLL by one and committed
+        # 460 cal over the interpreter's own correct 130-190.
+        #
+        # Gated on the source stating NO panel, which is what makes it narrow.
+        # "15 pieces" against "35 g (12 pieces)" is untouched: that panel knows
+        # what one piece weighs, so a mass resolves above and the count is
+        # never the multiplier. `unit_is_fraction` is likewise false when the
+        # unit IS the product ("6 slices" of turkey deli slice).
+        _no_panel = basis.serving_mass_g is None and basis.serving_ml is None
+        if countable and not (consumed.unit_is_fraction and _no_panel):
             return float(count)
+        if consumed.unit_is_fraction and _no_panel and count is not None:
+            raise ScalingRefused(
+                f"this source states no serving panel, so one "
+                f"{consumed.unit} of it cannot be priced as a whole serving")
         if count is not None:
             raise ScalingRefused(
                 "per-serving values need a serving mass; this portion is an "

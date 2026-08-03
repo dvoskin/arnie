@@ -122,6 +122,21 @@ class NormalizedQuantity:
     uncertainty_g: Optional[float] = None
     assumptions: tuple = ()
     count_basis: str = COUNT_BASIS_UNIT
+    #: The count names a PART of the food, not one of it — "1 piece" of an
+    #: eight-piece roll, "1 slice" of a pizza. Travels with the count for the
+    #: same reason `count_basis` does: only here are the unit AND the food name
+    #: both in hand, and downstream cannot re-derive it. A source that has no
+    #: serving panel must not multiply its numbers by a fraction of the dish —
+    #: prod 2026-08-03 fe#2719 read one piece as one whole roll, 460 cal over
+    #: the interpreter's own correct 130-190.
+    #:
+    #: FALSE when the unit IS the product ("6 slices" of turkey deli slice),
+    #: which is why this cannot be answered from the unit word alone. It is
+    #: also NOT a licence to refuse whenever it is true: a panel that
+    #: enumerates the same unit ("35 g (12 pieces)") knows exactly what one
+    #: piece weighs, and that path resolves a mass long before any count is
+    #: multiplied.
+    unit_is_fraction: bool = False
 
     # ── What the USER said, kept separate from what we made of it (§2, §10) ──
     #

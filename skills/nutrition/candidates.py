@@ -19,7 +19,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from skills.nutrition.normalize import is_measured_unit
+from skills.nutrition.normalize import is_measured_unit, is_partitive_unit
 from skills.nutrition.models import (FoodResolutionRequest, NutrientProfile,
                                      profile_from_values)
 from skills.nutrition.provenance import (MatchGrade, SourceTier,
@@ -209,8 +209,19 @@ def web_label_candidate(hit, request: FoodResolutionRequest) -> Optional[Candida
                 "sodium")}),
         # A branded label's serving is measured; a restaurant-item lookup's is
         # the dish as served, so a vague helping counts as one of them.
+        #
+        # UNLESS THEY NAMED A PART OF IT. As-served says "one helping is one
+        # serving however loosely they described the helping", and `_factor`
+        # turns that into `return float(count)` — so "1 piece" of a special roll
+        # multiplied the WHOLE ROLL's label by one and committed 460 cal over
+        # the interpreter's own correct 130-190 (prod 2026-08-03, fe#2719). A
+        # partitive unit is not a loose description of the helping; it is a
+        # precise description of a fraction, and the lookup has no idea how many
+        # pieces the roll had. Refusing to scale is the honest outcome: the
+        # interpreter's estimate stands, which was right.
         basis=PerServing(serving_mass_g=hit.get("serving_mass_g"),
-                         as_served=not branded),
+                         as_served=(not branded
+                                    and not is_partitive_unit(request.unit))),
         brand=request.brand,
         reported_grade=MatchGrade.CLOSE if branded else MatchGrade.CATEGORY,
         serving_text=str(hit.get("serving_text") or ""))

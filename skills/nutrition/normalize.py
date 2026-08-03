@@ -96,6 +96,38 @@ def is_count_unit(word: str) -> bool:
         _singular(u) for u in _COUNT_UNITS}
 
 
+#: Units that name a PART of a dish rather than the dish. "A piece", "a slice",
+#: "a bite" all presuppose a larger whole they were cut from — which is exactly
+#: the case an as-served basis may not treat as one helping.
+_PARTITIVE_UNITS = {
+    "piece", "pieces", "slice", "slices", "bite", "bites", "bit", "bits",
+    "sliver", "slivers", "wedge", "wedges", "square", "squares",
+    "strip", "strips", "chunk", "chunks", "forkful", "forkfuls",
+    "spoonful", "spoonfuls", "mouthful", "mouthfuls",
+}
+
+
+def is_partitive_unit(word: str) -> bool:
+    """Whether this word names a PART of something rather than the whole thing.
+
+    The distinction an as-served basis depends on and never asked for. A
+    restaurant lookup returns the dish, and `PerServing(as_served=True)` says
+    "one helping of it is one serving, however loosely they described the
+    helping" — true for "a plate of pad thai", false for "1 piece" of an
+    eight-piece roll, which is a precise description of a FRACTION. Prod
+    2026-08-03: a special roll's whole-roll label scaled by count=1 committed
+    460 cal for one piece, over the interpreter's own correct 130-190.
+
+    Deliberately NOT answerable by `count_units_compatible`: that asks whether
+    two panels count the same object, and it holds "piece" and "serving"
+    interchangeable on purpose — "12 pieces" does answer someone who said "15
+    units". Interchangeable for MATCHING is not the same as equivalent for
+    SCALING, and conflating them is what let a part be priced as a whole.
+    """
+    return _singular((word or "").strip().lower()) in {
+        _singular(u) for u in _PARTITIVE_UNITS}
+
+
 def is_measured_unit(word: str) -> bool:
     """Whether this word names a MEASURE — a mass or a volume — as opposed to a
     discrete item or a vague "serving".
@@ -138,6 +170,18 @@ def _singular(word: str) -> str:
     if word.endswith("s") and not word.endswith("ss"):
         return word[:-1]
     return word
+
+
+def _unit_is_fraction(unit_word: str, food_name: str = "") -> bool:
+    """Does this count name a PART of the food rather than one of the food?
+
+    Both halves are needed and only here are both in hand. `is_partitive_unit`
+    knows "piece" and "slice" presuppose a whole; `_unit_names_the_food` knows
+    a TURKEY DELI SLICE is itself the product, so counting slices of it counts
+    units. Same yield-to-the-food-name shape `_count_basis` uses for vessels.
+    """
+    return (is_partitive_unit(unit_word)
+            and not _unit_names_the_food(unit_word, food_name))
 
 
 def _count_basis(unit_word: str, food_name: str = "") -> str:
@@ -683,6 +727,7 @@ def _from_ontology(raw: str, unit_text: str, food_name: str, amount: float
         # A vague measure by construction — but "1 bowl" of a burrito bowl still
         # counts the product, so the food name gets the same say it gets above.
         count=amount, count_basis=_count_basis(result.unit, food_name),
+        unit_is_fraction=_unit_is_fraction(result.unit, food_name),
         unit_label=raw or f"{_fmt(amount)} {result.unit}",
         uncertainty_g=dist.uncertainty_g,
         assumptions=(f"{result.unit} estimated at "
@@ -1034,6 +1079,7 @@ def _normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
             return NormalizedQuantity(
                 amount=amount, unit=(head or "serving"), count=amount,
                 count_basis=_count_basis(head, food_name),
+                unit_is_fraction=_unit_is_fraction(head, food_name),
                 unit_label=raw or f"{amount} {head or 'serving'}",
                 assumptions=(MASS_UNKNOWN,))
         grams, spread = est
@@ -1044,6 +1090,7 @@ def _normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
             amount=amount, unit=(head or "piece"),
             grams=round(amount * grams, 1), count=amount,
             count_basis=_count_basis(head, food_name),
+                unit_is_fraction=_unit_is_fraction(head, food_name),
             unit_label=raw or f"{amount} {head or 'piece'}",
             uncertainty_g=round(amount * spread, 1),
             assumptions=tuple(assumptions))
@@ -1057,6 +1104,7 @@ def _normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
     return NormalizedQuantity(
         amount=amount, unit=head or "serving", count=amount,
         count_basis=_count_basis(head, food_name),
+                unit_is_fraction=_unit_is_fraction(head, food_name),
         unit_label=raw or food_name,
         assumptions=("unrecognized unit, treated as a serving",))
 
