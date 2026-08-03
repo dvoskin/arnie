@@ -476,6 +476,15 @@ class FoodItemSummary:
     #: A named product rather than a generic food. Drives capitalisation, and
     #: is data the interpreter already has rather than something to infer.
     branded: bool = False
+    #: This item REVISED a row that was already on the log, rather than putting
+    #: a new one there. A turn can do both at once, and the plan's single
+    #: `intent` cannot say which item is which: a mixed turn is COMMIT — its
+    #: label is "commit" precisely because no one verb fits the turn — so
+    #: `_subject_line` gave every name the COMMIT verb and a correction was
+    #: announced as a fresh log ("Logged Tuna Sashimi and Quest Chips Chili
+    #: Lime", 2026-08-03, where the tuna was an update from 4 pieces to 1).
+    #: The verb belongs to the ITEM, not to the turn.
+    corrected: bool = False
     #: What we costed this item at — populated ONLY where no card will show it.
     #:
     #: The thinness above is deliberate and stays: a composer that can see
@@ -1843,8 +1852,22 @@ def build_prompt(plan: FoodResponsePlan) -> str:
                 "wait for a later turn if giving it room would be tone-deaf.")
 
     if plan.committed_items:
-        parts.append("LOGGED (the card shows these — do not recite them): "
-                     + "; ".join(i.describe() for i in plan.committed_items))
+        # SPLIT BY WHAT HAPPENED TO EACH. Listing a corrected row under LOGGED
+        # told the composer a fresh entry had landed, and it wrote one — the
+        # same fault `_subject_line` had, reached by the other path. A composer
+        # that cannot tell a repair from an addition will narrate both as
+        # additions.
+        _created = [i for i in plan.committed_items if not i.corrected]
+        _corrected = [i for i in plan.committed_items if i.corrected]
+        if _created:
+            parts.append("LOGGED (the card shows these — do not recite them): "
+                         + "; ".join(i.describe() for i in _created))
+        if _corrected:
+            parts.append(
+                "UPDATED — already on the log before this message, and revised "
+                "just now. NOT newly logged; say what changed, do not announce "
+                "them as fresh entries: "
+                + "; ".join(i.describe() for i in _corrected))
     if plan.sourcing:
         # HOW SURE TO SOUND. The receipt has always shown the user where a
         # number came from; the writer was never told, so it hedged the same
@@ -2057,11 +2080,31 @@ def _subject_line(plan: "FoodResponsePlan") -> str:
 
     Returns "" when there is nothing to name, so silence survives where silence
     is honest: a COMMIT plan that committed nothing has no subject.
+
+    ONE TURN CAN DO TWO THINGS. A mixed turn — correct one row, create another —
+    arrives as COMMIT, because that is the only label that fits a turn doing
+    both. Reading the verb off the intent then applied "Logged" to the
+    correction too, and the reply announced a row that had been on the log for
+    an hour as if it had just landed. Each name takes the verb for what happened
+    to IT; the intent still governs wherever the turn had a single verb of its
+    own (an UNDO undid everything it names).
     """
-    names = [i.name for i in (plan.committed_items or ()) if i.name]
-    if not names:
+    items = [i for i in (plan.committed_items or ()) if i.name]
+    if not items:
         return ""
-    return f"{_SUBJECT_VERB.get(plan.intent, 'Logged')} {_join(names)}."
+    turn_verb = _SUBJECT_VERB.get(plan.intent, "Logged")
+    corrected = [i.name for i in items if i.corrected]
+    created = [i.name for i in items if not i.corrected]
+    # A turn NAMED IN `_SUBJECT_VERB` has a verb of its own, and it governs
+    # every name it carries: an UNDO undid all of them. Only the unlabelled
+    # intent — COMMIT, the label a mixed turn falls to because no one verb fits
+    # it — has to ask each item what happened to it.
+    if plan.intent in _SUBJECT_VERB or not corrected or not created:
+        return f"{turn_verb} {_join([i.name for i in items])}."
+    # The repair before the addition: the correction answers what they just
+    # said, and the new food follows it.
+    return (f"{_SUBJECT_VERB[FoodResponseIntent.CORRECT]} {_join(corrected)}. "
+            f"{turn_verb} {_join(created)}.")
 
 
 def _names_the_food(text: str, plan: "FoodResponsePlan") -> bool:

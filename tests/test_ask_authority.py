@@ -227,7 +227,9 @@ def test_a_corrected_row_still_gets_a_card():
     card = _logged_entry_card("update_food_entry", {
         "entry_id": 501, "food_name": "Barebells Cookies and Cream Bar",
         "quantity": "1 bar", "calories": 200, "protein": 20})
-    assert card["type"] == "macro_card"
+    # As a PATCH — the row is already on an earlier card, and that is the one
+    # this revises. See tests/test_corrected_card_patch_0803.py.
+    assert card["type"] == "macro_card_patch"
     assert card["payload"]["entry_id"] == 501
     assert card["payload"]["corrected"] is True
     assert card["payload"]["calories"] == 200

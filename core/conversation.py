@@ -348,9 +348,21 @@ def _workout_card_enabled() -> bool:
     return os.getenv("WORKOUT_CARD", "true").lower() in ("true", "1", "yes")
 
 
+#: Card types that put a NEW card on screen for this turn, and so carry figures
+#: the sentence must not recite. `macro_card_patch` is deliberately absent: it
+#: revises a card the user is already looking at, so it takes nothing away from
+#: what this reply still owes them.
+_RENDERS_A_CARD = frozenset({"macro_card", "workout_card"})
+
+
 def _logged_entry_card(name: str, inp, call=None) -> Optional[dict]:
     """The macro_card / workout_card for a log_food / log_exercise call — but ONLY
     when it actually created or rolled up into a real DB row.
+
+    An `update_food_entry` returns a `macro_card_patch` instead: same payload,
+    keyed by `entry_id`, for the client to apply to the card that row is already
+    on. See that branch. Everything below is true of both — a patch is gated on
+    a real row exactly as a card is.
 
     The dispatcher stashes that row id on inp["_entry_id"]. A deduped / no-op call
     (the model re-fired something already on the board, e.g. a SPURIOUS log_food on
@@ -368,11 +380,29 @@ def _logged_entry_card(name: str, inp, call=None) -> Optional[dict]:
                 else inp.get("_entry_id") or inp.get("entry_id"))
     if not entry_id:
         return None
-    # A CORRECTED ROW IS STILL A ROW. Updates emitted no card at all, so after
-    # "the bar was cookies and cream" the entire confirmation was whatever
-    # sentence the composer wrote — nothing showed the new name or the new
-    # numbers, and the correction landed invisibly. The card is the receipt
-    # that it took: same shape as a log, because it mirrors the same row.
+    # A CORRECTED ROW IS STILL A ROW — BUT IT IS NOT A NEW ONE.
+    #
+    # Updates emitted no card at all, so after "the bar was cookies and cream"
+    # the entire confirmation was whatever sentence the composer wrote —
+    # nothing showed the new name or the new numbers, and the correction landed
+    # invisibly. So a correction earns a receipt, same payload shape as a log,
+    # because it mirrors the same row.
+    #
+    # It travels as a PATCH, not as a card. Emitted as `macro_card` it joined
+    # this turn's `cards` list beside the genuinely new rows, and the client
+    # buckets that list by card type — so one turn that corrected the tuna and
+    # logged the chips (2026-08-03, le#921 + le#922) grouped both into a single
+    # meal card, and the corrected tuna reappeared on the chips' card while
+    # still living on its own earlier one. A meal card lists what this turn
+    # CREATED; a correction belongs to the card the row is already on, which
+    # only `entry_id` can identify.
+    #
+    # `macro_card_patch` is the same payload under a type that says what to do
+    # with it. The entry_id gate above is unchanged and still absolute: a patch
+    # exists only where a real row was updated, so the card/row invariant holds
+    # on this branch exactly as it does for a log. Clients that predate the type
+    # decode it as unknown and ignore it (WireContract's forward-compat case)
+    # rather than rendering a second card for a row they already show.
     if name == "update_food_entry":
         _nm = str(inp.get("food_name") or inp.get("food_hint") or "").strip()
         if not _nm:
@@ -410,7 +440,7 @@ def _logged_entry_card(name: str, inp, call=None) -> Optional[dict]:
                    else inp.get("_receipt"))
         if isinstance(receipt, dict):
             payload.update(receipt)
-        return {"type": "macro_card", "payload": payload}
+        return {"type": "macro_card_patch", "payload": payload}
     if name in ("log_food", "restore_food_entry"):
         # A restore is a committed food row like any other — it earns the same
         # tappable card (P0 card/ledger unification, 2026-07-24).
@@ -2422,11 +2452,27 @@ async def _run_turn(
                         # deterministic floor for a logged meal is the empty
                         # string (`food_response._subject_line`). An empty
                         # plan here is a card with nothing said over it.
-                        _names = tuple(
-                            FoodItemSummary(name=str(
-                                (c.get("input") or {}).get("food_name")
-                                or "").strip())
-                            for c in (_ok_calls or []))
+                        #
+                        # EACH NAME CARRIES WHAT HAPPENED TO IT. The plan has
+                        # one `intent` for the whole turn, and a turn that
+                        # corrects one row and creates another has no single
+                        # verb — so every name took COMMIT's, and a correction
+                        # was announced as a fresh log. An update names itself
+                        # by `food_hint` when the correction changed an amount
+                        # rather than an identity (the same "new name, else the
+                        # name it had" resolution `_logged_entry_card` uses);
+                        # without that fallback the corrected row contributes an
+                        # empty name and the sentence cannot mention it at all.
+                        _names = []
+                        for c in (_ok_calls or []):
+                            _cin = c.get("input") or {}
+                            _upd = c.get("name") == "update_food_entry"
+                            _nm = str(_cin.get("food_name") or "").strip()
+                            if _upd and not _nm:
+                                _nm = str(_cin.get("food_hint") or "").strip()
+                            _names.append(FoodItemSummary(name=_nm,
+                                                          corrected=_upd))
+                        _names = tuple(_names)
                         # WHETHER A CARD RENDERS IS A PROPERTY OF THE TURN, NOT
                         # OF THE TRANSPORT. This read `on_card is not None`,
                         # which is a question about the CALLER: only the iOS
@@ -2447,18 +2493,25 @@ async def _run_turn(
                         # "has an entry_id" test would.
                         # SUPPRESSION IS ABOUT THE LOG CARD. This asks "may
                         # the sentence skip what the card already says", and a
-                        # correction's card is supplementary: the sentence
+                        # correction's receipt is supplementary: the sentence
                         # naming what changed IS the confirmation that it took.
                         # Counting update cards here made "Bumped the birria to
                         # 2 tacos" read as recitation, so it was stripped and
                         # the reply fell back to "Fixed." — the one word that
                         # does not say what was fixed.
+                        #
+                        # Read off the emitted TYPE, not off the tool name. The
+                        # rule is "did a card render in this turn", and since a
+                        # correction became a `macro_card_patch` — applied to a
+                        # card belonging to an EARLIER turn — the card builder
+                        # answers that question directly. Naming the tool here
+                        # restated a rule that now lives one layer down, which
+                        # is how the two drift apart.
                         _card_renders = any(
-                            _logged_entry_card(c.name, c.raw_input, call=c)
-                            is not None
+                            (_logged_entry_card(c.name, c.raw_input, call=c)
+                             or {}).get("type") in _RENDERS_A_CARD
                             for c in (_execution.successful
-                                      if _execution is not None else ())
-                            if getattr(c, "name", "") != "update_food_entry")
+                                      if _execution is not None else ()))
                         # NAME THE MOMENT. Every structured turn declared
                         # itself a COMMIT — a correction, a deletion and an
                         # undo all announced themselves as a fresh log, which
@@ -3711,6 +3764,12 @@ user_message=_user_text or "")
     # no card, so a stale card never leaks onto a reply that logged nothing). The
     # iOS client renders these inline beneath the text; Telegram/iMessage adapters
     # ignore the field.
+    #
+    # An update_food_entry rides the same list as a `macro_card_patch`: NOT a row
+    # on this turn's card, but a revision addressed by entry_id to the card that
+    # row already appears on. One ordered channel on purpose — patches persist
+    # into `cards_json` and rehydrate through the same client-side builder as the
+    # cards do, so a reloaded transcript resolves to what the live one showed.
     if tool_calls:
         _calls_by_id = {}
         try:
