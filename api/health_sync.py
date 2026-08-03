@@ -116,11 +116,47 @@ async def post_snapshot(
             return await _write_snapshot(db, user, payload, snap_date, turn)
 
 
+async def _touch_apple_health_sync(db, user_id: int) -> None:
+    """Record WHEN HealthKit last delivered, so the coach header can say how
+    current it is.
+
+    Whoop and Oura both write `WearableDevice.last_sync_at`, and both `/status`
+    endpoints read it back. HealthKit wrote the snapshot row and nothing else —
+    so for an Apple-Health-only user there was no readable answer anywhere in
+    the system to "when did this last update". The only nearby timestamp,
+    `health_snapshots.created_at`, is when the DAY's row was first created, not
+    when it last changed; on a phone syncing every hour it reports the same
+    instant all day.
+
+    The column already exists. This path simply never wrote it, which is why
+    freshness had to be inferred instead of read.
+    """
+    from datetime import datetime as _dt
+
+    from db.models import WearableDevice
+
+    row = (await db.execute(
+        select(WearableDevice)
+        .where(WearableDevice.user_id == user_id,
+               WearableDevice.device_type == "apple_health")
+    )).scalars().first()
+    now = _dt.utcnow()
+    if row is None:
+        # First sync from this phone. The row is the record that the source is
+        # connected at all — the header's "no wearable" branch reads exactly
+        # this absence.
+        db.add(WearableDevice(user_id=user_id, device_type="apple_health",
+                              last_sync_at=now))
+    else:
+        row.last_sync_at = now
+
+
 async def _write_snapshot(db, user, payload, snap_date, turn) -> dict:
     """The committed half, so the handler above reads as identity → write."""
     data = payload.model_dump(exclude={"date", "workouts"}, exclude_none=True)
     data.setdefault("source", "apple_health")
     await upsert_health_snapshot(db, user.id, snap_date, **data)
+    await _touch_apple_health_sync(db, user.id)
 
     if payload.workouts:
         # Persist via the legacy webhook's per-day replace-on-sync (one

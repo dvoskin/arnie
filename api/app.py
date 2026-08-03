@@ -223,6 +223,7 @@ from api.groups import router as groups_router
 from api.water import router as water_router
 from api.profile_edit import router as profile_edit_router
 from api.settings_api import prefs_router, feedback_router, signout_router
+from api.coach_live import router as coach_live_router
 from api.insights_api import router as insights_api_router
 from api.quick_log import router as quick_log_router
 from api.whoop_api import router as whoop_api_router
@@ -248,6 +249,8 @@ app.include_router(prefs_router)
 app.include_router(feedback_router)
 app.include_router(signout_router)
 app.include_router(insights_api_router)
+# The one interpreted read of the day — every Coach section reads this.
+app.include_router(coach_live_router)
 app.include_router(quick_log_router)
 app.include_router(whoop_api_router)
 app.include_router(oura_api_router)
