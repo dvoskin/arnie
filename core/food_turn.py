@@ -2926,6 +2926,116 @@ def _portion_stakes(item_label: str, user_message: str) -> float:
         return 0.0
 
 
+def _portion_options(item_label: str, user_message: str, *,
+                     items=None) -> list:
+    """The portion bracket, offered instead of discarded.
+
+    `_portion_stakes` directly above already walks this exact chain — the
+    user's own vague word, then what the calibrated ontology says that word
+    spans — and uses it to RANK the question. The distribution it throws away
+    is the same object `derive_vague_quantities` turns into "one tablespoon" /
+    "two tablespoons" on the pipeline branch. So the endpoints a portion
+    question should offer are not new data and are not a new judgement; they
+    are the ones already computed, reaching the wire instead of the floor.
+
+    That is what keeps this inside the no-invented-precision rule. Nothing
+    here derives a number: `_measure_options` owns the phrasing (spoons for
+    spoon measures, grams otherwise) and the ontology owns the bounds. Every
+    gate below is a reason NOT to offer, and an empty list is a correct
+    answer:
+
+      * no vague measure of the USER'S OWN — nothing hedged was said about
+        this food, so there is no bracket of theirs to hand back;
+      * our unit is their word — food_pipeline.py's rule ("only when our unit
+        DIFFERS from the user's word"). "a piece of the special roll" recorded
+        as 1 piece is not a silent conversion, and offering "30g or 200g"
+        against a portion they counted is the truffle-fries incident arriving
+        from the other side;
+      * no ontology row, or a spread under VAGUE_SPREAD_RATIO — the same bar
+        that decides the vagueness is worth a turn at all. Two chips 20%
+        apart are theatre.
+    """
+    try:
+        from core.food_pipeline import (VAGUE_MEASURES, VAGUE_SPREAD_RATIO,
+                                        _measure_options, _vague_measure_in)
+        from skills.nutrition.portions import distribution_for
+        label = str(item_label or "").strip()
+        measure = _vague_measure_in(user_message or "", label)
+        if not measure:
+            return []
+        # THEIR WORD, RECORDED AS OURS. The interpreter's own row is the only
+        # place this branch can see what unit we settled on, so the pipeline's
+        # rule is applied to the material this branch actually has.
+        our_unit = ""
+        for it in (items or ()):
+            if not isinstance(it, dict):
+                continue
+            if str(it.get("food") or "").strip().lower() == label.lower():
+                our_unit = str(it.get("unit") or "").strip().lower()
+                break
+        if our_unit and VAGUE_MEASURES.get(our_unit.rstrip("s")) == measure:
+            return []
+        dist = distribution_for(measure, label)
+        if dist is None or not dist.lower_g:
+            return []
+        if dist.upper_g / max(dist.lower_g, 1e-6) < VAGUE_SPREAD_RATIO:
+            return []
+        return [str(o).strip() for o in _measure_options(measure, dist)
+                if str(o or "").strip()]
+    except Exception:      # a chip row is never worth losing the question for
+        logger.debug("portion options not derived", exc_info=True)
+        return []
+
+
+def _question_options(*, label: str, qs, found_by_label, message: str,
+                      items=None) -> list:
+    """The real options for ONE question on the interpreter branch.
+
+    A shelf answers its own product and nothing else, so it is tried first and
+    wins outright — "which Quest flavour" is better served by the flavours we
+    looked up than by how much a bag holds. Only a question actually ASKING
+    about amount falls through to the portion bracket; handing "30g or 200g"
+    to "grilled or fried?" would read as an answer to the question being
+    asked.
+    """
+    for _flb, _fvs in (found_by_label or ()):
+        if str(_flb or "").strip().lower() == str(label or "").strip().lower():
+            return list(_fvs)[:4]
+    if any(_facet_kind(q) == "portion" for q in (qs or ())):
+        return _portion_options(label, message, items=items)[:4]
+    return []
+
+
+def _questions_from_points(points, *, message: str = "", items=None,
+                           found_by_label=()) -> list:
+    """`points` as the structure the client renders, not as prose.
+
+    The same label/qs parse `clarify_plan_from_points` performs, so what ships
+    on the wire is the structure the renderer spoke. Every interpreter-side
+    ask goes through here — the first ask, the answer-turn re-ask, and the
+    calorie-only fallback — because an ask that ships no structure gives the
+    client nothing to hang a chip on, and the user types. That was true of two
+    of those three sites.
+    """
+    out = []
+    for _pt in (points or ()):
+        if not isinstance(_pt, dict):
+            continue
+        _lbl = str(_pt.get("label") or "").strip(", ").strip()
+        _qs = _pt.get("qs")
+        if not isinstance(_qs, list):
+            _qs = [_pt.get("q")]
+        _qs = [str(q).strip() for q in _qs if q and str(q).strip()]
+        if not _qs:
+            continue
+        out.append({"item": _lbl or None,
+                    "text": " ".join(_qs[:4]),
+                    "options": _question_options(
+                        label=_lbl, qs=_qs, found_by_label=found_by_label,
+                        message=message, items=items)})
+    return out[:4]
+
+
 def group_unknowns(asks: list, user_message: str = "",
                    priced: Optional[dict] = None) -> tuple:
     """The meal's unknowns, grouped by what is actually unknown.
@@ -4205,28 +4315,27 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             # structure the renderer spoke. Options attach to the group whose
             # label they belong to (a shelf answers its own product, never the
             # count question next to it).
-            _questions = []
-            for _pt in (data.get("points") or []):
-                if not isinstance(_pt, dict):
-                    continue
-                _lbl = str(_pt.get("label") or "").strip(", ").strip()
-                _qs = _pt.get("qs")
-                if not isinstance(_qs, list):
-                    _qs = [_pt.get("q")]
-                _qs = [str(q).strip() for q in _qs if q and str(q).strip()]
-                if not _qs:
-                    continue
-                _opts = []
-                for _flb, _fvs in _found_by_label:
-                    if _flb.lower() == _lbl.lower():
-                        _opts = list(_fvs)[:4]
-                        break
-                _questions.append({"item": _lbl or None,
-                                   "text": " ".join(_qs[:4]),
-                                   "options": _opts})
+            # A shelf if this product has one; otherwise, for a question about
+            # AMOUNT, the ontology bracket that already ranked it. Measured on
+            # prod 2026-08-03: 1 of the last 40 asks carried any options,
+            # because a shelf was the only thing that could produce them — and
+            # a portion question is the commonest ask there is.
+            _questions = _questions_from_points(
+                data.get("points"), message=message, items=data.get("items"),
+                found_by_label=_found_by_label)
+            if not _chip_options:
+                # The flat legacy row, kept consistent with the per-question
+                # ones. `conversation.py` only reads it when NO question
+                # carried options, so it fills solely for the unambiguous
+                # single-question ask — a flat row under two questions is the
+                # ambiguity `group` exists to remove.
+                _flat = [q["options"] for q in _questions if q["options"]]
+                _chip_options = _flat[0] if len(_flat) == 1 else []
+            # `_questions_from_points` already returns `out[:4]`, so the cap that
+            # used to sit here is redundant — it is not dropped, it moved.
             return {"action": "ask", "text": text, "tool_calls": _ready_now,
                     DEFERRED_KEY: _deferred_now,
-                    "questions": _questions[:4], "options": _chip_options}
+                    "questions": _questions, "options": _chip_options}
         # A QUESTION WE CANNOT PHRASE IS NOT A REASON TO LEAVE THE LANE.
         # `clarify_plan_from_points` returns None when `points` is empty, and
         # the empty text that follows used to return None from this function —
@@ -4270,7 +4379,15 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     "text": (await _render(_ctx(_p2, user=user, messages=history,
                                                 day_state=day_line))
                              if _p2 is not None else ""),
-                    "points": data["points"]}
+                    "points": data["points"],
+                    # A re-ask is still an ask. This branch shipped no
+                    # `questions` at all, so the one turn where the user has
+                    # already answered once and is being asked again — the
+                    # turn least worth making them type — was the one with no
+                    # chips available to it.
+                    "questions": _questions_from_points(
+                        data["points"], message=message,
+                        items=data.get("items"))}
         return None
 
     ops = _normalize_ops(data)
@@ -4534,7 +4651,14 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                                            day_state=day_line))
                         if _p3 is not None else "")
                 if _txt:
-                    return {"action": "ask", "text": _txt, "points": _pts}
+                    # `ambiguity_points` emits {label, q}, which
+                    # `_questions_from_points` already reads — the calorie-only
+                    # fallback is the path taken when the staged pipeline is
+                    # off, and it should not also be the path with no chips.
+                    return {"action": "ask", "text": _txt, "points": _pts,
+                            "questions": _questions_from_points(
+                                _pts, message=message,
+                                items=data.get("items"))}
 
     board_by_id = {}
     for b in (board or []):
