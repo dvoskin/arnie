@@ -2853,7 +2853,26 @@ async def _analyze_food(db, user, food_name, inp):
         # is THIS food, and overriding on medium corrupted logs — "grilled shrimp"
         # matched a carb-heavy dish and committed 2450 cal / 357g carbs over the
         # interpreter's correct 150. Medium -> keep the interpreter's number.
-        if meal and str(meal.get("confidence", "")).lower() == "high":
+        # PLAUSIBILITY BACKSTOP (Phase 3), same line promotion enforces: identity
+        # confidence cannot vouch for the VALUE. A web total that moves the
+        # interpreter's number past the cap is a wrong-dish/wrong-unit hit
+        # (eggplant 33→1650 was "high"-confidence shaped), so the reasoned
+        # baseline stands and the decline is one grep away.
+        _web_ok = bool(meal) and str(meal.get("confidence", "")).lower() == "high"
+        if _web_ok:
+            try:
+                from skills.nutrition.promotion import plausibility_cap, _delta_ratio
+                _cap = plausibility_cap()
+                _x = _delta_ratio(result.calories, meal["calories"])
+                if _cap > 0 and _x is not None and _x >= _cap:
+                    _web_ok = False
+                    logger.warning(
+                        f"web meal enrich DECLINED reason=implausible_move "
+                        f"food={food_name!r} interp={result.calories} "
+                        f"web={round(meal['calories'])} x={_x:.1f} cap={_cap:g}")
+            except Exception:
+                pass
+        if _web_ok:
             logger.info(
                 f"web meal enrich: {food_name!r} {result.calories}→"
                 f"{round(meal['calories'])} cal (conf={meal['confidence']})")
@@ -2868,7 +2887,7 @@ async def _analyze_food(db, user, food_name, inp):
             result.source = "web_label"
             result.confidence = "likely"
             result.enrichment_source = "web_label"
-        elif meal:
+        elif meal and str(meal.get("confidence", "")).lower() != "high":
             logger.info(
                 f"web meal enrich DECLINED (conf={meal['confidence']}, need high): "
                 f"{food_name!r} keeping interpreter {result.calories} cal vs web "
