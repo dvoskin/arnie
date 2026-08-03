@@ -22,6 +22,13 @@ evidence for — "Update the sun chips to just 9 chips please", "Okay make that
 from numbers already in hand, and return None the moment anything is missing.
 The caller's fallback for None is exactly what it does today.
 
+THREE ARMS, EACH FOR A POPULATION PROD PRODUCED, weakest evidence last:
+
+    apply_portion                   a mass at both ends, or a stored basis
+    apply_count_correction          the same object counted twice
+    apply_serving_count_correction  the panel enumerates what the correction
+                                    names — "1 small snack bag" -> "1 burger"
+
 **The old portion is derived, not stored.** An entry keeps its committed
 calories and a quantity string; the mass behind that string was thrown away.
 With the per-100g basis the created event now carries, the mass comes back as
@@ -239,4 +246,144 @@ def apply_count_correction(*, food_name: str, old_quantity: str,
         return scaled
     except Exception as e:
         logger.warning(f"count correction unavailable: {e}")
+        return None
+
+
+def _counts_a_piece(unit_word: str, food_name: str, panel_unit: str) -> bool:
+    """Whether this unit counts PIECES of the source rather than servings of it.
+
+    The old side of a serving-count correction has to be a count of whole
+    servings, so every way of naming a piece disqualifies it: the panel's own
+    word ("2 pieces"), the product's own noun ("2 burgers"), and the partitive
+    nouns that presuppose a whole they were cut from ("2 wedges", "2 chunks").
+
+    The last one is not covered by the first two — "chunk" is interchangeable
+    with nothing and names no product — and without it "2 chunks" would be read
+    as two servings and priced by dividing the row in half.
+    """
+    from skills.nutrition.normalize import (is_partitive_unit,
+                                            unit_counts_the_pieces)
+    return (unit_counts_the_pieces(unit_word, food_name, panel_unit)
+            or is_partitive_unit(unit_word))
+
+
+def _committed_servings(committed: Mapping, per100: Optional[Mapping],
+                        serving_text: str) -> Optional[float]:
+    """How many of the source's servings the committed macros actually are.
+
+    Only when the panel weighs a serving AND a per-100g basis is stored — then
+    the row's own mass is recoverable and the answer is arithmetic. None
+    otherwise, which means "not checkable here", not "one".
+    """
+    # `_serving_count` by its private name deliberately: it is the branch's own
+    # uppercase-panel fix, three sessions are building on it right now, and
+    # renaming it here would merge clean into their new call sites and break
+    # them at runtime. `core.food_intelligence` already reads it this way.
+    from skills.nutrition.normalize import _serving_count, serving_unit_mass
+    panel = serving_unit_mass(serving_text or "")
+    count = _serving_count(serving_text or "")
+    if not panel or not count:
+        return None
+    serving_mass = _num(panel[0]) * _num(count[0])
+    grams = portion_from_basis(per100 or {},
+                               calories=_num((committed or {}).get("calories")))
+    if not serving_mass or serving_mass <= 0 or not grams:
+        return None
+    return grams / serving_mass
+
+
+def apply_serving_count_correction(*, food_name: str, old_quantity: str,
+                                   new_quantity: str, committed: Mapping,
+                                   serving_text: str,
+                                   per100: Optional[Mapping] = None
+                                   ) -> Optional[dict]:
+    """"1 small snack bag" -> "1 burger", priced off the panel's own count.
+
+    THE THIRD POPULATION, and the one prod 2026-08-03 produced. le#936
+    corrected fe#2721 to "1 burger" with no calorie key, both arms above
+    declined, and the row kept the 15-piece bag's 140 cal against one gummy
+    burger. Neither could help: `apply_portion` needs a mass and "15 PIECES"
+    names no grams, and `apply_count_correction` needs compatible units — "bag"
+    and "burger" are not.
+
+    Nothing was missing but the join. The panel says one serving is 15 pieces;
+    the new unit is the product's own noun, so it counts those pieces; the old
+    quantity was one serving. One burger is therefore a fifteenth of what is on
+    the row — arithmetic on numbers already in hand, no lookup, no guess.
+
+    THE PREMISE IS THAT THE COMMITTED ROW IS `old` WHOLE SERVINGS, and it is
+    the only thing here that is assumed rather than read, so it is fenced on
+    every side:
+
+      * the count must be one the user actually stated. "whatever was left"
+        parses to amount=1.0 by default, and reading that as one serving would
+        invent a denominator out of a shrug.
+      * it must be whole. Half a bag is not a whole number of servings and
+        `old * per_serving` would not be a whole number of pieces either.
+      * it must be a unit count, not a helping. "2 handfuls" has a count and a
+        mass estimate, and neither is a serving.
+      * its unit must not name a piece — else this divides by the serving a
+        second time. "1 piece" -> "1 burger" is the same object and belongs to
+        the arm above, not to a fifteenth of the row.
+      * and where the premise is CHECKABLE it is checked, not assumed. A panel
+        that also weighs a serving plus a stored basis gives the row's real
+        serving multiple, and it must agree with the count. Sun Chips' own
+        "28 g (about 15 chips)" against a 210-cal bag is 1.4 servings, not 1 —
+        so "1 bag" there is 21 chips, and this declines rather than calling it
+        15. That case is already priced correctly by mass one arm up; what
+        matters is that a disagreement is never resolved in favour of the
+        wording.
+    """
+    try:
+        from skills.nutrition.models import COUNT_BASIS_UNIT
+        from skills.nutrition.normalize import (_serving_count,
+                                                normalize_quantity,
+                                                unit_counts_the_pieces)
+
+        panel = _serving_count(serving_text or "")
+        if not panel:
+            return None
+        per_serving, panel_unit = _num(panel[0]), panel[1]
+        if not per_serving or per_serving <= 0:
+            return None
+
+        # THE NEW UNIT MUST COUNT THE PANEL'S PIECES, or the ratio below counts
+        # one thing and divides by another.
+        new = normalize_quantity((new_quantity or "").strip(), food_name or "")
+        new_n = _num(new.count)
+        if not new_n or new_n <= 0:
+            return None
+        if not unit_counts_the_pieces(new.unit or "", food_name or "",
+                                      panel_unit):
+            return None
+
+        # THE OLD QUANTITY MUST BE A WHOLE NUMBER OF THE SOURCE'S SERVINGS.
+        old = normalize_quantity((old_quantity or "").strip(), food_name or "")
+        old_n = _num(old.count)
+        if not old_n or old_n <= 0 or old_n != int(old_n):
+            return None
+        if old.user_stated_amount is None:
+            return None
+        if old.count_basis != COUNT_BASIS_UNIT:
+            return None
+        if _counts_a_piece(old.unit or "", food_name or "", panel_unit):
+            return None
+
+        actual = _committed_servings(committed, per100, serving_text or "")
+        if actual is not None and abs(actual - old_n) > 0.1 * old_n:
+            logger.info("event=correction_apply outcome=declined "
+                        "reason=serving_multiple_disagrees food=%r stated=%s "
+                        "derived=%.2f", food_name, old_n, actual)
+            return None
+
+        pieces = old_n * per_serving
+        scaled = scale_by_ratio(committed, new_n / pieces)
+        if scaled is not None:
+            logger.info("event=correction_apply outcome=applied "
+                        "route=serving_count food=%r pieces=%.1f ratio=%.4f "
+                        "cal=%s", food_name, pieces, new_n / pieces,
+                        scaled.get("calories"))
+        return scaled
+    except Exception as e:
+        logger.warning(f"serving-count correction unavailable: {e}")
         return None

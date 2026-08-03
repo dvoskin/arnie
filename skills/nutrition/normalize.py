@@ -378,6 +378,33 @@ def count_units_compatible(portion_unit: str, serving_unit: str) -> bool:
     return a in _INTERCHANGEABLE_COUNTS and b in _INTERCHANGEABLE_COUNTS
 
 
+def unit_counts_the_pieces(unit_word: str, food_name: str,
+                           panel_unit: str) -> bool:
+    """Whether a count of `unit_word` counts the items a panel enumerates.
+
+    Two ways to be the panel's item, and a panel-word match only finds the
+    first. "15 PIECES" of Sour Gummy Mini Burgers enumerates gummy burgers, so
+    "1 burger" counts exactly what the panel counts — but
+    `count_units_compatible("burger", "piece")` is False and must stay False,
+    because that predicate asks whether two PANELS count the same object and
+    holds "piece" and "serving" interchangeable to do it. A product's own noun
+    is not interchangeable with anything; it is the item itself, which is what
+    `_unit_names_the_food` knows and nothing else does.
+
+    Prod 2026-08-03, fe#2721: the correction "1 small snack bag" -> "1 burger"
+    had a readable panel and a unit that named the food, and no code could put
+    those two facts together — so the row kept the whole bag's 140 cal against
+    one gummy.
+
+    Same shape as `_unit_is_fraction` one screen up, and its near-mirror: that
+    one asks whether a count names a PART of the food, this one whether it
+    names ONE of the panel's items. Both need the unit and the food name
+    together, which is why neither is answerable from the unit word alone.
+    """
+    return (count_units_compatible(unit_word, panel_unit)
+            or _unit_names_the_food(unit_word, food_name))
+
+
 #: Adjectives that shift a piece weight. Small effect, large in aggregate over
 #: six slices — and cheap to honour.
 _SIZE_MODIFIERS = {
