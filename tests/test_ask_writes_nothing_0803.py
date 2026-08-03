@@ -22,21 +22,27 @@ import pytest
 import core.food_turn as FT
 
 
-def test_partial_commit_is_off_by_default():
-    """The switch be65fb6 introduced, restored with the same default. Absent
-    from render.yaml, so prod rides this."""
+def test_partial_commit_is_on_until_the_held_items_are_stashed():
+    """NOT the intended end state. be65fb6's default was false and holding is
+    the right call — but tests/test_leave_no_food_behind.py proves the premise
+    ("the answer turn re-reads the whole message") false: an item neither asked
+    about nor marked ready is LOST, not deferred, which is the corn that
+    vanished behind a turkey clarification. Committing the orphans is currently
+    the only thing between a clarification and silent data loss.
+
+    Flips to false once held AND orphan items ride the pending question's
+    staged_items, so the answer turn commits them deterministically."""
     os.environ.pop("FOOD_PARTIAL_COMMIT", None)
-    assert FT.partial_commit_enabled() is False
+    assert FT.partial_commit_enabled() is True
 
 
 @pytest.mark.parametrize("raw,expected", [
     ("true", True), ("1", True), ("yes", True),
-    ("false", False), ("", False), ("no", False),
+    ("false", False), ("no", False),
 ])
-def test_the_switch_still_restores_the_old_behaviour(monkeypatch, raw, expected):
-    """It is a kill switch in both directions — the writes can come back
-    without a deploy, which is why the narration guard below has to survive
-    independently of the default."""
+def test_the_switch_works_in_both_directions(monkeypatch, raw, expected):
+    """A kill switch both ways — which is why the narration guard below has to
+    survive independently of whichever default is in force."""
     monkeypatch.setenv("FOOD_PARTIAL_COMMIT", raw)
     assert FT.partial_commit_enabled() is expected
 

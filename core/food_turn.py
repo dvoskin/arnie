@@ -97,8 +97,30 @@ def partial_commit_enabled() -> bool:
     ask. Nothing is lost by holding — the answer turn re-reads the whole meal,
     which is how held items have always come back.
 
-    FOOD_PARTIAL_COMMIT=true restores the old behaviour without a deploy."""
-    return os.getenv("FOOD_PARTIAL_COMMIT", "false").lower() in (
+    ⚠ DEFAULT IS TRUE, AND THAT IS NOT THE INTENDED END STATE. Holding is the
+    right call, but it may not ship before the held items are STASHED. The
+    reasoning above assumed "nothing is lost by holding — the answer turn
+    re-reads the whole message"; `tests/test_leave_no_food_behind.py` proves
+    that assumption false with a prod bug: "150g turkey and a corn" dropped the
+    CORN when the turkey raised a clarification, because on an ask only `ready`
+    commits and an item the interpreter neither asked about nor marked ready is
+    LOST — not deferred. That test's own words: "the interpreter's sorting
+    isn't reliable enough to trust with data integrity."
+
+    So committing the orphans is currently the only thing standing between a
+    clarification and silent data loss, and turning it off trades a cosmetic
+    inconsistency (a card that reads as finished above an open question) for a
+    vanished food. That is the worse bug.
+
+    The flip to false is gated on the pipeline branch's `staged_items` codec
+    covering the interpreter branch too, so held AND orphan items ride the
+    pending question and the answer turn commits them deterministically rather
+    than re-parsing for them. Everything else here — both call sites, and the
+    `discard_held` guard that stops an ask losing its own question — is already
+    in place and correct, so that flip is a one-line change plus the staging.
+
+    FOOD_PARTIAL_COMMIT=false holds everything, once that lands."""
+    return os.getenv("FOOD_PARTIAL_COMMIT", "true").lower() in (
         "true", "1", "yes")
 
 
