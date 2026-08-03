@@ -803,8 +803,16 @@ def apply_policy(plan: FoodResponsePlan) -> FoodResponsePlan:
     sentences, words, allow_q, allow_none = INTENT_POLICY[plan.intent]
     if plan.intent is FoodResponseIntent.CLARIFY and plan.clarification_unknowns:
         count = len(pursued_unknowns(plan.clarification_unknowns, plan.user_mode))
-        sentences = max(sentences, min(3, count + 1))
-        words = max(words, min(70, 25 * count + 20))
+        # ROOM FOR THE SHAPE WE ASK FOR. `min(3, ...)` fit a reading plus ONE
+        # question; the composer is now told to give each question its own
+        # bubble, and a reading plus two questions is three sentences with
+        # nothing left over — so a two-question ask failed TOO_LONG and shipped
+        # the deterministic floor instead, which is the run-on prose this was
+        # meant to replace. The cap still binds: it is one bubble per question
+        # plus the reading, not a licence to ramble, and `pursued_unknowns`
+        # already decided how many questions are worth asking at this mode.
+        sentences = max(sentences, min(4, count + 1))
+        words = max(words, min(95, 25 * count + 20))
     if plan.unpriced_corrections:
         # A correction may not normally ask — its job is to show the change
         # took. This is the one shape that has to: the identity moved, nothing
@@ -1769,6 +1777,22 @@ def build_prompt(plan: FoodResponsePlan) -> str:
             "clause why it is shaky, and ask about that one thing. Always end "
             "on the question — a reading with no question asks nothing and "
             "commits nothing.\n"
+            # ONE QUESTION PER BUBBLE when there is more than one. Two
+            # questions in a paragraph is a form to re-read: the shipped
+            # sashimi ask ran "about how many pieces total... And is there
+            # rice under it or with it, or any soy sauce/sides, or just the
+            # fish plain?" as continuous prose, and the eye has to parse which
+            # parts are questions before it can answer either. Separating them
+            # is also what lets the client put each question's answer chips
+            # under the question they answer — the wire carries them grouped,
+            # and a single prose bubble collapses that back into one row.
+            + ("ONE QUESTION PER BUBBLE. You have more than one thing to ask, "
+               "so each gets its own bubble, shortest first — never two "
+               "questions in the same paragraph, and never a preamble "
+               "announcing how many there are (\"two things and I've got "
+               "it\"): the bubbles already show that.\n"
+               if len(pursued_unknowns(plan.clarification_unknowns,
+                                       plan.user_mode)) > 1 else "")
             + ("A LINE MARKED OPEN IS THE ONE YOU ARE ASKING ABOUT — never "
                "state a single figure for it. Stating a number for the thing "
                "you are about to ask about tells them the answer does not "

@@ -3877,6 +3877,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # REAL VARIANTS AS THE OPTIONS, when the thing being asked about is a
         # branded product. `build_prompt` already passes `clarification_options`
         # to the composer; they were simply never populated on this path.
+        _found_by_label, _chip_options = [], []
         if _plan is not None and not _plan.clarification_options:
             # EVERY branded unknown, not just the first. Looking up only
             # `points[0]` meant a meal with two branded products got the real
@@ -3892,15 +3893,33 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                        for p in (data.get("points") or [])
                        if isinstance(p, dict) and str(p.get("label") or "").strip()]
             _found = []
+            _found_by_label = []
             for _lb in _labels[:3]:
                 if not (_branded_any or _looks_like_brand(_lb)):
                     continue
                 _v = await _variant_options(_lb, True)
                 if _v:
                     _found.append(f"{_lb}: " + ", ".join(_v))
+                    _found_by_label.append((_lb, list(_v)))
             if _found:
                 import dataclasses as _dc
                 _plan = _dc.replace(_plan, clarification_options=tuple(_found))
+            # THE SAME OPTIONS, TAPPABLE. The composer hears "Barebells: Salty
+            # Peanut, Caramel Cashew" and voices it; the client can also render
+            # each as a one-tap answer chip — but only from here, where the
+            # options are still discrete. Flattened into prose they are gone,
+            # which is why the chips iOS shows today are a client-side guess
+            # (QuickReplyEngine) rather than the shelf we actually looked up.
+            # One product asks with bare flavours; two products prefix each
+            # with its product, because an unlabelled pool spanning two shelves
+            # reads as flavours of one. Only REAL options become chips — a
+            # count question ("how many pieces?") gets none rather than
+            # inventing a precision the user never stated.
+            if len(_found_by_label) == 1:
+                _chip_options = list(_found_by_label[0][1])[:4]
+            else:
+                _chip_options = [f"{_lb} {_v}" for _lb, _vs in _found_by_label
+                                 for _v in _vs][:4]
         text = (await _render(_ctx(_plan, user=user, day_state=day_line, messages=history))
                 if _plan is not None else "")
         # THE READY FOODS GO ON THE BOARD. The recap has always named them as
@@ -3922,7 +3941,36 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # otherwise (invariant_sweep 3/7; reproduced live).
         _ready_now = _calls_for_ready(data.get("ready")) + _orphan_calls(data)
         if text:
-            return {"action": "ask", "text": text, "tool_calls": _ready_now}
+            # THE QUESTIONS, STILL QUESTIONS. The composer voices them and the
+            # voicing is one string — but a two-question ask rendered as prose
+            # leaves the client nothing to hang per-question answer chips on,
+            # which is how the sashimi ask (pieces? rice?) shipped as three
+            # paragraphs with a guessed chip row. Same label/qs parse as
+            # `clarify_plan_from_points`, so the structure on the wire is the
+            # structure the renderer spoke. Options attach to the group whose
+            # label they belong to (a shelf answers its own product, never the
+            # count question next to it).
+            _questions = []
+            for _pt in (data.get("points") or []):
+                if not isinstance(_pt, dict):
+                    continue
+                _lbl = str(_pt.get("label") or "").strip(", ").strip()
+                _qs = _pt.get("qs")
+                if not isinstance(_qs, list):
+                    _qs = [_pt.get("q")]
+                _qs = [str(q).strip() for q in _qs if q and str(q).strip()]
+                if not _qs:
+                    continue
+                _opts = []
+                for _flb, _fvs in _found_by_label:
+                    if _flb.lower() == _lbl.lower():
+                        _opts = list(_fvs)[:4]
+                        break
+                _questions.append({"item": _lbl or None,
+                                   "text": " ".join(_qs[:4]),
+                                   "options": _opts})
+            return {"action": "ask", "text": text, "tool_calls": _ready_now,
+                    "questions": _questions[:4], "options": _chip_options}
         # A QUESTION WE CANNOT PHRASE IS NOT A REASON TO LEAVE THE LANE.
         # `clarify_plan_from_points` returns None when `points` is empty, and
         # the empty text that follows used to return None from this function —
@@ -4165,6 +4213,17 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     "question_id": _q.question_id,
                     "staged_item_id": _q.staged_item_id,
                     "staged_items": _staged_payload,
+                    # ONE group: the staged engine asks about one item at a
+                    # time by design, and its options are already real
+                    # (ambiguity top_options / variant shelves) — the same
+                    # structure the interpreter branch ships, so the client
+                    # renders both asks identically.
+                    "questions": [{
+                        "item": (getattr(_q, "item_name", "") or None),
+                        "text": _q.prompt,
+                        "options": [str(o) for o in
+                                    (getattr(_q, "options", ()) or ())][:4],
+                    }],
                     "requested_fields": list(_q.requested_fields),
                     # THE SHAPE WE ASKED FOR travels too. `parse_answer`
                     # dispatches on `response_schema` — without it the narrow

@@ -35,9 +35,20 @@ def select_fresh_clarifications(
         )
     cutoff = now - _td(minutes=freshness_minutes)
 
+    # EVERY kind that is a food question, not the one the legacy tool writes.
+    # This matched only kind="food_clarification" — the note_food_clarification
+    # rows — while the structured lane stamps ASK_KIND="food_structured_ask" on
+    # every ask it raises (115 of the 210 food rows in prod, and all recent
+    # ones). So the wire and the [PENDING CLARIFICATION] block silently skipped
+    # exactly the asks the structured path was holding meals open for; the
+    # model still saw its prior through get_open_pending_question, which
+    # queries by ASK_KIND — the two readers disagreeing is how the sashimi ask
+    # (PQ 2075) could bind the route while the client showed no marker.
+    _FOOD_ASK_KINDS = ("food_clarification", "food_structured_ask",
+                       "food_ask_first")
     fresh = [
         p for p in (pending_rows or [])
-        if getattr(p, "kind", None) == "food_clarification"
+        if getattr(p, "kind", None) in _FOOD_ASK_KINDS
         and getattr(p, "asked_at", None) is not None
         and p.asked_at >= cutoff
         and getattr(p, "answered_at", None) is None
@@ -68,7 +79,28 @@ def serialize_pending_clarifications(pending_rows, now=None, food_mode: str = No
         question = (getattr(p, "question", None) or "").strip()
         if not item and not question:
             continue
-        out.append({"item": item or None, "question": question or None})
+        entry = {"item": item or None, "question": question or None}
+        # The structure behind the ask, when the asking turn stashed it: which
+        # meal card this question is holding open, and the per-question groups
+        # with their real options. A client that relaunches mid-clarification
+        # can rebuild the same chips the live turn showed instead of a bare
+        # text marker. Absent on older rows; both keys optional on the wire.
+        try:
+            import json as _json_pc
+            _payload = _json_pc.loads(getattr(p, "payload_json", "") or "{}")
+            _mg = (_payload.get("meal_group_id") or "").strip()
+            if _mg:
+                entry["meal_group_id"] = _mg
+            _qs = _payload.get("questions")
+            if isinstance(_qs, list) and _qs:
+                entry["questions"] = [
+                    {"item": (q.get("item") or None),
+                     "text": (q.get("text") or ""),
+                     "options": [str(o) for o in (q.get("options") or [])][:4]}
+                    for q in _qs[:4] if isinstance(q, dict)]
+        except Exception:
+            pass
+        out.append(entry)
     return out
 
 

@@ -55,13 +55,82 @@ class Button:
     label: str
     value: Optional[str] = None   # text sent back when tapped (defaults to label)
     url: Optional[str] = None     # if set, this is a link button
+    #: Which question this chip answers, when a turn asks more than one (the
+    #: sashimi ask: pieces AND rice). A flat chip row under two questions is
+    #: ambiguous about which one a tap answers; the group index binds each chip
+    #: to its question so clients can render per-question rows. None = the
+    #: turn's only question — every existing caller and adapter unchanged.
+    group: Optional[int] = None
 
     @property
     def send_value(self) -> str:
         return self.value if self.value is not None else self.label
 
 
+#: A chip is read at a glance, in a row, at thumb width — so it is not the
+#: string the product database happens to store. Raw variant labels arrive as
+#: "Barebells Protein Bar, Salty Peanut (55g)" or "SALTY PEANUT", and a row of
+#: those wraps, repeats the product three times, and reads as database output
+#: rather than something to tap.
 import re as _re_platform
+
+_CHIP_MAX = 24
+_CHIP_NOISE = _re_platform.compile(
+    r"\s*[\(\[][^)\]]*[)\]]\s*"          # trailing pack sizes: "(55g)", "[2pk]"
+    r"|\s*[-–—,:;]\s*$"                   # dangling separators
+    r"|^\s*[-–—,:;]\s*", _re_platform.I)
+
+
+def chip_label(raw: str, *, drop_prefix: str = "") -> str:
+    """One quick-reply option, phrased the way a person would tap it.
+
+    Pure and side-effect free. Casing is LEFT ALONE beyond a fully-shouting
+    label: flavours and brands are proper nouns ("Salty Peanut", "BBQ"), and
+    sentence-casing them here would fight the product's own name — Arnie's
+    sentence-case rule governs his prose, not the labels on a shelf.
+
+    `drop_prefix` removes the product when the question already names it, so a
+    single-product ask reads "Salty Peanut · Caramel Cashew" rather than
+    "Barebells Salty Peanut · Barebells Caramel Cashew".
+    """
+    text = " ".join(str(raw or "").split())
+    if not text:
+        return ""
+    prev = None
+    while prev != text:
+        prev = text
+        text = _CHIP_NOISE.sub("", text).strip()
+    if drop_prefix:
+        pref = " ".join(str(drop_prefix).split())
+        if pref and text.lower().startswith(pref.lower()):
+            stripped = text[len(pref):].lstrip(" -–—,:")
+            # Only if something recognisable survives — "Barebells" alone must
+            # not become "".
+            if len(stripped) >= 2:
+                text = stripped
+    if text.isupper() and len(text) > 3:
+        text = text.title()
+    if len(text) > _CHIP_MAX:
+        cut = text[:_CHIP_MAX].rsplit(" ", 1)[0]
+        text = (cut if len(cut) >= _CHIP_MAX // 2 else text[:_CHIP_MAX]).rstrip(" -–—,:") + "…"
+    return text.strip()
+
+
+def chip_labels(raws, *, drop_prefix: str = "", limit: int = 4) -> list:
+    """`chip_label` over a list: cleaned, de-duplicated case-insensitively,
+    order preserved, empties dropped, capped. A row of chips is a set of
+    choices — two that render identically after cleaning are one choice."""
+    out, seen = [], set()
+    for raw in (raws or ()):
+        label = chip_label(raw, drop_prefix=drop_prefix)
+        key = label.lower()
+        if label and key not in seen:
+            seen.add(key)
+            out.append(label)
+        if len(out) >= limit:
+            break
+    return out
+
 
 # Tool-call markup the model must NEVER show the user. Under a heavy prompt an
 # older model sometimes writes its function-call SYNTAX as text instead of
@@ -427,7 +496,8 @@ def serialize_response(response: Response) -> dict:
             if response.effect else None
         ),
         "buttons": (
-            [{"label": b.label, "value": b.send_value, "url": b.url}
+            [{"label": b.label, "value": b.send_value, "url": b.url,
+              "group": b.group}
              for b in response.buttons]
             if response.buttons else None
         ),

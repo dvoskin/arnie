@@ -1336,6 +1336,10 @@ async def _run_turn(
                          "requested_fields": list(
                              _sft.get("requested_fields") or ()),
                          "options": list(_sft.get("options") or ()),
+                         # The per-question structure behind the chips: the
+                         # answer turn and the clarification wire both read it,
+                         # so a re-ask renders the same groups the first ask did.
+                         "questions": list(_sft.get("questions") or ()),
                          "meal_group_id": _sft.get("meal_group_id") or "",
                          # THE LOGGING DAY THIS QUESTION WAS ASKED ON. The
                          # answer may arrive after midnight; without this the
@@ -3530,6 +3534,33 @@ user_message=_user_text or "")
         _response_streamed = False
 
     resp = Response.from_text(response_text)
+
+    # ── Answer chips for a structured ask ─────────────────────────────────────
+    # The ask's REAL options (ambiguity top_options, brand shelves) become
+    # tappable buttons, each bound to its question by group index. Only on a
+    # turn whose final disposition is still the ask — a rescue or repair that
+    # replaced the reply must not ship chips for a question it no longer asks.
+    # Options-less questions ship no chips: a count ask ("how many pieces?")
+    # offering invented numbers would state a precision the user never gave.
+    if (_sft is not None and _sft.get("action") == "ask"
+            and not _signing_off):
+        try:
+            from core.platform import Button as _Btn, chip_labels as _chips
+            _chip_buttons = []
+            for _gi, _qd in enumerate(_sft.get("questions") or []):
+                # The product is dropped from its own options: the question
+                # already names it, so repeating it on every chip spends the
+                # width that makes them readable.
+                for _lbl in _chips(_qd.get("options"),
+                                   drop_prefix=(_qd.get("item") or "")):
+                    _chip_buttons.append(_Btn(label=_lbl, group=_gi))
+            if not _chip_buttons:
+                _chip_buttons = [_Btn(label=_lbl, group=0)
+                                 for _lbl in _chips(_sft.get("options"))]
+            if _chip_buttons:
+                resp.buttons = _chip_buttons[:8]
+        except Exception:
+            logger.debug("ask chips not attached", exc_info=True)
 
     # ── Streaming catch-up: emit any non-streamed response bubbles ────────────
     # In streaming mode the model's text streamed live as it arrived. But several
