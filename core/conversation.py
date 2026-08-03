@@ -1363,6 +1363,18 @@ async def _run_turn(
                          # answering turn applies the answer to it instead of
                          # re-interpreting the message and re-pricing the food.
                          "staged_items": _sft.get("staged_items") or [],
+                         # THE WRITES THE ASK IS HOLDING, as built rows.
+                         # `staged_items` is the ASKED item, carried so an
+                         # answer can be applied to it; this is everything the
+                         # ask settled and chose not to write yet. Without it
+                         # an ask that writes nothing is an ask that LOSES
+                         # whatever the answer turn forgets to mention — the
+                         # corn behind the turkey clarification
+                         # (tests/test_leave_no_food_behind.py). food_turn's
+                         # `_settle_deferred` reads it back off `prior` and
+                         # commits it on whatever the answer turn decides,
+                         # including a fall-through to legacy.
+                         "deferred_calls": _sft.get("deferred_calls") or [],
                          "requested_fields": list(
                              _sft.get("requested_fields") or ()),
                          "options": list(_sft.get("options") or ()),

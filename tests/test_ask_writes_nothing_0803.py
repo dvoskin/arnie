@@ -22,18 +22,18 @@ import pytest
 import core.food_turn as FT
 
 
-def test_partial_commit_is_on_until_the_held_items_are_stashed():
-    """NOT the intended end state. be65fb6's default was false and holding is
-    the right call — but tests/test_leave_no_food_behind.py proves the premise
-    ("the answer turn re-reads the whole message") false: an item neither asked
-    about nor marked ready is LOST, not deferred, which is the corn that
-    vanished behind a turkey clarification. Committing the orphans is currently
-    the only thing between a clarification and silent data loss.
+def test_an_ask_writes_nothing_by_default():
+    """be65fb6's default, restored — now that holding cannot lose a food.
 
-    Flips to false once held AND orphan items ride the pending question's
-    staged_items, so the answer turn commits them deterministically."""
+    It could not ship while the premise "the answer turn re-reads the whole
+    message" was load-bearing; tests/test_leave_no_food_behind.py falsifies it
+    (an item neither asked about nor marked ready is LOST, not deferred — the
+    corn that vanished behind a turkey clarification). Both ask branches now
+    stash the writes they hold on the pending question and the answering turn
+    settles them deterministically, so the recovery no longer depends on the
+    model saying the food's name a second time."""
     os.environ.pop("FOOD_PARTIAL_COMMIT", None)
-    assert FT.partial_commit_enabled() is True
+    assert FT.partial_commit_enabled() is False
 
 
 @pytest.mark.parametrize("raw,expected", [

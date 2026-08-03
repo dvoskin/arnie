@@ -122,30 +122,37 @@ def partial_commit_enabled() -> bool:
     ask. Nothing is lost by holding — the answer turn re-reads the whole meal,
     which is how held items have always come back.
 
-    ⚠ DEFAULT IS TRUE, AND THAT IS NOT THE INTENDED END STATE. Holding is the
-    right call, but it may not ship before the held items are STASHED. The
-    reasoning above assumed "nothing is lost by holding — the answer turn
-    re-reads the whole message"; `tests/test_leave_no_food_behind.py` proves
-    that assumption false with a prod bug: "150g turkey and a corn" dropped the
-    CORN when the turkey raised a clarification, because on an ask only `ready`
-    commits and an item the interpreter neither asked about nor marked ready is
-    LOST — not deferred. That test's own words: "the interpreter's sorting
-    isn't reliable enough to trust with data integrity."
+    DEFAULT IS NOW FALSE, and the thing that gated it has landed. The blocker
+    was never the narration — it was that "nothing is lost by holding, the
+    answer turn re-reads the whole message" is FALSE.
+    `tests/test_leave_no_food_behind.py` proves it with a prod bug: "150g
+    turkey and a corn" dropped the CORN when the turkey raised a clarification,
+    because on an ask only `ready` commits and an item the interpreter neither
+    asked about nor marked ready is LOST — not deferred. That file's own words:
+    "the interpreter's sorting isn't reliable enough to trust with data
+    integrity."
 
-    So committing the orphans is currently the only thing standing between a
-    clarification and silent data loss, and turning it off trades a cosmetic
-    inconsistency (a card that reads as finished above an open question) for a
-    vanished food. That is the worse bug.
+    So holding could not ship while the answer turn's recovery of a held food
+    depended on the model mentioning it again. It no longer does. BOTH ask
+    branches now build their write calls unconditionally and stash the ones
+    they are not writing (`DEFERRED_KEY`) on the pending question; the
+    answering turn settles them in `_settle_deferred` at `run`'s single exit,
+    on every disposition including a fall-through to legacy. The switch decides
+    WHEN a settled food is written, never WHETHER — with it on the rows land on
+    the ask, with it off the identical rows land one turn later.
 
-    The flip to false is gated on the pipeline branch's `staged_items` codec
-    covering the interpreter branch too, so held AND orphan items ride the
-    pending question and the answer turn commits them deterministically rather
-    than re-parsing for them. Everything else here — both call sites, and the
-    `discard_held` guard that stops an ask losing its own question — is already
-    in place and correct, so that flip is a one-line change plus the staging.
+    Held is now also the SAFER side on double-writes, which inverts the
+    original argument. Writing on the ask leaves the answer turn's re-emission
+    to be caught by the model choosing an update — `_board_lines` renders "JUST
+    LOGGED, seconds ago" and asks for one, but that is a prompt line, and the
+    executor's dedup cannot help because it filters to entry ids that existed
+    before the batch. Held, both readings meet inside one plan and the
+    duplicate is dropped before anything is written
+    (`tests/test_every_food_survives_the_clarification.py` pins both halves).
 
-    FOOD_PARTIAL_COMMIT=false holds everything, once that lands."""
-    return os.getenv("FOOD_PARTIAL_COMMIT", "true").lower() in (
+    FOOD_PARTIAL_COMMIT=true is the way back, and stays covered: the switch is
+    a real escape hatch, not a dead flag."""
+    return os.getenv("FOOD_PARTIAL_COMMIT", "false").lower() in (
         "true", "1", "yes")
 
 
@@ -2545,6 +2552,144 @@ def _orphan_calls(data: dict) -> list:
     return _calls_for_ready(orphans)
 
 
+#: Where an ask stashes the writes it is holding. Rides the pending question's
+#: payload (core/conversation.py) and is settled by `_settle_deferred` on the
+#: answering turn.
+DEFERRED_KEY = "deferred_calls"
+
+
+def deferred_calls(prior: Optional[dict]) -> list:
+    """The write calls an earlier ask held back, as stashed with the question.
+
+    Log calls only. An update or a delete is anchored to an `entry_id` that was
+    resolved against the board as it stood at ASK time, and by the time the
+    answer arrives that board has moved — replaying one would correct a row the
+    user may already have changed. New rows carry no such reference, so they are
+    the only shape that survives the wait intact.
+    """
+    return [c for c in ((prior or {}).get(DEFERRED_KEY) or [])
+            if isinstance(c, dict) and c.get("name") == "log_food"
+            and isinstance(c.get("input"), dict)]
+
+
+def _call_name_key(call: dict) -> str:
+    from skills.nutrition.food_dedup import normalize_food_name
+    return normalize_food_name((call.get("input") or {}).get("food_name"))
+
+
+def _undeferred(held: list, plan_calls: list) -> list:
+    """The held writes the turn's own plan does NOT already cover.
+
+    THE ANSWER TURN'S OWN READING WINS when it has one. Both lists are written
+    in the SAME batch, so the executor's dedup cannot separate them — it filters
+    its candidate set to the entry ids that existed BEFORE the batch
+    (`pre_existing_food_ids`, handlers/tool_executor.py) precisely so a bulk
+    paste never blocks itself. Two calls for the same food in one plan is
+    therefore two rows, and nothing downstream would catch it.
+
+    The re-read is preferred over the stash for the same reason the whole
+    mechanism exists: the user just spoke, and their answer may have revised a
+    food we were not asking about ("the rice was actually two cups"). The stash
+    is the BACKSTOP — it commits exactly the foods the re-read lost, which is
+    the case `tests/test_leave_no_food_behind.py` is made of and the one the
+    interpreter's sorting cannot be trusted with.
+    """
+    seen = {_call_name_key(c) for c in (plan_calls or [])
+            if isinstance(c, dict) and c.get("name") == "log_food"}
+    out, kept = [], set()
+    for call in held:
+        key = _call_name_key(call)
+        if not key or key in seen or key in kept:
+            continue
+        kept.add(key)
+        out.append(call)
+    return out
+
+
+def _settle_deferred(out: Optional[dict], prior: Optional[dict]) -> Optional[dict]:
+    """Commit what the ask held back, whatever this turn decided on its own.
+
+    An ask that writes nothing is only honest if the foods it held come back,
+    and "the answer turn re-reads the whole message" is the premise
+    `tests/test_leave_no_food_behind.py` falsifies: an item the interpreter
+    neither asked about nor marked ready is LOST, not deferred. So the held
+    writes are settled HERE, at the one exit every path shares, rather than
+    inside the interpreter that may not mention them — and rather than in the
+    coordinator, which would put a second definition of the food lane's writes
+    outside the food lane.
+
+    Every disposition is covered because the losing ones are the point:
+
+      • a plan          — the held writes join it, minus what it already covers
+      • None            — the interpreter passed or failed and control goes to
+                          legacy; the meal must not go with it
+      • another ask     — the stash rides forward onto the new question
+      • skip an item    — "everything else stands", so everything else is written
+      • cancel the meal — nothing goes on the board, including this
+    """
+    held = deferred_calls(prior)
+    if not held:
+        return out
+
+    def _plan(calls: list, base: Optional[dict] = None) -> dict:
+        # The composer and its deterministic floor voice this, as on every
+        # other log turn — a literal here would be a third renderer, and an
+        # English-only one (cause E).
+        plan = dict(base or {})
+        plan.update({"action": "log", "tool_calls": calls,
+                     "kinds": ["log"] * len(calls)})
+        plan.setdefault("say", "")
+        plan.setdefault("note", "")
+        plan.setdefault("follow_up", "")
+        plan.pop(DEFERRED_KEY, None)
+        return plan
+
+    if out is None:
+        fresh = _undeferred(held, [])
+        logger.info("event=deferred_commit outcome=legacy_fallthrough "
+                    "committed=%d", len(fresh))
+        return _plan(fresh) if fresh else None
+
+    action = out.get("action")
+
+    if out.get("_drop_deferred"):
+        logger.info("event=deferred_commit outcome=cancelled held=%d", len(held))
+        return out
+
+    if action == "ask":
+        # The question changed; the debt did not. Carrying it forward is what
+        # keeps a second ask from doing what the first one was fixed for.
+        carried = _undeferred(held, out.get("tool_calls") or [])
+        merged = list(out.get(DEFERRED_KEY) or [])
+        merged += _undeferred(carried, merged)
+        out[DEFERRED_KEY] = merged
+        logger.info("event=deferred_commit outcome=carried held=%d", len(merged))
+        return out
+
+    if action in ("log", "update", "delete", "commit"):
+        fresh = _undeferred(held, out.get("tool_calls") or [])
+        if not fresh:
+            logger.info("event=deferred_commit outcome=covered held=%d",
+                        len(held))
+            return out
+        # AHEAD of the turn's own calls: these were settled a turn ago, and an
+        # update in this plan may target a row this list is about to create.
+        out["tool_calls"] = fresh + list(out.get("tool_calls") or [])
+        out["kinds"] = ["log"] * len(fresh) + list(out.get("kinds") or [])
+        if action not in ("log", "commit"):
+            out["action"] = "commit"
+        logger.info("event=deferred_commit outcome=merged committed=%d "
+                    "held=%d", len(fresh), len(held))
+        return out
+
+    # "pass" that is not a cancellation — a skip, or the interpreter declining
+    # a message that was never about food. The held meal still lands.
+    fresh = _undeferred(held, [])
+    logger.info("event=deferred_commit outcome=settled_on_%s committed=%d",
+                action or "none", len(fresh))
+    return _plan(fresh) if fresh else out
+
+
 def clarify_text_from_points(points: list, ready: list | None = None, *,
                              user_message: str = "") -> str:
     """The deterministic floor for `clarify_plan_from_points`.
@@ -3446,7 +3591,11 @@ def _handle_clarification_command(command, prior: Optional[dict],
 
     if command is _C.CANCEL_MEAL:
         logger.info("event=clarify_command cmd=cancel_meal")
-        return {"action": "pass",
+        # THE ONLY DISPOSITION THAT DISCARDS THE HELD WRITES. "Nothing went on
+        # the board" has to stay true of the foods the ask was holding as well
+        # as the one it asked about — cancelling a meal that silently landed
+        # most of itself is the same broken promise as an ask that writes.
+        return {"action": "pass", "_drop_deferred": True,
                 "text": "Dropped it — nothing went on the board."}
 
     if command is _C.SKIP_ITEM:
@@ -3634,11 +3783,17 @@ async def run(message: str, user, prior: Optional[dict] = None,
         fields = {}
 
     with food_trace.span(**fields):
-        return await _run_untraced(
+        out = await _run_untraced(
             message, user, prior=prior, day_line=day_line, board=board,
             last_assistant=last_assistant, regulars=regulars,
             thread_active=thread_active, history=history,
             on_first_food=on_first_food)
+    # THE HELD MEAL IS SETTLED AT THE EXIT, NOT INSIDE THE DECISION. Same
+    # reasoning as the trace above: this function has a dozen return points and
+    # the one that would get missed is the one that mattered — a turn that
+    # returns None hands control to legacy, and that is exactly where a held
+    # food would disappear for good.
+    return _settle_deferred(out, prior)
 
 
 async def _run_untraced(message: str, user, prior: Optional[dict] = None,
@@ -4023,10 +4178,23 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         # otherwise (invariant_sweep 3/7; reproduced live).
         # AN ASK WRITES NOTHING (be65fb6, restored). The ready foods wait with
         # the held one: a card that reads as finished above a question that
-        # says it is not is worse than a meal that lands a turn later, and the
-        # answer turn re-reads the whole message anyway.
-        _ready_now = ((_calls_for_ready(data.get("ready")) + _orphan_calls(data))
-                      if partial_commit_enabled() else [])
+        # says it is not is worse than a meal that lands a turn later.
+        #
+        # WAITING IS NOT DROPPING, and this is where the difference is made.
+        # The calls are built either way — the ask decides WHEN they are
+        # written, never WHETHER — so a held food travels as the exact row the
+        # partial commit would have created, priced by the same `_log_call` at
+        # the moment we understood it. Flipping the switch moves the write by
+        # one turn; it does not re-derive it, and it cannot lose it.
+        #
+        # This branch is where most asks come from, and until now it staged
+        # NOTHING: the pipeline branch below stashed its held item and this one
+        # returned the question alone, so `ready` and the orphans depended on
+        # the model mentioning them again. That dependency is the corn in
+        # tests/test_leave_no_food_behind.py.
+        _held_writes = _calls_for_ready(data.get("ready")) + _orphan_calls(data)
+        _ready_now = _held_writes if partial_commit_enabled() else []
+        _deferred_now = [] if partial_commit_enabled() else _held_writes
         if text:
             # THE QUESTIONS, STILL QUESTIONS. The composer voices them and the
             # voicing is one string — but a two-question ask rendered as prose
@@ -4057,6 +4225,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                                    "text": " ".join(_qs[:4]),
                                    "options": _opts})
             return {"action": "ask", "text": text, "tool_calls": _ready_now,
+                    DEFERRED_KEY: _deferred_now,
                     "questions": _questions[:4], "options": _chip_options}
         # A QUESTION WE CANNOT PHRASE IS NOT A REASON TO LEAVE THE LANE.
         # `clarify_plan_from_points` returns None when `points` is empty, and
@@ -4250,27 +4419,36 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             # is one definition of what a write is.
             # AN ASK WRITES NOTHING (be65fb6, restored) — the same decision as
             # the interpreter branch above, made in both places because either
-            # can raise the question. With the switch off there is nothing to
-            # build and nothing for the veto to filter.
-            _ready_calls = []
-            if partial_commit_enabled():
-                try:
-                    _board_by_id = {}
-                    for _b in (board or []):
-                        try:
-                            _board_by_id[int(_b["id"])] = _b
-                        except Exception:
-                            continue
-                    _c, _k, _il = _build_calls(ops, _board_by_id)
-                    _ready_calls, _, _, _ = _apply_clarification_veto(
-                        _decision, _c, _k, _il)
-                except Exception as _ve:
-                    # A partial commit is an improvement, never a
-                    # precondition — losing it costs an extra turn, losing the
-                    # QUESTION loses the meal.
-                    logger.warning(
-                        f"partial-commit calls unavailable: {_ve}")
-                    _ready_calls = []
+            # can raise the question.
+            #
+            # The veto still runs with the switch off, and that is deliberate:
+            # it is what separates the held items from the rest, so its output
+            # is exactly the set that must survive the wait. Skipping it when
+            # nothing is being written today would mean the answer turn had
+            # nothing to settle — and a held food that only exists while the
+            # write is enabled is the data loss, not the write.
+            _ready_calls, _deferred_calls = [], []
+            try:
+                _board_by_id = {}
+                for _b in (board or []):
+                    try:
+                        _board_by_id[int(_b["id"])] = _b
+                    except Exception:
+                        continue
+                _c, _k, _il = _build_calls(ops, _board_by_id)
+                _cleared, _, _, _ = _apply_clarification_veto(
+                    _decision, _c, _k, _il)
+                if partial_commit_enabled():
+                    _ready_calls = _cleared
+                else:
+                    _deferred_calls = _cleared
+            except Exception as _ve:
+                # A partial commit is an improvement, never a
+                # precondition — losing it costs an extra turn, losing the
+                # QUESTION loses the meal.
+                logger.warning(
+                    f"partial-commit calls unavailable: {_ve}")
+                _ready_calls, _deferred_calls = [], []
             # THE RESOLUTION TRAVELS, NOT JUST A REFERENCE TO IT (cause A).
             #
             # `staged_item_id` below is a pointer, and by the time the answer
@@ -4302,6 +4480,12 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 _staged_payload = []
             return {"action": "ask", "text": _text,
                     "tool_calls": _ready_calls,
+                    # The settled foods, held as the rows they would have been.
+                    # `staged_items` above carries the ASKED item as a
+                    # resolution to apply an answer to; this carries the ones
+                    # with no question left to answer, so the answering turn
+                    # writes them rather than re-deriving them.
+                    DEFERRED_KEY: _deferred_calls,
                     "points": [_q.prompt],
                     "question_id": _q.question_id,
                     "staged_item_id": _q.staged_item_id,

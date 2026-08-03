@@ -112,21 +112,31 @@ async def test_the_settled_food_waits_with_the_doubtful_one(v2, monkeypatch):
     gate has no "ask" in its action tuple. Live symptom: "Had some chicken and
     rice" wrote the rice, never mentioned it, and asked about the chicken.
 
-    ⚠ NOT the default yet, which is why this sets the flag. "Nothing is lost by
-    waiting, the answer turn re-reads the whole message" was the premise, and
+    THE DEFAULT NOW, and the flag is left unset here on purpose so this test
+    fails if the default drifts back. "Nothing is lost by waiting, the answer
+    turn re-reads the whole message" was the premise, and
     tests/test_leave_no_food_behind.py falsifies it: an item neither asked
-    about nor marked ready is LOST, not deferred. Holding ships once the held
-    and orphan items ride the pending question's staged_items.
+    about nor marked ready is LOST, not deferred. So waiting is only honest
+    because the banana now RIDES the question as a built write — asserted
+    below, and end-to-end in
+    tests/test_every_food_survives_the_clarification.py.
     """
     monkeypatch.setattr(FT, "chat", _fake_chat(_log([
         SPOON,
         {"food": "Banana", "amount": 1, "unit": "medium", "calories": 105,
          "protein": 1, "carbs": 27, "fats": 0}])))
-    monkeypatch.setenv("FOOD_PARTIAL_COMMIT", "false")
+    monkeypatch.delenv("FOOD_PARTIAL_COMMIT", raising=False)
     out = await FT.run("a spoon of peanut butter and a banana", _user())
     assert out["action"] == "ask"
     assert not (out.get("tool_calls") or []), (
         "an ask must carry no writes — the whole meal waits for the answer")
+    # WAITING IS NOT DROPPING. Without this line the assertion above is
+    # satisfied just as well by losing the banana.
+    held = [(c.get("input") or {}).get("food_name")
+            for c in (out.get("deferred_calls") or [])]
+    assert "Banana" in held, (
+        f"the settled food was held but not stashed — it is now lost: {held}")
+    assert "Peanut butter" not in held, "the asked food answered its own question"
 
 
 @pytest.mark.asyncio
@@ -143,3 +153,6 @@ async def test_the_switch_still_commits_the_settled_food(v2, monkeypatch):
     assert out["action"] == "ask"
     committed = [c["input"]["food_name"] for c in (out.get("tool_calls") or [])]
     assert "Banana" in committed and "Peanut butter" not in committed
+    # WRITTEN OR HELD, NEVER BOTH — a food in both lists lands twice.
+    assert not (out.get("deferred_calls") or []), (
+        "the writing path also stashed; the banana would be logged twice")
