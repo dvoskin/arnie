@@ -83,6 +83,17 @@ services:
       # FOOD_COMPOSER=false reverts without a deploy.
       - key: FOOD_COMPOSER
         value: "true"
+      # DEFER MICRONUTRIENTS OFF THE REPLY PATH (P1 latency).
+      #
+      # The card's primary numbers (cal/protein/carbs/fats) resolve inline and
+      # are shown immediately; the micro panel (fiber/sugar/sodium/vitamins) is
+      # a per-item Haiku call that was blocking the serial reply path for ~0.6-1s
+      # per branded/composite item. `_deferred_micro_fill` populates them on its
+      # OWN session via ensure_future right after the reply is sent, so the panel
+      # fills a beat later instead of holding the whole turn. FOOD_MICROS_DEFERRED
+      # =false reverts to inline without a deploy.
+      - key: FOOD_MICROS_DEFERRED
+        value: "true"
       # THE FAST PATH, MEASURED BUT NOT TRUSTED.
       #
       # `core/food_fast_path.py` is a deterministic parser that produces the
