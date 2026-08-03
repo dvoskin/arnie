@@ -94,14 +94,24 @@ services:
       # =false reverts to inline without a deploy.
       - key: FOOD_MICROS_DEFERRED
         value: "true"
-      # SECOND-TIER HEADS-UP (P1 felt-latency). When a food turn is still running
-      # ~6s in, it appends a fuller "still on it, here's what's taking the time"
-      # line after the first heads-up — the way Claude narrates a long step. Pure
-      # reassurance; it never touches the log. FOOD_LATE_HEADSUP=false kills it
-      # with no deploy; FOOD_LATE_HEADSUP_DELAY_S tunes how long after the first
-      # line (≈2.5s in) it waits, so 3.5 puts the second around the 6s mark.
+      # SECOND-TIER HEADS-UP (P1 felt-latency) — OFF. When a food turn was still
+      # running ~6s in this appended a fuller "still on it, here's what's taking
+      # the time" line after the first heads-up. Pure reassurance; it never
+      # touched the log.
+      #
+      # TURNED OFF 2026-08-03 (Danny): it collides with the answer. The timer
+      # emits through `on_text_bubble` directly, outside the bubble streamer's
+      # ordering, so a reply that lands while the line is in flight interleaves
+      # with it — and its `_reply_ready` guard cannot close that window, because
+      # the flag flips at commit while the composer's bubbles are still
+      # streaming behind it. The shipped shape was two heads-up lines about the
+      # same food ("let me get the proper numbers for that tuna sashimi", then
+      # "taking a closer look at that tuna sashimi") stacked above the answer,
+      # which reads as the coach repeating himself rather than as reassurance.
+      # The first-tier heads-up at ~2.5s stays; it is inside the streamer.
+      # Set back to "true" to restore, no code change needed.
       - key: FOOD_LATE_HEADSUP
-        value: "true"
+        value: "false"
       - key: FOOD_LATE_HEADSUP_DELAY_S
         value: "3.5"
       # THE FAST PATH, MEASURED BUT NOT TRUSTED.
