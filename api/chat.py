@@ -174,6 +174,31 @@ def _turn_tools(turn) -> list[str]:
     return seen
 
 
+async def _open_food_clarifications(db, user) -> list[dict]:
+    """Food items Arnie is still waiting on an answer about, after this turn.
+
+    These rows already exist — they back the [PENDING CLARIFICATION] prompt
+    block — but they never reached the wire, so a turn that logged two of four
+    items streamed a macro card for the two that landed and the client had no
+    way to say the rest was still open. The card read as "the whole meal is in"
+    (Danny, 2026-08-03).
+
+    Read AFTER the turn, so anything the turn just resolved is already gone, and
+    anything it newly asked is already here. Best-effort: a failure here reports
+    an empty list and the client simply shows no marker — it never costs a reply.
+    """
+    try:
+        from db.queries import get_open_pending_questions
+        from core.context_builder import serialize_pending_clarifications
+        rows = await get_open_pending_questions(db, user.id)
+        food_mode = (getattr(user.preferences, "food_logging_mode", None)
+                     if user.preferences else None)
+        return serialize_pending_clarifications(rows, food_mode=food_mode)
+    except Exception as e:
+        logger.warning(f"pending clarification serialize failed: {e}")
+        return []
+
+
 async def _backfill_city(identity: str, lat: float, lng: float) -> None:
     """Reverse-geocode the user's city OFF the turn path (fire-and-forget from
     _coached_reply). Fills users.city only if it's still empty — a user-set or
@@ -289,11 +314,14 @@ async def _coached_reply(identity: str, text: str, source_type: str,
             except Exception as e:
                 logger.error(f"chat turn failed (identity={identity}): {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail="coaching turn failed")
+            # Read inside the session — the payload is assembled after it closes.
+            pending_clarifications = await _open_food_clarifications(db, user)
     finally:
         lock.release()
 
     payload = serialize_response(turn.response)
     payload["tools"] = _turn_tools(turn)
+    payload["pending_clarifications"] = pending_clarifications
 
     # ── Voice-in → voice-out (iOS) ────────────────────────────────────────────
     # When the user sent a voice note, attach a spoken version of the reply as
@@ -737,6 +765,8 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
                 logger.error(f"stream turn failed (identity={identity}): {e}", exc_info=True)
                 await ws.send_json({"type": "error", "detail": "coaching turn failed"})
                 return
+            # Read inside the session — `done` is assembled after it closes.
+            pending_clarifications = await _open_food_clarifications(db, user)
 
     # `done` carries only bubbles NOT already streamed (e.g. a dashboard link added
     # after the stream), plus reaction/effect/buttons/link/meta.
@@ -750,6 +780,7 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
                          if (c.get("payload") or {}).get("entry_id") not in _early_ids
                          and c.get("entry_id") not in _early_ids]
     done["tools"] = _turn_tools(turn)
+    done["pending_clarifications"] = pending_clarifications
     done["type"] = "done"
     # Same stable turn identity as the REST path — see payload["log_id"] there.
     done["log_id"] = getattr(turn, "log_id", None)

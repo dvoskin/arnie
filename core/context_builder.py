@@ -18,16 +18,14 @@ _CLARIFICATION_FRESHNESS = {
 }
 
 
-def render_pending_clarification_block(
+def select_fresh_clarifications(
     pending_rows, now=None, freshness_minutes: int = 30, food_mode: str = None
-) -> str:
-    """Render the [PENDING CLARIFICATION] context block from a list of
-    PendingQuestion rows. Filters to food_clarification kind, freshness window,
-    unanswered. Pure + testable — no DB dependency. now= injectable for tests.
-
-    freshness_minutes scales with food_logging_mode: quick=15, moderate=30, strict=60.
-    Caps at 3 rows so the prompt stays lean even if the model accumulated many.
-    Returns "" when nothing fresh — context_builder will skip the line entirely.
+):
+    """The open food clarifications, newest first — the ONE filter both readers
+    use. `render_pending_clarification_block` turns these into prompt text; the
+    chat wire ships the same rows to the client so a native card can say the log
+    is still incomplete. Sharing the selector is the point: if the model believes
+    a question is live, the user must see the same thing.
     """
     from datetime import datetime as _dt, timedelta as _td
     now = now or _dt.utcnow()
@@ -44,15 +42,54 @@ def render_pending_clarification_block(
         and p.asked_at >= cutoff
         and getattr(p, "answered_at", None) is None
     ]
-    if not fresh:
-        return ""
-    # Newest-first so the [:3] cap surfaces the most recently asked questions —
+    # Newest-first so a [:3] cap surfaces the most recently asked questions —
     # the ones the user is most likely responding to. Stable secondary sort by
     # item_referenced so the order is deterministic when ties occur.
     fresh.sort(
         key=lambda p: (p.asked_at, getattr(p, "item_referenced", "") or ""),
         reverse=True,
     )
+    return fresh
+
+
+def serialize_pending_clarifications(pending_rows, now=None, food_mode: str = None,
+                                     limit: int = 3) -> list[dict]:
+    """The same open clarifications as a JSON-ready list for the chat wire.
+
+    WHY: a turn that logs two of four items streams a macro card for the two
+    that landed, and the card reads as "the meal is in." The questions holding
+    up the rest were tracked only in the prompt, so the client had nothing to
+    say about them (Danny, 2026-08-03). Pure — no DB dependency, `now`
+    injectable, same shape whether it came from REST or the stream's done frame.
+    """
+    out = []
+    for p in select_fresh_clarifications(pending_rows, now=now, food_mode=food_mode)[:limit]:
+        item = (getattr(p, "item_referenced", None) or "").strip()
+        question = (getattr(p, "question", None) or "").strip()
+        if not item and not question:
+            continue
+        out.append({"item": item or None, "question": question or None})
+    return out
+
+
+def render_pending_clarification_block(
+    pending_rows, now=None, freshness_minutes: int = 30, food_mode: str = None
+) -> str:
+    """Render the [PENDING CLARIFICATION] context block from a list of
+    PendingQuestion rows. Filters to food_clarification kind, freshness window,
+    unanswered. Pure + testable — no DB dependency. now= injectable for tests.
+
+    freshness_minutes scales with food_logging_mode: quick=15, moderate=30, strict=60.
+    Caps at 3 rows so the prompt stays lean even if the model accumulated many.
+    Returns "" when nothing fresh — context_builder will skip the line entirely.
+    """
+    from datetime import datetime as _dt
+    now = now or _dt.utcnow()
+    fresh = select_fresh_clarifications(
+        pending_rows, now=now, freshness_minutes=freshness_minutes, food_mode=food_mode
+    )
+    if not fresh:
+        return ""
 
     lines = [
         "[PENDING CLARIFICATION] You asked these RECENTLY about foods. "
