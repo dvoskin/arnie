@@ -3014,7 +3014,13 @@ user_message=_user_text or "")
     # cannot create a false positive, because a reply that states the day total
     # CORRECTLY never exceeds the DB by more than the tolerance; only a fabricated
     # total does. A stated total is checkable against the ledger on its own terms.
-    if not _phantom and not tool_calls:
+    # NO LEDGER, NO VERDICT. `today_log` can be absent (a turn before the day row
+    # exists, a failed load), and `getattr(None, ...) or 0` makes that look like a
+    # day with zero calories — against which EVERY stated total is fabricated. That
+    # is the same mistake as judging a row against a payload that predates it, and
+    # dropping the wording precondition below is what would have exposed it: the
+    # guard must abstain when it has nothing to check against, not convict.
+    if not _phantom and not tool_calls and today_log is not None:
         try:
             from core.turn_health import (
                 claimed_day_total as _claimed_total,
