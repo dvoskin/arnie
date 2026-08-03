@@ -43,6 +43,21 @@ MODE_LIVE = "live"
 LOUD_DELTA_MULTIPLE = 2.5
 
 
+def plausibility_cap() -> float:
+    """PLAUSIBILITY BACKSTOP (Phase 3). A VERIFIED identity can still carry a
+    broken VALUE — a serving→grams unit slip ("1 cup rice" priced as ~1 gram → 1
+    cal when the interpreter said 205) or a mis-bind moves the number an order of
+    magnitude. Phase 2 measured the line: past ~5x the override is a unit/mis-bind
+    error (the interpreter won 8/8 above 5x), while the useful 2-5x corrections
+    (multi-can drinks, jerky) sit below it. So an override that moves calories >=
+    this factor is refused even on EXACT/CLOSE identity, and the interpreter's
+    baseline stands. FOOD_PLAUSIBILITY_CAP tunes it; <= 0 disables the backstop."""
+    try:
+        return float(os.getenv("FOOD_PLAUSIBILITY_CAP", "5.0"))
+    except (TypeError, ValueError):
+        return 5.0
+
+
 def resolver_mode() -> str:
     """off | shadow | live.
 
@@ -309,6 +324,20 @@ def promote(resolution, *, food_name: str, quantity: str, legacy,
     legacy_cal = getattr(legacy, "calories", None)
     new_cal = promoted.calories
     moved = _delta_ratio(legacy_cal, new_cal)
+    # PLAUSIBILITY BACKSTOP (Phase 3): identity says WHICH food; it cannot vouch
+    # for the VALUE. "White rice, cooked" was an EXACT match and still committed
+    # 1 cal for a cup (a serving→grams slip priced ~1 gram; interpreter said 205,
+    # prod fe#2705 on d117581 — P1's identity gate alone let it through). Past
+    # the cap the override IS the error, so the reasoned baseline stands. The
+    # user's OWN data is exempt: a value they confirmed wins at any ratio.
+    _cap = plausibility_cap()
+    if _cap > 0 and not _trusted and moved is not None and moved >= _cap:
+        logger.warning(
+            f"event=nutrition_promotion turn={turn_id or '-'} "
+            f"food={food_name!r} outcome=declined reason=implausible_move "
+            f"legacy_cal={legacy_cal} new_cal={new_cal} x={moved:.1f} "
+            f"cap={_cap:g} src={_src or '-'} grade={_grade or '-'}")
+        return legacy
     logger.info(
         f"event=nutrition_promotion turn={turn_id or '-'} "
         f"food={food_name!r} outcome=promoted "

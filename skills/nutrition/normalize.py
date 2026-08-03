@@ -692,6 +692,15 @@ def _volume(raw: str, unit_text: str, food_name: str, amount: float, ml: float,
     """A volume portion, with a mass alongside it where we can honestly state
     one.
 
+    DIMENSION INVARIANT (root fix 0803, prod fe#2705): `(amount, unit)` must
+    denominate ONE measurement. This constructor used to return amount=<count of
+    cups> beside unit="ml" — a broken pair whose f"{amount} {unit}" recombination
+    ("1 cup" -> "1 ml") re-entered a later turn and honestly priced a cup of rice
+    as ~0.7 g -> 1 cal (committed; the interpreter's 205 was discarded). `unit`
+    now carries the SURFACE token the user said ("cup", "glass", "tbsp"); the
+    canonical volume rides `milliliters`, which is what scaling reads. Every
+    round-trip re-normalizes to the same grams.
+
     The volume is exact as a volume. The mass is not, and without it a per-100g
     source cannot answer at all — which used to mean the resolver kept the
     source's per-100g row verbatim and logged a teaspoon of sugar as 387
@@ -706,7 +715,7 @@ def _volume(raw: str, unit_text: str, food_name: str, amount: float, ml: float,
     if bridged is not None:
         grams, density, category = bridged
         return NormalizedQuantity(
-            amount=amount, unit="ml", milliliters=ml, grams=grams,
+            amount=amount, unit=token, milliliters=ml, grams=grams,
             count=count, count_basis=count_basis, unit_label=label,
             uncertainty_g=round(grams * 0.15, 1),
             assumptions=notes + (f"{_fmt(ml)}ml estimated at {_fmt(grams)}g "
@@ -720,7 +729,7 @@ def _volume(raw: str, unit_text: str, food_name: str, amount: float, ml: float,
         if solid is not None:
             grams, uncertainty, source = solid
             return NormalizedQuantity(
-                amount=amount, unit="ml", milliliters=ml, grams=grams,
+                amount=amount, unit=token, milliliters=ml, grams=grams,
                 count=count, count_basis=count_basis, unit_label=label,
                 uncertainty_g=uncertainty,
                 assumptions=notes + (f"{_fmt(amount)} cup estimated at "
@@ -729,7 +738,7 @@ def _volume(raw: str, unit_text: str, food_name: str, amount: float, ml: float,
     # unknown for a per-100g one — which the resolver reports rather than
     # papering over with water density.
     return NormalizedQuantity(
-        amount=amount, unit="ml", milliliters=ml, count=count,
+        amount=amount, unit=token, milliliters=ml, count=count,
         count_basis=count_basis,
         unit_label=label, assumptions=notes)
 

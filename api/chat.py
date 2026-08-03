@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field, field_validator
 from db.database import AsyncSessionLocal
 from db.queries import resolve_user, get_recent_conversations, get_recent_conversations_linked, save_user_location
 from core.chat_service import run_chat_turn
-from core.platform import Response, serialize_response, WIRE_VERSION
+from core.platform import Response, serialize_response, WIRE_VERSION, _sanitize_bubble
 from api.auth import current_identity, verify_session_token
 from core.mutation_contract import mutation_turn
 # Shared with the Telegram and iMessage handlers — the coalescing rules and
@@ -714,7 +714,13 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
             user = await resolve_user(db, identity)
 
             async def on_bubble(text: str) -> None:
-                await ws.send_json({"type": "bubble", "text": text})
+                # The iOS streamed wire enforces voice, the same way core/platform
+                # does for the Telegram/iMessage wire. The streamer sanitizes the
+                # model's bubbles before they reach here, but the heads-up path
+                # sends straight to this callback — so without this a heads-up
+                # line's em dash or lowercase lead would ship raw. _sanitize_bubble
+                # is idempotent, so re-cleaning an already-clean bubble is free.
+                await ws.send_json({"type": "bubble", "text": _sanitize_bubble(text)})
 
             async def on_tool_start(tools: list) -> None:
                 # Drives the iOS live indicator. DEFAULT: a NEUTRAL "thinking"
