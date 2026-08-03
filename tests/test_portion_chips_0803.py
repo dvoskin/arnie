@@ -19,6 +19,8 @@ offering "8 / 10 / 12" when nothing computed those states a precision the user
 never gave, and a question whose bracket is not derivable ships no chips —
 that is the correct outcome, not a gap to paper over.
 """
+import re
+
 from core.food_turn import _portion_options
 
 
@@ -236,7 +238,16 @@ def test_a_question_with_no_real_options_still_ships():
 def test_a_non_portion_question_gets_nothing_from_the_ontology():
     """"how's it cooked, grilled or baked?" is a preparation question. The
     portion bracket answers a different question and would read as an answer
-    to this one."""
+    to this one.
+
+    The assertion was `out == []`, which was the only way to say "no bracket"
+    while the ontology was the sole source of options. It is now one of three
+    (shelf, bracket, and the choice the question itself names), so asserting
+    emptiness would assert the ABSENCE OF ANY ANSWER rather than the absence of
+    the WRONG one — and this test's own title is about the ontology. Pinned
+    both ways round instead: the bracket must not appear, and what does appear
+    must be the question's own alternatives.
+    """
     from core.food_turn import _question_options
 
     out = _question_options(
@@ -244,4 +255,6 @@ def test_a_non_portion_question_gets_nothing_from_the_ontology():
         found_by_label=[],
         message="I'm having some chicken",
         items=[{"food": "Chicken", "amount": 6, "unit": "oz"}])
-    assert out == []
+    assert not any(re.search(r"\d", o) for o in out), (
+        f"a portion bracket answered a preparation question: {out}")
+    assert out == ["Grilled", "Baked"], out

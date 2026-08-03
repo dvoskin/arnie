@@ -105,20 +105,40 @@ class ScriptedLLM:
                 "tool_calls": []}
 
 
-def _composer_line(system: str) -> str:
-    """A reply that names what the prompt says was written and what is open.
+#: The composer's prompt names the foods it is allowed to talk about on lines
+#: of this shape. Reading them back is how the stand-in stays a stand-in: it
+#: asserts nothing of its own, so a failed invariant is the PLAN's fault.
+_PROMPT_FOOD_RE = re.compile(r"^\s*[-•*]?\s*([A-Z][^:\n,(]{2,40})", re.M)
 
-    Deliberately mechanical. The composer's real job (voice) is not what this
-    file gates; what it gates is whether the PLAN handed the composer a
-    coherent set of facts, so the stand-in reads the facts back verbatim.
+
+def _composer_line(system: str) -> str:
+    """A reply that names the foods the prompt handed over, and asks when asked.
+
+    Deliberately mechanical — the composer's real job is voice, and voice is
+    not what this file gates.
+
+    IT MUST SATISFY `validate()`. The first version returned a bare statement,
+    so every ask turn came back `missing_question`, the composer retried, and
+    the bubble under test was the deterministic FALLBACK rather than the
+    composed reply. The invariants were reading a path production rarely takes.
     """
-    said = []
-    for label, pat in (("logged", r"(?:LOGGED|WROTE|committed)[^\n]*"),
-                       ("open", r"(?:NOT LOGGED|still open)[^\n]*")):
-        m = re.search(pat, system or "")
-        if m:
-            said.append(m.group(0))
-    return " ".join(said) or "Got it."
+    s = system or ""
+    names = []
+    for block in ("NOT LOGGED, still open", "UNDERSTOOD but NOT YET WRITTEN",
+                  "LOGGED", "WROTE"):
+        i = s.find(block)
+        if i == -1:
+            continue
+        for m in _PROMPT_FOOD_RE.finditer(s[i:i + 400]):
+            n = m.group(1).strip()
+            if n and n.lower() not in (x.lower() for x in names):
+                names.append(n)
+    body = ("Got " + ", ".join(names[:6]) + ".") if names else "Got it."
+    # A question is REQUIRED whenever the plan holds something open; supplying
+    # one keeps us on the composed path instead of the fallback.
+    if re.search(r"ASK|question|still open|NOT LOGGED", s, re.I):
+        body += " How much was it, a cup or more than that?"
+    return body
 
 
 #: Modules that bind `chat` at import time (`from core.llm import chat`), so
@@ -461,6 +481,69 @@ def check_i6(composer_prompts, payload):
             f"{(rem_c, rem_p)} — two owners for one day")
 
 
+def check_i2(payload, entries):
+    """A card must stand for a row, and a row should reach the user.
+
+    Two ways this broke. A card with no row is the phantom log — `_logged_entry_card`
+    is gated on a real `entry_id` now, so that side is closed. The open side is
+    a row with no card: `update_food_entry` renders as `{"type":
+    "macro_card_patch"}`, and the shipped client has no decoder case for it, so
+    a corrected food updates a real row and draws nothing at all.
+    """
+    ids = {e.id for e in entries}
+    for card in cards_of(payload):
+        eid = (card.get("payload") or {}).get("entry_id")
+        if eid is None:
+            continue
+        assert eid in ids, (
+            f"I2: card claims entry {eid}, which is not on the board {sorted(ids)}")
+
+
+def check_i7(composer_prompts, plan):
+    """Every food the interpreter parsed must reach the composer.
+
+    "a piece of challah with 3 slice honey turkey and some mayo and jalapaenos"
+    came back as "Reading this as challah with three honey turkey slices and a
+    small handful of jalapenos" — the MAYO silently absent, then asked about
+    separately as if it were new.
+
+    There is no readback template to inspect: the sentence is composer prose.
+    So this asserts the INPUT, which is where the loss happens —
+    `food_response._priced` drops any item with falsy calories, and the calorie
+    join is exact-lowered-name against `data["items"]` only. `validate()` has an
+    INVENTED-item rule and no MISSING-item rule, so nothing downstream can
+    notice.
+    """
+    prompt = " ".join(composer_prompts or []).lower()
+    if not prompt:
+        return
+    missing = [it["food"] for it in (plan.get("items") or [])
+               if it.get("food", "").lower() not in prompt]
+    assert not missing, (
+        f"I7: the interpreter parsed {missing} and the composer was never told "
+        f"about them — they cannot appear in the readback")
+
+
+def check_i8_shape(payload):
+    """An ask must ship answers, not leave the client to guess them.
+
+    `conversation.py` is the only producer of `Response.buttons`, and on the
+    interpreter branch its only option source used to be a branded Open Food
+    Facts shelf — so an unbranded portion question shipped nothing and
+    `QuickReplyEngine.swift` parsed Arnie's own sentence into "Rice / Cup /
+    More than that" for a question about grilled versus fried. Telegram and
+    iMessage have no parser at all and shipped no options whatsoever.
+    """
+    pend = pending_of(payload)
+    if not pend:
+        return
+    for entry in pend:
+        for q in (entry.get("questions") or []):
+            assert q.get("options"), (
+                f"I8: the ask {q.get('text')!r} shipped no options — the "
+                f"client has nothing to offer but a guess")
+
+
 def check_i9(text):
     """The reply is the coach speaking, not the planner thinking out loud."""
     leaks = [p for p in (
@@ -634,9 +717,12 @@ async def test_the_day_that_started_this(client, seeded, edges):
         where = f"turn {i + 1}/{len(THE_DAY)} ({message[:40]!r})"
         try:
             check_i1(payload)
+            check_i2(payload, board)
             check_i3(text, board_before, payload)
             check_i5(board)
             check_i6(edges.composer_prompts, payload)
+            check_i7(edges.composer_prompts, plan)
+            check_i8_shape(payload)
             check_i9(text)
         except AssertionError as e:
             raise AssertionError(f"{where}: {e}") from None

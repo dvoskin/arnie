@@ -2620,6 +2620,14 @@ def _same_food(a: str, b: str) -> bool:
     return ta <= tb or tb <= ta
 
 
+def _same_food_name(a: str, b: str) -> bool:
+    """`_same_food` for RAW names — normalizes first. Callers that hold food
+    names as the user/interpreter wrote them want this one; callers holding
+    already-normalized keys (`_call_name_key`) want `_same_food`."""
+    from skills.nutrition.food_dedup import normalize_food_name
+    return _same_food(normalize_food_name(a), normalize_food_name(b))
+
+
 def _undeferred(held: list, plan_calls: list) -> list:
     """The held writes the turn's own plan does NOT already cover.
 
@@ -2811,8 +2819,42 @@ def clarify_plan_from_points(points: list, ready: list | None = None, *,
         cal, pro = _priced.get(str(name).strip().lower(), (None, None))
         return FoodItemSummary(name=name, calories=cal, protein=pro)
 
-    resolved = tuple(_summary(_ready_name(r))
-                     for r in (ready or ()) if _ready_name(r))[:4]
+    _ready_names = [_ready_name(r) for r in (ready or ()) if _ready_name(r)]
+    _asked_names = [label for label, _ in asks if label]
+
+    # THE ORPHANS BELONG IN THE READING. An item the interpreter parsed but
+    # sorted into neither `ready` nor `points` reached no part of the plan, so
+    # the composer was never told it existed and could not name it. That is the
+    # mayo: "a piece of challah with 3 slice honey turkey and some mayo and
+    # jalapaenos" read back as "challah with three honey turkey slices and a
+    # small handful of jalapenos", with the mayo asked about afterwards as
+    # though it were new.
+    #
+    # The comment below has claimed since this function was written that "the
+    # items NOT asked about stay pending ... they are named in the plan and the
+    # user sees them held" — true only for items that made it into `asks`.
+    #
+    # `resolved_items` is the right slot, not a new one: it feeds the
+    # "UNDERSTOOD but NOT YET WRITTEN" block, and since an ask writes nothing
+    # (FOOD_PARTIAL_COMMIT=false) that is exactly an orphan's status. It rides
+    # the pending question as a deferred call and lands on the answer turn.
+    _orphans = []
+    for it in (items or ()):
+        if not isinstance(it, dict):
+            continue
+        nm = str(it.get("food") or "").strip()
+        if not nm:
+            continue
+        if any(_same_food_name(nm, k) for k in _ready_names + _asked_names):
+            continue
+        if any(_same_food_name(nm, k) for k in _orphans):
+            continue
+        _orphans.append(nm)
+
+    # Cap the READING, not the meal: six rather than four because the orphans
+    # now share the slot, and dropping one of them here would reintroduce the
+    # silence this just closed for the sake of a shorter sentence.
+    resolved = tuple(_summary(n) for n in (_ready_names + _orphans))[:6]
     pending = tuple(_summary(label) for label, _ in asks if label)
     # Several facets of one item ("grilled or fried?", "skin on or off?") are
     # ONE question about that item. Joining them keeps the plan's promise that
@@ -3036,6 +3078,73 @@ def _portion_options(item_label: str, user_message: str, *,
         return []
 
 
+#: Openers a facet may start with before the real choice begins.
+_ASK_OPENER_RE = re.compile(
+    r"^(?:was\s+it|is\s+it|is\s+that|were\s+they|are\s+they|did\s+you\s+have|"
+    r"which(?:\s+one)?|what(?:\s+kind)?)\b[\s,:-]*", re.I)
+
+#: A side that is only this is not an answer to anything.
+_NOT_AN_ANSWER = frozenset((
+    "it", "that", "this", "them", "one", "some", "any", "more", "less",
+    "much", "many", "you", "your", "yours", "calling", "coming", "so", "or",
+))
+
+#: A side STARTING with one of these is a clause about the conversation, not a
+#: choice about the food. This is the guard that rejects "You calling it" —
+#: the chip iOS actually shipped for "Any more coming or you calling it?".
+#: Checking only whole-side stop words let a three-word pronoun clause through,
+#: which is precisely the failure being fixed.
+_NOT_AN_ANSWER_LEAD = frozenset((
+    "you", "your", "i", "we", "they", "it", "that", "this", "there", "he",
+    "she", "am", "are", "do", "does", "did", "shall", "should", "would",
+))
+
+
+def _stated_options(qs) -> list:
+    """The choices the interpreter PUT IN the question — "fast food or
+    homemade?" -> ["Fast food", "Homemade"].
+
+    Shipped nothing before this, and the cost was not a missing chip row. iOS
+    fell back to `QuickReplyEngine.swift`, which re-derives choices by parsing
+    the RENDERED reply: it splits on the last sentence terminator and then on
+    "or"/commas. For "Chicken grilled or fried, and about how much, a cup or
+    two? And the rice, cup or more than that?" that discards the whole first
+    question and offers "Rice / Cup / More than that"; for "Any more coming or
+    you calling it?" it offers "Coming / You calling it". Telegram and iMessage
+    have no parser at all and offered nothing.
+
+    The server can do this correctly precisely because it is not parsing prose.
+    It has the facets as the interpreter authored them — one clause, one
+    question — so there is no paragraph to mis-split and no sibling question to
+    swallow. Doing it here once also means all three channels get it.
+
+    Deliberately narrow. A side longer than three words is a sentence, not a
+    choice; a side carrying a digit is a portion answer and belongs to
+    `_portion_options`, which prices it properly rather than echoing it.
+    """
+    for q in (qs or ()):
+        text = str(q or "").strip().rstrip("?.! ")
+        if not text:
+            continue
+        # One clause. "grilled or fried, and about how much" is TWO questions
+        # sharing a string; only the alternation is answerable as a chip.
+        for clause in re.split(r"[,;]| and (?=how|what|about)", text):
+            clause = _ASK_OPENER_RE.sub("", clause.strip())
+            parts = [p.strip() for p in re.split(r"\s+or\s+", clause, flags=re.I)]
+            if len(parts) != 2 or not all(parts):
+                continue
+            if any(re.search(r"\d", p) for p in parts):
+                continue                      # a portion answer, priced elsewhere
+            if any(len(p.split()) > 3 for p in parts):
+                continue                      # a sentence, not a choice
+            if any(p.lower() in _NOT_AN_ANSWER for p in parts):
+                continue
+            if any(p.split()[0].lower() in _NOT_AN_ANSWER_LEAD for p in parts):
+                continue
+            return [p[:1].upper() + p[1:] for p in parts]
+    return []
+
+
 def _question_options(*, label: str, qs, found_by_label, message: str,
                       items=None) -> list:
     """The real options for ONE question on the interpreter branch.
@@ -3051,8 +3160,14 @@ def _question_options(*, label: str, qs, found_by_label, message: str,
         if str(_flb or "").strip().lower() == str(label or "").strip().lower():
             return list(_fvs)[:4]
     if any(_facet_kind(q) == "portion" for q in (qs or ())):
-        return _portion_options(label, message, items=items)[:4]
-    return []
+        _p = _portion_options(label, message, items=items)[:4]
+        if _p:
+            return _p
+    # Last: the choice the question already names. Tried after the shelf and
+    # the bracket because those are looked-up facts and this is only what the
+    # interpreter wrote — but it is the difference between an answerable
+    # question and one every client has to guess at on its own.
+    return _stated_options(qs)[:4]
 
 
 def _questions_from_points(points, *, message: str = "", items=None,
