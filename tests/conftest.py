@@ -148,10 +148,11 @@ def _isolate_turn_scoped_caches():
     import core.food_turn as _FT
     import handlers.tool_executor as _TE
     import core.food_ledger as _FL
+    import skills.nutrition.off as _OFF
     for cache in (_FT._SPREAD_CACHE, _FT._RELEVANCE_CACHE,
-                  _TE._INFLIGHT_FETCHES, _FL._SEEN):
+                  _TE._INFLIGHT_FETCHES, _FL._SEEN, _OFF._BREAKER):
         cache.clear()
     yield
     for cache in (_FT._SPREAD_CACHE, _FT._RELEVANCE_CACHE,
-                  _TE._INFLIGHT_FETCHES, _FL._SEEN):
+                  _TE._INFLIGHT_FETCHES, _FL._SEEN, _OFF._BREAKER):
         cache.clear()

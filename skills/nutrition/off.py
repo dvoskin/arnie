@@ -20,6 +20,7 @@ import asyncio
 import logging
 import os
 import re
+import time
 from typing import Optional
 
 import httpx
@@ -196,6 +197,69 @@ def _per_serving(nutriments: dict) -> Optional[dict]:
     return out
 
 
+#: LEGACY-ENDPOINT CIRCUIT BREAKER.
+#:
+#: `search()` tries cgi/search.pl first and falls back to Search-a-licious,
+#: and its own docstring puts the legacy 503 rate at ~1/3 of calls. Measured on
+#: prod 2026-08-03 (the Cali Roll turn), one lookup against a degraded legacy
+#: endpoint cost:
+#:
+#:     22:11:14,700  cgi/search.pl -> 503
+#:     22:11:15,155  cgi/search.pl -> 503     (+0.455s)
+#:     22:11:16,314  cgi/search.pl -> 503     (+1.159s)
+#:     22:11:16,828  search/       -> 200     (+0.514s)
+#:
+#: — 2.1 s, of which ~1.0 s is pure backoff sleep, to learn a thing the
+#: PREVIOUS lookup in the same process already knew. When legacy is down it is
+#: down for minutes, not milliseconds, so every food in a multi-item paste pays
+#: the full toll independently.
+#:
+#: So remember it. After `_BREAKER_TRIP` consecutive HARD failures, skip legacy
+#: entirely for `_BREAKER_COOLDOWN_S` and go straight to the endpoint that
+#: works. One success closes it. This changes no result — legacy is only ever
+#: consulted first for its ranking, and a hard failure yields no ranking at all.
+#:
+#: TRIP IS 1, AND THAT IS NOT TWITCHY: `_search_legacy` returns None only once
+#: `_get_json` has exhausted all three attempts WITH the backoff between them,
+#: so a single hard failure already means three refused requests over ~1 s. A
+#: trip threshold of 2 would mean the second food in a paste still pays the
+#: full toll before anything is learned — which is the exact cost this exists
+#: to remove.
+#:
+#: A dict rather than two module floats so tests can `.clear()` it like the
+#: other process-global caches conftest isolates.
+_BREAKER: dict = {}
+_BREAKER_TRIP = 1
+_BREAKER_COOLDOWN_S = 120.0
+
+
+def _legacy_is_down() -> bool:
+    until = _BREAKER.get("until") or 0.0
+    if not until:
+        return False
+    if time.monotonic() >= until:
+        _BREAKER.clear()
+        logger.info("event=off_breaker state=closed reason=cooldown_elapsed")
+        return False
+    return True
+
+
+def _note_legacy(ok: bool) -> None:
+    if ok:
+        if _BREAKER:
+            logger.info("event=off_breaker state=closed reason=success")
+        _BREAKER.clear()
+        return
+    fails = int(_BREAKER.get("fails") or 0) + 1
+    _BREAKER["fails"] = fails
+    if fails >= _BREAKER_TRIP and not _BREAKER.get("until"):
+        _BREAKER["until"] = time.monotonic() + _BREAKER_COOLDOWN_S
+        logger.warning(
+            "event=off_breaker state=open fails=%d cooldown_s=%.0f "
+            "url=%s — skipping straight to the fallback",
+            fails, _BREAKER_COOLDOWN_S, _SEARCH_URL)
+
+
 async def _get_json(url: str, params: dict, *, attempts: int = 3,
                     timeout: float = 5.0) -> Optional[dict]:
     """GET url?params and return parsed JSON, retrying transient failures.
@@ -294,6 +358,7 @@ async def _search_legacy(name: str, page_size: int) -> Optional[list]:
         "json": 1, "page_size": page_size, "fields": _FIELDS,
     }
     body = await _get_json(_SEARCH_URL, params)
+    _note_legacy(body is not None)
     if body is None:
         return None
     return body.get("products") or []
@@ -332,7 +397,15 @@ async def search(name: str, page_size: int = 8) -> Optional[dict]:
     if not off_enabled() or not (name or "").strip():
         return None
 
-    products = await _search_legacy(name, page_size)
+    # Skip a host we already know is down (see _BREAKER). The fallback below is
+    # not a lesser answer here — when legacy fails hard it returns no ranking at
+    # all, so the only thing the attempt buys is its own latency.
+    if _legacy_is_down():
+        products = None
+        logger.info("event=off_breaker state=open action=skipped_legacy food=%r",
+                    name)
+    else:
+        products = await _search_legacy(name, page_size)
     picked = _best_candidate(name, products) if products else None
     used = "legacy"
 
