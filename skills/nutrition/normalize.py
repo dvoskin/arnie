@@ -96,6 +96,36 @@ def is_count_unit(word: str) -> bool:
         _singular(u) for u in _COUNT_UNITS}
 
 
+def is_measured_unit(word: str) -> bool:
+    """Whether this word names a MEASURE — a mass or a volume — as opposed to a
+    discrete item or a vague "serving".
+
+    Public for the same reason `is_count_unit` is, and urgently so. Callers were
+    asking this question by string-matching the canonical tokens, e.g.
+    `unit not in ("g", "ml")` in `skills.nutrition.candidates`, which was only
+    ever correct while `_volume()` returned `unit="ml"`. When c360fad made `unit`
+    carry the SURFACE token the user said ("cup", "tbsp", "glass"), every one of
+    those comparisons silently changed meaning — a cup flipped from a per-100
+    basis to an as-served one. The membership question belongs here, next to the
+    tables that answer it, so a change to what `unit` carries cannot quietly
+    re-point a caller again.
+    """
+    word = (word or "").strip().lower()
+    if not word:
+        return False
+    if word in _MASS_G or word in _VOL_ML:
+        return True
+    s = _singular(word)
+    if (s in {_singular(u) for u in _MASS_G}
+            or s in {_singular(u) for u in _VOL_ML}):
+        return True
+    # VESSELS ARE VOLUMES TOO. "a glass", "a mug", "a bowl" carry a millilitre
+    # figure via `vessel_volume` and used to reach callers as unit="ml", so
+    # leaving them out here would re-create the same basis flip this predicate
+    # exists to stop — just for the vessel words instead of the unit words.
+    return vessel_volume(word) is not None
+
+
 def _singular(word: str) -> str:
     """Crude, but correct on the words this module actually compares.
 

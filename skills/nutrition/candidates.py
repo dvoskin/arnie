@@ -19,6 +19,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
+from skills.nutrition.normalize import is_measured_unit
 from skills.nutrition.models import (FoodResolutionRequest, NutrientProfile,
                                      profile_from_values)
 from skills.nutrition.provenance import (MatchGrade, SourceTier,
@@ -70,8 +71,8 @@ def user_label_candidate(request: FoodResolutionRequest) -> Optional[Candidate]:
     return Candidate(
         source="user_label", tier=SourceTier.USER_LABEL,
         name=request.food_name, profile=request.user_label_values,
-        basis=(PerUnit(as_served=True) if request.unit not in ("g", "ml")
-               else Per100g()),
+        basis=(Per100g() if is_measured_unit(request.unit)
+               else PerUnit(as_served=True)),
         brand=request.brand, variant=request.variant,
         reported_grade=MatchGrade.EXACT)
 
@@ -83,8 +84,8 @@ def provisional_candidate(request: FoodResolutionRequest) -> Optional[Candidate]
     return Candidate(
         source="provisional", tier=SourceTier.PROVISIONAL,
         name=request.food_name, profile=request.provisional_values,
-        basis=(PerUnit(as_served=True) if request.unit not in ("g", "ml")
-               else Per100g()),
+        basis=(Per100g() if is_measured_unit(request.unit)
+               else PerUnit(as_served=True)),
         brand=request.brand, variant=request.variant,
         reported_grade=MatchGrade.CATEGORY)
 
