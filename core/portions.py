@@ -19,12 +19,13 @@ from __future__ import annotations
 
 import re
 from typing import Optional
+from core.units import G_PER_OZ
 
 # True mass units → grams. These are GROUND TRUTH for a food's weight.
 _TRUE_MASS_UNITS = {
     "g": 1.0, "gram": 1.0, "grams": 1.0, "gr": 1.0,
     "kg": 1000.0, "kilo": 1000.0, "kilos": 1000.0,
-    "oz": 28.35, "ounce": 28.35, "ounces": 28.35,
+    "oz": G_PER_OZ, "ounce": G_PER_OZ, "ounces": G_PER_OZ,
     "lb": 453.6, "lbs": 453.6, "pound": 453.6, "pounds": 453.6,
 }
 # Mass + volume → grams (volume assumes water-ish density; only close enough for

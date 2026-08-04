@@ -15,6 +15,7 @@ import logging
 import uuid
 import os
 import pytz
+from core.units import LB_PER_KG
 
 logger = logging.getLogger(__name__)
 
@@ -1847,7 +1848,7 @@ async def apply_landing_profile_to_user(
         if _tz:
             user.timezone = _tz
     if profile.get("goal_weight_lbs"):
-        user.goal_weight_kg = round(profile["goal_weight_lbs"] / 2.20462, 2)
+        user.goal_weight_kg = round(profile["goal_weight_lbs"] / LB_PER_KG, 2)
     user.onboarding_completed = True
 
     if any(profile.get(k) is not None for k in
@@ -2801,7 +2802,7 @@ async def query_history_stats(
             ]
             if matches:
                 for e in matches:
-                    w_lbs = round(e.weight * 2.20462, 1) if e.weight else None
+                    w_lbs = round(e.weight * LB_PER_KG, 1) if e.weight else None
                     sessions.append({
                         "date": str(log.date),
                         "sets": e.sets, "reps": e.reps,
@@ -2862,7 +2863,7 @@ async def query_history_stats(
         rows = []
         for l in logs:
             for e in (l.exercise_entries or []):
-                w_lbs = round(e.weight * 2.20462, 1) if e.weight else None
+                w_lbs = round(e.weight * LB_PER_KG, 1) if e.weight else None
                 rows.append({
                     "date": str(l.date),
                     "exercise_name": e.exercise_name or "",
@@ -2995,7 +2996,7 @@ async def query_history_stats(
                 "exercise": [{
                     "exercise_name": e.exercise_name or "",
                     "sets": e.sets, "reps": e.reps,
-                    "weight_lbs": (round(e.weight * 2.20462, 1) if e.weight else None),
+                    "weight_lbs": (round(e.weight * LB_PER_KG, 1) if e.weight else None),
                     "duration_minutes": e.duration_minutes,
                     "cardio_type": e.cardio_type,
                 } for e in (l.exercise_entries or [])],

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Iterable, Optional
+from core.units import LB_PER_KG
 
 
 def normalize_exercise_name(name: Optional[str]) -> str:
@@ -159,7 +160,7 @@ def format_dedup_result(dup, now_utc: datetime) -> str:
     """
     weight_part = ""
     if getattr(dup, "weight", None):
-        weight_part = f" @ {dup.weight * 2.20462:.0f}lb"
+        weight_part = f" @ {dup.weight * LB_PER_KG:.0f}lb"
     age_sec = max(0, int((now_utc - dup.timestamp).total_seconds()))
     age_part = f"{age_sec}s ago" if age_sec < 90 else f"{age_sec // 60} min ago"
     return (
@@ -257,7 +258,7 @@ def format_rollup_result(entry, now_utc: datetime) -> str:
     model it was an UPDATE (one row), not a new log line."""
     weight_part = ""
     if getattr(entry, "weight", None):
-        weight_part = f" @ {entry.weight * 2.20462:.0f}lb"
+        weight_part = f" @ {entry.weight * LB_PER_KG:.0f}lb"
     return (
         f"Updated the running set on #{entry.id}: {entry.exercise_name} "
         f"now {entry.sets}x{entry.reps}{weight_part} — one entry grew, no new row."
@@ -428,9 +429,9 @@ def format_append_result(entry, now_utc: datetime) -> str:
     running state so the model confirms from DB truth, not its own memory."""
     wtokens = _weights_tokens(getattr(entry, "weights", None))
     if wtokens:
-        load = "/".join(f"{w * 2.20462:.0f}" for w in wtokens) + "lb"
+        load = "/".join(f"{w * LB_PER_KG:.0f}" for w in wtokens) + "lb"
     elif getattr(entry, "weight", None):
-        load = f"{entry.weight * 2.20462:.0f}lb"
+        load = f"{entry.weight * LB_PER_KG:.0f}lb"
     else:
         load = ""
     load_part = f" @ {load}" if load else ""

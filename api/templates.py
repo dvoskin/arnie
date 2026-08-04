@@ -7,6 +7,7 @@ and these ~1.6k lines of HTML live on their own (AUDIT #9).
 """
 import html
 from typing import Optional  # noqa: F401 — kept for parity if signatures evolve
+from core.units import LB_PER_KG
 
 
 def _dashboard_title(name: str) -> str:
@@ -4568,7 +4569,7 @@ function renderWeightModule(d){{
     var inp = document.getElementById('wm-logform-val');
     if(inp && !inp.value){{
       var unit = _weightLogUnit || 'lbs';
-      inp.value = unit === 'kg' ? (current/2.20462).toFixed(1) : current.toFixed(1);
+      inp.value = unit === 'kg' ? (current/LB_PER_KG).toFixed(1) : current.toFixed(1);
     }}
   }}
 }}
@@ -4585,8 +4586,8 @@ function setWeightLogUnit(u){{
   if(inp && inp.value){{
     var v = parseFloat(inp.value);
     if(!isNaN(v)){{
-      if(_weightLogUnit === 'lbs' && u === 'kg') inp.value = (v/2.20462).toFixed(1);
-      if(_weightLogUnit === 'kg' && u === 'lbs') inp.value = (v*2.20462).toFixed(1);
+      if(_weightLogUnit === 'lbs' && u === 'kg') inp.value = (v/LB_PER_KG).toFixed(1);
+      if(_weightLogUnit === 'kg' && u === 'lbs') inp.value = (v*LB_PER_KG).toFixed(1);
     }}
   }}
   _weightLogUnit = u;
@@ -4617,7 +4618,7 @@ async function submitWeightLog(){{
   if(isNaN(raw) || raw <= 0){{ inp.focus(); return; }}
   // Sanity bounds — generous, just to catch typos like a stray digit. Convert
   // before bounds-check so kg entries don't trip the lbs ceiling.
-  var lbs = _weightLogUnit === 'kg' ? raw * 2.20462 : raw;
+  var lbs = _weightLogUnit === 'kg' ? raw * LB_PER_KG : raw;
   if(lbs < 50 || lbs > 900){{
     alert('That weight looks off — double-check the number and unit.');
     return;

@@ -19,6 +19,7 @@ without a tier). Keyed by the canonical names in
 from __future__ import annotations
 
 from typing import Optional
+from core.units import LB_PER_KG
 
 # 1RM as a multiple of bodyweight. (novice, intermediate, advanced).
 # "beginner" is anything below novice; "elite" territory sits above advanced but
@@ -38,7 +39,7 @@ _STANDARDS: dict[str, dict[str, tuple[float, float, float]]] = {
     "Leg Press":              {"male": (2.00, 3.00, 4.00), "female": (1.50, 2.30, 3.20)},
 }
 
-_KG_TO_LB = 2.20462
+_KG_TO_LB = LB_PER_KG
 
 
 def has_standard(canonical: str) -> bool:

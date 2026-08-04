@@ -43,6 +43,7 @@ from db.queries import (
     set_subscription_active, set_subscription_cancelled,
 )
 from api.usda import search_food as _usda_search
+from core.units import CM_PER_IN, KG_PER_LB, LB_PER_KG
 
 logger = logging.getLogger(__name__)
 
@@ -1184,7 +1185,7 @@ async def api_preregister(payload: PreRegisterPayload, request: Request):
             if not (50 <= goal_weight_lbs <= 600):
                 raise HTTPException(status_code=422, detail="Goal weight out of range")
             from core.targets import goal_weight_conflict, goal_weight_implausible
-            goal_kg = goal_weight_lbs / 2.20462
+            goal_kg = goal_weight_lbs / LB_PER_KG
             conflict = goal_weight_conflict(payload.primary_goal, payload.weight_kg, goal_kg)
             if conflict == "cut_not_below":
                 raise HTTPException(
@@ -1338,7 +1339,7 @@ def _compute_analytics(user, prefs, weight_data):
     result["bmr"] = round(bmr)
     result["activity_factor"] = factor
 
-    lbs = w * 2.20462
+    lbs = w * LB_PER_KG
     result["rec_protein_min"] = round(lbs * 0.7)
     result["rec_protein_max"] = round(lbs * 1.0)
 
@@ -1349,7 +1350,7 @@ def _compute_analytics(user, prefs, weight_data):
         result["pace_lbs_per_week"] = round(abs(daily_diff) * 7 / 3500, 1) if daily_diff != 0 else 0
 
         if user.goal_weight_kg and result.get("pace_lbs_per_week", 0) > 0:
-            lbs_to_go = abs(w - user.goal_weight_kg) * 2.20462
+            lbs_to_go = abs(w - user.goal_weight_kg) * LB_PER_KG
             result["lbs_to_goal"] = round(lbs_to_go, 1)
             result["weeks_to_goal"] = round(lbs_to_go / result["pace_lbs_per_week"])
 
@@ -1428,7 +1429,7 @@ async def _build_stats_for_user(db, user, target_date=None):
     weight_data = [
         {"date": w.timestamp.strftime("%Y-%m-%d"),
          "kg": round(w.weight_kg, 1),
-         "lbs": round(w.weight_kg * 2.20462, 1)}
+         "lbs": round(w.weight_kg * LB_PER_KG, 1)}
         for w in _one_per_day_prefer_manual(weights)
     ]
 
@@ -1468,7 +1469,7 @@ async def _build_stats_for_user(db, user, target_date=None):
             "exercise_entries": [
                 {"id": e.id, "name": e.exercise_name or "?",
                  "sets": e.sets, "reps": e.reps,
-                 "weight": round(e.weight * 2.20462, 1) if e.weight else None,
+                 "weight": round(e.weight * LB_PER_KG, 1) if e.weight else None,
                  "duration_minutes": e.duration_minutes,
                  "is_cardio": bool(e.cardio_type),
                  "cardio_type": e.cardio_type,
@@ -1576,7 +1577,7 @@ async def _build_stats_for_user(db, user, target_date=None):
     def _ht():
         if not user.height_cm:
             return ""
-        total_in = user.height_cm / 2.54
+        total_in = user.height_cm / CM_PER_IN
         return f"{int(total_in // 12)}'{int(total_in % 12)}\""
 
     # ── Reminder deliverability (honesty) ──────────────────────────────────────
@@ -1613,8 +1614,8 @@ async def _build_stats_for_user(db, user, target_date=None):
         "sex": user.sex,
         "height_cm": user.height_cm,
         "height_ft": _ht(),
-        "current_weight_lbs": round(user.current_weight_kg * 2.20462, 1) if user.current_weight_kg else None,
-        "goal_weight_lbs": round(user.goal_weight_kg * 2.20462, 1) if user.goal_weight_kg else None,
+        "current_weight_lbs": round(user.current_weight_kg * LB_PER_KG, 1) if user.current_weight_kg else None,
+        "goal_weight_lbs": round(user.goal_weight_kg * LB_PER_KG, 1) if user.goal_weight_kg else None,
         "primary_goal": user.primary_goal,
         "training_experience": user.training_experience,
         "non_training_activity": user.non_training_activity,
@@ -1779,7 +1780,7 @@ def _build_fitness_for_user(logs) -> dict:
             return "legs"
         return "other"
 
-    KG = 2.20462
+    KG = LB_PER_KG
     asc = sorted(logs, key=lambda l: l.date)
     mov = OrderedDict()
     cardio = []
@@ -2365,7 +2366,7 @@ async def api_edit_exercise(entry_id: int, patch: ExercisePatch, token: str = Qu
             raise HTTPException(status_code=401, detail="Invalid token")
         changes = patch.model_dump(exclude_none=True)
         if "weight" in changes:
-            changes["weight"] = changes["weight"] * 0.453592
+            changes["weight"] = changes["weight"] * KG_PER_LB
         async with mutation_turn(
             db, channel=DASHBOARD, command="update_exercise", user_id=user.id,
             client_key=mc_client_key(client_request_id), payload=patch,
@@ -2513,12 +2514,12 @@ async def api_edit_profile(token: str, patch: ProfilePatch):
                         total_in = float(s)
                     if not (24 <= total_in <= 110):  # 2ft–9ft sanity
                         raise ValueError("Height out of range")
-                    user.height_cm = round(total_in * 2.54, 1)
+                    user.height_cm = round(total_in * CM_PER_IN, 1)
             elif field in _int_fields:
                 setattr(user, field, int(raw) if raw else None)
             elif field in _weight_fields:
                 db_col = _weight_fields[field]
-                setattr(user, db_col, float(raw) * 0.453592 if raw else None)
+                setattr(user, db_col, float(raw) * KG_PER_LB if raw else None)
             elif field in _pref_str and user.preferences:
                 _val = str(raw).strip() if raw else None
                 # Normalize the tiered prefs onto a valid vocabulary so a non-slider
@@ -3922,7 +3923,7 @@ async def api_log_weight(body: WeightLogBody, token: str = Query(...),
     unit = (body.unit or "lbs").lower()
     if unit not in ("lbs", "kg"):
         raise HTTPException(status_code=400, detail="unit must be 'lbs' or 'kg'")
-    weight_kg = body.weight * 0.453592 if unit == "lbs" else body.weight
+    weight_kg = body.weight * KG_PER_LB if unit == "lbs" else body.weight
     if not (20.0 <= weight_kg <= 410.0):
         raise HTTPException(status_code=400, detail="weight out of range")
 
@@ -3937,7 +3938,7 @@ async def api_log_weight(body: WeightLogBody, token: str = Query(...),
             client_key=mc_client_key(client_request_id), payload=body,
             dedup=f"weight:{weight_kg:.3f}", claim=True,
         ) as turn:
-            current_lbs = round(weight_kg * 2.20462, 1)
+            current_lbs = round(weight_kg * LB_PER_KG, 1)
             if turn.replay:
                 return {"status": "ok", "id": turn.stored.get("entry_id"),
                         "idempotent_replay": True, "turn_id": turn.turn_id,
@@ -3949,7 +3950,7 @@ async def api_log_weight(body: WeightLogBody, token: str = Query(...),
             # reading BEFORE we insert this one.
             prev_lbs = None
             if prior:
-                prev_lbs = round(prior[0].weight_kg * 2.20462, 1)
+                prev_lbs = round(prior[0].weight_kg * LB_PER_KG, 1)
 
             # Web/webhook weigh-in is a deliberate user-entered number → "manual".
             # `ledger_source` writes the event inside `add_body_metric`'s own
@@ -3965,7 +3966,7 @@ async def api_log_weight(body: WeightLogBody, token: str = Query(...),
             goal_kg = getattr(user, "goal_weight_kg", None)
             to_goal_lbs = None
             if goal_kg:
-                to_goal_lbs = round(abs(weight_kg - goal_kg) * 2.20462, 1)
+                to_goal_lbs = round(abs(weight_kg - goal_kg) * LB_PER_KG, 1)
 
             goal_v = (user.primary_goal or "").strip()
 
@@ -4010,7 +4011,7 @@ async def api_log_exercise(body: ExerciseLogBody, token: str = Query(...),
                 log = await get_or_create_log_for_date(db, user.id, date.fromisoformat(body.log_date))
             else:
                 log = await get_or_create_today_log(db, user.id, tz)
-            weight_kg = body.weight_lbs * 0.453592 if body.weight_lbs else None
+            weight_kg = body.weight_lbs * KG_PER_LB if body.weight_lbs else None
             # ONE ledger writer — `add_exercise_entry` records the `created` event
             # itself; the provenance label rides through (master audit 2026-07-30).
             # `exercise_name` / `weight`, NOT `parsed_exercise_name` /

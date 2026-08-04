@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Iterable, Optional
+from core.units import LB_PER_KG
 
 
 def _norm(s: Optional[str]) -> str:
@@ -66,7 +67,7 @@ def _format_entry_brief(e) -> str:
     dur = getattr(e, "duration_minutes", None)
     if weight and reps:
         # Show weight in lb (user-facing units) without forcing prefs lookup
-        wlb = weight * 2.20462
+        wlb = weight * LB_PER_KG
         return f"{wlb:.0f}lb × {reps}"
     if reps:
         return f"× {reps}"

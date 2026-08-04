@@ -25,6 +25,7 @@ import re
 from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Optional
+from core.units import G_PER_OZ, ML_PER_FLOZ
 
 
 class UnitKind(str, Enum):
@@ -693,13 +694,13 @@ def detect_modifier(text: str) -> str:
 
 # ── exact conversions ─────────────────────────────────────────────────────────
 MASS_TO_G = {"g": 1.0, "gram": 1.0, "grams": 1.0, "kg": 1000.0,
-             "oz": 28.3495, "ounce": 28.3495, "ounces": 28.3495,
+             "oz": G_PER_OZ, "ounce": G_PER_OZ, "ounces": G_PER_OZ,
              "lb": 453.592, "lbs": 453.592, "pound": 453.592,
              "pounds": 453.592}
 
 VOLUME_TO_ML = {"ml": 1.0, "l": 1000.0, "liter": 1000.0, "litre": 1000.0,
                 "cup": 236.588, "cups": 236.588, "tbsp": 14.787,
-                "tsp": 4.929, "floz": 29.574, "fl oz": 29.574,
+                "tsp": 4.929, "floz": ML_PER_FLOZ, "fl oz": ML_PER_FLOZ,
                 "pint": 473.176, "quart": 946.353}
 
 

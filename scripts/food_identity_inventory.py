@@ -127,13 +127,23 @@ def vocabularies() -> int:
 
 #: Conversion constants that should live in ONE unit registry and do not.
 #: Counted because the expansion directive named duplicated unit conversion,
-#: and this is the largest measured duplication in the codebase — 74 sites for
+#: and this was the largest measured duplication in the codebase — 74 sites for
 #: kg<->lb alone, spanning weight, height, strength and nutrition.
+#:
+#: THE PATTERNS ARE WRITTEN THIS WAY FOR A REASON. The first version used
+#: `0\.45359\b`, and `\b` cannot match between "9" and "2" — so every
+#: `0.453592` site was invisible, including four user WEIGHT-WRITE paths in
+#: api/app.py. The audit reported a number lower than the truth, which is the
+#: worst failure mode an audit has: it says the work is done.
+#:
+#: So: a trailing `(?![\d])` instead of `\b`, a leading `(?<![\d.])` so a
+#: longer literal is not matched by its own prefix, and open-ended digits so a
+#: sixth spelling cannot hide behind a fifth.
 _CONVERSIONS = {
-    "kg <-> lb": r"2\.20462|2\.2046\b|0\.45359|0\.4536\b",
-    "cm <-> in": r"2\.54\b|0\.3937",
-    "g <-> oz": r"28\.3495|28\.35\b",
-    "ml <-> floz": r"29\.5735|29\.57\b",
+    "kg <-> lb": r"(?<![\d.])(?:2\.2046\d*|0\.4535\d*)(?![\d])",
+    "cm <-> in": r"(?<![\d.])(?:2\.54|0\.3937\d*)(?![\d])",
+    "g <-> oz": r"(?<![\d.])(?:28\.34\d*|28\.35)(?![\d])",
+    "ml <-> floz": r"(?<![\d.])29\.57\d*(?![\d])",
 }
 
 

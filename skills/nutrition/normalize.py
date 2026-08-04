@@ -22,12 +22,13 @@ from typing import Optional
 
 from skills.nutrition.models import (COUNT_BASIS_ESTIMATE, COUNT_BASIS_UNIT,
                                      NormalizedQuantity)
+from core.units import G_PER_OZ, ML_PER_FLOZ
 
 #: Mass units → grams. Exact conversions; no judgement involved.
 _MASS_G = {
     "g": 1.0, "gram": 1.0, "grams": 1.0, "gm": 1.0,
     "kg": 1000.0, "kilogram": 1000.0, "kilograms": 1000.0,
-    "oz": 28.3495, "ounce": 28.3495, "ounces": 28.3495,
+    "oz": G_PER_OZ, "ounce": G_PER_OZ, "ounces": G_PER_OZ,
     "lb": 453.592, "lbs": 453.592, "pound": 453.592, "pounds": 453.592,
 }
 
@@ -38,7 +39,7 @@ _VOL_ML = {
     "cup": 236.588, "cups": 236.588,
     "tbsp": 14.787, "tablespoon": 14.787, "tablespoons": 14.787,
     "tsp": 4.929, "teaspoon": 4.929, "teaspoons": 4.929,
-    "floz": 29.574, "fl oz": 29.574, "fluid ounce": 29.574,
+    "floz": ML_PER_FLOZ, "fl oz": ML_PER_FLOZ, "fluid ounce": ML_PER_FLOZ,
     "pint": 473.176, "pints": 473.176,
     "quart": 946.353, "quarts": 946.353,
 }

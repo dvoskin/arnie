@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from api.auth import current_identity
 from db.database import AsyncSessionLocal
 from db.queries import resolve_user
+from core.units import LB_PER_KG
 
 router = APIRouter(prefix="/api/v1", tags=["insights"])
 
@@ -136,7 +137,7 @@ async def get_exercise_prs_for_ios(
     return {
         "v": 1,
         "window": "all",
-        "bodyweight_lbs": round(bodyweight_kg * 2.20462, 1) if bodyweight_kg else None,
+        "bodyweight_lbs": round(bodyweight_kg * LB_PER_KG, 1) if bodyweight_kg else None,
         "sex": sex,
         "level": level,
         "prs": prs,

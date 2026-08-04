@@ -24,6 +24,7 @@ from db.queries import (
     get_recent_health_snapshots,
     _user_today,
 )
+from core.units import CM_PER_IN, LB_PER_KG
 
 
 def _targets(user) -> dict:
@@ -51,7 +52,7 @@ def _weights_csv_to_lbs(csv: str | None) -> str | None:
             kg = float(piece)
         except ValueError:
             continue
-        parts.append(str(round(kg * 2.20462, 1)))
+        parts.append(str(round(kg * LB_PER_KG, 1)))
     return ",".join(parts) if parts else None
 
 
@@ -127,7 +128,7 @@ def _log_to_day(log) -> dict | None:
                 # workout's start) over logged-at; null occurred_at falls back to it.
                 "timestamp": (e.occurred_at or e.timestamp).isoformat() if (e.occurred_at or e.timestamp) else None,
                 "sets": e.sets, "reps": e.reps,
-                "weight": round(e.weight * 2.20462, 1) if e.weight else None,
+                "weight": round(e.weight * LB_PER_KG, 1) if e.weight else None,
                 # Per-set load — CSV in lbs for the client. Null when uniform.
                 "weights": _weights_csv_to_lbs(e.weights),
                 "duration_minutes": e.duration_minutes,
@@ -315,7 +316,7 @@ def _weight_block(weights, user, as_of_date=None) -> dict | None:
         {
             "date": _weighin_day_of(w.timestamp, _tz).isoformat(),
             "kg":   round(w.weight_kg, 1),
-            "lbs":  round(w.weight_kg * 2.20462, 1),
+            "lbs":  round(w.weight_kg * LB_PER_KG, 1),
             # so iOS can tag an auto-synced reading ("Apple Health") vs a manual one
             "source": getattr(w, "source", None) or "manual",
         }
@@ -326,7 +327,7 @@ def _weight_block(weights, user, as_of_date=None) -> dict | None:
     if getattr(user, "goal_weight_kg", None) is not None:
         goal = {
             "kg":  round(user.goal_weight_kg, 1),
-            "lbs": round(user.goal_weight_kg * 2.20462, 1),
+            "lbs": round(user.goal_weight_kg * LB_PER_KG, 1),
         }
     return {"latest": latest, "goal": goal, "recent": recent}
 
@@ -362,7 +363,7 @@ async def week_data(db, user) -> dict:
         {
             "date": _weighin_day_of(w.timestamp, _tz).isoformat(),
             "kg": round(w.weight_kg, 1),
-            "lbs": round(w.weight_kg * 2.20462, 1),
+            "lbs": round(w.weight_kg * LB_PER_KG, 1),
         }
         for w in _one_per_day_prefer_manual(weights, _tz)
     ]
@@ -677,7 +678,7 @@ def _shape_health(snaps) -> list:
 def _height_ft(user) -> str:
     if not user.height_cm:
         return ""
-    total_in = user.height_cm / 2.54
+    total_in = user.height_cm / CM_PER_IN
     return f"{int(total_in // 12)}'{int(total_in % 12)}\""
 
 
@@ -732,8 +733,8 @@ async def profile_data(db, user) -> dict:
             "sex": user.sex,
             "height_cm": user.height_cm,
             "height_ft": _height_ft(user),
-            "current_weight_lbs": round(user.current_weight_kg * 2.20462, 1) if user.current_weight_kg else None,
-            "goal_weight_lbs": round(user.goal_weight_kg * 2.20462, 1) if user.goal_weight_kg else None,
+            "current_weight_lbs": round(user.current_weight_kg * LB_PER_KG, 1) if user.current_weight_kg else None,
+            "goal_weight_lbs": round(user.goal_weight_kg * LB_PER_KG, 1) if user.goal_weight_kg else None,
             "primary_goal": user.primary_goal,
             "training_experience": user.training_experience,
             "non_training_activity": user.non_training_activity,

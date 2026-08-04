@@ -14,6 +14,7 @@ surfaces "I never noticed that" moments instead of just reporting.
 from datetime import date, timedelta
 from statistics import mean
 from typing import Optional
+from core.units import LB_PER_KG
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -30,14 +31,14 @@ def weight_projection(weights, user, weeks: int = 4) -> Optional[str]:
         return None
     rate_per_day = (sw[-1].weight_kg - sw[0].weight_kg) / days
     if abs(rate_per_day) < 0.005:  # essentially flat
-        return f"you're holding steady around {sw[-1].weight_kg * 2.20462:.0f} lbs."
+        return f"you're holding steady around {sw[-1].weight_kg * LB_PER_KG:.0f} lbs."
     projected_kg = sw[-1].weight_kg + rate_per_day * 7 * weeks
-    proj_lbs = projected_kg * 2.20462
-    cur_lbs = sw[-1].weight_kg * 2.20462
+    proj_lbs = projected_kg * LB_PER_KG
+    cur_lbs = sw[-1].weight_kg * LB_PER_KG
     goal = getattr(user, "goal_weight_kg", None)
     base = f"if this trend holds, you're on pace for ~{proj_lbs:.0f} lbs in {weeks} weeks (now {cur_lbs:.0f})."
     if goal:
-        goal_lbs = goal * 2.20462
+        goal_lbs = goal * LB_PER_KG
         # weeks to goal at current rate
         remaining_kg = goal - sw[-1].weight_kg
         if rate_per_day != 0 and (remaining_kg / rate_per_day) > 0:
@@ -162,7 +163,7 @@ def fmt_records(recs: dict) -> str:
     if "best_protein_week_avg" in recs: bits.append(f"best protein week avg {recs['best_protein_week_avg']}g")
     if "most_workouts_week" in recs: bits.append(f"most workouts in a week {recs['most_workouts_week']}")
     if "best_step_week_avg" in recs: bits.append(f"best weekly step avg {recs['best_step_week_avg']:,}")
-    if "lowest_weight_kg" in recs: bits.append(f"lowest weight {recs['lowest_weight_kg'] * 2.20462:.0f} lbs")
+    if "lowest_weight_kg" in recs: bits.append(f"lowest weight {recs['lowest_weight_kg'] * LB_PER_KG:.0f} lbs")
     if not bits:
         return ""
     return "[PERSONAL RECORDS] " + " · ".join(bits)

@@ -7,6 +7,7 @@ auto-computed identically everywhere. Use compute_macro_targets() for full
 shim is kept for backward compatibility but now wraps the unified math.
 """
 import logging
+from core.units import LB_PER_KG
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ def compute_adaptive_tdee(history: list, weights: list, window_days: int = 14) -
         "tdee": int(round(tdee)),
         "avg_intake": int(round(avg_intake)),
         "weight_change_kg": round(slope * span_days, 2),
-        "weight_change_lbs": round(slope * span_days * 2.20462, 1),
+        "weight_change_lbs": round(slope * span_days * LB_PER_KG, 1),
         "span_days": span_days,
         "days_logged": days_logged,
         "confidence": confidence,
@@ -146,8 +147,8 @@ def compute_macro_targets(user) -> dict | None:
 
     tdee = bmr * factor
     goal = (user.primary_goal or "maintain").lower()
-    w_lb = w_kg * 2.20462
-    goal_lb = (user.goal_weight_kg * 2.20462) if user.goal_weight_kg else w_lb
+    w_lb = w_kg * LB_PER_KG
+    goal_lb = (user.goal_weight_kg * LB_PER_KG) if user.goal_weight_kg else w_lb
 
     if goal == "cut":
         cals, deficit_pct = round(tdee * 0.825), -17.5
@@ -226,8 +227,8 @@ def compute_macros_for_calorie_target(user, calorie_target: int) -> dict | None:
     if not (user.current_weight_kg and calorie_target):
         return None
     cals = int(calorie_target)
-    w_lb = user.current_weight_kg * 2.20462
-    goal_lb = (user.goal_weight_kg * 2.20462) if user.goal_weight_kg else w_lb
+    w_lb = user.current_weight_kg * LB_PER_KG
+    goal_lb = (user.goal_weight_kg * LB_PER_KG) if user.goal_weight_kg else w_lb
     goal = (user.primary_goal or "maintain").lower()
 
     if goal == "cut":

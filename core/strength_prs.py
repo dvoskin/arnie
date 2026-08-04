@@ -19,8 +19,9 @@ from typing import List, Optional
 from db.models import DailyLog
 from skills.fitness.exercise_catalog import canonicalize
 from core import strength_standards
+from core.units import LB_PER_KG
 
-_KG_TO_LB = 2.20462
+_KG_TO_LB = LB_PER_KG
 _EPLEY_MIN_REPS = 1
 _EPLEY_MAX_REPS = 20   # Epley is unreliable past ~20 reps
 

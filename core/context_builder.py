@@ -9,6 +9,7 @@ from datetime import datetime, date, timedelta
 from db.models import User, DailyLog, UserPreferences, BodyMetric, HealthSnapshot
 from db.queries import get_recent_logs, get_recent_weights, get_recent_health_snapshots
 from memory.memory_manager import read_memory
+from core.units import LB_PER_KG
 
 
 _CLARIFICATION_FRESHNESS = {
@@ -389,13 +390,13 @@ def _exercise_load_str(e) -> str:
         lbs = []
         for t in wcsv.split(","):
             try:
-                lbs.append(str(round(float(t.strip()) * 2.20462)))
+                lbs.append(str(round(float(t.strip()) * LB_PER_KG)))
             except (ValueError, TypeError):
                 continue
         if lbs:
             return f" @ {lbs[0]}lb" if len(set(lbs)) == 1 else " @ " + "/".join(lbs) + "lb"
     if getattr(e, "weight", None):
-        return f" @ {round(e.weight * 2.20462, 1)}lb"
+        return f" @ {round(e.weight * LB_PER_KG, 1)}lb"
     return ""
 
 
@@ -760,8 +761,8 @@ def fmt_strength_prs(logs: List[DailyLog]) -> str:
     top = sorted(best.items(), key=lambda x: x[1][2], reverse=True)[:7]
     lines = ["ESTIMATED 1RMs (Epley, best sets last 28 days):"]
     for name, (w_kg, reps, e1rm, d) in top:
-        w_lbs = w_kg * 2.20462
-        e1rm_lbs = e1rm * 2.20462
+        w_lbs = w_kg * LB_PER_KG
+        e1rm_lbs = e1rm * LB_PER_KG
         lines.append(
             f"  {name}: ~{e1rm_lbs:.0f}lb / ~{e1rm:.1f}kg "
             f"(from {w_lbs:.0f}lb × {reps}reps on {d})"
@@ -947,7 +948,7 @@ def goal_progress(user: User) -> str:
     if abs(start - goal) < 0.01:
         return ""
     kg_to_go = abs(current - goal)
-    lbs_to_go = kg_to_go * 2.20462
+    lbs_to_go = kg_to_go * LB_PER_KG
     return f"Goal: {current:.1f}kg → {goal:.1f}kg  ({lbs_to_go:.1f} lbs to go)"
 
 

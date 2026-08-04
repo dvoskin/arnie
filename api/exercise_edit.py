@@ -41,6 +41,7 @@ from db.models import ExerciseEntry
 from db.queries import (
     resolve_user, update_exercise_entry, delete_exercise_entry, log_conversation,
 )
+from core.units import LB_PER_KG
 
 router = APIRouter(prefix="/api/v1/exercise", tags=["exercise"])
 
@@ -114,14 +115,14 @@ async def update_exercise(
             changes = body.model_dump(exclude_none=True)
             # iOS sends lbs; the DB stores weight in kg. Convert before the helper.
             if "weight" in changes:
-                changes["weight"] = float(changes["weight"]) / 2.20462
+                changes["weight"] = float(changes["weight"]) / LB_PER_KG
             # CSV in lbs → CSV in kg (same pattern, per-set). Blank tokens dropped.
             if "weights" in changes:
                 lbs_parts = [p.strip() for p in str(changes["weights"]).split(",") if p.strip()]
                 kg_parts: list[str] = []
                 for p in lbs_parts:
                     try:
-                        kg_parts.append(str(round(float(p) / 2.20462, 2)))
+                        kg_parts.append(str(round(float(p) / LB_PER_KG, 2)))
                     except ValueError:
                         continue
                 changes["weights"] = ",".join(kg_parts) if kg_parts else None
@@ -244,7 +245,7 @@ def _client_entry(row) -> dict:
             tok = tok.strip()
             if not tok: continue
             try:
-                parts.append(str(round(float(tok) * 2.20462, 1)))
+                parts.append(str(round(float(tok) * LB_PER_KG, 1)))
             except ValueError:
                 continue
         weights_lbs = ",".join(parts) if parts else None
@@ -253,7 +254,7 @@ def _client_entry(row) -> dict:
         "name": row.exercise_name or "",
         "sets": row.sets,
         "reps": row.reps,
-        "weight": round((row.weight or 0) * 2.20462, 1) if row.weight else None,
+        "weight": round((row.weight or 0) * LB_PER_KG, 1) if row.weight else None,
         "weights": weights_lbs,
         "duration_minutes": int(row.duration_minutes) if row.duration_minutes else None,
         "cardio_type": row.cardio_type,
@@ -271,7 +272,7 @@ async def _snapshot_entry(db, entry_id: int) -> Optional[dict]:
         "name":     row.exercise_name,
         "sets":     row.sets,
         "reps":     row.reps,
-        "weight_lbs": round((row.weight or 0) * 2.20462, 1) if row.weight else None,
+        "weight_lbs": round((row.weight or 0) * LB_PER_KG, 1) if row.weight else None,
         "duration_minutes": int(row.duration_minutes) if row.duration_minutes else None,
         "cardio_type": row.cardio_type,
         "rir":      row.rir,
@@ -290,7 +291,7 @@ def _build_update_message(before: dict, updated, changes: dict) -> str:
     if "reps" in changes and updated.reps != before.get("reps"):
         deltas.append(f"reps {before.get('reps')} → {updated.reps}")
     if "weight" in changes:
-        new_lbs = round((updated.weight or 0) * 2.20462, 1) if updated.weight else 0
+        new_lbs = round((updated.weight or 0) * LB_PER_KG, 1) if updated.weight else 0
         if new_lbs != (before.get("weight_lbs") or 0):
             deltas.append(f"weight {before.get('weight_lbs') or 0}lb → {new_lbs}lb")
     if "duration_minutes" in changes and updated.duration_minutes != before.get("duration_minutes"):

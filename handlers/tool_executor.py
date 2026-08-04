@@ -33,6 +33,7 @@ from db.queries import (
 )
 from handlers.onboarding import is_onboarding_complete
 from memory.memory_manager import append_memory_update, init_memory
+from core.units import G_PER_OZ, KG_PER_LB, LB_PER_KG, ML_PER_FLOZ
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,7 @@ def _lbs_to_kg(weight, unit: str = "lbs"):
     if weight is None:
         return None
     weight = float(weight)
-    return weight * 0.453592 if (unit or "lbs").lower().strip() == "lbs" else weight
+    return weight * KG_PER_LB if (unit or "lbs").lower().strip() == "lbs" else weight
 
 
 def _weights_csv_to_kg(weights_csv, unit: str = "lbs"):
@@ -707,12 +708,12 @@ def _movement_set_summary(today_log, exercise_name: str) -> str:
     plural = "s" if total_sets != 1 else ""
 
     def _lb(wk):
-        return round(wk * 2.20462) if wk else None
+        return round(wk * LB_PER_KG) if wk else None
     distinct = {_lb(wk) for _, wk in per_set if wk}
     if len(distinct) <= 1:
         # Uniform load (or none) — the original compact format, unchanged.
         w = next((wk for _, wk in reversed(per_set) if wk), None)
-        weight_part = f" @ {w * 2.20462:.0f}lb" if w else ""
+        weight_part = f" @ {w * LB_PER_KG:.0f}lb" if w else ""
         return f"{name or 'exercise'}: {total_sets} set{plural}{reps_part}{weight_part}"
     # Mixed loads — show each set's reps×load so the authoritative readback is correct.
     breakdown = ", ".join(
@@ -1795,7 +1796,7 @@ async def _web_lookup_packaged(food_name: str, quantity) -> dict | None:
         if sv_m:
             grams = float(sv_m.group(1))
             if sv_m.group(2).lower().startswith("o"):
-                grams *= 28.35
+                grams *= G_PER_OZ
             if 5 <= grams <= 600:
                 per100 = {
                     "calories": cal / grams * 100,
@@ -4318,9 +4319,9 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             if ratio < 0.8 or ratio > 1.25:
                 # Suggest the most likely intended units so the model can ask
                 # specifically rather than vaguely.
-                cur_lb = cur_kg * 2.20462
+                cur_lb = cur_kg * LB_PER_KG
                 return (f"Skipped weight log — {weight} {unit} reads as "
-                        f"{weight_kg:.1f} kg ({weight_kg*2.20462:.1f} lb), "
+                        f"{weight_kg:.1f} kg ({weight_kg*LB_PER_KG:.1f} lb), "
                         f"but their current weight is ~{cur_kg:.1f} kg "
                         f"({cur_lb:.1f} lb). YOUR REPLY: ask them to confirm "
                         f"the unit — 'was that {weight} kg or {weight} lb?' "
@@ -4353,16 +4354,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             None,
         )
 
-        logged_lbs = weight_kg * 2.20462
+        logged_lbs = weight_kg * LB_PER_KG
         if previous:
-            delta_lbs = (weight_kg - previous.weight_kg) * 2.20462
+            delta_lbs = (weight_kg - previous.weight_kg) * LB_PER_KG
             delta_note = f"Change vs previous weigh-in: {delta_lbs:+.1f}lb."
         else:
             delta_note = "No prior weigh-in in the last 14 days."
 
         if len(ordered) >= 2:
             first = ordered[0]
-            trend_lbs = (weight_kg - first.weight_kg) * 2.20462
+            trend_lbs = (weight_kg - first.weight_kg) * LB_PER_KG
             trend_note = (
                 f"14-day trend window: {len(ordered)} weigh-ins, "
                 f"{trend_lbs:+.1f}lb from first to now."
@@ -4372,8 +4373,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
 
         goal_kg = getattr(user, "goal_weight_kg", None)
         if goal_kg:
-            goal_lbs = goal_kg * 2.20462
-            remaining_lbs = (weight_kg - goal_kg) * 2.20462
+            goal_lbs = goal_kg * LB_PER_KG
+            remaining_lbs = (weight_kg - goal_kg) * LB_PER_KG
             if abs(remaining_lbs) < 0.25:
                 goal_note = f"Goal: {goal_lbs:.1f}lb; essentially at goal."
             elif remaining_lbs > 0:
@@ -5275,7 +5276,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # T2.4 — resolve to target log (today by default; supports date= for
         # past-day correction same as food/exercise).
         target_log, past_date = await _resolve_log(inp, user, today_log, db)
-        ml = inp.get("amount_ml") or (inp.get("amount_oz", 0) * 29.5735)
+        ml = inp.get("amount_ml") or (inp.get("amount_oz", 0) * ML_PER_FLOZ)
 
         # Re-log-on-context-shift guard (Phase 1.3). Mirrors Phase 1.2 food
         # dedup. The model can carry a prior-turn water log forward across
@@ -5350,8 +5351,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             except Exception as _ev_e:
                 logger.warning(f"ledger event (water created) skipped: {_ev_e}")
         total_ml = target_log.total_water_ml or 0
-        oz_this = round((ml or 0) / 29.5735)
-        total_oz = round(total_ml / 29.5735)
+        oz_this = round((ml or 0) / ML_PER_FLOZ)
+        total_oz = round(total_ml / ML_PER_FLOZ)
         # Hydration status relative to a common ~2400ml daily target
         if total_ml >= 2000:
             hydration = "solid — well hydrated for the day"
@@ -6115,7 +6116,7 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 if g_match:
                     grams = float(g_match.group(1))
                 elif oz_match:
-                    grams = float(oz_match.group(1)) * 28.3495
+                    grams = float(oz_match.group(1)) * G_PER_OZ
                 if grams:
                     factor = grams / 100.0
                     t_cal = round(cal100 * factor)

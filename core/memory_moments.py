@@ -11,6 +11,7 @@ proactive surfacing, not every message (so it stays special).
 from datetime import date, timedelta
 from statistics import mean
 from typing import Optional
+from core.units import LB_PER_KG
 
 
 def find_memory_moment(weights, recent_logs, user) -> Optional[str]:
@@ -24,15 +25,15 @@ def find_memory_moment(weights, recent_logs, user) -> Optional[str]:
         first, last = sw[0], sw[-1]
         span_days = (last.timestamp - first.timestamp).days
         if span_days >= 21:
-            delta_lbs = (last.weight_kg - first.weight_kg) * 2.20462
-            start_lbs = first.weight_kg * 2.20462
-            now_lbs = last.weight_kg * 2.20462
+            delta_lbs = (last.weight_kg - first.weight_kg) * LB_PER_KG
+            start_lbs = first.weight_kg * LB_PER_KG
+            now_lbs = last.weight_kg * LB_PER_KG
             weeks = span_days // 7
             goal = getattr(user, "goal_weight_kg", None)
 
             # Milestone: just crossed the goal
             if goal:
-                goal_lbs = goal * 2.20462
+                goal_lbs = goal * LB_PER_KG
                 want_down = goal < first.weight_kg
                 crossed = (want_down and now_lbs <= goal_lbs + 0.5) or \
                           (not want_down and now_lbs >= goal_lbs - 0.5)

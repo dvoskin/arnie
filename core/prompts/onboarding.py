@@ -1,3 +1,4 @@
+from core.units import LB_PER_KG
 """
 Onboarding system prompt — hybrid brain-dump flow.
 Logic lives in handlers/onboarding.py; this file is prompt content only.
@@ -109,7 +110,7 @@ def build_ios_landing_intro(
     "never label the goal back" rule.
     """
     def _lbs(kg: float | None) -> int | None:
-        return round(kg * 2.20462) if kg else None
+        return round(kg * LB_PER_KG) if kg else None
 
     first = (name or "").strip().split(" ")[0]
     greeting = f"Hey {first} 👊" if first else "Hey 👊"
