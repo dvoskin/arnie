@@ -80,15 +80,63 @@ MIN_MASS_FOR_DENSITY_G = 20.0
 #: zero". Kept to genuinely calorie-free drinks and broths; anything with a
 #: sweetener, milk or solids belongs above the floor and is caught if it lands
 #: below it.
-_NEAR_ZERO_RE = re.compile(
-    r"\b(water|seltzer|sparkling|club soda|black coffee|espresso|americano|"
-    r"tea|herbal|diet (?:coke|pepsi|soda)|zero sugar|broth|bouillon|"
-    r"consomm[eé]|ice|gum)\b", re.I)
+#: THE WHOLE NAME, NOT A TOKEN IN IT. This began as a word-boundary
+#: alternation — `\b(water|tea|ice|sparkling|broth|...)\b` — and it was wrong
+#: nine ways on the first stress test: ice cream, ice cream cake, sparkling
+#: wine, sparkling rose, bubble tea, Thai iced tea, tea cake, coconut water,
+#: water chestnut and broth-based ramen all matched. Every one of those would
+#: have been EXEMPTED from the density floor, so a 500 g tub of ice cream
+#: committed at 0 calories would have passed in silence — which is the exact
+#: defect the floor was added to stop, reintroduced by its own exception.
+#:
+#: A containment test was never the right shape. "Is this food calorie-free"
+#: is a question about the whole name, so it is matched against the whole
+#: name, after stripping the modifiers people actually type.
+#:
+#: DELIBERATELY STRICT, because the two errors do not cost the same. Refusing a
+#: genuinely-zero food falls back to the model's own read (~5 cal for a black
+#: coffee) — a small, self-correcting error. Exempting a caloric one lets a
+#: zero commit as fact, which is unbounded and invisible. So bare "coffee" is
+#: NOT here: a coffee may have milk in it, and being wrong about that is the
+#: expensive direction.
+_NEAR_ZERO_FOODS = frozenset((
+    "water", "sparkling water", "mineral water", "soda water", "club soda",
+    "seltzer", "tonic water", "ice", "ice water",
+    "black coffee", "espresso", "americano", "cold brew",
+    "tea", "green tea", "black tea", "herbal tea", "peppermint tea",
+    "chamomile tea", "iced tea", "unsweetened iced tea",
+    "diet coke", "diet pepsi", "diet soda", "coke zero", "pepsi zero",
+    "broth", "bone broth", "chicken broth", "beef broth", "vegetable broth",
+    "stock", "chicken stock", "bouillon", "consomme", "consommé",
+))
+
+#: Modifiers that do not change whether a drink is calorie-free.
+#:
+#: "black" is NOT one, and neither is "iced". Both look like modifiers and both
+#: carry the meaning: stripping "black" turned "black coffee" into "coffee",
+#: which is deliberately absent from the set above, so the one unambiguous
+#: zero-calorie coffee stopped being recognised. Where a modifier genuinely
+#: matters it belongs in the set as part of the name ("black coffee", "black
+#: tea", "iced tea"), not in this list.
+_ZERO_MODIFIER_RE = re.compile(
+    r"^(?:a|an|the|some|hot|cold|plain|plainly|unsweetened|"
+    r"large|small|medium|regular|tall|grande|venti|"
+    r"cup\s+of|glass\s+of|mug\s+of|bottle\s+of|can\s+of)\s+",
+    re.I)
 
 
 def is_near_zero_food(name: str) -> bool:
-    """Whether a food is legitimately ~0 kcal/g at any mass."""
-    return bool(_NEAR_ZERO_RE.search(name or ""))
+    """Whether a food is legitimately ~0 kcal/g at any mass.
+
+    Matched on the WHOLE (modifier-stripped) name — see `_NEAR_ZERO_FOODS`.
+    """
+    n = re.sub(r"[^a-z0-9\s]", " ", (name or "").lower())
+    n = re.sub(r"\s+", " ", n).strip()
+    prev = None
+    while n and n != prev:                 # "a large iced tea" -> "iced tea"
+        prev = n
+        n = _ZERO_MODIFIER_RE.sub("", n).strip()
+    return n in _NEAR_ZERO_FOODS
 
 #: A single logged ITEM above this is a scaling artefact rather than a meal.
 #: Deliberately generous — a large restaurant platter is a real 2,000-calorie

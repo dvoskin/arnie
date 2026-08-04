@@ -65,7 +65,10 @@ def test_genuinely_thin_vegetables_survive(name, cal, grams):
 
 @pytest.mark.parametrize("name", [
     "Water", "Black coffee", "Green tea", "Diet coke", "Chicken broth",
-    "Sparkling water", "Espresso",
+    "Sparkling water", "Espresso", "Ice", "Bone broth", "Americano",
+    # Modifiers people actually type must not defeat the match.
+    "a large iced tea", "cup of green tea", "Hot tea", "hot black coffee",
+    "Unsweetened iced tea",
 ])
 def test_the_genuinely_zero_foods_are_exempt(name):
     """`food_intelligence` says the same thing where it refuses to attribute a
@@ -74,10 +77,29 @@ def test_the_genuinely_zero_foods_are_exempt(name):
         f"{name} was refused for being zero, which it is"
 
 
-def test_a_sweet_drink_is_not_exempt():
-    """The exemption is calorie-free drinks, not drinks. A 350 g cola at 0 cal
-    is a pricing failure wearing a drink's name."""
-    assert _fatal(sanity.check_values(calories=0, grams=350, name="Coca-Cola"))
+@pytest.mark.parametrize("name", [
+    # THE EXEMPTION'S OWN FIRST DRAFT FAILED EVERY ONE OF THESE. It was a
+    # word-boundary alternation — \b(water|tea|ice|sparkling|broth|...)\b — so
+    # a token anywhere in the name exempted the whole food from the floor. A
+    # 500 g tub of ice cream at 0 calories would have committed in silence,
+    # which is the exact defect the floor exists to stop, reintroduced by its
+    # own exception. Matched on the whole name now.
+    "Ice cream", "Ice cream cake", "Sparkling wine", "Sparkling rose",
+    "Bubble tea", "Thai iced tea", "Tea cake", "Tea biscuits",
+    "Coconut water", "Water chestnut", "Broth-based ramen",
+    "Coffee with milk", "Latte", "Iced latte", "Iced coffee with cream",
+    "Coca-Cola",
+])
+def test_a_caloric_food_is_never_exempt(name):
+    """The exemption is calorie-free DRINKS, not anything whose name contains
+    one. A zero here is a pricing failure wearing a drink's name.
+
+    Deliberately asymmetric: refusing a genuinely-zero food falls back to the
+    model's own read, a small self-correcting error. Exempting a caloric one
+    lets a zero commit as fact, which is unbounded and invisible.
+    """
+    assert _fatal(sanity.check_values(calories=0, grams=350, name=name)), \
+        f"{name!r} was exempted from the density floor"
 
 
 def test_a_small_portion_is_not_judged():
