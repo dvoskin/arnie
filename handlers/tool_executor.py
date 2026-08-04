@@ -2153,6 +2153,33 @@ def _web_enrich_candidate(food_name: str) -> bool:
     return not _BEVERAGE_RE.search(n)
 
 
+def _web_enrich_could_be_accepted(baseline_cal) -> bool:
+    """Whether a web total could survive the cap, decided BEFORE paying for it.
+
+    The no-baseline refusal added 2026-08-03 declines every web total when the
+    interpreter's own number is absent or <= 0 — there is no ratio to measure a
+    move from nothing, and "nobody could price it" is not a reason to believe a
+    search result outright. Which makes the lookup on that path pure cost: a
+    Tavily search plus a Haiku extract, two network round trips, to produce a
+    number already certain to be thrown away.
+
+    So ask first. This is the same condition the refusal applies, kept beside it
+    deliberately — if the cap is disabled (`FOOD_PLAUSIBILITY_CAP=0`) there is
+    no refusal to anticipate and the lookup runs as before.
+    """
+    try:
+        from skills.nutrition.promotion import plausibility_cap
+        if plausibility_cap() <= 0:
+            return True
+    except Exception:
+        return True
+    if (baseline_cal or 0) > 0:
+        return True
+    logger.info("web meal enrich SKIPPED reason=no_baseline — the cap would "
+                "refuse whatever came back")
+    return False
+
+
 async def _web_lookup_meal(food_name: str, quantity) -> dict | None:
     """Web lookup for the ABSOLUTE calories+macros of a composite/restaurant meal
     the databases miss. Unlike _web_lookup_packaged (a per-100g density anchored
@@ -2918,7 +2945,8 @@ async def _analyze_food(db, user, food_name, inp):
     # otherwise the estimate stands untouched. A user-stated label never
     # reaches here — it returns above. Kill switch: WEB_MEAL_ENRICH=false.
     if (web_meal_enrich_enabled() and result.source == "estimate"
-            and _web_enrich_candidate(food_name)):
+            and _web_enrich_candidate(food_name)
+            and _web_enrich_could_be_accepted(result.calories)):
         try:
             meal = await _web_lookup_meal(food_name, inp.get("quantity"))
         except Exception as e:

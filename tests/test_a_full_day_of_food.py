@@ -179,6 +179,13 @@ def edges(monkeypatch):
     # suite defaults it off, which is why no existing test noticed that the
     # commonest food sentences never reach the lane under test.
     monkeypatch.setenv("FOOD_GATE_MODEL", "true")
+    # Same reason, second flag. `micros_deferred_enabled` defaults FALSE in code
+    # and render.yaml ships it TRUE, so the suite was exercising the INLINE
+    # micro estimate while production defers it past the reply. A harness whose
+    # whole purpose is replaying production should not differ from it on which
+    # side of a turn's latency budget a model call falls — and matching it also
+    # takes eleven stubbed model calls out of a single day's replay.
+    monkeypatch.setenv("FOOD_MICROS_DEFERRED", "true")
 
     llm_stub = ScriptedLLM([])
 

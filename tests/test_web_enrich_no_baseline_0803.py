@@ -77,6 +77,66 @@ async def test_the_executor_refuses_a_web_total_with_no_baseline(
             f"{interp_cal!r} — the cap cannot see a move from nothing")
 
 
+@pytest.mark.asyncio
+async def test_a_lookup_certain_to_be_refused_is_never_paid_for(monkeypatch):
+    """The refusal makes the lookup free to skip, so skip it.
+
+    `_web_lookup_meal` is a Tavily search plus a Haiku extract — two network
+    round trips per food. With no baseline the cap declines whatever comes
+    back, so on that path both were spent to produce a number certain to be
+    discarded. Asserting the CALL COUNT rather than the timing: the cost is the
+    round trips, and a clock in a test is a flake.
+    """
+    import handlers.tool_executor as te
+
+    calls = []
+
+    async def _web(food_name, quantity):
+        calls.append(food_name)
+        return {"calories": 400, "protein": 8, "carbs": 30, "fat": 15,
+                "confidence": "high"}
+
+    monkeypatch.setattr(te, "_web_lookup_meal", _web)
+    monkeypatch.setenv("WEB_MEAL_ENRICH", "true")
+    monkeypatch.setenv("FOOD_PLAUSIBILITY_CAP", "5.0")
+    monkeypatch.setattr(te, "fetch_candidates", lambda *a, **k: _none_candidates())
+
+    await te._analyze_food(None, _user(), "Cali Roll",
+                           {"food_name": "Cali Roll", "quantity": "8 piece",
+                            "calories": None})
+    assert calls == [], "paid for a web lookup whose answer the cap would refuse"
+
+    # And the lane still runs when there IS something to compare against.
+    await te._analyze_food(None, _user(), "Cali Roll",
+                           {"food_name": "Cali Roll", "quantity": "8 piece",
+                            "calories": 283})
+    assert calls == ["Cali Roll"], "the lane must still fire on a real baseline"
+
+
+@pytest.mark.asyncio
+async def test_the_skip_defers_to_a_disabled_cap(monkeypatch):
+    """With `FOOD_PLAUSIBILITY_CAP=0` there is no refusal to anticipate, so
+    there is nothing to skip — the optimization may not quietly become a second
+    policy."""
+    import handlers.tool_executor as te
+
+    calls = []
+
+    async def _web(food_name, quantity):
+        calls.append(food_name)
+        return None
+
+    monkeypatch.setattr(te, "_web_lookup_meal", _web)
+    monkeypatch.setenv("WEB_MEAL_ENRICH", "true")
+    monkeypatch.setenv("FOOD_PLAUSIBILITY_CAP", "0")
+    monkeypatch.setattr(te, "fetch_candidates", lambda *a, **k: _none_candidates())
+
+    await te._analyze_food(None, _user(), "Cali Roll",
+                           {"food_name": "Cali Roll", "quantity": "8 piece",
+                            "calories": None})
+    assert calls == ["Cali Roll"], "the cap is off; the lookup should still run"
+
+
 def _user():
     from types import SimpleNamespace
     return SimpleNamespace(
