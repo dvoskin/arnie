@@ -91,11 +91,11 @@ def _grams(raw_quantity: str, food_name: str,
                                                 normalize_quantity,
                                                 serving_unit_mass)
         quantity = normalize_quantity(text, food_name or "")
-        grams = _num(quantity.grams)
-        if grams and grams > 0:
-            return grams
         count = _num(quantity.count)
         panel = serving_unit_mass(serving_text or "") if serving_text else None
+        # THE PANEL FIRST, as this function's docstring has always said. The
+        # code checked `quantity.grams` first, which only agreed with the
+        # docstring while no generic weight existed for these names.
         if count and count > 0 and panel:
             unit_mass, panel_unit = panel[0], panel[1]
             # The panel's unit has to answer the portion's. "9 chips" against a
@@ -105,6 +105,30 @@ def _grams(raw_quantity: str, food_name: str,
             if _num(unit_mass) and count_units_compatible(
                     quantity.unit or "", panel_unit or ""):
                 return float(unit_mass) * float(count)
+        grams = _num(quantity.grams)
+        if grams and grams > 0:
+            # A PRODUCT THAT PUBLISHES A COUNTING PANEL OWNS ITS OWN PIECE, and
+            # a food-shaped average is not a stand-in for it. "Sour Gummy Mini
+            # Burgers" with a panel of "15 PIECES" is headed by "burgers", so
+            # the generic 226 g hamburger weight matched it (113 g after the
+            # "Mini" modifier) and priced one gummy sweet at 395 cal.
+            #
+            # That panel names a count and no mass, so there is nothing here to
+            # scale by — which is the correct answer, not a reason to reach for
+            # a different food's weight. Declining hands it to
+            # `apply_count_correction`, whose whole subject is a panel that
+            # counts pieces: one burger is a fifteenth of the row, 9.3 cal.
+            #
+            # This docstring's own claim — "its head-noun rule declines on a
+            # branded name anyway" — was true only until `PIECE_WEIGHTS_G` grew
+            # these rows. It is now enforced rather than assumed.
+            if count and count > 0 and serving_text and not panel:
+                logger.info(
+                    "event=correction_apply outcome=declined "
+                    "reason=product_counts_its_own_pieces food=%r panel=%r",
+                    food_name, serving_text)
+                return None
+            return grams
     except Exception:
         return None
     return None

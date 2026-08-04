@@ -289,6 +289,41 @@ PIECE_WEIGHTS_G = {
     "slice": (28.0, 10.0),          # last resort for an unqualified "slice"
 }
 
+#: TWO PIECE TABLES EXISTED AND ONLY THIS ONE PRICED ANYTHING.
+#: `core.portions._PIECE_GRAMS` carries 34 single-item weights and feeds ONLY
+#: `portion_check`, which returns an advisory string appended to a coach note
+#: AFTER the write ("calories imply ~94 g but '1 burger' is typically ~226 g").
+#: 29 of its rows had no counterpart here, so "1 burger", "1 avocado", "1
+#: potato", "1 chicken breast", "1 muffin" resolved to NO MASS AT ALL and fell
+#: to the estimate path — where the model's calorie guess becomes the portion.
+#: That is symptom 7's burger: 240 cal committed against a published ~500,
+#: with the correct 226 g printed underneath it in a note nobody acts on.
+#:
+#: Folded in rather than copied, so the two cannot drift. Existing rows win —
+#: they carry measured spreads and were tuned against real logs.
+#:
+#: THE SPREAD IS A STATED ASSUMPTION, NOT A MEASUREMENT. `_PIECE_GRAMS` is a
+#: bare median with no variance, and 25% is what a single item's weight plausibly
+#: spans (USDA's own small/medium/large produce weights sit around there). It is
+#: written down as an assumption because it is one; anyone with the real
+#: per-item distributions should replace it with them.
+_ADVISORY_PIECE_SPREAD = 0.25
+
+
+def _fold_in_advisory_piece_weights() -> None:
+    try:
+        from core.portions import _PIECE_GRAMS as _advisory
+    except Exception:                                    # pragma: no cover
+        return
+    for _name, _g in (_advisory or {}).items():
+        if _name in PIECE_WEIGHTS_G or not _g:
+            continue
+        PIECE_WEIGHTS_G[_name] = (float(_g),
+                                  round(float(_g) * _ADVISORY_PIECE_SPREAD, 1))
+
+
+_fold_in_advisory_piece_weights()
+
 #: `_singular` (defined above) is what compares a serving panel's count unit
 #: with the parser's, so "12 pieces" on a label and "15 piece" from the user
 #: line up. It deliberately lives in ONE place: this module briefly carried two

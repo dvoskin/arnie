@@ -129,11 +129,37 @@ def test_mass_stated_ounces_forward():
     assert a.calories == round(165 * 170.1 / 100)   # ≈ 281, from grams not the LLM's 220
 
 
-def test_non_mass_quantity_falls_back_to_estimate():
-    """A count/cup/vague amount has no reliable grams → keep trusting the LLM's
-    calories (back grams out of them), unchanged from before."""
-    a = analyze("chicken breast", "1 breast", 270, 50, 0, 6, usda_candidate=_CHICKEN)
-    assert a.calories == 270          # LLM estimate honored — no ground-truth grams
+def test_a_counted_whole_food_is_priced_from_its_portion():
+    """This asserted the OPPOSITE — that a count keeps the LLM's calories,
+    "unchanged from before" — and that policy was reversed on 2026-08-03 with
+    measurement behind it.
+
+    The old rule read as "a calibrated portion vs. the model's estimate", and
+    the real choice was "a calibrated portion vs. the model's estimate WEARING
+    a portion's clothes": with no mass, `analyze` computed
+    `grams = cal / cal100 * 100`, so the guess became the portion and every
+    macro was rescaled off it. Against independently published portion weights
+    the portion path runs 3% median error against the model's 15% (see
+    `tests/test_portion_pricing_accuracy_0803.py`, which is the gate).
+
+    Here: one chicken breast is 174 g, so 165 x 1.74 = 287 against a published
+    ~284. The model's 270 was 5% low — the documented ~19% undercount, smaller
+    than usual.
+
+    A quantity with NO calibrated mass still falls back to the estimate; that
+    case moved to `test_a_vague_amount_still_falls_back_to_the_estimate`.
+    """
+    a = analyze("chicken breast", "1 breast", 270, 50, 0, 6,
+                usda_candidate=_CHICKEN)
+    assert a.calories == round(165 * 174.0 / 100)
+
+
+def test_a_vague_amount_still_falls_back_to_the_estimate():
+    """The half of the old rule that survives: "some" carries an uncertainty
+    larger than its own median, so there is no portion to price from and the
+    model's read stands."""
+    a = analyze("grandma's stew", "some", 420, 25, 30, 20)
+    assert a.calories == 420
 
 
 def test_volume_ml_is_not_treated_as_ground_truth():
