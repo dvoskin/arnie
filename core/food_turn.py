@@ -3416,6 +3416,43 @@ def _question_options(*, label: str, qs, found_by_label, message: str,
     return _stated_options(qs, label=label)[:4]
 
 
+def _asks_strictly_less(points, prior) -> bool:
+    """Whether this ask is the REMAINDER of the previous one.
+
+    True when every thing it asks about was already asked, and it asks about
+    fewer of them than last time. Both halves matter: the first says nothing
+    new is being introduced, the second guarantees the exchange converges —
+    a strictly shrinking finite set reaches empty. That is what lets the
+    remainder through the never-loop guard without a counter, and a counter is
+    the wrong instrument here anyway, since it cannot tell a second question
+    from the second half of the first one.
+
+    Matched on the ITEM the question is bound to rather than its wording: the
+    model rephrases freely between turns ("how was it cooked" / "grilled or
+    fried"), and the food is the part that has to be stable for the answer to
+    bind to anything at all. An unlabelled question matches nothing and is
+    treated as new, which is the safe direction.
+    """
+    _prior_qs = [q for q in ((prior or {}).get("questions") or ())
+                 if isinstance(q, dict)]
+    _prior_items = {str(q.get("item") or "").strip().lower()
+                    for q in _prior_qs}
+    _prior_items.discard("")
+    if not _prior_qs or not _prior_items:
+        return False
+    _now = [str((p or {}).get("label") or "").strip(", ").strip().lower()
+            for p in (points or ()) if isinstance(p, dict)]
+    _now = [x for x in _now if x]
+    # Counted against the number of QUESTIONS, not of distinct foods. Both of
+    # the 2026-08-04 questions were about the chicken, so a set of items has
+    # size one and "fewer items than before" can never be true of the turn this
+    # exists to rescue. Questions are what the user answers and questions are
+    # what has to run out.
+    if not _now or len(_now) >= len(_prior_qs):
+        return False
+    return all(x in _prior_items for x in _now)
+
+
 def _questions_from_points(points, *, message: str = "", items=None,
                            found_by_label=()) -> list:
     """`points` as the structure the client renders, not as prose.
@@ -4780,7 +4817,29 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             message or "", re.I))
         _ask_count = int((prior or {}).get("ask_count") or 1)
         _new_amb = bool(data.get("new_ambiguity"))
-        if data.get("points") and (_user_invited or (_new_amb and _ask_count < 2)):
+        # THE REST OF WHAT WE ALREADY ASKED IS NOT A NEW QUESTION.
+        #
+        # This is the branch behind the whole 2026-08-04 transcript. Arnie asked
+        # two things at once — how the chicken was cooked, and how much. The
+        # user tapped "60g", answering the second. The interpreter correctly
+        # came back with an ask for the FIRST, still unanswered. Neither lift
+        # applied: "60g" invites nothing, and the cook method is not a NEW
+        # ambiguity, it is the original one. So this returned None, the turn
+        # fell to legacy, and legacy re-asked in prose — "I still need cook
+        # method for the chicken, grilled, baked, or fried?" — with no chips,
+        # no structured state, and the held rice settled behind it as a
+        # writes-only side effect. Legacy's own wording proves the question
+        # survived; only the structure was thrown away.
+        #
+        # `never loop` is still the rule and is still enforced, by a stronger
+        # test than a counter: a re-ask is allowed only when it asks about
+        # STRICTLY FEWER things than the ask before it. The open set shrinks
+        # every turn, so the exchange cannot fail to terminate — and it
+        # terminates by running out of questions rather than by running out of
+        # patience.
+        _remainder = _asks_strictly_less(data.get("points"), prior)
+        if data.get("points") and (_user_invited or _remainder
+                                   or (_new_amb and _ask_count < 2)):
             from core.food_response import render_plan as _render
             from core.food_response import with_context as _ctx
             _p2 = clarify_plan_from_points(data["points"], data.get("ready"),
