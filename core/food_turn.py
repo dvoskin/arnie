@@ -2575,7 +2575,27 @@ async def _variant_options(label: str, branded: bool) -> tuple:
     return tuple(out)
 
 
-def _calls_for_ready(ready) -> list:
+def _label_item(call, source: str, index: int):
+    """Stamp a stable id on a held call, once, at the moment it is built.
+
+    ASSIGNED HERE AND NOWHERE ELSE, because this is the only point where the
+    item exists and has not yet been re-read. `_undeferred` must never mint
+    one: the whole failure being measured is that identity gets re-derived
+    downstream from a string, and a shadow that invents the id it is testing
+    tests itself.
+
+    The id names the parse position and its source list, not the food. That is
+    honest about what it can do — it survives being CARRIED across turns, and
+    it deliberately cannot be re-derived from the answer turn's fresh parse,
+    because a cross-turn id has to name the FOOD and only the entity registry
+    can do that. See `_shadow_undeferred`.
+    """
+    if isinstance(call, dict):
+        call.setdefault("input", {})["_item_id"] = f"{source}:{index}"
+    return call
+
+
+def _calls_for_ready(ready, source: str = "ready") -> list:
     """Write calls for the foods an ask is NOT asking about.
 
     Built with the same `_log_call` the commit path uses, so provenance and
@@ -2584,10 +2604,10 @@ def _calls_for_ready(ready) -> list:
     which is the old behaviour, rather than writing rows it never costed.
     """
     calls = []
-    for item in ready_items(ready):
+    for _i, item in enumerate(ready_items(ready)):
         call = _log_call(item)
         if call is not None:
-            calls.append(call)
+            calls.append(_label_item(call, source, _i))
     return calls
 
 
@@ -2624,7 +2644,11 @@ def _orphan_calls(data: dict) -> list:
                            "surfaced, not committed", name)
             continue
         orphans.append(it)
-    return _calls_for_ready(orphans)
+    # A SEPARATE NAMESPACE. Orphans come from `items` minus ready/points, so
+    # they are different foods from the ready ones by construction — reusing
+    # "ready:N" would give two distinct foods the same id, which is worse than
+    # giving them none.
+    return _calls_for_ready(orphans, source="orphan")
 
 
 #: Where an ask stashes the writes it is holding. Rides the pending question's
@@ -2824,7 +2848,108 @@ def _undeferred(held: list, plan_calls: list) -> list:
             unclaimed.remove(_fuzzy[0])
             continue
         out.append(call)
+    _shadow_undeferred(held, plan_calls, out)
     return out
+
+
+#: Env kill switch for the shadow comparison. It only reads and logs, so a bad
+#: fire costs a log line and never a row — but a shadow that cannot be turned
+#: off is a shadow that gets reverted instead of disabled.
+def _shadow_enabled() -> bool:
+    return (os.getenv("FOOD_IDENTITY_SHADOW", "true") or "").strip().lower() \
+        in ("1", "true", "yes", "on")
+
+
+def _item_id_of(call) -> str:
+    """The stable id a call carries, or "" when it predates them.
+
+    Read, never invented. A shadow that fabricates the identity it is
+    measuring measures itself.
+    """
+    if not isinstance(call, dict):
+        return ""
+    return str((call.get("input") or {}).get("_item_id") or "")
+
+
+def _shadow_undeferred(held: list, plan_calls: list, live_out: list) -> None:
+    """Reconcile by STABLE ID beside the live name match, and report the delta.
+
+    Writes nothing and returns nothing. `live_out` is already decided by the
+    time this runs; this only says what an id-based reconciliation WOULD have
+    decided, so the disagreement rate can be measured on real traffic before
+    anything depends on it.
+
+    Why this function is the first migration rather than a later one: the
+    consequence audit ranks `_undeferred`'s fuzzy claim loop as the single
+    highest-risk heuristic in the codebase, and the comment six lines above
+    says why — across turns, a wrong match is "DELETING a row the user
+    reported". The corpus measures that rule at one false match and five missed
+    renames out of 36 labelled pairs.
+
+    A CONSTRAINT THIS MEASUREMENT MADE OBVIOUS, recorded because it decides
+    what the next phase has to be. `held` and `plan` are two parses of the SAME
+    message on two different turns. An id minted per parse cannot match across
+    them — the second parse mints new ones. So a cross-turn stable id has to
+    name the FOOD, not the parse, which means it has to come from the entity
+    registry that does not exist yet.
+
+    Until it does, ids can only be carried FORWARD (held items keep the ids
+    they were stashed with) and never re-derived on the answer turn. An
+    id-based reconciliation therefore cannot collapse anything, and would keep
+    every held food. That is not a strategy worth shipping; it IS worth
+    measuring, because the difference between it and the live path is exactly
+    the set of rows the name matcher collapses — and every collapse across
+    turns is a candidate row deletion, which is what the audit ranks first.
+
+    So four outcomes, and `plan_unlabelled` is the one that carries the number:
+
+      * `no_ids`          — nothing carries ids; nothing is comparable.
+      * `plan_unlabelled` — held items are labelled, the answer turn's re-parse
+                            is not (the expected state today). Reports how many
+                            foods the live path COLLAPSED, which is the
+                            row-deletion exposure.
+      * `agree` / `disagree` — a genuine comparison, reachable only once the
+                            answer turn can carry the original ids.
+    """
+    if not _shadow_enabled():
+        return
+    try:
+        _held_ids = {_item_id_of(c) for c in (held or [])}
+        _plan_ids = {_item_id_of(c) for c in (plan_calls or [])}
+        _held_ids.discard("")
+        _plan_ids.discard("")
+        if not _held_ids:
+            logger.info("event=identity_shadow outcome=no_ids held=%d plan=%d",
+                        len(held or []), len(plan_calls or []))
+            return
+        if not _plan_ids:
+            _collapsed = len(held or []) - len(live_out or [])
+            logger.info(
+                "event=identity_shadow outcome=plan_unlabelled held=%d "
+                "plan=%d live_kept=%d collapsed=%d — every collapse here is a "
+                "held food the NAME match dropped and an id match would have "
+                "kept", len(held or []), len(plan_calls or []),
+                len(live_out or []), _collapsed)
+            return
+        # THE WHOLE RULE, and it is one line: a held item is covered when the
+        # plan carries the SAME ID. No token subset, no head-noun rule, no
+        # plural handling — because identity is an id, and none of those
+        # questions arise once it is.
+        shadow_keep = [c for c in (held or [])
+                       if _item_id_of(c) and _item_id_of(c) not in _plan_ids]
+        live_names = sorted(_call_name_key(c) for c in (live_out or []))
+        shadow_names = sorted(_call_name_key(c) for c in shadow_keep)
+        if live_names == shadow_names:
+            logger.info("event=identity_shadow outcome=agree kept=%d",
+                        len(live_names))
+            return
+        logger.warning(
+            "event=identity_shadow outcome=disagree live=%r shadow=%r "
+            "held=%d plan=%d — the name match and the id match kept "
+            "different foods", live_names, shadow_names,
+            len(held or []), len(plan_calls or []))
+    except Exception:      # a measurement may never cost the turn it measures
+        logger.debug("identity shadow failed", exc_info=True)
 
 
 def _settle_deferred(out: Optional[dict], prior: Optional[dict]) -> Optional[dict]:
