@@ -782,6 +782,122 @@ async def test_the_card_and_the_sentence_round_the_day_the_same_way(
             f"two owners with different rounding")
 
 
+# ── The other two channels ────────────────────────────────────────────────────
+#
+# WHY NOT THROUGH THE WEBHOOKS. `POST /webhook/{token}` needs a live
+# python-telegram-bot Application on `app.state` (503 without one) and `POST
+# /imessage` needs a BlueBubbles signature — and BOTH answer 200 immediately and
+# do the turn in a background task, so the HTTP response carries no reply to
+# assert against. That plumbing is real, but it is not where food bugs live, and
+# `test_webhook_signatures.py` already covers it.
+#
+# `run_chat_turn` is the seam that matters: its own docstring says the caller
+# owns identity and delivery and "this function owns everything in between" —
+# routing, the interpreter, pricing, the executor, the renderer. Driving it with
+# `platform` varying is what actually asks whether the three channels are equal.
+
+CHANNELS = ("ios", "telegram", "imessage")
+
+
+async def turn(user_id, text, *, platform):
+    """One turn on a given channel, below the transport."""
+    import db.database as D
+    from core.chat_service import run_chat_turn
+    from db.queries import reload_user
+    async with D.AsyncSessionLocal() as s:
+        user = await reload_user(s, user_id)
+        return await run_chat_turn(s, user, text, platform=platform,
+                                   schedule_background=False)
+
+
+@pytest.mark.parametrize("platform", CHANNELS)
+@pytest.mark.asyncio
+async def test_every_channel_logs_the_same_meal(seeded, edges, platform):
+    """The same exchange, the same rows, whichever channel it arrived on.
+
+    Memory's standing rule is three EQUAL channels, and the food lane is shared
+    below the transport — so a divergence here would mean something in routing,
+    rendering or the executor is reading `platform` when it should not.
+    """
+    edges.plans.append(THE_DAY[0][1])
+    edges.plans.append(THE_DAY[1][1])
+    t1 = await turn(seeded, THE_DAY[0][0], platform=platform)
+    t2 = await turn(seeded, THE_DAY[1][0], platform=platform)
+    assert t1 is not None and t2 is not None
+
+    board = await rows(seeded)
+    check_i4(board, ["Ground beef", "rice"])
+    check_i5(board)
+
+
+@pytest.mark.parametrize("platform", CHANNELS)
+@pytest.mark.asyncio
+async def test_every_channel_gets_the_same_answer_chips(seeded, edges, platform):
+    """An ask must offer its choices on every channel, not just the one with a
+    client-side parser.
+
+    Only iOS ever had chips, and only because `QuickReplyEngine.swift` guesses
+    them from the rendered sentence. Telegram and iMessage shipped none at all —
+    the same question, and on two channels out of three the user types. That is
+    the asymmetry `_stated_options` closes, and this is what pins it.
+    """
+    edges.plans.append({
+        "action": "ask",
+        "points": [{"label": "Burger", "qs": ["fast food or homemade?"]}],
+        "items": [item("Burger", 500, unit="burger")],
+    })
+    t = await turn(seeded, "I had a burger", platform=platform)
+    labels = [b.label for b in (t.response.buttons or [])]
+    assert labels == ["Fast food", "Homemade"], (
+        f"{platform}: expected the question's own choices, got {labels!r}")
+
+
+@pytest.mark.asyncio
+async def test_a_russian_meal_still_reaches_the_lane(seeded, edges):
+    """The structured gate is EN-keyed, and that has shipped unlogged food.
+
+    With the model gate on — which is production — a Russian report routes like
+    any other. `test_the_regex_gate_alone_cannot_read_russian` below pins the
+    blindspot itself, so the day this flag is ever turned off, the cost is
+    written down rather than rediscovered.
+    """
+    edges.plans.append({"action": "log", "items": [
+        item("Гречка", 340, unit="cup"), item("Куриная грудка", 165, unit="cup")]})
+    t = await turn(seeded, "я съел гречку и куриную грудку", platform="telegram")
+    assert t is not None
+    board = await rows(seeded)
+    assert len(board) == 2, [e.parsed_food_name for e in board]
+    check_i5(board)
+
+
+@pytest.mark.asyncio
+async def test_the_regex_gate_admits_russian_without_the_model(seeded, edges,
+                                                               monkeypatch):
+    """The blindspot is CLOSED, and this is what keeps it closed.
+
+    I wrote this test expecting the opposite. The EN-keyed gate did once ship
+    unlogged food in Russian, and the version of this test that asserted that
+    failed — because `_food_route_reason` now has an explicit `_non_latin`
+    escape that returns "" (admit) instead of "no_food_shape". Its own comment
+    records the cost of the old behaviour: "98 of the 301 real food logs this
+    gate turned away were rejected for no reason but their alphabet."
+
+    That distinction is the valuable part and it is subtle enough to be worth a
+    gate of its own: a message our ASCII shape rules cannot READ is not a
+    message that isn't food. So this runs with FOOD_GATE_MODEL OFF deliberately
+    — if the escape were ever removed as dead code, the model gate would hide
+    it in production and only this test would notice.
+    """
+    monkeypatch.setenv("FOOD_GATE_MODEL", "false")
+    edges.plans.append({"action": "log", "items": [
+        item("Гречка", 340, unit="cup"), item("Куриная грудка", 165, unit="cup")]})
+    await turn(seeded, "я съел гречку и куриную грудку", platform="telegram")
+    board = await rows(seeded)
+    assert len(board) == 2, (
+        f"a Russian meal did not reach the lane without the model gate: "
+        f"{[e.parsed_food_name for e in board]}")
+
+
 @pytest.mark.asyncio
 async def test_the_days_totals_agree_across_endpoints(client, seeded, edges):
     """I10. The card, the reply and GET /api/v1/day are three readers of one
