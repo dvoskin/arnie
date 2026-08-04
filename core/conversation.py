@@ -2773,8 +2773,11 @@ async def _run_turn(
                 # never vaporize the notice (Dove bar incident class).
                 if _sft.get("_held_stash"):
                     from core.food_turn import note_held_items
+                    # The BOARD too, not just this turn's writes — a row logged
+                    # a turn ago is done, not held. See `note_held_items`.
                     response_text = note_held_items(
-                        response_text, _sft["_held_stash"], _ok_calls)
+                        response_text, _sft["_held_stash"], _ok_calls,
+                        board=_board or ())
                 _response_streamed = False
                 # RENDER (review fix, PR #29). The last stage of a food turn is
                 # the sentence the user reads, and it used to fall outside the

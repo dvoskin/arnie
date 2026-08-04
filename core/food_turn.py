@@ -1103,12 +1103,29 @@ def _interpreter_system(*, narrate: bool) -> str:
     return _MUTE_RE.sub("" if narrate else r"\1", src)
 
 
-def note_held_items(say: str, stashed: list, tool_calls: list) -> str:
+def note_held_items(say: str, stashed: list, tool_calls: list,
+                    board: list = ()) -> str:
     """A confirm-answer turn must never silently drop a stashed item: anything
     the user saw in 'Locking this in' that is not in the write gets NAMED as
-    held (Dove bar incident 2026-07-24 — 3 confirmed, 2 logged, bar vanished)."""
+    held (Dove bar incident 2026-07-24 — 3 confirmed, 2 logged, bar vanished).
+
+    WRITTEN THIS TURN *OR ALREADY ON THE BOARD*. This compared the stash only
+    against THIS turn's commits, and had no notion of the board at all — so a
+    row written a turn ago read as missing and got announced as held. Prod
+    2026-08-03: "Holding the Challah bread and Honey turkey slices and
+    Jalapenos - tell me which kind and it goes on too", one inch under a
+    receipt panel reading "Logged Challah bread, 140 cal".
+
+    The canned tail is the tell that this is a template rather than a
+    judgement — blueberries and fries have no "kind". Naming a food as held
+    when it is on the board is worse than saying nothing: it invites the user
+    to answer a question about a thing that is already done, and the answer
+    then reads as a new report.
+    """
     logged = {(tc.get("input") or {}).get("food_name", "").lower()
               for tc in (tool_calls or [])}
+    logged |= {str((row or {}).get("food") or "").lower()
+               for row in (board or ())}
     missing = []
     for it in (stashed or []):
         food = (it.get("food") or "").strip()

@@ -124,7 +124,28 @@ def render_pending_clarification_block(
         return ""
 
     lines = [
+        # NEVER NARRATE THE DECISION. This block hands the model a routing
+        # choice to make — is this an answer, or a new food — and said nothing
+        # about keeping the choice private. So it announced it. Prod 2026-08-03,
+        # the reply as sent: "That open question's dead, ground beef and rice is
+        # a new food, nothing to do with bar flavors." That is this paragraph's
+        # own vocabulary read back to the user.
+        #
+        # `core/prompts/arnie.py` already says these are "system labels —
+        # invisible to the user", and that was not enough, because what leaked
+        # was not the LABEL. The model kept the brackets to itself and narrated
+        # the reasoning they asked for. So the clause names the decision, not
+        # just the note. Compare `turn_obligations.OBLIGATIONS_NOTE`, which has
+        # carried "never mention or quote it" from the start.
+        #
+        # THE MARKER ITSELF MUST NOT MOVE. `arnie.py:483` instructs the model by
+        # its literal text ("if [PENDING CLARIFICATION] is in context next
+        # turn...") and `:803` lists it among the system labels, so rewording
+        # the bracket silently unhooks the persona from the block it describes.
+        # An earlier draft of this fix did exactly that.
         "[PENDING CLARIFICATION] You asked these RECENTLY about foods. "
+        "This note is not written by the user; never mention it, quote it, or "
+        "narrate the decision it asks you to make. "
         "The user's current message MAY be answering you, or may be a NEW "
         "food unrelated to the question. DON'T re-ask either way. Then decide: "
         "IF this turn answers your question → log ALL the foods from that "
