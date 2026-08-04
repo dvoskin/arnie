@@ -1435,6 +1435,20 @@ PORTION_CASES = [
          expect={"source": "usda", "calories": (105, 112),
                  "assumption_contains": "density"}),
 
+    case("a-noodle-soup-is-priced-as-a-soup", "portioning",
+         "chicken noodle soup", "a mug",
+         candidates=[c("usda", GENERIC, "Soup, chicken noodle", calories=36,
+                       protein=2.5, sodium=340)],
+         # The sibling above, with the ingredient named. `food_category` picks
+         # the DENSITY, and its dish tier still resolved longest-fragment-first
+         # inside itself — so "noodle" (6) outranked "soup" (4) and this was
+         # priced as pasta at 0.59 g/ml instead of soup at 1.0, a basis 40%
+         # light. Not a 2026-08-03 regression: it returned pasta on the
+         # pre-existing tree too, which is exactly why it needed a case of its
+         # own rather than being assumed covered by the mug above.
+         expect={"source": "usda", "calories": (105, 112),
+                 "assumption_contains": "density"}),
+
     case("a-glass-of-milk-is-not-a-mass-of-milk", "portioning",
          "milk", "a glass",
          candidates=[c("usda", GENERIC, "Milk, 2%", calories=50, protein=3.4)],

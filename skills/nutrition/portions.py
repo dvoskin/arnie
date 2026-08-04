@@ -424,6 +424,19 @@ FOOD_CATEGORIES = {
     "olive oil": "oil", "oil": "oil", "syrup": "syrup", "honey": "syrup",
     "sauce": "sauce", "dressing": "sauce", "salsa": "sauce",
     "soup": "soup", "stew": "soup", "salad": "salad",
+    # A NOODLE SOUP IS A SOUP. The dish tier beats the ingredient tier, but
+    # WITHIN the dish tier longest-fragment still decides — so "noodle" (6)
+    # outranked "soup" (4) and `food_category("chicken noodle soup")` returned
+    # `pasta`. That is not a 2026-08-03 regression; it returned pasta on the
+    # pre-existing tree too. It matters because the categories carry DENSITY:
+    # `VOLUME_DENSITY_G_PER_ML` has soup at 1.0 and pasta at 0.59, so a bowl of
+    # it was priced against a basis 40% light.
+    #
+    # Longer explicit keys, the same convention that keeps peanut butter off
+    # `oil` and deli meat off `meat`.
+    "noodle soup": "soup", "ramen": "soup", "pho": "soup",
+    "wonton soup": "soup", "miso soup": "soup", "udon soup": "soup",
+    "chicken noodle": "soup", "matzo ball soup": "soup",
 }
 
 #: The vague measures we recognize, longest first so "small handful" resolves
