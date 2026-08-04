@@ -956,14 +956,22 @@ def derive_vague_quantities(items, data: Mapping, *, message: str,
 
         calories = _calories_for(raw_by_ordinal.get(item.ordinal) or {})
         span = _span_from(distribution, calories)
-        # Descending confidence, deliberately. Equal confidences read as a coin
-        # toss to the clarification policy, which makes QUICK mode ask — and
-        # quick exists precisely to accept this risk and commit with a stated
+        # Unequal confidences, deliberately. Equal ones read as a coin toss to
+        # the clarification policy, which makes QUICK mode ask — and quick
+        # exists precisely to accept this risk and commit with a stated
         # assumption instead.
-        labels = _measure_options(measure, distribution)
+        #
+        # WHICH option carries the top confidence is the part that moves food.
+        # The labels arrive ascending, so a positional `(0.6, 0.35, 0.2)` gave
+        # the LOW end the most confidence and QUICK mode assumed the smallest
+        # portion on offer — against the standing rule to bias high when unsure.
+        # Assigned by role now: the median is the ontology's best estimate and
+        # wins; the high end outranks the low one.
+        labels = _measure_options(measure, distribution, item.original_text)
+        weights = ((0.2, 0.6, 0.35) if len(labels) == 3 else (0.6, 0.35))
         options = tuple(
             AmbiguityOption(label, confidence=confidence)
-            for label, confidence in zip(labels, (0.6, 0.35, 0.2)))
+            for label, confidence in zip(labels, weights))
 
         out.append(item.with_ambiguities(list(item.ambiguities) + [
             build_ambiguity(
@@ -973,8 +981,7 @@ def derive_vague_quantities(items, data: Mapping, *, message: str,
                 calorie_span=span, item_calories=calories, options=options,
                 targets=dict(targets) if targets else None,
                 confidence=getattr(distribution, "confidence", None),
-                prompt=_vague_prompt(item.original_text, measure,
-                                     _measure_options(measure, distribution),
+                prompt=_vague_prompt(item.original_text, measure, labels,
                                      sole_estimate=_sole_estimate))]))
     return tuple(out)
 
@@ -1073,13 +1080,97 @@ _G_PER_TBSP = 15.0
 _SPOKEN = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
 
 
-def _measure_options(measure: str, distribution) -> tuple:
-    """The two ends of the plausible range, in the words the measure invites.
+#: The unit a person can PICTURE, per portion-ontology category.
+#:
+#: Grams are what we PRICE in and what almost nobody SERVES in. "Closer to 60g
+#: or 220g?" asks someone to convert before they can answer, and the answer is
+#: not cheap to get wrong: a tapped option is recorded as the user's own figure
+#: (`_item_is_stated` clears `estimated`, so the "(my estimate)" marker, the
+#: card range and the disclosure all switch off). An option nobody can evaluate
+#: therefore does not merely annoy — it launders a guess into ground truth.
+#:
+#: This table chooses only the WORDS. Every number behind them stays the
+#: ontology's: each candidate is rendered, re-parsed through the same
+#: `normalize_quantity` the log path uses, and kept only if it lands nearer its
+#: own anchor than any other anchor. A rendering that does not survive that
+#: round trip is dropped and the row falls back to grams, so no vocabulary here
+#: can put a mass on the board that pricing would not have chosen itself.
+_EVERYDAY_UNIT = {
+    # Sold and portioned by weight at a counter, and the unit a US kitchen
+    # scale and every recipe already speaks for these.
+    "meat": "oz", "deli_meat": "oz", "bacon": "oz", "cheese": "oz",
+    "nuts": "oz", "chips": "oz", "dried_fruit": "oz",
+    # Served out of a measuring cup, a mug or a bowl.
+    "rice": "cup", "pasta": "cup", "cereal": "cup", "soup": "cup",
+    "berries": "cup", "greens": "cup", "leafy": "cup", "salad": "cup",
+    "popcorn": "cup", "yogurt": "cup", "ice_cream": "cup",
+}
 
-    Spoons get spoons; everything else gets grams. "Was the scoop closer to one
-    or two tablespoons?" is a question someone can answer from memory, and "was
-    it closer to 16g or 34g?" is one they have to convert first — which is the
-    difference between a clarification and a chore.
+#: Renderings offered per everyday unit, smallest first. Plain ASCII fractions
+#: because that is what `normalize_quantity` parses; the round trip below is
+#: what actually proves each one, so this list may be extended freely.
+_UNIT_RENDERINGS = {
+    "oz": ("1 oz", "2 oz", "3 oz", "4 oz", "5 oz", "6 oz", "8 oz",
+           "10 oz", "12 oz", "16 oz"),
+    "cup": ("1/4 cup", "1/3 cup", "1/2 cup", "2/3 cup", "3/4 cup", "1 cup",
+            "1 1/4 cups", "1 1/2 cups", "2 cups", "2 1/2 cups", "3 cups"),
+}
+
+
+def _everyday_labels(anchors: tuple, food: str) -> tuple:
+    """`anchors` (ascending grams) said in a unit the user serves food in.
+
+    Returns one label per anchor, or `()` when this food has no everyday unit,
+    when a rendering will not parse, or when two anchors would land on the same
+    words. The acceptance test is entirely derived — a label is kept only if its
+    re-parsed mass is closer to its OWN anchor than to any neighbouring one, so
+    there is no tolerance constant to tune and no way for a label to silently
+    stand in for a portion the user did not mean.
+    """
+    from skills.nutrition.normalize import normalize_quantity
+    from skills.nutrition.portions import food_category
+    unit = _EVERYDAY_UNIT.get(food_category(food or ""))
+    if not unit:
+        return ()
+    priced = []
+    for label in _UNIT_RENDERINGS[unit]:
+        try:
+            grams = normalize_quantity(label, food).grams
+        except Exception:
+            grams = None
+        if grams:
+            priced.append((label, float(grams)))
+    if not priced:
+        return ()
+
+    out = []
+    for anchor in anchors:
+        label, grams = min(priced, key=lambda lg: abs(lg[1] - anchor))
+        # The whole acceptance rule: this rendering must be a better answer for
+        # the anchor it was picked for than for any other anchor on the row.
+        # A "4 oz" that is really nearer the high end is not a middle option.
+        if min(anchors, key=lambda a: abs(grams - a)) != anchor:
+            return ()
+        out.append(label)
+    return tuple(out) if len(set(out)) == len(out) else ()
+
+
+def _measure_options(measure: str, distribution, food: str = "") -> tuple:
+    """The plausible range, in the words the measure invites.
+
+    Three points, not two. The low and high ends bound the question; the MIDDLE
+    is the ontology's own median — the single most likely portion — and it was
+    absent for as long as this function existed. Its slot was not: the caller
+    has always zipped these labels against `(0.6, 0.35, 0.2)`, and the third
+    confidence has been dead since it was written. Offering only the ends meant
+    every tap logged a 10th- or 90th-percentile portion while the best answer
+    available was never on screen.
+
+    Spoons get spoons, and everything with an everyday unit gets that unit
+    (`_everyday_labels`) — "was it closer to 2 or 8 oz?" is a question someone
+    can answer from memory, and "closer to 60g or 220g?" is one they have to
+    convert first, which is the difference between a clarification and a chore.
+    Grams remain the fallback, and remain what all of this is measured in.
     """
     if measure in ("spoonful", "scoop", "drizzle") and \
             distribution.upper_g <= 80:
@@ -1088,7 +1179,13 @@ def _measure_options(measure: str, distribution) -> tuple:
         return (f"{_SPOKEN.get(low, low)} tablespoon"
                 + ("" if low == 1 else "s"),
                 f"{_SPOKEN.get(high, high)} tablespoons")
-    return (f"{_g(distribution.lower_g)}", f"{_g(distribution.upper_g)}")
+    anchors = (distribution.lower_g, distribution.median_g,
+               distribution.upper_g)
+    if not (anchors[0] < anchors[1] < anchors[2]):
+        # A median sitting on an end offers no third choice; keep the ends.
+        return (f"{_g(distribution.lower_g)}", f"{_g(distribution.upper_g)}")
+    return _everyday_labels(anchors, food) or (
+        f"{_g(anchors[0])}", f"{_g(anchors[1])}", f"{_g(anchors[2])}")
 
 
 def _g(grams: float) -> str:

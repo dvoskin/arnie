@@ -3250,7 +3250,7 @@ def _portion_options(item_label: str, user_message: str, *,
             return []
         if dist.upper_g / max(dist.lower_g, 1e-6) < VAGUE_SPREAD_RATIO:
             return []
-        return [str(o).strip() for o in _measure_options(measure, dist)
+        return [str(o).strip() for o in _measure_options(measure, dist, label)
                 if str(o or "").strip()]
     except Exception:      # a chip row is never worth losing the question for
         logger.debug("portion options not derived", exc_info=True)

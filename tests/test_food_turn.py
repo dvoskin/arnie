@@ -4,6 +4,7 @@ formatted ask, the structural question-can-never-be-a-food property, and the
 run_turn wiring (log path skips the big pass entirely; ask path holds + records
 the pending; the answer turn logs the whole exchange). Switch: STRUCTURED_FOOD."""
 import json
+import re
 import pytest
 from types import SimpleNamespace
 
@@ -510,8 +511,19 @@ async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
     # decided afterwards on what is left open.
     assert out2["action"] == "ask" and out2.get("kind") != "confirm"
     assert "caesar salad" in out2["text"].lower()
-    assert "30g" in out2["text"] or "200g" in out2["text"], (
-        "the question must name the range, not just re-show our number")
+    # THE RANGE, IN WHATEVER UNIT IT IS BEST SAID IN. This asserted "30g" or
+    # "200g" literally, which pinned the gram VOCABULARY rather than the
+    # property. A salad is served out of a bowl, so the bracket now reads
+    # "closer to 1/2 or 3 cups" — same 30-200g span, said in a unit somebody can
+    # answer from memory. What has to hold is that the question offers a spread
+    # and does not simply echo the 1.5 cups nobody established.
+    _quantities = set(re.findall(r"\d+(?:[./]\d+)?", out2["text"]))
+    assert len(_quantities) >= 2, (
+        f"the question must name the range, not just re-show our number: "
+        f"{out2['text']!r}")
+    assert "1.5" not in out2["text"], (
+        f"the parse's own invented figure must not be the question: "
+        f"{out2['text']!r}")
     # 3. Bulk plan (>=4 items) → confirm even when all stated.
     monkeypatch.setattr(FT, "chat", _fake_chat({
         "action": "log",
