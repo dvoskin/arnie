@@ -27,13 +27,21 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from data.identity_collisions import IDENTITY_PAIRS          # noqa: E402
 
-from core.food_turn import _is_renaming_of                   # noqa: E402
+from core.food_turn import (_claims_the_same_food,           # noqa: E402
+                            _is_renaming_of)
 
 
-def _score():
+def _score(fn=_claims_the_same_food):
+    """Scored against the DELETE PATH by default.
+
+    `_is_renaming_of` answers "do these read like one food renamed?" — a
+    reasonable question with a heuristic answer. `_claims_the_same_food`
+    authorises DELETING a row, and that is the function whose false-match rate
+    is worth ratcheting.
+    """
     false_match, missed = [], []
     for a, b, same, why in IDENTITY_PAIRS:
-        got = _is_renaming_of(a, b)
+        got = fn(a, b)
         if got and not same:
             false_match.append((a, b, why))
         elif same and not got:
@@ -45,6 +53,8 @@ def _score():
 #:
 #:   1 / 5  string rule alone, measured 2026-08-04 before the registry
 #:   0 / 1  registry first, string rule where the registry abstains
+#:   0 / 2  registry ONLY on the delete path; abstention preserves both
+#:   0 / 1  after six alias rows closed the abstentions that mattered
 #:
 #: The false-match number is the one that deletes a row the user reported, and
 #: it is now zero. The survivor is berry/berries, which the registry does not
@@ -102,3 +112,52 @@ def test_a_rename_still_collapses(a, b, why):
             "working as intended: adding a synonym is an alias entry, not a "
             "change to a matching algorithm.")
     assert _is_renaming_of(a, b), f"{b!r} should collapse into {a!r} ({why})"
+
+
+# ── abstention must preserve, never delegate a delete ────────────────────────
+
+def test_an_unknown_food_is_preserved_not_guessed():
+    """THE RULE THE DELETE PATH NOW FOLLOWS.
+
+        registry says same      -> claim
+        registry says different -> preserve
+        registry says UNKNOWN   -> preserve
+
+    Not "unknown -> let the fuzzy matcher decide whether to delete the row".
+    A missed rename writes the food twice: visible, one tap from repair. A
+    false match deletes a row the user reported: silent, unrecoverable. Where
+    there is no opinion, the asymmetry decides.
+    """
+    from skills.nutrition.entities import same_food
+
+    # A pair the registry does not know, that the string rule WOULD collapse.
+    # Deliberately a nonsense food: any real one can be closed by an alias row,
+    # and this test is about what happens when NOTHING is known — which is the
+    # permanent state for the long tail of real user language.
+    assert same_food("zzyzx", "zzyzx surprise") is None
+    assert _claims_the_same_food("zzyzx", "zzyzx surprise") is False
+
+
+def test_the_delete_path_never_consults_the_string_rule_when_strict():
+    """`_is_renaming_of` still exists and is still string-based. It simply no
+    longer decides anything mutation-critical — which is the acceptance
+    criterion, not a style preference."""
+    import core.food_turn as FT
+
+    called = []
+    original = FT._is_renaming_of
+    FT._is_renaming_of = lambda a, b: called.append((a, b)) or original(a, b)
+    try:
+        for a, b, _s, _w in IDENTITY_PAIRS:
+            FT._claims_the_same_food(a, b)
+    finally:
+        FT._is_renaming_of = original
+    assert not called, f"the string rule was consulted on the delete path: {called[:3]}"
+
+
+def test_the_fallback_can_be_restored(monkeypatch):
+    """Reversible. `FOOD_IDENTITY_STRICT=false` returns the old behaviour, so
+    a coverage problem in production is a config change rather than a revert."""
+    monkeypatch.setenv("FOOD_IDENTITY_STRICT", "false")
+    assert _claims_the_same_food("zzyzx", "zzyzx surprise") is _is_renaming_of(
+        "zzyzx", "zzyzx surprise")

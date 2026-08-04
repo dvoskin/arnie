@@ -100,6 +100,15 @@ _COMPOUND_PARENTS = {
     "milk chocolate": "chocolate",
     "egg roll": "roll",
     "orange juice": "juice",
+    # Added as DATA when the delete path stopped guessing and these two showed
+    # up as abstentions. That is the acceptance criterion working: closing a
+    # gap is a row here, not a change to a matching algorithm.
+    "olive oil": "oil",
+    "vegetable oil": "oil",
+    "coconut oil": "oil",
+    "greek yogurt": "yogurt",
+    "cheddar cheese": "cheese",
+    "grilled chicken": "chicken",
     # nothing but itself — no food may claim these
     "peanut butter": None,
     "almond butter": None,

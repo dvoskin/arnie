@@ -2771,6 +2771,49 @@ def _registry_enabled() -> bool:
         in ("1", "true", "yes", "on")
 
 
+def _identity_strict() -> bool:
+    """Whether an UNKNOWN food is preserved rather than handed to the string
+    rule. `FOOD_IDENTITY_STRICT=false` restores the fallback.
+
+    On by default, because of what the two outcomes cost. A missed rename
+    writes the food twice: visible, and one tap from repair. A false match
+    deletes a row the user reported: silent, and unrecoverable. So where the
+    registry has no opinion, the answer is "keep both" rather than "let a rule
+    that cannot tell a rename from a different food decide".
+
+    Measured on the 36-pair corpus, this costs two duplicates — berry/berries
+    and oil/olive oil, both foods the registry does not yet know — and removes
+    the fuzzy matcher from the delete path entirely.
+    """
+    return (os.getenv("FOOD_IDENTITY_STRICT", "true") or "").strip().lower() \
+        in ("1", "true", "yes", "on")
+
+
+def _claims_the_same_food(narrow: str, wide: str) -> bool:
+    """Whether `wide` may CLAIM `narrow` and drop it. The delete path.
+
+    Separate from `_is_renaming_of` on purpose. That function answers "do these
+    read like one food renamed?", which is a reasonable question with a
+    heuristic answer. THIS one authorises deleting a row, and a heuristic
+    answer is not good enough for that — so it requires the registry to say
+    yes, and treats silence as no.
+
+    `_is_renaming_of` still exists and is still string-based; it simply no
+    longer decides anything mutation-critical, which is the acceptance
+    criterion ("`_same_food` token-subset logic no longer owns item
+    reconciliation") rather than a style preference.
+    """
+    if not _identity_strict():
+        return _is_renaming_of(narrow, wide)
+    verdict = _registry_says(narrow, wide)
+    if verdict is None:
+        logger.info(
+            "event=identity_preserved narrow=%r wide=%r — registry has no "
+            "opinion, so both are kept rather than one deleted", narrow, wide)
+        return False
+    return bool(verdict)
+
+
 def _registry_says(narrow: str, wide: str):
     """The registry's verdict, or None when it does not know this food.
 
@@ -2915,7 +2958,7 @@ def _undeferred(held: list, plan_calls: list) -> list:
         # rename from a different food whose name contains this one, and across
         # turns that is the difference between collapsing a duplicate and
         # DELETING a row the user reported. See `_is_renaming_of`.
-        _fuzzy = [s for s in unclaimed if _is_renaming_of(key, s)]
+        _fuzzy = [s for s in unclaimed if _claims_the_same_food(key, s)]
         if len(_fuzzy) == 1:
             logger.info(
                 "event=deferred_collapse held=%r covered_by=%r — treated as the "
