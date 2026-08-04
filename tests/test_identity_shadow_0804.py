@@ -98,19 +98,57 @@ def test_it_reports_when_nothing_is_labelled(caplog):
     assert _log_of(caplog, "no_ids"), "an unmeasurable turn must say so"
 
 
-def test_it_counts_the_collapses_the_name_match_made(caplog):
-    """THE NUMBER THIS PHASE EXISTS TO PRODUCE. Held items are labelled and the
-    answer turn's re-parse is not, which is the expected state until a
-    cross-turn id can name the FOOD rather than the parse. So the measurable
-    quantity is how many held foods the name match dropped — each one a
-    candidate row deletion."""
+def test_it_reports_by_reason_not_as_one_number(caplog):
+    """THE NUMBER THIS PHASE EXISTS TO PRODUCE, and it may not be one number.
+
+    The first version logged `collapsed = len(held) - len(live_out)`, which
+    counts four different events as one. A within-`held` duplicate is
+    deliberate normalisation and an unusable call was never a row — reporting
+    either as deletion exposure produces alarm rather than signal.
+
+    Only a FUZZY match can drop a food the user reported, so only `renamed` is
+    the risk number. Here: two held foods, one duplicate, one fuzzy claim.
+    """
     held = _calls_for_ready([
+        {"food": "Rice", "calories": 200, "amount": 1, "unit": "cup"},
         {"food": "Rice", "calories": 200, "amount": 1, "unit": "cup"},
         {"food": "Corn", "calories": 90, "amount": 1, "unit": "ear"}])
     with caplog.at_level(logging.INFO, logger="core.food_turn"):
         _undeferred(held, [_c("White rice")])
-    rec = _log_of(caplog, "plan_unlabelled")
-    assert rec and "collapsed=1" in rec[0].getMessage()
+    msg = _log_of(caplog, "plan_unlabelled")[0].getMessage()
+    assert "renamed=1" in msg, msg
+    assert "duplicate_held=1" in msg, msg
+    assert "exact=0" in msg and "unusable=0" in msg, msg
+
+
+def test_an_entity_id_survives_a_fresh_parse(caplog):
+    """The distinction the item id could not make. `_item_id` names a parse
+    POSITION and dies with the payload; `_entity_id` names the FOOD and is
+    recoverable from the answer turn's own re-read — which is what makes a
+    genuine cross-turn comparison possible at all."""
+    from core.food_turn import _entity_id_of
+    from skills.nutrition.entities import resolve
+
+    held = _calls_for_ready([
+        {"food": "White rice", "calories": 200, "amount": 1, "unit": "cup"}])
+    assert _entity_id_of(held[0]) == resolve("white rice")
+
+    plan = [{"name": "log_food",
+             "input": {"food_name": "White rice, cooked",
+                       "_entity_id": resolve("White rice, cooked")}}]
+    with caplog.at_level(logging.INFO, logger="core.food_turn"):
+        _undeferred(held, plan)
+    assert [r for r in caplog.records
+            if "basis=entity" in r.getMessage()], "entity basis not used"
+
+
+def test_an_unknown_food_gets_no_invented_entity_id():
+    """An invented id is a false match wearing a stable name."""
+    from core.food_turn import _entity_id_of
+    calls = _calls_for_ready([
+        {"food": "Zzyzx surprise", "calories": 100, "amount": 1,
+         "unit": "serving"}])
+    assert _entity_id_of(calls[0]) == ""
 
 
 def test_a_real_comparison_when_both_sides_carry_ids(caplog):

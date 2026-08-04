@@ -95,12 +95,24 @@ def c_dish_by_length():
 
 
 def c_product_override():
-    """Generic head matching must not override products/protected compounds."""
-    src = _src("skills/nutrition/normalize.py")
-    guarded = "protected_compound" in src or "entity_type" in src
-    return (FAIL if not guarded else PASS,
-            "no product/compound guard in the piece matcher"
-            if not guarded else "guarded", [])
+    """Generic head matching must not claim a distinct compound food.
+
+    BEHAVIOURAL, not a source grep. The first version looked for the string
+    "protected_compound" in normalize.py — which would have passed on a
+    variable name and failed on a working guard that lives elsewhere. What the
+    criterion actually asserts is that `butter` cannot claim `peanut butter`,
+    so that is what is asked, of whatever owns identity today.
+    """
+    try:
+        from core.food_turn import _is_renaming_of
+    except Exception as e:
+        return FAIL, f"identity unavailable: {e}", []
+    cases = [("butter", "peanut butter"), ("banana", "banana bread"),
+             ("orange", "orange juice"), ("rice", "rice cakes"),
+             ("coffee", "coffee cake"), ("milk", "milk chocolate")]
+    bad = [f"{a!r} claims {b!r}" for a, b in cases if _is_renaming_of(a, b)]
+    return (PASS if not bad else FAIL,
+            f"{len(bad)} distinct foods claimable by a generic head", bad)
 
 
 def c_structured_options():
@@ -166,12 +178,30 @@ def c_units():
 
 
 def c_corpus():
-    """Replay must show a lower false-match rate. Needs ground truth."""
-    return (BLOCKED,
-            "no labelled corpus exists; the directive asks for 1,000+ "
-            "messages. Every rate metric is unmeasurable until it does — "
-            "shadow mode against no ground truth yields a disagreement "
-            "count, not a result", [])
+    """Replay must show a LOWER false-match rate than the pre-migration rule.
+
+    No longer BLOCKED: a labelled corpus exists (36 pairs, the directive's own
+    collision families). It is ~4% of the 1,000+ messages asked for and is
+    authored rather than sampled, so this measures the collision families
+    specifically and claims nothing about production traffic.
+    """
+    import sys as _sys
+    _sys.path.insert(0, str(_ROOT / "tests"))
+    try:
+        from data.identity_collisions import IDENTITY_PAIRS
+        from core.food_turn import _is_renaming_of
+    except Exception as e:
+        return FAIL, f"corpus unavailable: {e}", []
+    false_match = [f"{a!r} claims {b!r}" for a, b, same, _ in IDENTITY_PAIRS
+                   if _is_renaming_of(a, b) and not same]
+    missed = [f"{a!r} vs {b!r}" for a, b, same, _ in IDENTITY_PAIRS
+              if same and not _is_renaming_of(a, b)]
+    # BASELINE, string rule alone, 2026-08-04: 1 false match, 5 missed.
+    ok = len(false_match) == 0 and len(missed) <= 1
+    return (PASS if ok else FAIL,
+            f"{len(false_match)} false matches (was 1), "
+            f"{len(missed)} missed renames (was 5), on 36 labelled pairs",
+            false_match + missed)
 
 
 CRITERIA = [

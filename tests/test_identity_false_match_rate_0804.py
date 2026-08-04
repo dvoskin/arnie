@@ -41,10 +41,16 @@ def _score():
     return false_match, missed
 
 
-#: BASELINE, measured 2026-08-04 before any identity migration. These numbers
-#: are a ratchet: a change may lower them and may not raise them.
-BASELINE_FALSE_MATCHES = 1
-BASELINE_MISSED_RENAMES = 5
+#: A RATCHET. A change may lower these and may not raise them.
+#:
+#:   1 / 5  string rule alone, measured 2026-08-04 before the registry
+#:   0 / 1  registry first, string rule where the registry abstains
+#:
+#: The false-match number is the one that deletes a row the user reported, and
+#: it is now zero. The survivor is berry/berries, which the registry does not
+#: know — an abstention, not a wrong answer.
+BASELINE_FALSE_MATCHES = 0
+BASELINE_MISSED_RENAMES = 1
 
 
 def test_the_false_match_rate_does_not_regress():
@@ -77,9 +83,6 @@ def test_no_distinct_food_is_claimed_by_another(a, b, why):
     cannot fix it. Peanut butter is a distinct food that happens to be a
     butter, which is what `protected_compound` on the entity registry is for.
     """
-    if (a, b) == ("butter", "peanut butter"):
-        pytest.xfail("protected compound; needs the entity registry, not a "
-                     "negative regex")
     assert not _is_renaming_of(a, b), (
         f"{b!r} would claim and delete {a!r} ({why})")
 
@@ -90,14 +93,12 @@ def test_no_distinct_food_is_claimed_by_another(a, b, why):
 def test_a_rename_still_collapses(a, b, why):
     """The duplicate-collapse the mechanism exists for must survive every
     narrowing."""
-    if (a, b) == ("chicken", "chicken breast"):
-        pytest.xfail("a cut is a trailing head noun; correct by the rule, "
-                     "wrong for reconciliation — needs entity parentage")
-    if a + "s" in b or b.endswith(("es", "ies")):
+    if (a, b) == ("berry", "berries"):
         pytest.xfail(
-            "PLURAL BLINDNESS. `_is_renaming_of` does not singularise, so a "
-            "re-read of the same food is treated as a different one and the "
-            "row is written TWICE. Live today. Fixed in step 2 (canonical "
-            "food identity); the stemmer it needs already exists in "
-            "normalize._stems and is not reachable from here.")
+            "the last survivor, and an ABSTENTION rather than a wrong answer. "
+            "'berry' is not a registered entity, so the registry declines and "
+            "the string rule takes it — and that rule does not singularise. "
+            "Closed by one alias row, which is the acceptance criterion "
+            "working as intended: adding a synonym is an alias entry, not a "
+            "change to a matching algorithm.")
     assert _is_renaming_of(a, b), f"{b!r} should collapse into {a!r} ({why})"

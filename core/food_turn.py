@@ -2584,15 +2584,40 @@ def _label_item(call, source: str, index: int):
     downstream from a string, and a shadow that invents the id it is testing
     tests itself.
 
-    The id names the parse position and its source list, not the food. That is
-    honest about what it can do — it survives being CARRIED across turns, and
-    it deliberately cannot be re-derived from the answer turn's fresh parse,
-    because a cross-turn id has to name the FOOD and only the entity registry
-    can do that. See `_shadow_undeferred`.
+    TWO IDS, BECAUSE THEY ANSWER DIFFERENT QUESTIONS, and conflating them is
+    the trap this migration is most likely to fall into:
+
+      `_item_id`   — WHICH ITEM. "ready:0" names a parse position inside ONE
+                     pending payload. It is stable only while that payload
+                     lives, and a fresh parse on the answer turn mints its own.
+                     It can be carried; it can never be recovered.
+      `_entity_id` — WHICH FOOD. "food:white_rice" comes from the registry and
+                     IS recoverable from a fresh parse, which is precisely what
+                     makes cross-turn reconciliation possible.
+
+    `_entity_id` is empty when the registry does not know the food, and that is
+    a real answer rather than a gap to fill — an invented id is a false match
+    wearing a stable name.
     """
-    if isinstance(call, dict):
-        call.setdefault("input", {})["_item_id"] = f"{source}:{index}"
+    if not isinstance(call, dict):
+        return call
+    inp = call.setdefault("input", {})
+    inp["_item_id"] = f"{source}:{index}"
+    try:
+        from skills.nutrition.entities import resolve as _resolve
+        eid = _resolve(str(inp.get("food_name") or ""))
+        if eid:
+            inp["_entity_id"] = eid
+    except Exception:      # a label may never cost the write it labels
+        logger.debug("entity id not resolved", exc_info=True)
     return call
+
+
+def _entity_id_of(call) -> str:
+    """The canonical food id a call carries, or "". Read, never minted."""
+    if not isinstance(call, dict):
+        return ""
+    return str((call.get("input") or {}).get("_entity_id") or "")
 
 
 def _calls_for_ready(ready, source: str = "ready") -> list:
@@ -2730,6 +2755,39 @@ _PREPARATION_TOKENS = frozenset((
 ))
 
 
+def _registry_enabled() -> bool:
+    """`FOOD_IDENTITY_REGISTRY=false` returns identity to the string rule.
+
+    Wired ON because the measurement says so, not because it is new. Against
+    the 36-pair labelled corpus:
+
+        string rule           1 false match, 5 missed renames
+        registry, then string 0 false matches, 1 missed rename
+
+    The false match is the one that deletes a row the user reported, and the
+    registry takes it to zero.
+    """
+    return (os.getenv("FOOD_IDENTITY_REGISTRY", "true") or "").strip().lower() \
+        in ("1", "true", "yes", "on")
+
+
+def _registry_says(narrow: str, wide: str):
+    """The registry's verdict, or None when it does not know this food.
+
+    None is passed through rather than coerced: a caller that cannot tell "not
+    the same" from "I have no idea" will treat the second as the first, which
+    is the confident-answer-to-an-unanswerable-question failure being fixed.
+    """
+    if not _registry_enabled():
+        return None
+    try:
+        from skills.nutrition.entities import same_food
+        return same_food(narrow, wide)
+    except Exception:      # identity may never be lost to an import
+        logger.debug("entity registry unavailable", exc_info=True)
+        return None
+
+
 def _is_renaming_of(narrow: str, wide: str) -> bool:
     """Whether `wide` is the SAME food as `narrow`, named more precisely.
 
@@ -2752,6 +2810,15 @@ def _is_renaming_of(narrow: str, wide: str) -> bool:
     head, but it may not put a new head noun after it. That keeps the collapse
     this exists for (symptom 5's duplicate rice) and stops the deletion.
     """
+    # THE REGISTRY FIRST, and only when it actually knows both foods. It is
+    # authoritative because it answers the question that was being asked —
+    # identity — where everything below infers it from spelling. `potato` and
+    # `potatoes` are one entity; `butter` and `peanut butter` are two, and no
+    # rule reading the strings can be right about both.
+    _known = _registry_says(narrow, wide)
+    if _known is not None:
+        return _known
+
     n, w = _name_tokens(narrow), _name_tokens(wide)
     if not n or not w or not (n <= w):
         return False
@@ -2809,11 +2876,18 @@ def _undeferred(held: list, plan_calls: list) -> list:
     # `['Rice','Coffee']`, silently, no tombstone, no log line naming the loss.
     # Orange/orange juice and egg/egg roll do the same.
     pending, kept = [], set()
+    _reasons = {"exact_claimed": 0, "renamed_claimed": 0,
+                "duplicate_held": 0, "unusable_call": 0}
     for call in held:
         key = _call_name_key(call)
-        if key and key not in kept:
-            kept.add(key)
-            pending.append((key, call))
+        if not key:
+            _reasons["unusable_call"] += 1
+            continue
+        if key in kept:
+            _reasons["duplicate_held"] += 1
+            continue
+        kept.add(key)
+        pending.append((key, call))
 
     # ACROSS TURNS: INJECTIVE, AND EXACT CLAIMS FIRST. One plan call may account
     # for at most ONE held call. Exactness is resolved in its own pass because
@@ -2826,6 +2900,7 @@ def _undeferred(held: list, plan_calls: list) -> list:
         if key in unclaimed:
             unclaimed.remove(key)
             covered.add(key)
+            _reasons["exact_claimed"] += 1
 
     out = []
     for key, call in pending:
@@ -2846,9 +2921,10 @@ def _undeferred(held: list, plan_calls: list) -> list:
                 "event=deferred_collapse held=%r covered_by=%r — treated as the "
                 "same food renamed", key, _fuzzy[0])
             unclaimed.remove(_fuzzy[0])
+            _reasons["renamed_claimed"] += 1
             continue
         out.append(call)
-    _shadow_undeferred(held, plan_calls, out)
+    _shadow_undeferred(held, plan_calls, out, _reasons)
     return out
 
 
@@ -2871,7 +2947,8 @@ def _item_id_of(call) -> str:
     return str((call.get("input") or {}).get("_item_id") or "")
 
 
-def _shadow_undeferred(held: list, plan_calls: list, live_out: list) -> None:
+def _shadow_undeferred(held: list, plan_calls: list, live_out: list,
+                       reasons: Optional[dict] = None) -> None:
     """Reconcile by STABLE ID beside the live name match, and report the delta.
 
     Writes nothing and returns nothing. `live_out` is already decided by the
@@ -2922,14 +2999,39 @@ def _shadow_undeferred(held: list, plan_calls: list, live_out: list) -> None:
             logger.info("event=identity_shadow outcome=no_ids held=%d plan=%d",
                         len(held or []), len(plan_calls or []))
             return
+        # A CROSS-TURN COMPARISON IS POSSIBLE THE MOMENT ENTITIES RESOLVE,
+        # because an entity id survives a fresh parse where an item id cannot.
+        _plan_entities = {_entity_id_of(c) for c in (plan_calls or [])}
+        _plan_entities.discard("")
+        if _plan_entities:
+            shadow_keep = [c for c in (held or [])
+                           if _entity_id_of(c) not in _plan_entities]
+            live_names = sorted(_call_name_key(c) for c in (live_out or []))
+            shadow_names = sorted(_call_name_key(c) for c in shadow_keep)
+            _same = live_names == shadow_names
+            logger.log(
+                logging.INFO if _same else logging.WARNING,
+                "event=identity_shadow outcome=%s basis=entity live=%r "
+                "shadow=%r", "agree" if _same else "disagree",
+                live_names, shadow_names)
+            return
         if not _plan_ids:
-            _collapsed = len(held or []) - len(live_out or [])
+            # BROKEN DOWN BY WHY, because `len(held) - len(live_out)` counts
+            # four different events as one and only two of them are identity
+            # decisions. A within-`held` duplicate is deliberate normalisation
+            # and an unusable call was never a row — reporting either as
+            # deletion exposure produces alarm rather than signal.
+            _r = dict(reasons or {})
+            _identity = _r.get("exact_claimed", 0) + _r.get("renamed_claimed", 0)
             logger.info(
                 "event=identity_shadow outcome=plan_unlabelled held=%d "
-                "plan=%d live_kept=%d collapsed=%d — every collapse here is a "
-                "held food the NAME match dropped and an id match would have "
-                "kept", len(held or []), len(plan_calls or []),
-                len(live_out or []), _collapsed)
+                "plan=%d live_kept=%d identity_claimed=%d exact=%d renamed=%d "
+                "duplicate_held=%d unusable=%d — only `renamed` is a fuzzy "
+                "match, and only a fuzzy match can drop a food the user "
+                "reported", len(held or []), len(plan_calls or []),
+                len(live_out or []), _identity,
+                _r.get("exact_claimed", 0), _r.get("renamed_claimed", 0),
+                _r.get("duplicate_held", 0), _r.get("unusable_call", 0))
             return
         # THE WHOLE RULE, and it is one line: a held item is covered when the
         # plan carries the SAME ID. No token subset, no head-noun rule, no
