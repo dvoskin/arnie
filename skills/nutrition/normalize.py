@@ -969,6 +969,63 @@ def _unit_names_the_food(unit_word: str, food_name: str) -> bool:
     return False
 
 
+def portion_mass_for_pricing(raw: str, food_name: str = "") -> Optional[float]:
+    """The calibrated mass of this portion, for pricing a per-100g row FORWARD.
+
+    `core.portions.mass_grams` answers only for an explicit weight ("200 g",
+    "6 oz"), on the reasoning that anything else "is itself a guess and
+    shouldn't override the LLM's estimate". That reasoning held when the
+    alternative was nothing. It is not what actually happens: with no mass,
+    `analyze` computes `grams = cal / cal100 * 100` — the model's calorie guess
+    BECOMES the portion, and every macro is rescaled off that same guess, so a
+    38% calorie undercount is mechanically a 38% protein undercount. That is
+    prod 2026-08-03's "Grilled Chicken (1 cup) 143 cal / 23 g" against a truth
+    nearer 230 / 43.
+
+    So the choice was never "a calibrated portion vs. the model's estimate". It
+    was "a calibrated portion vs. the model's estimate wearing a portion's
+    clothes".
+
+    NO CERTAINTY THRESHOLD, AND THAT IS A MEASURED DECISION. This first carried
+    one — use the mass only when its relative uncertainty was under 30% — and
+    the measurement refuted it. Against independently published portion
+    references (not this repo's own ontology, which would have made the check
+    circular):
+
+        portion                ours   ref   forward   model   truth   fwd/model err
+        1 cup rice, cooked     158g  158g      206     205     205      1% /  0%
+        1 cup chicken, diced   140g  140g      231     143     231      0% / 38%
+        1 cup ground beef      140g  136g      350     240     340      3% / 29%
+        1 oz almonds            30g   28g      174     170     164      6% /  4%
+        3 slices deli turkey    54g   57g       56      68      59      5% / 15%
+        1 slice challah         28g   43g       78     140     120     35% / 17%
+        1 bowl oatmeal         250g  234g      170     150     158      8% /  5%
+        2 large eggs           100g  100g      143     140     143      0% /  2%
+
+        median error: forward 5%, model 15%.  worst: 35% vs 38%.
+
+    Uncertainty did not predict error. The worst forward case, challah at 35%,
+    carries only 25% uncertainty; "3 slices" at 39% uncertainty scores 5% and
+    "1 bowl" at 50% scores 8%. A threshold on uncertainty would have excluded
+    the two GOOD answers and kept the bad one, so it was not merely arbitrary —
+    it selected the wrong way round.
+
+    What arbitrates instead is the disagreement demotion in `analyze`, which
+    already compares a forward-computed value against the model's own read and
+    reverts on a profile flip or an implausible move. That machinery is
+    calibrated and tested; a constant invented here is not.
+
+    The one genuine miss above is a DATA gap, not a method one: the ontology
+    prices a bread slice at 28 g and a bakery challah slice is ~43 g. It is
+    fixed by giving challah its own row, not by declining to use the row.
+    """
+    q = normalize_quantity(raw, food_name)
+    grams = getattr(q, "grams", None)
+    if not grams or grams <= 0:
+        return None
+    return float(grams)
+
+
 def confident_lower_mass(raw: str, food_name: str = "") -> Optional[float]:
     """The SMALLEST mass this portion could plausibly be, or None if we cannot
     say — `grams - uncertainty_g`.

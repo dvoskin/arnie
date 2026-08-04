@@ -127,6 +127,9 @@ PORTION_ONTOLOGY = {
     },
     "slice": {
         "bread":        (28.0, 22.0, 36.0, 0.78),
+        # A bakery egg bread is cut thicker than a sandwich loaf — ~43 g against
+        # 28 g. Measured as the worst case in the portion-pricing evaluation.
+        "egg_bread":    (43.0, 33.0, 58.0, 0.70),
         "deli_meat":    (18.0, 12.0, 26.0, 0.70),
         "cheese":       (21.0, 15.0, 28.0, 0.75),
         "pizza":        (107.0, 75.0, 145.0, 0.60),
@@ -274,6 +277,13 @@ PORTION_ONTOLOGY = {
         "popcorn":      (10.0, 7.0, 15.0, 0.60),
         "nuts":         (130.0, 110.0, 150.0, 0.70),
         "dried_fruit":  (150.0, 120.0, 175.0, 0.65),
+        # A cup of diced or shredded cooked meat is a well-behaved portion — it
+        # is how a bowl or a salad gets built, and it does not vary the way the
+        # catch-all 60-240 g implies. Without this row "a cup of chicken"
+        # carried a 4x spread at 0.40 confidence, which is indistinguishable
+        # from knowing nothing; the estimate path then backed the portion out
+        # of the model's own calorie guess, so a low guess stayed low.
+        "meat":         (140.0, 115.0, 165.0, 0.65),
         "default":      (120.0, 60.0, 240.0, 0.40),
     },
 }
@@ -371,8 +381,32 @@ FOOD_CATEGORIES = {
     "raisin": "dried_fruit", "dried apricot": "dried_fruit",
     "date": "dried_fruit", "dried": "dried_fruit",
     "bread": "bread", "toast": "bread", "bagel": "bread", "bun": "bread",
+    # ENRICHED / EGG BREADS ARE CUT THICKER, and `slice.bread` prices the
+    # sandwich loaf at 28 g. A bakery challah or brioche slice is ~43 g, which
+    # is the single largest miss in the portion-pricing measurement (2026-08-03:
+    # 78 cal computed against a published ~120). Longest-fragment matching keeps
+    # these off plain "bread".
+    "challah": "egg_bread", "brioche": "egg_bread", "babka": "egg_bread",
+    "banana bread": "egg_bread", "cornbread": "egg_bread",
+    "focaccia": "egg_bread", "texas toast": "egg_bread",
     "turkey": "deli_meat", "ham": "deli_meat", "salami": "deli_meat",
     "deli": "deli_meat", "prosciutto": "deli_meat", "bologna": "deli_meat",
+    # THERE WAS NO MEAT CATEGORY AT ALL, and this file said so: "no
+    # meat/protein category". `deli_meat` covered the sandwich fillings and
+    # nothing covered the thing most people build a meal around. So
+    # `food_category("grilled chicken")` returned "default", and one cup of it
+    # priced at the catch-all 120 g with a 60-240 g spread — 75% relative
+    # uncertainty on the commonest protein portion there is (prod 2026-08-03:
+    # "Grilled Chicken (1 cup)" committed 143 cal / 23 g against a truth nearer
+    # 230 / 43).
+    #
+    # `deli_meat` keeps turkey and ham on the longest-fragment rule, the same
+    # way `nut_butter` keeps peanut butter off `oil`.
+    "chicken": "meat", "beef": "meat", "steak": "meat", "pork": "meat",
+    "lamb": "meat", "veal": "meat", "salmon": "meat", "tuna": "meat",
+    "shrimp": "meat", "prawn": "meat", "cod": "meat", "tilapia": "meat",
+    "fish": "meat", "mince": "meat", "ground beef": "meat",
+    "ground turkey": "meat", "brisket": "meat", "carnitas": "meat",
     "cheese": "cheese", "cheddar": "cheese", "provolone": "cheese",
     "pizza": "pizza", "cake": "cake", "bacon": "bacon", "tomato": "tomato",
     "rice": "rice", "yogurt": "yogurt", "sugar": "sugar",
@@ -439,15 +473,42 @@ def _stem_matches(name: str, fragment: str) -> bool:
     return False
 
 
+#: Categories that describe the whole PREPARATION rather than an ingredient in
+#: it. A dish decides how the portion behaves — "chicken soup" is ladled and
+#: priced like soup, not like chicken — so it wins over an ingredient match
+#: regardless of which fragment happens to be longer.
+#:
+#: Longest-fragment alone was enough while every ingredient word was shorter
+#: than its dish word. Adding a `meat` category broke that silently: "chicken"
+#: (7) outranks "soup" (4), so `food_category("chicken soup")` became `meat`,
+#: soup lost the density that turns its volume into a mass, and a mug of it
+#: came back with NO CALORIES AT ALL — caught by
+#: `test_nutrition_gold::a-mug-of-soup-gets-a-volume-and-a-mass`, which is
+#: exactly the job that gold case exists to do.
+_DISH_CATEGORIES = frozenset((
+    "soup", "salad", "pizza", "cake", "sauce", "oats", "pasta", "cereal",
+    "ice_cream", "popcorn",
+))
+
+
 def food_category(food_name: str) -> str:
-    """Which ontology row applies. Longest fragment wins so "peanut butter"
-    does not resolve as "nuts"."""
+    """Which ontology row applies.
+
+    Longest fragment wins within a tier, so "peanut butter" does not resolve as
+    "nuts". A DISH beats an INGREDIENT across tiers — see `_DISH_CATEGORIES`.
+    """
     n = (food_name or "").lower()
     best, best_len = "default", 0
+    dish, dish_len = "", 0
     for fragment, category in FOOD_CATEGORIES.items():
-        if len(fragment) > best_len and _stem_matches(n, fragment):
+        if not _stem_matches(n, fragment):
+            continue
+        if category in _DISH_CATEGORIES:
+            if len(fragment) > dish_len:
+                dish, dish_len = category, len(fragment)
+        elif len(fragment) > best_len:
             best, best_len = category, len(fragment)
-    return best
+    return dish or best
 
 
 def detect_measure(text: str) -> Optional[str]:

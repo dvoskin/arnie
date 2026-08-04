@@ -30,23 +30,30 @@ def test_a_vague_portion_offers_the_ontologys_own_endpoints():
     """"I'm having some chicken and rice" — prod #2090 and #2075, both shipped
     with `options: []`.
 
-    "some" is the user's own word; the ontology prices it at 30-200g for an
-    uncategorised food. Those endpoints are what `_measure_options` already
-    renders on the pipeline branch, and they are what the composer is already
-    told to voice ("both ends have to be things they could plausibly have
-    eaten"). They reach the wire here.
+    "some" is the user's own word; the ontology prices it, and those endpoints
+    are what `_measure_options` already renders on the pipeline branch and what
+    the composer is already told to voice ("both ends have to be things they
+    could plausibly have eaten"). They reach the wire here.
+
+    The bracket was 30-200g when this was written, because chicken was
+    UNCATEGORISED and fell to `some.default`. `PORTION_ONTOLOGY["some"]` has
+    always carried a calibrated `meat` row — (120, 60, 220) — and it was
+    unreachable, because `FOOD_CATEGORIES` had no meat entry to return. Adding
+    one (2026-08-03) made it live. Same principle as the sibling test below:
+    a food with its own row uses its own row.
     """
     opts = _portion_options("Chicken", "I'm having some chicken and rice",
                             items=[{"food": "Chicken", "amount": 6,
                                     "unit": "oz", "calories": 280}])
-    assert opts == ["30g", "200g"]
+    assert opts == ["60g", "220g"]
 
 
 def test_the_category_row_wins_over_the_fallback():
-    """Rice has its own ontology row, so its bracket is 80-260g where the
-    uncategorised chicken gets the broad 30-200g default. Two foods, two
-    different real answers — which is the whole reason for deriving them
-    rather than writing a table of numbers here."""
+    """Rice has its own ontology row, so its bracket is 80-260g where an
+    uncategorised food gets the broad 30-200g default (see the special roll
+    below, which still does). Two foods, two different real answers — which is
+    the whole reason for deriving them rather than writing a table of numbers
+    here."""
     opts = _portion_options("rice", "just some rice",
                             items=[{"food": "rice", "amount": 1,
                                     "unit": "cup", "calories": 200}])
@@ -183,7 +190,7 @@ def test_a_portion_question_with_no_shelf_gets_the_bracket():
         found_by_label=[],
         message="I'm having some chicken and rice",
         items=[{"food": "Chicken", "amount": 6, "unit": "oz"}])
-    assert out == ["30g", "200g"]
+    assert out == ["60g", "220g"]   # the `some.meat` row, reachable since 08-03
 
 
 def test_points_become_questions_with_their_own_options():
@@ -205,7 +212,7 @@ def test_points_become_questions_with_their_own_options():
         {"item": "Quest chips", "text": "which flavor?",
          "options": ["Nacho Cheese", "BBQ"]},
         {"item": "Chicken", "text": "rough amount - oz or a piece?",
-         "options": ["30g", "200g"]},
+         "options": ["60g", "220g"]},
         {"item": None, "text": "any sauce on it?", "options": []},
     ]
 
@@ -221,7 +228,7 @@ def test_the_fallbacks_point_shape_is_read_too():
         message="just some chicken",
         items=[{"food": "Chicken", "amount": 6, "unit": "oz"}])
     assert out == [{"item": "Chicken", "text": "roughly how much?",
-                    "options": ["30g", "200g"]}]
+                    "options": ["60g", "220g"]}]
 
 
 def test_a_question_with_no_real_options_still_ships():

@@ -198,6 +198,25 @@ _FORM_PENALTY = (
 )
 
 
+def portion_pricing_enabled() -> bool:
+    """Whether a CALIBRATED portion may price a per-100g row forward.
+
+    ON by default, and a kill switch rather than an opt-in: the behaviour it
+    replaces — backing the portion out of the model's calorie guess whenever no
+    explicit weight was stated — is the one this exists to stop, so shipping it
+    dark would leave the defect live. `FOOD_PORTION_PRICING=false` reverts to
+    the old estimate path without a deploy, which is the same shape every other
+    risky change in this lane carries.
+
+    Deliberately NOT gated on NUTRITION_ACCURACY_V2. This is not an accuracy
+    experiment, it is a correction to which number is treated as evidence, and
+    it should not wait on a canary that has its own separate rollout.
+    """
+    import os
+    return os.getenv("FOOD_PORTION_PRICING", "true").lower() in (
+        "1", "true", "yes")
+
+
 def _nutrition_accuracy_v2() -> bool:
     """The unified accuracy capability (docs/NUTRITION_ACCURACY_REDESIGN.md).
 
@@ -872,6 +891,37 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         if not _mg:
             _mg = _mass_from_serving_panel(quantity, src, name)
             _from_panel = _mg is not None
+        # A CALIBRATED PORTION BEATS A CALORIE GUESS WEARING ONE. With no mass
+        # at all this function computes `grams = cal / cal100 * 100` — the
+        # model's guess BECOMES the portion, and every macro is rescaled off
+        # that same guess, so a 38% calorie undercount is mechanically a 38%
+        # protein undercount. `mass_grams` declines cups and pieces because
+        # "the gram weight is itself a guess"; the alternative it leaves is not
+        # no guess, it is a worse one that nothing downstream can see.
+        #
+        # `portion_mass_for_pricing` answers only where the mass is known to
+        # within 30% (a cup of rice, a cup of meat, two eggs, a scoop) and
+        # stays silent for "some" and "a bowl", which keeps those on the
+        # estimate path where they belong.
+        # GENERIC FOODS ONLY, and the failures that taught me the boundary.
+        # Applied to every source, this broke four real invariants at once:
+        # a mug of soup lost its calories entirely, a label's protein came back
+        # as the portion-scaled 3.6 instead of its published 4.2, and
+        # `macros_are_estimated` went False on a row whose PORTION we had
+        # guessed — the receipt claiming a label for a number we estimated.
+        #
+        # The distinction is whether the food has a manufacturer-defined unit.
+        # A packaged product does: "1 bowl" or "1 slice" of it is a helping we
+        # sized, not one of its servings, and the per-serving panel above owns
+        # that case — `test_per_serving_is_the_answer` is named for it. A
+        # generic whole food has no unit at all, and grams x per-100g is
+        # exactly the right model for it.
+        _from_measure = False
+        if (not _mg and portion_pricing_enabled()
+                and src is usda_candidate):
+            from skills.nutrition.normalize import portion_mass_for_pricing
+            _mg = portion_mass_for_pricing(quantity, name)
+            _from_measure = _mg is not None
         # PORTION PRIOR (v2, Part 3): an un-weighed whole food with no serving
         # panel had its grams backed out of the model's ~19%-low calorie guess.
         # A typical as-eaten serving is a better prior than that guess — use it,
@@ -1042,7 +1092,7 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             # "all three are exact matches with a known mass"; a prior is
             # neither exact nor a mass anyone measured, so it must not buy the
             # extra room. `_from_prior` was computed for this and never read.
-            _known_mass = bool(_mg) and not _from_prior
+            _known_mass = bool(_mg) and not _from_prior and not _from_measure
             _bound = (_OVERCOUNT_MULTIPLE_KNOWN_MASS
                       if (_known_mass and _trustworthy)
                       else _OVERCOUNT_MULTIPLE)
