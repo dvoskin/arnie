@@ -925,8 +925,17 @@ async def _run_turn(
         except Exception:
             pass
 
-    def _to_legacy(reason: str):
-        """Hand this turn back to the legacy path, on the record."""
+    def _to_legacy(reason: str, **detail):
+        """Hand this turn back to the legacy path, on the record.
+
+        `detail` is the part that makes the record usable. `reason` names the
+        DECISION (interpreter_none, kill_switch); the interesting question is
+        almost always which of several very different situations produced it,
+        and until now the answer was not written down anywhere. The
+        2026-08-04 transcript had to be diagnosed by reading source, because
+        the line that fired said the interpreter returned nothing — true, and
+        useless.
+        """
         nonlocal _legacy_reason
         _legacy_reason = reason
         # ON THE LATENCY LINE TOO. The reason has always been logged, in a
@@ -934,11 +943,15 @@ async def _run_turn(
         # ones" needed two greps and a join nobody wrote.
         try:
             from core import food_trace as _ft_l
-            _ft_l.note(legacy_escape_reason=reason)
+            _ft_l.note(legacy_escape_reason=reason, **{
+                k: v for k, v in detail.items() if v not in (None, "")})
         except Exception:
             pass
         _end_route()
-        logger.info(f"event=structured_food_fallback reason={reason} {_tag}")
+        _extra = "".join(f" {k}={v}" for k, v in detail.items()
+                         if v not in (None, ""))
+        logger.info(
+            f"event=structured_food_fallback reason={reason}{_extra} {_tag}")
         return None
     _source = source_type or platform
     _tag = f"{platform}:{user.id}"
@@ -1013,6 +1026,11 @@ async def _run_turn(
     # land and no card is ever built for them — see `_settle_expired_deferred`.
     _settled_calls: list = []
     _settled_results: list = []
+    # Whether this turn's hand-back to legacy was the writes-only settle rather
+    # than an interpreter failure. They took the same log line, so a SUCCESS
+    # (held food committed, reply belongs to the conversational brain) was
+    # indistinguishable from the most common failure in the product.
+    _wo_settled = False
     # VERIFY-BEFORE-STREAM: on a streaming logging turn we HOLD the follow-up voicing
     # (buffer, don't stream live) until the day-total guard has checked its running
     # total against the DB. Then the verified response_text is emitted ONCE via the
@@ -1430,12 +1448,28 @@ async def _run_turn(
                     # survives ~40 hours.
                     await _clear_deferred(db, _sft_prior_pq, _sft_prior)
                     _sft = None
+                    _wo_settled = True
                 if _sft is None:
                     # The interpreter times out or the model fails and control
                     # transfers to legacy behaviour. Fail-safe during rollout —
                     # but a transfer nobody can see is a transfer nobody can
                     # measure, and this is the most common one.
-                    _to_legacy("interpreter_none")
+                    #
+                    # AND IT WAS NOT ONE THING. A model timeout, an unparseable
+                    # response, a message with no food in it, a refused re-ask
+                    # and a deliberate writes-only hand-back all logged the
+                    # same line — including the writes-only case, which is a
+                    # SUCCESS (held food committed) wearing the name of a
+                    # failure. `none_reason` names which; the rest is the
+                    # context needed to judge whether the escape was right.
+                    from core.food_turn import decline_detail as _why_none
+                    _to_legacy(
+                        "interpreter_none",
+                        none_reason=("writes_only" if _wo_settled
+                                     else (_why_none() or "unrecorded")),
+                        had_pending_clarification=bool(_sft_prior),
+                        settled_held=len(_settled_calls) or "",
+                    )
                 if _sft is not None:
                     # Day snapshot BEFORE the writes — the say tokens are filled
                     # from the committed delta after enrichment runs.

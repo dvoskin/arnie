@@ -47,6 +47,7 @@ import json
 import logging
 import os
 import re
+from contextvars import ContextVar as _ContextVar
 from typing import Optional
 
 from core.llm import chat
@@ -4329,6 +4330,13 @@ async def run(message: str, user, prior: Optional[dict] = None,
     """
     from core import food_trace
 
+    # Cleared per turn: a reason left over from the previous turn on this task
+    # would be reported as this turn's, which is worse than reporting nothing.
+    try:
+        FOOD_DECLINE.set("")
+    except Exception:
+        pass
+
     fields = {}
     try:
         from core.turn_identity import current_turn_id
@@ -4353,6 +4361,39 @@ async def run(message: str, user, prior: Optional[dict] = None,
     return _settle_deferred(out, prior)
 
 
+#: WHY the interpreter declined this turn, for the fallback line to report.
+#:
+#: `reason=interpreter_none` was the single most common escape in the product
+#: and it named nothing: a model timeout, an unparseable response, a message
+#: with no food in it and a deliberate hand-back all logged identically. The
+#: 2026-08-04 transcript was diagnosed by reading source rather than logs for
+#: exactly this reason — the line that fired said "the interpreter returned
+#: nothing", which was true and useless.
+#:
+#: Ambient rather than threaded through the return type, following the same
+#: pattern as `execution_result.LAST_EXECUTION`: `_run_untraced` has nine
+#: return-None sites and the one that would have been missed is the one that
+#: mattered.
+FOOD_DECLINE: "ContextVar[str]" = _ContextVar("FOOD_DECLINE", default="")
+
+
+def _none(reason: str):
+    """Decline the turn, on the record. Always returns None."""
+    try:
+        FOOD_DECLINE.set(reason)
+    except Exception:
+        pass
+    return None
+
+
+def decline_detail() -> str:
+    """The last recorded decline reason, for the fallback log line."""
+    try:
+        return FOOD_DECLINE.get() or ""
+    except Exception:
+        return ""
+
+
 async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                         day_line: str = "", board: Optional[list] = None,
                         last_assistant: str = "",
@@ -4375,7 +4416,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
     evidence requirement for additions ("also a coke with it"). ONE model call
     per food turn — the narration material rides the same JSON. Never raises."""
     if not (message or "").strip():
-        return None
+        return _none("empty_message")
 
     # ── THE ANSWER IS READ BY THE PARSER THAT ASKED THE QUESTION ────────────
     #
@@ -4601,14 +4642,21 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             # Includes DeadlineExceeded: out of time is a fall-through to the
             # legacy path, never a lost meal.
             logger.warning(f"food_turn logger pass failed: {e}")
-            return None
+            # Out of time and a genuine model error are different operational
+            # problems with different fixes; both used to read as "returned
+            # nothing". Told apart by the type hierarchy the code already
+            # defines — `deadline.DeadlineExceeded` subclasses `TimeoutError`,
+            # as does `asyncio.TimeoutError` — rather than by matching words in
+            # the message, which would be a guess about wording we control.
+            return _none("timeout" if isinstance(e, TimeoutError)
+                         else "model_error")
         _note_interpreter_cost(res, _interp_model)
         data = _parse(res.get("text") or "")
         _capture_interpreter_output(message, data)
         if _shadow_parse is not None:
             _log_fast_path_shadow(_shadow_parse, data)
     if not isinstance(data, dict):
-        return None
+        return _none("schema_invalid")
     action = data.get("action")
 
     # ── Part 5: resolve, then ask (NUTRITION_ACCURACY_V2) ───────────────────
@@ -4803,7 +4851,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         if data.get("items") or data.get("ready"):
             data, action = _ask_becomes_log(data), "log"
         else:
-            return None      # nothing parsed and nothing to ask: not our turn
+            return _none("no_food_intent")   # nothing parsed, nothing to ask
 
     if action == "ask" and prior:
         # An unprompted ask on the answer turn = the model chaining its own
@@ -4857,11 +4905,14 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     "questions": _questions_from_points(
                         data["points"], message=message,
                         items=data.get("items"))}
-        return None
+        # A re-ask that is neither invited, nor the remainder of the open
+        # question, nor a bounded new ambiguity. THIS is the branch that sent
+        # the 2026-08-04 turn to legacy; named so a recurrence is one grep.
+        return _none("reask_refused")
 
     ops = _normalize_ops(data)
     if not ops:
-        return None
+        return _none("no_ops")
 
     # Consumption-evidence invariant (fix #3): drop any log op the message
     # cannot support — an interrogative or evidence-free cold message never
@@ -4888,7 +4939,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 message, prior=prior, thread_active=thread_active):
         ops = [(k, o) for k, o in ops if k != "log"]
         if not ops:
-            return None
+            return _none("no_consumption_evidence")
 
     # ── §2, §3, §4, §5: the answer turn revalidates ─────────────────────────
     #
@@ -5199,7 +5250,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 "points": ["both components of the split"]}
 
     if not calls:
-        return None
+        return _none("no_calls")
 
     say = str(data.get("say") or "").strip()
     say = say.replace("~", "").replace("—", ",").replace("–", ",")
