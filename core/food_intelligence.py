@@ -1033,7 +1033,16 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             # was argued for, and nothing in that argument stretches to seven
             # times. `_profile_flip` still applies unconditionally, so a wrong
             # row that also collapses a dominant macro is caught either way.
-            _known_mass = bool(_mg)
+            # A FABRICATED MASS IS NOT A KNOWN ONE. `_mg` reaches here from
+            # three places and only two of them are measurements: a stated
+            # weight, a label's own serving panel ("That is a KNOWN mass, not
+            # an estimate" — see where `_from_panel` is set), and
+            # `portion_prior(name)`, which is a population typical for an
+            # un-weighed whole food. The wider 4x bound is argued directly from
+            # "all three are exact matches with a known mass"; a prior is
+            # neither exact nor a mass anyone measured, so it must not buy the
+            # extra room. `_from_prior` was computed for this and never read.
+            _known_mass = bool(_mg) and not _from_prior
             _bound = (_OVERCOUNT_MULTIPLE_KNOWN_MASS
                       if (_known_mass and _trustworthy)
                       else _OVERCOUNT_MULTIPLE)
