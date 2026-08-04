@@ -149,3 +149,101 @@ def test_nothing_is_duplicated(family):
         # And nothing survives that the plan is also going to write.
         assert not (set(kept) & set(plan)), (
             f"{set(kept) & set(plan)} would be written twice")
+
+
+# ── the rollback must actually roll back ─────────────────────────────────────
+#
+# REGRESSION, found in review of fba5ca1 and reproduced before fixing.
+# `_refinement_decision` returned a bare None when either flag was off, and
+# `_undeferred` had no branch for it — so a unique fuzzy candidate was
+# PRESERVED instead of collapsed. The documented emergency control had silently
+# become "create duplicates" rather than "restore the old matcher".
+
+def _unique():
+    return _undeferred([_c("White rice")], [_c("White rice, cooked")])
+
+
+def _ambiguous():
+    return _undeferred([_c("Bread")], [_c("Banana bread"), _c("Garlic bread")])
+
+
+def test_strict_off_restores_unique_legacy_collapse(monkeypatch):
+    monkeypatch.setenv("FOOD_IDENTITY_STRICT", "false")
+    assert _names(_unique()) == [], "the legacy matcher should have collapsed"
+
+
+def test_registry_off_restores_unique_legacy_collapse(monkeypatch):
+    """The half the first fix missed. Guarding only on strict left the
+    registry-off case with an EMPTY candidate set, so the legacy branch had
+    nothing to decide — the flag rolled back the decision but not the candidate
+    search."""
+    monkeypatch.setenv("FOOD_IDENTITY_REGISTRY", "false")
+    assert _names(_unique()) == []
+
+
+def test_both_flags_off_restores_legacy(monkeypatch):
+    monkeypatch.setenv("FOOD_IDENTITY_STRICT", "false")
+    monkeypatch.setenv("FOOD_IDENTITY_REGISTRY", "false")
+    assert _names(_unique()) == []
+
+
+@pytest.mark.parametrize("env", [
+    {"FOOD_IDENTITY_STRICT": "false"},
+    {"FOOD_IDENTITY_REGISTRY": "false"},
+    {"FOOD_IDENTITY_STRICT": "false", "FOOD_IDENTITY_REGISTRY": "false"},
+])
+def test_rollback_still_does_not_collapse_ambiguous_candidates(env, monkeypatch):
+    """Rolling back restores the OLD behaviour, which also carried on
+    ambiguity. A rollback that started merging three-way families would be a
+    second bug wearing the first one's clothes."""
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    assert _names(_ambiguous()) == ["Bread"]
+
+
+def test_a_broken_policy_fails_closed_rather_than_falling_back(monkeypatch):
+    """A DELIBERATE ROLLBACK AND A BROKEN MODULE ARE DIFFERENT EVENTS, and
+    used to be indistinguishable — both produced None.
+
+    They need opposite behaviour. Turning the flag off asks for the legacy
+    matcher; an import error must NOT silently re-enable the very matcher
+    strict mode exists to prevent. So failure preserves both foods.
+    """
+    import skills.nutrition.refinement as R
+
+    def _boom(*a, **k):
+        raise ImportError("policy module gone")
+
+    monkeypatch.setattr(R, "evaluate_refinement", _boom)
+    assert _names(_unique()) == ["White rice"], "failure must fail closed"
+
+    from core.food_turn import _refinement_decision
+    from skills.nutrition.refinement import DecisionMode
+    assert _refinement_decision("white rice", ["white rice, cooked"]).mode \
+        is DecisionMode.FAILED_CLOSED
+
+
+def test_the_decision_says_which_mode_produced_it(monkeypatch):
+    """Observability: production must be able to separate "we rolled back" from
+    "the policy broke" from "the policy decided"."""
+    from core.food_turn import _refinement_decision
+    from skills.nutrition.refinement import DecisionMode
+
+    assert _refinement_decision("white rice", ["white rice, cooked"]).mode \
+        is DecisionMode.POLICY
+    monkeypatch.setenv("FOOD_IDENTITY_STRICT", "false")
+    assert _refinement_decision("white rice", ["white rice, cooked"]).mode \
+        is DecisionMode.LEGACY_FALLBACK
+
+
+def test_unevaluated_quantity_compatibility_is_not_reported_as_met():
+    """`quantity_compatible: bool = True` let an unchecked condition be
+    reported as a satisfied one — one piece of non-evidence inside an object
+    whose entire purpose is to carry evidence."""
+    from core.food_turn import _refinement_decision
+
+    # A REFINEMENT, not an alias. "white rice" / "white rice, cooked" is the
+    # same entity and returns before the quantity check is reached.
+    d = _refinement_decision("yogurt", ["greek yogurt"])
+    assert d.allowed
+    assert any("not evaluated" in e for e in d.evidence), d.evidence

@@ -35,6 +35,30 @@ class RefinementOperation(str, Enum):
     CLARIFICATION_ANSWER = "clarification_answer"
 
 
+class DecisionMode(str, Enum):
+    """HOW the decision was reached, so a rollback is distinguishable from a
+    breakage. Both used to produce `None`, which meant the caller could not
+    tell "we deliberately turned the policy off" from "the policy module
+    failed to import" — and those need opposite behaviour: the first restores
+    the documented legacy path, the second must fail closed.
+    """
+    POLICY = "policy"                  # the registry decided
+    LEGACY_FALLBACK = "legacy_fallback"   # flags off, use the old matcher
+    FAILED_CLOSED = "failed_closed"    # policy unavailable; preserve both
+
+
+class Compatibility(str, Enum):
+    """THREE STATES, because "not checked" is not "compatible".
+
+    `quantity_compatible: bool = True` let an unevaluated condition be
+    reported as a satisfied one, which is one piece of non-evidence inside an
+    object whose whole purpose is to carry evidence.
+    """
+    COMPATIBLE = "compatible"
+    INCOMPATIBLE = "incompatible"
+    UNKNOWN = "unknown"
+
+
 class RefinementReason(str, Enum):
     ALIAS = "alias"                                   # same entity outright
     UNIQUE_REMAINING_CANDIDATE = "unique_remaining_candidate"
@@ -55,13 +79,16 @@ class RefinementContext:
     exact_pass_completed: bool = False
     candidate_is_unconsumed: bool = False
     candidate_set_size: int = 0
-    quantity_compatible: bool = True
+    #: UNKNOWN by default. A caller that has not compared quantities must not
+    #: be able to imply it has, and the evidence log says so explicitly.
+    quantity_compatibility: "Compatibility" = None
 
 
 @dataclass(frozen=True)
 class RefinementDecision:
     allowed: bool
     reason: RefinementReason
+    mode: DecisionMode = DecisionMode.POLICY
     source_entity_id: Optional[str] = None
     candidate_entity_id: Optional[str] = None
     evidence: tuple = field(default_factory=tuple)
@@ -87,7 +114,8 @@ def evaluate_refinement(source: str, candidate: str,
     sid, cid = resolve(source, language), resolve(candidate, language)
 
     def _no(reason):
-        return RefinementDecision(False, reason, sid, cid, tuple(ev))
+        return RefinementDecision(False, reason, DecisionMode.POLICY, sid, cid,
+                                  tuple(ev))
 
     if sid is None or cid is None:
         ev.append(f"unresolved: source={sid!r} candidate={cid!r}")
@@ -95,8 +123,8 @@ def evaluate_refinement(source: str, candidate: str,
 
     if same_food(source, candidate, language):
         ev.append("same canonical entity or alias of it")
-        return RefinementDecision(True, RefinementReason.ALIAS, sid, cid,
-                                  tuple(ev))
+        return RefinementDecision(True, RefinementReason.ALIAS,
+                                  DecisionMode.POLICY, sid, cid, tuple(ev))
 
     rel = relation_between(source, candidate) or relation_between(
         candidate, source)
@@ -121,11 +149,16 @@ def evaluate_refinement(source: str, candidate: str,
     if context.candidate_set_size != 1:
         ev.append(f"{context.candidate_set_size} candidates — ambiguous")
         return _no(RefinementReason.AMBIGUOUS)
-    if not context.quantity_compatible:
+    compat = context.quantity_compatibility or Compatibility.UNKNOWN
+    if compat is Compatibility.INCOMPATIBLE:
         ev.append("quantities incompatible")
         return _no(RefinementReason.NOT_RELATED)
+    # UNKNOWN proceeds only because every other condition is already unique and
+    # exact — and it is RECORDED as unevaluated rather than reported as met.
+    ev.append("quantity compatibility not evaluated" if
+              compat is Compatibility.UNKNOWN else "quantities compatible")
 
     ev.append(f"{rel.value if rel else 'refining'} relation, sole candidate, "
               f"after the exact pass")
     return RefinementDecision(True, RefinementReason.UNIQUE_REMAINING_CANDIDATE,
-                              sid, cid, tuple(ev))
+                              DecisionMode.POLICY, sid, cid, tuple(ev))

@@ -2832,14 +2832,26 @@ def _refinement_decision(key: str, candidates: list):
                                refuse. Left True with this note rather than
                                asserted silently.
     """
-    if not _identity_strict() or not _registry_enabled():
+    from skills.nutrition.refinement import (Compatibility, DecisionMode,
+                                             RefinementDecision,
+                                             RefinementReason)
+    if not candidates:
         return None
+    if not _identity_strict() or not _registry_enabled():
+        # DELIBERATE ROLLBACK, and it must actually roll back. Returning a bare
+        # None here left `_undeferred` with no branch to take, so a unique
+        # fuzzy candidate was PRESERVED instead of collapsed — the documented
+        # emergency control silently became "create duplicates" rather than
+        # "restore the old matcher".
+        return RefinementDecision(
+            allowed=False, reason=RefinementReason.NOT_RELATED,
+            mode=DecisionMode.LEGACY_FALLBACK,
+            evidence=("registry or strict mode disabled; "
+                      "the legacy matcher decides",))
     try:
         from skills.nutrition.refinement import (RefinementContext,
                                                  RefinementOperation,
                                                  evaluate_refinement)
-        if not candidates:
-            return None
         return evaluate_refinement(
             key, candidates[0],
             RefinementContext(
@@ -2847,10 +2859,20 @@ def _refinement_decision(key: str, candidates: list):
                 exact_pass_completed=True,
                 candidate_is_unconsumed=True,
                 candidate_set_size=len(candidates),
+                # NOT CHECKED HERE, and said so rather than implied. `True`
+                # reported an unevaluated condition as a satisfied one.
+                quantity_compatibility=Compatibility.UNKNOWN,
             ))
     except Exception:
-        logger.debug("refinement policy unavailable", exc_info=True)
-        return None
+        # A BROKEN POLICY IS NOT A ROLLBACK. Failing closed preserves both
+        # foods; falling back to the old matcher on an import error would
+        # silently re-enable the behaviour strict mode exists to prevent.
+        logger.warning("refinement policy unavailable; failing closed",
+                       exc_info=True)
+        return RefinementDecision(
+            allowed=False, reason=RefinementReason.UNKNOWN_ENTITY,
+            mode=DecisionMode.FAILED_CLOSED,
+            evidence=("policy module unavailable; both kept",))
 
 
 def _claims_the_same_food(narrow: str, wide: str) -> bool:
@@ -2867,9 +2889,13 @@ def _claims_the_same_food(narrow: str, wide: str) -> bool:
     criterion ("`_same_food` token-subset logic no longer owns item
     reconciliation") rather than a style preference.
     """
-    if not _identity_strict():
+    # EITHER FLAG IS A ROLLBACK, and both must roll back the same thing.
+    # Guarding only on strict left the registry-off case with an EMPTY
+    # candidate set, so the legacy branch downstream had nothing to decide and
+    # a unique fuzzy match was preserved instead of collapsed.
+    if not _identity_strict() or not _registry_enabled():
         return _is_renaming_of(narrow, wide)
-    verdict = _registry_says(narrow, wide)
+    verdict = _is_identity_or_refinement_candidate(narrow, wide)
     if verdict is None:
         logger.info(
             "event=identity_preserved narrow=%r wide=%r — registry has no "
@@ -2878,8 +2904,18 @@ def _claims_the_same_food(narrow: str, wide: str) -> bool:
     return bool(verdict)
 
 
-def _registry_says(narrow: str, wide: str):
-    """The registry's verdict, or None when it does not know this food.
+def _is_identity_or_refinement_candidate(narrow: str, wide: str):
+    """Could these two be one item — by identity OR by refinement, either way?
+
+    RENAMED from `_registry_says` (review). The old name suggested a generic
+    registry lookup while the answer combines two different questions, and a
+    Boolean under that name is exactly what a future caller would mistake for
+    identity. `same_food` is the identity question and stays narrow.
+
+    This builds the CANDIDATE SET only. Whether a candidate may actually claim
+    a held food is decided afterwards by `evaluate_refinement`, with the
+    caller's conditions — so a permissive answer here cannot by itself drop a
+    row.
 
     None is passed through rather than coerced: a caller that cannot tell "not
     the same" from "I have no idea" will treat the second as the first, which
@@ -2946,7 +2982,7 @@ def _is_renaming_of(narrow: str, wide: str) -> bool:
     # identity — where everything below infers it from spelling. `potato` and
     # `potatoes` are one entity; `butter` and `peanut butter` are two, and no
     # rule reading the strings can be right about both.
-    _known = _registry_says(narrow, wide)
+    _known = _is_identity_or_refinement_candidate(narrow, wide)
     if _known is not None:
         return _known
 
@@ -3052,6 +3088,19 @@ def _undeferred(held: list, plan_calls: list) -> list:
         # and nothing in the signature would object. The decision carries its
         # evidence so production can be asked WHY a food was claimed.
         _decision = _refinement_decision(key, _fuzzy)
+        if _decision is not None and \
+                _decision.mode.value == "legacy_fallback":
+            # The documented rollback: the OLD matcher decides, exactly as it
+            # did before the registry existed.
+            if len(_fuzzy) == 1:
+                logger.info(
+                    "event=deferred_collapse held=%r covered_by=%r "
+                    "reason=legacy_unique_fuzzy_match", key, _fuzzy[0])
+                unclaimed.remove(_fuzzy[0])
+                _reasons["renamed_claimed"] += 1
+                continue
+            out.append(call)
+            continue
         if _decision is not None and _decision.allowed:
             logger.info(
                 "event=deferred_collapse held=%r covered_by=%r reason=%s "
