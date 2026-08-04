@@ -617,6 +617,29 @@ def _parse_amount(text: str) -> tuple:
     return 1.0, low
 
 
+def _stems(word: str) -> frozenset:
+    """Every singular `word` could be — the word itself plus each plural form
+    undone. A SET rather than one stem, because picking a single stem means
+    guessing which plural rule applies, and English will not be guessed at:
+    `-ies` undoes to `-y` for "fries" and to `-ie` for "cookies", and nothing
+    in the spelling says which.
+
+    Offering both and letting the caller intersect against the other side's
+    forms settles it against the actual vocabulary instead. `rstrip("s")` — one
+    stem, one rule — got "potatoes" wrong ("potatoe", so no potato weighed
+    anything) and mangled every word ending in a double s ("glass" -> "gla").
+    """
+    w = (word or "").strip()
+    out = {w}
+    if len(w) > 2 and w.endswith("s") and not w.endswith("ss"):
+        out.add(w[:-1])                      # eggs -> egg, cookies -> cookie
+    if len(w) > 3 and re.search(r"(?:o|s|x|z|ch|sh)es$", w):
+        out.add(w[:-2])                      # potatoes -> potato
+    if len(w) > 4 and w.endswith("ies"):
+        out.add(w[:-3] + "y")                # fries -> fry, berries -> berry
+    return frozenset(out)
+
+
 def _head_matches(name: str, key: str) -> bool:
     """Whether `key` is the HEAD of this food name, not merely inside it.
 
@@ -624,11 +647,14 @@ def _head_matches(name: str, key: str) -> bool:
     "chipotle bowl" weigh 2 g (chip) and "banana bread" weigh 118 g (banana).
     English compounds put the head noun last, so the key has to land at the
     end — "banana bread" is a bread, "orange chicken" is a chicken, and neither
-    has a piece weight here.
+    has a piece weight here. That guard is unchanged; only the plural handling
+    below it is, and it still compares position by position from the end.
     """
-    words = [w.rstrip("s") for w in re.findall(r"[a-z']+", name)]
-    key_words = [w.rstrip("s") for w in key.split()]
-    return bool(words) and words[-len(key_words):] == key_words
+    words = [_stems(w) for w in re.findall(r"[a-z']+", name)]
+    key_words = [_stems(w) for w in key.split()]
+    if not words or len(key_words) > len(words):
+        return False
+    return all(a & b for a, b in zip(words[-len(key_words):], key_words))
 
 
 def piece_weight(food_name: str, unit_text: str = "") -> Optional[tuple]:
