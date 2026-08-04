@@ -2811,19 +2811,58 @@ def _identity_strict() -> bool:
         in ("1", "true", "yes", "on")
 
 
-#: Imported at module scope so the comparison below is an identity check on
-#: the enum rather than on a string reconstructed at each call site.
-try:
-    from skills.nutrition.refinement import DecisionMode as _DecisionMode
-except Exception:      # pragma: no cover - the policy is optional at import
-    _DecisionMode = None
+def _is_legacy_fallback(decision) -> bool:
+    """Whether this decision is the DELIBERATE rollback.
+
+    Compares the ENUM BY IDENTITY, with the import guarded. A first attempt
+    compared the mode's string value against a literal, which reintroduced the
+    very contract `DecisionMode` exists to remove — caught by the test that
+    pins it, which greps this function for exactly that shape.
+
+    The import cannot be at module scope: if the policy module is unavailable,
+    a module-scope `_DecisionMode` is None and dereferencing it raises inside
+    the branch meant to survive exactly that. Guarded here, an unimportable
+    policy answers False — and `_NoPolicy.mode` is None, so it is never a
+    rollback and both foods are preserved.
+    """
+    mode = getattr(decision, "mode", None)
+    if mode is None:
+        return False
+    try:
+        from skills.nutrition.refinement import DecisionMode
+    except Exception:
+        return False
+    return mode is DecisionMode.LEGACY_FALLBACK
+
+
+class _NoPolicy:
+    """The result when the refinement policy cannot be loaded AT ALL.
+
+    Owned by this module on purpose. Every earlier version built its
+    "failed closed" answer out of `RefinementDecision`, `RefinementReason` and
+    `DecisionMode` — all imported from the module whose absence it was trying
+    to describe. So a genuine ImportError escaped `_refinement_decision`
+    entirely and propagated into the turn, and the fail-closed guarantee was
+    false exactly when it mattered.
+
+    Structurally compatible with a `RefinementDecision` for the two fields the
+    caller reads, and `allowed` is False, so an unloadable policy preserves
+    both foods rather than deleting one.
+    """
+    allowed = False
+    mode = None
+    reason = None
+    evidence = ("refinement policy could not be imported; both kept",)
 
 
 def _refinement_decision(key: str, candidates: list):
     """`_undeferred`'s authority to bind one held food to a re-read, spelled out.
 
-    Returns a `RefinementDecision`, or None when the registry is off and the
-    legacy path decides.
+    Returns a decision, or None when there is nothing to decide.
+
+    THE IMPORT IS THE FIRST THING AND IT IS GUARDED. Building a typed
+    "the policy failed" answer used to require importing the very module that
+    failed, which meant a real ImportError escaped instead of failing closed.
 
     The four conditions this caller can honestly assert, and why each is true
     HERE rather than in general:
@@ -2836,51 +2875,42 @@ def _refinement_decision(key: str, candidates: list):
       candidate_set_size     — several candidates means carry, never guess. A
                                food written twice is visible and recoverable;
                                one silently dropped is not.
-      quantity_compatible    — not yet checked, and declared False would only
-                               refuse. Left True with this note rather than
-                               asserted silently.
+      quantity_compatibility — UNKNOWN. Not checked here, and recorded as
+                               unevaluated rather than reported as satisfied.
     """
-    from skills.nutrition.refinement import (Compatibility, DecisionMode,
-                                             RefinementDecision,
-                                             RefinementReason)
     if not candidates:
         return None
-    if not _identity_strict() or not _registry_enabled():
-        # DELIBERATE ROLLBACK, and it must actually roll back. Returning a bare
-        # None here left `_undeferred` with no branch to take, so a unique
-        # fuzzy candidate was PRESERVED instead of collapsed — the documented
-        # emergency control silently became "create duplicates" rather than
-        # "restore the old matcher".
-        return RefinementDecision(
-            allowed=False, reason=RefinementReason.NOT_RELATED,
-            mode=DecisionMode.LEGACY_FALLBACK,
-            evidence=("registry or strict mode disabled; "
-                      "the legacy matcher decides",))
     try:
-        from skills.nutrition.refinement import (RefinementContext,
-                                                 RefinementOperation,
-                                                 evaluate_refinement)
-        return evaluate_refinement(
+        from skills.nutrition import refinement as _rf
+    except Exception:
+        # AN UNLOADABLE POLICY IS NOT A ROLLBACK. Preserve both foods; falling
+        # back to the legacy matcher here would re-enable deletion-capable
+        # fuzzy matching at the exact moment the safety policy is known gone.
+        logger.warning("refinement policy could not be imported; failing "
+                       "closed", exc_info=True)
+        return _NoPolicy()
+    if not _identity_strict() or not _registry_enabled():
+        return _rf.RefinementDecision(
+            allowed=False, reason=_rf.RefinementReason.NOT_RELATED,
+            mode=_rf.DecisionMode.LEGACY_FALLBACK,
+            evidence=("legacy matcher selected by rollback flag",))
+    try:
+        return _rf.evaluate_refinement(
             key, candidates[0],
-            RefinementContext(
-                operation=RefinementOperation.UNDEFER_PENDING_ITEM,
+            _rf.RefinementContext(
+                operation=_rf.RefinementOperation.UNDEFER_PENDING_ITEM,
                 exact_pass_completed=True,
                 candidate_is_unconsumed=True,
                 candidate_set_size=len(candidates),
-                # NOT CHECKED HERE, and said so rather than implied. `True`
-                # reported an unevaluated condition as a satisfied one.
-                quantity_compatibility=Compatibility.UNKNOWN,
+                quantity_compatibility=_rf.Compatibility.UNKNOWN,
             ))
     except Exception:
-        # A BROKEN POLICY IS NOT A ROLLBACK. Failing closed preserves both
-        # foods; falling back to the old matcher on an import error would
-        # silently re-enable the behaviour strict mode exists to prevent.
-        logger.warning("refinement policy unavailable; failing closed",
+        logger.warning("refinement policy raised; failing closed",
                        exc_info=True)
-        return RefinementDecision(
-            allowed=False, reason=RefinementReason.UNKNOWN_ENTITY,
-            mode=DecisionMode.FAILED_CLOSED,
-            evidence=("policy module unavailable; both kept",))
+        return _rf.RefinementDecision(
+            allowed=False, reason=_rf.RefinementReason.UNKNOWN_ENTITY,
+            mode=_rf.DecisionMode.FAILED_CLOSED,
+            evidence=("policy execution failed; both kept",))
 
 
 def _claims_the_same_food(narrow: str, wide: str) -> bool:
@@ -3096,12 +3126,13 @@ def _undeferred(held: list, plan_calls: list) -> list:
         # and nothing in the signature would object. The decision carries its
         # evidence so production can be asked WHY a food was claimed.
         _decision = _refinement_decision(key, _fuzzy)
-        # THE ENUM, NOT ITS VALUE. Comparing `.value == "legacy_fallback"`
-        # recreated the string contract `DecisionMode` was introduced to
-        # remove — a typo would have read as "not a rollback" and silently
-        # preserved duplicates, which is the bug this branch exists to fix.
-        if _decision is not None and \
-                _decision.mode is _DecisionMode.LEGACY_FALLBACK:
+        # THE ENUM, NOT ITS VALUE, and asked of the DECISION rather than of a
+        # module-scope import that may be None. Comparing
+        # `.value == "legacy_fallback"` recreated the string contract
+        # `DecisionMode` exists to remove; dereferencing a `_DecisionMode` that
+        # failed to import raised AttributeError inside the very branch meant
+        # to handle the policy being unavailable.
+        if _decision is not None and _is_legacy_fallback(_decision):
             # The documented rollback: the OLD matcher decides, exactly as it
             # did before the registry existed.
             if len(_fuzzy) == 1:
@@ -3122,10 +3153,17 @@ def _undeferred(held: list, plan_calls: list) -> list:
             _reasons["renamed_claimed"] += 1
             continue
         if _fuzzy and _decision is not None:
+            # DEFENSIVE ON THE REASON, because the one decision that carries
+            # None for it is `_NoPolicy` — the unloadable-policy case, i.e.
+            # exactly the branch this log is describing. Dereferencing
+            # `.reason.value` there raised inside the handler meant to keep
+            # both foods, which is how a fail-closed path fails open.
             logger.info(
                 "event=refinement_refused held=%r candidates=%d reason=%s "
                 "evidence=%s — both kept", key, len(_fuzzy),
-                _decision.reason.value, "; ".join(_decision.evidence))
+                getattr(getattr(_decision, "reason", None), "value",
+                        "policy_unavailable"),
+                "; ".join(getattr(_decision, "evidence", ()) or ()))
         out.append(call)
     _shadow_undeferred(held, plan_calls, out, _reasons)
     return out

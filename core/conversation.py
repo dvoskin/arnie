@@ -782,18 +782,24 @@ def _shadow_clarification_fields(sft, resp) -> None:
     asks shipped `options: []`.
     """
     try:
-        from skills.nutrition.clarification_adapter import (fields_from_turn,
-                                                            unanswerable)
+        from skills.nutrition.clarification_adapter import (
+            fields_from_turn, free_text_required, missing_expected_options)
         fields = fields_from_turn(sft or {})
         if not fields:
             return
-        blind = unanswerable(fields)
+        # TWO NUMBERS, because they mean different things. A free-text question
+        # is not broken — "what restaurant was it from?" correctly requires
+        # typing. Only a field that PROMISES a choice and offers none is a
+        # defect, and conflating them would have overstated breakage and pushed
+        # toward generating chips for questions that should stay free text.
+        blind = missing_expected_options(fields)
+        typed_free = free_text_required(fields)
         _btns = len(getattr(resp, "buttons", None) or ())
         _typed = sum(len(f.options) for f in fields)
         logger.info(
             "event=clarification_shadow fields=%d typed_options=%d "
-            "wire_buttons=%d unanswerable=%d attributes=%s%s",
-            len(fields), _typed, _btns, len(blind),
+            "wire_buttons=%d missing_expected=%d free_text=%d attributes=%s%s",
+            len(fields), _typed, _btns, len(blind), len(typed_free),
             ",".join(f.attribute for f in fields),
             "" if _typed == _btns else
             f" MISMATCH typed={_typed} wire={_btns}")

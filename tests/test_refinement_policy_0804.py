@@ -280,7 +280,13 @@ def test_the_mode_branch_compares_the_enum_not_a_string():
 
     import core.food_turn as FT
 
-    src = inspect.getsource(FT._undeferred)
+    # The check lives in `_is_legacy_fallback` so the import can be guarded —
+    # a module-scope enum is None when the policy is unavailable, and
+    # dereferencing it raises inside the branch meant to survive that.
+    src = inspect.getsource(FT._undeferred) + inspect.getsource(
+        FT._is_legacy_fallback)
     assert 'mode.value ==' not in src, (
         "the rollback branch is comparing a string again")
-    assert "_DecisionMode.LEGACY_FALLBACK" in src
+    assert 'getattr(mode, "value"' not in src, (
+        "the string contract came back through getattr")
+    assert "is DecisionMode.LEGACY_FALLBACK" in src

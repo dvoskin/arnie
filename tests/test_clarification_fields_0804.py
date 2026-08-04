@@ -23,7 +23,8 @@ from core.semantics import ClarificationField, ClarificationOption
 from skills.nutrition.clarification_adapter import (field_from_dict,
                                                     field_from_question,
                                                     fields_from_turn,
-                                                    unanswerable)
+                                                    free_text_required,
+                                                    missing_expected_options)
 
 
 class _Q:
@@ -90,18 +91,33 @@ def test_the_live_ask_produces_two_answerable_fields():
 
     assert len(fields) == 2
     assert [f.attribute for f in fields] == ["preparation", "portion"]
-    assert not unanswerable(fields), "every question must be tappable"
+    assert not missing_expected_options(fields), "every select must offer choices"
     # And each option belongs to ITS question, which is what a flat chip row
     # could not say when Arnie asked two things at once.
     for f in fields:
         assert all(o.field_id == f.id for o in f.options)
 
 
-def test_a_question_with_no_options_is_counted_not_hidden():
-    """The number worth watching. Each is a turn where the user must type."""
+def test_free_text_is_not_the_same_as_broken():
+    """RENAMED METRIC. `unanswerable` counted every optionless question as a
+    defect, which would have overstated breakage in production and pushed
+    toward generating chips for questions that should stay free text.
+
+    "What restaurant was it from?" correctly requires typing. Only a field that
+    PROMISES a choice and offers none is broken.
+    """
     fields = fields_from_turn({"action": "ask", "questions": [
         {"item": "Soup", "text": "What kind of soup?", "options": []}]})
-    assert len(unanswerable(fields)) == 1
+    assert len(free_text_required(fields)) == 1
+    assert len(missing_expected_options(fields)) == 0, (
+        "a question with no options was typed free_text, so it is not broken")
+
+    # And the real defect: a select that offers nothing.
+    from core.semantics import ClarificationField
+    broken = (ClarificationField(id="q", event_id="i", attribute="identity",
+                                 question="Which one?", options=(),
+                                 response_type="single_select"),)
+    assert len(missing_expected_options(broken)) == 1
 
 
 def test_a_turn_that_asks_outside_the_structured_list_still_reports():
@@ -110,7 +126,7 @@ def test_a_turn_that_asks_outside_the_structured_list_still_reports():
     vanishing, so it is counted."""
     fields = fields_from_turn({"action": "ask", "questions": [],
                                "text": "Was that homemade?"})
-    assert len(fields) == 1 and len(unanswerable(fields)) == 1
+    assert len(fields) == 1 and len(free_text_required(fields)) == 1
 
 
 @pytest.mark.parametrize("sft", [
@@ -158,6 +174,8 @@ def test_the_shadow_reports_a_mismatch_between_typed_and_wire(caplog):
     msg = [r.getMessage() for r in caplog.records
            if "event=clarification_shadow" in r.getMessage()][0]
     assert "MISMATCH" in msg and "typed=2" in msg and "wire=0" in msg
+    assert "missing_expected=" in msg and "free_text=" in msg, (
+        "the two metrics must be reported separately")
 
 
 def test_the_shadow_never_costs_the_turn(monkeypatch):
@@ -166,3 +184,42 @@ def test_the_shadow_never_costs_the_turn(monkeypatch):
         "skills.nutrition.clarification_adapter.fields_from_turn",
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")))
     CV._shadow_clarification_fields({"action": "ask", "questions": [{}]}, None)
+
+
+def test_the_generated_id_is_marked_migration_only():
+    """⚠ The shadow's field id is derived from list position and display text,
+    so it changes when the interpreter reorders or renames — unusable for
+    binding an answer across turns, which is the one job an id has.
+
+    Pinned as a reminder rather than a behaviour: this must not become the
+    production contract, and the durable form
+    (`pending:item:attribute:revision`) arrives with the PendingOperation
+    migration.
+    """
+    import inspect
+
+    from skills.nutrition import clarification_adapter as CA
+
+    # Whitespace-normalised: these phrases are line-wrapped in the source, and
+    # a test that breaks on reflowing a docstring is a test nobody keeps.
+    doc = " ".join((inspect.getdoc(CA.field_from_dict) or "").split())
+    assert "MEASUREMENT-ONLY" in doc and "DELETION MILESTONE" in doc
+    assert "pending_meal_id" in doc
+
+    # The shape threads a pending id when one exists.
+    f = CA.field_from_dict({"item": "Chicken", "text": "How?",
+                            "options": ["A"]}, 0, pending_id="pm_9")
+    assert f.id.startswith("pm_9:")
+
+
+def test_attribute_inference_is_marked_backwards():
+    """The adapter guesses the attribute by reading the RENDERED question,
+    which is the direction the architecture reverses. Marked migration-only so
+    the new type is not mistaken for a replacement of the prose-parsing it
+    currently wraps."""
+    import inspect
+
+    from skills.nutrition import clarification_adapter as CA
+
+    doc = " ".join((inspect.getdoc(CA._attribute_of) or "").split())
+    assert "MIGRATION-ONLY" in doc and "DELETION MILESTONE" in doc
