@@ -185,3 +185,74 @@ synthetic English.
 food while the first is still live. That is the *"do not leave old and new
 ownership active indefinitely"* failure mode the directive warns about, and
 the mitigation is the exit criteria above being gates rather than notes.
+
+---
+
+## 6. Cross-domain expansion
+
+The expansion directive asks whether the same anti-patterns exist outside
+nutrition. Measured across the same 192 modules, split into domain modules and
+the shared routing layer they all pass through.
+
+### The anti-patterns are NOT evenly spread
+
+| Domain | regex | substring gate | plural heuristic | prose parsing |
+|---|---:|---:|---:|---:|
+| food | 72 | 82 | 25 | 26 |
+| workout | 0 | 4 | 1 | 14 |
+| sleep | 0 | 0 | 0 | 1 |
+| water / habits / memory / search / reminders | 0 | 0 | 0 | 0 |
+
+This is a real result and it changes the plan. **Food is the only domain that
+built its own language layer.** Everything else routes through LLM tool-calling
+and never grew a regex gate, because it never had a deterministic
+interpreter to gate. So the expansion is not "port the food fix to eight
+domains" — seven of them have nothing to port.
+
+The corollary is less comfortable: those domains have no deterministic
+interpretation *at all*, so they cannot preserve uncertainty, cannot bind a
+correction to a stable prior item, and cannot ask a typed clarification. They
+are not clean; they are absent. Food is ahead of them and its problems are the
+problems of having tried.
+
+### What IS genuinely cross-domain
+
+**Unit conversion, and it is worse than in food.** `2.20462` appears at **74
+sites across 16 modules** with no shared units module anywhere:
+
+```
+api/app.py 15   tool_executor 10   api/native_data 7   api/exercise_edit 6
+core/targets 5  context_builder  strength_prs  session_state  memory_moments …
+```
+
+Also `2.54` (3 sites), `28.3495` (11 sites / 4 modules), `29.5735` (3). Every
+one is a literal at a call site. This is the directive's *"duplicated unit
+conversion"* exactly, it spans weight, height, strength and nutrition, and it
+is the single highest-leverage cross-domain fix because a `UnitDefinition`
+registry is required by the food plan anyway — Phase 2 should own **all**
+dimensions, not just food's.
+
+**The shared routing layer** (107 modules the domain buckets do not claim)
+carries 62 compiled regexes and 119 substring gates, concentrated in
+`tool_executor` (30), `db/queries` (16), `conversation` (12), `coach_live` (11).
+This is where channel divergence and English-only routing actually live, and it
+is shared by every domain — so fixing it once fixes all of them.
+
+*One correction to my own scan:* the "reference phrase" count (293) is
+inflated. 56 of those are in `core/prompts/arnie.py`, which is prompt TEXT
+rather than code, and prompt text handling "another one" is the correct place
+for it. The real code-side figure is much smaller and I have not isolated it;
+it should not be quoted as evidence until it is.
+
+### Revised sequencing
+
+1. **Phase 2 owns units for every dimension**, not food's alone. It is already
+   required, it is the largest measured duplication in the codebase, and it is
+   the one change that pays off in eight domains at once.
+2. **The shared routing layer is audited before the domain layers**, because
+   its regexes and substring gates are what every domain inherits.
+3. **Do not build canonical semantics for the seven quiet domains yet.** They
+   have no competing sources of truth to reconcile — they have no source of
+   truth. Giving them one is a feature project, not an architecture
+   correction, and it should be sequenced on product need rather than on
+   symmetry with food.

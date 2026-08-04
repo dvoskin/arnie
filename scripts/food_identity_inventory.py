@@ -125,9 +125,45 @@ def vocabularies() -> int:
     return 0
 
 
+#: Conversion constants that should live in ONE unit registry and do not.
+#: Counted because the expansion directive named duplicated unit conversion,
+#: and this is the largest measured duplication in the codebase — 74 sites for
+#: kg<->lb alone, spanning weight, height, strength and nutrition.
+_CONVERSIONS = {
+    "kg <-> lb": r"2\.20462|2\.2046\b|0\.45359|0\.4536\b",
+    "cm <-> in": r"2\.54\b|0\.3937",
+    "g <-> oz": r"28\.3495|28\.35\b",
+    "ml <-> floz": r"29\.5735|29\.57\b",
+}
+
+
+def conversions() -> int:
+    """Every hard-coded unit conversion, by module. Should reach zero."""
+    files = _modules()
+    for name, pattern in _CONVERSIONS.items():
+        rx = re.compile(pattern, re.I)
+        hits = collections.Counter()
+        for f in files:
+            n = len(rx.findall(f.read_text()))
+            if n:
+                hits[str(f.relative_to(_ROOT))] = n
+        print(f"{name:14} {sum(hits.values()):>3} sites / "
+              f"{len(hits):>2} modules")
+        for f, n in hits.most_common(6):
+            print(f"   {n:>16}  {f}")
+        print()
+    return 0
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--vocabularies", action="store_true",
                     help="show the tables and whether they agree")
+    ap.add_argument("--conversions", action="store_true",
+                    help="every hard-coded unit conversion, by module")
     args = ap.parse_args()
-    sys.exit(vocabularies() if args.vocabularies else scan())
+    if args.vocabularies:
+        sys.exit(vocabularies())
+    if args.conversions:
+        sys.exit(conversions())
+    sys.exit(scan())
