@@ -1103,6 +1103,12 @@ def _interpreter_system(*, narrate: bool) -> str:
     return _MUTE_RE.sub("" if narrate else r"\1", src)
 
 
+#: How recently a board row must have landed to count as "this exchange".
+#: The hold notice is about the meal being discussed right now; a row from
+#: breakfast is not evidence about a food stashed at dinner.
+BOARD_RECENCY_MIN = 90
+
+
 def note_held_items(say: str, stashed: list, tool_calls: list,
                     board: list = ()) -> str:
     """A confirm-answer turn must never silently drop a stashed item: anything
@@ -1122,16 +1128,35 @@ def note_held_items(say: str, stashed: list, tool_calls: list,
     to answer a question about a thing that is already done, and the answer
     then reads as a new report.
     """
-    logged = {(tc.get("input") or {}).get("food_name", "").lower()
-              for tc in (tool_calls or [])}
-    logged |= {str((row or {}).get("food") or "").lower()
-               for row in (board or ())}
+    written = {(tc.get("input") or {}).get("food_name", "").lower()
+               for tc in (tool_calls or [])}
+    # THE RECENT BOARD, AND ONLY BY NAME. Folding the WHOLE day in silenced a
+    # genuinely held food on any substring collision: a coffee logged at
+    # breakfast made "Coffee cake" eight hours later read as already done, and
+    # the notice — the one thing standing between a stashed item and silent
+    # loss — disappeared. Chicken/Chicken wings and Egg/Eggplant parm do the
+    # same. Every row already carries `mins_ago`, so the window costs nothing.
+    _recent = []
+    for row in (board or ()):
+        _age = (row or {}).get("mins_ago")
+        if _age is None or _age <= BOARD_RECENCY_MIN:
+            _nm = str((row or {}).get("food") or "").lower()
+            if _nm:
+                _recent.append(_nm)
     missing = []
     for it in (stashed or []):
         food = (it.get("food") or "").strip()
-        if food and not any(food.lower() in ln or ln in food.lower()
-                            for ln in logged if ln):
-            missing.append(food)
+        if not food:
+            continue
+        _f = food.lower()
+        # Substring EITHER WAY against this turn's writes, where the executor
+        # may have renamed the row; EXACT against the board, where a different
+        # food that merely contains this name is a different food.
+        if any(_f in ln or ln in _f for ln in written if ln):
+            continue
+        if _f in _recent:
+            continue
+        missing.append(food)
     if not missing:
         return say
     held = " and ".join(missing[:3])

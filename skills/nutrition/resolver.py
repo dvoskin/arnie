@@ -572,7 +572,19 @@ def _resolve(request: FoodResolutionRequest,
     # behind a warning nobody read — unknown is not zero, and it is not the
     # wrong portion either.
     from skills.nutrition import sanity as _sanity
-    basis_findings = _sanity.check(scaled, winner.basis, quantity)
+    # THE NAME, because one check needs it. `sanity.check` consults the food
+    # name for exactly one thing — whether a near-zero density is legitimate
+    # (water, black coffee, broth) — and `is_near_zero_food("")` is False by
+    # construction, so omitting it refused every genuinely calorie-free drink
+    # and blanked its whole profile (`scaled = NutrientProfile()` below). A 16 oz
+    # black coffee resolved to no nutrients at all.
+    #
+    # Telemetry-only today, since `resolver_mode()` defaults to shadow and
+    # `promote()` returns the legacy value — but it biases the promotion gate
+    # against the resolver on precisely the class it gets right, and becomes
+    # real data loss the moment NUTRITION_RESOLVER_MODE=live.
+    basis_findings = _sanity.check(scaled, winner.basis, quantity,
+                                   getattr(request, "food_name", "") or "")
     fatal = [f for f in basis_findings if f.is_fatal]
     for finding in basis_findings:
         warnings.append(f"{finding.code}: {finding.message}")

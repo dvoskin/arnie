@@ -261,15 +261,27 @@ def _note_legacy(ok: bool) -> None:
 
 
 async def _get_json(url: str, params: dict, *, attempts: int = 3,
-                    timeout: float = 5.0) -> Optional[dict]:
+                    timeout: float = 5.0,
+                    health: Optional[dict] = None) -> Optional[dict]:
     """GET url?params and return parsed JSON, retrying transient failures.
 
     The legacy OFF search endpoint 503s intermittently (and instantly), so one
     shot silently drops the enrichment. Retry on _RETRY_STATUS and on network
     blips/timeouts with a short backoff. Timeouts are retried at most once (they
     already cost `timeout` seconds — piling on more would balloon a multi-item
-    paste's latency). Returns None when every attempt fails. Never raises."""
+    paste's latency). Returns None when every attempt fails. Never raises.
+
+    `health`, when a dict is passed, is filled with what this call learned
+    about the HOST as distinct from the ANSWER — `{"refused": bool}`, set only
+    when the host was actually asked and actually refused. The circuit breaker
+    reads that instead of `body is None`, because "no answer" has causes that
+    say nothing about the host: an exhausted turn budget (no request is made at
+    all), a 404, a 200 that will not parse. Counting those as outages tripped a
+    process-global 120s breaker on zero HTTP requests."""
     from core import deadline
+
+    if health is not None:
+        health["refused"] = False
 
     backoff = (0.3, 0.7, 1.2)
     timeout_used = False
@@ -284,7 +296,7 @@ async def _get_json(url: str, params: dict, *, attempts: int = 3,
             # remainder on connection setup and still return nothing — worse
             # than the miss we return here, because it costs the time too.
             logger.info("event=off_skipped reason=turn_budget url=%s", url)
-            return None
+            return None          # never asked — says nothing about the host
         try:
             r = await _client().get(url, params=params, timeout=call_timeout)
         except (httpx.TimeoutException, httpx.TransportError) as e:
@@ -294,6 +306,8 @@ async def _get_json(url: str, params: dict, *, attempts: int = 3,
                 timeout_used = True
             if i == attempts - 1:
                 logger.warning("OFF GET %s failed (transport): %s", url, e)
+                if health is not None:
+                    health["refused"] = True     # asked, and could not reach it
                 return None
             await _asleep(backoff[min(i, len(backoff) - 1)])
             continue
@@ -305,6 +319,11 @@ async def _get_json(url: str, params: dict, *, attempts: int = 3,
                 return r.json() or {}
             except Exception:
                 return None
+        if r.status_code in _RETRY_STATUS and i == attempts - 1:
+            # Retries exhausted against 502/503/429 — the host is refusing, and
+            # this is the one signal the breaker exists for.
+            if health is not None:
+                health["refused"] = True
         if r.status_code in _RETRY_STATUS and i < attempts - 1:
             # Honor Retry-After when present, but cap it — a multi-second stall
             # here would serialize behind the concurrent USDA lookup for nothing.
@@ -357,8 +376,16 @@ async def _search_legacy(name: str, page_size: int) -> Optional[list]:
         "search_terms": name, "search_simple": 1, "action": "process",
         "json": 1, "page_size": page_size, "fields": _FIELDS,
     }
-    body = await _get_json(_SEARCH_URL, params)
-    _note_legacy(body is not None)
+    _health: dict = {}
+    body = await _get_json(_SEARCH_URL, params, health=_health)
+    # THE HOST'S HEALTH, NOT THE QUERY'S LUCK. `body is None` also covers an
+    # exhausted turn budget (no request made), a 404 and an unparseable 200 —
+    # none of which mean legacy is down, and all of which used to open a
+    # process-global 120s breaker for every concurrent user.
+    if _health.get("refused"):
+        _note_legacy(False)
+    elif body is not None:
+        _note_legacy(True)
     if body is None:
         return None
     return body.get("products") or []

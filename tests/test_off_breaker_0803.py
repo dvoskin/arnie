@@ -121,3 +121,29 @@ def test_a_single_503_is_not_enough_to_trip_it(client):
         f"a hard failure should mean the retries were exhausted first, "
         f"saw {client.legacy} request(s)")
     assert off._legacy_is_down(), "one exhausted lookup should open it"
+
+
+# ── the breaker must key on the HOST, not on the answer ──────────────────────
+
+def test_an_exhausted_turn_budget_does_not_open_it(client, monkeypatch):
+    """`_get_json` returns None on the budget path BEFORE any request, and
+    `_search_legacy` counted that as a hard failure — so a turn that ran out of
+    time opened a process-global 120s breaker having made ZERO HTTP requests,
+    for every other concurrent user. "No answer" has causes that say nothing
+    about the host."""
+    from core import deadline
+
+    off._BREAKER.clear()
+    with deadline.budget(0.001):
+        asyncio.run(off.search("Cali Roll"))
+    assert client.legacy == 0, "a request was made despite no budget"
+    assert not off._legacy_is_down(), (
+        "the breaker opened without ever asking the host")
+
+
+def test_a_genuine_refusal_still_opens_it(client):
+    """The signal it exists for: retries exhausted against 502/503/429."""
+    off._BREAKER.clear()
+    asyncio.run(off.search("Cali Roll"))
+    assert client.legacy >= 3
+    assert off._legacy_is_down()

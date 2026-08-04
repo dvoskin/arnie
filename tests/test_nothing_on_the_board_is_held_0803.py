@@ -65,13 +65,22 @@ def test_this_turns_write_still_counts():
     assert "Holding" not in out, out
 
 
-def test_a_board_row_named_more_precisely_still_matches():
-    """The ask stashed "Challah bread"; the row landed as "Challah bread,
-    sliced". Substring matching in either direction is what this function has
-    always used, and the board must get the same treatment as the writes."""
-    out = note_held_items(
-        SAY, [{"food": "Challah"}], [], board=[_row("Challah bread, sliced")])
-    assert "Holding" not in out, out
+def test_a_renamed_row_is_matched_through_THIS_turns_writes():
+    """The ask stashed "Challah"; the executor wrote "Challah bread, sliced".
+
+    This asserted the same loose match against the BOARD, and that was the
+    weaker premise. A rename happens inside the turn that writes it, where
+    `tool_calls` still carries both names — so the loose match belongs there.
+    On the board, where rows come from earlier turns, a food that merely
+    CONTAINS this name is a different food (Chicken / Chicken wings, Egg /
+    Eggplant parm), and matching loosely silences a hold that was real.
+
+    The asymmetry is deliberate and follows the costs: naming a food that turns
+    out to be done is an apology, dropping one that was genuinely held is
+    silent loss. Err toward naming.
+    """
+    assert "Holding" not in note_held_items(
+        SAY, [{"food": "Challah"}], [_call("Challah bread, sliced")], board=[])
 
 
 def test_no_board_argument_is_the_old_behaviour():
@@ -79,3 +88,36 @@ def test_no_board_argument_is_the_old_behaviour():
     the board explicitly."""
     out = note_held_items(SAY, [{"food": "Dove bar"}], [])
     assert "Holding the Dove bar" in out
+
+
+# ── but the board is this exchange, not the whole day ─────────────────────────
+
+def _old_row(name, mins):
+    return {"id": 9, "food": name, "qty": "1", "mins_ago": mins, "cal": 100}
+
+
+def test_a_breakfast_row_does_not_silence_a_dinner_hold():
+    """Folding the WHOLE day in traded one bug for another. A coffee logged at
+    breakfast made "Coffee cake" eight hours later read as already done, and
+    the notice — the one thing between a stashed food and silent loss —
+    vanished. Every row carries `mins_ago`, so the window costs nothing."""
+    out = note_held_items(SAY, [{"food": "Coffee cake"}], [],
+                          board=[_old_row("Coffee", 480)])
+    assert "Holding the Coffee cake" in out, out
+
+
+def test_the_board_is_matched_exactly_not_by_substring():
+    """On the board a different food that merely CONTAINS this name is a
+    different food. Chicken/Chicken wings, Egg/Eggplant parm."""
+    out = note_held_items(SAY, [{"food": "Chicken wings"}], [],
+                          board=[_old_row("Chicken", 5)])
+    assert "Holding the Chicken wings" in out, out
+
+
+def test_this_turns_write_is_still_matched_loosely():
+    """The executor may rename what it writes ("Challah" -> "Challah bread,
+    sliced"), so THIS turn's calls keep substring matching in both directions.
+    Only the board is exact."""
+    out = note_held_items(SAY, [{"food": "Challah"}],
+                          [_call("Challah bread, sliced")], board=[])
+    assert "Holding" not in out, out
