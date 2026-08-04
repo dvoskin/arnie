@@ -2808,7 +2808,23 @@ def _settle_deferred(out: Optional[dict], prior: Optional[dict]) -> Optional[dic
         fresh = _undeferred(held, [])
         logger.info("event=deferred_commit outcome=legacy_fallthrough "
                     "committed=%d", len(fresh))
-        return _plan(fresh) if fresh else None
+        if not fresh:
+            return None
+        # WRITES ONLY — THE REPLY IS STILL LEGACY'S.
+        #
+        # `out is None` means the interpreter passed or failed and the turn
+        # belongs to the conversational brain; `_to_legacy("interpreter_none")`
+        # calls that "the most common one". Returning a log plan here made
+        # `_sft` non-None, so the structured branch took the turn and the food
+        # composer answered over the recovered rows — a coaching question, a
+        # non-food message or a model failure on a turn with an open stash got
+        # a meal recap instead of an answer.
+        #
+        # The debt still has to be paid; it just may not buy the microphone.
+        # `core/conversation.py` commits these and then hands the turn back.
+        _p = _plan(fresh)
+        _p["_writes_only"] = True
+        return _p
 
     action = out.get("action")
 

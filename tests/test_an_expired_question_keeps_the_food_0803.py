@@ -115,3 +115,30 @@ async def test_it_never_raises(monkeypatch):
 def _user():
     from types import SimpleNamespace
     return SimpleNamespace(id=1, timezone="UTC")
+
+
+# ── and a stash may pay its debt without taking the turn ──────────────────────
+
+def test_a_legacy_fall_through_writes_the_food_but_not_the_reply():
+    """`out is None` means the interpreter passed or failed and the turn
+    belongs to the conversational brain — `_to_legacy("interpreter_none")` calls
+    that "the most common one".
+
+    Returning a log plan there made `_sft` non-None, so the structured branch
+    took the turn and the food composer answered over the recovered rows: a
+    coaching question, a non-food message, or a model failure on a turn with an
+    open stash got a meal recap instead of an answer. The debt still has to be
+    paid; it just may not buy the microphone.
+    """
+    import core.food_turn as FT
+    out = FT._settle_deferred(None, {"deferred_calls": [_call("Corn")]})
+    assert out["action"] == "log"
+    assert out["_writes_only"] is True, (
+        "the recovered rows would take the turn away from legacy")
+    assert [c["input"]["food_name"] for c in out["tool_calls"]] == ["Corn"]
+
+
+def test_no_stash_leaves_a_declined_turn_completely_alone():
+    import core.food_turn as FT
+    assert FT._settle_deferred(None, {}) is None
+    assert FT._settle_deferred(None, None) is None

@@ -3408,13 +3408,26 @@ async def _execute_tool_calls(
     if any(log_calls.values()):
         try:
             _u = getattr(user, "id", None)
-            _p = getattr(user, "channel_preference", None) or "?"
+            # `source`, NOT `platform`. This printed
+            # `user.channel_preference` — a per-USER preference for where
+            # PROACTIVE nudges are sent, normalized to "telegram"|"imessage"
+            # and structurally incapable of saying "ios". So every iOS turn
+            # logged `platform=telegram` (prod 2026-08-03), and any reading of
+            # dedup effectiveness "by platform" off this line was measuring the
+            # nudge setting of whoever happened to log.
+            #
+            # This function is never passed the turn's platform, so it does not
+            # claim one. `source_type` is at least about THIS call — though it
+            # is itself overloaded (the caller passes `source_type or platform`),
+            # which is why it is named for what it holds rather than for what a
+            # reader might hope it holds.
+            _src = source_type or "?"
             _fc, _fs = log_calls["food"], log_skipped["food"]
             _wc, _ws = log_calls["water"], log_skipped["water"]
             _xc, _xs = log_calls["exercise"], log_skipped["exercise"]
             _bc, _bs = log_calls["body_weight"], log_skipped["body_weight"]
             logger.info(
-                f"event=tool_log_turn user_id={_u} platform={_p} "
+                f"event=tool_log_turn user_id={_u} source={_src} "
                 f"food={_fc}/{_fs} water={_wc}/{_ws} "
                 f"exercise={_xc}/{_xs} body_weight={_bc}/{_bs}"
             )

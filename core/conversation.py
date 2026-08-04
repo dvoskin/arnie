@@ -1341,6 +1341,17 @@ async def _run_turn(
                                       thread_active=bool(
                                           _route_mid or _photo_food),
                                       on_first_food=_early_heads_up)
+                if _sft is not None and _sft.get("_writes_only"):
+                    # A STASH MAY PAY ITS DEBT WITHOUT TAKING THE TURN.
+                    # `_settle_deferred` recovered held food on a turn the
+                    # interpreter declined — so the food is written here, and
+                    # the turn goes back to the conversational brain that it
+                    # actually belongs to. Without this the food composer
+                    # answered a coaching question with a meal recap.
+                    await _settle_expired_deferred(
+                        db, user, {"deferred_calls": _sft.get("tool_calls")},
+                        today_log, source_type=_source)
+                    _sft = None
                 if _sft is None:
                     # The interpreter times out or the model fails and control
                     # transfers to legacy behaviour. Fail-safe during rollout —
