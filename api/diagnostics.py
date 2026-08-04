@@ -167,6 +167,37 @@ def _food_pipeline(user_id: Optional[int] = None) -> dict:
     except Exception as e:                           # pragma: no cover
         out["FOOD_COMPOSER"] = {"error": str(e)}
 
+    # THE TWO FLAGS THE 2026-08-03 REPAIR TURNS ON, AND NEITHER WAS VISIBLE.
+    # This block's own opening argument applies to both: a code default that
+    # differs from what render.yaml declares, so repo state cannot answer "what
+    # is deployed". After that repair went live the only way to answer "is an
+    # ask still writing rows in production?" was to ask a human to open the
+    # Render dashboard — which is precisely the "flag nobody can see" the
+    # FOOD_IDENTITY_ASK note above objects to.
+    #
+    # FOOD_PARTIAL_COMMIT is the load-bearing one. Its code default is now
+    # false (an ask writes nothing, held food rides the pending question), and
+    # a dashboard override of `true` silently restores the defect the whole
+    # repair exists to remove: a card that reads as finished above a question
+    # that says it is not.
+    try:
+        from core.food_turn import partial_commit_enabled
+        out["FOOD_PARTIAL_COMMIT"] = _flag(
+            "FOOD_PARTIAL_COMMIT", partial_commit_enabled())
+    except Exception as e:                           # pragma: no cover
+        out["FOOD_PARTIAL_COMMIT"] = {"error": str(e)}
+
+    # FOOD_PORTION_PRICING decides whether a generic food is priced from a
+    # calibrated portion or from the model's calorie guess — a 3% vs 15% median
+    # error difference against published portion weights. It ships ON, so its
+    # interesting state is somebody having turned it OFF.
+    try:
+        from core.food_intelligence import portion_pricing_enabled
+        out["FOOD_PORTION_PRICING"] = _flag(
+            "FOOD_PORTION_PRICING", portion_pricing_enabled())
+    except Exception as e:                           # pragma: no cover
+        out["FOOD_PORTION_PRICING"] = {"error": str(e)}
+
     return out
 
 

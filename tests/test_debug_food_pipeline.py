@@ -103,3 +103,42 @@ def test_public_summary_never_echoes_raw_env(monkeypatch):
     assert "definitely-not-a-mode" not in repr(pub)
     # ...while still reporting the silent fallback the container is running.
     assert pub["TURN_COORDINATOR_MODE"]["effective"] == "legacy_only"
+
+
+# ── the flags the 2026-08-03 repair turns on ─────────────────────────────────
+
+def test_the_repair_flags_are_visible_from_outside():
+    """A FLAG NOBODY CAN SEE IS A DECISION NOBODY MAKES — this module's own
+    argument, applied to the two flags the food-lane repair depends on.
+
+    After that repair went live, the only way to answer "is an ask still
+    writing rows in production?" was to ask a human to open the Render
+    dashboard. Both flags have a CODE default that a dashboard value can
+    silently override, which is the exact condition `_food_pipeline`'s
+    docstring says repo state cannot answer.
+
+    FOOD_PARTIAL_COMMIT is the load-bearing one: an override of `true`
+    restores the defect the whole repair exists to remove.
+    """
+    from api.diagnostics import public_pipeline_summary
+    out = public_pipeline_summary()
+    for key in ("FOOD_PARTIAL_COMMIT", "FOOD_PORTION_PRICING"):
+        assert key in out, f"{key} is not visible on /health"
+        assert "effective" in out[key] and "env_set" in out[key], out[key]
+
+
+def test_partial_commit_reports_the_value_the_lane_actually_uses():
+    """Resolved through the real accessor, not re-read from the environment —
+    so this block cannot drift from the behaviour it reports."""
+    from api.diagnostics import public_pipeline_summary
+    from core.food_turn import partial_commit_enabled
+    assert (public_pipeline_summary()["FOOD_PARTIAL_COMMIT"]["effective"]
+            is partial_commit_enabled())
+
+
+def test_an_override_is_reported_as_deliberate(monkeypatch):
+    """`env_set` is what separates "defaulted" from "somebody chose this"."""
+    from api.diagnostics import public_pipeline_summary
+    monkeypatch.setenv("FOOD_PARTIAL_COMMIT", "true")
+    entry = public_pipeline_summary()["FOOD_PARTIAL_COMMIT"]
+    assert entry["effective"] is True and entry["env_set"] is True
