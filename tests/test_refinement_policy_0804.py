@@ -247,3 +247,40 @@ def test_unevaluated_quantity_compatibility_is_not_reported_as_met():
     d = _refinement_decision("yogurt", ["greek yogurt"])
     assert d.allowed
     assert any("not evaluated" in e for e in d.evidence), d.evidence
+
+
+def test_a_runtime_exception_inside_the_policy_also_fails_closed(monkeypatch):
+    """The import-failure test proved one path. A policy that IMPORTS and then
+    RAISES is the likelier failure in practice — a bad row, a None where an
+    entity was expected — and the broad handler must treat it the same way.
+
+    Fail closed means BOTH foods survive. Falling back to the legacy matcher
+    here would silently re-enable deletion-capable fuzzy matching at exactly
+    the moment the safety policy is known to be broken.
+    """
+    import skills.nutrition.refinement as R
+    from skills.nutrition.refinement import DecisionMode
+
+    def _boom(*a, **k):
+        raise RuntimeError("policy raised at runtime")
+
+    monkeypatch.setattr(R, "evaluate_refinement", _boom)
+    assert _names(_unique()) == ["White rice"]
+
+    from core.food_turn import _refinement_decision
+    d = _refinement_decision("white rice", ["white rice, cooked"])
+    assert d.mode is DecisionMode.FAILED_CLOSED and not d.allowed
+
+
+def test_the_mode_branch_compares_the_enum_not_a_string():
+    """`DecisionMode` was introduced to remove an ambiguous string contract;
+    comparing `.value == "legacy_fallback"` recreated one, where a typo reads
+    as "not a rollback" and silently preserves duplicates."""
+    import inspect
+
+    import core.food_turn as FT
+
+    src = inspect.getsource(FT._undeferred)
+    assert 'mode.value ==' not in src, (
+        "the rollback branch is comparing a string again")
+    assert "_DecisionMode.LEGACY_FALLBACK" in src

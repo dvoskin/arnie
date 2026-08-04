@@ -768,6 +768,39 @@ async def _clear_deferred(db, pending_row, prior) -> None:
                      "on a later turn): %s", e, exc_info=True)
 
 
+def _shadow_clarification_fields(sft, resp) -> None:
+    """Report what a TYPED clarification contract would have shipped.
+
+    Writes nothing. `resp.buttons` is already decided; this says what
+    `core.semantics.ClarificationField` makes of the same turn, so the
+    disagreement is measurable before anything depends on it.
+
+    The number worth watching is `unanswerable` — questions carrying no
+    options. Each one is a turn where the user must type, and where iOS
+    re-derives chips by parsing Arnie's own rendered sentence
+    (`QuickReplyEngine.swift`). Measured on prod 2026-08-03: 39 of the last 40
+    asks shipped `options: []`.
+    """
+    try:
+        from skills.nutrition.clarification_adapter import (fields_from_turn,
+                                                            unanswerable)
+        fields = fields_from_turn(sft or {})
+        if not fields:
+            return
+        blind = unanswerable(fields)
+        _btns = len(getattr(resp, "buttons", None) or ())
+        _typed = sum(len(f.options) for f in fields)
+        logger.info(
+            "event=clarification_shadow fields=%d typed_options=%d "
+            "wire_buttons=%d unanswerable=%d attributes=%s%s",
+            len(fields), _typed, _btns, len(blind),
+            ",".join(f.attribute for f in fields),
+            "" if _typed == _btns else
+            f" MISMATCH typed={_typed} wire={_btns}")
+    except Exception:      # a measurement may never cost the turn
+        logger.debug("clarification shadow failed", exc_info=True)
+
+
 async def _settle_expired_deferred(db, user, prior, today_log, *,
                                    source_type=None) -> tuple:
     """Commit the foods an expired clarification was still holding.
@@ -3851,6 +3884,7 @@ user_message=_user_text or "")
                 resp.buttons = _chip_buttons[:8]
         except Exception:
             logger.debug("ask chips not attached", exc_info=True)
+        _shadow_clarification_fields(_sft, resp)
 
     # ── Streaming catch-up: emit any non-streamed response bubbles ────────────
     # In streaming mode the model's text streamed live as it arrived. But several

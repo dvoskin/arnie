@@ -2811,6 +2811,14 @@ def _identity_strict() -> bool:
         in ("1", "true", "yes", "on")
 
 
+#: Imported at module scope so the comparison below is an identity check on
+#: the enum rather than on a string reconstructed at each call site.
+try:
+    from skills.nutrition.refinement import DecisionMode as _DecisionMode
+except Exception:      # pragma: no cover - the policy is optional at import
+    _DecisionMode = None
+
+
 def _refinement_decision(key: str, candidates: list):
     """`_undeferred`'s authority to bind one held food to a re-read, spelled out.
 
@@ -3088,8 +3096,12 @@ def _undeferred(held: list, plan_calls: list) -> list:
         # and nothing in the signature would object. The decision carries its
         # evidence so production can be asked WHY a food was claimed.
         _decision = _refinement_decision(key, _fuzzy)
+        # THE ENUM, NOT ITS VALUE. Comparing `.value == "legacy_fallback"`
+        # recreated the string contract `DecisionMode` was introduced to
+        # remove — a typo would have read as "not a rollback" and silently
+        # preserved duplicates, which is the bug this branch exists to fix.
         if _decision is not None and \
-                _decision.mode.value == "legacy_fallback":
+                _decision.mode is _DecisionMode.LEGACY_FALLBACK:
             # The documented rollback: the OLD matcher decides, exactly as it
             # did before the registry existed.
             if len(_fuzzy) == 1:
