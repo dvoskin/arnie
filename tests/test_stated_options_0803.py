@@ -152,3 +152,53 @@ def test_the_existing_guards_survive_the_wider_split():
     assert _stated_options(["Any more coming or you calling it?"]) == []
     assert _stated_options(["one or two?"], label="Bars") == []
     assert _stated_options(["1 or 2?"], label="Bars") == []
+
+
+# ── a closed facet the question named none of ────────────────────────────────
+
+def test_the_live_cooked_question_gets_chips():
+    """"How was the chicken cooked?" — a perfectly good question with nothing
+    to tap, because it names no options for `_stated_options` to find. Live
+    2026-08-04, on the turn AFTER the user had already answered once."""
+    from core.food_turn import _question_options
+    assert _question_options(
+        label="Chicken", qs=["How was the chicken cooked?"],
+        found_by_label=[], message="having some chicken",
+        items=[{"food": "Chicken", "amount": 1, "unit": "serving"}]) \
+        == ["Grilled", "Baked", "Fried", "Not sure"]
+
+
+def test_the_questions_own_words_still_win():
+    """The closed set is a BACKSTOP. When the interpreter wrote the choices, its
+    wording is more specific to what it is asking than a table can be."""
+    from core.food_turn import _question_options
+    assert _question_options(
+        label="Chicken", qs=["Grilled, baked, or fried?"],
+        found_by_label=[], message="having some chicken",
+        items=[{"food": "Chicken", "amount": 1, "unit": "serving"}]) \
+        == ["Grilled", "Baked", "Fried"]
+
+
+@pytest.mark.parametrize("food", ["Eggs", "Potatoes", "Rice"])
+def test_a_food_without_a_row_declines(food):
+    """A single answer set would be right for meat and WRONG for breakfast —
+    eggs are scrambled or boiled, potatoes are mashed or roasted. A wrong chip
+    is worse than no chip, because a tapped option is recorded as the user's
+    own answer. Only rows we can defend are written; the rest decline, exactly
+    as the portion ontology's fallbacks do."""
+    from core.food_turn import _question_options
+    assert _question_options(
+        label=food, qs=[f"How were the {food.lower()} cooked?"],
+        found_by_label=[], message=f"had some {food.lower()}",
+        items=[{"food": food, "amount": 1, "unit": "serving"}]) == []
+
+
+def test_a_portion_question_is_not_shadowed():
+    """The preparation backstop is last, so it cannot answer a question about
+    amount — `_facet_kind` has to agree it is a preparation question at all."""
+    from core.food_turn import _question_options
+    assert _question_options(
+        label="Chicken", qs=["about how much?"],
+        found_by_label=[], message="having some chicken",
+        items=[{"food": "Chicken", "amount": 6, "unit": "oz"}]) \
+        == ["2 oz", "4 oz", "8 oz"]

@@ -3410,11 +3410,58 @@ def _question_options(*, label: str, qs, found_by_label, message: str,
         _p = _portion_options(label, message, items=items)[:4]
         if _p:
             return _p
-    # Last: the choice the question already names. Tried after the shelf and
+    # Then: the choice the question already names. Tried after the shelf and
     # the bracket because those are looked-up facts and this is only what the
     # interpreter wrote — but it is the difference between an answerable
     # question and one every client has to guess at on its own.
-    return _stated_options(qs, label=label)[:4]
+    _stated = _stated_options(qs, label=label)[:4]
+    if _stated:
+        return _stated
+    # Last: a closed facet whose answers we know for this food even though the
+    # question named none of them. "How was the chicken cooked?" is the live
+    # 2026-08-04 case — a perfectly good question with nothing to tap.
+    return _closed_facet_options(label, qs)[:4]
+
+
+#: The answers a PREPARATION question has, per ontology category.
+#:
+#: Closed in a way a portion is not — a chicken was grilled, baked or fried —
+#: but closed DIFFERENTLY for different foods, which is the whole reason this
+#: is a table and not a constant. Eggs are scrambled, boiled or poached;
+#: potatoes are mashed, roasted or fried. A single list would be right for meat
+#: and wrong for breakfast, and a wrong chip is worse than no chip: a tapped
+#: option is recorded as the user's own answer.
+#:
+#: `portions.FORM_ALIASES` cannot supply this. That vocabulary is about how
+#: much of a food fits in a cup (cooked, shredded, cubed) — a MASS question.
+#: Cooking method changes calories per gram, not grams per cup, so the two
+#: never meet.
+#:
+#: Only rows we can defend are written, and everything else declines. That is
+#: the same "progressively replace the fallbacks" shape the portion ontology
+#: uses, and it is the honest state: no chips is a correct answer to a question
+#: whose options nobody has established.
+#:
+#: "Not sure" is not padding. Without an out, a closed question dead-ends the
+#: user who genuinely does not know, and their only way past it is to type
+#: something the parser then has to guess at.
+_PREPARATION_OPTIONS = {
+    "meat": ("Grilled", "Baked", "Fried", "Not sure"),
+}
+
+
+def _closed_facet_options(label: str, qs) -> list:
+    """Options for a facet with a known answer set, when the question named
+    none. Empty whenever we have not established the set for this food."""
+    try:
+        if not any(_facet_kind(q) == "preparation" for q in (qs or ())):
+            return []
+        from skills.nutrition.portions import food_category
+        return list(_PREPARATION_OPTIONS.get(
+            food_category(str(label or "")), ()))
+    except Exception:
+        logger.debug("closed-facet options not derived", exc_info=True)
+        return []
 
 
 def _asks_strictly_less(points, prior) -> bool:
