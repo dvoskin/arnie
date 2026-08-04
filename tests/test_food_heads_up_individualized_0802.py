@@ -15,7 +15,15 @@ from core.conversation import _food_heads_up_subject
 from handlers.tool_executor import (FOOD_LOOKUP_HEADS_UP, _FOOD_LOOKUP_TEMPLATES,
                                     _FOOD_LOOKUP_TEMPLATES_BRANDED, tool_heads_up)
 
-_BANNED_WRITE = ("log", "add", "sav", "writ", "track", "enter")
+#: COMPLETED write forms, not the verb. The rule this enforces is that a
+#: heads-up must never claim the row is already down — that duplicates the
+#: commit indicator and reads as a stall. It was written as a substring ban on
+#: "log"/"add"/"sav", which cannot tell "logged that" (a false claim) from "so
+#: I log this accurately" (a reason for the pause, and the exact wording Danny
+#: asked for on 2026-08-04). Narrowed to the completed forms, which is what the
+#: rule was always about.
+_BANNED_WRITE = ("logged", "logging", "added", "adding", "saved", "saving",
+                 "written", "writing", "tracked", "tracking", "entered")
 
 
 @pytest.mark.parametrize("line", _FOOD_LOOKUP_TEMPLATES + _FOOD_LOOKUP_TEMPLATES_BRANDED)
@@ -27,7 +35,14 @@ def test_template_names_food_describes_a_lookup_never_a_write(line):
     assert line == lowered, "pinned literals stay lowercase; voice lifts them"
     assert "—" not in line, "no em dash in voice"
     words = len(line.replace("{food}", "food").split())
-    assert 9 <= words <= 16, f"{line!r} is {words} words (target 10-15)"
+    # SHORTER (Danny, 2026-08-04). The 10-15 target produced lines that read as
+    # the opening of the final reply rather than as cover for a pause —
+    # "verifying the numbers on that chicken so what you see is right" is
+    # procedural, and on a live screenshot it blended straight into the
+    # clarification underneath it. The brief is now one short sentence; the
+    # preferred wording is eight words. Still a floor, because a two-word
+    # fragment reads as terse rather than as a coach speaking.
+    assert 4 <= words <= 11, f"{line!r} is {words} words (target 5-10)"
 
 
 def test_generic_food_is_named_and_placeholder_never_leaks():

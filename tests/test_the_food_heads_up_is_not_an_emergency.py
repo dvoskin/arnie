@@ -57,9 +57,18 @@ def test_the_same_food_always_gets_the_same_line():
 def test_every_line_describes_a_lookup_and_never_a_write(line):
     """`NO TRANSACTION NARRATION` removed "Logging all 2 now" because a bubble
     claiming a write is underway duplicates the indicator and reads as
-    stalling. A heads-up says we are checking a source."""
+    stalling. A heads-up says we are checking a source.
+
+    COMPLETED forms, not the verb (2026-08-04). The rule is about claiming the
+    row is already down, and a substring ban on "log" cannot tell "logged that"
+    from "so I log this accurately" — the second names the REASON for the pause
+    and is the wording Danny picked as the strongest latency cover. Narrowed to
+    what the rule was always about; "logging" stays banned because a write in
+    progress is exactly the claim being prevented.
+    """
     lowered = line.lower()
-    for banned in ("log", "add", "sav", "writ", "track", "enter"):
+    for banned in ("logged", "logging", "added", "adding", "saved", "saving",
+                   "written", "writing", "tracked", "tracking", "entered"):
         assert banned not in lowered, f"{line!r} sounds like a write"
 
 
@@ -70,7 +79,13 @@ def test_every_line_keeps_the_rules_that_were_right(line):
     # terse rather than as a coach speaking. Still a ceiling — this is a bubble
     # that appears for a second or two while a lookup runs, and a sentence the
     # user has to read twice defeats the point of reassurance.
-    assert len(line) <= 44, f"{line!r} is too long for a heads-up bubble"
+    # 30 -> 44 (2026-07-31) -> 48 (2026-08-04). The last raise is exactly three
+    # characters and buys one line: "checking the portions so i log this
+    # accurately", the wording Danny picked as the strongest latency cover. The
+    # ceiling's reason is unchanged and still binding — this bubble shows for a
+    # second or two while a lookup runs, and a sentence the user has to read
+    # twice defeats the point of reassurance.
+    assert len(line) <= 48, f"{line!r} is too long for a heads-up bubble"
     assert line == lowered, "pinned literals stay lowercase; voice lifts them"
     for banned in ("lemme", "real quick", "hang tight", "hang on", "one sec"):
         assert banned not in lowered, f"{line!r} is try-hard casual"

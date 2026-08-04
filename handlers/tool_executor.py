@@ -1334,53 +1334,70 @@ def _deep_research_allow(user_id: int) -> bool:
 # bubble that claims the row is down duplicates the indicator and reads as a
 # stall. Generic {food} is lowercased in-sentence; branded {food} keeps its case.
 _FOOD_LOOKUP_TEMPLATES_BRANDED = (
-    "reading the label on that {food} so the macros are exact.",
-    "pulling {food}'s own label numbers so this is spot on.",
-    "checking the published label for {food} so your macros are exact.",
-    "getting the numbers straight off the {food} label right now.",
-    "let me read the {food} label so it's exactly what's in it.",
-    "checking what the {food} label actually says so nothing's a guess.",
-    "pulling the real label macros for {food} so your total is right.",
-    "reading the {food} packaging so you get the exact numbers.",
-    "let me grab the label macros on {food} so they're precise.",
-    "checking the official {food} label so your day stays accurate.",
+    "reading the {food} label so the macros are exact.",
+    "pulling {food}'s own label numbers now.",
+    "checking the published label for {food}.",
+    "getting the numbers off the {food} label.",
+    "let me read the {food} label properly.",
+    "checking what the {food} label says.",
+    "pulling the label macros for {food}.",
+    "reading the {food} packaging now.",
+    "let me grab the {food} label macros.",
+    "checking the official {food} label.",
 )
+#: SHORTER, AND ABOUT THE PORTION (Danny, 2026-08-04, off a live screenshot).
+#:
+#: These are LATENCY COVER — they exist to say "heard you, working" while the
+#: resolver runs, and then to be replaced by the real answer. The old pool read
+#: as the beginning of the final reply instead: "verifying the numbers on that
+#: chicken so what you see is right" is procedural, promises correctness before
+#: anything has been resolved, and visually blends into the clarification that
+#: follows it.
+#:
+#: So: one short sentence, conversational, naming the benefit rather than the
+#: mechanism. No numbers — a calorie figure here is a claim made before
+#: resolution. No "verify"/"confirm"/"real data" — those assert a result. And
+#: still no "log"/"land"/"save", which would read as a completed write.
+#:
+#: Still a POOL, not the one preferred line. A single string repeats on every
+#: log and becomes noise (Danny 0802: 15-20 variations so it isn't noticeable);
+#: the recommended wording leads it and the rest sit in the same register.
 _FOOD_LOOKUP_TEMPLATES = (
-    "let me pull the real calories on that {food} so it's exactly right.",
-    "checking what's actually in that {food} so your numbers come out accurate.",
-    "getting the real macros on that {food} now, not a guess.",
-    "let me get the proper numbers for that {food} so your day stays accurate.",
-    "digging up the real macros on that {food} so it's precise.",
-    "checking that {food} against real data so the totals are honest.",
-    "working out that {food} properly so the numbers match what you ate.",
-    "finding the actual numbers for that {food}, not just an estimate.",
-    "let me get the real macros on that {food} rather than guess.",
-    "pulling accurate numbers for that {food} so your totals hold up.",
-    "getting that {food} right, checking the real macros rather than guessing.",
-    "let me check the true calories on that {food} so you can trust the total.",
-    "sorting out exactly what that {food} comes to so your day is accurate.",
-    "checking the real numbers on that {food} so you get the exact macros.",
-    "let me nail down the macros on that {food} so it's precise, one moment.",
-    "verifying the numbers on that {food} so what you see is right.",
-    "getting you accurate macros on that {food}, checking a real source now.",
-    "let me confirm the real calories in that {food} so nothing's off.",
+    "checking the portions to log that {food} accurately.",
+    "let me tighten up the {food} estimate.",
+    "checking the {food} details now.",
+    "just checking the portion on that {food}.",
+    "let me size up that {food} properly.",
+    "working out how much {food} that is.",
+    "checking the {food} portion so this comes out right.",
+    "let me get the {food} portion right.",
+    "sizing up that {food} now.",
+    "checking how much that {food} comes to.",
+    "let me look at the {food} portion properly.",
+    "quick check on the {food} portion.",
+    "working out the {food} portion now.",
+    "let me size that {food} up first.",
+    "checking what portion of {food} that is.",
+    "getting the {food} portion right.",
+    "let me check the {food} portion properly.",
+    "sizing up the {food} so this is accurate.",
 )
 
 #: No-food fallback — no single food was extracted (multi-item over budget, or a
 #: bare turn). Terse (<=44 chars), describes a lookup, claims no label. Pinned by
 #: test_the_food_heads_up_is_not_an_emergency.
 _FOOD_LOOKUP_BUBBLES = (
-    "checking the real numbers on that.",
-    "pulling the actual macros, not a guess.",
-    "getting the proper numbers for this.",
-    "checking what's actually in that.",
-    "finding the real numbers for it.",
-    "working this one out properly.",
-    "checking the macros against a source.",
-    "digging up the numbers on that.",
-    "getting the macros right on this one.",
-    "sorting out what that comes to.",
-    "checking that one against real data.",
+    "checking the portions to log this accurately.",
+    "just checking the portions.",
+    "let me size this up properly.",
+    "working out the portions now.",
+    "checking the amounts now.",
+    "quick check on the portions.",
+    "let me check the portions first.",
+    "sizing this up now.",
+    "getting the portions right.",
+    "checking how much that comes to.",
+    "let me look at the portions properly.",
 )
 
 #: SECOND-TIER heads-up (P1). Fires ONLY when a turn is still running ~6s in,
