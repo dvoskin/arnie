@@ -1987,11 +1987,17 @@ def build_prompt(plan: FoodResponsePlan) -> str:
     _snap = plan.committed_snapshot
     if _snap is not None:
         parts.append(
+            # SIGNED, and the same numbers the card carries. `cal_left` is
+            # floored at zero for the deterministic prose templates, and
+            # handing that to the composer told it "0 calories left" on a day
+            # 1200 over — so it coached from a number that said the opposite of
+            # the verdict printed beside it.
             "WHERE THE DAY STANDS (reason from these; do not restate a number "
             f"the card already shows): {_snap.day_cal} of {_snap.cal_target} "
             f"calories, {_snap.day_protein} of {_snap.protein_target}g "
-            f"protein, so {_snap.cal_left} calories and "
-            f"{_snap.protein_left}g protein left.")
+            f"protein, so {_snap.cal_remaining} calories and "
+            f"{_snap.protein_remaining}g protein left "
+            "(negative means OVER).")
     elif plan.day_state:
         parts.append("WHERE THE DAY STANDS (reason from these, do not recite "
                      f"them): {plan.day_state}")

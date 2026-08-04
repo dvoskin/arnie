@@ -1371,6 +1371,27 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
                 carbs = round(per100["carbs"] * _ratio, 1)
             if per100.get("fat") is not None:
                 fat = round(per100["fat"] * _ratio, 1)
+            # THE WHOLE PANEL, not just the macros. Rescaling four fields and
+            # leaving fibre, sugar, sodium and the micros at values derived
+            # from the mass we just REJECTED is worse than not repricing: the
+            # row then carries a correct calorie count beside a fabricated
+            # panel, under `micronutrient_source="usda_exact"`. Measured on
+            # black beans "1 cup" at llm_cal=1 — 158 cal committed correctly
+            # with fibre 0.1 g and sodium 2 mg against a real 10.4 g / 286 mg,
+            # and the coach note flipped from "good fibre" to "~0g fiber
+            # (low)". Nothing downstream heals it, because
+            # `handlers/tool_executor.py` backfills only when the field is
+            # None and 0.0 is not None.
+            if per100.get("fiber") is not None:
+                fiber = round(per100["fiber"] * _ratio, 1)
+            if per100.get("sugar") is not None:
+                sugar = round(per100["sugar"] * _ratio, 1)
+            if per100.get("sodium") is not None:
+                sodium = round(per100["sodium"] * _ratio, 0)
+            for _mk in _MICRO_KEYS:
+                _mv = per100.get(_mk)
+                if _mv is not None:
+                    micros[_mk] = round(_mv * _ratio, 2)
             _implied_grams = _reprice_g
             computed_forward = True
             logger.warning(

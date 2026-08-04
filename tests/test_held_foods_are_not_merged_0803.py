@@ -86,7 +86,69 @@ def test_the_turkey_and_corn_case_is_unchanged():
 def test_ambiguity_carries_rather_than_drops():
     """When several plan calls could account for one held call, none of them
     claims it. A food written twice is visible and recoverable; one silently
-    dropped is not."""
+    dropped is not.
+
+    The example changed with the head-noun rule: "Rice pudding" is no longer a
+    candidate at all (a new head noun after the match makes it a different
+    food), so it is no longer ambiguous with "Fried rice". Two genuine renames
+    are.
+    """
     out = _undeferred([_c("Rice")],
-                      [_c("Fried rice"), _c("Rice pudding")])
+                      [_c("Fried rice"), _c("Cooked rice")])
     assert _names(out) == ["Rice"]
+
+
+# ── a rename is not "any name that contains this one" ─────────────────────────
+
+@pytest.mark.parametrize("held,plan", [
+    ("Orange", "Orange juice"),
+    ("Coffee", "Coffee cake"),
+    ("Peanut", "Peanut butter"),
+    ("Egg", "Egg roll"),
+    ("Apple", "Apple pie"),
+    ("Rice", "Rice cakes"),
+])
+def test_a_different_food_never_claims_a_held_one(held, plan):
+    """THE ACROSS-TURNS HALF, which the first fix missed entirely.
+
+    `_same_food` is a token-subset test, so it could not tell "the answer turn
+    renamed the same food" from "a different food whose name contains this
+    one". Driven end to end through two real turns, held foods VANISHED:
+
+        "an orange and a glass of orange juice" -> the orange, gone
+        "coffee and coffee cake"                -> the coffee, gone
+
+    with no row, no tombstone, and `outcome=covered` logged over the loss. 26
+    such pairs exist among the 275 food names in `portions.py` alone.
+
+    English compounds put the head noun last, so a new head AFTER the match
+    means a different food — while words BEFORE it, and preparation words
+    anywhere, are the same food described better.
+    """
+    assert _names(_undeferred([_c(held)], [_c(plan)])) == [held]
+
+
+@pytest.mark.parametrize("held,plan", [
+    ("White rice", "White rice, cooked"),   # symptom 5, the reason this exists
+    ("Beef", "Ground beef"),
+    ("Turkey", "Ground turkey"),
+    ("Oil", "Olive oil"),
+    ("Chicken", "Grilled chicken"),
+    # A LEADING modifier NAMES THE SAME FOOD MORE PRECISELY, even when it is an
+    # ingredient rather than a preparation. I first asserted the opposite for
+    # these two, having lifted them off a list of token COLLISIONS without
+    # asking which way each should resolve — the code was right and the test
+    # was wrong.
+    #
+    # The reason it resolves this way is the deferral's own context: `held` and
+    # `plan` are two readings of the SAME message. If the user had said "bread
+    # and banana bread", the answer turn's re-read would emit both; emitting
+    # only "banana bread" means it is the one item, described better. That is
+    # not true of a trailing head noun — "orange juice" is not a more precise
+    # "orange", it is a different thing made from one.
+    ("Bread", "Banana bread"),
+    ("Soup", "Miso soup"),
+])
+def test_a_genuine_rename_still_collapses(held, plan):
+    """The narrowing may not cost the duplicate-collapse it was built for."""
+    assert _undeferred([_c(held)], [_c(plan)]) == []

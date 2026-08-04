@@ -2694,6 +2694,59 @@ def _same_food(a: str, b: str) -> bool:
     return ta <= tb or tb <= ta
 
 
+#: Words that describe how a food was PREPARED rather than which food it is.
+#: "White rice" -> "White rice, cooked" is the same rice; "Orange" -> "Orange
+#: juice" is not the same orange.
+_PREPARATION_TOKENS = frozenset((
+    "cooked", "raw", "grilled", "fried", "baked", "roasted", "boiled",
+    "steamed", "grill", "broiled", "seared", "ground", "chopped", "diced",
+    "sliced", "shredded", "minced", "plain", "cold", "hot", "fresh", "frozen",
+    "leftover", "reheated", "homemade", "prepared", "whole", "lean",
+))
+
+
+def _is_renaming_of(narrow: str, wide: str) -> bool:
+    """Whether `wide` is the SAME food as `narrow`, named more precisely.
+
+    `_same_food`'s token-subset test cannot tell a rename from a different food
+    whose name happens to contain this one, and used across turns that deleted
+    real food: held "Orange" against a plan naming "Orange juice" was treated
+    as covered and never written. Measured end to end — orange/orange juice,
+    coffee/coffee cake, peanut/peanut butter, egg/egg roll, apple/apple pie all
+    vanished, with `outcome=covered` logged over the loss. 26 such pairs exist
+    among the 275 food names in `portions.py` alone.
+
+    English compounds put the head noun LAST, so what the extra tokens are, and
+    where they sit, is the whole signal:
+
+        "white rice"  -> "white rice, cooked"   extra token is a PREPARATION -> same food
+        "orange"      -> "orange juice"         extra token is a new HEAD    -> different food
+        "beef"        -> "ground beef"          extra token LEADS            -> same food
+
+    So a rename may add preparation words anywhere, or any words BEFORE the
+    head, but it may not put a new head noun after it. That keeps the collapse
+    this exists for (symptom 5's duplicate rice) and stops the deletion.
+    """
+    n, w = _name_tokens(narrow), _name_tokens(wide)
+    if not n or not w or not (n <= w):
+        return False
+    if n == w:
+        return True
+    nl, wl = list(_ordered_tokens(narrow)), list(_ordered_tokens(wide))
+    if not nl or not wl:
+        return False
+    # The head noun must survive. Anything appended after it that is not a
+    # preparation word makes this a different food.
+    _tail = wl[wl.index(nl[-1]) + 1:] if nl[-1] in wl else wl
+    return all(t in _PREPARATION_TOKENS for t in _tail)
+
+
+def _ordered_tokens(key: str) -> list:
+    """`_name_tokens` in order, for the head-noun rule."""
+    return [t for t in (re.sub(r"[^a-z0-9]+", "", w) for w in (key or "").split())
+            if t]
+
+
 def _same_food_name(a: str, b: str) -> bool:
     """`_same_food` for RAW names — normalizes first. Callers that hold food
     names as the user/interpreter wrote them want this one; callers holding
@@ -2758,8 +2811,15 @@ def _undeferred(held: list, plan_calls: list) -> list:
         # "White rice, cooked"). Only when exactly one plan call is a candidate
         # — several, or none, and we carry it. A held food written twice is
         # visible and recoverable; one silently dropped is not.
-        _fuzzy = [s for s in unclaimed if _same_food(key, s)]
+        # `_is_renaming_of`, NOT `_same_food`. A subset test cannot tell a
+        # rename from a different food whose name contains this one, and across
+        # turns that is the difference between collapsing a duplicate and
+        # DELETING a row the user reported. See `_is_renaming_of`.
+        _fuzzy = [s for s in unclaimed if _is_renaming_of(key, s)]
         if len(_fuzzy) == 1:
+            logger.info(
+                "event=deferred_collapse held=%r covered_by=%r — treated as the "
+                "same food renamed", key, _fuzzy[0])
             unclaimed.remove(_fuzzy[0])
             continue
         out.append(call)

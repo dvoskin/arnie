@@ -744,6 +744,30 @@ async def run_turn(*args, **kwargs) -> TurnResult:
             pass
 
 
+async def _clear_deferred(db, pending_row, prior) -> None:
+    """Strip `deferred_calls` from an open pending question's payload.
+
+    A stash that has been WRITTEN must stop being a stash. The question itself
+    may still be open and unanswered — that is why this edits the payload
+    rather than stamping `answered_at` — but the food inside it is on the board
+    now, and anything that reloads the row would write it again.
+
+    Never raises: a failure here leaves a stale IOU, which dedup can still
+    catch inside its window, whereas an exception would cost the reply.
+    """
+    if pending_row is None or not (prior or {}).get("deferred_calls"):
+        return
+    try:
+        import json as _json
+        _payload = dict(prior or {})
+        _payload.pop("deferred_calls", None)
+        pending_row.payload_json = _json.dumps(_payload)
+        await db.commit()
+    except Exception as e:
+        logger.error("could not clear deferred_calls (they may re-commit "
+                     "on a later turn): %s", e, exc_info=True)
+
+
 async def _settle_expired_deferred(db, user, prior, today_log, *,
                                    source_type=None) -> int:
     """Commit the foods an expired clarification was still holding.
@@ -1348,9 +1372,26 @@ async def _run_turn(
                     # the turn goes back to the conversational brain that it
                     # actually belongs to. Without this the food composer
                     # answered a coaching question with a meal recap.
+                    # THE REAL PRIOR, not a synthetic dict. It carries
+                    # `log_date`, and without it the stashed-date steering in
+                    # `_settle_expired_deferred` is dead on this path — a meal
+                    # held overnight lands on the answer day, which is the
+                    # wrong-day write the expiry path exists to prevent.
+                    _wo = dict(_sft_prior or {})
+                    _wo["deferred_calls"] = _sft.get("tool_calls") or []
                     await _settle_expired_deferred(
-                        db, user, {"deferred_calls": _sft.get("tool_calls")},
-                        today_log, source_type=_source)
+                        db, user, _wo, today_log, source_type=_source)
+                    # AND TEAR UP THE IOU. Setting `_sft = None` skips the
+                    # branch that stamps `answered_at`, so the pending row kept
+                    # its `deferred_calls` and EVERY later turn reloaded and
+                    # re-wrote the same stash — and while an ask is open every
+                    # turn is a food turn, with `_run_untraced` returning None
+                    # for any non-food message. Measured: the same two foods
+                    # re-committed turn after turn, eventually folding into a
+                    # later meal's receipt. Dedup is the only thing in the way
+                    # and its window is 90 minutes against a pending that
+                    # survives ~40 hours.
+                    await _clear_deferred(db, _sft_prior_pq, _sft_prior)
                     _sft = None
                 if _sft is None:
                     # The interpreter times out or the model fails and control
@@ -2551,9 +2592,12 @@ async def _run_turn(
                             for _cr in (_execution.successful
                                         if _execution is not None else ()):
                                 if isinstance(_cr.receipt, dict):
-                                    _cr.receipt["remaining_cal"] = _snap.cal_left
+                                    # SIGNED — the card's own field always was,
+                                    # and every consumer keys on the sign.
+                                    _cr.receipt["remaining_cal"] = \
+                                        _snap.cal_remaining
                                     _cr.receipt["remaining_protein"] = \
-                                        _snap.protein_left
+                                        _snap.protein_remaining
                         except Exception:
                             pass    # a card with a stale number beats no card
                         # The committed item NAMES travel with the plan, and

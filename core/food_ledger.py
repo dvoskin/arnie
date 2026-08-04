@@ -203,11 +203,35 @@ class TransactionSnapshot:
 
     @property
     def cal_left(self) -> int:
+        """Floored at zero — this feeds PROSE. "You're at 3200 with -1200 left"
+        is not a sentence anyone says; see `_DAY_TAIL` and the `{cal_left}`
+        token in `core/ledger_undo.py`."""
         return max(0, self.cal_target - self.day_cal)
 
     @property
     def protein_left(self) -> int:
         return max(0, self.protein_target - self.day_protein)
+
+    @property
+    def cal_remaining(self) -> int:
+        """SIGNED — this feeds the CARD, where negative means over.
+
+        The card's own `rem_c` (`core/receipt.py:105`) has always been signed,
+        and everything downstream keys on the sign: `coach_read_contradicts`
+        blocks "plenty of room" when it is negative and "over target" when it
+        is positive, and the iOS card renders red on `c < 0`. Reconciling the
+        card from `cal_left` floored that to 0, so a 3200-calorie day showed
+        "0 calories left" beside its own verdict reading "about 1200 calories
+        over" — symptom 11 recreated inside one bubble, by the fix for symptom
+        11. At exactly 0 neither contradiction guard fires either, so a model
+        line claiming room is accepted on an over-target day.
+        """
+        return self.cal_target - self.day_cal
+
+    @property
+    def protein_remaining(self) -> int:
+        """SIGNED. See `cal_remaining`."""
+        return self.protein_target - self.day_protein
 
     def token_values(self) -> dict:
         return {
