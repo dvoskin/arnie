@@ -165,15 +165,134 @@ def conversions() -> int:
     return 0
 
 
+# ── consequence classification ───────────────────────────────────────────────
+#
+# A COUNT IS NOT A RISK. Every hit in `scan()` weighs the same, so a regex that
+# formats a display string and a regex that decides whether to delete a row are
+# indistinguishable — and prioritising by raw count therefore prioritises by
+# verbosity. This classifies each hit by what it can actually break.
+#
+# Judged structurally rather than by keyword: the enclosing function is found
+# by walking the AST, and the function is classified by what IT does. A hit
+# inside a function that reaches a write is mutation-class no matter how
+# innocent the line looks; a hit inside a docstring or an f-string is
+# presentation no matter how alarming.
+
+#: What a write looks like here, grounded by counting the codebase rather than
+#: guessed: db.add( 44, db.delete( 7, await db.execute 241, update_food_entry
+#: 54, delete_food_entry 28, log_food 197, execute_tool_calls 29.
+_WRITES = re.compile(
+    r"\bdb\.add\(|\bdb\.delete\(|\bawait db\.execute|\.commit\(\)"
+    r"|update_food_entry|delete_food_entry|log_food\b|execute_tool_calls")
+
+#: Consequence classes, most severe first. First match wins.
+_CLASSES = (
+    ("mutation-targeting", lambda body, mod, line: bool(_WRITES.search(body))),
+    ("commit-gating", lambda body, mod, line: bool(
+        re.search(r"\ballow(ed)?\b|\bblock|\bgate\b|\brefus|\bdecline", body)
+        and re.search(r"return (False|None)", body))),
+    ("identity-resolution", lambda body, mod, line: bool(
+        re.search(r"_same_food|_head_matches|_is_renaming_of|entry_id"
+                  r"|_undeferred|dedup", body))),
+    ("reference-binding", lambda body, mod, line: bool(
+        re.search(r"\bprior\b|pending|deferred|staged|last_|previous", body))),
+    ("quantity-conversion", lambda body, mod, line: bool(
+        re.search(r"grams|_g\b|mass|calorie|kcal|weight_kg|LB_PER_KG"
+                  r"|G_PER_OZ", body))),
+    ("routing", lambda body, mod, line: bool(
+        re.search(r"_to_legacy|route|applies\(|intent|classify", body))),
+    ("search-promotion", lambda body, mod, line: bool(
+        re.search(r"promote|candidate|rank|score", body))),
+    ("unclassified-residual", lambda body, mod, line: True),
+)
+
+
+def _enclosing(tree, lineno: int):
+    """The innermost function containing `lineno`, or None for module level."""
+    import ast as _ast
+    best = None
+    for node in _ast.walk(tree):
+        if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+            end = getattr(node, "end_lineno", node.lineno)
+            if node.lineno <= lineno <= end:
+                if best is None or node.lineno > best.lineno:
+                    best = node
+    return best
+
+
+def consequence(pattern: str = None) -> int:
+    """Classify every heuristic hit by what it can break."""
+    import ast as _ast
+    rx = re.compile(pattern or (
+        r"re\.compile\(|rstrip\(\"s\"\)|_same_food|_head_matches"
+        r"|_is_renaming_of|re\.split\(|\.lower\(\) in "))
+    # A FEATURE FLAG IS NOT AN INTERPRETATION. `os.getenv("X").lower() in
+    # ("true","1")` matched the substring-gate pattern, so every boolean flag
+    # in the codebase was being scored as language handling — the same
+    # over-counting the `\b` bug produced, in the other direction. Config reads
+    # decide deployment, never what the user meant.
+    _config = re.compile(r"os\.getenv|os\.environ|_enabled\b|_ENABLED\b")
+    tally = collections.Counter()
+    detail = collections.defaultdict(list)
+    for f in _modules():
+        if f.name in ("units.py", "food_identity_inventory.py",
+                      "semantics_acceptance.py"):
+            continue
+        text = f.read_text()
+        try:
+            tree = _ast.parse(text)
+        except SyntaxError:
+            continue
+        lines = text.splitlines()
+        for i, line in enumerate(lines, 1):
+            if not rx.search(line) or _config.search(line):
+                continue
+            fn = _enclosing(tree, i)
+            if fn is None:
+                body, where = line, "<module>"
+            else:
+                body = "\n".join(
+                    lines[fn.lineno - 1:getattr(fn, "end_lineno", fn.lineno)])
+                where = fn.name
+            # A hit inside the function's own docstring describes behaviour, it
+            # does not cause any.
+            doc = _ast.get_docstring(fn) if fn is not None else None
+            if doc and line.strip() and line.strip() in doc:
+                cls = "presentation-only"
+            else:
+                cls = next(name for name, test in _CLASSES
+                           if test(body, str(f), line))
+            tally[cls] += 1
+            detail[cls].append(
+                f"{f.relative_to(_ROOT)}:{i} ({where})  {line.strip()[:56]}")
+    order = [c for c, _ in _CLASSES] + ["presentation-only"]
+    print("HEURISTIC HITS BY CONSEQUENCE, most severe first\n")
+    for cls in order:
+        if not tally[cls]:
+            continue
+        print(f"  {cls:22} {tally[cls]:>4}")
+        for d in detail[cls][:4]:
+            print(f"      {d}")
+        if len(detail[cls]) > 4:
+            print(f"      … {len(detail[cls]) - 4} more")
+        print()
+    print(f"  {'TOTAL':22} {sum(tally.values()):>4}")
+    return 0
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--vocabularies", action="store_true",
                     help="show the tables and whether they agree")
     ap.add_argument("--conversions", action="store_true",
                     help="every hard-coded unit conversion, by module")
+    ap.add_argument("--consequence", action="store_true",
+                    help="classify heuristic hits by what they can break")
     args = ap.parse_args()
     if args.vocabularies:
         sys.exit(vocabularies())
     if args.conversions:
         sys.exit(conversions())
+    if args.consequence:
+        sys.exit(consequence())
     sys.exit(scan())

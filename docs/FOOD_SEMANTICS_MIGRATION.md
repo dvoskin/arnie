@@ -251,8 +251,107 @@ it should not be quoted as evidence until it is.
    the one change that pays off in eight domains at once.
 2. **The shared routing layer is audited before the domain layers**, because
    its regexes and substring gates are what every domain inherits.
-3. **Do not build canonical semantics for the seven quiet domains yet.** They
-   have no competing sources of truth to reconcile — they have no source of
-   truth. Giving them one is a feature project, not an architecture
-   correction, and it should be sequenced on product need rather than on
-   symmetry with food.
+3. **Do not build full domain ontologies for the seven quiet domains yet** —
+   every exercise, every habit, every sleep concept, every search entity.
+   Those are feature projects and should be sequenced on product need.
+
+### Correction (Danny, review of the audit commit)
+
+The line above originally read *"do not build canonical semantics for the seven
+quiet domains yet"*, and that was too strong. It conflated two different
+things:
+
+- building **rich domain ontologies** for eight domains — correctly deferred;
+- building the **shared semantic contracts** — which must happen now.
+
+The audit's own findings are the argument against the version I wrote. It
+established that those domains cannot preserve uncertainty, bind a correction
+to a stable prior event, produce a typed clarification, distinguish
+interpretation evidence, or behave consistently across languages. Those are
+precisely the gaps the universal contracts close. Deferring them does not
+protect the quiet domains; it guarantees food re-implements each concept in a
+food-specific way and someone generalises it later — which is how food got
+here.
+
+**So: land the shared contracts now, with food as their first deep
+implementation.**
+
+```
+SemanticTurn        CanonicalIntent     CanonicalQuantity   UnitRegistry
+EventReference      ClarificationField  PendingOperation    CanonicalEvent
+ExecutionResult     provenance / confidence / language / locale metadata
+```
+
+The quiet domains keep their LLM tool interpretation for now, but their outputs
+adapt **into these same contracts** rather than growing parallel ones. The
+binding rule: *food may not define a food-specific version of quantities,
+references, clarifications, pending lifecycle or execution results, because
+none of those concepts is food-specific.*
+
+### The audit's other weakness: a count is not a risk
+
+Every hit currently weighs the same. A regex that formats a display string and
+a regex that decides whether to delete a row both count as one, and prioritising
+by raw count therefore prioritises by verbosity rather than by consequence.
+
+Before implementation, every regex, substring gate, prose parser and conversion
+is classified by what it can actually break:
+
+```
+presentation-only   routing            interpretation      identity-resolution
+reference-binding   quantity-conversion  mutation-targeting  commit-gating
+search-promotion
+```
+
+A substring inside a prompt is not comparable to one deciding "same prior
+workout" or "delete last weight". `scripts/food_identity_inventory.py
+--consequence` produces this classification; priority follows mutation risk,
+not volume.
+
+**Measured result:**
+
+| class | hits |
+|---|---:|
+| mutation-targeting | 8 |
+| commit-gating | 6 |
+| identity-resolution | 13 |
+| reference-binding | 3 |
+| quantity-conversion | 5 |
+| search-promotion | 1 |
+| unclassified residual | 158 |
+| presentation-only | 3 |
+
+**27 hits can break data; 158 cannot.** Prioritising by raw count would have
+started almost anywhere; prioritising by consequence puts one function at the
+top:
+
+```
+core/food_turn.py:2819 (_undeferred)  _fuzzy = [s for s in unclaimed
+                                       if _is_renaming_of(key, s)]
+```
+
+Its own neighbouring comment reads *"DELETING a row the user reported"*. That
+is the single highest-risk heuristic in the codebase, it is what acceptance
+criterion 4 names, and it is where migration to stable IDs starts.
+
+Second is `_item_is_stated` (commit-gating), whose `rstrip("s")` unit
+comparison was probed on 2026-08-04 and found **not** to misfire today —
+protected only by a downstream digit fallback. Behaving is not the same as
+being correct, and a commit gate is not a place to rely on the difference.
+
+*Two false-positive classes were removed from this count and are worth naming,
+because both inflated it the way the `\b` bug deflated the conversion count:*
+every boolean feature flag (`os.getenv("X").lower() in ("true","1")`) matched
+the substring-gate pattern and was scoring as language handling; and the
+catch-all bucket is labelled **unclassified-residual** rather than
+"interpretation", because calling a `lambda: True` fallback a classification is
+how 158 unexamined lines would have acquired a meaning they have not earned.
+
+### Priority (revised)
+
+1. duplicated units — **done**, `core/units.py`
+2. mutation-critical shared routing
+3. reference and correction binding
+4. food identity and clarification
+5. adapters so the quiet domains emit the same contracts
+6. domain ontology expansion, on product need
