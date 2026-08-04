@@ -123,3 +123,57 @@ def test_the_ceiling_is_untouched():
 def test_olive_oil_still_passes_at_the_ceiling():
     assert not _fatal(sanity.check_values(
         calories=119, grams=13.5, name="Olive oil"))
+
+
+# ── the refusal must actually change something ────────────────────────────────
+
+def _usda_rice():
+    return {"description": "Rice, white, cooked", "_match": "exact",
+            "per100g": {"calories": 130, "protein": 2.7, "carbs": 28,
+                        "fat": 0.3}}
+
+
+def test_the_refusal_is_not_a_no_op_when_the_model_supplied_the_zero():
+    """The floor fired and then reverted to the number that caused it.
+
+    Every OTHER fatal finding means a SOURCE row was scaled wrongly, so falling
+    back to `_llm0` is the right escape — the model's read was produced without
+    that bad basis. `energy_density_negligible` is the opposite: when the model
+    is what supplied the near-zero, `_llm0` IS the number that failed.
+
+        analyze("White rice", "1 cup", llm_cal=1) -> committed 1     (before)
+        analyze("White rice", "1 cup", llm_cal=0) -> committed 206
+
+    Two cases one calorie apart with opposite outcomes — the zero-calorie branch
+    upstream catches `cal <= 0` and reprices, and nothing caught the 1.
+    """
+    import core.food_intelligence as FI
+    out = FI.analyze("White rice", "1 cup", 1, 1, 1, 0,
+                     usda_candidate=_usda_rice())
+    assert round(out.calories) > 150, (
+        f"committed {out.calories} — the floor refused and then restored the "
+        f"model's 1")
+
+
+def test_the_reprice_uses_the_portion_not_its_lower_bound():
+    """One number decides whether to refuse (the pessimistic lower bound); a
+    different one decides what to commit instead. Using the lower bound for
+    both priced a cup of rice at 135 g / 175 cal rather than 158 g / 206."""
+    import core.food_intelligence as FI
+    out = FI.analyze("White rice", "1 cup", 1, 1, 1, 0,
+                     usda_candidate=_usda_rice())
+    assert round(out.calories) == 206, out.calories
+
+
+def test_with_nothing_to_reprice_from_it_still_reverts():
+    """No source density means no better answer available — revert to the
+    model's read as before, and do not raise."""
+    import core.food_intelligence as FI
+    out = FI.analyze("Mystery thing", "1 cup", 1, 1, 1, 0)
+    assert round(out.calories) == 1
+
+
+def test_a_genuinely_zero_drink_is_never_repriced():
+    import core.food_intelligence as FI
+    out = FI.analyze("Black coffee", "12 oz", 0, 0, 0, 0)
+    assert round(out.calories) == 0

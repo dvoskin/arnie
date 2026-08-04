@@ -498,6 +498,13 @@ def _lead_words(low: str):
     return None
 
 
+#: "5-6 pieces", "2 - 3 bars", "1-2 cups". Digits only, and both ends bare —
+#: "1-1/2 cups" is a mixed number written with a hyphen and must NOT match, so
+#: a slash anywhere in either end disqualifies it.
+_RANGE_RE = re.compile(
+    r"^\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)(?!\s*/)\s+(.*)$")
+
+
 def _parse_amount(text: str) -> tuple:
     """(amount, remainder). Digits, fractions, mixed numbers and number words.
 
@@ -509,6 +516,36 @@ def _parse_amount(text: str) -> tuple:
     t = (text or "").strip()
     if not t:
         return 1.0, ""
+
+    # A HYPHEN BETWEEN TWO DIGITS IS A RANGE, NOT A MIXED NUMBER.
+    #
+    # De-hyphenating first is right for words — "three-quarters" and "three
+    # quarters" are one portion — and catastrophic for digits, because "5-6"
+    # became "5 6", which `_QTY_RE` reads as a mixed number and ADDS:
+    #
+    #     "5-6 pieces" -> 11        "2-3 eggs"  -> 5
+    #     "1-2 cups"   -> 3 (360g)  "3-4 oz"    -> 7 oz (198g)
+    #
+    # Worst downstream: `_per_serving_for("2-3 bars", <190-cal panel>)` returns
+    # 950 cal on a path that sets `computed_forward` and takes NO overcount
+    # demotion. This is live on 47d0b01 today — it does not need the portion
+    # work to hurt anyone.
+    #
+    # THE MIDPOINT, because the user stated both ends and their own central
+    # value is the honest reading of that. Not the high end (which is what
+    # shipped — "5-6 pcs" logged as 6) and not the low (which quietly
+    # under-counts); "bias high at low confidence" is a rule about OUR
+    # estimates, not about a number the user gave us both halves of.
+    #
+    # `5 to 6 pieces` already parsed as 5 and is left alone here — the "to"
+    # form never reached the mixed-number arm.
+    _rng = _RANGE_RE.match(t)
+    if _rng:
+        lo, hi = float(_rng.group(1)), float(_rng.group(2))
+        if hi > lo:
+            rest = (_rng.group(3) or "").strip()
+            return (lo + hi) / 2.0, rest
+
     low = t.lower().replace("-", " ")
 
     m = _QTY_RE.match(low)

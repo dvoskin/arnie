@@ -1321,7 +1321,56 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             calories=cal, protein=protein, carbs=carbs, fat=fat,
             fiber=fiber, grams=(_stated_g or _implied_grams), name=name)
         _fatal = [f for f in _findings if f.is_fatal]
-        if _fatal:
+        # THE MODEL'S READ IS NOT A REMEDY WHEN THE MODEL IS THE PROBLEM.
+        #
+        # Every other fatal finding means a SOURCE row was scaled wrongly, so
+        # reverting to `_llm0` is the right escape — the model's number was
+        # produced without that bad basis. `energy_density_negligible` is the
+        # opposite: the row says a real portion carries no energy, and when the
+        # model is what supplied the near-zero, `_llm0` IS the number that
+        # failed. Reverting to it made the refusal a no-op:
+        #
+        #     analyze("White rice", "1 cup", llm_cal=1)  -> committed 1
+        #     analyze("White rice", "1 cup", llm_cal=0)  -> committed 206
+        #
+        # Two cases one calorie apart, opposite outcomes — the zero-calorie
+        # branch further up catches `cal <= 0` and reprices, and nothing caught
+        # the 1. So when we have a source density and a stated mass, price it
+        # forward here for the same reason that branch does.
+        _negligible_only = bool(_fatal) and all(
+            f.code == "energy_density_negligible" for f in _fatal)
+        # THE POINT ESTIMATE HERE, not the lower bound. `_stated_g` is
+        # deliberately pessimistic because it decides a REFUSAL; using it as
+        # the replacement VALUE priced a cup of rice at its smallest plausible
+        # mass (135g -> 175 cal instead of 158g -> 206). One number answers
+        # "should we refuse", a different one answers "what instead".
+        _reprice_g = None
+        _reprice_per100 = locals().get("per100") or {}
+        _reprice_cal100 = _reprice_per100.get("calories")
+        if _negligible_only:
+            try:
+                from skills.nutrition.normalize import portion_mass_for_pricing
+                _reprice_g = portion_mass_for_pricing(quantity or "", name or "")
+            except Exception:
+                _reprice_g = None
+        if (_negligible_only and _reprice_g
+                and _reprice_cal100 and _reprice_cal100 > 0):
+            cal100, per100 = _reprice_cal100, _reprice_per100
+            _ratio = _reprice_g / 100.0
+            cal = round(cal100 * _ratio)
+            if per100.get("protein") is not None:
+                protein = round(per100["protein"] * _ratio, 1)
+            if per100.get("carbs") is not None:
+                carbs = round(per100["carbs"] * _ratio, 1)
+            if per100.get("fat") is not None:
+                fat = round(per100["fat"] * _ratio, 1)
+            _implied_grams = _reprice_g
+            computed_forward = True
+            logger.warning(
+                "sanity refusal for %r: %s — the model supplied the near-zero, "
+                "so repriced from the source at %.0fg -> %s cal",
+                name, "; ".join(f.code for f in _fatal), _reprice_g, cal)
+        elif _fatal:
             logger.warning(
                 "sanity refusal for %r: %s — falling back to the model's read",
                 name, "; ".join(f.code for f in _fatal))
