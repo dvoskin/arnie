@@ -769,12 +769,27 @@ async def _clear_deferred(db, pending_row, prior) -> None:
 
 
 async def _settle_expired_deferred(db, user, prior, today_log, *,
-                                   source_type=None) -> int:
+                                   source_type=None) -> tuple:
     """Commit the foods an expired clarification was still holding.
 
-    Returns how many landed. NEVER raises and never blocks the turn: a failure
-    here must degrade to the old behaviour (the food is lost) rather than cost
-    the user the reply they are waiting for.
+    Returns `(calls, call_results)` — WHAT it committed, not merely how many.
+
+    It returned a count, and a count cannot become a card. `_logged_entry_card`
+    is gated on an `entry_id` that lives ONLY on the typed `CallResult`, because
+    the executor is immutable by design (`execution_result.stash` never writes
+    the command input, P0.3e). So discarding what `execute_tool_calls` returned
+    here committed the food and threw away the one object that could render it:
+    the held rice landed in the day total, moved the day's numbers, and appeared
+    on no card on any turn — visible to the user only as a total that did not
+    match anything they could see (live, 2026-08-04).
+
+    Both are returned because both are needed downstream: the raw call dicts
+    join this turn's `tool_calls`, and the results join `_execution`, which is
+    the identity-keyed pairing the card builder walks.
+
+    NEVER raises and never blocks the turn: a failure here must degrade to the
+    old behaviour (the food is lost) rather than cost the user the reply they
+    are waiting for.
 
     The asked-about item is deliberately NOT here — it rides `staged_items` and
     genuinely has no answer, so it stays unwritten. `deferred_calls` is the
@@ -791,7 +806,7 @@ async def _settle_expired_deferred(db, user, prior, today_log, *,
         from core.food_turn import deferred_calls as _deferred
         calls = _deferred(prior)
         if not calls:
-            return 0
+            return [], []
         _stashed_date = (prior or {}).get("log_date") or ""
         if _stashed_date:
             for _tc in calls:
@@ -811,11 +826,22 @@ async def _settle_expired_deferred(db, user, prior, today_log, *,
             getattr(user, "id", "?"), len(calls), names, _stashed_date or "-")
         await execute_tool_calls(calls, user, today_log, db,
                                  source_type or "text")
-        return len(calls)
+        # The typed view the executor just published. Read here rather than
+        # returned by `execute_tool_calls` because that is the established
+        # pattern (`run_turn` reads the same contextvar right after its own
+        # batch), and read IMMEDIATELY so a later batch cannot overwrite it.
+        _results = []
+        try:
+            from core.execution_result import LAST_EXECUTION
+            _ex = LAST_EXECUTION.get()
+            _results = list(getattr(_ex, "calls", ()) or ())
+        except Exception:      # a missing card must never cost the write
+            logger.debug("settled deferred: no typed view", exc_info=True)
+        return calls, _results
     except Exception as e:
         logger.error("expired-deferred rescue FAILED (food lost): %s", e,
                      exc_info=True)
-        return 0
+        return [], []
 
 
 async def _run_turn(
@@ -980,6 +1006,13 @@ async def _run_turn(
     # first pass + follow-up + any self-heal retry. None when not streaming.
     _streamed_total = 0
     _early_card_ids: list = []   # log cards streamed early (before the follow-up)
+    # Food a HELD clarification settled earlier in this turn. It commits well
+    # before `tool_calls` is bound (which happens ~800 lines below and would
+    # overwrite anything appended at the settle site), so it is carried here and
+    # merged once the typed execution view exists. Without the merge the rows
+    # land and no card is ever built for them — see `_settle_expired_deferred`.
+    _settled_calls: list = []
+    _settled_results: list = []
     # VERIFY-BEFORE-STREAM: on a streaming logging turn we HOLD the follow-up voicing
     # (buffer, don't stream live) until the day-total guard has checked its running
     # total against the DB. Then the verified response_text is emitted ONCE via the
@@ -1058,9 +1091,11 @@ async def _run_turn(
                         # because this is the last moment anything knows the
                         # food exists: the next turn may not be a food turn at
                         # all, and then `run()` never executes.
-                        await _settle_expired_deferred(
+                        _sc, _sr = await _settle_expired_deferred(
                             db, user, _sft_prior, today_log,
                             source_type=_source)
+                        _settled_calls += _sc
+                        _settled_results += _sr
                         from datetime import datetime as _dt_x
                         _sft_prior_pq.answered_at = _dt_x.utcnow()
                         await db.commit()
@@ -1379,8 +1414,10 @@ async def _run_turn(
                     # wrong-day write the expiry path exists to prevent.
                     _wo = dict(_sft_prior or {})
                     _wo["deferred_calls"] = _sft.get("tool_calls") or []
-                    await _settle_expired_deferred(
+                    _sc, _sr = await _settle_expired_deferred(
                         db, user, _wo, today_log, source_type=_source)
+                    _settled_calls += _sc
+                    _settled_results += _sr
                     # AND TEAR UP THE IOU. Setting `_sft = None` skips the
                     # branch that stamps `answered_at`, so the pending row kept
                     # its `deferred_calls` and EVERY later turn reloaded and
@@ -3914,6 +3951,25 @@ user_message=_user_text or "")
                     db, user, effect_taken=resp.effect is not None)
             except Exception:
                 logger.warning("achievement check failed (fail-open)", exc_info=True)
+
+    # ── Food a held clarification settled earlier in this turn ────────────────
+    # It never rides `tool_calls` — it committed hundreds of lines above, before
+    # that list is even bound — and merging it in there would hand the settled
+    # rows to every other consumer of the list (narration filters, commit
+    # accounting, dedup), which is not what happened and not what should be
+    # reported. The CARD is the one thing that was missing, so the card is the
+    # only thing added, from the typed results the executor published.
+    #
+    # First, because these rows are the earlier part of the meal: the food the
+    # user reported before the question that held it.
+    for _sr_call in _settled_results:
+        try:
+            _card = _logged_entry_card(
+                getattr(_sr_call, "name", ""), None, call=_sr_call)
+            if _card is not None:
+                resp.cards.append(_card)
+        except Exception:      # a card is never worth the reply
+            logger.debug("settled-deferred card skipped", exc_info=True)
 
     # ── Typed inline cards for native clients ─────────────────────────────────
     # A log_food / log_exercise call becomes a macro_card / workout_card — but ONLY

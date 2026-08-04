@@ -47,10 +47,13 @@ async def test_the_held_meal_is_committed_when_the_question_ages_out(monkeypatch
         return {}
 
     monkeypatch.setattr(CV, "execute_tool_calls", _exec)
-    n = await _settle_expired_deferred(
+    _calls, _results = await _settle_expired_deferred(
         None, _user(), {"deferred_calls": [_call("Corn"), _call("Rice")]},
         _FakeLog())
-    assert n == 2
+    # WHAT it committed, not how many. A count cannot become a card, and
+    # returning one is why held food landed in the day total and rendered
+    # nothing — see `test_the_settled_food_gets_a_card` below.
+    assert len(_calls) == 2
     assert [(c["input"]["food_name"]) for c in seen["calls"]] == ["Corn", "Rice"]
 
 
@@ -94,8 +97,10 @@ async def test_a_call_that_names_its_own_day_keeps_it(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_an_empty_payload_writes_nothing():
-    assert await _settle_expired_deferred(None, _user(), {}, _FakeLog()) == 0
-    assert await _settle_expired_deferred(None, _user(), None, _FakeLog()) == 0
+    assert await _settle_expired_deferred(None, _user(), {}, _FakeLog()) \
+        == ([], [])
+    assert await _settle_expired_deferred(None, _user(), None, _FakeLog()) \
+        == ([], [])
 
 
 @pytest.mark.asyncio
@@ -109,7 +114,54 @@ async def test_it_never_raises(monkeypatch):
 
     monkeypatch.setattr(CV, "execute_tool_calls", _boom)
     assert await _settle_expired_deferred(
-        None, _user(), {"deferred_calls": [_call("Corn")]}, _FakeLog()) == 0
+        None, _user(), {"deferred_calls": [_call("Corn")]}, _FakeLog()) \
+        == ([], [])
+
+
+@pytest.mark.asyncio
+async def test_the_settled_food_gets_a_card(monkeypatch):
+    """THE OTHER HALF OF "the food did not expire": it has to be VISIBLE.
+
+    Live, 2026-08-04 — "Having some chicken and rice". The rice was held, the
+    clarification resolved, the rice committed and moved the day's totals, and
+    it appeared on no card on any turn. The user saw a total that matched
+    nothing on screen and reasonably concluded the meal was wrong.
+
+    The cause is structural rather than a missed branch. `_logged_entry_card`
+    is gated on an `entry_id`, and since P0.3e ("executor immutability
+    complete") that id exists ONLY on the typed `CallResult` —
+    `execution_result.stash` is explicit that the command input is never
+    written. So a settle that discarded what the executor published had
+    destroyed the only object a card can be built from, and no amount of
+    downstream care could recover it.
+
+    This pins the RESULTS coming back, which is what makes the card possible.
+    """
+    import core.conversation as CV
+    from core.execution_result import (LAST_EXECUTION, ExecutionResult,
+                                       CallResult)
+
+    _inp = {"food_name": "White rice", "quantity": "1 cup", "calories": 205}
+    _committed = CallResult(name="log_food", raw_input=_inp, entry_id=4242,
+                            status="committed")
+
+    async def _exec(calls, user, today_log, db, source_type="text", **kw):
+        LAST_EXECUTION.set(ExecutionResult(calls=(_committed,)))
+        return {}
+
+    monkeypatch.setattr(CV, "execute_tool_calls", _exec)
+    _calls, _results = await _settle_expired_deferred(
+        None, _user(), {"deferred_calls": [{"name": "log_food",
+                                            "input": _inp}]},
+        _FakeLog())
+    assert len(_calls) == 1
+    assert [r.entry_id for r in _results] == [4242], (
+        "without the typed result there is no entry_id, and without an "
+        "entry_id there is no card")
+    # And that result really does render — the same builder run_turn uses.
+    card = CV._logged_entry_card("log_food", None, call=_results[0])
+    assert card is not None and card["type"] == "macro_card"
+    assert card["payload"]["entry_id"] == 4242
 
 
 def _user():
