@@ -100,3 +100,55 @@ def test_the_first_answerable_facet_wins():
     the row belongs to."""
     assert _stated_options(
         ["roughly how much?", "grilled or fried?"]) == ["Grilled", "Fried"]
+
+
+# ── a serial list is one question, not three fragments ───────────────────────
+
+@pytest.mark.parametrize("text,label,expected", [
+    ("Grilled, baked, or fried?", "Chicken", ["Grilled", "Baked", "Fried"]),
+    ("Chicken grilled, baked, or fried?", "Chicken",
+     ["Grilled", "Baked", "Fried"]),
+    ("Hot, iced, or blended?", "Coffee", ["Hot", "Iced", "Blended"]),
+])
+def test_a_serial_list_survives_the_clause_splitter(text, label, expected):
+    """LIVE, 2026-08-04. "Grilled, baked, or fried?" shipped NO chips.
+
+    Two independent barriers, either of which was fatal:
+
+      * the clause splitter ran on every comma, so the commonest three-way
+        choice in English arrived as ["Grilled", "baked", "or fried"] — three
+        fragments with no alternation left in any of them, so all three failed
+        the both-sides test;
+      * and that test was pinned at `len(parts) != 2`, so a three-way choice
+        was rejected even on the rare occasions one survived the split.
+
+    Both are fixed by one grammatical observation: a comma list whose LAST item
+    is introduced by "or" is a serial list, and a serial list is one question.
+    """
+    assert _stated_options([text], label=label) == expected
+
+
+def test_and_is_not_a_serial_conjunction():
+    """The distinction that keeps the fix honest. "or" joins CHOICES; "and"
+    joins CLAUSES. Matching both read the second question as a third choice and
+    offered "About how much" as an answer to how the chicken was cooked, so the
+    serial test requires "or" specifically — and a genuine two-question string
+    still splits, still answers only its alternation."""
+    assert _stated_options(["grilled or fried, and about how much?"],
+                           label="Chicken") == ["Grilled", "Fried"]
+
+
+def test_a_list_wider_than_the_chip_row_is_declined():
+    """`chip_labels` caps a row at four, so a five-way list is not a row we
+    could render. Declining is correct: a silently truncated list drops a real
+    answer the user gave the question."""
+    assert _stated_options(["Grilled, baked, fried, air-fried, or poached?"],
+                           label="Chicken") == []
+
+
+def test_the_existing_guards_survive_the_wider_split():
+    """Widening 2 to 2-4 must not re-admit anything the narrow form rejected —
+    these are the exact rows iOS shipped before the server owned chips."""
+    assert _stated_options(["Any more coming or you calling it?"]) == []
+    assert _stated_options(["one or two?"], label="Bars") == []
+    assert _stated_options(["1 or 2?"], label="Bars") == []

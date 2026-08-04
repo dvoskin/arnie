@@ -3278,6 +3278,15 @@ _ASK_OPENER_RE = re.compile(
     r"|how\s+was\s+(?:it|that|the)?\s*"
     r")[\s,:-]*", re.I)
 
+#: A comma list whose LAST item is introduced by "or" — the serial comma. This
+#: is what tells "Grilled, baked, or fried?" (one question, three choices) apart
+#: from "grilled or fried, and about how much?" (two questions sharing a
+#: string). "or" ONLY, deliberately: a list of choices is joined by "or", where
+#: "and" joins clauses — matching both read the second question as a third
+#: choice and offered "About how much" as an answer to how the chicken was
+#: cooked. Requires a non-space after it so a trailing "or" does not qualify.
+_SERIAL_LIST_RE = re.compile(r",\s*or\s+\S", re.I)
+
 #: A side that is only this is not an answer to anything.
 _NOT_AN_ANSWER = frozenset((
     "it", "that", "this", "them", "one", "some", "any", "more", "less",
@@ -3333,7 +3342,19 @@ def _stated_options(qs, label: str = "") -> list:
             continue
         # One clause. "grilled or fried, and about how much" is TWO questions
         # sharing a string; only the alternation is answerable as a chip.
-        for clause in re.split(r"[,;]| and (?=how|what|about)", text):
+        #
+        # UNLESS THE COMMAS ARE A LIST. "Grilled, baked, or fried?" is the
+        # commonest way English offers three choices and it is ONE question —
+        # splitting it here produced ["Grilled", "baked", "or fried"], three
+        # fragments with no alternation left in any of them, so every one failed
+        # the both-sides test below and the single commonest facet in the
+        # product shipped no chips at all (live, 2026-08-04). The tell is
+        # grammatical, not statistical: a comma list whose LAST item is
+        # introduced by "or" is a serial list. Drop that "or" and it is two
+        # clauses again, and this correctly leaves it alone.
+        _clauses = ([text] if _SERIAL_LIST_RE.search(text)
+                    else re.split(r"[,;]| and (?=how|what|about)", text))
+        for clause in _clauses:
             clause = _ASK_OPENER_RE.sub("", clause.strip())
             # THE FOOD'S OWN NAME IS NOT AN ANSWER ABOUT THAT FOOD. The
             # interpreter writes facets both ways — "grilled or fried?" and
@@ -3344,8 +3365,17 @@ def _stated_options(qs, label: str = "") -> list:
             if label:
                 clause = re.sub(r"^" + re.escape(label.strip()) + r"\b[\s,:-]*",
                                 "", clause, flags=re.I).strip()
-            parts = [p.strip() for p in re.split(r"\s+or\s+", clause, flags=re.I)]
-            if len(parts) != 2 or not all(parts):
+            # The serial "or" is absorbed by the comma it follows, so the last
+            # item arrives as "fried" rather than "or fried".
+            parts = [p.strip() for p in
+                     re.split(r"\s*,\s*(?:or\s+)?|\s+or\s+", clause,
+                              flags=re.I)]
+            # Two to four. It was pinned at exactly two, which rejected a
+            # three-way choice even on the rare occasion one survived the split
+            # above — and three is how many ways a chicken is usually cooked.
+            # Four is the chip row's own width (`chip_labels` caps at 4), so a
+            # longer list is not a row we could show anyway.
+            if not (2 <= len(parts) <= 4) or not all(parts):
                 continue
             if any(re.search(r"\d", p) for p in parts):
                 continue                      # a portion answer, priced elsewhere
