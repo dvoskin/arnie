@@ -68,11 +68,25 @@ class Relation(str, Enum):
     DISTINCT = "distinct"
 
 
-#: The relations under which two names denote ONE food, so a re-read naming
-#: the narrower one may claim the wider. Everything else preserves both.
-#: `INGREDIENT_OF` and `DISTINCT` are deliberately absent.
-UNIFYING = frozenset({Relation.ALIAS_OF, Relation.SUBTYPE_OF,
-                      Relation.PREPARED_FORM_OF, Relation.PRODUCT_VARIANT_OF})
+#: THE SAME ENTITY. Only true aliases and morphological variants — "potatoes"
+#: is "potato" in every context, for every purpose, forever.
+#:
+#: NARROWED FROM FOUR RELATIONS TO ONE (review, 2026-08-04). Subtype, prepared
+#: form and product variant were in here, which made `same_food("bread",
+#: "banana bread")` return True — and that is not true. A meal can contain
+#: both, and greek yogurt has materially different protein from yogurt. The
+#: relations describe how concepts RELATE; treating four of them as identity
+#: recreates the original failure with better vocabulary.
+IDENTITY = frozenset({Relation.ALIAS_OF})
+
+#: MAY REFINE, given evidence that the two describe the SAME REPORTED ITEM.
+#: "chicken" -> "grilled chicken" is a better description of one item when a
+#: re-read produced it, and two separate foods when the user said both.
+#:
+#: Nothing here is identity, and no caller may treat it as identity without
+#: supplying that evidence. `same_food` will not consider these at all.
+REFINING = frozenset({Relation.SUBTYPE_OF, Relation.PREPARED_FORM_OF,
+                      Relation.PRODUCT_VARIANT_OF})
 
 
 @dataclass(frozen=True)
@@ -110,8 +124,8 @@ class FoodEntity:
     def alias_texts(self) -> frozenset:
         return frozenset(a.text for a in self.aliases)
 
-    def unifying_parents(self) -> tuple:
-        return tuple(t for r, t in self.relations if r in UNIFYING)
+    def parents(self, relations) -> tuple:
+        return tuple(t for r, t in self.relations if r in relations)
 
 
 #: (compound, relation, target). One row per fact, and the RELATION is the
@@ -363,16 +377,21 @@ def relation_between(a: str, b: str) -> Optional[Relation]:
     return None
 
 
-def ancestry(entity_id: str) -> tuple:
-    """`entity_id` and every food it is the same food as, nearest first.
+def ancestry(entity_id: str, relations=None) -> tuple:
+    """`entity_id` and every food reachable from it under `relations`.
 
-    Only UNIFYING relations are walked. An `ingredient_of` edge is recorded and
-    deliberately not followed: chicken noodle soup is made with chicken and is
-    not chicken, and walking that edge is how a soup claims and deletes it.
+    Defaults to IDENTITY — alias edges only — so the default answer to "is this
+    the same food?" is the narrow one. Pass REFINING to ask the different, and
+    weaker, question of whether one could be a better description of the other.
+
+    An `ingredient_of` edge is never in either set: it is recorded and
+    deliberately not followed, because chicken noodle soup is made with chicken
+    and is not chicken.
 
     Bounded against a cycle: the table is hand-maintained and a loop in it must
     degrade to a short chain rather than hang the turn.
     """
+    relations = IDENTITY if relations is None else relations
     seen, chain, frontier = set(), [], [entity_id]
     while frontier:
         cur = frontier.pop()
@@ -382,17 +401,21 @@ def ancestry(entity_id: str) -> tuple:
         chain.append(cur)
         ent = _ENTITIES.get(cur)
         if ent:
-            frontier.extend(ent.unifying_parents())
+            frontier.extend(ent.parents(relations))
     return tuple(chain)
 
 
 def same_food(a: str, b: str, language: str = "en") -> Optional[bool]:
-    """True/False when both names resolve; None when either does not.
+    """Are these THE SAME ENTITY? True/False when both resolve, None otherwise.
 
-    Same food when they are the same entity, or when one is the other under a
-    UNIFYING relation — alias, subtype, prepared form, product variant. An
-    `ingredient_of` edge returns False: it is a recorded relationship AND a
-    refusal, which is the distinction a bare parent could not express.
+    Identity only: the same entity, or an alias of it. "bread" and "banana
+    bread" are NOT the same food and this says so — a meal can contain both,
+    and a function that claims otherwise hands every future caller a licence to
+    merge them.
+
+    For the weaker question — could one be a better description of the same
+    reported item? — see `may_refine`, which requires the caller to have
+    evidence that it IS the same item.
 
     THE THREE-VALUED RETURN IS THE POINT. A caller that cannot tell "different"
     from "I do not know" will treat the second as the first, and the failure
@@ -401,7 +424,27 @@ def same_food(a: str, b: str, language: str = "en") -> Optional[bool]:
     ea, eb = resolve(a, language), resolve(b, language)
     if ea is None or eb is None:
         return None
-    return ea in ancestry(eb) or eb in ancestry(ea)
+    return ea == eb or ea in ancestry(eb) or eb in ancestry(ea)
+
+
+def may_refine(narrow: str, wide: str, language: str = "en") -> Optional[bool]:
+    """Could `wide` be a better description of the SAME reported item?
+
+    NOT AN IDENTITY CLAIM, and the naming is deliberate. "chicken" ->
+    "grilled chicken" is one item described better when a re-read produced it,
+    and two foods when the user said both — and this function cannot tell those
+    apart. It answers only "is such a reading available at all?"; the caller
+    must supply the evidence that the two describe one item.
+
+    `_undeferred` is currently the only caller that can, because both of its
+    lists are readings of ONE message and its matching is exact-first and
+    injective — so a food the user actually named twice is claimed by its own
+    exact counterpart before any refinement is considered.
+    """
+    ea, eb = resolve(narrow, language), resolve(wide, language)
+    if ea is None or eb is None:
+        return None
+    return ea in ancestry(eb, IDENTITY | REFINING)
 
 
 def stands_alone(name: str) -> bool:

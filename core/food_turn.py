@@ -2811,6 +2811,48 @@ def _identity_strict() -> bool:
         in ("1", "true", "yes", "on")
 
 
+def _refinement_decision(key: str, candidates: list):
+    """`_undeferred`'s authority to bind one held food to a re-read, spelled out.
+
+    Returns a `RefinementDecision`, or None when the registry is off and the
+    legacy path decides.
+
+    The four conditions this caller can honestly assert, and why each is true
+    HERE rather than in general:
+
+      exact_pass_completed   — exact claims are resolved in their own pass
+                               above, so a food the user genuinely named twice
+                               has already taken its counterpart.
+      candidate_is_unconsumed— `unclaimed` is maintained injectively; a plan
+                               call accounts for at most one held call.
+      candidate_set_size     — several candidates means carry, never guess. A
+                               food written twice is visible and recoverable;
+                               one silently dropped is not.
+      quantity_compatible    — not yet checked, and declared False would only
+                               refuse. Left True with this note rather than
+                               asserted silently.
+    """
+    if not _identity_strict() or not _registry_enabled():
+        return None
+    try:
+        from skills.nutrition.refinement import (RefinementContext,
+                                                 RefinementOperation,
+                                                 evaluate_refinement)
+        if not candidates:
+            return None
+        return evaluate_refinement(
+            key, candidates[0],
+            RefinementContext(
+                operation=RefinementOperation.UNDEFER_PENDING_ITEM,
+                exact_pass_completed=True,
+                candidate_is_unconsumed=True,
+                candidate_set_size=len(candidates),
+            ))
+    except Exception:
+        logger.debug("refinement policy unavailable", exc_info=True)
+        return None
+
+
 def _claims_the_same_food(narrow: str, wide: str) -> bool:
     """Whether `wide` may CLAIM `narrow` and drop it. The delete path.
 
@@ -2846,8 +2888,32 @@ def _registry_says(narrow: str, wide: str):
     if not _registry_enabled():
         return None
     try:
-        from skills.nutrition.entities import same_food
-        return same_food(narrow, wide)
+        from skills.nutrition.entities import may_refine, same_food
+        # TWO QUESTIONS, ASKED IN ORDER, and the ordering is the correction
+        # from review. `same_food` is IDENTITY and is deliberately narrow —
+        # "bread" and "banana bread" are not one entity, a meal can contain
+        # both, and a registry that says otherwise licenses every future caller
+        # to merge them.
+        #
+        # The question THIS function asks is weaker: could the second be a
+        # better description of the same reported item? That is what a
+        # reconciliation between two readings of one message needs, and it is
+        # asked here rather than inside `same_food` so no other caller inherits
+        # the answer by accident.
+        verdict = same_food(narrow, wide)
+        if verdict:
+            return True
+        # BOTH DIRECTIONS, because this caller cannot tell which reading is the
+        # narrower one. `may_refine` is directional and correctly so — "yogurt"
+        # is not a better description of "greek yogurt" — but `held` and `plan`
+        # are two parses of ONE message and either may be the more specific.
+        # An ask that stashed "grilled chicken" and a re-read naming only
+        # "chicken" is still one item.
+        a = may_refine(narrow, wide)
+        b = may_refine(wide, narrow)
+        if verdict is None and a is None and b is None:
+            return None
+        return bool(a or b)
     except Exception:      # identity may never be lost to an import
         logger.debug("entity registry unavailable", exc_info=True)
         return None
@@ -2981,13 +3047,24 @@ def _undeferred(held: list, plan_calls: list) -> list:
         # turns that is the difference between collapsing a duplicate and
         # DELETING a row the user reported. See `_is_renaming_of`.
         _fuzzy = [s for s in unclaimed if _claims_the_same_food(key, s)]
-        if len(_fuzzy) == 1:
+        # THE CONDITIONS ARE STATED, NOT ASSUMED. A bare predicate lets the
+        # next caller bind two foods without any of what makes it safe here,
+        # and nothing in the signature would object. The decision carries its
+        # evidence so production can be asked WHY a food was claimed.
+        _decision = _refinement_decision(key, _fuzzy)
+        if _decision is not None and _decision.allowed:
             logger.info(
-                "event=deferred_collapse held=%r covered_by=%r — treated as the "
-                "same food renamed", key, _fuzzy[0])
+                "event=deferred_collapse held=%r covered_by=%r reason=%s "
+                "evidence=%s", key, _fuzzy[0], _decision.reason.value,
+                "; ".join(_decision.evidence))
             unclaimed.remove(_fuzzy[0])
             _reasons["renamed_claimed"] += 1
             continue
+        if _fuzzy and _decision is not None:
+            logger.info(
+                "event=refinement_refused held=%r candidates=%d reason=%s "
+                "evidence=%s — both kept", key, len(_fuzzy),
+                _decision.reason.value, "; ".join(_decision.evidence))
         out.append(call)
     _shadow_undeferred(held, plan_calls, out, _reasons)
     return out

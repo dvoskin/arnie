@@ -154,3 +154,54 @@ def test_the_fallback_can_be_restored(monkeypatch):
     monkeypatch.setenv("FOOD_IDENTITY_STRICT", "false")
     assert _claims_the_same_food("zzyzx", "zzyzx surprise") is _is_renaming_of(
         "zzyzx", "zzyzx surprise")
+
+
+# ── a relationship is not an identity ────────────────────────────────────────
+
+def test_a_subtype_is_not_the_same_food():
+    """`same_food` answers IDENTITY and nothing else.
+
+    Subtype, prepared form and product variant were all inside `UNIFYING`,
+    which made `same_food("bread", "banana bread")` return True. A meal can
+    contain both, and greek yogurt has materially different protein from
+    yogurt — a function claiming otherwise hands every future caller a licence
+    to merge them.
+    """
+    from skills.nutrition.entities import may_refine, same_food
+
+    for a, b in [("bread", "banana bread"), ("rice", "fried rice"),
+                 ("yogurt", "greek yogurt"), ("chicken", "grilled chicken")]:
+        assert same_food(a, b) is False, f"{a}/{b} must not be one entity"
+        assert may_refine(a, b) is True, f"{a}/{b} should be refinable"
+
+    # A true alias is identity, and stays so.
+    assert same_food("potato", "potatoes") is True
+    # An ingredient edge is neither.
+    assert same_food("chicken", "chicken noodle soup") is False
+    assert may_refine("chicken", "chicken noodle soup") is False
+
+
+@pytest.mark.parametrize("message,foods", [
+    p for p in __import__("data.identity_collisions", fromlist=["x"]
+                          ).ADVERSARIAL_LISTS
+])
+def test_a_list_of_two_related_foods_keeps_both(message, foods):
+    """THE FAILURE MODE A RELATIONSHIP-AWARE MATCHER INVITES.
+
+    Every one of these names a food and something related to it in one message,
+    and every one must end with two rows. Driven through `_undeferred` because
+    the protection is not the registry alone — it is exact-first injective
+    matching, which claims the food the user actually named twice before any
+    refinement test sees it.
+    """
+    from core.food_turn import _undeferred
+
+    def call(n):
+        return {"name": "log_food", "input": {"food_name": n}}
+
+    for plan in ([], foods, foods[:1], foods[1:]):
+        kept = _undeferred([call(f) for f in foods], [call(p) for p in plan])
+        surviving = {c["input"]["food_name"] for c in kept} | set(plan)
+        assert surviving >= set(foods), (
+            f"{message!r} with plan={plan} lost "
+            f"{set(foods) - surviving}")

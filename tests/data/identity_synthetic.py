@@ -39,7 +39,8 @@ a spellchecker nobody has written and would pass or fail for reasons unrelated
 to identity. Those families need real inputs. They are listed in
 `UNCOVERED_FAMILIES` so the gap is a value in the code rather than a note.
 """
-from skills.nutrition.entities import _ENTITIES, Relation, UNIFYING
+from skills.nutrition.entities import (IDENTITY, REFINING, _ENTITIES,
+                                       Relation)
 
 #: Families the directive requires that synthetic data CANNOT honestly cover.
 #: Each needs production or curated real-world input.
@@ -86,11 +87,16 @@ def _plurals():
 
 
 def _unifying_relations():
-    """Every declared same-food edge, in both directions. `_undeferred` sees
-    two readings of one message and neither is guaranteed to be the narrower,
-    so both orders must agree."""
+    """Every edge under which a re-read may describe the same reported item,
+    in both directions. `_undeferred` sees two readings of one message and
+    neither is guaranteed to be the narrower, so both orders must agree.
+
+    IDENTITY and REFINING together, because that is the question the
+    reconciliation asks. `same_food` alone is narrower and deliberately so —
+    see the review correction in `entities.py`.
+    """
     out = []
-    for rel in UNIFYING:
+    for rel in (IDENTITY | REFINING):
         for ent, target in _entities_with(rel):
             t = _ENTITIES.get(target)
             if t:

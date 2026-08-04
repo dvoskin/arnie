@@ -78,3 +78,49 @@ DELETES_A_ROW = tuple(
     (a, b) for a, b, same, _ in IDENTITY_PAIRS if not same)
 
 __all__ = ["IDENTITY_PAIRS", "DELETES_A_ROW"]
+
+
+#: ADVERSARIAL LIST CASES (review, 2026-08-04). Each is a single message
+#: naming BOTH a food and something related to it, which is the shape a
+#: relationship-aware matcher is most likely to merge. Every one must end the
+#: exchange with two rows.
+#:
+#: Driven through `_undeferred` rather than through `same_food`, because the
+#: question is not "are these the same food?" — it is "does the reconciliation
+#: keep both?", and the answer depends on exact-first injective matching as
+#: much as on the registry.
+ADVERSARIAL_LISTS = (
+    ("bread and banana bread", ["Bread", "Banana bread"]),
+    ("rice plus some fried rice", ["Rice", "Fried rice"]),
+    ("regular yogurt and a greek yogurt", ["Yogurt", "Greek yogurt"]),
+    ("grilled chicken with a side of plain chicken",
+     ["Chicken", "Grilled chicken"]),
+    ("orange chicken and an orange", ["Orange", "Orange chicken"]),
+    ("coffee with coffee cake", ["Coffee", "Coffee cake"]),
+    ("chicken breast and chicken noodle soup",
+     ["Chicken breast", "Chicken noodle soup"]),
+    ("a potato and some sweet potatoes", ["Potato", "Sweet potatoes"]),
+    ("milk and milk chocolate", ["Milk", "Milk chocolate"]),
+    ("peanuts and peanut butter", ["Peanut", "Peanut butter"]),
+)
+
+
+#: THREE-WAY FAMILIES (review, 2026-08-04). The adversarial pairs above are
+#: protected partly by exact-first injective matching; these weaken that cover
+#: deliberately, because a generic term facing SEVERAL related compounds has no
+#: exact counterpart to claim and must fall through to the refinement policy.
+#:
+#: The property is not only "both foods remain". It is that no food is lost, no
+#: food is duplicated, and the outcome does not depend on plan ORDERING.
+THREE_WAY_FAMILIES = (
+    ["Bread", "Banana bread", "Garlic bread"],
+    ["Rice", "Fried rice", "Rice cake"],
+    ["Orange", "Orange juice", "Orange chicken"],
+    ["Coffee", "Iced coffee", "Coffee cake"],
+    ["Chicken", "Chicken breast", "Chicken noodle soup"],
+    ["Yogurt", "Greek yogurt", "Frozen yogurt"],
+    ["Apple", "Apple juice", "Apple pie"],
+    ["Turkey", "Turkey sandwich", "Turkey bacon"],
+    ["Egg", "Egg salad", "Egg roll"],
+    ["Cheese", "Cheesecake", "Grilled cheese"],
+)
