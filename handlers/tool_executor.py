@@ -2980,9 +2980,16 @@ async def _analyze_food(db, user, food_name, inp):
                              meal["carbs"], meal["fat"],
                              usda_candidate=None, memory_match=None,
                              web_candidate=None)
-            result.source = "web_label"
+            # NOT "web_label". That source belongs to `_web_lookup_packaged`,
+            # which anchors on a published per-100g panel. This lane asks Haiku
+            # to read Tavily snippets for a dish's TOTAL — a different kind of
+            # evidence, and calling it a label made a bakery challah's receipt
+            # say "From the product label" about a food that has no label
+            # anywhere. Naming it honestly costs nothing: the number is still
+            # used, the user is just told what it is.
+            result.source = "web_estimate"
             result.confidence = "likely"
-            result.enrichment_source = "web_label"
+            result.enrichment_source = "web_estimate"
         elif meal and str(meal.get("confidence", "")).lower() != "high":
             logger.info(
                 f"web meal enrich DECLINED (conf={meal['confidence']}, need high): "

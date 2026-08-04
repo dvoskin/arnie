@@ -1325,12 +1325,23 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         except Exception:
             pass
     note = "; ".join(bits)
-    conf_note = {
-        "exact": "label exact match" if source == "web_label" else "USDA exact match",
-        "likely": "label match" if source == "web_label" else "USDA likely match",
-        "user-confirmed": "your usual (confirmed)",
-        "estimated": "estimate",
-    }.get(confidence, confidence)
+    # `web_estimate` is a search result read by a model, not a panel — so it
+    # gets neither the label wording nor USDA's. Saying "label match" over it
+    # is the same overclaim the receipt string carried.
+    if source == "web_estimate":
+        conf_note = {
+            "exact": "typical published numbers",
+            "likely": "typical published numbers",
+            "user-confirmed": "your usual (confirmed)",
+            "estimated": "estimate",
+        }.get(confidence, confidence)
+    else:
+        conf_note = {
+            "exact": "label exact match" if source == "web_label" else "USDA exact match",
+            "likely": "label match" if source == "web_label" else "USDA likely match",
+            "user-confirmed": "your usual (confirmed)",
+            "estimated": "estimate",
+        }.get(confidence, confidence)
 
     return FoodAnalysis(
         calories=round(cal), protein=round(protein, 1), carbs=round(carbs, 1),

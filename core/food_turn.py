@@ -1261,23 +1261,36 @@ def _revalidate_after_answer(ops, prior, message: str, mode: str = "moderate"):
             continue
 
         _before_cal = op.get("calories")
-        # EVERYTHING DERIVED FROM THE OLD UNIT IS GONE. Dropped from the op so
-        # nothing downstream can read a stale value: the enrichment path
-        # recomputes from the corrected unit, and a missing key is a recompute
-        # where a stale one is a wrong answer that looks settled.
-        for _k in ("calories", "protein", "carbs", "fats", "grams",
-                   "estimated_mass_g", "count_basis"):
-            op.pop(_k, None)
-        logger.info(
-            "event=unit_correction food=%r %s->%s invalidated=%d",
-            food, change.before, change.after, len(change.invalidated))
-
         # A REPEATED NUMBER IS NOT A RE-ESTIMATE. The interpreter sees the
         # prior exchange, and the easiest thing it can do with "actually they
         # were pieces" is hand back the figure it already gave. Identical
         # calories across a unit change that means a different amount of food
         # is the previous answer, unrevised — and it stops every mode.
         _stale = estimate_is_stale(was.get("calories"), _before_cal)
+
+        # EVERYTHING DERIVED FROM THE OLD UNIT IS GONE — WHEN THERE IS NOTHING
+        # FRESH TO KEEP. The drop used to happen here unconditionally, above
+        # every branch below, and its comment promised "the enrichment path
+        # recomputes from the corrected unit". Nothing recomputes. `_log_call`
+        # omits absent keys, `analyze` receives llm_cal=None and produces 0,
+        # the zero-calorie refusal sets source="estimate" — which is the gate
+        # that OPENS the web enrich lane — and a fabricated total commits.
+        #
+        # Prod 2026-08-03, the Cali Roll: the interpreter reasoned 283 for the
+        # corrected unit, the pop deleted it, and 400 committed with the macros
+        # force-fit to match. Three of the four exits below COMMIT, so on those
+        # paths the drop was not invalidating a stale number, it was destroying
+        # the only reasoned one.
+        #
+        # A stale estimate really is worthless and still goes. A fresh one is
+        # the best figure anyone has for the corrected unit and stays.
+        if _stale:
+            _drop_unit_derived(op)
+        logger.info(
+            "event=unit_correction food=%r %s->%s invalidated=%d stale=%s",
+            food, change.before, change.after,
+            len(change.invalidated), _stale)
+
         if not change.blocks_commit and not _stale:
             continue
 
@@ -1309,11 +1322,30 @@ def _revalidate_after_answer(ops, prior, message: str, mode: str = "moderate"):
                         food, change.before, change.after, _lo, _hi)
             continue
 
+        # ASKING. Here the drop is right and always was: the op rides the
+        # question rather than committing, and whatever the user answers is
+        # what prices it. A figure derived from the OLD unit surviving onto
+        # that item is the "wrong answer that looks settled" the original
+        # comment was written about.
+        _drop_unit_derived(op)
         _text = question_for(change, food) or (
             f"How big were the {change.after}s of {food}?")
         return {"action": "ask", "text": _text, "points": [_text],
                 "items": [op], "kind": "clarify"}
     return None
+
+
+#: Everything on an op that only meant something under the PREVIOUS unit.
+_UNIT_DERIVED_KEYS = ("calories", "protein", "carbs", "fats", "grams",
+                      "estimated_mass_g", "count_basis")
+
+
+def _drop_unit_derived(op: dict) -> None:
+    """Forget the figures the old unit produced, so nothing downstream reads a
+    stale one. Only for ops that are NOT about to commit on a fresh estimate —
+    see the caller."""
+    for _k in _UNIT_DERIVED_KEYS:
+        op.pop(_k, None)
 
 
 def _item_is_stated(it: dict, message: str) -> bool:

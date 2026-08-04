@@ -50,6 +50,13 @@ _SOURCE_LABELS = {
     # receipt was calling it a guess, which is why it looked like OFF never ran.
     "off":       ("barcode", "Found the product in Open Food Facts"),
     "web_label": ("globe", "Found the product label online"),
+    # A SEARCH RESULT IS NOT A LABEL. `_web_lookup_meal` asks Haiku to read
+    # Tavily snippets for a dish's total; `_web_lookup_packaged` reads an
+    # actual published panel. Both used to report as "web_label", so a bakery
+    # challah with no label anywhere claimed "From the product label" — the
+    # receipt telling the user to trust a number it had guessed from a web
+    # page (Danny, 2026-08-03).
+    "web_estimate": ("globe", "Looked up typical numbers online"),
     "usda":      ("magnifyingglass", "Matched the USDA food database"),
     "estimate":  ("wand.and.stars", "Estimated from what you described"),
     # `FoodAnalysis.source` legitimately carries values from the CANDIDATE key
@@ -73,6 +80,7 @@ _SOURCE_DETAIL = {
     "memory":    "From your saved foods",
     "off":       "From the Open Food Facts label",
     "web_label": "From the product label",
+    "web_estimate": "Typical numbers found online",
     "usda":      "From the USDA database",
     "estimate":  "Best estimate from the description",
     "user_label":   "From the label you gave me",
@@ -121,8 +129,26 @@ def _food_line(inp: dict, result: str) -> dict:
     # while the line under an item claims "who determined these calories" —
     # which is how "From the USDA database" appeared beneath numbers whose only
     # USDA contribution was the sodium.
-    detail = src.get("detail") or (
-        _SOURCE_DETAIL.get(src.get("source")) if src else "")
+    #
+    # THE LANE OUTRANKS THE RUNG HERE TOO. `src["detail"]` is
+    # `authority.display_detail`, keyed by RUNG, while `_SOURCE_DETAIL` is
+    # keyed by LANE — and they disagree constantly, because an Open Food Facts
+    # answer is lane `off` and rung `branded_exact`, whose sentence is "From
+    # the product label". Taking the rung sentence unconditionally is how a
+    # bakery challah's receipt claimed a product label for a food that has
+    # none (Danny, 2026-08-03).
+    #
+    # `_food_detailed` was narrowed for exactly this and this path was not, so
+    # the CONDENSED line — which is what a multi-item meal like that sandwich
+    # renders — kept the bug. Same rule now: the rung may ADD to the receipt
+    # (the "supplemented" case says something the lane cannot), never overrule
+    # it about which lane answered.
+    _lane_detail = _SOURCE_DETAIL.get(src.get("source")) if src else ""
+    _rung_detail = src.get("detail") or ""
+    if _lane_detail and not (_rung_detail and "supplemented" in _rung_detail):
+        detail = _lane_detail
+    else:
+        detail = _rung_detail or _lane_detail
     if not detail:
         if "usda" in r.lower():
             detail = "Matched against the USDA database"
@@ -205,7 +231,8 @@ def _food_detailed(inp: dict, result: str) -> list:
     # The WINNER already says where the answer came from, so listing the lanes
     # that also matched as their own lines says it three more times. They are
     # corroboration — they belong on that line, not above it.
-    _winner_lane = {"usda": "usda", "off": "off", "web_label": "web"}.get(source)
+    _winner_lane = {"usda": "usda", "off": "off", "web_label": "web",
+                    "web_estimate": "web"}.get(source)
     _also = [n for lane_icon, n in _found
              if _LANE_LABELS.get(_winner_lane, ("", ""))[1] != n]
     if _also:
