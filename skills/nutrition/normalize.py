@@ -1063,6 +1063,28 @@ def portion_mass_for_pricing(raw: str, food_name: str = "") -> Optional[float]:
     return float(grams)
 
 
+def confident_upper_mass(raw: str, food_name: str = "") -> Optional[float]:
+    """The LARGEST mass this portion could plausibly be — `grams +
+    uncertainty_g`.
+
+    The mirror of `confident_lower_mass`, and needed for the same reason in the
+    opposite direction. A refusal takes the most generous reading of the
+    portion; which end is generous depends on which bound is being tested.
+
+      floor   ("this carries no energy")  -> the SMALLEST it could be
+      ceiling ("this is denser than fat") -> the LARGEST it could be
+
+    Feeding the lower bound to both is how a hedged portion of a legitimately
+    dense food — "some olive oil", "a drizzle" — computed as denser than pure
+    fat and lost its exact source row to the model's guess.
+    """
+    q = normalize_quantity(raw, food_name)
+    grams = getattr(q, "grams", None)
+    if not grams or grams <= 0:
+        return None
+    return float(grams) + float(getattr(q, "uncertainty_g", 0) or 0)
+
+
 def confident_lower_mass(raw: str, food_name: str = "") -> Optional[float]:
     """The SMALLEST mass this portion could plausibly be, or None if we cannot
     say — `grams - uncertainty_g`.

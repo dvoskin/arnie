@@ -177,3 +177,43 @@ def test_a_genuinely_zero_drink_is_never_repriced():
     import core.food_intelligence as FI
     out = FI.analyze("Black coffee", "12 oz", 0, 0, 0, 0)
     assert round(out.calories) == 0
+
+
+# ── each bound takes its own generous mass ────────────────────────────────────
+
+def test_the_ceiling_reads_the_upper_bound_and_the_floor_the_lower():
+    """A refusal rests on the most forgiving reading of the portion, and which
+    end is forgiving depends on the direction being tested.
+
+    Both were evaluated against the pessimistic LOWER bound, so a hedged
+    portion of a legitimately dense food computed as denser than pure fat:
+    "some olive oil" (80g +/- 85g -> lower bound collapses) lost its exact USDA
+    row to the model's guess, opened the web lane and logged a spurious
+    IMPOSSIBLE warning that would mask the floor's real hits.
+    """
+    # 120 cal in 13.5g is 8.9 cal/g — under the 12.0 refusal, at the ceiling.
+    assert not _fatal(sanity.check_values(
+        calories=120, grams=13.5, grams_upper=20.0, name="Olive oil"))
+    # The same calories against a mass we know is small IS a basis error.
+    assert _fatal(sanity.check_values(
+        calories=588, grams=16, grams_upper=16, name="Peanut butter"))
+
+
+def test_a_hedged_fat_keeps_its_source_row():
+    """End to end: "some olive oil" must stay seated on its exact USDA row."""
+    import core.food_intelligence as FI
+    oil = {"description": "Olive oil", "_match": "exact",
+           "per100g": {"calories": 884, "protein": 0, "carbs": 0, "fat": 100}}
+    out = FI.analyze("Olive oil", "some", 120, 0, 0, 14, usda_candidate=oil)
+    assert out.source == "usda", (
+        f"a hedged portion demoted a legitimately dense food to "
+        f"{out.source!r}")
+
+
+def test_an_absent_upper_bound_falls_back_to_the_mass():
+    """Every caller that passes a measured weight sends no upper bound, and
+    must behave exactly as before."""
+    assert _fatal(sanity.check_values(calories=588, grams=16,
+                                      name="Peanut butter"))
+    assert not _fatal(sanity.check_values(calories=205, grams=158,
+                                          name="White rice"))

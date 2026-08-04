@@ -1311,15 +1311,22 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
         # refusal should rest on the most generous reading of the portion. A
         # vague measure ("some", 80g +/- 85g) returns None and is judged only
         # by the checks that need no mass.
-        _stated_g = None
+        # ...and the UPPER bound alongside it, because the ceiling wants the
+        # opposite end. Passing the pessimistic lower mass to both made "some
+        # olive oil" compute as denser than pure fat and lose its exact USDA
+        # row — a legitimately dense food punished for a hedged portion.
+        _stated_g = _stated_hi = None
         try:
-            from skills.nutrition.normalize import confident_lower_mass
+            from skills.nutrition.normalize import (confident_lower_mass,
+                                                    confident_upper_mass)
             _stated_g = confident_lower_mass(quantity or "", name or "")
+            _stated_hi = confident_upper_mass(quantity or "", name or "")
         except Exception:
-            _stated_g = None
+            _stated_g = _stated_hi = None
         _findings = _sanity.check_values(
             calories=cal, protein=protein, carbs=carbs, fat=fat,
-            fiber=fiber, grams=(_stated_g or _implied_grams), name=name)
+            fiber=fiber, grams=(_stated_g or _implied_grams),
+            grams_upper=(_stated_hi or _implied_grams), name=name)
         _fatal = [f for f in _findings if f.is_fatal]
         # THE MODEL'S READ IS NOT A REMEDY WHEN THE MODEL IS THE PROBLEM.
         #

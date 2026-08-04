@@ -232,13 +232,28 @@ def check(profile, basis, quantity, name: str = "") -> Tuple[SanityFinding, ...]
     mass = _mass_of(quantity)
 
     # ── Energy density: the hardest bound there is ──────────────────────────
+    #
+    # EACH BOUND TAKES ITS OWN GENEROUS MASS. A refusal should rest on the most
+    # forgiving reading of the portion, and which end is forgiving depends on
+    # the direction being tested:
+    #
+    #   floor   ("carries no energy")   -> the SMALLEST it could be
+    #   ceiling ("denser than pure fat") -> the LARGEST it could be
+    #
+    # Both were evaluated against the lower bound, so a hedged portion of a
+    # legitimately dense food — "some olive oil", "a drizzle" — computed as
+    # denser than fat and lost its exact source row to the model's guess.
+    # `mass_hi` falls back to `mass` when no upper bound travelled, which is
+    # every caller that passes a measured weight.
+    mass_hi = getattr(quantity, "grams_upper", None) or mass
     if mass and mass > 0:
         density = calories / mass
-        if density > IMPOSSIBLE_KCAL_PER_G:
+        density_hi = calories / mass_hi if mass_hi else density
+        if density_hi > IMPOSSIBLE_KCAL_PER_G:
             findings.append(SanityFinding(
                 "energy_density_impossible", IMPOSSIBLE,
-                f"{calories:.0f} cal for {mass:.0f}g is {density:.1f} cal/g — "
-                f"far above pure fat, so the serving basis is wrong"))
+                f"{calories:.0f} cal for {mass_hi:.0f}g is {density_hi:.1f} "
+                f"cal/g — far above pure fat, so the serving basis is wrong"))
         elif density > MAX_KCAL_PER_G * 0.95:
             # Oils and nut butters live here legitimately. Worth saying,
             # never worth refusing.
@@ -312,7 +327,7 @@ def _trim(n) -> str:
 
 
 def check_values(*, calories, protein=None, carbs=None, fat=None,
-                 fiber=None, grams=None, name: str = "",
+                 fiber=None, grams=None, grams_upper=None, name: str = "",
                  ) -> Tuple[SanityFinding, ...]:
     """The same physics, against plain numbers.
 
@@ -337,8 +352,9 @@ def check_values(*, calories, protein=None, carbs=None, fat=None,
             return self._v.get(key)
 
     class _Q:
-        def __init__(self, g):
+        def __init__(self, g, g_hi=None):
             self.grams = g
+            self.grams_upper = g_hi
             self.milliliters = None
             self.count = None
 
@@ -349,4 +365,4 @@ def check_values(*, calories, protein=None, carbs=None, fat=None,
 
     return check(_P(calories=calories, protein=protein, carbs=carbs, fat=fat,
                     fiber=fiber),
-                 _B(), _Q(grams), name)
+                 _B(), _Q(grams, grams_upper), name)
