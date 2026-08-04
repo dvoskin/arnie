@@ -55,12 +55,13 @@ def _score(fn=_claims_the_same_food):
 #:   0 / 1  registry first, string rule where the registry abstains
 #:   0 / 2  registry ONLY on the delete path; abstention preserves both
 #:   0 / 1  after six alias rows closed the abstentions that mattered
+#:   0 / 0  after typed relations (berry/berries closed by an alias row)
 #:
 #: The false-match number is the one that deletes a row the user reported, and
 #: it is now zero. The survivor is berry/berries, which the registry does not
 #: know — an abstention, not a wrong answer.
 BASELINE_FALSE_MATCHES = 0
-BASELINE_MISSED_RENAMES = 1
+BASELINE_MISSED_RENAMES = 0
 
 
 def test_the_false_match_rate_does_not_regress():
@@ -103,14 +104,6 @@ def test_no_distinct_food_is_claimed_by_another(a, b, why):
 def test_a_rename_still_collapses(a, b, why):
     """The duplicate-collapse the mechanism exists for must survive every
     narrowing."""
-    if (a, b) == ("berry", "berries"):
-        pytest.xfail(
-            "the last survivor, and an ABSTENTION rather than a wrong answer. "
-            "'berry' is not a registered entity, so the registry declines and "
-            "the string rule takes it — and that rule does not singularise. "
-            "Closed by one alias row, which is the acceptance criterion "
-            "working as intended: adding a synonym is an alias entry, not a "
-            "change to a matching algorithm.")
     assert _is_renaming_of(a, b), f"{b!r} should collapse into {a!r} ({why})"
 
 

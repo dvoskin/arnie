@@ -37,93 +37,155 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Optional
+
+
+class Relation(str, Enum):
+    """HOW one food relates to another. `parent_id` was carrying four of these
+    at once, which the review caught before it became load-bearing.
+
+    The distinction that matters for reconciliation is not hierarchy depth, it
+    is whether the two are THE SAME FOOD when one describes the other better:
+
+        alias_of            "potatoes" / "potato"        -> same
+        subtype_of          "banana bread" / "bread"     -> same
+        prepared_form_of    "grilled chicken" / "chicken"-> same
+        product_variant_of  "greek yogurt" / "yogurt"    -> same
+        ingredient_of       "chicken" / "chicken soup"   -> NOT the same
+        distinct            "peanut butter" / "butter"   -> NOT the same
+
+    `ingredient_of` is why one field was not enough. A soup CONTAINS chicken
+    and IS a soup, and a model that can only say "related" would have to pick
+    one — which is how "chicken" ends up claiming and deleting "chicken noodle
+    soup", or the reverse.
+    """
+    ALIAS_OF = "alias_of"
+    SUBTYPE_OF = "subtype_of"
+    PREPARED_FORM_OF = "prepared_form_of"
+    PRODUCT_VARIANT_OF = "product_variant_of"
+    INGREDIENT_OF = "ingredient_of"
+    DISTINCT = "distinct"
+
+
+#: The relations under which two names denote ONE food, so a re-read naming
+#: the narrower one may claim the wider. Everything else preserves both.
+#: `INGREDIENT_OF` and `DISTINCT` are deliberately absent.
+UNIFYING = frozenset({Relation.ALIAS_OF, Relation.SUBTYPE_OF,
+                      Relation.PREPARED_FORM_OF, Relation.PRODUCT_VARIANT_OF})
+
+
+@dataclass(frozen=True)
+class EntityAlias:
+    """One way a food is written, IN A LANGUAGE.
+
+    English was baked into identity: aliases seeded from English tables,
+    English plural rules, English preparation words stripped inside `resolve`.
+    None of that is wrong for English and all of it is wrong as a definition of
+    identity — "papa" is a potato in es-MX and nothing in the old shape could
+    say so.
+
+    Language travels with the alias so adding Spanish is rows rather than a
+    second resolver.
+    """
+    text: str
+    language: str = "en"
+    locale: str = ""
 
 
 @dataclass(frozen=True)
 class FoodEntity:
-    """One food, and every way it is written.
+    """One food, every way it is written, and how it relates to others.
 
-    `parent_id` is the whole answer to peanut butter, and to banana bread,
-    which need OPPOSITE answers about the same shape. It records what the food
-    IS, so a name that merely appears inside it can never claim it. That is
-    data about the food, which is why it lives here rather than as a negative
-    case in a matcher.
+    `relations` replaces `parent_id`. The old field answered "what is this a
+    kind of?" and was asked to mean alias, subtype, preparation and product
+    variant at once — four questions with one answer.
     """
     id: str
     canonical_name: str
-    aliases: frozenset = frozenset()
-    display_singular: str = ""
-    display_plural: str = ""
-    #: The food this one IS a kind of, if any. `""` means it stands alone —
-    #: nothing may claim it by sharing a token with it.
-    parent_id: str = ""
+    aliases: tuple = ()
+    relations: tuple = ()          # ((Relation, target_entity_id), ...)
+
+    @property
+    def alias_texts(self) -> frozenset:
+        return frozenset(a.text for a in self.aliases)
+
+    def unifying_parents(self) -> tuple:
+        return tuple(t for r, t in self.relations if r in UNIFYING)
 
 
-#: Compounds, and the food each one actually IS.
+#: (compound, relation, target). One row per fact, and the RELATION is the
+#: fact — a bare parent could not tell "is a kind of" from "is made with".
 #:
-#: A FLAG WAS NOT ENOUGH, and the corpus proved it in one run. The first
-#: version marked "banana bread", "noodle soup" and "fried rice" as protected
-#: compounds — and scored 8 wrong, because those ARE their head noun. Banana
-#: bread is not a banana AND IS a bread. Both halves are true at once, and a
-#: boolean can only say one of them.
-#:
-#: A parent says both. The entity is distinct from every food it merely
-#: mentions, and identical in kind to the one it descends from:
-#:
-#:     banana bread   parent=bread    -> not a banana, is a bread
-#:     peanut butter  parent=None     -> not a butter, is its own food
-#:     noodle soup    parent=soup     -> is a soup
-#:     orange juice   parent=juice    -> not an orange
-#:
-#: `parent=None` is the strong claim and is used sparingly: it says this food
-#: is nothing but itself, so nothing may ever claim it. Peanut butter earns it
-#: because it is a distinct food that happens to be spelled as a butter — the
-#: exact case no string rule can reach.
-_COMPOUND_PARENTS = {
-    # is a kind of its head noun
-    "noodle soup": "soup",
-    "miso soup": "soup",
-    "chicken noodle soup": "noodle soup",
-    "fried rice": "rice",
-    "white rice": "rice",
-    "banana bread": "bread",
-    "coffee cake": "cake",
-    "cream cheese": "cheese",
-    "chicken breast": "chicken",
-    "chicken thigh": "chicken",
-    "chicken wing": "chicken",
-    "ground beef": "beef",
-    "ground turkey": "turkey",
-    "orange chicken": "chicken",
-    "apple pie": "pie",
-    "milk chocolate": "chocolate",
-    "egg roll": "roll",
-    "orange juice": "juice",
-    # Added as DATA when the delete path stopped guessing and these two showed
-    # up as abstentions. That is the acceptance criterion working: closing a
-    # gap is a row here, not a change to a matching algorithm.
-    "olive oil": "oil",
-    "vegetable oil": "oil",
-    "coconut oil": "oil",
-    "greek yogurt": "yogurt",
-    "cheddar cheese": "cheese",
-    "grilled chicken": "chicken",
+#: A FLAG WAS NOT ENOUGH AND NEITHER WAS A PARENT. The first version used a
+#: boolean and scored eight wrong, because "banana bread" is not a banana AND
+#: is a bread. A parent said both, and then quietly said four different things:
+#: alias, subtype, preparation, product variant. `chicken` / `chicken noodle
+#: soup` is the pair that forces the issue — the soup CONTAINS chicken and IS a
+#: soup, and only one of those may unify.
+_RELATIONS = (
+    # is a kind of
+    ("noodle soup", Relation.SUBTYPE_OF, "soup"),
+    ("miso soup", Relation.SUBTYPE_OF, "soup"),
+    ("chicken noodle soup", Relation.SUBTYPE_OF, "noodle soup"),
+    ("banana bread", Relation.SUBTYPE_OF, "bread"),
+    ("coffee cake", Relation.SUBTYPE_OF, "cake"),
+    ("cream cheese", Relation.SUBTYPE_OF, "cheese"),
+    ("apple pie", Relation.SUBTYPE_OF, "pie"),
+    ("milk chocolate", Relation.SUBTYPE_OF, "chocolate"),
+    ("egg roll", Relation.SUBTYPE_OF, "roll"),
+    ("orange juice", Relation.SUBTYPE_OF, "juice"),
+    ("chicken breast", Relation.SUBTYPE_OF, "chicken"),
+    ("chicken thigh", Relation.SUBTYPE_OF, "chicken"),
+    ("chicken wing", Relation.SUBTYPE_OF, "chicken"),
+    ("olive oil", Relation.SUBTYPE_OF, "oil"),
+    ("vegetable oil", Relation.SUBTYPE_OF, "oil"),
+    ("coconut oil", Relation.SUBTYPE_OF, "oil"),
+    ("cheddar cheese", Relation.SUBTYPE_OF, "cheese"),
+    ("white rice", Relation.SUBTYPE_OF, "rice"),
+
+    # cooked or otherwise prepared, still the same food
+    ("fried rice", Relation.PREPARED_FORM_OF, "rice"),
+    ("grilled chicken", Relation.PREPARED_FORM_OF, "chicken"),
+    ("ground beef", Relation.PREPARED_FORM_OF, "beef"),
+    ("ground turkey", Relation.PREPARED_FORM_OF, "turkey"),
+
+    # a commercial or regional variant of the same food
+    ("greek yogurt", Relation.PRODUCT_VARIANT_OF, "yogurt"),
+
+    # MADE WITH, and therefore NOT the same food. These edges exist to be
+    # refused: without them nothing records that the relationship was
+    # considered, and the next person adds a parent.
+    ("chicken noodle soup", Relation.INGREDIENT_OF, "chicken"),
+    ("orange chicken", Relation.INGREDIENT_OF, "orange"),
+    ("orange juice", Relation.INGREDIENT_OF, "orange"),
+    ("banana bread", Relation.INGREDIENT_OF, "banana"),
+    ("coffee cake", Relation.INGREDIENT_OF, "coffee"),
+    ("apple pie", Relation.INGREDIENT_OF, "apple"),
+    ("corn dog", Relation.INGREDIENT_OF, "corn"),
+    ("milk chocolate", Relation.INGREDIENT_OF, "milk"),
+
     # nothing but itself — no food may claim these
-    "peanut butter": None,
-    "almond butter": None,
-    "eggplant parmesan": None,
-    "corn dog": None,
-    "hot dog": None,
-    "sweet potato": None,
-    "ice cream": None,
-    "sour cream": None,
-    "coconut water": None,
-    "water chestnut": None,
-    "buttermilk": None,
-    "rice cake": None,
-    "rice cakes": None,
-}
+    ("peanut butter", Relation.DISTINCT, ""),
+    ("almond butter", Relation.DISTINCT, ""),
+    ("eggplant parmesan", Relation.DISTINCT, ""),
+    ("corn dog", Relation.DISTINCT, ""),
+    ("hot dog", Relation.DISTINCT, ""),
+    ("sweet potato", Relation.DISTINCT, ""),
+    ("ice cream", Relation.DISTINCT, ""),
+    ("sour cream", Relation.DISTINCT, ""),
+    ("coconut water", Relation.DISTINCT, ""),
+    ("water chestnut", Relation.DISTINCT, ""),
+    ("buttermilk", Relation.DISTINCT, ""),
+    ("rice cake", Relation.DISTINCT, ""),
+    ("orange chicken", Relation.DISTINCT, ""),
+)
+
+#: Names the seeded tables do not carry, added as DATA. `berry` was the last
+#: abstention on the corpus — the registry did not know it, so the delete path
+#: preserved rather than collapsed. One row closes it, which is the point.
+_EXTRA_NAMES = ("berry", "oil", "juice", "roll", "pie", "chocolate", "soup",
+                "cake", "bread", "cheese", "yogurt", "beef", "turkey")
 
 
 def _slug(name: str) -> str:
@@ -159,48 +221,61 @@ def _build() -> tuple:
     from skills.nutrition.normalize import PIECE_WEIGHTS_G
     from skills.nutrition.portions import FOOD_CATEGORIES
 
-    names: set = set()
-    names.update(k for k in PIECE_WEIGHTS_G)
+    names: set = set(_EXTRA_NAMES)
+    names.update(PIECE_WEIGHTS_G)
     # FOOD_CATEGORIES keys are FRAGMENTS ("blueberr", "cherr") as often as
     # names, so only whole-word entries are taken. A fragment is a matching
     # aid, not a food, and registering one as an entity would be the same
     # category error this module exists to correct.
     names.update(k for k in FOOD_CATEGORIES
                  if re.fullmatch(r"[a-z]+(?: [a-z]+)*", k) and len(k) > 3)
-    names.update(_COMPOUND_PARENTS)
-    names.update(v for v in _COMPOUND_PARENTS.values() if v)
+    for name, _rel, target in _RELATIONS:
+        names.add(name)
+        if target:
+            names.add(target)
+
+    by_name = {n: f"food:{_slug(n)}" for n in names}
+    rels: dict = {}
+    for name, rel, target in _RELATIONS:
+        tid = by_name.get(target, "") if target else ""
+        if rel is not Relation.DISTINCT and not tid:
+            continue
+        rels.setdefault(by_name[name], []).append((rel, tid))
 
     entities: dict = {}
     for name in sorted(names):
-        eid = f"food:{_slug(name)}"
-        plurals = _plural_forms(name)
-        entities[eid] = FoodEntity(
-            id=eid,
-            canonical_name=name,
-            aliases=frozenset({name} | plurals),
-            display_singular=name,
-            display_plural=next(iter(plurals), name),
-            parent_id=(f"food:{_slug(_COMPOUND_PARENTS[name])}"
-                       if _COMPOUND_PARENTS.get(name) else ""),
-        )
+        eid = by_name[name]
+        # English plurals are ALIASES, in English. They are expanded once, at
+        # construction, into stored rows — a lookup never guesses a spelling.
+        aliases = tuple(EntityAlias(text=t, language="en")
+                        for t in sorted({name} | _plural_forms(name)))
+        entities[eid] = FoodEntity(id=eid, canonical_name=name,
+                                   aliases=aliases,
+                                   relations=tuple(rels.get(eid, ())))
 
     index: dict = {}
     for ent in entities.values():
         for alias in ent.aliases:
+            key = (alias.text, alias.language)
+            cur = index.get(key)
             # LONGEST CANONICAL WINS a collision between two entities' alias
             # sets, so "sweet potatoes" resolves to the sweet potato rather
             # than to the potato whose plural it also contains.
-            cur = index.get(alias)
             if cur is None or len(entities[cur].canonical_name) < \
                     len(ent.canonical_name):
-                index[alias] = ent.id
+                index[key] = ent.id
     return entities, index
 
 
-#: Words that describe how a food was PREPARED rather than which food it is.
-#: Read from the ontology's own form vocabulary — a seventh hand-written list
-#: of cooking words is exactly what this module exists to stop.
-def _form_words() -> frozenset:
+def _form_words(language: str = "en") -> frozenset:
+    """Words describing how a food was PREPARED rather than which food it is.
+
+    KEYED BY LANGUAGE. Baking English cooking words into `resolve` made
+    identity English-shaped; a language with no entry gets an empty set, so its
+    names are matched whole and nothing is silently stripped.
+    """
+    if language != "en":
+        return frozenset()
     try:
         from skills.nutrition.portions import FORM_ALIASES
         out = set()
@@ -213,64 +288,57 @@ def _form_words() -> frozenset:
 
 
 _ENTITIES, _ALIAS_INDEX = _build()
-_FORM_WORDS = _form_words()
 
 
-def resolve(name: str) -> Optional[str]:
+def resolve(name: str, language: str = "en") -> Optional[str]:
     """The entity id this name denotes, or None.
 
-    NONE IS A REAL ANSWER and the callers must treat it as one. Forcing a match
-    is how a false one acquires a piece weight, merges two foods, or overwrites
-    a correction target — the directive's "unknown is safer than a false match",
-    and the reason this returns Optional rather than a best guess.
+    NONE IS A REAL ANSWER and callers must treat it as one. Forcing a match is
+    how a false one acquires a piece weight, merges two foods, or overwrites a
+    correction target — and on the delete path `_claims_the_same_food` now
+    treats None as "preserve both".
 
-    Longest phrase first, so "peanut butter" is found before "butter" and
-    "chicken noodle soup" before "chicken". That ordering IS the protected
-    compound rule at lookup time; `protected_compound` records it on the entity
-    so callers can also ask.
+    LANGUAGE IS A PARAMETER, not an assumption. Everything English-specific —
+    the plural expansion, the preparation vocabulary — is scoped to `language`,
+    so adding Spanish is alias rows plus a form list rather than a second
+    resolver. Punctuation stripping is the one step applied to every language,
+    because "White rice, cooked" and "arroz blanco, cocido" both arrive with
+    commas.
     """
-    # Punctuation is not identity. Real names arrive as "White rice, cooked"
-    # and "chicken (grilled)", and a comma was enough to make the whole lookup
-    # miss — so it is normalised away before anything is compared, and NOT by
-    # the callers, each of which would do it differently.
-    n = " ".join(re.sub(r"[^a-z0-9 ]+", " ", (name or "").lower()).split())
+    n = " ".join(re.sub(r"[^\w ]+", " ", (name or "").lower()).split())
     if not n:
         return None
-    if n in _ALIAS_INDEX:
-        return _ALIAS_INDEX[n]
-    # Then the longest registered phrase that is the HEAD of this name, so
-    # "grilled chicken" resolves to chicken while "banana bread" does not
-    # resolve to banana.
-    hit = _tail_match(n)
+    hit = _tail_match(n, language)
     if hit:
         return hit
-    # PREPARATION IS NOT IDENTITY. "White rice, cooked" and "chicken (grilled)"
-    # are a rice and a chicken; the form word is a fact ABOUT the food, and it
-    # sits where the head noun would be, so the tail match cannot see past it.
-    #
-    # Tried only AFTER the whole name fails, so entities that genuinely contain
-    # a form word keep it: "fried rice" is matched whole above and never
-    # reaches here to be reduced to "rice".
-    stripped = [w for w in n.split() if w not in _FORM_WORDS]
+    # PREPARATION IS NOT IDENTITY. "White rice, cooked" is a rice; the form
+    # word sits where the head noun would be, so the tail match cannot see past
+    # it. Tried only AFTER the whole name fails, so entities that genuinely
+    # contain a form word keep it — "fried rice" is matched whole above and
+    # never reduced to "rice".
+    forms = _form_words(language)
+    stripped = [w for w in n.split() if w not in forms]
     if stripped and len(stripped) != len(n.split()):
-        return _tail_match(" ".join(stripped))
+        return _tail_match(" ".join(stripped), language)
     return None
 
 
-def _tail_match(n: str) -> Optional[str]:
+def _tail_match(n: str, language: str = "en") -> Optional[str]:
     """The longest registered phrase that is the HEAD of this name.
 
     English compounds put the head last, so "grilled chicken" resolves to
-    chicken while "banana bread" does not resolve to banana — the bread is the
-    head and the banana is a modifier.
+    chicken while "banana bread" does not resolve to banana. That rule is
+    ENGLISH, which is why it is reached through a language-keyed index — a
+    language whose compounds head differently needs its own matcher, not a
+    patch to this one.
     """
-    if n in _ALIAS_INDEX:
-        return _ALIAS_INDEX[n]
+    if (n, language) in _ALIAS_INDEX:
+        return _ALIAS_INDEX[(n, language)]
     words = n.split()
     for size in range(len(words), 0, -1):
         tail = " ".join(words[-size:])
-        if tail in _ALIAS_INDEX:
-            return _ALIAS_INDEX[tail]
+        if (tail, language) in _ALIAS_INDEX:
+            return _ALIAS_INDEX[(tail, language)]
     return None
 
 
@@ -278,60 +346,74 @@ def get(entity_id: str) -> Optional[FoodEntity]:
     return _ENTITIES.get(entity_id)
 
 
-def stands_alone(name: str) -> bool:
-    """Whether this food is nothing but itself — no other food may claim it.
+def relation_between(a: str, b: str) -> Optional[Relation]:
+    """The declared relation from `b` to `a`, if one is recorded.
 
-    True for peanut butter, false for banana bread. The pair is the reason a
-    boolean flag was not enough: both CONTAIN another food's name, and only one
-    of them is a kind of it.
+    Reported so a caller can act on WHY rather than only on whether — an
+    ingredient edge and an unknown pair both mean "do not claim", but only one
+    of them means "we looked at this".
     """
-    eid = resolve(name)
-    ent = _ENTITIES.get(eid) if eid else None
-    return bool(ent and ent.canonical_name in _COMPOUND_PARENTS
-                and not ent.parent_id)
+    ea, eb = resolve(a), resolve(b)
+    if ea is None or eb is None:
+        return None
+    ent = _ENTITIES.get(eb)
+    for rel, target in (ent.relations if ent else ()):
+        if target == ea:
+            return rel
+    return None
 
 
 def ancestry(entity_id: str) -> tuple:
-    """`entity_id` and every food it is a kind of, nearest first.
+    """`entity_id` and every food it is the same food as, nearest first.
 
-    Bounded against a cycle in the data: a parent table is hand-maintained, and
-    a loop in it must degrade to a short chain rather than hang the turn.
+    Only UNIFYING relations are walked. An `ingredient_of` edge is recorded and
+    deliberately not followed: chicken noodle soup is made with chicken and is
+    not chicken, and walking that edge is how a soup claims and deletes it.
+
+    Bounded against a cycle: the table is hand-maintained and a loop in it must
+    degrade to a short chain rather than hang the turn.
     """
-    seen, chain = set(), []
-    cur = entity_id
-    while cur and cur not in seen:
+    seen, chain, frontier = set(), [], [entity_id]
+    while frontier:
+        cur = frontier.pop()
+        if not cur or cur in seen:
+            continue
         seen.add(cur)
         chain.append(cur)
         ent = _ENTITIES.get(cur)
-        cur = ent.parent_id if ent else ""
+        if ent:
+            frontier.extend(ent.unifying_parents())
     return tuple(chain)
 
 
-def same_food(a: str, b: str) -> Optional[bool]:
+def same_food(a: str, b: str, language: str = "en") -> Optional[bool]:
     """True/False when both names resolve; None when either does not.
 
-    Same food when they are the same entity, OR when one is a kind of the
-    other — "noodle soup" IS a soup, so a re-read naming it more precisely is
-    one food described better rather than two foods.
+    Same food when they are the same entity, or when one is the other under a
+    UNIFYING relation — alias, subtype, prepared form, product variant. An
+    `ingredient_of` edge returns False: it is a recorded relationship AND a
+    refusal, which is the distinction a bare parent could not express.
 
-    Descent is checked in BOTH directions because `_undeferred` sees two
-    readings of one message and neither is guaranteed to be the narrower.
-
-    THE THREE-VALUED RETURN IS THE POINT. A caller that cannot tell "these are
-    different" from "I do not know" will treat the second as the first, and the
-    failure being fixed is a confident answer to an unanswerable question. None
-    means fall back to whatever the caller did before.
+    THE THREE-VALUED RETURN IS THE POINT. A caller that cannot tell "different"
+    from "I do not know" will treat the second as the first, and the failure
+    being fixed is a confident answer to an unanswerable question.
     """
-    ea, eb = resolve(a), resolve(b)
+    ea, eb = resolve(a, language), resolve(b, language)
     if ea is None or eb is None:
         return None
     return ea in ancestry(eb) or eb in ancestry(ea)
 
 
+def stands_alone(name: str) -> bool:
+    """Whether this food is declared DISTINCT — nothing may claim it."""
+    ent = _ENTITIES.get(resolve(name) or "")
+    return bool(ent and any(r is Relation.DISTINCT for r, _ in ent.relations))
+
+
 def coverage() -> dict:
-    """How much of the vocabulary is registered. Should rise across phases."""
+    """How much vocabulary is registered. Should rise across phases."""
+    from collections import Counter
+    rels = Counter(r.value for e in _ENTITIES.values() for r, _ in e.relations)
+    langs = Counter(lang for _t, lang in _ALIAS_INDEX)
     return {"entities": len(_ENTITIES), "aliases": len(_ALIAS_INDEX),
-            "with_parent": sum(1 for e in _ENTITIES.values() if e.parent_id),
-            "stand_alone": sum(1 for e in _ENTITIES.values()
-                               if e.canonical_name in _COMPOUND_PARENTS
-                               and not e.parent_id)}
+            "relations": dict(rels), "languages": dict(langs)}

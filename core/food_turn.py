@@ -2781,9 +2781,31 @@ def _identity_strict() -> bool:
     registry has no opinion, the answer is "keep both" rather than "let a rule
     that cannot tell a rename from a different food decide".
 
-    Measured on the 36-pair corpus, this costs two duplicates — berry/berries
-    and oil/olive oil, both foods the registry does not yet know — and removes
-    the fuzzy matcher from the delete path entirely.
+    Measured: strict preservation initially cost two duplicates (berry/berries,
+    oil/olive oil), and alias rows closed both. The corpus now scores 0 false
+    matches and 0 missed renames on 36 hand-labelled pairs and 431 synthetic
+    ones.
+
+    THIS FLAG IS AN EMERGENCY CONTROL, NOT AN OPERATING MODE, and it has a
+    deletion milestone rather than an open end. `=false` restores a matcher
+    that is measurably able to delete a row the user reported, so it exists to
+    make a bad rollout a config change instead of a revert — and for nothing
+    else.
+
+    DELETE THE FALLBACK when all four hold:
+
+      1. `event=identity_preserved` rate is stable and understood in
+         production — the registry's abstention rate on real traffic, which no
+         synthetic corpus can predict;
+      2. no identity-related regression during a soak with strict on for all
+         traffic;
+      3. registry coverage measured against real inputs, not against its own
+         seeded tables (see `UNCOVERED_FAMILIES` — misspellings, branded
+         products, restaurant dishes and non-English aliases are all
+         unvalidated);
+      4. strict on for every user for a fixed period with (1)-(3) holding.
+
+    Until then the fallback stays and this docstring is the record of why.
     """
     return (os.getenv("FOOD_IDENTITY_STRICT", "true") or "").strip().lower() \
         in ("1", "true", "yes", "on")
