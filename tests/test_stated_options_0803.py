@@ -59,6 +59,34 @@ def test_what_must_never_become_a_chip(question, why):
     assert _stated_options([question]) == [], why
 
 
+@pytest.mark.parametrize("question,label,expected", [
+    # THE OPENER. An enumeration of interrogatives missed "was that" and
+    # "were those", so the commonest question form in English kept its opener
+    # and shipped it as a chip: ["Was that homemade", "Store-bought"], which
+    # the user taps and sends back verbatim. Matched on shape now.
+    ("Was that homemade or store-bought?", "", ["Homemade", "Store-bought"]),
+    ("Were those baked or fried?", "", ["Baked", "Fried"]),
+    ("Is it whole milk or skim?", "Milk", ["Whole milk", "Skim"]),
+    ("Was the chicken grilled or fried?", "Chicken", ["Grilled", "Fried"]),
+    ("What kind of bread, white or wheat?", "Bread", ["White", "Wheat"]),
+    # THE SUBJECT. The interpreter writes facets both ways, and a leading food
+    # name produced ["Chicken grilled", "Fried"]. The label IS the item this
+    # question is attached to, so stripping it is exact rather than a guess.
+    ("Chicken grilled or fried?", "Chicken", ["Grilled", "Fried"]),
+    ("Rice white or brown?", "Rice", ["White", "Brown"]),
+])
+def test_the_opener_and_the_subject_are_not_answers(question, label, expected):
+    assert _stated_options([question], label=label) == expected
+
+
+def test_a_spelled_count_is_left_to_the_portion_path():
+    """"one or two" is a COUNT. `_portion_options` prices it against the
+    ontology; echoing the words back offers the same thing unpriced, and wins,
+    because this is tried second."""
+    assert _stated_options(["did you have one or two?"], label="Eggs") == []
+    assert _stated_options(["a half or a whole?"], label="Bagel") == []
+
+
 def test_a_digit_is_left_to_the_portion_path():
     """A side carrying a number is a portion answer. `_portion_options` prices
     those against the ontology; echoing the words back would offer the same

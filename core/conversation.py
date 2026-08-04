@@ -744,6 +744,56 @@ async def run_turn(*args, **kwargs) -> TurnResult:
             pass
 
 
+async def _settle_expired_deferred(db, user, prior, today_log, *,
+                                   source_type=None) -> int:
+    """Commit the foods an expired clarification was still holding.
+
+    Returns how many landed. NEVER raises and never blocks the turn: a failure
+    here must degrade to the old behaviour (the food is lost) rather than cost
+    the user the reply they are waiting for.
+
+    The asked-about item is deliberately NOT here — it rides `staged_items` and
+    genuinely has no answer, so it stays unwritten. `deferred_calls` is the
+    rest of the meal: foods the user reported, that we understood and priced,
+    and that were held back only because a DIFFERENT item raised a question.
+    Their day is not in doubt, only their company.
+
+    Written against the STASHED date when there is one, so a meal held
+    overnight lands on the day it was eaten rather than the day it expired.
+    `log_food` already accepts `input["date"]` and resolves the target day via
+    `get_or_create_log_for_date`, so the past-day case needs no new machinery.
+    """
+    try:
+        from core.food_turn import deferred_calls as _deferred
+        calls = _deferred(prior)
+        if not calls:
+            return 0
+        _stashed_date = (prior or {}).get("log_date") or ""
+        if _stashed_date:
+            for _tc in calls:
+                if _tc.get("name") == "log_food":
+                    # `setdefault` — a call that already names its own day
+                    # keeps it.
+                    (_tc.setdefault("input", {})).setdefault(
+                        "date", _stashed_date)
+        if today_log is None:
+            from db.queries import get_or_create_today_log
+            today_log = await get_or_create_today_log(
+                db, user.id, getattr(user, "timezone", None) or "UTC")
+        names = [(c.get("input") or {}).get("food_name") for c in calls]
+        logger.warning(
+            "event=deferred_commit outcome=expired_rescue user=%s count=%d "
+            "foods=%s date=%s — the question aged out; the food did not",
+            getattr(user, "id", "?"), len(calls), names, _stashed_date or "-")
+        await execute_tool_calls(calls, user, today_log, db,
+                                 source_type or "text")
+        return len(calls)
+    except Exception as e:
+        logger.error("expired-deferred rescue FAILED (food lost): %s", e,
+                     exc_info=True)
+        return 0
+
+
 async def _run_turn(
     user,
     db,
@@ -966,6 +1016,27 @@ async def _run_turn(
                 try:
                     from core.food_ledger import pending_expired as _pq_exp
                     if _pq_exp(_sft_prior_pq, (_sft_prior or {}).get("kind")):
+                        # THE QUESTION EXPIRES. THE FOOD DOES NOT.
+                        #
+                        # Since an ask writes nothing (FOOD_PARTIAL_COMMIT
+                        # defaults false), the whole understood meal lives ONLY
+                        # as `deferred_calls` in this payload until
+                        # `_settle_deferred` commits it at `run()`'s exit. That
+                        # exit needs another food turn. Retiring the row here
+                        # without reading it therefore destroyed every food the
+                        # user reported — not the one item we asked about, the
+                        # MEAL. On origin/main the ready foods were already
+                        # written, so expiry cost one item; the flag flip turned
+                        # that into total, silent loss, which is the exact class
+                        # this branch exists to close.
+                        #
+                        # Settled HERE rather than deferred to the next turn,
+                        # because this is the last moment anything knows the
+                        # food exists: the next turn may not be a food turn at
+                        # all, and then `run()` never executes.
+                        await _settle_expired_deferred(
+                            db, user, _sft_prior, today_log,
+                            source_type=_source)
                         from datetime import datetime as _dt_x
                         _sft_prior_pq.answered_at = _dt_x.utcnow()
                         await db.commit()

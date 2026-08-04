@@ -2696,18 +2696,47 @@ def _undeferred(held: list, plan_calls: list) -> list:
     """
     seen = [_call_name_key(c) for c in (plan_calls or [])
             if isinstance(c, dict) and c.get("name") == "log_food"]
-    out, kept = [], []
+    unclaimed = list(seen)
+
+    # WITHIN `held`, EXACT ONLY. Every entry came from a DIFFERENT parsed item —
+    # `_calls_for_ready` walks `ready`, `_orphan_calls` walks `items` minus
+    # anything already in ready/points — so two held calls are two foods by
+    # construction. Matching them fuzzily deleted real food:
+    # `held=[Rice, Rice cakes, Coffee, Coffee cake]` settled as
+    # `['Rice','Coffee']`, silently, no tombstone, no log line naming the loss.
+    # Orange/orange juice and egg/egg roll do the same.
+    pending, kept = [], set()
     for call in held:
         key = _call_name_key(call)
-        # `_same_food`, not equality: the answer turn re-reads the original
-        # sentence and routinely names the food more precisely than the ask did
-        # ("White rice" -> "White rice, cooked"). Under equality that is a
-        # second row, in the same batch, where the executor's dedup cannot see
-        # it — see the docstring above for why it cannot.
-        if not key or any(_same_food(key, s) for s in seen) \
-                or any(_same_food(key, k) for k in kept):
+        if key and key not in kept:
+            kept.add(key)
+            pending.append((key, call))
+
+    # ACROSS TURNS: INJECTIVE, AND EXACT CLAIMS FIRST. One plan call may account
+    # for at most ONE held call. Exactness is resolved in its own pass because
+    # order otherwise decides the outcome: walking once, the plain "Orange"
+    # reached `plan=[Orange juice]` first, matched it fuzzily, consumed the slot
+    # and dropped ITSELF — leaving the juice to be written and the orange to
+    # vanish. Claiming exact matches up front spends that slot where it belongs.
+    covered = set()
+    for key, _call in pending:
+        if key in unclaimed:
+            unclaimed.remove(key)
+            covered.add(key)
+
+    out = []
+    for key, call in pending:
+        if key in covered:
             continue
-        kept.append(key)
+        # The duplicate this exists to collapse: the answer turn re-read the
+        # sentence and named the food more precisely ("White rice" ->
+        # "White rice, cooked"). Only when exactly one plan call is a candidate
+        # — several, or none, and we carry it. A held food written twice is
+        # visible and recoverable; one silently dropped is not.
+        _fuzzy = [s for s in unclaimed if _same_food(key, s)]
+        if len(_fuzzy) == 1:
+            unclaimed.remove(_fuzzy[0])
+            continue
         out.append(call)
     return out
 
@@ -3128,9 +3157,25 @@ def _portion_options(item_label: str, user_message: str, *,
 
 
 #: Openers a facet may start with before the real choice begins.
+#:
+#: An enumeration was the wrong shape and shipped a new nonsense chip on the
+#: commonest question form in English: "Was that homemade or store-bought?"
+#: kept "was that" and offered ["Was that homemade", "Store-bought"], which the
+#: user then TAPS and sends back as their answer. Symptom 10 was nonsense
+#: chips; a server-side mis-split is not an improvement on a client-side one.
+#:
+#: So this matches the SHAPE instead of a word list: an optional interrogative
+#: or copula, an optional subject (the food, a pronoun, an article phrase), and
+#: then the choice. `_stated_options` requires BOTH sides of the alternation to
+#: survive as short noun phrases, so an opener that over-strips fails closed —
+#: no chips — rather than shipping half a sentence.
 _ASK_OPENER_RE = re.compile(
-    r"^(?:was\s+it|is\s+it|is\s+that|were\s+they|are\s+they|did\s+you\s+have|"
-    r"which(?:\s+one)?|what(?:\s+kind)?)\b[\s,:-]*", re.I)
+    r"^(?:"
+    r"(?:was|were|is|are|do|did|does|have|has)\s+"
+    r"(?:it|that|those|they|these|this|you|your|the|a|an|any)?\s*"
+    r"|which(?:\s+one)?\s*|what(?:\s+kind|\s+sort|\s+type)?(?:\s+of)?\s*"
+    r"|how\s+was\s+(?:it|that|the)?\s*"
+    r")[\s,:-]*", re.I)
 
 #: A side that is only this is not an answer to anything.
 _NOT_AN_ANSWER = frozenset((
@@ -3149,7 +3194,17 @@ _NOT_AN_ANSWER_LEAD = frozenset((
 ))
 
 
-def _stated_options(qs) -> list:
+#: Spelled counts. A count is a PORTION answer — `_portion_options` prices it
+#: against the ontology, where echoing the word back would offer the same thing
+#: without the pricing and would win, because it is tried second. The digit
+#: guard below covers "1 or 2"; this covers "one or two".
+_SPELLED_COUNT = frozenset((
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "half", "a half", "a couple", "couple", "a few", "few",
+))
+
+
+def _stated_options(qs, label: str = "") -> list:
     """The choices the interpreter PUT IN the question — "fast food or
     homemade?" -> ["Fast food", "Homemade"].
 
@@ -3179,6 +3234,15 @@ def _stated_options(qs) -> list:
         # sharing a string; only the alternation is answerable as a chip.
         for clause in re.split(r"[,;]| and (?=how|what|about)", text):
             clause = _ASK_OPENER_RE.sub("", clause.strip())
+            # THE FOOD'S OWN NAME IS NOT AN ANSWER ABOUT THAT FOOD. The
+            # interpreter writes facets both ways — "grilled or fried?" and
+            # "Chicken grilled or fried?" — and the second offered
+            # ["Chicken grilled", "Fried"], a chip the user taps and sends back
+            # verbatim. Exact, not a guess: the label IS the item this question
+            # is attached to.
+            if label:
+                clause = re.sub(r"^" + re.escape(label.strip()) + r"\b[\s,:-]*",
+                                "", clause, flags=re.I).strip()
             parts = [p.strip() for p in re.split(r"\s+or\s+", clause, flags=re.I)]
             if len(parts) != 2 or not all(parts):
                 continue
@@ -3188,6 +3252,8 @@ def _stated_options(qs) -> list:
                 continue                      # a sentence, not a choice
             if any(p.lower() in _NOT_AN_ANSWER for p in parts):
                 continue
+            if any(p.lower() in _SPELLED_COUNT for p in parts):
+                continue                      # a count, priced by the ontology
             if any(p.split()[0].lower() in _NOT_AN_ANSWER_LEAD for p in parts):
                 continue
             return [p[:1].upper() + p[1:] for p in parts]
@@ -3216,7 +3282,7 @@ def _question_options(*, label: str, qs, found_by_label, message: str,
     # the bracket because those are looked-up facts and this is only what the
     # interpreter wrote — but it is the difference between an answerable
     # question and one every client has to guess at on its own.
-    return _stated_options(qs)[:4]
+    return _stated_options(qs, label=label)[:4]
 
 
 def _questions_from_points(points, *, message: str = "", items=None,
