@@ -969,6 +969,33 @@ def _unit_names_the_food(unit_word: str, food_name: str) -> bool:
     return False
 
 
+def confident_lower_mass(raw: str, food_name: str = "") -> Optional[float]:
+    """The SMALLEST mass this portion could plausibly be, or None if we cannot
+    say — `grams - uncertainty_g`.
+
+    For a REFUSAL, the point estimate is the wrong number to reason from. A
+    portion is often a range wearing a single figure: "some" normalizes to 80 g
+    with an uncertainty of 85 g, which is to say we do not know. Judging energy
+    density against 80 would let a bound refuse a food on the strength of our
+    own guess about how much of it there was.
+
+    So refusals take the most generous reading available. Below the lower bound
+    there is no portion left to argue about, and "even at the smallest mass this
+    could be, it carries no energy" is a claim about the FOOD rather than about
+    our estimate of the portion.
+
+    Returns None when the lower bound collapses to nothing (uncertainty >= the
+    mass), which is the honest answer for a vague measure and the reason "some
+    lettuce" is never refused.
+    """
+    q = normalize_quantity(raw, food_name)
+    grams = getattr(q, "grams", None)
+    if not grams or grams <= 0:
+        return None
+    low = float(grams) - float(getattr(q, "uncertainty_g", 0) or 0)
+    return low if low > 0 else None
+
+
 def normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
     """A portion, plus the record of how it became one (§2, §10).
 

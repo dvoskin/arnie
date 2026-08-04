@@ -1240,9 +1240,27 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     # saves.
     try:
         from skills.nutrition import sanity as _sanity
+        # THE STATED PORTION, NOT THE DERIVED ONE. `_implied_grams` is set from
+        # `cal / cal100 * 100` on the estimate path (see above), so
+        # `calories / _implied_grams` is identically `cal100/100` — a constant.
+        # Measuring density against it cannot detect a portion error in either
+        # direction, which is why one cup of rice committed at 1 cal with the
+        # density check live and silent. `normalize_quantity` reaches masses
+        # `mass_grams` cannot ("1 cup" -> 158 g), which is the same reason the
+        # zero-calorie branch above reaches for it.
+        # The LOWER BOUND, not the point estimate: this feeds a refusal, and a
+        # refusal should rest on the most generous reading of the portion. A
+        # vague measure ("some", 80g +/- 85g) returns None and is judged only
+        # by the checks that need no mass.
+        _stated_g = None
+        try:
+            from skills.nutrition.normalize import confident_lower_mass
+            _stated_g = confident_lower_mass(quantity or "", name or "")
+        except Exception:
+            _stated_g = None
         _findings = _sanity.check_values(
             calories=cal, protein=protein, carbs=carbs, fat=fat,
-            fiber=fiber, grams=_implied_grams)
+            fiber=fiber, grams=(_stated_g or _implied_grams), name=name)
         _fatal = [f for f in _findings if f.is_fatal]
         if _fatal:
             logger.warning(

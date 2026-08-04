@@ -2290,14 +2290,55 @@ async def _logged_history_match(db, user_id, food_name, quantity, days=90):
             ratio = _lead_count(quantity) / max(_lead_count(fe.quantity), 0.5)
             if ratio <= 0 or ratio > 20:
                 ratio = 1.0
+            _cal = round(float(fe.calories) * ratio)
+            # A ROW IS NOT GROUND TRUTH JUST BECAUSE WE WROTE IT. This override
+            # returns before the resolver, the plausibility cap, the web lane
+            # and the micro fallback — everything that would otherwise object —
+            # so a bad row here is not merely wrong once, it is wrong forever.
+            # Prod 2026-08-03: one cup of white rice committed at 1 cal through
+            # a unit slip; `estimated_flag` was False and `calories > 0`, so it
+            # cleared both filters above and was eligible to be served back as
+            # the user's own confirmed history.
+            #
+            # The same physics that refuses it on the way IN refuses it on the
+            # way back out. Nothing else about the override changes: a sane
+            # prior log still beats USDA, which is the whole point of it.
+            if not _history_row_is_plausible(_cal, quantity, fe.parsed_food_name):
+                logger.warning(
+                    "history ground-truth DECLINED as implausible: %r %r -> "
+                    "%s cal (prior %r) — falling through to the ladder",
+                    fe.parsed_food_name, quantity, _cal, fe.quantity)
+                return None
             return {
-                "calories": round(float(fe.calories) * ratio),
+                "calories": _cal,
                 "protein": round(float(fe.protein or 0) * ratio, 1),
                 "carbs": round(float(fe.carbs or 0) * ratio, 1),
                 "fats": round(float(fe.fats or 0) * ratio, 1),
                 "name": fe.parsed_food_name,
             }
     return None
+
+
+def _history_row_is_plausible(calories, quantity, name) -> bool:
+    """Whether a prior row may stand in as ground truth for THIS portion.
+
+    Only the fatal checks — a SUSPECT row (an oil at the energy ceiling) is a
+    legitimate prior log and must keep winning. Fails open: a plausibility
+    check that errors must not cost the user their own history.
+    """
+    try:
+        from skills.nutrition import sanity as _sanity
+        from skills.nutrition.normalize import confident_lower_mass
+        # The SMALLEST the portion could be — see `confident_lower_mass`. A
+        # vague measure returns None here and is never refused, so this can
+        # only reject a row whose portion we actually know.
+        _g = confident_lower_mass(quantity or "", name or "")
+        if not _g:
+            return True
+        return not [f for f in _sanity.check_values(
+            calories=calories, grams=_g, name=name or "") if f.is_fatal]
+    except Exception:
+        return True
 
 
 def _user_stated_label(inp) -> bool:
@@ -2905,6 +2946,26 @@ async def _analyze_food(db, user, food_name, inp):
                         f"web meal enrich DECLINED reason=implausible_move "
                         f"food={food_name!r} interp={result.calories} "
                         f"web={round(meal['calories'])} x={_x:.1f} cap={_cap:g}")
+                elif _cap > 0 and _x is None and not (result.calories or 0) > 0:
+                    # NO BASELINE IS NOT NO OBJECTION. `_delta_ratio` returns
+                    # None when either side is <= 0 — correctly, since there is
+                    # no ratio between "no number" and 400 — but the condition
+                    # above read that as consent, so a 0 -> 400 move was the one
+                    # move the cap could never see. It is also the least
+                    # defensible one: every guard that would have priced this
+                    # food declined, and the answer to "nobody could price it"
+                    # is not "believe a search result outright".
+                    #
+                    # Prod 2026-08-03 (Cali Roll): the interpreter's own 283
+                    # was popped by the unit-change path, `analyze` received no
+                    # calories and produced 0, the zero refusal set
+                    # source="estimate" — which is the gate that OPENS this lane
+                    # — and 400 committed unchallenged.
+                    _web_ok = False
+                    logger.warning(
+                        f"web meal enrich DECLINED reason=no_baseline "
+                        f"food={food_name!r} interp={result.calories} "
+                        f"web={round(meal['calories'])} cap={_cap:g}")
             except Exception:
                 pass
         if _web_ok:

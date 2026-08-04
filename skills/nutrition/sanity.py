@@ -29,6 +29,7 @@ oils, nuts and spirits are exactly the foods that sit near these bounds.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -48,6 +49,46 @@ from typing import Optional, Tuple
 #: between 12 and 36 by rounding.
 MAX_KCAL_PER_G = 9.0
 IMPOSSIBLE_KCAL_PER_G = 12.0
+
+#: THE FLOOR. Every bound in this file was one-sided until 2026-08-03, and the
+#: gap shipped: one cup of cooked white rice — 158 g by the ontology — committed
+#: at 1 CALORIE, 0.006 kcal/g, while the interpreter had said 205. Nothing
+#: objected, because the only density rule was a ceiling and the Atwater check
+#: is gated at MACRO_CHECK_MIN_KCAL = 40, which excludes the entire failing
+#: range by construction.
+#:
+#: 0.05, not the 0.2 that looks defensible. Lettuce is ~0.15 kcal/g, celery
+#: ~0.16, cucumber ~0.15, raw jalapeno ~0.29 — all real foods that really are
+#: that thin, and a floor that fails them is a floor that gets turned off. The
+#: production defect sits thirty times below this and twenty times below the
+#: thinnest vegetable, so the separation is not delicate.
+#:
+#: IMPOSSIBLE rather than SUSPECT, matching the ceiling's logic: a portion with
+#: real mass and no energy does not describe a food, it describes a portion we
+#: failed to price. The exemption below is the one place this module needs to
+#: know anything about food rather than physics, and it is deliberately short.
+MIN_KCAL_PER_G = 0.05
+
+#: Below this mass there is nothing to reason about — a 5 g portion at 0 cal is
+#: a garnish, and the arithmetic is noise at that scale.
+MIN_MASS_FOR_DENSITY_G = 20.0
+
+#: THE ONE PLACE FOOD KNOWLEDGE IS UNAVOIDABLE. Water, black coffee, plain tea
+#: and diet soda really are ~0 kcal/g at any mass, so the floor must not fire on
+#: them — `core/food_intelligence` says the same thing where it refuses to
+#: attribute a zero: "water and black coffee are real foods that really are
+#: zero". Kept to genuinely calorie-free drinks and broths; anything with a
+#: sweetener, milk or solids belongs above the floor and is caught if it lands
+#: below it.
+_NEAR_ZERO_RE = re.compile(
+    r"\b(water|seltzer|sparkling|club soda|black coffee|espresso|americano|"
+    r"tea|herbal|diet (?:coke|pepsi|soda)|zero sugar|broth|bouillon|"
+    r"consomm[eé]|ice|gum)\b", re.I)
+
+
+def is_near_zero_food(name: str) -> bool:
+    """Whether a food is legitimately ~0 kcal/g at any mass."""
+    return bool(_NEAR_ZERO_RE.search(name or ""))
 
 #: A single logged ITEM above this is a scaling artefact rather than a meal.
 #: Deliberately generous — a large restaurant platter is a real 2,000-calorie
@@ -121,12 +162,16 @@ def _mass_of(quantity) -> Optional[float]:
     return float(ml) if ml else None
 
 
-def check(profile, basis, quantity) -> Tuple[SanityFinding, ...]:
+def check(profile, basis, quantity, name: str = "") -> Tuple[SanityFinding, ...]:
     """Every check that applies, worst first. Never raises.
 
     `profile` is the SCALED profile — the numbers about to be shown. Checking
     the source row instead would pass every one of the failures above, since
     each of them is a correct row scaled wrongly.
+
+    `name` is consulted for one thing only: whether a near-zero density is
+    legitimate (water, black coffee, broth). Every other rule here is physics
+    and stays blind to what the food is called.
     """
     findings = []
     try:
@@ -152,6 +197,17 @@ def check(profile, basis, quantity) -> Tuple[SanityFinding, ...]:
             findings.append(SanityFinding(
                 "energy_density_extreme", SUSPECT,
                 f"{density:.1f} cal/g is at or above pure fat"))
+        elif (density < MIN_KCAL_PER_G and mass >= MIN_MASS_FOR_DENSITY_G
+                and not is_near_zero_food(name)):
+            # THE OTHER SIDE OF THE SAME BOUND. A real portion carrying no
+            # energy is not a food, it is a portion we failed to price — one
+            # cup of rice at 1 cal, 0.006 cal/g. Nothing else in this file
+            # could see it: the ceiling only looks up, and Atwater is gated
+            # above 40 cal so the whole failing range is exempt.
+            findings.append(SanityFinding(
+                "energy_density_negligible", IMPOSSIBLE,
+                f"{calories:.0f} cal for {mass:.0f}g is {density:.3f} cal/g — "
+                f"a portion that size is not free, so it was never priced"))
 
     # ── Absolute bounds on one line item ────────────────────────────────────
     if calories > MAX_ITEM_KCAL:
@@ -208,7 +264,8 @@ def _trim(n) -> str:
 
 
 def check_values(*, calories, protein=None, carbs=None, fat=None,
-                 fiber=None, grams=None) -> Tuple[SanityFinding, ...]:
+                 fiber=None, grams=None, name: str = "",
+                 ) -> Tuple[SanityFinding, ...]:
     """The same physics, against plain numbers.
 
     `check()` wants a NutrientProfile and a SourceBasis, which only the
@@ -244,4 +301,4 @@ def check_values(*, calories, protein=None, carbs=None, fat=None,
 
     return check(_P(calories=calories, protein=protein, carbs=carbs, fat=fat,
                     fiber=fiber),
-                 _B(), _Q(grams))
+                 _B(), _Q(grams), name)
