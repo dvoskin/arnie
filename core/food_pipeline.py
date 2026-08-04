@@ -1117,6 +1117,60 @@ _UNIT_RENDERINGS = {
 }
 
 
+def _count_labels(distribution, food: str) -> tuple:
+    """A countable food's bracket said as COUNTS of itself.
+
+    The anchor-matching in `_everyday_labels` is the wrong instrument here.
+    A burger's bracket is 169.5-565 g and none of those numbers is a whole
+    burger; what a person can answer is "one or two". So the counts spanning
+    the bracket are offered directly, named with the table's own singular key
+    rather than the user's wording — "1 potatoes" is not a chip anyone taps.
+
+    Nothing is invented: the count times the piece weight IS the bracket the
+    ontology produced, and each label is re-parsed by the log path's own
+    parser, so a label that would not price is never offered.
+    """
+    from skills.nutrition.normalize import (normalize_quantity, piece_key,
+                                            piece_weight)
+    from skills.nutrition.portions import Specificity
+    # ONLY when the ontology itself decided this food is counted. Reading the
+    # piece table directly instead offered "4 friess" and "8 chips" — foods
+    # that HAVE a piece weight precisely because the piece is a sub-unit, which
+    # is why `_piece_distribution` refuses them. The tier is the decision; this
+    # only renders it.
+    if getattr(distribution, "specificity", None) is not Specificity.PIECE:
+        return ()
+    noun = piece_key(food)
+    weighed = piece_weight(food)
+    if not noun or not weighed or not weighed[0]:
+        return ()
+    per = float(weighed[0])
+    lo = max(1, int(round(distribution.lower_g / per)))
+    hi = max(lo, int(round(distribution.upper_g / per)))
+    out = []
+    for n in range(lo, min(hi, lo + 3) + 1):
+        label = f"{n} {noun if n == 1 else _plural(noun)}"
+        try:
+            if normalize_quantity(label, food).grams:
+                out.append(label)
+        except Exception:
+            return ()
+    return tuple(out) if len(out) >= 2 else ()
+
+
+def _plural(noun: str) -> str:
+    """English plural for a table key. Small because the keys are ordinary
+    concrete nouns — but not `+ "s"`, which wrote "potatos" and "friess" onto
+    chips the user is meant to tap."""
+    if re.search(r"(?:s|x|z|ch|sh)$", noun):
+        return noun + "es"
+    if re.search(r"[^aeiou]o$", noun):
+        return noun + "es"              # potato -> potatoes
+    if re.search(r"[^aeiou]y$", noun):
+        return noun[:-1] + "ies"        # berry -> berries
+    return noun + "s"
+
+
 def _everyday_labels(anchors: tuple, food: str) -> tuple:
     """`anchors` (ascending grams) said in a unit the user serves food in.
 
@@ -1179,6 +1233,13 @@ def _measure_options(measure: str, distribution, food: str = "") -> tuple:
         return (f"{_SPOKEN.get(low, low)} tablespoon"
                 + ("" if low == 1 else "s"),
                 f"{_SPOKEN.get(high, high)} tablespoons")
+    # A food that comes in pieces is answered in pieces, before any other
+    # rendering is considered. `distribution_for`'s piece tier already decided
+    # this food is counted rather than measured; saying it in grams or ounces
+    # would ask the user to weigh something they can simply count.
+    _counted = _count_labels(distribution, food)
+    if _counted:
+        return _counted
     anchors = (distribution.lower_g, distribution.median_g,
                distribution.upper_g)
     if not (anchors[0] < anchors[1] < anchors[2]):

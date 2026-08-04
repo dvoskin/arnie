@@ -46,6 +46,7 @@ class Specificity(str, Enum):
     (measure, category, form) to write next.
     """
     FORM = "form"            # category AND form: "a handful of cooked spinach"
+    PIECE = "piece"          # the food's OWN unit: "some burgers" is burgers
     CATEGORY = "category"    # category only: "a handful of spinach"
     FALLBACK = "fallback"    # the measure's broad default
 
@@ -543,11 +544,75 @@ def detect_form(text: str) -> str:
     return best
 
 
+#: What a hedge means in PIECES, for a food that comes in pieces:
+#: (median, lower, upper) counts. Only the hedges have one — "a handful of
+#: burgers" is not a count and keeps its category row.
+_COUNT_SPANS = {
+    "some": (1, 1, 2),       # also 'a couple', 'a few', 'a chunk' — see
+    "little": (1, 1, 1),     # food_pipeline.VAGUE_MEASURES, which folds them in
+}
+
+
+def _piece_distribution(measure: str, food_name: str
+                        ) -> Optional[QuantityDistribution]:
+    """The bracket for a hedge over a COUNTABLE food, in multiples of itself.
+
+    A burger is 226 g and the generic hedge row is 30-200 g, so before this the
+    single most ordinary meal in the product was bracketed ENTIRELY BELOW its
+    own weight — and the chips built from that bracket offered portions of a
+    burger nobody eats. That is not a less precise answer than the right one,
+    it is an answer to a different question.
+
+    Two things decide whether this tier applies, both derived:
+
+      * the food has a piece weight at all (`PIECE_WEIGHTS_G` via the same
+        `piece_weight` the pricing path uses, head-noun matched, so "banana
+        bread" is not a banana);
+      * and that piece is SERVING-SCALE — at least the smallest portion the
+        ontology is already willing to call a portion of this food. One french
+        fry is 8 g against a floor of 30, so fries correctly keep their
+        category row; a burger is 226 g against the same floor. No constant is
+        introduced: the ontology's own lower bound is the bar.
+
+    Confidence comes from the piece's own relative spread rather than a written
+    number, so a food we know tightly (an egg, 50 ± 6) outranks one we do not
+    (a burger, 226 ± 56.5) without anyone deciding that by hand.
+    """
+    span = _COUNT_SPANS.get(measure)
+    rows = PORTION_ONTOLOGY.get(measure) or {}
+    if not span or not rows:
+        return None
+    try:
+        from skills.nutrition.normalize import piece_weight
+        weighed = piece_weight(food_name)
+    except Exception:
+        weighed = None
+    if not weighed or not weighed[0]:
+        return None
+    grams, spread = float(weighed[0]), float(weighed[1] or 0.0)
+
+    category = food_category(food_name)
+    entry = (rows.get(category) if category != "default" else None) \
+        or rows.get("default")
+    if not entry or grams < entry[1]:
+        return None                      # granular: a single one is not a portion
+
+    mid, lo, hi = span
+    return QuantityDistribution(
+        median_g=round(grams * mid, 1),
+        lower_g=round(max(0.0, grams - spread) * lo, 1),
+        upper_g=round((grams + spread) * hi, 1),
+        confidence=round(max(0.05, min(0.95, 1.0 - (spread / grams))), 2),
+        category=f"piece_{measure}", form="",
+        specificity=Specificity.PIECE)
+
+
 def distribution_for(measure: str, food_name: str = "", modifier: str = "",
                      form: Optional[str] = None
                      ) -> Optional[QuantityDistribution]:
     """The best available distribution, walking specific → broad.
 
+        0. the food's own PIECE — "some burgers" is burgers
         1. (category, form)  — "a handful of cooked spinach"
         2. category          — "a handful of spinach"
         3. the measure's broad default
@@ -560,6 +625,13 @@ def distribution_for(measure: str, food_name: str = "", modifier: str = "",
     rows = PORTION_ONTOLOGY.get(measure)
     if not rows:
         return None
+
+    # Tier 0 first, and only when no size modifier is in play: "a small burger"
+    # is a scaled BURGER and `SIZE_MODIFIERS` below is where that is applied.
+    if not (modifier or "").strip():
+        _piece = _piece_distribution(measure, food_name)
+        if _piece is not None:
+            return _piece
 
     category = food_category(food_name)
     resolved_form = form if form is not None else detect_form(food_name)

@@ -657,6 +657,22 @@ def _head_matches(name: str, key: str) -> bool:
     return all(a & b for a, b in zip(words[-len(key_words):], key_words))
 
 
+def piece_key(food_name: str, unit_text: str = "") -> Optional[str]:
+    """The TABLE KEY this food matched, or None.
+
+    `piece_weight` answers "how heavy is one", and a chip that offers a count
+    also has to NAME the thing being counted. The key is the singular noun the
+    table was written with ("burger", "chicken breast"), which is what a label
+    should say — the user's own wording may be plural or inflected, and
+    "1 potatoes" is not a chip anyone wants to tap.
+    """
+    name = f"{unit_text} {food_name}".strip().lower()
+    for key in sorted(PIECE_WEIGHTS_G, key=len, reverse=True):
+        if _head_matches(name, key):
+            return key
+    return None
+
+
 def piece_weight(food_name: str, unit_text: str = "") -> Optional[tuple]:
     """(grams, uncertainty_g) for one piece of this food, or None when we have
     no basis for a guess. None is a legitimate answer — it becomes an unknown
@@ -1301,8 +1317,16 @@ def _normalize_quantity(raw: str, food_name: str = "") -> NormalizedQuantity:
     # count-unit list can never be complete, so a unit word that appears in
     # the food name is a count of that food.
     food_words = set(re.findall(r"[a-z]+", (food_name or "").lower()))
-    food_as_unit = bool(tokens) and any(
-        t.rstrip("s") in {w.rstrip("s") for w in food_words} for t in tokens)
+    # Stem SETS, not `rstrip("s")` — the same one-rule singularisation that made
+    # `_head_matches` miss a potato missed it here too, and this one is worse
+    # because it is on the user's own typing: "1 potato" against a food read as
+    # "potatoes" compared "potato" to "potatoe", decided the food was not its
+    # own unit, and returned no mass at all for a portion the user stated
+    # exactly. Every -o and -y food had it ("2 tomatoes", "3 cherries").
+    _food_stems = set()
+    for _w in food_words:
+        _food_stems |= _stems(_w)
+    food_as_unit = bool(tokens) and any(_stems(t) & _food_stems for t in tokens)
     countable = head in _COUNT_UNITS or food_as_unit or not unit_text
     if countable:
         est = piece_weight(food_name, unit_text)
