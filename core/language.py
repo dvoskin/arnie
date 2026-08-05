@@ -84,6 +84,92 @@ def reply_language_directive(
     )
 
 
+# ── command locale (B-1) ─────────────────────────────────────────────────────
+#
+# WHY A CLARIFICATION NEEDS A LOCALE AT ALL.
+#
+# `skills.nutrition.answer_parsers.parse_command` is an ENGLISH phrase parser
+# that decides whether to cancel a meal, skip an item, or assume a portion.
+# Run against text in another language it is not neutral — it is a matcher with
+# no idea the ground moved. This repo has shipped that exact defect before:
+# EN-only rescue detectors in the food lane let Russian meals go unlogged
+# (2026-08-03). The routing gate was fixed then; the DETECTORS were not, and
+# this is one of them.
+#
+# Today the English patterns mostly return nothing on foreign text by luck —
+# "не знаю" and "no importa" match no rule, and the anchored bare `cancel`
+# does not fire on "cancela". This turns that luck into a guarantee before
+# B-1.8's constrained classifier widens the surface. The case it genuinely
+# closes is MIXED script: a Russian message carrying an English brand name or
+# a transliterated fragment.
+
+ENGLISH = "en"
+UNKNOWN_LOCALE = "und"
+
+#: Stored `preferred_language` values that mean "English". The column holds
+#: an LLM-written language NAME, not a code, and null means English/auto.
+_ENGLISH_NAMES = frozenset({"english", "en", "en-us", "en-gb", "american english",
+                            "british english"})
+
+#: Language name -> locale code, for the scripts we can prove. Latin-script
+#: languages are deliberately absent: script cannot tell Spanish from English,
+#: so they resolve from the stored preference or not at all.
+_LOCALE_OF = {
+    "russian": "ru", "ukrainian": "uk", "bulgarian": "bg", "serbian": "sr",
+    "macedonian": "mk", "belarusian": "be", "chinese": "zh",
+    "mandarin": "zh", "cantonese": "zh", "japanese": "ja", "korean": "ko",
+    "arabic": "ar", "hebrew": "he", "greek": "el", "thai": "th",
+    "hindi": "hi", "spanish": "es", "french": "fr", "german": "de",
+    "portuguese": "pt", "italian": "it", "dutch": "nl", "polish": "pl",
+    "turkish": "tr", "vietnamese": "vi", "indonesian": "id",
+}
+
+#: Non-Latin scripts, checked against a message when no preference is stored.
+_SCRIPT_LOCALES = (
+    (_CYRILLIC, "ru"), (_JAPANESE, "ja"), (_KOREAN, "ko"), (_HAN, "zh"),
+    (_ARABIC, "ar"), (_HEBREW, "he"), (_GREEK, "el"), (_THAI, "th"),
+    (_DEVANAGARI, "hi"),
+)
+
+
+def command_locale(preferred_language: Optional[str] = None,
+                   message: Optional[str] = None,
+                   established: Optional[str] = None) -> str:
+    """The locale a clarification ANSWER must be interpreted under.
+
+    Priority, highest first, per the rollout design:
+
+      1. the user's explicit stored preference,
+      2. the locale ESTABLISHED on the operation — so an answer is read in the
+         same language context the question was asked in,
+      3. script evidence in this message, as a fallback only.
+
+    Step 3 is last on purpose: one-word replies are exactly where detection is
+    least reliable, and "6 oz" carries no language signal at all. Falling back
+    to English there is safe because English is what the parser already
+    assumes; falling back to a DETECTED language on two characters would be a
+    guess with a destructive command behind it.
+    """
+    stored = (preferred_language or "").strip().lower()
+    if stored:
+        if stored in _ENGLISH_NAMES:
+            return ENGLISH
+        return _LOCALE_OF.get(stored, UNKNOWN_LOCALE)
+    if established:
+        return established
+    text = message or ""
+    for script, locale in _SCRIPT_LOCALES:
+        if script.search(text):
+            return locale
+    return ENGLISH
+
+
+def is_english(locale: Optional[str]) -> bool:
+    """Only an explicit English locale passes. `UNKNOWN_LOCALE` does not —
+    "we could not tell" must never authorise a destructive command."""
+    return (locale or "").strip().lower() in _ENGLISH_NAMES
+
+
 def needs_language_reset(
     preferred_language: Optional[str],
     recent_user_texts: Iterable[Optional[str]],

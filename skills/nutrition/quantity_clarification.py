@@ -168,11 +168,28 @@ def _is_correction(message: str) -> bool:
 
 # ── candidates ───────────────────────────────────────────────────────────────
 
-def _quantity(grams: float, *, provenance, unit_id: str = "g",
+#: Masses are held to a tenth of a gram. Not a precision claim — nothing here
+#: was weighed — but a STABILITY one: option ids, labels and stored patches all
+#: derive from this number, and an unquantized 141.70000000000002 would make
+#: two runs of the same evidence produce two different chips.
+_GRAM_STEP = Decimal("0.1")
+
+
+def _quantity(grams, *, provenance, unit_id: str = "g",
               confidence: float = 0.0, basis: str = "") -> Any:
+    """A `CanonicalQuantity` in grams, WITHOUT a float round trip.
+
+    `Decimal(str(v))`, never `Decimal(str(round(float(v), 1)))`: the second
+    form re-widens an already-imprecise value into a binary float before
+    narrowing it again, which is how `Decimal("0.1")` stops equalling itself.
+    `CanonicalQuantity` holds `Decimal` precisely so a portion survives the
+    round trip into storage that B-0c proved — spending that guarantee at the
+    point of construction would make the guarantee decorative.
+    """
     from core.semantics import CanonicalQuantity, Confidence, Dimension
 
-    g = Decimal(str(round(float(grams), 1)))
+    g = (grams if isinstance(grams, Decimal) else Decimal(str(grams)))
+    g = g.quantize(_GRAM_STEP)
     return CanonicalQuantity(
         amount=g, unit_id=unit_id, dimension=Dimension.MASS, grams=g,
         provenance=provenance,

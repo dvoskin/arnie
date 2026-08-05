@@ -16,10 +16,13 @@ filling a field with the wrong value is not.
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Optional
+
+logger = logging.getLogger(__name__)
 
 from skills.nutrition.clarify_policy import ClarificationQuestion, ResponseSchema
 
@@ -65,10 +68,20 @@ MIN_CONFIDENCE = 0.55
 
 # ── commands (build order 21) ─────────────────────────────────────────────────
 _COMMANDS = (
+    # THE BARE FORM IS ANCHORED; the explicit ones are not.
+    #
+    # `\bcancel\b` as a search matched "I didn't cancel my order" and threw the
+    # meal away. Cancelling is the one command that destroys work the user
+    # already did, so its false-positive cost is the highest here and its
+    # false-negative cost is the lowest — an unrecognised "cancel" is retyped,
+    # a phantom one loses the meal. So a bare "cancel" must BE the message
+    # (optionally politened), while "cancel the meal" stays unambiguous
+    # anywhere it appears.
     (ClarificationCommand.CANCEL_MEAL,
-     r"\b(?:cancel(?:\s+(?:the\s+)?(?:meal|all|everything))?|"
-     r"forget\s+(?:the\s+)?(?:whole\s+)?(?:thing|meal)|"
-     r"don'?t\s+log\s+(?:any\s+of\s+)?(?:it|that|this))\b"),
+     r"(?:^\s*(?:just\s+|please\s+|ok\s+|okay\s+)*cancel(?:\s+(?:it|that|this))?\s*[.!]?\s*$"
+     r"|\bcancel\s+(?:the\s+)?(?:meal|all|everything|log|entry)\b"
+     r"|\bforget\s+(?:the\s+)?(?:whole\s+)?(?:thing|meal)\b"
+     r"|\bdon'?t\s+log\s+(?:any\s+of\s+)?(?:it|that|this)\b)"),
     (ClarificationCommand.SKIP_ITEM,
      r"\b(?:skip\s+(?:it|that|this|the\s+\w+)|never\s?mind|"
      r"don'?t\s+log\s+the\s+\w+|drop\s+(?:it|that|the\s+\w+)|"
@@ -111,14 +124,59 @@ _COMMANDS = (
 )
 
 
-def parse_command(text: str) -> Optional[ClarificationCommand]:
+#: A command word immediately after one of these is the OPPOSITE of a command.
+#: "don't skip it" matched SKIP_ITEM and closed the operation — the user was
+#: asking us NOT to, and we did. Same class as the unanchored bare "cancel":
+#: these patterns are searched, so they see their trigger word wherever it
+#: appears, including inside its own negation.
+_NEGATORS = (
+    r"don'?t", r"do\s+not", r"didn'?t", r"did\s+not", r"doesn'?t", r"won'?t",
+    r"will\s+not", r"can'?t", r"cannot", r"never", r"no\s+need\s+to",
+    r"rather\s+not", r"not",
+)
+_NEGATED_RE = re.compile(rf"(?:{'|'.join(_NEGATORS)})\s+(?:\w+\s+){{0,1}}$",
+                         re.I)
+
+
+def parse_command(text: str,
+                  locale: str = "en") -> Optional[ClarificationCommand]:
     """A command is checked BEFORE any schema parser: "skip it" is not a
-    product name, however hard a fuzzy matcher tries."""
+    product name, however hard a fuzzy matcher tries.
+
+    THIS IS TIER 1 — A LOCALE-SPECIFIC LEXICON, NOT A UNIVERSAL PARSER. The
+    output (`ClarificationCommand`) is language-neutral; these PATTERNS are
+    English. Run against another language they are not neutral, they are a
+    matcher that does not know the ground moved, and this repo has already
+    shipped that: EN-only rescue detectors let Russian meals go unlogged
+    (2026-08-03). The routing gate was fixed then and the detectors were not.
+
+    So a non-English locale returns None and the turn falls to the field
+    parser and then to repair — never to a guessed cancellation. No phrase is
+    granted a "language-neutral" exemption, because none can be proven one and
+    the cost of being wrong is a destroyed meal. Tier 2 (a pending-aware
+    constrained multilingual classifier) is B-1.8; per-locale lexicons land
+    with the languages they serve.
+
+    `locale` defaults to English so existing callers keep today's behaviour
+    exactly. Callers that KNOW the locale — the canonical clarification path
+    does, it persists one on the operation — must pass it.
+
+    A NEGATED command is also not a command. These commands destroy work the
+    user already did, so the parser stays conservative in both directions it
+    can be wrong: the trigger must be aimed at the question (anchored, for the
+    bare forms) and must not sit under a negation.
+    """
+    from core.language import is_english
+
     t = (text or "").strip().lower()
     if not t:
         return None
+    if not is_english(locale):
+        logger.debug("event=command_locale_declined locale=%s", locale)
+        return None
     for command, pattern in _COMMANDS:
-        if re.search(pattern, t, re.I):
+        match = re.search(pattern, t, re.I)
+        if match and not _NEGATED_RE.search(t[:match.start()]):
             return command
     return None
 

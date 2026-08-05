@@ -45,6 +45,24 @@ of those gates.
 | shadow-builder tests | deleted with the builder (`test_a_failure_while_BUILDING_the_shadow_is_contained`) | done |
 | parity tests (`test_the_first_migration_0805.py` shadow half) | delete when `compare_with_legacy` goes | pending |
 
+## Owed per language before Tier 1 commands may run (B-1)
+
+`parse_command` is a locale-specific lexicon, not a universal parser, and it
+returns `NONE` for every locale but English. That is a deliberate, enforced
+restriction — not a gap to be closed by widening the English regexes. Each
+language earns its Tier 1 the same way:
+
+| step | what it means |
+|---|---|
+| locale lexicon | cancel / skip / estimate / restart / keep-as-read, in that language's normalized forms, owned and tested per locale — never one universal regex |
+| field-parser fixtures | number words and unit words (`seis onzas`, `шесть унций`) belong to the NARROW quantity parser, not to the command layer |
+| classifier corpus | Tier 2's training/eval set for that language (B-1.8) |
+| adversarial destructive-command tests | the negation and near-miss cases, per language: the failure that matters is a phantom cancel, not a missed one |
+| production measurement | cancel rate, repair rate and abandonment for that locale before widening |
+
+Until then, non-English answers reach the field parser and then repair. That
+is the correct behaviour, not a degraded one.
+
 ## Known dead weight, tracked not yet deletable
 
 | item | why it still exists |

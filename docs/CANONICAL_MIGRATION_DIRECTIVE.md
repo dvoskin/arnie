@@ -423,6 +423,49 @@ eligible; each option belongs to exactly one field; mixed chip rows forbidden;
 a partial answer updates only answered fields; unanswered fields remain open;
 one meal still commits once.
 
+**B-1 language scope — English-only, ENFORCED, not assumed.**
+
+`parse_command` decides whether to cancel a meal, skip an item or assume a
+portion, and its patterns are English. Run against another language it is not
+neutral: it is a matcher that does not know the ground moved. This repo has
+shipped that defect — EN-only rescue detectors let Russian meals go unlogged
+(2026-08-03); the routing gate was fixed and the DETECTORS were not.
+
+The command layer is therefore a three-tier design, and B-1 builds only Tier 1:
+
+```text
+user text
+  → Tier 1  locale-specific deterministic lexicon   (B-1: English only)
+  → Tier 2  pending-aware constrained classifier    (B-1.8)
+  → Tier 3  repair, never a guess
+```
+
+The OUTPUT is language-neutral (`ClarificationCommand`); the PATTERNS are not.
+So, in force from B-1:
+
+* `parse_command(text, locale=...)` returns `NONE` unless the locale is
+  English. No phrase gets a "language-neutral" exemption — none can be proven
+  one, and the cost of being wrong is a destroyed meal.
+* `UNKNOWN_LOCALE` is not English. "We could not tell" must never authorise a
+  destructive command.
+* The locale is **persisted on the operation** (`operation_id · revision ·
+  locale`), so an answer is interpreted under the same language context as the
+  question rather than re-detected from a two-word reply.
+* Resolution order: stored preference → the operation's established locale →
+  script detection, last.
+* Numeric/unit answers (`150 g`, `6 oz`) still work in any locale — excluding
+  a locale from the COMMAND lexicon must not exclude it from answering.
+  Language-specific number words (`seis onzas`, `шесть унций`) belong to the
+  narrow quantity parser, not here.
+* Destructive and non-destructive commands do not share a threshold:
+  `CANCEL` very high · `SKIP_ITEM` high · `USE_ESTIMATE` moderate · `NONE`
+  safe default. A mistaken estimate is repairable and disclosed; a mistaken
+  cancellation discards the meal.
+
+**Owed, per language, before that language may run Tier 1:** a locale lexicon,
+field-parser fixtures, a classifier corpus, adversarial destructive-command
+tests, and production measurement. Tracked in `DELETION_INVENTORY.md`.
+
 **B-1.5 deletion boundary:** delete the matching legacy preparation ownership
 at promotion — the preparation question producer, its option builder
 (`_PREPARATION_OPTIONS`), and answer-turn preparation reconstruction.
@@ -464,6 +507,14 @@ commit path. Mode assumptions produce typed patches or typed assumptions with
 `MODE_DEFAULT` provenance — never masquerading as user statements.
 
 ### B-1.8 — Harden answer classification and repair
+
+Includes **Tier 2 of the command layer**: a pending-aware constrained
+multilingual classifier that receives the user text, the known locale, the
+active clarification field and the allowed command enum — and may return only
+a `ClarificationCommand` or `NONE`. It has no authority to interpret a new
+meal. "No tengo idea" resolves to `USE_ESTIMATE`; it can never resolve to a
+food entry. Below the confidence threshold the answer falls to the field
+parser and then to repair, phrased in the user's own language.
 
 Fallback order:
 

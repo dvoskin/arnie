@@ -68,8 +68,11 @@ def _candidates(*grams_and_sources):
                 else Provenance.ONTOLOGY)
         out.append(CandidateValue(
             candidate_id=cid,
+            # `basis` is set here because the real producer sets it, and a
+            # fixture that omits it would let traceability rot untested.
             semantic_value=qc._quantity(grams, provenance=prov,
-                                        confidence=conf),
+                                        confidence=conf,
+                                        basis=f"{source.value} evidence"),
             source=source, probability=prob, confidence=conf))
     return tuple(out)
 
@@ -218,7 +221,7 @@ def test_a_chip_tap_resolves_to_the_stored_patch():
 def test_a_typed_quantity_that_was_offered_produces_the_same_patch_type():
     ix = _interaction()
     r = answer_from_text(ix, field_id=_field_id(ix), text="5 oz",
-                         food_name="chicken breast")
+                         revision=REV, food_name="chicken breast")
     assert r.outcome is Outcome.APPLIED
     assert isinstance(r.patch, SetQuantity)
     assert r.patch.provenance is Provenance.USER_STATED, \
@@ -229,7 +232,7 @@ def test_a_typed_quantity_that_was_never_offered_is_a_first_class_answer():
     """The typed path is not a fallback for people the chips failed."""
     ix = _interaction()
     r = answer_from_text(ix, field_id=_field_id(ix), text="about 6 ounces",
-                         food_name="chicken breast")
+                         revision=REV, food_name="chicken breast")
     assert r.outcome is Outcome.APPLIED
     assert 160 < float(r.patch.quantity.grams) < 185
     assert r.patch.provenance is Provenance.USER_STATED
@@ -248,7 +251,8 @@ def test_a_foreign_field_is_refused():
     r = answer_from_chip(ix, field_id=f"{OP}:food_other:quantity:{REV}",
                          option_id="opt_hist_last", revision=REV)
     assert r.outcome is Outcome.REFUSED
-    r2 = answer_from_text(ix, field_id="op_2:food_si_1:quantity:0", text="5 oz")
+    r2 = answer_from_text(ix, field_id="op_2:food_si_1:quantity:0", text="5 oz",
+                          revision=REV)
     assert r2.outcome is Outcome.REFUSED
 
 
@@ -288,7 +292,7 @@ def test_a_duplicate_tap_is_deterministic():
 def test_an_unparseable_answer_repairs_and_never_reaches_the_interpreter():
     ix = _interaction()
     r = answer_from_text(ix, field_id=_field_id(ix), text="it was fine thanks",
-                         food_name="chicken breast")
+                         revision=REV, food_name="chicken breast")
     assert r.outcome is Outcome.REPAIR, \
         "an unparsed answer must ask again, not become a second meal"
 
@@ -296,7 +300,7 @@ def test_an_unparseable_answer_repairs_and_never_reaches_the_interpreter():
 def test_an_explicit_cancel_closes_the_operation():
     ix = _interaction()
     r = answer_from_text(ix, field_id=_field_id(ix), text="never mind",
-                         food_name="chicken breast")
+                         revision=REV, food_name="chicken breast")
     assert r.outcome is Outcome.CANCELLED
 
 
@@ -304,6 +308,299 @@ def test_the_answer_outcomes_have_no_legacy_member():
     """C10, at the type level: there is no way to SAY 'fall back' here."""
     assert {o.value for o in Outcome} == {
         "applied", "cancelled", "repair", "refused"}
+
+
+def test_a_typed_answer_is_checked_for_staleness_too():
+    """A boundary that checks staleness on the tap path only is a boundary
+    that does not check it — people type into stale screens as readily as
+    they tap them."""
+    ix = _interaction()
+    r = answer_from_text(ix, field_id=_field_id(ix), text="6 oz",
+                         revision=REV + 1, food_name="chicken breast")
+    assert r.outcome is Outcome.REFUSED
+    assert "revision" in r.reason
+
+
+# ── the result type ──────────────────────────────────────────────────────────
+
+def test_an_applied_answer_must_carry_its_patch():
+    """`patch: Any = None` with nothing checking it let a REFUSED result reach
+    a caller that read `.patch` unconditionally — which is how settle() died
+    on NoneType.quantity."""
+    from core.clarification_answer import AnswerResult
+
+    with pytest.raises(TypeError, match="APPLIED answer IS its patch"):
+        AnswerResult(Outcome.APPLIED)
+    with pytest.raises(TypeError, match="must carry no patch"):
+        AnswerResult(Outcome.REFUSED,
+                     patch=SetQuantity(event_id="e", field_id="f",
+                                       quantity=qc._quantity(
+                                           100, provenance=Provenance.ONTOLOGY)))
+
+
+# ── commands ─────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("text,expected", [
+    ("cancel", Outcome.CANCELLED),
+    ("just cancel", Outcome.CANCELLED),
+    ("never mind", Outcome.CANCELLED),
+    ("skip it", Outcome.CANCELLED),
+    ("start over", Outcome.CANCELLED),
+    # NOT cancels. A bare "cancel" mid-sentence used to throw the meal away,
+    # and cancelling is the one command that destroys work already done.
+    ("I didn't cancel my order", Outcome.REPAIR),
+    ("cancel my gym membership", Outcome.REPAIR),
+])
+def test_cancellation_matches_the_command_not_the_substring(text, expected):
+    ix = _interaction()
+    assert answer_from_text(ix, field_id=_field_id(ix), text=text,
+                            revision=REV).outcome is expected
+
+
+def test_i_dont_know_is_answered_not_re_asked():
+    """Repairing here would ask the same question again to someone who just
+    said they cannot answer it. The value is an option already on their
+    screen, re-provenanced because WE chose it."""
+    ix = _interaction()
+    r = answer_from_text(ix, field_id=_field_id(ix), text="I don't know",
+                         revision=REV, food_name="chicken breast")
+    assert r.outcome is Outcome.APPLIED
+    assert r.patch.provenance is Provenance.MODE_DEFAULT, \
+        "an assumed portion must stay disclosable — it is not the user's"
+    assert r.patch.quantity.grams == Decimal("141.7"), "the middle option"
+
+
+def test_an_estimate_synthesizes_nothing_and_stays_traceable():
+    """Every fact the committed row needs in order to disclose honestly."""
+    ix = _interaction()
+    field = ix.groups[0].fields[0]
+    offered = {o.patch.quantity.grams: o for o in field.options}
+
+    r = answer_from_text(ix, field_id=_field_id(ix), text="just estimate it",
+                         revision=REV, food_name="chicken breast")
+
+    assert r.outcome is Outcome.APPLIED
+    assert r.patch.quantity.grams in offered, \
+        "the assumed value must be an option that was ON SCREEN, not a new one"
+    assert r.patch.provenance is Provenance.MODE_DEFAULT
+    assert r.patch.quantity.provenance is Provenance.MODE_DEFAULT, \
+        "the QUANTITY's own provenance drives is_estimated, so it has to " \
+        "change too — the patch alone is not what pricing reads"
+    assert r.patch.quantity.is_estimated, \
+        "the '(my estimate)' marker, the card range and the disclosure all " \
+        "key on this"
+    # WHERE THE NUMBER CAME FROM survives the re-provenancing: the candidate's
+    # basis rides the quantity's confidence, so a receipt can still say the
+    # ontology (or the user's own history) supplied it.
+    assert r.patch.quantity.confidence.basis, "the evidence must stay nameable"
+    assert offered[r.patch.quantity.grams].source is CandidateSource.USER_HISTORY
+    # Same target as any other answer — an estimate is not a different lane.
+    assert r.patch.field_id == _field_id(ix)
+    assert r.patch.event_id == field.event_id
+
+
+def test_an_estimate_is_deterministic_and_therefore_idempotent():
+    """Two deliveries of "I don't know" must produce the SAME patch, or the
+    idempotency the commit boundary provides has nothing to match on."""
+    ix = _interaction()
+    kw = dict(field_id=_field_id(ix), revision=REV, food_name="chicken breast")
+    first = answer_from_text(ix, text="I don't know", **kw)
+    second = answer_from_text(ix, text="no idea", **kw)
+    assert first.patch == second.patch
+
+
+def _options_of(field, *grams):
+    """Options built directly, bypassing `select`'s three-option cap.
+
+    The cap is a PRODUCT rule about how many chips a row may carry; the median
+    rule is arithmetic over whatever a field holds. Testing the second through
+    the first would silently make the four-option case untestable — `select`
+    would drop one and the assertion would measure the cap instead.
+    """
+    from core.semantics import ClarificationOption, SetQuantity
+
+    return tuple(
+        ClarificationOption(
+            label=f"{g:g}g", option_id=f"opt_{i}", field_id=field.field_id,
+            source=CandidateSource.ONTOLOGY,
+            patch=SetQuantity(
+                event_id=field.event_id, field_id=field.field_id,
+                quantity=qc._quantity(g, provenance=Provenance.ONTOLOGY,
+                                      basis="portion ontology"),
+                provenance=Provenance.USER_SELECTED))
+        for i, g in enumerate(sorted(grams)))
+
+
+@pytest.mark.parametrize("grams,expected", [
+    ((141.7,), "141.7"),                          # one
+    ((85.0, 226.0), "226.0"),                     # two  -> the UPPER middle
+    ((85.0, 141.7, 226.0), "141.7"),              # three
+    ((85.0, 141.7, 226.0, 340.0), "226.0"),       # four -> the upper middle
+])
+def test_the_assumed_value_is_the_median_by_semantic_value(grams, expected):
+    """Median by GRAMS, never by rendered order — a row's display order is a
+    presentation decision and must not become an arithmetic one.
+
+    On an even count the UPPER middle wins. That is not a coin toss: an
+    assumed portion is a low-confidence estimate, and this codebase's standing
+    rule for those is to bias high, because under-counting a meal is the error
+    a user does not notice.
+    """
+    field = qc.quantity_field(operation_id=OP, revision=REV, item=_item())
+    options = _options_of(field, *grams)
+    ix = qc.build_interaction(operation_id=OP, revision=REV, item=_item(),
+                              options=options)
+    r = answer_from_text(ix, field_id=_field_id(ix), text="I don't know",
+                         revision=REV)
+    assert str(r.patch.quantity.grams) == expected
+
+
+def test_the_median_ignores_the_rendered_order():
+    """Same options, shuffled on the row: the assumed value must not move."""
+    field = qc.quantity_field(operation_id=OP, revision=REV, item=_item())
+    a, b, c = _options_of(field, 85.0, 141.7, 226.0)
+    for row in ((a, b, c), (c, a, b), (b, c, a)):
+        ix = qc.build_interaction(operation_id=OP, revision=REV, item=_item(),
+                                  options=row)
+        r = answer_from_text(ix, field_id=_field_id(ix), text="I don't know",
+                             revision=REV)
+        assert str(r.patch.quantity.grams) == "141.7"
+
+
+def test_a_non_numeric_option_cannot_be_assumed():
+    """An estimate needs a quantity. An option carrying a different patch kind
+    — or none at all — is not a candidate for one, and picking it by position
+    would apply a preparation as if it were a mass."""
+    from core.semantics import ClarificationOption, SetPreparation
+
+    field = qc.quantity_field(operation_id=OP, revision=REV, item=_item())
+    prep = ClarificationOption(
+        label="Grilled", option_id="opt_prep", field_id=field.field_id,
+        patch=SetPreparation(event_id=field.event_id,
+                             field_id=field.field_id,
+                             preparation_id="prep.grilled"))
+    mixed = qc.quantity_field(operation_id=OP, revision=REV, item=_item(),
+                              options=(prep,))
+    ix = qc.build_interaction(operation_id=OP, revision=REV, item=_item(),
+                              options=(prep,))
+    r = answer_from_text(ix, field_id=mixed.field_id, text="I don't know",
+                         revision=REV)
+    assert r.outcome is Outcome.REPAIR, \
+        "no mass on offer means nothing to assume"
+
+
+def test_an_estimate_with_nothing_offered_repairs():
+    ix = _interaction(candidates=())
+    assert ix.groups[0].fields[0].response_type is ResponseType.FREE_TEXT_FALLBACK
+    r = answer_from_text(ix, field_id=_field_id(ix), text="no idea",
+                         revision=REV)
+    assert r.outcome is Outcome.REPAIR
+
+
+# ── the shared command parser stays conservative ─────────────────────────────
+
+@pytest.mark.parametrize("text,destroys", [
+    # Directed at the open clarification — these MAY destroy it.
+    ("cancel", True), ("cancel the meal", True), ("forget the whole thing", True),
+    ("skip it", True), ("never mind", True), ("start over", True),
+    ("don't log it", True),
+    # Ordinary language that merely CONTAINS a command word. An open operation
+    # is real work the user already did; the parser must not destroy it on a
+    # substring.
+    ("I didn't cancel my order", False), ("cancel my subscription", False),
+    ("not cancel", False), ("my flight was cancelled", False),
+    ("don't skip it", False), ("I skipped breakfast", False),
+])
+def test_only_a_directed_command_may_destroy_an_operation(text, destroys):
+    """`parse_command` is shared with the legacy lane, so this pins the
+    distinction that matters most: a command AIMED at the open question versus
+    a sentence that happens to contain its word."""
+    ix = _interaction()
+    outcome = answer_from_text(ix, field_id=_field_id(ix), text=text,
+                               revision=REV,
+                               food_name="chicken breast").outcome
+    assert (outcome is Outcome.CANCELLED) is destroys, \
+        f"{text!r} -> {outcome.value}"
+
+
+@pytest.mark.parametrize("text", [
+    "I don't know", "no idea", "estimate it", "just use your estimate",
+    "not sure", "your best guess",
+])
+def test_uncertainty_phrasings_all_reach_the_estimate_path(text):
+    ix = _interaction()
+    r = answer_from_text(ix, field_id=_field_id(ix), text=text, revision=REV,
+                         food_name="chicken breast")
+    assert r.outcome is Outcome.APPLIED
+    assert r.patch.provenance is Provenance.MODE_DEFAULT
+
+
+# ── the command lexicon is TIER 1, and Tier 1 is English ─────────────────────
+
+@pytest.mark.parametrize("locale", ["ru", "es", "fr", "ja", "und", "", None])
+def test_english_command_rules_never_run_on_another_locale(locale):
+    """The recurrence guard. EN-only rescue detectors in this lane shipped
+    unlogged Russian meals on 2026-08-03; the routing gate was fixed and the
+    DETECTORS were not, and `parse_command` is one of them.
+
+    Nothing here is granted a language-neutral exemption — none can be proven
+    one, and the cost of being wrong is a destroyed meal. A non-English answer
+    falls to the field parser and then to repair.
+    """
+    from skills.nutrition.answer_parsers import parse_command
+
+    for destructive in ("cancel", "cancel the meal", "skip it", "never mind",
+                        "start over", "don't log it"):
+        assert parse_command(destructive, locale=locale) is None, \
+            f"{destructive!r} was obeyed under locale {locale!r}"
+
+    ix = _interaction()
+    assert answer_from_text(ix, field_id=_field_id(ix), text="cancel",
+                            revision=REV, locale=locale).outcome is \
+        Outcome.REPAIR, "an unreadable answer repairs; it never cancels"
+
+
+def test_a_universal_notation_answer_still_works_in_any_locale():
+    """Numbers and unit symbols carry no language. Excluding a locale from the
+    COMMAND lexicon must not exclude it from answering the question."""
+    ix = _interaction()
+    r = answer_from_text(ix, field_id=_field_id(ix), text="150 g",
+                         revision=REV, locale="ru", food_name="chicken breast")
+    assert r.outcome is Outcome.APPLIED
+    assert r.patch.quantity.grams == Decimal("150.0")
+
+
+def test_the_locale_resolution_order():
+    """Stored preference, then the locale established on the operation, then
+    script evidence — detection last, because a two-word reply is where it is
+    least reliable and a destructive command sits behind it."""
+    from core.language import UNKNOWN_LOCALE, command_locale, is_english
+
+    assert command_locale("Russian", "6 oz") == "ru", "the preference wins"
+    assert command_locale(None, "6 oz", established="ru") == "ru", \
+        "the question's language governs its answer"
+    assert command_locale(None, "не знаю") == "ru", "script, as a fallback"
+    assert command_locale(None, "6 oz") == "en"
+    assert command_locale("Klingon") == UNKNOWN_LOCALE
+    assert not is_english(UNKNOWN_LOCALE), \
+        "'we could not tell' must never authorise a destructive command"
+
+
+# ── decimals ─────────────────────────────────────────────────────────────────
+
+def test_quantities_never_round_trip_through_a_float():
+    """`Decimal(str(round(float(v), 1)))` re-widens an already-imprecise value
+    into a binary float before narrowing it again. B-0c's storage guarantee is
+    decorative if construction spends it."""
+    q = qc._quantity(Decimal("141.75"), provenance=Provenance.ONTOLOGY)
+    assert q.grams == Decimal("141.8") and q.amount == q.grams
+    assert isinstance(q.grams, Decimal)
+
+    ix = _interaction()
+    typed = answer_from_text(ix, field_id=_field_id(ix), text="6 oz",
+                             revision=REV, food_name="chicken breast")
+    assert isinstance(typed.patch.quantity.grams, Decimal)
+    assert typed.patch.quantity.grams == Decimal("170.1")
 
 
 # ── the rollout gate ─────────────────────────────────────────────────────────
