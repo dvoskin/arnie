@@ -482,10 +482,10 @@ slice is done" are different claims and were conflated once already.
 | settlement: one canonical commit, replay on re-delivery | DONE |
 | locale pinned at the ask, English-only Tier 1 | DONE |
 | repair / cancel / internal-failure copy from committed truth | DONE (facts + deterministic fallbacks) |
-| **card + totals verification against the committed result** | TODO |
+| card + totals from the SAME facts — disagreement unconstructable | DONE |
+| instrumentation: all 11 signals, one owner; abandonment + correction on a timer | DONE |
+| live operation probe, correlated to a self-minted operation id | WRITTEN — evidence owed on deploy |
 | **Arnie voice over the committed facts** | TODO — after lifecycle/committed-truth verification, BEFORE broad rollout |
-| **instrumentation: latency, abandonment, correction-within-10-min, "Other" rate** | TODO |
-| **live operation probe: exact row correlation, duplicate/stale/foreign proof** | TODO |
 | **Telegram/iMessage label-text path proven in production** | TODO |
 | **iOS B-1b: ID-addressed payload + real chip-path proof** | TODO |
 | **rollout: allowlist → 1% → 5% → 25% → 100% of eligible turns** | TODO |
