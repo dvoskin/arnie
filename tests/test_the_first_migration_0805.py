@@ -285,3 +285,26 @@ async def test_matching_calories_do_not_hide_a_macro_split(pg):
         "calories agree and must not be reported"
     assert any(d.startswith("protein 43.0 != 10.0") for d in diffs), diffs
     assert any(d.startswith("day_protein") for d in diffs), diffs
+
+
+def test_the_shadow_flag_is_reportable_from_outside(monkeypatch):
+    """A FLAG NOBODY CAN SEE IS A DECISION NOBODY MAKES — and for a SHADOW it
+    is worse than that.
+
+    The 593bd19 deploy landed with no way to tell from outside whether the
+    shadow was running. An unset shadow produces a clean, empty,
+    zero-divergence window that is indistinguishable from a lane in perfect
+    agreement — so the evidence used to promote a mutation owner and DELETE its
+    predecessor could be the evidence of nothing having happened.
+    """
+    from api.diagnostics import public_pipeline_summary
+
+    monkeypatch.setenv("CANONICAL_WRITER_SHADOW", "true")
+    on = public_pipeline_summary()["CANONICAL_WRITER_SHADOW"]
+    assert on["effective"] is True and on["env_set"] is True
+
+    monkeypatch.delenv("CANONICAL_WRITER_SHADOW", raising=False)
+    off = public_pipeline_summary()["CANONICAL_WRITER_SHADOW"]
+    assert off["effective"] is False and off["env_set"] is False, (
+        "defaulted-off and deliberately-off must be distinguishable: they "
+        "behave identically and need opposite fixes")

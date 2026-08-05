@@ -198,6 +198,32 @@ def _food_pipeline(user_id: Optional[int] = None) -> dict:
     except Exception as e:                           # pragma: no cover
         out["FOOD_PORTION_PRICING"] = {"error": str(e)}
 
+    # THE CANONICAL MIGRATION'S OWN FLAGS, for the reason this whole block
+    # exists — and learned the hard way on the 593bd19 deploy, where the
+    # shadow's entire purpose is to produce parity data and there was no way to
+    # tell from outside whether it was running.
+    #
+    # That ambiguity is worse than an off flag. An unset shadow produces a
+    # clean, empty, zero-divergence window that looks exactly like a lane in
+    # perfect agreement — so the evidence used to promote a mutation owner and
+    # DELETE its predecessor could be the evidence of nothing having run.
+    try:
+        from core.canonical_shadow import shadow_enabled
+        out["CANONICAL_WRITER_SHADOW"] = _flag(
+            "CANONICAL_WRITER_SHADOW", shadow_enabled())
+    except Exception as e:                           # pragma: no cover
+        out["CANONICAL_WRITER_SHADOW"] = {"error": str(e)}
+
+    try:
+        from core.pending_repository import (commit_enforce_enabled,
+                                             persist_shadow_enabled)
+        out["PENDING_OPERATION_PERSIST_SHADOW"] = _flag(
+            "PENDING_OPERATION_PERSIST_SHADOW", persist_shadow_enabled())
+        out["COMMIT_COORDINATOR_ENFORCE"] = _flag(
+            "COMMIT_COORDINATOR_ENFORCE", commit_enforce_enabled())
+    except Exception as e:                           # pragma: no cover
+        out["COMMIT_COORDINATOR_ENFORCE"] = {"error": str(e)}
+
     return out
 
 
