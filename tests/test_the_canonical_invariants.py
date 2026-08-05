@@ -472,38 +472,108 @@ def test_c8_every_clarification_producer_is_a_known_one():
 # frozen. The client-side producer (QuickReplyEngine.swift) lives in the iOS
 # repo and is inventoried in docs/CHIP_GENERATION_MIGRATION.md instead.
 
-#: Sites assembling an `"options"` wire payload (7 in food_turn + the
-#: conversation relay into the pending payload).
-_OPTION_PAYLOAD_SITES = 8
+#: WHERE OPTIONS ARE ASSEMBLED, per file, with what each one IS. A count alone
+#: cannot tell debt from a bystander, and a five-file allowlist could not see a
+#: producer that moved — the first version of this ratchet froze five files and
+#: one spelling (`"options":`) while `context_builder` and `clarify_ui` shipped
+#: uncounted, so the contract document overclaimed on the day it was written.
+#: This walks the whole repo by AST, like C3/C4, and matches every spelling a
+#: producer can use: a dict literal with an "options" key, `dict(options=...)`,
+#: and `x["options"] = ...`. Reads are not producers, so only Store subscripts
+#: count.
+_OPTION_PAYLOAD_BASELINE = {
+    # DEBT — heuristic producers the chip pipeline replaces.
+    "core/food_turn.py": 7,             # the primary assembler (7 shapes)
+    "core/conversation.py": 1,          # write-side relay into the pending
+                                        # payload; dies at B-1
+    "core/context_builder.py": 1,       # read-side relay of the SAME stash
+                                        # onto the chat wire; dies with it
+    "skills/nutrition/clarify_ui.py": 1,  # dormant staged-pipeline UI model
+    # BYSTANDER — named so the ratchet can tell it from debt. Not a wire
+    # payload: a materiality diagnostic whose "options" are the two candidate
+    # numbers that disagree.
+    "skills/nutrition/validators.py": 2,
+    # CANONICAL — the replacement, not the population. `UnresolvedField`
+    # serializes its own typed options; this entry rises as B-1 lands and the
+    # DEBT entries above fall.
+    "core/semantics.py": 1,
+}
 
 #: `AmbiguityOption(...)` constructors — the staged pipeline's option shape
 #: (4 in food_pipeline + 1 in staged_codec's decoder).
 _AMBIGUITY_OPTION_CONSTRUCTORS = 5
 
 
+def _option_payload_sites() -> dict:
+    """Every site that BUILDS an options payload, keyed by file.
+
+    AST, not grep: a string match cannot tell `"options":` in a dict from the
+    same characters in a docstring, and it cannot see `dict(options=...)` at
+    all — so a new producer evaded the ratchet by choosing another spelling.
+    """
+    found = {}
+    for path in sorted(ROOT.rglob("*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel.startswith(("tests/", "scripts/", "alembic/", ".venv/")) \
+                or rel.startswith("simulate_"):
+            continue
+        try:
+            tree = ast.parse(path.read_text())
+        except Exception:
+            continue
+        sites = set()
+        for node in ast.walk(tree):
+            hit = False
+            if isinstance(node, ast.Dict):
+                hit = any(isinstance(k, ast.Constant) and k.value == "options"
+                          for k in node.keys)
+            elif (isinstance(node, ast.Subscript)
+                    and isinstance(node.slice, ast.Constant)
+                    and node.slice.value == "options"
+                    and isinstance(node.ctx, ast.Store)):
+                hit = True
+            elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id == "dict"):
+                hit = any(kw.arg == "options" for kw in node.keywords)
+            if hit:
+                sites.add((node.lineno, node.col_offset))
+        if sites:
+            found[rel] = len(sites)
+    return found
+
+
 def test_c9_every_clarification_option_producer_is_a_known_one():
-    """RATCHET, both directions, same rules as C4/C8."""
-    payload_sites, ctor_sites = [], []
-    for rel in ("core/food_turn.py", "core/conversation.py",
-                "core/food_pipeline.py", "skills/nutrition/clarify_policy.py",
-                "skills/nutrition/staged_codec.py"):
+    """RATCHET, both directions, same rules as C3/C4 — repo-wide by AST."""
+    found = _option_payload_sites()
+
+    unknown = {f: n for f, n in found.items()
+               if f not in _OPTION_PAYLOAD_BASELINE}
+    assert not unknown, (
+        f"a NEW option producer appeared in {unknown}. Chips are becoming a "
+        f"projection of canonical semantic state (docs/"
+        f"CHIP_GENERATION_MIGRATION.md); widening the heuristic population "
+        f"first makes that migration larger. If this is the canonical "
+        f"pipeline, add it to the baseline AS canonical.")
+    grew = {f: (n, _OPTION_PAYLOAD_BASELINE[f]) for f, n in found.items()
+            if n > _OPTION_PAYLOAD_BASELINE[f]}
+    assert not grew, f"option producers grew (found, baseline): {grew}"
+    shrank = {f: (found.get(f, 0), n)
+              for f, n in _OPTION_PAYLOAD_BASELINE.items()
+              if found.get(f, 0) < n}
+    assert not shrank, (
+        f"fewer option sites remain (found, baseline): {shrank} — LOWER "
+        f"_OPTION_PAYLOAD_BASELINE to hold the ground")
+
+    ctor_sites = []
+    for rel in ("core/food_pipeline.py", "skills/nutrition/staged_codec.py",
+                "skills/nutrition/clarify_policy.py", "core/food_turn.py",
+                "core/conversation.py"):
         src = (ROOT / rel).read_text()
         for i, line in enumerate(src.splitlines(), 1):
             stripped = line.split("#")[0]
-            if '"options":' in stripped:
-                payload_sites.append(f"{rel}:{i}")
             if "AmbiguityOption(" in stripped and "import" not in stripped \
                     and "class " not in stripped:
                 ctor_sites.append(f"{rel}:{i}")
-
-    assert len(payload_sites) <= _OPTION_PAYLOAD_SITES, (
-        f"a NEW option producer appeared: {payload_sites}. Chips are becoming "
-        f"a projection of canonical semantic state (docs/"
-        f"CHIP_GENERATION_MIGRATION.md); widening the heuristic population "
-        f"first makes that migration larger.")
-    assert len(payload_sites) == _OPTION_PAYLOAD_SITES, (
-        f"only {len(payload_sites)} option-payload sites remain "
-        f"({payload_sites}) — LOWER _OPTION_PAYLOAD_SITES to hold the ground")
     assert len(ctor_sites) <= _AMBIGUITY_OPTION_CONSTRUCTORS, (
         f"new AmbiguityOption constructor(s): {ctor_sites}")
     assert len(ctor_sites) == _AMBIGUITY_OPTION_CONSTRUCTORS, (

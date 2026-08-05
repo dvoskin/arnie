@@ -57,12 +57,24 @@ def test_every_step_is_resolved_when_the_record_claims_completion():
 
 def test_a_complete_record_names_the_verified_build():
     """An outcome with no sha is not evidence — it cannot be re-checked, and
-    a later deploy would silently invalidate it without changing the text."""
+    a later deploy would silently invalidate it without changing the text.
+
+    ANCHORED, not "some hex somewhere". The record deliberately names two
+    builds now (the promoted one, and later heads that are test-verified
+    only), so a loose search stays green if the promoted-build line is edited
+    to a sha no step was ever run against — the record's load-bearing sentence
+    ("that is the build every ✅ below was measured against") would then lie
+    while the gate passed.
+    """
     text = RECORD.read_text()
     if "**Status: COMPLETE" not in text:
         pytest.skip("record is INCOMPLETE")
-    assert re.search(r"\b[0-9a-f]{12}\b", text), (
-        "no build sha in the record — 'verified' against what?")
+    m = re.search(r"Promoted build `([0-9a-f]{12})`", text)
+    assert m, "no promoted-build sha in the record — 'verified' against what?"
+    step1 = next(outcome for n, _, outcome in _rows() if n == 1)
+    assert m.group(1) in step1, (
+        f"the record promotes `{m.group(1)}` but step 1 verified {step1!r} — "
+        f"the ✅ table is not evidence about the promoted sha")
 
 
 def test_the_record_matches_the_code_that_shipped():

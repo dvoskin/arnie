@@ -116,7 +116,21 @@ class OutboxEvent:
             raise UnserializableResult(
                 f"outbox payload for {self.kind!r} is "
                 f"{type(self.payload).__name__}, not a dict")
-        _json_safe(self.payload, f"outbox[{self.kind}].payload")
+        if "version" in self.payload:
+            raise UnserializableResult(
+                f"outbox payload for {self.kind!r} uses the reserved key "
+                f"'version' — the enqueue envelope stamps the schema version "
+                f"there, so a payload key would silently overwrite it and the "
+                f"corrupt job row would be shaped exactly like a valid one")
+        # THE VALIDATED SNAPSHOT REPLACES THE CALLER'S DICT. `_json_safe`
+        # rebuilds dicts and lists recursively, so keeping its return value
+        # both validates and severs the alias in one line. Storing the
+        # caller's object made "validated at construction" untrue: a producer
+        # that kept enriching its own dict injected a Decimal past this check,
+        # and `record_result` then raised INSIDE the meal transaction —
+        # unwinding a ledger write that had already succeeded.
+        object.__setattr__(self, "payload",
+                           _json_safe(self.payload, f"outbox[{self.kind}].payload"))
         if not self.dedup_key and not self.allow_duplicates:
             raise UnserializableResult(
                 f"outbox event {self.kind!r} has no dedup_key and does not "
@@ -124,7 +138,11 @@ class OutboxEvent:
                 f"decision, not a default")
 
     def to_payload(self) -> dict:
-        return {"kind": self.kind, "payload": self.payload,
+        # A COPY, for the same reason the stored dict is one: handing out the
+        # internal object lets a consumer mutate a frozen event after the
+        # fact, which would change what a later comparison or dedup sees.
+        return {"kind": self.kind,
+                "payload": _json_safe(self.payload, f"outbox[{self.kind}]"),
                 "dedup_key": self.dedup_key, "version": self.version,
                 "allow_duplicates": self.allow_duplicates}
 

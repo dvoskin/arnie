@@ -43,8 +43,11 @@ def _option_of(raw: Any, field_id: str) -> Optional[ClarificationOption]:
         return None
     if isinstance(raw, str):
         text = raw.strip()
-        return ClarificationOption(label=text, field_id=field_id) if text \
-            else None
+        # `adapter_built=True` is the C10 enforcement key: patch=None is
+        # permitted ONLY on inventoried legacy measurement paths, and this is
+        # one. Every canonical B-1 option must carry a patch.
+        return ClarificationOption(label=text, field_id=field_id,
+                                   adapter_built=True) if text else None
     label = str(getattr(raw, "label", "") or "").strip()
     if not label:
         return None
@@ -55,7 +58,8 @@ def _option_of(raw: Any, field_id: str) -> Optional[ClarificationOption]:
         value = getattr(raw, "payload", None)
     return ClarificationOption(
         label=label, value=value, field_id=field_id,
-        option_id=str(getattr(raw, "candidate_id", "") or ""))
+        option_id=str(getattr(raw, "candidate_id", "") or ""),
+        adapter_built=True)
 
 
 def field_from_dict(raw: dict, index: int = 0,

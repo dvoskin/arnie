@@ -21,10 +21,10 @@ import pytest
 from core.semantics import (CandidateSource, CandidateValue, CanonicalQuantity,
                             ClarificationAttribute, ClarificationGroup,
                             ClarificationInteraction, ClarificationOption,
-                            Dimension, Provenance, ResponseType,
-                            SelectFoodEntity, SelectProductVariant,
-                            SemanticPatch, SetConsumedFraction, SetPreparation,
-                            SetQuantity, SetServingBasis, UncertaintyEvidence,
+                            Dimension, Provenance, ResponseType, SelectEntity,
+                            SelectProductVariant, SemanticPatch,
+                            SetConsumedFraction, SetPreparation, SetQuantity,
+                            SetServingBasis, UncertaintyEvidence,
                             UnresolvedField)
 
 
@@ -77,7 +77,7 @@ def test_every_patch_names_its_target():
     for cls, extra in ((SetQuantity, {"quantity": CanonicalQuantity(
                             amount=Decimal("5"), unit_id="oz",
                             dimension=Dimension.MASS, grams=Decimal("141.7"))}),
-                       (SelectFoodEntity, {"entity_id": "food.chicken"}),
+                       (SelectEntity, {"entity_id": "food.chicken"}),
                        (SetPreparation, {"preparation_id": "prep.grilled"})):
         with pytest.raises(ValueError):
             cls(event_id="", field_id="f", **extra)
@@ -107,7 +107,7 @@ def test_consumed_fraction_bounds():
 
 def test_identity_patches_require_stable_ids():
     with pytest.raises(ValueError):
-        SelectFoodEntity(event_id="e", field_id="f", entity_id="")
+        SelectEntity(event_id="e", field_id="f", entity_id="")
     with pytest.raises(ValueError):
         SelectProductVariant(event_id="e", field_id="f", entity_id="")
     v = SelectProductVariant(event_id="e", field_id="f",

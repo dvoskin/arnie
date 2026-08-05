@@ -29,9 +29,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core import meal_commit
 from core.commit_coordinator import commit_or_load_existing
-from core.meal_commit import MealCommitResult
+from core.meal_commit import MealCommitResult, OutboxEvent
 from db.database import make_engine
-from db.models import Base, DailyLog, FoodEntry, LedgerEvent, User
+from db.models import Base, BackgroundJob, DailyLog, FoodEntry, LedgerEvent, User
 
 PG = os.getenv("TEST_POSTGRES_URL")
 if os.getenv("CI") and not PG:
@@ -81,7 +81,16 @@ async def fake_activity_writer(db, *, operation, resolved_meal):
                      "top_load_kg": max(s.load_kg for s in activity.sets)},
         assumptions=("assumed barbell, as last session",),
         render_actions=({"action": "refresh_training_view",
-                         "user_id": activity.user_id},))
+                         "user_id": activity.user_id},),
+        # DURABLE POST-COMMIT WORK, from a domain with no food rows. The
+        # coordinator hard-requires `OutboxEvent` — a type that lives in
+        # core.meal_commit — so the newest shared-spine requirement was
+        # unproven for any other domain until this writer emitted one.
+        outbox_events=(OutboxEvent(
+            kind="training_analysis",
+            payload={"exercise": activity.exercise,
+                     "total_reps": total_reps},
+            dedup_key=f"u{activity.user_id}:analysis:{activity.operation_id}"),))
 
 
 BENCH = FakeResolvedActivity(
@@ -125,6 +134,13 @@ async def test_a_non_food_domain_commits_through_the_same_spine(pg):
             assert n == 0, (
                 f"the coordinator created {model.__name__} rows for a domain "
                 f"that has none — the spine is food-coupled")
+
+        # ...while the durable post-commit work DID land, in the same
+        # transaction as the (absent) rows. Enqueue is the newest shared-spine
+        # requirement and the one the fake domain never exercised.
+        jobs = (await s.execute(select(BackgroundJob))).scalars().all()
+        assert [j.kind for j in jobs] == ["training_analysis"], \
+            f"expected one non-food outbox job, got {[j.kind for j in jobs]}"
 
 
 @pytest.mark.asyncio

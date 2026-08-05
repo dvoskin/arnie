@@ -100,10 +100,16 @@ Phase A
 ✓ canonical commit/replay path
 ✓ durable outbox split
 ✓ clarification producers frozen by C8 (and option producers by C9)
-✓ semantic clarification contracts implemented/test-locked (B-0b)
+✓ B-0b semantic contract surface implemented and test-locked
+✓ B-0c persistence, round-trip, validation and immutability hardened
 ```
 
 The next work begins at B-1.
+
+Status wording is deliberately split. "Implemented and test-locked" is a claim
+about construction; "storage-proven" is a claim about the boundary B-1
+actually crosses, and the two were conflated once already — the contracts
+passed 105 in-memory tests while no patch could be serialized at all.
 
 ## Phase B — Canonical clarification for conversational food
 
@@ -156,6 +162,97 @@ meaning.
 carries schema version, domain, operation ID, revision, event IDs, field IDs,
 patch type IDs. No unversioned arbitrary dict becomes the permanent pending
 payload.
+
+**`patch=None` is permitted exclusively on inventoried legacy measurement
+paths** — today the two construction sites in
+`skills/nutrition/clarification_adapter.py`, which set `adapter_built=True`.
+Every canonical option created for B-1 must carry a non-null patch. `source`
+alone could not express this: it is independently optional, so no predicate
+could distinguish an adapter-built option from a canonical producer that
+forgot its patch, and C10 was a comment with nothing to key on.
+
+### B-0c — Contract hardening and persistence proof
+
+Status: complete (`core/semantics.py`, `tests/test_contract_persistence_b0c.py`).
+
+Purpose: prove the B-0b types cross process and storage boundaries without
+losing type identity, provenance, immutability, or domain meaning. B-1 stores
+options and later receives only an `option_id`, so the backend must reload the
+exact typed patch from persisted state. Without typed serialization the
+canonical flow degrades to
+
+```text
+SetQuantity → JSON dict → loaded as dict → reconstructed heuristically
+```
+
+which is the architecture being removed, relocated server-side.
+
+**Patch serialization.** Every patch serializes with an explicit
+discriminator and schema version:
+
+```json
+{
+  "patch_type": "set_quantity",
+  "schema_version": 1,
+  "event_id": "food_1",
+  "field_id": "op_1:food_1:quantity:0",
+  "provenance": "user_selected",
+  "quantity": {"amount": "5", "unit_id": "oz", "dimension": "mass",
+               "grams": "141.7"}
+}
+```
+
+Loading returns the concrete type (`SetQuantity → JSON → SetQuantity`, never
+`→ dict`) through a closed registry that fails shut on an unknown
+`patch_type` or a newer `schema_version`. Round-trip equality is asserted for
+every patch family. **Decimals cross as strings, not JSON numbers** — through
+a float, `Decimal("0.1")` does not come back equal to itself, and exact
+portion arithmetic is the reason quantities are `Decimal` at all.
+
+**Enum coercion is symmetric.** Strings are coerced and invalid ones refused
+at every construction boundary; after construction every internal value is an
+enum instance. The asymmetry that existed — field attribute required an enum
+while patch provenance and option source kept raw strings — silently
+reclassified a user's own figure as an estimate, because
+`Provenance.is_users_own` is an identity check and a `str` fails it without
+raising.
+
+**Group validation.** `ClarificationGroup` enforces a non-empty event id, at
+least one field, every field targeting the same event, and no duplicate field
+ids — which, since `field_id` embeds attribute and revision, is also the
+no-duplicate-attribute check.
+
+**Interaction validation.** `ClarificationInteraction` enforces operation and
+revision alignment across every group and field, unique field ids across
+groups, one group per event, and no option referencing a foreign field. A
+selectable field with no options is refused at construction: it must declare
+`FREE_TEXT_FALLBACK` rather than ship blank for a client to "repair" (C15).
+
+**Immutability.** Mutable payloads are deep-copied at contract construction. A
+frozen dataclass holding the caller's dict is not immutable — the producer
+could keep editing it, injecting values past validation. The outbox's
+`version` key is reserved so a payload cannot shadow the schema version.
+
+**Workout seam completeness.** `SelectEntity` (renamed from
+`SelectFoodEntity`) is the domain-neutral entity-selection patch that answers
+`EXERCISE_IDENTITY`; `CandidateSource.DEVICE` exists for HealthKit/Whoop
+candidates; `UncertaintyEvidence.impact_spread` is a `CanonicalQuantity`
+rather than a calorie number. Renaming was free while zero producers existed;
+after B-1 stores patches, `patch_type` is wire data and a rename is a
+migration. Load-basis semantics (per-dumbbell vs total) remain owed and are
+tracked in `docs/WORKOUT_CONTRACTS.md`.
+
+**Persistence proof.** The test that matters is not an in-memory contract
+test. It performs the real sequence, against a file database with real
+per-session connections:
+
+```text
+create interaction with a SetQuantity option
+  → serialize into the PendingOperation payload
+  → commit → close the session → open a NEW session
+  → load the operation → bind option_id
+  → obtain a typed SetQuantity → apply
+```
 
 ### B-1 — One item, one mass-quantity field
 
@@ -274,6 +371,38 @@ Promotion: observe canonical B-1 writes → compare behavior → promote
 eligibility path → delete legacy B-1 option/question path → lower
 producer/option ratchets.
 
+**B-1 option pipeline scope.** B-1 builds a *minimal, quantity-specific*
+candidate generation → selection → patch → render path. It does NOT build the
+generalized cross-field `ClarificationOptionGenerator` (milestone 9). The
+distinction is load-bearing in both directions: overbuilding the general
+framework during B-1 is how a vertical slice becomes a horizontal layer, and
+deferring *semantic option integrity* to milestone 9 would ship B-1 chips that
+are still labels. B-1's options are canonical — typed patches, recorded
+source, no prose derivation — over exactly one attribute.
+
+**B-1 deletion boundary.** Deletion happens at B-1 promotion, not at B-4.
+Scoped to the exact B-1 eligibility predicate, delete or disable:
+
+* the legacy quantity question producer,
+* the legacy quantity option builder,
+* answer-turn quantity reconstruction,
+* client prose chip derivation for canonical quantity interactions.
+
+Leaving these alive "until the cleanup phase" is how B-4 becomes an
+unreviewable mass, and it is also how two owners of the same question coexist
+in production — the condition that produced the four producers.
+
+**B-1 product measurement.** Correctness is not success. Instrument, per
+interaction: clarification shown · chip selected · free text used · repair
+required · clarification abandoned · time to answer · rounds before commit ·
+estimate requested · meal committed · correction within 10 minutes.
+
+Key indicators: clarification completion rate · median clarification latency ·
+repair rate · duplicate-meal rate · immediate-correction rate · share of
+options sourced from history versus fallback · share of users choosing
+"Other". **A technically correct option system that frequently forces "Other"
+has failed**, and only the last two indicators can detect it.
+
 ### B-1.5 — One item, multiple independent material fields
 
 After B-1 is green in production, add preparation classification. Do not use a
@@ -293,6 +422,10 @@ operation remains pending until policy says ready. Rules: both fields already
 eligible; each option belongs to exactly one field; mixed chip rows forbidden;
 a partial answer updates only answered fields; unanswered fields remain open;
 one meal still commits once.
+
+**B-1.5 deletion boundary:** delete the matching legacy preparation ownership
+at promotion — the preparation question producer, its option builder
+(`_PREPARATION_OPTIONS`), and answer-turn preparation reconstruction.
 
 ### B-1.6 — Conditional clarification dependencies
 
@@ -314,6 +447,10 @@ fields made irrelevant, (3) activates newly eligible dependent fields,
 Revision sequence: r0 quantity+preparation open → r1 quantity=5oz,
 preparation=plain, added_fat_present activates → r2 present=yes, amount
 activates → r3 amount=1 tbsp, ready → r3 canonical commit.
+
+**B-1.6 deletion boundary:** delete hardcoded added-fat follow-up branching
+for eligible turns, if present. The dependency engine replaces it; leaving the
+branch as a fallback means two owners decide when to ask.
 
 ### B-1.7 — Accuracy-mode policy over one topology
 
@@ -389,7 +526,7 @@ deliberate operation outcome — not normal moderate-mode behavior.
 *"I had a Fairlife shake."* Fields: product identity, package size, consumed
 fraction. Candidate sources in order: user product history, exact catalog
 candidates, package metadata, validated resolver candidates, constrained model
-proposal last. Options carry stable identifiers (`SelectFoodEntity`,
+proposal last. Options carry stable identifiers (`SelectEntity`,
 `SelectProductVariant`, `SetPackageSize`, `SetConsumedFraction`); the label is
 never parsed.
 
@@ -511,9 +648,11 @@ exercise-name strings as identity.
 
 **F-1** interpretation ("Bench 3x8 at 135, then incline dumbbells 3x10 with
 50s" → `ResolvedWorkoutDraft`). **F-2** clarification reuses the EXACT shared
-architecture — workout patches (`SelectExerciseEntity`, `SetSetCount`,
+architecture — workout patches (`SetSetCount`,
 `SetRepCount`, `SetExternalLoad`, `SetLoadBasis`, `SetDuration`,
-`SetDistance`, `SetEquipment`), dependencies (load amount → load basis:
+`SetDistance`, `SetEquipment`; exercise identity is answered by the shared
+`SelectEntity`, not a byte-identical `SelectExerciseEntity`), dependencies
+(load amount → load basis:
 per-dumbbell / total / machine stack / assisted), options from program
 prescription, same-session history, recent history, equipment increments,
 device data. No separate workout chip system. **F-3** presentation post-
@@ -559,7 +698,9 @@ reuses typed fields and patches; domain payloads stay specific.
  6. B-1.8 answer repair/fallback
  7. B-2 multi-item and partial answers
  8. product/fraction/package fields
- 9. full semantic option pipeline
+ 9. generalized ClarificationOptionGenerator across all migrated field
+    families — NOT "semantic options arrive here". B-1 already ships a
+    minimal, quantity-specific option pipeline; this milestone generalizes it
 10. one PendingOperation owner
 11. delete adapters and legacy clarification producers
 12. migrate remaining conversational food writers
@@ -579,3 +720,27 @@ reuses typed fields and patches; domain payloads stay specific.
 previous capability is authoritative end to end, production-measured, and its
 legacy owner has been deleted. That gets Arnie to the desired backend without
 recreating the same fragmentation under better type names.
+
+## Status board
+
+Kept current. This is the single answer to "where are we"; the phase sections
+above are the detail.
+
+```text
+Phase A    COMPLETE          production-verified on a66e9ba8
+
+B-0        COMPLETE          ratchets enforced continuously (C8, C9)
+B-0b       CONTRACT SURFACE COMPLETE
+B-0c       COMPLETE          serialization, validation, immutability,
+                             persistence proof
+B-1        NEXT              one-item mass-quantity vertical slice
+B-1.5      quantity + independent preparation
+B-1.6      conditional added-fat dependency
+B-1.7      accuracy policy over one topology
+B-1.8      constrained fallback and repair
+B-2+       expansion
+B-3/B-4    ownership consolidation and deletion
+C          finish canonical conversational food
+D          generalize only proven shared contracts
+E/F        structured then conversational workouts
+```

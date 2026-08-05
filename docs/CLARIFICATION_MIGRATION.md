@@ -106,6 +106,20 @@ a chain of translated representations:
                                               producers frozen separately: C9.
                                               Chip pipeline plan:
                                               docs/CHIP_GENERATION_MIGRATION.md
+    B-0c CONTRACTS SURVIVE STORAGE            DONE — `patch_type` discriminator
+                                              + schema version, typed round
+                                              trip (Decimal exact), symmetric
+                                              enum coercion, group/interaction
+                                              validation, deep-copied payloads,
+                                              and the persistence proof: a
+                                              stored option_id becomes a typed
+                                              SetQuantity in a NEW session
+                                              (tests/test_contract_persistence_
+                                              b0c.py). B-0b proved the types
+                                              hold in memory; B-1 crosses a
+                                              JSON column and a process
+                                              boundary, which is a different
+                                              claim.
     B-1  ONE-ITEM QUANTITY SLICE ONLY         the whole of the next milestone:
                                               "I had chicken" → quantity ask →
                                               chip OR text answer → revised

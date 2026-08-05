@@ -22,7 +22,16 @@ implementation and this contract demonstrate the same invariant.
 | pending lifecycle (RESOLVING … FAILED) | `core/semantics.PendingOperation` | transition tests |
 | `CanonicalEvent` / `CanonicalQuantity` / `Dimension` | `core/semantics` | dimensional-consistency tests |
 | provenance enum (USER_STATED / USER_SELECTED / …) | `core/semantics.Provenance` | — add `DEVICE` at Phase D for HealthKit/Whoop imports |
+| candidate source enum | `core/semantics.CandidateSource` | `DEVICE` landed at B-0c (device data is the PRIMARY candidate source for DURATION/DISTANCE, and the enum is closed and coercing — its absence made a device-sourced candidate unconstructable). B-1's food candidate rules exclude it, so no selector policy is owed yet |
+| entity-selection patch | `core/semantics.SelectEntity` | domain-neutral by name as of B-0c: it writes `CanonicalEvent.entity_id`, which every domain has, so `EXERCISE_IDENTITY` needs no second patch class. Renamed from `SelectFoodEntity` while zero producers existed — after B-1 stores patches, `patch_type` is wire data |
+| uncertainty evidence | `core/semantics.UncertaintyEvidence` | `impact_spread` is a `CanonicalQuantity`, not a calorie number — a 60-100 kg squat's consequence is training load. Fake-domain round trip |
+| durable outbox events | `core/meal_commit.OutboxEvent` | fake-domain test enqueues one `training_analysis` job with zero food rows |
 | one clock | `core/clock` | one-clock suites |
+
+**Still owed for workouts, named rather than implied:** load-basis semantics
+(per-dumbbell vs total) — `SetExternalLoad` alone cannot express "50s" meaning
+two 50 kg dumbbells. Tracked for F-2; food does not need it, so the rule of
+two has not been met.
 
 ## Target domain model (Phase D, verbatim from the directive)
 
@@ -97,6 +106,11 @@ and migrates on the same shadow → parity → promote → delete path.
   already domain-neutral.
 * `write_canonical_meal`'s `resolved_meal` kwarg → `payload` when the writer
   protocol (§13) is extracted.
+* `OutboxEvent` — the NAME is domain-neutral; what is owed is RELOCATION out
+  of `core.meal_commit`, alongside the `MealCommitResult` → `OperationResult`
+  extraction. The coordinator hard-requires it for every domain's durable
+  post-commit work (`core/commit_coordinator.py:65`), so a workout writer
+  imports a meal module to enqueue a training analysis.
 
 None of these renames may happen speculatively — each is earned by the workout
 implementation actually arriving (rule of two), and each is mechanical because

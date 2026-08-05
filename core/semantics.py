@@ -38,7 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 # The canonical execution result ALREADY EXISTS and is already cross-domain.
 # Re-exported, never redefined.
@@ -51,6 +51,14 @@ __all__ = [
     "EventReference", "CanonicalEvent",
     "ClarificationOption", "ClarificationField",
     "PendingOperation", "PendingStatus",
+    # B-0b/B-0c: the typed clarification layer and its storage form.
+    "ClarificationAttribute", "ResponseType", "ClarificationStatus",
+    "CandidateSource", "CandidateValue", "UncertaintyEvidence",
+    "UnresolvedField", "ClarificationGroup", "ClarificationInteraction",
+    "SemanticPatch", "SetQuantity", "SetConsumedFraction", "SelectEntity",
+    "SelectProductVariant", "SetPreparation", "SetServingBasis",
+    "PATCH_TYPES", "PATCH_SCHEMA_VERSION", "patch_from_payload",
+    "UnknownPatchType",
 ]
 
 
@@ -103,6 +111,16 @@ class Confidence:
     def __post_init__(self):
         if not 0.0 <= self.score <= 1.0:
             raise ValueError(f"confidence out of range: {self.score}")
+
+    def to_payload(self) -> dict:
+        return {"score": float(self.score), "basis": self.basis}
+
+    @classmethod
+    def from_payload(cls, data: Optional[dict]) -> "Confidence":
+        if not data:
+            return cls()
+        return cls(score=float(data.get("score") or 0.0),
+                   basis=data.get("basis") or "")
 
 
 class NutritionProvenance(str, Enum):
@@ -175,6 +193,24 @@ class Dimension(str, Enum):
     DIMENSIONLESS = "dimensionless"
 
 
+# ── serialization primitives (B-0c) ──────────────────────────────────────────
+#
+# DECIMALS CROSS AS STRINGS, never as JSON numbers. `Decimal("0.1")` through a
+# float is `0.1000000000000000055511151231257827`, so a round trip that looks
+# equal at two decimal places is not equal, and `CanonicalQuantity` uses
+# `Decimal` precisely to keep portion arithmetic exact. A string round-trips
+# byte-for-byte and compares equal, which is what the round-trip test asserts.
+
+def _dec_out(v: Optional[Decimal]) -> Optional[str]:
+    return None if v is None else str(v)
+
+
+def _dec_in(v) -> Optional[Decimal]:
+    if v is None or v == "":
+        return None
+    return Decimal(str(v))
+
+
 @dataclass(frozen=True)
 class CanonicalQuantity:
     """An amount, in one shape, for every domain.
@@ -210,6 +246,15 @@ class CanonicalQuantity:
     surface_text: str = ""
 
     def __post_init__(self):
+        # COERCED, LIKE EVERY OTHER ENUM FIELD IN THIS MODULE. A string
+        # provenance survived construction and then failed at
+        # `is_estimated` -> `provenance.is_users_own` (AttributeError on str),
+        # or compared False against every `is` check — silently reclassifying
+        # a user's own figure as an estimate. Values arrive as strings the
+        # moment they come off the wire or out of storage, so this is the
+        # normal shape, not the exotic one.
+        object.__setattr__(self, "provenance", Provenance(self.provenance))
+        object.__setattr__(self, "dimension", Dimension(self.dimension))
         if (self.range_min is not None and self.range_max is not None
                 and self.range_min > self.range_max):
             raise ValueError(
@@ -239,6 +284,32 @@ class CanonicalQuantity:
     @property
     def is_range(self) -> bool:
         return self.range_min is not None and self.range_max is not None
+
+    _DECIMAL_FIELDS = ("amount", "range_min", "range_max", "grams",
+                       "milliliters", "count", "uncertainty")
+
+    def to_payload(self) -> dict:
+        data = {n: _dec_out(getattr(self, n)) for n in self._DECIMAL_FIELDS}
+        data.update(unit_id=self.unit_id, dimension=self.dimension.value,
+                    count_entity_id=self.count_entity_id,
+                    provenance=self.provenance.value,
+                    confidence=self.confidence.to_payload(),
+                    surface_text=self.surface_text)
+        return data
+
+    @classmethod
+    def from_payload(cls, data: Optional[dict]) -> Optional["CanonicalQuantity"]:
+        if data is None:
+            return None
+        kw = {n: _dec_in(data.get(n)) for n in cls._DECIMAL_FIELDS}
+        return cls(unit_id=data.get("unit_id") or "",
+                   dimension=Dimension(data.get("dimension")
+                                       or Dimension.DIMENSIONLESS),
+                   count_entity_id=data.get("count_entity_id") or "",
+                   provenance=Provenance(data.get("provenance")
+                                         or Provenance.UNKNOWN),
+                   confidence=Confidence.from_payload(data.get("confidence")),
+                   surface_text=data.get("surface_text") or "", **kw)
 
 
 # ── references and events ────────────────────────────────────────────────────
@@ -288,6 +359,11 @@ class CanonicalEvent:
     confidence: Confidence = field(default_factory=Confidence)
     provenance: Provenance = Provenance.UNKNOWN
     references: tuple = ()
+
+    def __post_init__(self):
+        object.__setattr__(self, "provenance", Provenance(self.provenance))
+        object.__setattr__(self, "resolution_status",
+                           ResolutionStatus(self.resolution_status))
 
 
 # ── clarification ────────────────────────────────────────────────────────────
@@ -356,6 +432,13 @@ class CandidateSource(str, Enum):
     ONTOLOGY = "ontology"
     MODEL_PROPOSAL = "model_proposal"
     MODE_DEFAULT = "mode_default"
+    #: HealthKit / Whoop / Oura — a recorded measurement, not an inference.
+    #: Pre-provisioned like the workout attributes above so the shared layer
+    #: never needs a food edit: it is the PRIMARY candidate source for workout
+    #: DURATION and DISTANCE, and this enum is closed, so its absence made a
+    #: device-sourced candidate unconstructable. B-1's food candidate rules
+    #: exclude it, so no selector policy is owed yet (docs/WORKOUT_CONTRACTS).
+    DEVICE = "device"
 
 
 # ── semantic patches ─────────────────────────────────────────────────────────
@@ -366,12 +449,29 @@ class CandidateSource(str, Enum):
 # cross one application boundary. No dict merges: every patch names the event
 # and field it changes, and the domain validates it before it applies.
 
+#: Bumped when a patch's stored shape changes in a way older code would
+#: misread. Read on load and failed closed, never guessed at.
+PATCH_SCHEMA_VERSION = 1
+
+
 @dataclass(frozen=True)
 class SemanticPatch:
-    """Base of every typed answer. Domain subclasses add the value."""
+    """Base of every typed answer. Domain subclasses add the value.
+
+    A PATCH IS STORED AND RELOADED, so it carries a discriminator. B-1's wire
+    contract is that a tap submits only ids and the server loads the stored
+    patch — which means the stored form must say which patch it IS. Without
+    `patch_type` the server would recover meaning by sniffing which keys are
+    present, i.e. re-inferring semantics from shape: the same defect as
+    parsing chips out of prose, relocated server-side.
+    """
     event_id: str
     field_id: str
     provenance: Provenance = Provenance.UNKNOWN
+
+    #: The stored discriminator. A ClassVar, not a field, so it cannot be
+    #: overridden per instance — the type declares what it is.
+    patch_type: ClassVar[str] = ""
 
     def __post_init__(self):
         if not self.event_id:
@@ -381,6 +481,35 @@ class SemanticPatch:
             raise ValueError(f"{type(self).__name__} needs the field it "
                              f"answers — C9's lesson is that unowned answers "
                              f"get re-parsed from prose")
+        # Symmetric with UnresolvedField.attribute and CandidateValue.source:
+        # coerce at the boundary so every internal value is an enum instance.
+        object.__setattr__(self, "provenance", Provenance(self.provenance))
+
+    # ── storage ──────────────────────────────────────────────────────────
+    def _value_payload(self) -> dict:
+        """Subclass values. The base carries only target and provenance."""
+        return {}
+
+    def to_payload(self) -> dict:
+        if not self.patch_type:
+            raise ValueError(
+                f"{type(self).__name__} has no patch_type — an unregistered "
+                f"patch cannot be stored, because nothing could load it back")
+        data = {"patch_type": self.patch_type,
+                "schema_version": PATCH_SCHEMA_VERSION,
+                "event_id": self.event_id, "field_id": self.field_id,
+                "provenance": self.provenance.value}
+        data.update(self._value_payload())
+        return data
+
+    @classmethod
+    def _from_values(cls, data: dict) -> "SemanticPatch":
+        """Subclass hook: build from a payload. Validation re-runs via
+        `__post_init__`, so a corrupted row fails on load, not at apply."""
+        return cls(event_id=data.get("event_id") or "",
+                   field_id=data.get("field_id") or "",
+                   provenance=Provenance(data.get("provenance")
+                                         or Provenance.UNKNOWN))
 
 
 @dataclass(frozen=True)
@@ -389,17 +518,33 @@ class SetQuantity(SemanticPatch):
     validity is enforced where the patch is BUILT, not where it lands."""
     quantity: Optional[CanonicalQuantity] = None
 
+    patch_type: ClassVar[str] = "set_quantity"
+
     def __post_init__(self):
         super().__post_init__()
         if not isinstance(self.quantity, CanonicalQuantity):
             raise ValueError("SetQuantity carries a CanonicalQuantity — a bare "
                              "number cannot say what dimension it is")
 
+    def _value_payload(self) -> dict:
+        return {"quantity": self.quantity.to_payload()}
+
+    @classmethod
+    def _from_values(cls, data: dict) -> "SetQuantity":
+        return cls(event_id=data.get("event_id") or "",
+                   field_id=data.get("field_id") or "",
+                   provenance=Provenance(data.get("provenance")
+                                         or Provenance.UNKNOWN),
+                   quantity=CanonicalQuantity.from_payload(
+                       data.get("quantity")))
+
 
 @dataclass(frozen=True)
 class SetConsumedFraction(SemanticPatch):
     """How much of the thing was actually eaten (0 < fraction <= 1]."""
     fraction: Optional[Decimal] = None
+
+    patch_type: ClassVar[str] = "set_consumed_fraction"
 
     def __post_init__(self):
         super().__post_init__()
@@ -408,17 +553,49 @@ class SetConsumedFraction(SemanticPatch):
             raise ValueError(f"consumed fraction must be in (0, 1], got {f!r}")
         object.__setattr__(self, "fraction", Decimal(f))
 
+    def _value_payload(self) -> dict:
+        return {"fraction": _dec_out(self.fraction)}
+
+    @classmethod
+    def _from_values(cls, data: dict) -> "SetConsumedFraction":
+        return cls(event_id=data.get("event_id") or "",
+                   field_id=data.get("field_id") or "",
+                   provenance=Provenance(data.get("provenance")
+                                         or Provenance.UNKNOWN),
+                   fraction=_dec_in(data.get("fraction")))
+
 
 @dataclass(frozen=True)
-class SelectFoodEntity(SemanticPatch):
-    """Resolve WHICH food this is — an entity id, never a fuzzy label."""
+class SelectEntity(SemanticPatch):
+    """Resolve WHICH entity this event is — an entity id, never a fuzzy label.
+
+    DOMAIN-NEUTRAL ON PURPOSE. It writes `CanonicalEvent.entity_id`, which
+    every domain has, so `EXERCISE_IDENTITY` is answerable without a second
+    byte-identical patch class and a second arm at the shared application
+    boundary. Renamed from `SelectFoodEntity` while zero producers existed:
+    once B-1 stores patches, `patch_type` is wire data and a rename is a
+    migration.
+    """
     entity_id: str = ""
+
+    patch_type: ClassVar[str] = "select_entity"
 
     def __post_init__(self):
         super().__post_init__()
         if not self.entity_id:
-            raise ValueError("SelectFoodEntity without an entity_id is the "
+            raise ValueError("SelectEntity without an entity_id is the "
                              "string-matching defect this type replaces")
+
+    def _value_payload(self) -> dict:
+        return {"entity_id": self.entity_id}
+
+    @classmethod
+    def _from_values(cls, data: dict) -> "SelectEntity":
+        return cls(event_id=data.get("event_id") or "",
+                   field_id=data.get("field_id") or "",
+                   provenance=Provenance(data.get("provenance")
+                                         or Provenance.UNKNOWN),
+                   entity_id=data.get("entity_id") or "")
 
 
 @dataclass(frozen=True)
@@ -427,10 +604,24 @@ class SelectProductVariant(SemanticPatch):
     entity_id: str = ""
     serving_id: str = ""
 
+    patch_type: ClassVar[str] = "select_product_variant"
+
     def __post_init__(self):
         super().__post_init__()
         if not self.entity_id:
             raise ValueError("SelectProductVariant needs the product's id")
+
+    def _value_payload(self) -> dict:
+        return {"entity_id": self.entity_id, "serving_id": self.serving_id}
+
+    @classmethod
+    def _from_values(cls, data: dict) -> "SelectProductVariant":
+        return cls(event_id=data.get("event_id") or "",
+                   field_id=data.get("field_id") or "",
+                   provenance=Provenance(data.get("provenance")
+                                         or Provenance.UNKNOWN),
+                   entity_id=data.get("entity_id") or "",
+                   serving_id=data.get("serving_id") or "")
 
 
 @dataclass(frozen=True)
@@ -438,10 +629,23 @@ class SetPreparation(SemanticPatch):
     """Grilled / fried / … — an ontology preparation id, not free text."""
     preparation_id: str = ""
 
+    patch_type: ClassVar[str] = "set_preparation"
+
     def __post_init__(self):
         super().__post_init__()
         if not self.preparation_id:
             raise ValueError("SetPreparation needs a preparation id")
+
+    def _value_payload(self) -> dict:
+        return {"preparation_id": self.preparation_id}
+
+    @classmethod
+    def _from_values(cls, data: dict) -> "SetPreparation":
+        return cls(event_id=data.get("event_id") or "",
+                   field_id=data.get("field_id") or "",
+                   provenance=Provenance(data.get("provenance")
+                                         or Provenance.UNKNOWN),
+                   preparation_id=data.get("preparation_id") or "")
 
 
 @dataclass(frozen=True)
@@ -449,31 +653,181 @@ class SetServingBasis(SemanticPatch):
     """Which label basis the numbers are per (per-container, per-serving…)."""
     basis_id: str = ""
 
+    patch_type: ClassVar[str] = "set_serving_basis"
+
     def __post_init__(self):
         super().__post_init__()
         if not self.basis_id:
             raise ValueError("SetServingBasis needs a basis id")
 
+    def _value_payload(self) -> dict:
+        return {"basis_id": self.basis_id}
+
+    @classmethod
+    def _from_values(cls, data: dict) -> "SetServingBasis":
+        return cls(event_id=data.get("event_id") or "",
+                   field_id=data.get("field_id") or "",
+                   provenance=Provenance(data.get("provenance")
+                                         or Provenance.UNKNOWN),
+                   basis_id=data.get("basis_id") or "")
+
+
+#: THE CLOSED REGISTRY. An explicit dict rather than a subclass walk: a patch
+#: type is stored data, so which strings are loadable must be a decision
+#: someone made, not a consequence of what happens to be imported.
+PATCH_TYPES = {cls.patch_type: cls for cls in (
+    SetQuantity, SetConsumedFraction, SelectEntity, SelectProductVariant,
+    SetPreparation, SetServingBasis)}
+
+
+class UnknownPatchType(ValueError):
+    """A stored patch this build cannot interpret. Fails closed — guessing
+    which patch a payload meant is the re-inference the type system removes."""
+
+
+def patch_from_payload(data: Optional[dict]) -> SemanticPatch:
+    """Load a stored patch back as its CONCRETE type.
+
+    `SetQuantity -> JSON -> SetQuantity`, never `-> dict`. Every subclass's
+    `__post_init__` re-runs, so a payload that has been corrupted, truncated
+    or hand-edited fails here rather than at the application boundary where
+    the transaction is already open.
+    """
+    if not isinstance(data, dict):
+        raise UnknownPatchType(
+            f"a stored patch is an object, got {type(data).__name__}")
+    kind = data.get("patch_type") or ""
+    cls = PATCH_TYPES.get(kind)
+    if cls is None:
+        raise UnknownPatchType(
+            f"unknown patch_type {kind!r} — this build cannot apply it, and "
+            f"guessing from the keys present is exactly what the "
+            f"discriminator exists to prevent")
+    version = data.get("schema_version")
+    if version is None or int(version) > PATCH_SCHEMA_VERSION:
+        raise UnknownPatchType(
+            f"patch {kind!r} has schema_version {version!r}, newer than this "
+            f"build's {PATCH_SCHEMA_VERSION}")
+    return cls._from_values(data)
+
 
 # ── candidate space (Phases D–F feed on these) ───────────────────────────────
+
+@dataclass(frozen=True)
+class ClarificationOption:
+    """One offered answer, and what it MEANS.
+
+    `label` is for the human, `value` is what the system records. Keeping them
+    separate is what allows a chip to read "Medium piece" while recording 113 g
+    — measured on 2026-08-04, where only number-first labels could be priced at
+    all, so every human-readable option was unusable.
+    """
+    label: str
+    value: Any = None
+    option_id: str = ""
+    field_id: str = ""
+    confidence: Confidence = field(default_factory=Confidence)
+    #: THE AUTHORITATIVE MEANING (C10 target). Canonical producers attach the
+    #: typed patch a tap applies; the measurement adapter leaves None because
+    #: the legacy shapes it reads never carried one — which is exactly the gap
+    #: being closed.
+    patch: Optional[SemanticPatch] = None
+    source: Optional[CandidateSource] = None
+    #: THE ENFORCEMENT KEY FOR C10. "patch=None is allowed only for the
+    #: measurement adapter" was a comment with nothing to key on — `source` is
+    #: independently optional, so no predicate could tell an adapter-built
+    #: option from a canonical producer that forgot its patch. Set True at the
+    #: adapter's construction sites only; at Phase H the promised check becomes
+    #: writable here as `patch is None and not adapter_built -> raise`.
+    adapter_built: bool = False
+
+    def __post_init__(self):
+        if self.source is not None:
+            object.__setattr__(self, "source", CandidateSource(self.source))
+        if self.patch is not None and not isinstance(self.patch, SemanticPatch):
+            raise ValueError(
+                "ClarificationOption.patch must be a SemanticPatch — a dict "
+                "here is the unvalidated answer the patch type replaces")
+
+    @property
+    def send_value(self) -> str:
+        """What a channel without a value channel (Telegram, iMessage) sends
+        back. The server resolves it against the stored options."""
+        return self.label if self.value is None else str(self.value)
+
+    def to_payload(self) -> dict:
+        return {"label": self.label,
+                "value": self.value,
+                "option_id": self.option_id,
+                "field_id": self.field_id,
+                "confidence": self.confidence.to_payload(),
+                "patch": None if self.patch is None else self.patch.to_payload(),
+                "source": None if self.source is None else self.source.value,
+                "adapter_built": bool(self.adapter_built)}
+
+    @classmethod
+    def from_payload(cls, data: dict) -> "ClarificationOption":
+        raw = data.get("source")
+        return cls(label=data.get("label") or "",
+                   value=data.get("value"),
+                   option_id=data.get("option_id") or "",
+                   field_id=data.get("field_id") or "",
+                   confidence=Confidence.from_payload(data.get("confidence")),
+                   patch=(patch_from_payload(data["patch"])
+                          if data.get("patch") else None),
+                   source=None if raw is None else CandidateSource(raw),
+                   adapter_built=bool(data.get("adapter_built", False)))
+
 
 @dataclass(frozen=True)
 class UncertaintyEvidence:
     """WHY a field is unresolved, carried as data so the ambiguity engine and
     the selector reason from the same facts: the value range the uncertainty
-    spans and the calorie consequence of guessing wrong."""
+    spans, and the consequence of guessing wrong in the domain's materiality
+    currency.
+
+    `impact_spread` is a `CanonicalQuantity`, not a bare calorie number. Food
+    supplies `Dimension.ENERGY`; a 60-100 kg squat's consequence is training
+    load, and naming the shared field `calorie_spread` would have forced
+    workouts either to leave it None forever — scoring every workout field as
+    zero-consequence in a shared stakes ranking — or to put kilograms in a
+    field named calories, the silent unit lie `CanonicalQuantity`'s trench-coat
+    check exists to reject.
+    """
     low: Optional[Decimal] = None
     high: Optional[Decimal] = None
     unit_id: str = ""
-    calorie_spread: Optional[Decimal] = None
+    impact_spread: Optional[CanonicalQuantity] = None
     basis: str = ""
+
+    def to_payload(self) -> dict:
+        return {"low": _dec_out(self.low), "high": _dec_out(self.high),
+                "unit_id": self.unit_id, "basis": self.basis,
+                "impact_spread": (None if self.impact_spread is None
+                                  else self.impact_spread.to_payload())}
+
+    @classmethod
+    def from_payload(cls, data: Optional[dict]) -> "UncertaintyEvidence":
+        if not data:
+            return cls()
+        return cls(low=_dec_in(data.get("low")), high=_dec_in(data.get("high")),
+                   unit_id=data.get("unit_id") or "",
+                   basis=data.get("basis") or "",
+                   impact_spread=CanonicalQuantity.from_payload(
+                       data.get("impact_spread")))
 
 
 @dataclass(frozen=True)
 class UnresolvedField:
     """One unresolved semantic field, identified by SEMANTICS — operation,
     event, attribute, revision — never by list position or display text.
-    (The adapter's position+text ids are measurement-only and die with it.)"""
+    (The adapter's position+text ids are measurement-only and die with it.)
+
+    THE FIELD OWNS ITS OPTIONS. Deriving one from the other is the defect this
+    whole migration removes: the server generated prose and re-parsed it for
+    chips, then the client did it again. A selectable field with no options is
+    refused here rather than shipped as a blank row a client "fixes" — C15.
+    """
     operation_id: str
     revision: int
     event_id: str
@@ -482,6 +836,8 @@ class UnresolvedField:
     allowed_units: tuple = ()
     materiality: Optional[float] = None
     uncertainty: UncertaintyEvidence = field(default_factory=UncertaintyEvidence)
+    response_type: ResponseType = ResponseType.FREE_TEXT
+    options: tuple = ()
 
     def __post_init__(self):
         if not self.operation_id or not self.event_id:
@@ -489,6 +845,36 @@ class UnresolvedField:
                              "revision — all of them")
         object.__setattr__(self, "attribute",
                            ClarificationAttribute(self.attribute))
+        object.__setattr__(self, "response_type",
+                           ResponseType(self.response_type))
+        object.__setattr__(self, "options", tuple(self.options or ()))
+        selectable = self.response_type in (ResponseType.SINGLE_SELECT,
+                                            ResponseType.MULTI_SELECT)
+        if selectable and not self.options:
+            raise ValueError(
+                f"{self.field_id} is a {self.response_type.value} with no "
+                f"options — a select that cannot be selected from must say so "
+                f"as FREE_TEXT_FALLBACK, not ship blank (C15)")
+        if self.options and not selectable:
+            raise ValueError(
+                f"{self.field_id} is {self.response_type.value} but carries "
+                f"options — a field with options IS a select")
+        seen = set()
+        for o in self.options:
+            if not o.option_id:
+                raise ValueError(
+                    f"an option on {self.field_id} has no option_id — the "
+                    f"wire submits ids, so an unidentified option is "
+                    f"unanswerable except by its label (C11)")
+            if o.option_id in seen:
+                raise ValueError(f"duplicate option_id {o.option_id!r} on "
+                                 f"{self.field_id}")
+            seen.add(o.option_id)
+            if o.field_id != self.field_id:
+                raise ValueError(
+                    f"option {o.option_id!r} answers {o.field_id!r} but sits "
+                    f"on {self.field_id!r} — an option that patches another "
+                    f"field is the mixed chip row, one level down")
 
     @property
     def field_id(self) -> str:
@@ -496,6 +882,48 @@ class UnresolvedField:
         rewording a question cannot change it."""
         return (f"{self.operation_id}:{self.event_id}:"
                 f"{self.attribute.value}:{self.revision}")
+
+    def option(self, option_id: str) -> ClarificationOption:
+        """Resolve a submitted option id against the STORED options, or fail.
+
+        This is the server side of the wire contract: a tap sends ids, and the
+        meaning comes from here — never from the label that came back.
+        """
+        for o in self.options:
+            if o.option_id == option_id:
+                return o
+        raise KeyError(
+            f"{option_id!r} is not an option on {self.field_id} — a tap whose "
+            f"option cannot be found is refused, not re-interpreted")
+
+    def to_payload(self) -> dict:
+        return {"operation_id": self.operation_id, "revision": self.revision,
+                "event_id": self.event_id, "attribute": self.attribute.value,
+                "allowed_dimensions": [str(d) for d in self.allowed_dimensions],
+                "allowed_units": [str(u) for u in self.allowed_units],
+                "materiality": (None if self.materiality is None
+                                else float(self.materiality)),
+                "uncertainty": self.uncertainty.to_payload(),
+                "response_type": self.response_type.value,
+                "options": [o.to_payload() for o in self.options]}
+
+    @classmethod
+    def from_payload(cls, data: dict) -> "UnresolvedField":
+        return cls(
+            operation_id=data.get("operation_id") or "",
+            revision=int(data.get("revision") or 0),
+            event_id=data.get("event_id") or "",
+            attribute=ClarificationAttribute(data.get("attribute")),
+            allowed_dimensions=tuple(data.get("allowed_dimensions") or ()),
+            allowed_units=tuple(data.get("allowed_units") or ()),
+            materiality=(None if data.get("materiality") is None
+                         else float(data["materiality"])),
+            uncertainty=UncertaintyEvidence.from_payload(
+                data.get("uncertainty")),
+            response_type=ResponseType(data.get("response_type")
+                                       or ResponseType.FREE_TEXT),
+            options=tuple(ClarificationOption.from_payload(o)
+                          for o in (data.get("options") or ())))
 
 
 @dataclass(frozen=True)
@@ -522,10 +950,50 @@ class CandidateValue:
 @dataclass(frozen=True)
 class ClarificationGroup:
     """One event's fields, grouped — the structure that makes a mixed chip row
-    (Elite / Core Power / Whole thing / About half) unconstructable."""
+    (Elite / Core Power / Whole thing / About half) unconstructable.
+
+    THE DOCSTRING USED TO BE THE WHOLE ENFORCEMENT. Without these checks a
+    group could hold another event's field, so the canonical defect was
+    representable one level down and a tap would patch an event the group's
+    label never named.
+    """
     event_id: str
     label: str = ""
     fields: tuple = ()
+
+    def __post_init__(self):
+        if not self.event_id:
+            raise ValueError("a group is addressed by its event")
+        object.__setattr__(self, "fields", tuple(self.fields or ()))
+        if not self.fields:
+            raise ValueError(f"group {self.event_id!r} has no fields — an "
+                             f"empty group renders a label with nothing to "
+                             f"answer")
+        seen = set()
+        for f in self.fields:
+            if f.event_id != self.event_id:
+                raise ValueError(
+                    f"group {self.event_id!r} cannot hold a field of "
+                    f"{f.event_id!r} — the mixed chip row stays "
+                    f"unconstructable")
+            # field_id is operation:event:attribute:revision, so this is also
+            # the "no duplicate attribute for the same event/revision" check.
+            if f.field_id in seen:
+                raise ValueError(
+                    f"duplicate field {f.field_id!r} in group "
+                    f"{self.event_id!r} — two answers would race for one slot")
+            seen.add(f.field_id)
+
+    def to_payload(self) -> dict:
+        return {"event_id": self.event_id, "label": self.label,
+                "fields": [f.to_payload() for f in self.fields]}
+
+    @classmethod
+    def from_payload(cls, data: dict) -> "ClarificationGroup":
+        return cls(event_id=data.get("event_id") or "",
+                   label=data.get("label") or "",
+                   fields=tuple(UnresolvedField.from_payload(f)
+                                for f in (data.get("fields") or ())))
 
 
 @dataclass(frozen=True)
@@ -534,6 +1002,11 @@ class ClarificationInteraction:
 
     Replaces question-as-container (C8's producers): the sentence stops being
     the vessel of semantics and becomes presentation over typed fields.
+
+    ONE OPERATION, ONE REVISION, THROUGHOUT. Every field it carries must name
+    the same pair, because a field's identity embeds them: an interaction
+    holding an `op_2` field would render a chip whose tap patches a different
+    operation than the one being answered.
     """
     interaction_id: str
     operation_id: str
@@ -541,39 +1014,82 @@ class ClarificationInteraction:
     introduction: str = ""
     groups: tuple = ()
 
+    #: Bumped when the stored interaction's shape changes.
+    SCHEMA_VERSION: ClassVar[int] = 1
+
     def __post_init__(self):
         if not self.interaction_id or not self.operation_id:
             raise ValueError("an interaction is addressed by operation and id")
+        object.__setattr__(self, "groups", tuple(self.groups or ()))
+        events, fields = set(), set()
+        for g in self.groups:
+            if g.event_id in events:
+                raise ValueError(
+                    f"interaction {self.interaction_id} has two groups for "
+                    f"{g.event_id!r} — one event, one group, or the same food "
+                    f"is asked about twice in one turn")
+            events.add(g.event_id)
+            for f in g.fields:
+                if (f.operation_id, f.revision) != (self.operation_id,
+                                                    self.revision):
+                    raise ValueError(
+                        f"interaction {self.operation_id}:{self.revision} "
+                        f"cannot carry field {f.field_id} — mixed operation "
+                        f"ownership means a tap patches the wrong operation")
+                if f.field_id in fields:
+                    raise ValueError(
+                        f"duplicate field {f.field_id!r} across groups")
+                fields.add(f.field_id)
 
+    def field(self, field_id: str) -> UnresolvedField:
+        for g in self.groups:
+            for f in g.fields:
+                if f.field_id == field_id:
+                    return f
+        raise KeyError(
+            f"{field_id!r} is not a field of interaction "
+            f"{self.interaction_id} — an answer to an unknown field is "
+            f"refused, not re-interpreted")
 
-@dataclass(frozen=True)
-class ClarificationOption:
-    """One offered answer, and what it MEANS.
+    def patch_for(self, field_id: str, option_id: str) -> SemanticPatch:
+        """THE WIRE CONTRACT, server side. A tap submits
+        (operation, revision, field, option) and the meaning is loaded from
+        here — the label never travels back as semantics (C11).
+        """
+        option = self.field(field_id).option(option_id)
+        if option.patch is None:
+            raise ValueError(
+                f"option {option_id!r} on {field_id} carries no patch — a "
+                f"canonical option's meaning is its patch, and re-deriving it "
+                f"from {option.label!r} is the defect being removed")
+        return option.patch
 
-    `label` is for the human, `value` is what the system records. Keeping them
-    separate is what allows a chip to read "Medium piece" while recording 113 g
-    — measured on 2026-08-04, where only number-first labels could be priced at
-    all, so every human-readable option was unusable.
-    """
-    label: str
-    value: Any = None
-    option_id: str = ""
-    field_id: str = ""
-    confidence: Confidence = field(default_factory=Confidence)
-    #: THE AUTHORITATIVE MEANING (C10 target). Canonical producers attach the
-    #: typed patch a tap applies; the measurement adapter leaves None because
-    #: the legacy shapes it reads never carried one — which is exactly the gap
-    #: being closed. When options become production-authoritative, a None
-    #: patch on a produced option fails, and `value` becomes presentation-era
-    #: legacy.
-    patch: Optional[SemanticPatch] = None
-    source: Optional[CandidateSource] = None
+    def to_payload(self) -> dict:
+        return {"schema_version": self.SCHEMA_VERSION,
+                "interaction_id": self.interaction_id,
+                "operation_id": self.operation_id, "revision": self.revision,
+                "introduction": self.introduction,
+                "groups": [g.to_payload() for g in self.groups]}
 
-    @property
-    def send_value(self) -> str:
-        """What a channel without a value channel (Telegram, iMessage) sends
-        back. The server resolves it against the stored options."""
-        return self.label if self.value is None else str(self.value)
+    @classmethod
+    def from_payload(cls, data: dict) -> "ClarificationInteraction":
+        """Fails closed on a version this build cannot read — an interaction
+        loaded as an empty one looks like "nothing was pending", which is how
+        a held meal disappears."""
+        if not isinstance(data, dict):
+            raise ValueError("a stored interaction is an object, got "
+                             f"{type(data).__name__}")
+        version = data.get("schema_version")
+        if version is None or int(version) > cls.SCHEMA_VERSION:
+            raise ValueError(
+                f"interaction schema_version {version!r} is newer than this "
+                f"build's {cls.SCHEMA_VERSION}")
+        return cls(interaction_id=data.get("interaction_id") or "",
+                   operation_id=data.get("operation_id") or "",
+                   revision=int(data.get("revision") or 0),
+                   introduction=data.get("introduction") or "",
+                   groups=tuple(ClarificationGroup.from_payload(g)
+                                for g in (data.get("groups") or ())))
 
 
 @dataclass(frozen=True)

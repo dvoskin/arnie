@@ -25,8 +25,9 @@ question/answer lifecycle; this one owns where options COME FROM.
 | directive phase | state |
 |---|---|
 | A — quick-log promotion closed | **DONE** — record COMPLETE on `a66e9ba8` |
-| B — freeze + map producers | **DONE** — C8 (questions: 4+1 relay), **C9 (options: 8 payload sites + 5 `AmbiguityOption` constructors)**; inventory below |
+| B — freeze + map producers | **DONE** — C8 (questions: 4+1 relay), **C9 (options: repo-wide AST, 13 sites across 6 files, classified)**; inventory below |
 | C — canonical contracts | **DONE (B-0b)** — enums, `SemanticPatch` family, `UnresolvedField`, `CandidateValue`, `ClarificationInteraction`/`Group`, option carries `patch` |
+| C′ — contracts survive storage | **DONE (B-0c)** — `patch_type` discriminator + schema version, typed round trip, symmetric enum coercion, group/interaction validation, deep-copied payloads, persistence proof across a closed session |
 | D — candidate-generator protocol | next, inside the B-1 slice |
 | E slice 1 — user-history quantities | inside B-1 |
 | F — deterministic selector | inside B-1 |
@@ -39,12 +40,25 @@ question/answer lifecycle; this one owns where options COME FROM.
 
 ## Option-source inventory (Phase B; frozen by C9)
 
+Measured repo-wide by AST (C9), not by an allowlist of files and one spelling.
+The first version of the ratchet froze five files matching the literal
+`"options":`, which is why the two relay rows below shipped uncounted and the
+contract document overclaimed on the day it was written.
+
 | producer | field | semantic source | output shape | deletion milestone |
 |---|---|---|---|---|
 | `food_turn` `_chip_options` / `"options"` sites ×7 | mixed | portion ontology, brand shelves, `_stated_options`, `_PREPARATION_OPTIONS`, piece-weight tables | flat label lists | replaced per field type at Phases H/L; deleted at N |
-| `conversation.py` relay ×1 | — | copies into pending payload | loose lists | dies when the interaction payload ships (B-1) |
+| `conversation.py` write-side relay ×1 | — | copies into pending payload | loose lists | dies when the interaction payload ships (B-1) |
+| `context_builder.py` read-side relay ×1 | — | re-reads the SAME stash onto the chat wire, truncated to 4 | loose lists | dies with the write-side relay (B-1) |
+| `clarify_ui.py` `as_dict` ×1 | staged asks | staged-pipeline UI model (dormant) | UI payload | absorbed at Phase H |
 | `AmbiguityOption(...)` ×5 (`food_pipeline` ×4, `staged_codec` ×1) | staged asks | ambiguity candidates | label+confidence, no patch | absorbed into `CandidateValue` at Phase D |
 | `QuickReplyEngine.swift` (iOS repo) | all | **Arnie's rendered prose** | client-parsed chips | disabled when interaction payload present (B-1), deleted at N |
+
+Counted but NOT debt, named so the ratchet can tell them apart:
+`validators.py` ×2 is a materiality diagnostic whose "options" are the two
+candidate numbers that disagree — not a wire payload; `semantics.py` ×1 is
+`UnresolvedField.to_payload`, the canonical replacement, and its count RISES
+as the debt rows fall.
 
 ## The evidence hierarchy (Phase D/E — matches the resolution directive)
 
@@ -78,7 +92,7 @@ producer freeze, already live):
 | directive | invariant | enforceable at |
 |---|---|---|
 | C9′ | every chip answers one canonical field (op/rev/event/field) | H |
-| C10′ | every chip carries a typed patch | H — `ClarificationOption.patch` exists now; None allowed only for the measurement adapter |
+| C10′ | every chip carries a typed patch | H — `ClarificationOption.patch` exists now; `patch=None` allowed **only** where `adapter_built=True`, which is the enforcement key (B-0c) and is set at the adapter's two construction sites and nowhere else |
 | C11′ | chip meaning never comes from rendered text | J (server) / N (client delete) |
 | C12′ | every option records source, confidence, evidence | D |
 | C13′ | every option is domain-valid (entity capabilities) | G |
