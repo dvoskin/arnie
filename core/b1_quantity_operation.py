@@ -46,6 +46,13 @@ CANCELLED = "cancelled"
 #: OUR failure, not the user's — an operation nobody can settle.
 FAILED = "failed"
 
+#: Ledger events that qualify as a CORRECTION of what B-1 committed. Not every
+#: later event on a row is one — a rollup or a restore says something else, and
+#: counting those would inflate the single metric that means "we got it wrong".
+#: An edit and a deletion are both evidence; `event_type` is recorded so they
+#: stay separable.
+CORRECTION_EVENT_TYPES = frozenset({"updated", "deleted"})
+
 
 @dataclass(frozen=True)
 class OwnedOperation:
@@ -191,28 +198,59 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
 ASK_TTL_MINUTES = 180
 
 
-#: Channels whose chips the SERVER renders, so an ID-addressed interaction is
-#: readable by construction. Telegram and iMessage have no client-side chip
-#: parser at all — they are why B-1 can be proven on real traffic without
-#: shipping Swift.
-_SERVER_RENDERED = frozenset({"telegram", "imessage", "bluebubbles", "sms"})
+#: HOW A CHANNEL CAN CARRY AN ANSWER BACK. These are not equivalent and must
+#: never be described as equivalent — the difference is what the answer is
+#: BOUND to.
+#:
+#:   ID_ADDRESSED   the reply carries operation_id + revision + field_id +
+#:                  option_id. The answer is bound to the exact question, and
+#:                  a stale or foreign one is detectable.
+#:
+#:   LABEL_TEXT     the reply carries the option's rendered words and nothing
+#:                  else. RESTRICTED, because binding is inferred: we match
+#:                  the text against the open operation's stored options. Two
+#:                  identical labels on two live operations are
+#:                  indistinguishable, a label typed by hand is
+#:                  indistinguishable from a press, and staleness cannot be
+#:                  detected at all — the text of last turn's chip looks
+#:                  exactly like this turn's.
+#:
+#: B-1 accepts LABEL_TEXT deliberately: it is what proves the wire on real
+#: traffic without shipping Swift. It is not the chip path, its production
+#: evidence does not substitute for the chip path's, and B-1b exists because
+#: of that.
+ID_ADDRESSED = "id_addressed"
+LABEL_TEXT = "label_text"
+
+#: Channels whose chips the SERVER renders. Telegram and iMessage have no
+#: client-side chip parser at all, so the canonical payload is readable by
+#: construction — but their reply carries only the label.
+_CHANNEL_CAPABILITY = {
+    "telegram": LABEL_TEXT,
+    "imessage": LABEL_TEXT,
+    "bluebubbles": LABEL_TEXT,
+    "sms": LABEL_TEXT,
+    # ios: absent until B-1b ships a build that renders fields/options and
+    # submits ids. Naming it here before then would be a capability claim
+    # about software that does not exist.
+}
+
+
+def channel_capability(source: Optional[str]) -> Optional[str]:
+    """How this channel can answer, or None if it cannot."""
+    return _CHANNEL_CAPABILITY.get(str(source or "").strip().lower())
 
 
 def client_renders_interactions(source: Optional[str]) -> bool:
-    """Can this client read the canonical payload?
+    """Can this client read the canonical payload at all?
 
-    AN EXCLUSION, NOT A DOWNGRADE. A client that cannot read the interaction
-    is ineligible for B-1 and stays wholly legacy. The alternative — sending
-    it the canonical question rendered as prose — would keep the sentence
-    parser alive INSIDE the replacement, which is the exact defect B-1 exists
-    to delete, and it would block deleting `QuickReplyEngine.swift` at
-    promotion.
-
-    iOS is deliberately absent until B-1b ships a build that renders
-    fields/options and submits ids. Adding it here before then would be a
-    capability claim about software that does not exist yet.
+    AN EXCLUSION, NOT A DOWNGRADE. A client that cannot is ineligible for B-1
+    and stays wholly legacy. The alternative — sending it the canonical
+    question rendered as prose — would keep the sentence parser alive INSIDE
+    the replacement, which is the exact defect B-1 exists to delete, and it
+    would block deleting `QuickReplyEngine.swift` at promotion.
     """
-    return str(source or "").strip().lower() in _SERVER_RENDERED
+    return channel_capability(source) is not None
 
 
 @dataclass(frozen=True)
@@ -402,8 +440,29 @@ def _introduction(staged) -> str:
 SETTLED_OWNERSHIP_MINUTES = 30
 
 
+class OwnershipUnknown(RuntimeError):
+    """THE LOOKUP ITSELF FAILED. Not "no operation owns this meal" — we do not
+    know whether one does.
+
+    The distinction is the whole point. `None` means the query ran and found
+    nothing, so the turn proceeds legacy exactly as today. A raise means the
+    query did not run, and treating that as `None` would hand a possibly-owned
+    meal to the broad interpreter on a database blip — turning a transient
+    error into a duplicate meal, silently, at exactly the moment nobody is
+    watching. Two states cannot express three.
+
+    The caller's only safe response is to log nothing and say so.
+    """
+
+
 async def owning(db, user) -> Optional[OwnedOperation]:
-    """The canonical operation that owns this user's meal, if any.
+    """The canonical operation that owns this user's meal.
+
+    TRI-STATE, deliberately:
+
+        OwnedOperation   this meal is ours
+        None             the query ran; nothing owns it — proceed legacy
+        raise            the query FAILED; ownership is unknown
 
     A ROW, NOT A FLAG — and the rollout gate is deliberately not consulted
     here. This answers a question about stored state: an operation exists,
@@ -428,9 +487,13 @@ async def owning(db, user) -> Optional[OwnedOperation]:
             .where(PendingOperation.user_id == user.id,
                    PendingOperation.domain == DOMAIN)
             .order_by(PendingOperation.id.desc()).limit(5))).scalars().all()
-    except Exception:
-        logger.warning("b1 pending lookup failed", exc_info=True)
-        return None
+    except Exception as exc:
+        logger.error("event=b1_ownership_unknown user=%s — refusing to "
+                     "proceed as unowned", getattr(user, "id", None),
+                     exc_info=True)
+        raise OwnershipUnknown(
+            f"could not determine B-1 ownership for user "
+            f"{getattr(user, 'id', None)}") from exc
 
     for row in rows:
         status = str(row.status or "")
@@ -620,32 +683,64 @@ async def sweep_abandoned(db, *, limit: int = 200) -> int:
     from core.clock import now as _now
     from db.models import PendingOperation
 
-    rows = (await db.execute(
-        select(PendingOperation)
-        .where(PendingOperation.domain == DOMAIN,
-               PendingOperation.status == AWAITING,
-               PendingOperation.expires_at.isnot(None),
-               PendingOperation.expires_at < _now())
-        .limit(limit))).scalars().all()
-
+    # STARVATION-SAFE, and this was a real defect. `LIMIT` applied before the
+    # slice filter means the batch is drawn from ALL expired food operations
+    # and only then narrowed to B-1's — so a backlog of expired non-B-1
+    # operations fills every page and B-1's are never reached, forever, while
+    # the sweep reports success.
+    #
+    # The slice IS queryable (`"slice": "b1_quantity"` lives in the JSON text),
+    # so it is pushed into the WHERE clause as a coarse pre-filter and
+    # re-checked properly after decoding — the LIKE narrows the scan, the
+    # decode decides. Deterministic ordering by id, and pagination continues
+    # until `limit` B-1 operations have been PROCESSED rather than until
+    # `limit` rows have been read.
     swept = 0
-    for row in rows:
-        try:
-            data = _json.loads(row.canonical_payload or "{}")
-        except Exception:
-            data = {}
-        if data.get("slice") != "b1_quantity":
-            continue
-        outcome = await repo.mark_expired(db, operation_id=row.operation_id,
-                                          expected_revision=int(row.revision or 0))
-        if not outcome.ok:
-            # Somebody answered between the query and the write. Their answer
-            # wins — this is a sweep, not a race to close.
-            continue
-        b1_metrics.abandoned(operation_id=row.operation_id,
-                             user_id=row.user_id,
-                             asked_at=row.created_at)
-        swept += 1
+    seen = 0
+    after_id = 0
+    page = max(limit, 50)
+    while swept < limit and seen < limit * 20:
+        rows = (await db.execute(
+            select(PendingOperation)
+            .where(PendingOperation.domain == DOMAIN,
+                   PendingOperation.status == AWAITING,
+                   PendingOperation.expires_at.isnot(None),
+                   PendingOperation.expires_at < _now(),
+                   PendingOperation.id > after_id,
+                   # MATCHED ON THE VALUE, not on a serialized key/value
+                   # pair. `'%"slice": "b1_quantity"%'` depends on
+                   # json.dumps' separator, and if that ever changes the LIKE
+                   # silently matches nothing — abandonment stops being
+                   # measured and the sweep still reports success. The decode
+                   # below is what decides; this only narrows the scan, so it
+                   # should be the loosest thing that narrows.
+                   PendingOperation.canonical_payload.like('%b1_quantity%'))
+            .order_by(PendingOperation.id)
+            .limit(page))).scalars().all()
+        if not rows:
+            break
+        after_id = rows[-1].id
+        seen += len(rows)
+        for row in rows:
+            if swept >= limit:
+                break
+            try:
+                data = _json.loads(row.canonical_payload or "{}")
+            except Exception:
+                data = {}
+            if data.get("slice") != "b1_quantity":
+                continue          # the LIKE narrowed; the decode decides
+            outcome = await repo.mark_expired(
+                db, operation_id=row.operation_id,
+                expected_revision=int(row.revision or 0))
+            if not outcome.ok:
+                # Somebody answered between the query and the write. Their
+                # answer wins — this is a sweep, not a race to close.
+                continue
+            b1_metrics.abandoned(operation_id=row.operation_id,
+                                 user_id=row.user_id,
+                                 asked_at=row.created_at)
+            swept += 1
     return swept
 
 
@@ -671,6 +766,7 @@ async def note_corrections(db, *, limit: int = 200) -> int:
     # thing joining the two.
     window = timedelta(minutes=b1_metrics.CORRECTION_WINDOW_MINUTES)
     since = _now() - (window * 3)
+    _ZERO = timedelta(0)
     rows = (await db.execute(
         select(PendingOperation)
         .where(PendingOperation.domain == DOMAIN,
@@ -686,6 +782,8 @@ async def note_corrections(db, *, limit: int = 200) -> int:
         entry_id = await _committed_entry_id(db, row.operation_id)
         if entry_id is None:
             continue
+        if await _already_observed(db, row.operation_id, entry_id):
+            continue
         events = (await db.execute(
             select(LedgerEvent)
             .where(LedgerEvent.domain == DOMAIN,
@@ -697,14 +795,67 @@ async def note_corrections(db, *, limit: int = 200) -> int:
         for event in events:
             if event.id == created.id or event.created_at is None:
                 continue
+            # QUALIFYING TYPES ONLY. Not every later event on a row is a
+            # correction of its numbers — a re-log rollup or a restore says
+            # something else — and counting them would inflate the one metric
+            # that is supposed to mean "we got it wrong".
+            if event.event_type not in CORRECTION_EVENT_TYPES:
+                continue
             gap = event.created_at - created.created_at
-            if gap <= window:
+            # BOTH ENDS. A negative gap is clock skew or a backfilled event,
+            # not a correction that happened before the thing it corrects, and
+            # letting it through would count an impossible ordering as
+            # evidence.
+            if gap < _ZERO or gap > window:
+                continue
+            if await _record_observation(
+                    db, operation_id=row.operation_id, entry_id=entry_id,
+                    user_id=row.user_id, event_type=event.event_type,
+                    minutes=gap.total_seconds() / 60.0):
                 b1_metrics.corrected(
                     operation_id=row.operation_id, user_id=row.user_id,
                     entry_id=entry_id, minutes=gap.total_seconds() / 60.0)
                 noted += 1
-                break
+            break
     return noted
+
+
+async def _already_observed(db, operation_id: str, entry_id) -> bool:
+    from sqlalchemy import select
+
+    from db.models import B1CorrectionObservation
+
+    return (await db.execute(
+        select(B1CorrectionObservation.id)
+        .where(B1CorrectionObservation.operation_id == operation_id,
+               B1CorrectionObservation.entry_id == entry_id)
+        .limit(1))).scalar_one_or_none() is not None
+
+
+async def _record_observation(db, *, operation_id: str, entry_id, user_id,
+                              event_type: str, minutes: float) -> bool:
+    """Claim this observation, or discover somebody already did.
+
+    THE INSERT IS THE CLAIM, contained in a savepoint, exactly as
+    `claim_commit` does it: a read-then-write cannot see the row another
+    worker is inserting, and two schedulers on two workers is the normal
+    deployment. Returns False when the observation already exists, which is
+    how the metric stays exactly-once rather than once-per-cron-tick.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from db.models import B1CorrectionObservation
+
+    try:
+        async with db.begin_nested():
+            db.add(B1CorrectionObservation(
+                operation_id=operation_id, entry_id=int(entry_id),
+                user_id=int(user_id), event_type=str(event_type),
+                minutes_after_commit=float(minutes)))
+            await db.flush()
+        return True
+    except IntegrityError:
+        return False
 
 
 async def _committed_entry_id(db, operation_id: str):

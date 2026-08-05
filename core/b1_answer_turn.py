@@ -86,10 +86,49 @@ async def handle(db, *, user, source_turn_id: str, message: str = "",
     does today. Every other return means the canonical path handled the turn
     and the legacy lane must not run.
     """
-    owned = await ops.owning(db, user)
+    try:
+        owned = await ops.owning(db, user)
+    except Exception as exc:
+        # THE THIRD STATE, and caught by OUTCOME rather than by type. We do
+        # not know whether a canonical operation owns this meal, so both
+        # remaining moves are unsafe: proceeding legacy may duplicate a meal
+        # that is already pending, and proceeding canonically has nothing to
+        # proceed with. Log nothing, write nothing, and say so.
+        #
+        # `OwnershipUnknown` is what the lookup raises deliberately; anything
+        # else reaching here means the same thing and is more alarming, not
+        # less. Narrowing this to one class would let an unforeseen error
+        # propagate to the caller's handler, which reads a raise as "not
+        # ours" — the exact collapse this whole item exists to prevent.
+        logger.error("event=b1_ownership_unknown user=%s",
+                     getattr(user, "id", None), exc_info=True)
+        return AnswerTurn(Outcome.REFUSED, internal_failure=True,
+                          reason=f"ownership unknown: {exc!r}")
     if owned is None:
         return None
 
+    # ONCE OWNERSHIP IS ESTABLISHED, THIS FUNCTION IS TOTAL. Every remaining
+    # failure resolves to a canonical outcome, never to a return of None —
+    # because None means "not ours" and the caller reads it as permission to
+    # run the legacy interpreter. An owned meal handed to the interpreter
+    # because settle() threw is the duplicate-meal path arriving through an
+    # error handler.
+    try:
+        return await _handle_owned(
+            db, user=user, owned=owned, source_turn_id=source_turn_id,
+            message=message, field_id=field_id, option_id=option_id,
+            revision=revision)
+    except Exception as exc:
+        logger.error("event=b1_answer_failed operation=%s user=%s",
+                     owned.operation_id, getattr(user, "id", None),
+                     exc_info=True)
+        return AnswerTurn(Outcome.REFUSED, operation_id=owned.operation_id,
+                          internal_failure=True, reason=repr(exc))
+
+
+async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
+                        field_id: str, option_id: str,
+                        revision: Optional[int]) -> AnswerTurn:
     if not owned.readable:
         # OUR failure, not theirs. Terminate rather than re-ask: no answer to
         # this operation could be applied, so a repair question would collect
@@ -233,13 +272,44 @@ def _measure_commit(owned, turn: AnswerTurn, *, user) -> None:
         facts = facts_for(turn)
         b1_metrics.committed(
             operation_id=owned.operation_id, user_id=getattr(user, "id", None),
-            entry_id=facts["entry_id"], calories=facts["calories"],
+            entry_id=facts.entry_id, calories=facts.calories,
             asked_at=owned.asked_at)
     except Exception:
         logger.debug("b1 commit metric failed", exc_info=True)
 
 
-def facts_for(turn: AnswerTurn) -> dict:
+@dataclass(frozen=True)
+class CanonicalResponseFacts:
+    """The committed truth, extracted ONCE and passed to every renderer.
+
+    Renderers receive THIS, never the `AnswerTurn` or the `MealCommitResult`.
+    A renderer holding the raw commit can recompute, and a renderer that can
+    recompute is a second owner of the number — which is how three owners of
+    the day total produced 789 and 788. Passing the same VALUE to copy, card
+    and (later) voice makes their agreement structural: there is no second
+    extraction that could drift from the first.
+    """
+    outcome: str
+    internal_failure: bool
+    operation_id: str
+    field_id: str
+    name: str
+    entry_id: Any
+    calories: Optional[float]
+    protein: Optional[float]
+    day_calories: Optional[float]
+    #: WE chose the portion and the user did not — drives "(my estimate)".
+    estimated: bool
+    #: The FIGURE is ours even if they picked it — drives the row's flag.
+    system_supplied_figure: bool
+    assumptions: tuple = ()
+
+    @property
+    def committed(self) -> bool:
+        return self.entry_id is not None or self.calories is not None
+
+
+def facts_for(turn: AnswerTurn) -> CanonicalResponseFacts:
     """THE CANONICAL RESPONSE FACTS. Read off the committed result, nothing
     derived.
 
@@ -254,16 +324,16 @@ def facts_for(turn: AnswerTurn) -> dict:
     first = items[0] if items and isinstance(items[0], dict) else {}
     totals = getattr(result, "meal_totals", None) or {}
     quantity = getattr(turn.patch, "quantity", None)
-    return {
-        "outcome": turn.outcome.value,
-        "internal_failure": turn.internal_failure,
-        "operation_id": turn.operation_id,
-        "field_id": turn.field_id,
-        "name": str(first.get("name") or "").strip(),
-        "entry_id": first.get("entry_id"),
-        "calories": totals.get("calories"),
-        "protein": totals.get("protein"),
-        "day_calories": (getattr(result, "day_totals", None) or {}).get(
+    return CanonicalResponseFacts(
+        outcome=turn.outcome.value,
+        internal_failure=turn.internal_failure,
+        operation_id=turn.operation_id,
+        field_id=turn.field_id,
+        name=str(first.get("name") or "").strip(),
+        entry_id=first.get("entry_id"),
+        calories=totals.get("calories"),
+        protein=totals.get("protein"),
+        day_calories=(getattr(result, "day_totals", None) or {}).get(
             "calories"),
         # THREE PROVENANCES, TWO QUESTIONS, AND THEY ARE NOT THE SAME QUESTION.
         #
@@ -281,15 +351,14 @@ def facts_for(turn: AnswerTurn) -> dict:
         # wrong in the other direction — it tells them we guessed when they
         # decided. Collapsing the two is how one of these disclosures always
         # ends up lying.
-        "estimated": bool(getattr(
+        estimated=bool(getattr(
             getattr(quantity, "provenance", None), "is_assumption", False)),
-        "system_supplied_figure": bool(
+        system_supplied_figure=bool(
             getattr(quantity, "is_estimated", False)),
-        "assumptions": list(getattr(result, "assumptions", ()) or ()),
-    }
+        assumptions=tuple(getattr(result, "assumptions", ()) or ()))
 
 
-def card_for(turn: AnswerTurn) -> Optional[dict]:
+def card_for(facts: CanonicalResponseFacts) -> Optional[dict]:
     """The macro card, built from the SAME facts as the sentence beside it.
 
     THIS IS WHY IT IS NOT BUILT FROM THE TOOL CALL. The legacy card reads the
@@ -305,27 +374,26 @@ def card_for(turn: AnswerTurn) -> Optional[dict]:
     nothing, which is exactly the leak `_logged_entry_card`'s `entry_id` gate
     exists to stop.
     """
-    if not turn.applied or turn.result is None:
+    if facts.outcome != "applied" or facts.internal_failure:
         return None
-    facts = facts_for(turn)
-    if facts["entry_id"] is None:
+    if facts.entry_id is None:
         return None
     payload = {
-        "name": facts["name"],
-        "entry_id": facts["entry_id"],
-        "calories": int(round(facts["calories"] or 0)),
-        "protein_g": int(round(facts["protein"] or 0)),
+        "name": facts.name,
+        "entry_id": facts.entry_id,
+        "calories": int(round(facts.calories or 0)),
+        "protein_g": int(round(facts.protein or 0)),
         "source": "manual",
         # THE ASSUMPTION, ON THE ROW. "Logged fast" and "logged fast and
         # quietly guessed" are different products, and this is the difference.
-        "estimated": facts["estimated"],
+        "estimated": facts.estimated,
     }
-    if facts["assumptions"]:
-        payload["assumptions"] = list(facts["assumptions"])
+    if facts.assumptions:
+        payload["assumptions"] = list(facts.assumptions)
     return {"type": "macro_card", "payload": payload}
 
 
-def copy_for(turn: AnswerTurn) -> str:
+def copy_for(facts: CanonicalResponseFacts) -> str:
     """The DETERMINISTIC fallback sentence, rendered from `facts_for`.
 
     Not a model call, and not because voice is unwelcome — because B-1's job
@@ -342,29 +410,31 @@ def copy_for(turn: AnswerTurn) -> str:
     Every number below comes off `MealCommitResult`. Nothing here adds,
     scales, or rounds anything.
     """
-    if turn.failed:
+    if facts.internal_failure:
         # HONEST, and not a question. Asking again would invite an answer we
-        # still could not apply.
+        # still could not apply. Covers both our failures — a stored
+        # interaction we cannot read, and an ownership lookup that did not
+        # run — because from the user's side they are the same fact: nothing
+        # was logged and it was not their doing.
         return ("Something went wrong on my end holding that question — "
                 "nothing was logged. Send the food again and I'll redo it.")
-    if turn.cancelled:
+    if facts.outcome == "cancelled":
         return "Dropped it, nothing logged."
-    if turn.refused:
+    if facts.outcome == "refused":
         return ("That answer was for an older question. Tell me the amount "
                 "again and I'll log it.")
-    if turn.repair:
+    if facts.outcome == "repair":
         return "How much was it? A rough amount is fine."
 
-    facts = facts_for(turn)
-    if facts["entry_id"] is None and facts["calories"] is None:
+    if not facts.committed:
         return "Logged."
 
-    said = f"Logged {facts['name']}" if facts["name"] else "Logged"
-    if facts["calories"] is not None:
-        said += f" — {facts['calories']:.0f} cal"
-        if facts["protein"] is not None:
-            said += f", {facts['protein']:.0f}g protein"
-    if facts["estimated"]:
+    said = f"Logged {facts.name}" if facts.name else "Logged"
+    if facts.calories is not None:
+        said += f" — {facts.calories:.0f} cal"
+        if facts.protein is not None:
+            said += f", {facts.protein:.0f}g protein"
+    if facts.estimated:
         # THE ASSUMPTION IS DISCLOSED, because the user did not supply it.
         said += " (my estimate)"
     return said + "."

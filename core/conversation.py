@@ -1132,19 +1132,29 @@ async def _run_turn(
                     source_turn_id=turn_id or _b1_tid() or "",
                     message=_user_text or "")
             except Exception:
-                # An owned operation whose ANSWER machinery threw is not a
-                # licence to hand the message to the interpreter — that is
-                # the duplicate-meal path. Log loudly and say nothing rather
-                # than log the wrong thing.
-                logger.error("b1 answer turn failed", exc_info=True)
-                _b1_out = None
+                # `handle()` is TOTAL once ownership is established, so
+                # reaching here means the failure happened before we could
+                # know whether this meal is owned — an import error, a
+                # session already poisoned. Falling through to the
+                # interpreter could duplicate a pending meal; refusing costs
+                # one turn and writes nothing. Refuse.
+                logger.error("b1 answer turn failed before ownership was "
+                             "known — refusing rather than proceeding legacy",
+                             exc_info=True)
+                from core.b1_answer_turn import AnswerTurn as _B1Turn
+                from core.clarification_answer import Outcome as _B1Outcome
+                _b1_out = _B1Turn(_B1Outcome.REFUSED, internal_failure=True,
+                                  reason="b1 answer path unavailable")
             if _b1_out is not None:
                 await db.commit()
                 logger.info(
                     "event=b1_answer outcome=%s operation=%s user=%s",
                     _b1_out.outcome.value, _b1_out.operation_id, user.id)
-                _b1_resp = Response.from_text(_b1_ans.copy_for(_b1_out))
-                _b1_card = _b1_ans.card_for(_b1_out)
+                # ONE extraction, passed to both renderers. Neither may
+                # re-read the commit result, so they cannot drift apart.
+                _b1_facts = _b1_ans.facts_for(_b1_out)
+                _b1_resp = Response.from_text(_b1_ans.copy_for(_b1_facts))
+                _b1_card = _b1_ans.card_for(_b1_facts)
                 if _b1_card is not None:
                     # ONE facts object, two renderings. The card cannot
                     # disagree with the sentence above it because neither

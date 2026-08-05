@@ -477,6 +477,89 @@ async def test_the_wire_offers_a_free_text_route(sessions, user, opened):
     assert field["response_type"] == "single_select"
 
 
+# ── ownership is tri-state ───────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_a_failed_lookup_is_not_the_same_as_not_owned(sessions, user,
+                                                            opened,
+                                                            monkeypatch):
+    """THE THIRD STATE. A database blip must not read as "nothing owns this
+    meal" — that hands a possibly-pending meal to the broad interpreter and
+    turns a transient error into a duplicate, silently, when nobody is
+    watching. Two states cannot express three."""
+    async def _blow_up(*a, **kw):
+        raise RuntimeError("connection reset")
+
+    monkeypatch.setattr("core.b1_quantity_operation.owning", _blow_up)
+    out = await _answer(sessions, user, message="6 oz")
+
+    assert out is not None, "None means 'not ours' and licenses the legacy lane"
+    assert out.failed
+    assert (await _counts(sessions))["food"] == 0, "nothing may be logged"
+    assert (await _row(sessions)).status == b1.AWAITING, \
+        "the operation is untouched — it is still answerable"
+
+
+@pytest.mark.asyncio
+async def test_the_lookup_raises_rather_than_returning_none_on_failure(
+        sessions, user, monkeypatch):
+    from sqlalchemy.ext.asyncio import AsyncSession as _AS
+
+    async def _blow_up(*a, **kw):
+        raise RuntimeError("connection reset")
+
+    monkeypatch.setattr(_AS, "execute", _blow_up)
+    async with sessions() as s:
+        u = User(id=user.id)
+        with pytest.raises(b1.OwnershipUnknown):
+            await b1.owning(s, u)
+
+
+@pytest.mark.asyncio
+async def test_a_failure_after_ownership_still_completes_canonically(
+        sessions, user, opened, monkeypatch):
+    """`handle` is TOTAL once ownership is established. An owned meal handed
+    to the interpreter because settle() threw is the duplicate-meal path
+    arriving through an error handler."""
+    async def _blow_up(*a, **kw):
+        raise RuntimeError("writer exploded")
+
+    monkeypatch.setattr("core.b1_quantity_operation.settle", _blow_up)
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=0)
+    assert out is not None and out.failed
+    assert (await _counts(sessions))["food"] == 0
+
+
+# ── one facts value ──────────────────────────────────────────────────────────
+
+def test_the_renderers_take_facts_not_the_result():
+    """A renderer holding the raw commit can recompute, and a renderer that
+    can recompute is a second owner of the number. Checked by signature, so
+    the seam cannot be reopened by a later edit."""
+    import inspect
+
+    for fn in (answer_turn.copy_for, answer_turn.card_for):
+        params = list(inspect.signature(fn).parameters)
+        assert params == ["facts"], f"{fn.__name__}{params}"
+    assert list(inspect.signature(answer_turn.facts_for).parameters) == ["turn"]
+
+
+@pytest.mark.asyncio
+async def test_one_extraction_feeds_every_renderer(sessions, user, opened):
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=0)
+    facts = answer_turn.facts_for(out)
+    card = answer_turn.card_for(facts)["payload"]
+    said = answer_turn.copy_for(facts)
+
+    assert card["calories"] == int(round(facts.calories))
+    assert f"{card['calories']} cal" in said
+    # Frozen, so a renderer cannot mutate the facts the next one will read.
+    with pytest.raises(Exception):
+        facts.calories = 1
+
+
 # ── card and totals ──────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -487,14 +570,14 @@ async def test_the_card_and_the_sentence_cannot_disagree(sessions, user,
     vs 788 from three owners of the day total."""
     out = await _answer(sessions, user, field_id=_field_id(opened),
                         option_id="opt_ont_mid", revision=0)
-    card = answer_turn.card_for(out)["payload"]
+    card = answer_turn.card_for(answer_turn.facts_for(out))["payload"]
     facts = answer_turn.facts_for(out)
-    said = answer_turn.copy_for(out)
+    said = answer_turn.copy_for(answer_turn.facts_for(out))
 
-    assert card["calories"] == int(round(facts["calories"]))
-    assert card["protein_g"] == int(round(facts["protein"]))
-    assert card["entry_id"] == facts["entry_id"]
-    assert card["name"] == facts["name"]
+    assert card["calories"] == int(round(facts.calories))
+    assert card["protein_g"] == int(round(facts.protein))
+    assert card["entry_id"] == facts.entry_id
+    assert card["name"] == facts.name
     assert f"{card['calories']} cal" in said
     assert f"{card['protein_g']}g protein" in said
 
@@ -504,7 +587,7 @@ async def test_the_card_mirrors_the_row_that_was_committed(sessions, user,
                                                            opened):
     out = await _answer(sessions, user, field_id=_field_id(opened),
                         option_id="opt_ont_mid", revision=0)
-    card = answer_turn.card_for(out)["payload"]
+    card = answer_turn.card_for(answer_turn.facts_for(out))["payload"]
     async with sessions() as s:
         entry = (await s.execute(select(FoodEntry))).scalar_one()
     assert card["entry_id"] == entry.id, "the card must be tappable"
@@ -517,11 +600,11 @@ async def test_an_assumed_portion_is_marked_on_the_card(sessions, user,
     """"Logged fast" and "logged fast and quietly guessed" are different
     products, and this is the difference."""
     out = await _answer(sessions, user, message="I don't know")
-    assert answer_turn.card_for(out)["payload"]["estimated"] is True
+    assert answer_turn.card_for(answer_turn.facts_for(out))["payload"]["estimated"] is True
 
     chosen = await _answer(sessions, user, field_id=_field_id(opened),
                            option_id="opt_ont_mid", revision=0)
-    card = answer_turn.card_for(chosen)
+    card = answer_turn.card_for(answer_turn.facts_for(chosen))
     if card is not None:               # the replay path returns the same row
         assert card["payload"]["estimated"] is False
 
@@ -534,7 +617,7 @@ async def test_no_card_leaks_onto_a_reply_that_logged_nothing(sessions, user,
     for kw in ({"message": "it was pretty good"},          # repair
                {"message": "never mind"}):                 # cancel
         out = await _answer(sessions, user, **kw)
-        assert answer_turn.card_for(out) is None, out.outcome
+        assert answer_turn.card_for(answer_turn.facts_for(out)) is None, out.outcome
 
 
 # ── the two signals no turn can emit ─────────────────────────────────────────
@@ -568,6 +651,44 @@ async def test_abandonment_is_swept_and_counted(sessions, user, opened,
     assert row.status == "expired", \
         "an unanswered row must not linger as awaiting_answer, or a message " \
         "weeks later reads as an answer to a forgotten meal"
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_cannot_be_starved_by_other_expired_operations(
+        sessions, user, opened):
+    """A REAL DEFECT, not a hypothetical. LIMIT applied before the slice
+    filter draws the batch from ALL expired food operations and only then
+    narrows to B-1's — so a backlog of expired non-B-1 operations fills every
+    page and B-1's are never reached, forever, while the sweep reports
+    success."""
+    import json as _json
+    from datetime import timedelta
+
+    from core.clock import now as _now
+
+    async with sessions() as s:
+        # A wall of expired NON-B-1 food operations, all older than ours.
+        for i in range(30):
+            s.add(PendingOperation(
+                operation_id=f"other:{i}", user_id=user.id, domain="food",
+                status=b1.AWAITING, storage_status="active", revision=0,
+                canonical_payload=_json.dumps({"slice": "something_else"}),
+                expires_at=_now() - timedelta(hours=2)))
+        await s.commit()
+        row = (await s.execute(select(PendingOperation).where(
+            PendingOperation.operation_id == opened.operation_id))).scalar_one()
+        row.expires_at = _now() - timedelta(minutes=1)
+        await s.commit()
+
+    async with sessions() as s:
+        swept = await b1.sweep_abandoned(s, limit=5)
+        await s.commit()
+
+    assert swept == 1, "the B-1 operation must be reached past the backlog"
+    async with sessions() as sess:
+        ours = (await sess.execute(select(PendingOperation).where(
+            PendingOperation.operation_id == opened.operation_id))).scalar_one()
+        assert ours.status == "expired"
 
 
 @pytest.mark.asyncio
@@ -622,6 +743,63 @@ async def test_a_correction_soon_after_the_commit_is_counted(
 
 
 @pytest.mark.asyncio
+async def test_a_correction_is_observed_exactly_once(sessions, user, opened):
+    """The sweep runs on a timer. Without a persisted record it re-emits the
+    same observation every tick, and the rate becomes a function of how often
+    cron runs rather than of how often we were wrong."""
+    from db.models import B1CorrectionObservation
+
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=0)
+    entry_id = out.result.committed_items[0]["entry_id"]
+    async with sessions() as s:
+        created = (await s.execute(select(LedgerEvent))).scalar_one()
+        s.add(LedgerEvent(user_id=user.id, domain="food", entry_id=entry_id,
+                          event_type="updated", source="dashboard:food_log",
+                          created_at=created.created_at))
+        await s.commit()
+
+    counts = []
+    for _ in range(3):                      # three cron ticks
+        async with sessions() as s:
+            counts.append(await b1.note_corrections(s))
+            await s.commit()
+    assert counts == [1, 0, 0], counts
+
+    async with sessions() as s:
+        rows = (await s.execute(
+            select(B1CorrectionObservation))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].event_type == "updated"
+    assert rows[0].entry_id == entry_id
+
+
+@pytest.mark.asyncio
+async def test_only_qualifying_event_types_inside_the_window_count(
+        sessions, user, opened):
+    """Not every later event on a row corrects its numbers, and a negative gap
+    is clock skew rather than a correction that preceded what it corrects."""
+    from datetime import timedelta
+
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=0)
+    entry_id = out.result.committed_items[0]["entry_id"]
+    async with sessions() as s:
+        created = (await s.execute(select(LedgerEvent))).scalar_one()
+        # A non-qualifying type, and a qualifying one OUTSIDE the window.
+        s.add(LedgerEvent(user_id=user.id, domain="food", entry_id=entry_id,
+                          event_type="restored", source="x",
+                          created_at=created.created_at))
+        s.add(LedgerEvent(user_id=user.id, domain="food", entry_id=entry_id,
+                          event_type="updated", source="x",
+                          created_at=created.created_at + timedelta(hours=2)))
+        await s.commit()
+
+    async with sessions() as s:
+        assert await b1.note_corrections(s) == 0
+
+
+@pytest.mark.asyncio
 async def test_an_untouched_commit_is_not_counted_as_corrected(sessions, user,
                                                                opened):
     await _answer(sessions, user, field_id=_field_id(opened),
@@ -644,15 +822,15 @@ async def test_the_response_facts_come_off_the_committed_result(sessions, user,
                         option_id="opt_ont_mid", revision=0)
     facts = answer_turn.facts_for(out)
 
-    assert facts["entry_id"] == out.result.committed_items[0]["entry_id"]
-    assert facts["calories"] == out.result.meal_totals["calories"]
-    assert facts["protein"] == out.result.meal_totals["protein"]
-    assert facts["operation_id"] == out.operation_id
+    assert facts.entry_id == out.result.committed_items[0]["entry_id"]
+    assert facts.calories == out.result.meal_totals["calories"]
+    assert facts.protein == out.result.meal_totals["protein"]
+    assert facts.operation_id == out.operation_id
     # TWO QUESTIONS, deliberately not collapsed: they chose the portion, so
     # nothing is being assumed AT them — but the FIGURE is still one we
     # produced, which is what the row's estimated flag records.
-    assert facts["estimated"] is False, "the user chose this portion"
-    assert facts["system_supplied_figure"] is True, \
+    assert facts.estimated is False, "the user chose this portion"
+    assert facts.system_supplied_figure is True, \
         "a tap is not the user's own figure — that distinction is the " \
         "2026-08-04 disclosure fix and must survive to the row"
 
@@ -664,15 +842,15 @@ async def test_a_tap_is_not_told_that_we_guessed(sessions, user, opened):
     the same conflation underneath."""
     out = await _answer(sessions, user, field_id=_field_id(opened),
                         option_id="opt_ont_mid", revision=0)
-    assert "(my estimate)" not in answer_turn.copy_for(out)
+    assert "(my estimate)" not in answer_turn.copy_for(answer_turn.facts_for(out))
 
 
 @pytest.mark.asyncio
 async def test_a_typed_figure_is_the_users_own(sessions, user, opened):
     out = await _answer(sessions, user, message="about 6 ounces")
     facts = answer_turn.facts_for(out)
-    assert facts["estimated"] is False
-    assert facts["system_supplied_figure"] is False, \
+    assert facts.estimated is False
+    assert facts.system_supplied_figure is False, \
         "they produced this number themselves"
 
 
@@ -680,8 +858,8 @@ async def test_a_typed_figure_is_the_users_own(sessions, user, opened):
 async def test_an_assumed_portion_is_disclosed_in_the_facts_and_the_copy(
         sessions, user, opened):
     out = await _answer(sessions, user, message="I don't know")
-    assert answer_turn.facts_for(out)["estimated"] is True
-    assert "(my estimate)" in answer_turn.copy_for(out), \
+    assert answer_turn.facts_for(out).estimated is True
+    assert "(my estimate)" in answer_turn.copy_for(answer_turn.facts_for(out)), \
         "an assumption the user did not supply must be visible to them"
 
 
@@ -691,7 +869,7 @@ async def test_the_copy_states_only_what_was_committed(sessions, user, opened):
     "logged, 970/98g" while nothing had been written."""
     out = await _answer(sessions, user, field_id=_field_id(opened),
                         option_id="opt_ont_mid", revision=0)
-    said = answer_turn.copy_for(out)
+    said = answer_turn.copy_for(answer_turn.facts_for(out))
     assert f"{out.result.meal_totals['calories']:.0f} cal" in said
     assert "chicken breast" in said
 
@@ -702,14 +880,14 @@ async def test_every_non_commit_outcome_has_deterministic_copy(sessions, user,
     """A voice pass that fails degrades to these — never to silence, and never
     to an invented sentence."""
     repaired = await _answer(sessions, user, message="it was pretty good")
-    assert answer_turn.copy_for(repaired) and "?" in answer_turn.copy_for(repaired)
+    assert answer_turn.copy_for(answer_turn.facts_for(repaired)) and "?" in answer_turn.copy_for(answer_turn.facts_for(repaired))
 
     refused = await _answer(sessions, user, field_id=_field_id(opened),
                             option_id="opt_nope", revision=0)
-    assert "older question" in answer_turn.copy_for(refused)
+    assert "older question" in answer_turn.copy_for(answer_turn.facts_for(refused))
 
     cancelled = await _answer(sessions, user, message="never mind")
-    assert "nothing logged" in answer_turn.copy_for(cancelled).lower()
+    assert "nothing logged" in answer_turn.copy_for(answer_turn.facts_for(cancelled)).lower()
 
 
 @pytest.mark.asyncio

@@ -293,6 +293,35 @@ class LedgerEvent(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class B1CorrectionObservation(Base):
+    """One B-1 committed row observed being corrected soon after it landed.
+
+    PERSISTED SO IT IS COUNTED ONCE. The observing sweep runs on a timer, so
+    without a record it re-emits the same observation every tick and the
+    "corrected within 10 minutes" rate becomes a function of how often cron
+    runs rather than of how often we were wrong.
+
+    Deduped by the DATABASE, not by the sweep remembering: the sweep is the
+    thing most likely to be restarted mid-run.
+    """
+    __tablename__ = "b1_correction_observations"
+    __table_args__ = (
+        UniqueConstraint("operation_id", "entry_id",
+                         name="uq_b1_correction_operation_entry"),
+        Index("ix_b1_correction_observed", "observed_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    operation_id = Column(String, nullable=False)
+    entry_id = Column(Integer, nullable=False)
+    user_id = Column(Integer, nullable=False)
+    #: An edit and a deletion are both evidence the number was wrong, and they
+    #: are not the same evidence. Kept apart so the rate stays actionable.
+    event_type = Column(String, nullable=False)
+    minutes_after_commit = Column(Float, nullable=False)
+    observed_at = Column(DateTime, server_default=func.now())
+
+
 class IdempotencyRecord(Base):
     """One logical write request, claimed exactly once (invariant I18).
 

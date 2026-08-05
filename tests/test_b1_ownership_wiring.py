@@ -151,6 +151,29 @@ def test_only_server_rendered_channels_are_capable_today():
     assert not b1.client_renders_interactions(None)
 
 
+def test_label_text_is_a_restricted_capability_not_an_equivalent_one():
+    """The difference is what the answer is BOUND to.
+
+    ID_ADDRESSED binds to the exact question, so a stale or foreign answer is
+    detectable. LABEL_TEXT infers the binding by matching words against the
+    open operation's options — two identical labels on two live operations are
+    indistinguishable, a hand-typed label is indistinguishable from a press,
+    and staleness cannot be detected at all, because the text of last turn's
+    chip looks exactly like this turn's.
+
+    B-1 accepts LABEL_TEXT to prove the wire without shipping Swift. Its
+    production evidence does not substitute for the chip path's, and B-1b
+    exists because of that.
+    """
+    assert b1.channel_capability("telegram") == b1.LABEL_TEXT
+    assert b1.channel_capability("imessage") == b1.LABEL_TEXT
+    assert b1.channel_capability("ios") is None
+    assert b1.ID_ADDRESSED != b1.LABEL_TEXT
+    assert b1.ID_ADDRESSED not in set(b1._CHANNEL_CAPABILITY.values()), \
+        "no channel may claim ID-addressed answers until one actually sends " \
+        "operation_id + field_id + option_id"
+
+
 @pytest.mark.asyncio
 async def test_every_decline_names_its_reason(sessions, user, caplog):
     """A decline has to be countable — the ineligibility mix is what sizes
