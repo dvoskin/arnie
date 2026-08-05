@@ -38,7 +38,16 @@ MAX_LINES = 2000
 
 #: Only lines carrying a structured `event=` key. Prose log lines are noise
 #: here and would evict the signal.
-_EVENT_RE = re.compile(r"\bevent=([a-z_]+)")
+#: DIGITS ARE PART OF AN EVENT NAME. `[a-z_]+` stopped at the first digit, so
+#: `event=b1_shown` was captured as the event `"b"` — not in WATCHED, so
+#: silently discarded. Every b1_* event was emitted correctly, dropped here,
+#: and its absence from `/admin/food-traces` was then read as evidence that
+#: B-1 never ran. It cost a day of diagnosis and two wrong conclusions.
+#:
+#: The endpoint could not have returned those events under ANY allowlist,
+#: which is the part worth remembering: a filter that silently renames what it
+#: cannot parse reports "nothing happened" for "I could not read it".
+_EVENT_RE = re.compile(r"\bevent=([a-z][a-z0-9_]*)")
 
 #: The events this buffer exists to make readable. An allowlist rather than
 #: "everything with event=", so a chatty new logger cannot silently push the
@@ -49,7 +58,28 @@ WATCHED = frozenset({
     "structured_food", "structured_food_fallback", "turn_trace",
     "food_composer", "identity_shadow_disagree",
     "canonical_shadow", "canonical_meal_written",
+    # B-1. AN ALLOWLIST IS A TRAP FOR NEW EVENTS, and this one caught me:
+    # six b1_* events were emitted correctly for a day and dropped here at
+    # the `not in WATCHED` line, and I read the resulting `matched: 0` as
+    # evidence about B-1's BEHAVIOUR across several rounds of diagnosis —
+    # including in a commit message asserting it "produced zero events".
+    #
+    # An endpoint that cannot return an event reports its absence exactly
+    # like an event that never happened. That is the same cannot-say defect
+    # /health had, for the third time in this slice, which is the argument
+    # for a prefix rule rather than a list somebody must remember to edit.
+    "b1_shown", "b1_declined", "b1_no_material", "b1_owns_turn",
+    "b1_answered", "b1_committed", "b1_abandoned", "b1_corrected",
+    "b1_answer_failed", "b1_ownership_unknown", "b1_operation_corrupt",
+    "b1_failed", "b1_cancelled", "b1_replayed", "b1_interaction_shown",
+    "b1_sweep", "b1_not_in_cohort", "b1_answer",
 })
+
+#: Any event whose name starts with one of these is watched without needing
+#: to be listed. The list above stays for the established names; this is what
+#: stops the next new event family from being invisible until somebody
+#: notices — which took a day for `b1_*`.
+WATCHED_PREFIXES = ("b1_", "canonical_")
 
 _lock = threading.Lock()
 _lines: collections.deque = collections.deque(maxlen=MAX_LINES)
@@ -69,7 +99,10 @@ class _RingHandler(logging.Handler):
         try:
             msg = record.getMessage()
             match = _EVENT_RE.search(msg)
-            if match is None or match.group(1) not in WATCHED:
+            if match is None:
+                return
+            event = match.group(1)
+            if event not in WATCHED and not event.startswith(WATCHED_PREFIXES):
                 return
             entry = {"ts": record.created, "event": match.group(1),
                      "level": record.levelname, "logger": record.name,
