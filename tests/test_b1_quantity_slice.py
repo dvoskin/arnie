@@ -41,12 +41,18 @@ def _ambiguity(field_name="estimated_mass_g", kind=AmbiguityType.CONSUMED_QUANTI
 
 
 def _item(*, name="chicken breast", stated=False, ambiguities=None,
-          vague="some"):
+          vague="some", fraction_of_container=False):
+    if stated:
+        intent = QuantityIntent(stated_amount=5.0, stated_unit="oz")
+    elif fraction_of_container:
+        intent = QuantityIntent(descriptor=vague, consumed_fraction=0.5,
+                                container_count=1.0)
+    else:
+        intent = QuantityIntent(descriptor=vague)
     return StagedFoodItem(
         staged_item_id="si_1", original_text=f"{vague} {name}",
         identity=FoodIdentity(canonical_name=name),
-        quantity=(QuantityIntent(stated_amount=5.0, stated_unit="oz")
-                  if stated else QuantityIntent(descriptor=vague)),
+        quantity=intent,
         vague_measure=vague,
         ambiguities=tuple(ambiguities if ambiguities is not None
                           else (_ambiguity(),)))
@@ -114,8 +120,12 @@ def test_the_canonical_shape_is_eligible():
      "I had a Core Power", qc.Ineligible.IDENTITY_AMBIGUOUS),
     ({"ambiguities": (_ambiguity("preparation", AmbiguityType.PREPARATION),)},
      "I had some chicken", qc.Ineligible.PREPARATION_DEPENDENCY),
-    ({"ambiguities": (_ambiguity("consumed_fraction", AmbiguityType.CONSUMED_QUANTITY),)},
-     "I had some of it", qc.Ineligible.NOT_MASS),
+    # A CONTAINER FRACTION, expressed where the distinction actually lives:
+    # the quantity INTENT. Both cases carry field_name="consumed_fraction",
+    # so the ambiguity alone cannot tell "half a bottle" (B-2.5) from "some
+    # chicken" (B-1).
+    ({"fraction_of_container": True}, "I had half of it",
+     qc.Ineligible.NOT_MASS),
 ])
 def test_every_out_of_scope_shape_declines_with_its_reason(kw, message, expected):
     """A typed reason, not a bool: 'how often, and for what' is the

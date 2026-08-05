@@ -337,8 +337,13 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
     from skills.nutrition import quantity_rollout as qr
 
     decision = _MaterialDecision(material)
-    verdict = qc.is_eligible(decision, message=material.get("message") or "",
-                             client_capable=client_capable)
+    verdict = qc.is_eligible(
+        decision, message=material.get("message") or "",
+        client_capable=client_capable,
+        # Absent means "the caller did not say", and the only safe reading of
+        # that is the pessimistic one. The pipeline branch fetches the shelf
+        # and passes True; the interpreter branch does not and passes False.
+        identity_evidence=bool(material.get("identity_evidence", False)))
     if not verdict.ok:
         from core import b1_metrics
         b1_metrics.declined(user_id=getattr(user, "id", None),

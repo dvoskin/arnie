@@ -3665,6 +3665,55 @@ _KIND_PHRASING = {
 }
 
 
+def _identity_evidence(data, spreads) -> bool:
+    """Did THIS turn fetch what a variant question needs? One helper, so the
+    two ask origins cannot answer it differently."""
+    try:
+        from core.food_pipeline import identity_evidence_fetched
+        return identity_evidence_fetched(data, spreads)
+    except Exception:
+        return False
+
+
+def _b1_material(data, *, message: str, mode: str) -> Optional[dict]:
+    """The semantic evidence B-1's predicate reads, for the INTERPRETER ask.
+
+    Runs the pipeline's own `derive_semantics`, so the two ask origins cannot
+    grow two definitions of "what is unresolved here" — that drift is why
+    there are four clarification producers to collapse.
+
+    `identity_evidence_fetched` is the honest part. This branch does not pay
+    for the shelf lookups (`_variant_spreads`) that reveal a product-variant
+    doubt, so a branded item comes back looking unambiguous — which is
+    indistinguishable from being so. The flag travels rather than the absence
+    being silently read as clarity; B-1 declines on it.
+
+    Returns None on any failure. B-1 declining costs nothing — the turn is
+    exactly the turn it is today — so this may never raise into the ask.
+    """
+    try:
+        from core.food_pipeline import (derive_semantics,
+                                        identity_evidence_fetched,
+                                        pipeline_enabled, stage_items)
+        if not pipeline_enabled():
+            return None
+        from core.turn_identity import current_turn_id as _tid
+        items, _group = stage_items(data, turn_id=(_tid() or ""),
+                                    message=message, mode=mode)
+        if not items:
+            return None
+        items = derive_semantics(items, data, message=message, mode=mode)
+        return {"staged_items": tuple(items),
+                "asked_item_id": getattr(items[0], "staged_item_id", ""),
+                "items": data.get("items") or [],
+                "message": message,
+                "identity_evidence": identity_evidence_fetched(data, None)}
+    except Exception:
+        logger.debug("b1 material not derived on the interpreter ask",
+                     exc_info=True)
+        return None
+
+
 def _portion_stakes(item_label: str, user_message: str) -> float:
     """Calories riding on an unstated portion, from the calibrated ontology.
 
@@ -5367,7 +5416,20 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             # used to sit here is redundant — it is not dropped, it moved.
             return {"action": "ask", "text": text, "tool_calls": _ready_now,
                     DEFERRED_KEY: _deferred_now,
-                    "questions": _questions, "options": _chip_options}
+                    "questions": _questions, "options": _chip_options,
+                    # THE OTHER ASK ORIGIN. This branch fires when the MODEL
+                    # proposed the ask; the pipeline branch fires when the
+                    # model said "log" and the system overrode it. Only the
+                    # second ran staging, because the pipeline is gated on a
+                    # log op — so a turn where the model itself noticed the
+                    # uncertainty produced no staged items and the canonical
+                    # predicate was never consulted, not even to decline.
+                    # Measured 2026-08-05 on B-1's own canonical example.
+                    #
+                    # `derive_semantics` is the SAME pass `plan_turn` runs, so
+                    # both origins hand the predicate one kind of evidence.
+                    "b1_material": _b1_material(data, message=message,
+                                                mode=mode)}
         # A QUESTION WE CANNOT PHRASE IS NOT A REASON TO LEAVE THE LANE.
         # `clarify_plan_from_points` returns None when `points` is empty, and
         # the empty text that follows used to return None from this function —
@@ -5672,6 +5734,12 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                         "asked_item_id": _q.staged_item_id,
                         "items": data.get("items") or [],
                         "message": message,
+                        # THIS branch paid for the shelf lookups above
+                        # (`_variant_spreads`), so a branded item's variant
+                        # doubt has genuinely been looked for. The interpreter
+                        # branch does not, and says so.
+                        "identity_evidence": _identity_evidence(data,
+                                                                _spreads),
                     },
                     # The settled foods, held as the rows they would have been.
                     # `staged_items` above carries the ASKED item as a

@@ -74,6 +74,11 @@ class Ineligible(str, Enum):
     CORRECTION_TURN = "correction_turn"
     CLIENT_INCAPABLE = "client_incapable"
     NO_CANDIDATES = "no_candidates"
+    #: A branded item on a turn that never fetched the product shelf. Without
+    #: that lookup `derive_variant_ambiguity` cannot find a variant question,
+    #: so the item comes back looking unambiguous — indistinguishable from
+    #: genuinely being so. "We did not look" must never read as "we know".
+    IDENTITY_UNVERIFIED = "identity_unverified"
 
 
 @dataclass(frozen=True)
@@ -88,16 +93,36 @@ class Eligibility:
 
 # ── eligibility ──────────────────────────────────────────────────────────────
 
-#: Ambiguity fields whose presence means this is NOT a pure quantity turn.
-#: Named positively rather than as "anything but quantity" so that a NEW
-#: ambiguity type added later defaults to ineligible — B-1 declining a turn it
-#: could have handled costs nothing; B-1 claiming one it cannot handle strands
-#: a meal.
-_QUANTITY_FIELDS = frozenset({"estimated_mass_g", "consumed_fraction"})
+#: THE ONE AMBIGUITY B-1 ANSWERS, keyed on the semantic TYPE rather than on a
+#: field-name string.
+#:
+#: The first version keyed on `field_name == "estimated_mass_g"` and rejected
+#: every real turn, because that name is not an ambiguity field at all — it is
+#: a `FoodAssumption` field in `clarify_policy`, answering a different question
+#: ("what did we assume, and must we disclose it"). The portion question the
+#: pipeline actually emits — from the user's own hedge and the calibrated
+#: ontology, the same bracket B-1's candidates are built from — carries
+#: `ambiguity_type=CONSUMED_QUANTITY` and `field_name="consumed_fraction"`.
+#:
+#: I wrote that clause from the type NAME instead of from what the pipeline
+#: emits, and the unit fixtures constructed the shape I had assumed, so 152
+#: tests validated the predicate against an ambiguity production never
+#: produces. The fixtures now come from `derive_semantics` for exactly that
+#: reason.
+#:
+#: Keyed on the ENUM so a new ambiguity type defaults to ineligible: B-1
+#: declining a turn it could have handled costs nothing, and B-1 claiming one
+#: it cannot handle strands a meal.
+def _is_quantity_question(amb) -> bool:
+    from skills.nutrition.ambiguity import AmbiguityType
+
+    return getattr(amb, "ambiguity_type", None) is \
+        AmbiguityType.CONSUMED_QUANTITY
 
 
 def is_eligible(decision, *, message: str = "",
-                client_capable: bool = False) -> Eligibility:
+                client_capable: bool = False,
+                identity_evidence: bool = True) -> Eligibility:
     """Does this turn match B-1's predicate exactly?
 
     Conjunctive and conservative. Every clause is a thing B-1 has NOT built,
@@ -124,6 +149,16 @@ def is_eligible(decision, *, message: str = "",
     if not getattr(identity, "canonical_name", None):
         return Eligibility(Ineligible.IDENTITY_UNRESOLVED)
 
+    # FAIL CLOSED ON EVIDENCE WE DID NOT FETCH. A branded item whose product
+    # shelf was never looked up has no derived variant ambiguity — not because
+    # there is none, but because nothing went looking. Claiming that turn would
+    # ask "how much?" about a food we cannot yet name, which is the ordering
+    # B-1's own predicate forbids (identity first, quantity second).
+    if not identity_evidence and (getattr(identity, "brand", None)
+                                  or getattr(identity, "product_line", None)
+                                  or getattr(identity, "variant", None)):
+        return Eligibility(Ineligible.IDENTITY_UNVERIFIED)
+
     quantity = getattr(item, "quantity", None)
     if getattr(quantity, "is_stated", False):
         # They told us. There is nothing to ask, and asking anyway is how a
@@ -140,13 +175,19 @@ def is_eligible(decision, *, message: str = "",
             return Eligibility(Ineligible.IDENTITY_AMBIGUOUS)
         if kind == "preparation":
             return Eligibility(Ineligible.PREPARATION_DEPENDENCY)
-        if getattr(amb, "field_name", "") not in _QUANTITY_FIELDS:
+        if not _is_quantity_question(amb):
             return Eligibility(Ineligible.OTHER_MATERIAL_AMBIGUITY)
 
-    if not any(getattr(a, "field_name", "") == "estimated_mass_g"
-               for a in material):
-        # `consumed_fraction` alone is a fraction-of-a-container question —
-        # B-2.5's slice, not a mass one.
+    if not any(_is_quantity_question(a) for a in material):
+        return Eligibility(Ineligible.NO_QUANTITY_QUESTION)
+
+    # A FRACTION OF A CONTAINER IS B-2.5'S SLICE, not this one — "half a Core
+    # Power" is a question about the package, not about a mass. Read off the
+    # quantity INTENT, which is where that distinction actually lives; the
+    # ambiguity's field name cannot tell the two apart because both arrive as
+    # `consumed_fraction`.
+    if (getattr(quantity, "container_count", None) is not None
+            or getattr(quantity, "consumed_fraction", None) is not None):
         return Eligibility(Ineligible.NOT_MASS)
 
     return Eligibility(Ineligible.ELIGIBLE, item=item)

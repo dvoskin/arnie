@@ -625,6 +625,75 @@ def _or_list(labels) -> str:
     return ", ".join(labels[:-1]) + f" or {labels[-1]}"
 
 
+def derive_semantics(items, data: Mapping, *, message: str = "",
+                     mode: str = "moderate", targets=None,
+                     variant_spreads=None, variant_rows=None, regulars=None,
+                     preferences=None, now=None):
+    """Staged items → items that know what is UNRESOLVED about them.
+
+    Extracted so both ask origins can produce the same evidence. `food_turn`
+    has two, and they are not variants of one thing:
+
+        the model proposed the ask   ("I had some chicken breast")
+        the system overrode a log    (model said log; policy held it)
+
+    Only the second ran this, because the pipeline is gated on a log op. So a
+    turn where the MODEL noticed the uncertainty never acquired staged items,
+    ambiguities, or anything else the canonical layer reads — measured on
+    2026-08-05, when the B-1 canonical example itself took that path and the
+    canonical predicate was never consulted, not even to decline.
+
+    ONE function, so the two origins cannot drift into two definitions of
+    "what is unresolved here". That drift is the whole reason there are four
+    clarification producers to collapse.
+
+    Every step is order-dependent and the order is `plan_turn`'s: what the
+    model reported, then what it could not notice (invented precision), then
+    what it cannot know (which product), then what WE introduced, then the
+    user's own preferences.
+    """
+    items = attach_ambiguities(items, data, mode=mode, targets=targets)
+    # The interpreter reports what IT noticed uncertain. It does not notice
+    # having invented precision — "a scoop" arriving as "1 tbsp" looks like an
+    # answer from where it stands. Derived from the user's own words, so the
+    # review turn can disclose it as ours.
+    items = derive_vague_quantities(items, data, message=message, mode=mode,
+                                    targets=targets)
+    # ...and the doubt the model cannot have: which of the products sharing
+    # this name it actually was. Fetched by the caller — absent when the
+    # caller did not pay for it, which is why `identity_evidence_fetched`
+    # below exists.
+    items = derive_variant_ambiguity(items, variant_spreads, data, mode=mode,
+                                     targets=targets)
+    # ...and the doubt we CREATED: a product specifier in our output that is
+    # nowhere in their message. Derived from the two strings alone, so it
+    # costs nothing and needs no vocabulary.
+    items = derive_assumed_identity(items, message=message, mode=mode,
+                                    targets=targets, variant_rows=variant_rows,
+                                    regulars=regulars)
+    return apply_preferences(items, preferences, now=now, mode=mode)
+
+
+def identity_evidence_fetched(data: Mapping, variant_spreads) -> bool:
+    """Did this turn PAY for the lookups that reveal a product-variant doubt?
+
+    `derive_variant_ambiguity` can only find a variant question when the
+    caller fetched the shelf. Absent that fetch, a branded item comes back
+    looking unambiguous — which is indistinguishable from genuinely being so,
+    and is exactly the kind of "we did not look" that must never read as "we
+    know". A caller that skipped the fetch must treat every branded item as
+    unverified rather than clear.
+
+    Non-branded items need no fetch: `_variant_spreads` filters to branded and
+    packaged names in the first place, so "chicken breast" is fully judged
+    without one.
+    """
+    branded = [raw for raw in (data.get("items") or [])
+               if isinstance(raw, Mapping)
+               and (raw.get("branded") or raw.get("is_packaged"))]
+    return not branded or bool(variant_spreads)
+
+
 def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
               mode: str = "moderate", round_number: int = 0,
               preferences=None, now: Optional[datetime] = None,
@@ -659,28 +728,10 @@ def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
         if not items:
             return None
         with food_trace.stage(Stage.CLARIFY) as clarifying:
-            items = attach_ambiguities(items, data, mode=mode, targets=targets)
-            # The interpreter reports what IT noticed uncertain. It does not
-            # notice having invented precision — "a scoop" arriving as "1 tbsp"
-            # looks like an answer from where it stands. Derived from the user's
-            # own words, so the review turn can disclose it as ours.
-            #
-            # Inside the CLARIFY stage because deriving an ambiguity IS
-            # clarification work, and its cost belongs in that stage's timing.
-            items = derive_vague_quantities(items, data, message=message,
-                                            mode=mode, targets=targets)
-            # ...and the doubt the model cannot have: which of the products
-            # sharing this name it actually was. Fetched by the caller.
-            items = derive_variant_ambiguity(items, variant_spreads, data,
-                                             mode=mode, targets=targets)
-            # ...and the doubt we CREATED: a product specifier in our output
-            # that is nowhere in their message. Derived from the two strings
-            # alone, so it costs nothing and needs no vocabulary.
-            items = derive_assumed_identity(items, message=message, mode=mode,
-                                            targets=targets,
-                                            variant_rows=variant_rows,
-                                            regulars=regulars)
-            items = apply_preferences(items, preferences, now=now, mode=mode)
+            items = derive_semantics(
+                items, data, message=message, mode=mode, targets=targets,
+                variant_spreads=variant_spreads, variant_rows=variant_rows,
+                regulars=regulars, preferences=preferences, now=now)
             decision = decide(list(items), mode=mode,
                               round_number=round_number)
             approved = _approved_operations(data, items, decision)
