@@ -31,6 +31,28 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+#: Compared on both the meal and the day. Calories alone would miss a lane that
+#: prices energy correctly and splits the macros wrong — which is most of the
+#: ways a resolver can be subtly incorrect.
+_MACROS = ("calories", "protein", "carbs", "fats")
+
+
+def operation_id_for(lane: str, user_id: int, turn_id: str) -> str:
+    """A GLOBALLY unique operation id.
+
+    `meal_commits` is unique on (operation_id, operation_revision) and
+    deliberately does NOT include user_id — operation identity is meant to be
+    global, and widening the constraint would weaken exactly the guarantee it
+    exists to give. So the id itself has to carry the scope.
+
+    It cannot simply be the turn id. `make_turn_id` returns `f"{channel}:{cid}"`
+    verbatim when the client supplies an Idempotency-Key, with NO user in it —
+    so two users sending the same key would share an operation, and the second
+    would be handed the first's committed result. The idempotency layer is not
+    exposed to this (`build_key` includes the user id); the turn id is.
+    """
+    return f"{lane}:{int(user_id)}:{turn_id}"
+
 
 def shadow_enabled() -> bool:
     return (os.getenv("CANONICAL_WRITER_SHADOW", "false") or "").strip().lower() \
@@ -65,16 +87,41 @@ def _divergences(result, legacy: dict) -> list:
     if names_a != names_b:
         out.append(f"names {names_a} != {names_b}")
 
-    for key in ("calories", "protein", "carbs", "fats"):
+    legacy_meal = legacy.get("totals", {}) or {}
+    for key in _MACROS:
         a = round(float(result.meal_totals.get(key, 0.0)), 1)
-        b = round(float(legacy.get("totals", {}).get(key, 0.0) or 0.0), 1)
+        b = round(float(legacy_meal.get(key, 0.0) or 0.0), 1)
         if abs(a - b) > 0.5:
             out.append(f"{key} {a} != {b}")
 
-    a_day = round(float(result.day_totals.get("calories", 0.0)), 1)
-    b_day = legacy.get("day_calories")
-    if b_day is not None and abs(a_day - round(float(b_day), 1)) > 0.5:
-        out.append(f"day_calories {a_day} != {b_day}")
+    # THE SHADOW IS ADDITIVE, AND RUNS AFTER THE LEGACY ROW COMMITTED.
+    #
+    # `_day_totals` reads the log, which `recompute_log_totals` derives from
+    # every entry — so at this moment the day contains BOTH the legacy row and
+    # the canonical copy of it, and a raw comparison reports a divergence
+    # exactly equal to the shadow meal on every single tap. Measured before
+    # fixing: 1440 vs 1120 on a day that started at 800.
+    #
+    # Removing the legacy meal asks the question that was actually intended:
+    # what would the day be if the canonical row REPLACED the one already
+    # committed? Equivalently, D_before + canonical_meal vs D_before +
+    # legacy_meal.
+    #
+    # Note the symmetric-looking alternative does NOT work here — subtracting
+    # each side's own meal leaves `D_before + legacy_meal` against `D_before`,
+    # because the canonical baseline already contains the legacy row. That is a
+    # consequence of shadowing after the authoritative write, which is itself
+    # deliberate: running first would put the shadow between the user and their
+    # own commit.
+    legacy_day = legacy.get("day_totals") or {}
+    for key in _MACROS:
+        if key not in legacy_day:
+            continue
+        expected = round(float(result.day_totals.get(key, 0.0))
+                         - float(legacy_meal.get(key, 0.0) or 0.0), 1)
+        actual = round(float(legacy_day.get(key) or 0.0), 1)
+        if abs(expected - actual) > 0.5:
+            out.append(f"day_{key} {expected} != {actual}")
     return out
 
 

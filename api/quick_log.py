@@ -227,7 +227,8 @@ async def _shadow_canonical(db, user, payload, entry, log, turn_id) -> None:
     canonical contract demands is already in hand, so a divergence means a real
     disagreement rather than a missing input.
     """
-    from core.canonical_shadow import compare_with_legacy, shadow_enabled
+    from core.canonical_shadow import (compare_with_legacy,
+                                       operation_id_for, shadow_enabled)
 
     if not shadow_enabled():
         return
@@ -249,7 +250,8 @@ async def _shadow_canonical(db, user, payload, entry, log, turn_id) -> None:
                         f"IANA zone; the logging day was computed in {zone}",)
 
         meal = ResolvedMeal(
-            operation_id=turn_id, revision=0, user_id=user.id,
+            operation_id=operation_id_for('quick_log', user.id, turn_id),
+            revision=0, user_id=user.id,
             logging_day=log.date, user_timezone=zone,
             intent=MealIntent.CREATE, source_turn_id=turn_id,
             meal_type=payload.meal_type, warnings=warnings,
@@ -276,7 +278,10 @@ async def _shadow_canonical(db, user, payload, entry, log, turn_id) -> None:
                     "totals": {"calories": entry.calories,
                                "protein": entry.protein,
                                "carbs": entry.carbs, "fats": entry.fats},
-                    "day_calories": log.total_calories})
+                    "day_totals": {"calories": log.total_calories,
+                                   "protein": log.total_protein,
+                                   "carbs": log.total_carbs,
+                                   "fats": log.total_fats}})
     except Exception as exc:      # a diagnostic may never break the write
         logger.warning("event=canonical_shadow lane=quick_log outcome=error "
                        "stage=build error=%s: %s",
