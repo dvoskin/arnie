@@ -126,18 +126,30 @@ def c_structured_options():
 
 
 def c_pending_owner():
-    """Pending clarification must have ONE lifecycle owner."""
+    """Pending clarification must have ONE lifecycle owner.
+
+    LIVE owners only. The first version counted `pending_store.py` because the
+    FILE EXISTS — but it has zero production importers and no table of its own
+    (measured 2026-08-04), so it competes with nothing. Counting a dead module
+    as a rival overstates the problem and, worse, hides the useful fact: it is a
+    complete implementation with versioning, expiry and an atomic `claim()`,
+    which is the answer to a different criterion this gate is also failing.
+
+    An owner is a symbol something actually READS.
+    """
     owners = []
-    if _grep(r"payload_json"):
-        owners.append("conversation.payload_json")
-    if (_ROOT / "skills/nutrition/pending_store.py").exists():
-        owners.append("pending_store.py")
-    if _grep(r"deferred_calls"):
-        owners.append("deferred_calls")
-    if _grep(r"staged_items"):
-        owners.append("staged_items")
+    for name, pattern in (("conversation.payload_json", r"payload_json"),
+                          ("deferred_calls", r"deferred_calls"),
+                          ("staged_items", r"staged_items")):
+        hits = [h for h in _grep(pattern)
+                if not h.startswith("skills/nutrition/pending_store.py")]
+        if hits:
+            owners.append(f"{name}({len(hits)})")
+    dead = [h for h in _grep(r"\bpending_store\b")
+            if not h.startswith("skills/nutrition/pending_store.py")]
+    note = "" if dead else "; pending_store.py is BUILT AND UNUSED (0 importers)"
     return (PASS if len(owners) <= 1 else FAIL,
-            f"{len(owners)} competing owners: {', '.join(owners)}", [])
+            f"{len(owners)} live owners: {', '.join(owners)}{note}", [])
 
 
 def c_commit_idempotent():

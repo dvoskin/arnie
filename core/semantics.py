@@ -296,6 +296,22 @@ class ClarificationField:
 # ── pending lifecycle ────────────────────────────────────────────────────────
 
 class PendingStatus(str, Enum):
+    """The OPERATION lifecycle, cross-domain.
+
+    ⚠ A SECOND `PendingStatus` EXISTS, and this one nearly became the mistake
+    the module's own docstring forbids. `skills/nutrition/pending_store.py`
+    defines ACTIVE / CONSUMED / CANCELLED / EXPIRED — the STORAGE lifecycle of
+    one row. They are not competing definitions of one idea; they are two
+    scopes, and `_STORAGE_STATUS` below maps between them so the relationship
+    is code rather than folklore.
+
+    That module is 355 lines, fully tested, and has ZERO production importers —
+    measured 2026-08-04. It also contains `claim()`: a real DB-level atomic
+    guard (`UPDATE ... WHERE answered_at IS NULL`, exactly one caller sees
+    rowcount 1), which is precisely the idempotency the acceptance gate is
+    failing for. It is prior art to ADOPT, not to duplicate, and step 4 is
+    therefore an adoption rather than a build.
+    """
     RESOLVING = "resolving"
     AWAITING_CLARIFICATION = "awaiting_clarification"
     READY_TO_COMMIT = "ready_to_commit"
@@ -311,14 +327,41 @@ class PendingStatus(str, Enum):
                         PendingStatus.EXPIRED, PendingStatus.FAILED)
 
 
+#: This operation lifecycle -> the storage lifecycle of the row behind it.
+#: Written down because two enums with overlapping member names and different
+#: scopes is how a "single source of truth" quietly becomes two.
+_STORAGE_STATUS = {
+    PendingStatus.RESOLVING: "active",
+    PendingStatus.AWAITING_CLARIFICATION: "active",
+    PendingStatus.READY_TO_COMMIT: "active",
+    PendingStatus.COMMITTING: "active",
+    PendingStatus.COMMITTED: "consumed",
+    PendingStatus.CANCELLED: "cancelled",
+    PendingStatus.EXPIRED: "expired",
+    PendingStatus.FAILED: "active",     # recoverable; the row stays claimable
+}
+
+
+def storage_status(status: "PendingStatus") -> str:
+    """The `pending_store.PendingStatus` value this operation state maps to."""
+    return _STORAGE_STATUS.get(status, "active")
+
+
 @dataclass(frozen=True)
 class PendingOperation:
     """One in-flight, multi-turn operation, in any domain.
 
-    ONE OWNER. Food currently has four — `conversation.payload_json`,
-    `pending_store`, `staged_items` and `deferred_calls` — which is why a held
-    food could commit with no card and a clarification answer could fall to
-    legacy while its state stayed behind.
+    ONE OWNER. Food has THREE live — `conversation.payload_json` (20 refs),
+    `deferred_calls` (18) and `staged_items` (14) — which is why a held food
+    could commit with no card and a clarification answer could fall to legacy
+    while its state stayed behind.
+
+    A FOURTH IS BUILT AND UNUSED. `skills/nutrition/pending_store.py` has zero
+    production importers and no table of its own, yet implements the lifecycle
+    with versioning, expiry and an atomic claim. Counting it as a competing
+    owner overstates the problem; ignoring it wastes the answer. It is listed
+    separately for that reason, and step 4 adopts it rather than adding a
+    fifth.
 
     `idempotency_key` is derived from the operation and its resolved payload,
     NOT from the message: food's existing key is
