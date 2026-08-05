@@ -4,6 +4,24 @@
 
 Promoted build `a66e9ba8c86a`, test identity `ios:canonical-parity-test-0805` (user 144), day log 479.
 
+## Scope of this record — one migration, one build
+
+TWO STATUSES, kept separate on purpose:
+
+* **Quick-log canonical promotion: COMPLETE, production-verified on
+  `a66e9ba8c86a`.** That is the build every ✅ below was measured against.
+* **Later heads (e.g. `7402be0d`+): test-verified; deployment verification
+  pending.** They change runtime behaviour (provenance typing, outbox
+  enqueueing, coordinator sequencing), so "the record is complete" must never
+  be read as "the current head is verified."
+
+This record is **immutable evidence for one migration, not a perpetual health
+certificate**. Ongoing ownership is protected by the things built for it: C7
+(the legacy writer cannot return), `/health`'s `QUICK_LOG_FOOD_WRITER`, and
+observable canonical writes. After any later deploy, the minimal smoke is:
+`/health` sha + writer state, one keyed tap, duplicate replay identity, stored
+provenance, zero duplicate job rows — not a rerun of this corpus.
+
 Migration 2/4 does not begin until this record is complete. That is the point
 of the record: "promoted" is a claim about production, and the tests passing is
 not evidence about production.

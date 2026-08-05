@@ -1,0 +1,581 @@
+# Phase B–F directive: complete clarification migration, finish conversational food, then extend the canonical backend to workouts
+
+> **Augmented directive — plan-of-record.** Received 2026-08-05; supersedes no
+> prior directive, composes with all of them. Detail documents:
+> [CLARIFICATION_MIGRATION.md](CLARIFICATION_MIGRATION.md) (Phase B design
+> decisions), [CHIP_GENERATION_MIGRATION.md](CHIP_GENERATION_MIGRATION.md)
+> (option pipeline + status ledger),
+> [QUICK_LOG_PROMOTION_RECORD.md](QUICK_LOG_PROMOTION_RECORD.md) (Phase A
+> evidence), [WORKOUT_CONTRACTS.md](WORKOUT_CONTRACTS.md) (Phase E/F shapes),
+> [DELETION_INVENTORY.md](DELETION_INVENTORY.md) (cleanup scoreboard),
+> [ARCHITECTURE_CONTRACT.md](ARCHITECTURE_CONTRACT.md) §1b (executable
+> invariants C1–C9). Enforcement lives in
+> `tests/test_the_canonical_invariants.py`; this document is the sequencing
+> authority.
+
+## End goal
+
+Arnie's backend should converge on one production architecture:
+
+```text
+human input
+→ domain interpretation
+→ canonical unresolved/resolved domain state
+→ semantic clarification fields
+→ typed answer patches
+→ one PendingOperation
+→ one canonical commit
+→ one persisted result
+→ presentation from committed truth
+→ durable downstream work
+```
+
+The target is not merely "better clarification." The target is:
+
+* no direct food writes outside the canonical writer,
+* no client-derived chip meaning,
+* no question-text parsing to recover semantics,
+* no broad interpreter treating clarification answers as new meals,
+* no competing pending stores,
+* no partial meal topology created by accuracy mode,
+* no narration before authoritative commit,
+* no duplicated card/totals logic,
+* and no clarification adapter with permanent tenure.
+
+Food is the reference implementation. Workouts adopt the shared operation
+spine only after food proves it.
+
+## Standing constraints
+
+These remain in force throughout the migration.
+
+### Ownership
+
+One owner per responsibility:
+
+```text
+resolver               → produces evidence
+ambiguity engine       → identifies unresolved semantic fields
+policy                 → decides ask / assume / defer / disclose
+option generator       → produces valid semantic answer candidates
+renderer               → produces human-facing wording and labels
+answer application     → applies typed patches
+domain writer          → mutates storage
+presentation builder   → renders committed truth
+```
+
+No layer may silently re-own another layer's responsibility.
+
+### Migration discipline
+
+Every migration slice follows:
+
+```text
+measure → freeze → build canonical path → shadow or gate → validate
+→ promote → delete predecessor → lower ratchet
+```
+
+Do not leave old production ownership available "just in case."
+
+### Transaction rules
+
+* One reported meal normally produces one operation and one commit.
+* No user-facing success before commit.
+* Duplicate delivery returns the persisted original result.
+* Pending revisions are durable.
+* Durable downstream work uses the transactional outbox.
+* Best-effort cache or UI work remains post-commit.
+* Accuracy mode changes policy, never storage topology.
+
+## Current position
+
+Already complete:
+
+```text
+Phase A
+✓ quick-log canonical writer
+✓ direct quick-log writer deleted
+✓ production verification complete
+✓ typed nutrition provenance
+✓ canonical commit/replay path
+✓ durable outbox split
+✓ clarification producers frozen by C8 (and option producers by C9)
+✓ semantic clarification contracts implemented/test-locked (B-0b)
+```
+
+The next work begins at B-1.
+
+## Phase B — Canonical clarification for conversational food
+
+### B-0 — Freeze legacy growth
+
+Status: complete, but maintain continuously.
+
+Enforce:
+
+* four legacy clarification producers plus one relay cannot increase,
+* option-producer locations cannot increase,
+* no new loose `questions` payload shape,
+* no new `ClarificationQuestion` constructor outside the frozen inventory,
+* no new client prose-to-chip parser,
+* no new pending representation,
+* no new direct conversational food writer.
+
+Add or retain ratchets for:
+
+```text
+question producers          (C8)
+option producers            (C9)
+legacy food writers         (C4)
+pending-state writers
+client prose chip derivation
+```
+
+Any new feature must use the canonical contracts or remain out of scope.
+
+### B-0b — Lock semantic contracts
+
+Status: implemented as prerequisites; production proof still pending.
+
+Canonical contracts: `ClarificationAttribute`, `ResponseType`,
+`ClarificationStatus`, `CandidateSource`, `UnresolvedField`, `CandidateValue`,
+`SemanticPatch`, `ClarificationOption`, `ClarificationGroup`,
+`ClarificationInteraction`, `QuestionIntent`, `EntityCapabilities`.
+
+Required properties:
+
+**Stable field identity** — `field_id = operation_id + event_id + attribute +
+semantic revision`. Never derive identity from list index, option label,
+question wording, screen position, or display name.
+
+**Typed option meaning** — every selectable option carries a typed patch.
+`label` = presentation, `option_id` = wire identity, `patch` = semantic
+meaning.
+
+**Versioned serialization** — every persisted canonical clarification payload
+carries schema version, domain, operation ID, revision, event IDs, field IDs,
+patch type IDs. No unversioned arbitrary dict becomes the permanent pending
+payload.
+
+### B-1 — One item, one mass-quantity field
+
+This is the first authoritative production slice.
+
+**Eligibility predicate** — B-1 applies only when ALL are true: exactly one
+food event; food identity sufficiently resolved; only material unresolved
+attribute is consumed quantity; quantity expressible in one supported
+dimension; first implementation uses mass; no product identity ambiguity; no
+preparation dependency; no multi-item meal; no mixed food/workout turn; no
+correction or destructive action; no requirement for multiple clarification
+rounds.
+
+Example — eligible: *"I had some chicken breast."* → entity = chicken breast,
+quantity = unresolved, dimension = mass.
+
+Not eligible (remain on legacy paths until their own slice is promoted):
+"chicken and rice" · "a Core Power" · "two pieces of chicken" · "fried chicken
+with sauce" · "half a rotisserie chicken" · "change yesterday's chicken".
+
+**B-1 flow**
+
+```text
+message → resolved food identity → one UnresolvedField(quantity)
+→ candidate generation → deterministic option selection
+→ canonical ClarificationInteraction → persist PendingOperation
+→ send grouped ID-addressed payload → receive chip or typed answer
+→ produce SetQuantity patch → validate and apply patch
+→ revise ResolvedMeal → canonical commit → PresentationSnapshot
+→ narration/card/totals
+```
+
+**Candidate evidence for B-1** — use ONLY: (1) high-confidence user history
+for the same canonical entity, (2) validated entity portion evidence,
+(3) deterministic domain fallback candidates, (4) free text. Exclude
+initially: web search, LLM-proposed candidates, complex cross-unit ranking,
+product catalog variants, conditional preparation logic.
+
+**Quantity option selection** — maximize useful coverage, not generic portion
+tiers: `probability × information gain × nutritional materiality × evidence
+confidence × user familiarity ÷ interaction cost`. Rules: one field only; at
+most three primary numeric options plus "Other"; avoid near-duplicates;
+respect preferred display units; preserve semantic quantities internally;
+never parse rendered labels later.
+
+**Wire contract** — server sends:
+
+```json
+{
+  "operation_id": "op_123",
+  "revision": 0,
+  "interaction_id": "int_123",
+  "groups": [
+    {
+      "event_id": "food_1",
+      "label": "Chicken breast",
+      "fields": [
+        {
+          "field_id": "op_123:food_1:quantity:0",
+          "attribute": "quantity",
+          "response_type": "single_select_or_text",
+          "options": [
+            {"option_id": "opt_3oz", "label": "3 oz"},
+            {"option_id": "opt_5oz", "label": "5 oz"},
+            {"option_id": "opt_8oz", "label": "8 oz"}
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+The stored server-side option contains the patch. The client submits
+`operation_id · revision · interaction_id · field_id · option_id · delivery
+key`. It never submits the label as meaning.
+
+**Answer paths** — chip: `option_id → load stored SetQuantity patch →
+validate field/revision/event → apply`. Typed ("Around six ounces"): `narrow
+quantity parser → SetQuantity(6 oz, USER_STATED) → validate → apply`. Both
+converge before pending-state mutation.
+
+**Revision rule** — revision changes only when persisted semantic state
+changes: r0 pending meal with open field → r1 patch applied, meal ready → r1
+canonical commit. Sending, retrying, or re-rendering the same interaction does
+not increment revision.
+
+**B-1 answer idempotency** — chip-answer identity: operation_id, revision,
+field_id, option_id, client delivery key. Typed-answer identity: operation_id,
+revision, source turn ID, client delivery key. A replay after commit returns
+the stored result. A duplicate before commit does not create another revision.
+
+**B-1 presentation** — the final response is produced from committed result
+data (committed item, meal totals, day totals, assumptions, provenance,
+correction actions). The model may phrase this data. It may not recalculate or
+invent it.
+
+**B-1 production definition of done**
+
+Server: canonical quantity producer is sole authority for eligible turns; one
+PendingOperation persists the interaction; options carry typed patches; chip
+and typed answers converge; stale and foreign answers fail closed; duplicate
+answers are idempotent; commit uses the canonical coordinator; result is
+persisted; no legacy writer is reached.
+
+Client: canonical payload disables prose-derived chips; chips render directly
+from fields/options; taps submit IDs; free text remains available; stale
+interactions are handled; final card uses committed result.
+
+Production corpus: chip answer · typed offered quantity · typed non-offered
+quantity · duplicate tap · stale revision · invalid option · wrong field ·
+answer after commit · repair flow · card/totals agreement · zero duplicate
+meals.
+
+Promotion: observe canonical B-1 writes → compare behavior → promote
+eligibility path → delete legacy B-1 option/question path → lower
+producer/option ratchets.
+
+### B-1.5 — One item, multiple independent material fields
+
+After B-1 is green in production, add preparation classification. Do not use a
+generic `cook_type`; model nutrition-relevant fields (breading, fried status,
+skin presence, cut, added sauce, added fat). First expansion uses one compact
+preparation category: `plain / breaded / fried / unknown`.
+
+```text
+Chicken breast
+Amount        [3 oz] [5 oz] [8 oz]
+Preparation   [Plain] [Breaded] [Fried] [Not sure]
+```
+
+Proves: multiple fields on one event; one grouped interaction; partial answer
+state; independent typed patches (`SetQuantity`, `SetPreparationCategory`);
+operation remains pending until policy says ready. Rules: both fields already
+eligible; each option belongs to exactly one field; mixed chip rows forbidden;
+a partial answer updates only answered fields; unanswered fields remain open;
+one meal still commits once.
+
+### B-1.6 — Conditional clarification dependencies
+
+Add semantic dependencies, beginning with added fat:
+
+```text
+quantity
+preparation category
+added_fat_present
+    └── added_fat_amount, active only when present = true
+```
+
+Not hardcoded conversation code — field activation predicates
+(`added_fat_amount active when added_fat_present == true`). After every patch
+the dependency engine: (1) recomputes active unresolved fields, (2) closes
+fields made irrelevant, (3) activates newly eligible dependent fields,
+(4) reruns materiality policy, (5) asks, assumes, or commits.
+
+Revision sequence: r0 quantity+preparation open → r1 quantity=5oz,
+preparation=plain, added_fat_present activates → r2 present=yes, amount
+activates → r3 amount=1 tbsp, ready → r3 canonical commit.
+
+### B-1.7 — Accuracy-mode policy over one topology
+
+Quick: ask quantity; assume plain; assume no added fat; disclose assumptions.
+Moderate: ask quantity; ask preparation; ask added fat only when material.
+Strict: ask quantity; ask preparation; ask skin/breading when relevant; ask
+added-fat presence; ask amount when present.
+
+All modes use one PendingOperation, one revision model, one answer system, one
+commit path. Mode assumptions produce typed patches or typed assumptions with
+`MODE_DEFAULT` provenance — never masquerading as user statements.
+
+### B-1.8 — Harden answer classification and repair
+
+Fallback order:
+
+```text
+1. exact option-ID binding
+2. narrow field parser
+3. pending-aware constrained classifier
+4. targeted repair
+5. explicit cancel or skip
+6. fresh-turn interpretation only with clear new consumption
+```
+
+Constrained commands: CANCEL · SKIP_ITEM · USE_ESTIMATE · COMMIT_READY ·
+RESTART · KEEP_AS_READ · NONE. The classifier receives the open operation,
+active fields, recent interaction, and user text — not an unconstrained
+fresh-meal task.
+
+**Hard routing rule** — while a clarification is open: an ambiguous reply is
+presumed to address the open operation unless it clearly introduces a distinct
+new consumption event. ("5 ounces" → answer; "probably grilled" → answer;
+"skip it" → command; "I also had a protein shake" → potential new food event,
+handled explicitly; "yeah" → field-specific interpretation or repair, never a
+fresh meal.)
+
+## B-2 — Multi-item meals and grouped interactions
+
+Only after single-item dependent flows are production-proven.
+
+*"I had chicken and rice."* →
+
+```text
+Meal
+├── chicken: quantity open · preparation open · added fat conditional
+└── rice:    quantity open
+```
+
+Capabilities: multiple events; grouped fields per event; partial answers;
+multi-turn completion; independent field activation; neighbor protection; one
+operation revision; one eventual meal commit.
+
+**Neighbor protection** — a clear item must not be re-questioned because an
+adjacent item is ambiguous. "5 oz chicken and some rice" → chicken quantity
+stays resolved; only rice is open.
+
+**Partial answers** — "5 oz for the chicken" applies only the matching field
+patch; rice stays open. Do NOT create one committed chicken meal and a second
+rice meal.
+
+**Bundling** — bundle fields only when all are currently active, independently
+answerable, the interaction remains compact, and field ownership stays clear.
+Never flatten all options into one row.
+
+**Explicit recovery partial commit** — allowed only through explicit recovery
+("log the chicken and skip the rice", expiry policy, abandonment, clearly
+separable consumption events, explicit "log the rest"), recorded as a
+deliberate operation outcome — not normal moderate-mode behavior.
+
+### B-2.5 — Product identity, package size, consumed fraction
+
+*"I had a Fairlife shake."* Fields: product identity, package size, consumed
+fraction. Candidate sources in order: user product history, exact catalog
+candidates, package metadata, validated resolver candidates, constrained model
+proposal last. Options carry stable identifiers (`SelectFoodEntity`,
+`SelectProductVariant`, `SetPackageSize`, `SetConsumedFraction`); the label is
+never parsed.
+
+### B-2.6 — Material preparation, sauces, composite additions
+
+Typed fields as needed: breading, skin, added fat, sauce type, sauce amount,
+sweetener, milk type, toppings. Ask by materiality (`expected nutrient
+variance × uncertainty × confidence improvement ÷ user effort`): grilled vs
+baked may not deserve a question; plain vs fried often does; oil presence may
+matter; herb seasoning does not; garnish color does not.
+
+### B-2.7 — Semantic chip candidate pipeline
+
+One `ClarificationOptionGenerator` (entity, field, resolver candidates, user
+history, locale, accuracy mode, channel capabilities) → canonical candidates.
+Evidence hierarchies per field family as in
+[CHIP_GENERATION_MIGRATION.md](CHIP_GENERATION_MIGRATION.md). Selection by
+probability, information gain, materiality, source confidence, semantic
+diversity, user familiarity, interaction cost. A separate renderer owns
+locale, unit preference, shortening, accessibility, channel constraints — no
+semantic choice during rendering. The client decides layout only; it does not
+derive semantics or generate missing options.
+
+### B-2.8 — QuestionIntent and voice boundary
+
+Policy emits `QuestionIntent` (interaction type, subjects, resolved context,
+unresolved fields, assumptions, urgency/materiality, desired compactness); the
+renderer produces wording under constraints, with deterministic fallback
+templates mandatory. Wording failure must never block the semantic
+interaction.
+
+## B-3 — Consolidate pending state
+
+`PendingOperation` becomes the sole durable owner: operation ID, revision,
+domain, payload schema version, domain payload, active fields, inactive
+dependent fields, resolved patches, assumptions, answer history, interaction
+history, expiry, attempt count, terminal status, commit claim, answer claim.
+
+Delete ownership from `deferred_calls`, `staged_items`, `pending_questions`,
+loose conversation payloads, reconstructed wire questions, parallel pending
+blobs. Compatibility readers may exist temporarily; no new writes target them.
+
+### B-3.5 — Promote canonical clarification across all food cases
+
+Field families one at a time (quantity → preparation → added fat → product
+identity → package size → fraction → serving basis → multi-item → partial
+answer → commands → repair), each through: eligibility predicate → canonical
+producer authoritative → shadow/measure → production corpus → promote →
+delete legacy family path → lower ratchet. Do not wait for all families before
+deleting migrated legacy ownership.
+
+## B-4 — Delete the old clarification architecture
+
+Delete: the clarification adapter; loose dict question producers; duplicate
+`ClarificationQuestion` constructors; question-text attribute inference;
+position/text-based field IDs; response-schema reconstruction; client
+`QuickReplyEngine` prose parsing; server option reconstruction; legacy
+pending-question ownership; broad interpreter fallback for open clarification;
+default moderate partial commits.
+
+Ratchets: C8 producers → 0 · legacy relays → 0 · prose chip parsers → 0 ·
+unstable field-ID builders → 0 · legacy pending writers → 0.
+
+**Phase B is not complete until deletion is merged and production-stable.**
+
+## Phase C — Finish conversational food on the canonical spine
+
+* **C-1** Migrate the two remaining `tool_executor` writers to
+  `ResolvedMeal → commit_or_load_existing → canonical writer`; C4 → 0.
+* **C-2** Canonical corrections (edit quantity, replace identity, change
+  preparation, remove item, add missed item, change meal type, correct
+  logging day) — each a new operation revision → immutable ledger event →
+  canonical write → persisted result. No row patches without ledger history.
+* **C-3** Canonical undo — targets stable committed event IDs, never
+  "last row" heuristics.
+* **C-4** `PresentationSnapshot` authority — one post-commit snapshot feeds
+  chat narration, meal card, day timeline, coach feed refresh, notifications,
+  API response. Delete duplicated calculation/formatting paths.
+* **C-5** Search/resolver consolidation — one coordinator over user history,
+  catalog, USDA, OFF, web evidence, model estimate; every winning value
+  records source, candidate ID, confidence, serving basis, identity
+  provenance, nutrition provenance, evidence IDs. The resolver reports
+  uncertainty; it does not decide whether to ask.
+* **C-6** One ambiguity engine — resolver evidence → one food ambiguity
+  engine → canonical unresolved fields → policy.
+* **C-7** Food production-readiness gate before workouts: all food writers
+  canonical; clarification canonical; corrections canonical; undo canonical;
+  no prose-derived chips; one pending owner; presentation from committed
+  truth; duplicate replay stable; PG concurrency tested; observability
+  complete; fallback rates within target; no unbounded clarification loops;
+  no legacy writer escape.
+
+## Phase D — Generalize the proven operation envelope
+
+Only after food has two real operation types or workouts begin using the
+spine. **D-1** shared `OperationRequest` (domain payload stays strongly
+typed — `ResolvedMeal | ResolvedWorkout | ResolvedWeight`, never generic JSON
+blobs). **D-2** shared `OperationResult` (moves render actions, outbox
+events, assumptions, warnings, committed event IDs out of `MealCommitResult`;
+domain results stay inside the envelope). **D-3** shared typed outbox
+contracts (event ID, kind enum, version, payload, dedup key, operation ID,
+user ID) for memory update, coaching analysis, trend recomputation,
+notification planning, timeline refresh, PR detection.
+
+## Phase E — Structured workout logging
+
+**E-1** contracts (`ResolvedWorkout`/`ResolvedExercise`/`ResolvedSet`/
+`WorkoutCommitResult`/`WorkoutPresentationSnapshot`). **E-2** storage
+(`workout_sessions`, `workout_exercises`, `workout_sets`,
+`exercise_resolution_evidence`; shared ledger for create/correct/undo/
+replace). **E-3** structured quick workout path through the shared
+coordinator, proving atomicity, duplicate replay, crash safety, PG
+concurrency, correction/undo, outbox behavior. **E-4** one workout entity
+registry (canonical exercise IDs, aliases, equipment variants, movement
+pattern, laterality, load semantics, measurement capabilities) — no ad hoc
+exercise-name strings as identity.
+
+## Phase F — Conversational workout logging and cross-domain turns
+
+**F-1** interpretation ("Bench 3x8 at 135, then incline dumbbells 3x10 with
+50s" → `ResolvedWorkoutDraft`). **F-2** clarification reuses the EXACT shared
+architecture — workout patches (`SelectExerciseEntity`, `SetSetCount`,
+`SetRepCount`, `SetExternalLoad`, `SetLoadBasis`, `SetDuration`,
+`SetDistance`, `SetEquipment`), dependencies (load amount → load basis:
+per-dumbbell / total / machine stack / assisted), options from program
+prescription, same-session history, recent history, equipment increments,
+device data. No separate workout chip system. **F-3** presentation post-
+commit; coaching downstream, never owning logging semantics. **F-4** mixed-
+domain turns ("chicken and rice, then bench 3x8") → one Turn, independent
+food and workout operations, each with its own resolution/pending/revision/
+commit/result; no giant cross-domain transaction by default; the response may
+aggregate both after each reaches a valid state.
+
+## Final deletion and completion criteria
+
+**Mutation** — zero direct food writers outside the canonical domain writer;
+zero direct workout writers; duplicate replay always loads the persisted
+result; all committed mutations have ledger events; corrections and undo use
+canonical operations.
+
+**Clarification** — zero legacy producers; zero adapter-owned production
+semantics; zero prose-derived chips; zero label-to-meaning parsing; one
+`PendingOperation` owner; typed patches for chip and text answers;
+dependency-driven follow-ups; accuracy modes share one topology.
+
+**Presentation** — narration, cards, totals from committed results; the model
+cannot mutate facts; no duplicated total calculation paths; assumptions and
+provenance preserved.
+
+**Operations** — durable work uses the outbox; best-effort work is explicitly
+noncritical; release tooling compiles operational scripts; promotion records
+are measured; health reports active owners; ratchets prevent legacy ownership
+from returning.
+
+**Domain expansion** — food fully canonical and production-proven; structured
+workout logging on the shared spine; conversational workout clarification
+reuses typed fields and patches; domain payloads stay specific.
+
+## Recommended milestone order
+
+```text
+ 1. B-1 one-item quantity
+ 2. promote and delete legacy B-1 path
+ 3. B-1.5 quantity + preparation
+ 4. B-1.6 added-fat dependency
+ 5. B-1.7 mode policy
+ 6. B-1.8 answer repair/fallback
+ 7. B-2 multi-item and partial answers
+ 8. product/fraction/package fields
+ 9. full semantic option pipeline
+10. one PendingOperation owner
+11. delete adapters and legacy clarification producers
+12. migrate remaining conversational food writers
+13. canonical corrections and undo
+14. PresentationSnapshot authority
+15. C4 reaches zero
+16. food production-readiness gate
+17. shared OperationResult envelope
+18. structured workout logging
+19. workout corrections/undo
+20. conversational workout interpretation
+21. workout clarification using the same patch system
+22. mixed-domain turn coordination
+```
+
+**The key sequencing rule:** expand one semantic capability only after the
+previous capability is authoritative end to end, production-measured, and its
+legacy owner has been deleted. That gets Arnie to the desired backend without
+recreating the same fragmentation under better type names.

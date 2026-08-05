@@ -458,3 +458,54 @@ def test_c8_every_clarification_producer_is_a_known_one():
     assert len(ctor_sites) == _CLARIFICATION_QUESTION_CONSTRUCTORS, (
         f"{len(ctor_sites)} constructors remain ({ctor_sites}) — LOWER "
         f"_CLARIFICATION_QUESTION_CONSTRUCTORS accordingly")
+
+
+# ── C9 · Every clarification OPTION producer is a known one ──────────────────
+#
+# Separate from C8 (question producers) per the chip-generation directive: the
+# QUESTION and its OPTIONS have historically had different owners, which is how
+# a question shipped with options:[] on 39 of 40 asks while the client rebuilt
+# chips from prose. The target pipeline —
+#   unresolved field → candidates → deterministic selection → typed patches
+#   → rendered labels
+# replaces every one of these sites; until each is replaced, the population is
+# frozen. The client-side producer (QuickReplyEngine.swift) lives in the iOS
+# repo and is inventoried in docs/CHIP_GENERATION_MIGRATION.md instead.
+
+#: Sites assembling an `"options"` wire payload (7 in food_turn + the
+#: conversation relay into the pending payload).
+_OPTION_PAYLOAD_SITES = 8
+
+#: `AmbiguityOption(...)` constructors — the staged pipeline's option shape
+#: (4 in food_pipeline + 1 in staged_codec's decoder).
+_AMBIGUITY_OPTION_CONSTRUCTORS = 5
+
+
+def test_c9_every_clarification_option_producer_is_a_known_one():
+    """RATCHET, both directions, same rules as C4/C8."""
+    payload_sites, ctor_sites = [], []
+    for rel in ("core/food_turn.py", "core/conversation.py",
+                "core/food_pipeline.py", "skills/nutrition/clarify_policy.py",
+                "skills/nutrition/staged_codec.py"):
+        src = (ROOT / rel).read_text()
+        for i, line in enumerate(src.splitlines(), 1):
+            stripped = line.split("#")[0]
+            if '"options":' in stripped:
+                payload_sites.append(f"{rel}:{i}")
+            if "AmbiguityOption(" in stripped and "import" not in stripped \
+                    and "class " not in stripped:
+                ctor_sites.append(f"{rel}:{i}")
+
+    assert len(payload_sites) <= _OPTION_PAYLOAD_SITES, (
+        f"a NEW option producer appeared: {payload_sites}. Chips are becoming "
+        f"a projection of canonical semantic state (docs/"
+        f"CHIP_GENERATION_MIGRATION.md); widening the heuristic population "
+        f"first makes that migration larger.")
+    assert len(payload_sites) == _OPTION_PAYLOAD_SITES, (
+        f"only {len(payload_sites)} option-payload sites remain "
+        f"({payload_sites}) — LOWER _OPTION_PAYLOAD_SITES to hold the ground")
+    assert len(ctor_sites) <= _AMBIGUITY_OPTION_CONSTRUCTORS, (
+        f"new AmbiguityOption constructor(s): {ctor_sites}")
+    assert len(ctor_sites) == _AMBIGUITY_OPTION_CONSTRUCTORS, (
+        f"{len(ctor_sites)} constructors remain ({ctor_sites}) — LOWER "
+        f"_AMBIGUITY_OPTION_CONSTRUCTORS accordingly")

@@ -28,7 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -80,6 +80,54 @@ class CommitClaim:
 
 
 # ── the result ───────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class OutboxEvent:
+    """One piece of durable post-commit work, typed BEFORE any producer exists.
+
+    Introduced while `outbox_events` had zero producers, so an untyped
+    `{"kind": ..., "payload": ...}` dict never acquires one — retrofitting
+    types onto a populated queue means migrating rows; refusing dicts on an
+    empty one costs nothing.
+
+    `dedup_key` is REQUIRED. The coordinator's winner-only enqueue already
+    stops a flaky network multiplying jobs, but a stable key also protects
+    against the paths that arrive later and are never load-tested: manual
+    replays, coordinator retries, migration bugs. A job type that genuinely
+    tolerates duplicates says so explicitly with `allow_duplicates=True` —
+    opting OUT of safety is a decision someone signs, not a field they forgot.
+
+    `version` is the payload's schema version, present from day one because a
+    consumer reading v1 rows after v2 ships needs to know which it holds —
+    the same lesson `meal_commits.result_payload` already encodes.
+    """
+    kind: str
+    payload: dict = field(default_factory=dict)
+    dedup_key: str = ""
+    version: int = 1
+    allow_duplicates: bool = False
+
+    def __post_init__(self):
+        if not self.kind or not isinstance(self.kind, str):
+            raise UnserializableResult(
+                "an outbox event needs a kind — durable work that cannot say "
+                "what it is cannot be swept")
+        if not isinstance(self.payload, dict):
+            raise UnserializableResult(
+                f"outbox payload for {self.kind!r} is "
+                f"{type(self.payload).__name__}, not a dict")
+        _json_safe(self.payload, f"outbox[{self.kind}].payload")
+        if not self.dedup_key and not self.allow_duplicates:
+            raise UnserializableResult(
+                f"outbox event {self.kind!r} has no dedup_key and does not "
+                f"declare allow_duplicates — duplicate tolerance is a "
+                f"decision, not a default")
+
+    def to_payload(self) -> dict:
+        return {"kind": self.kind, "payload": self.payload,
+                "dedup_key": self.dedup_key, "version": self.version,
+                "allow_duplicates": self.allow_duplicates}
+
 
 @dataclass(frozen=True)
 class MealCommitResult:
@@ -137,6 +185,29 @@ class MealCommitResult:
                      "assumptions", "warnings", "render_actions",
                      "outbox_events"):
             object.__setattr__(self, name, tuple(getattr(self, name) or ()))
+        # REHYDRATED AT CONSTRUCTION — the third recurrence of the same
+        # asymmetry (tuples vs lists, Decimal vs float, now OutboxEvent vs
+        # dict): allowing storage-shaped dicts to stay dicts made a winner
+        # holding OutboxEvent compare UNEQUAL to the duplicate rebuilt from
+        # JSON, which breaks C6 the moment a producer exists. Dicts from
+        # from_payload become the type again; the five fields are the v1
+        # schema, and a shape change bumps `version` rather than growing keys
+        # v1 code would silently drop.
+        def _event_of(e):
+            if isinstance(e, OutboxEvent):
+                return e
+            if isinstance(e, dict):
+                return OutboxEvent(
+                    kind=e.get("kind", ""),
+                    payload=e.get("payload") or {},
+                    dedup_key=e.get("dedup_key", "") or "",
+                    version=int(e.get("version", 1)),
+                    allow_duplicates=bool(e.get("allow_duplicates", False)))
+            raise UnserializableResult(
+                f"outbox_events entries must be OutboxEvent, got "
+                f"{type(e).__name__}")
+        object.__setattr__(self, "outbox_events",
+                           tuple(_event_of(e) for e in self.outbox_events))
         object.__setattr__(self, "meal_totals",
                            _totals(self.meal_totals, "meal_totals"))
         object.__setattr__(self, "day_totals",
@@ -157,8 +228,7 @@ class MealCommitResult:
             "warnings": _json_safe(list(self.warnings), "warnings"),
             "render_actions": _json_safe(list(self.render_actions),
                                          "render_actions"),
-            "outbox_events": _json_safe(list(self.outbox_events),
-                                        "outbox_events"),
+            "outbox_events": [e.to_payload() for e in self.outbox_events],
         }
 
     @classmethod

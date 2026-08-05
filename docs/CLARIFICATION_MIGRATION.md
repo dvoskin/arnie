@@ -1,5 +1,7 @@
 # Clarification migration — Phase B approach and sequencing
 
+> Sequencing authority: [CANONICAL_MIGRATION_DIRECTIVE.md](CANONICAL_MIGRATION_DIRECTIVE.md) (Phase B–F master directive). This document is the detail layer.
+
 Source: architecture review received 2026-08-05, folded into sequencing per the
 author's framing ("notes to consider … incorporate into approach and
 sequencing"). This is the plan-of-record for migrating conversational food —
@@ -92,9 +94,18 @@ a chain of translated representations:
 ## Sequencing (coordinated with the migration directive's phases)
 
     B-0  freeze producers                     DONE — C8 ratchet (a66e9ba)
-    B-0b strengthen semantic types            NEXT — ClarificationAttribute,
+    B-0b strengthen semantic types            DONE — ClarificationAttribute,
                                               ResponseType, ClarificationStatus,
-                                              SemanticPatch, ClarificationInteraction
+                                              CandidateSource, SemanticPatch
+                                              family, UnresolvedField,
+                                              CandidateValue,
+                                              ClarificationInteraction/Group;
+                                              option carries `patch`
+                                              (tests/test_clarification_
+                                              contracts_b0b.py). Option
+                                              producers frozen separately: C9.
+                                              Chip pipeline plan:
+                                              docs/CHIP_GENERATION_MIGRATION.md
     B-1  ONE-ITEM QUANTITY SLICE ONLY         the whole of the next milestone:
                                               "I had chicken" → quantity ask →
                                               chip OR text answer → revised

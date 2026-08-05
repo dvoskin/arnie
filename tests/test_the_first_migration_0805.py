@@ -363,7 +363,7 @@ async def test_durable_outbox_work_rides_the_transaction(pg):
 
     from core.canonical_writer import ResolvedMeal
     from core.commit_coordinator import commit_or_load_existing
-    from core.meal_commit import MealCommitResult
+    from core.meal_commit import MealCommitResult, OutboxEvent
     from db.models import BackgroundJob
 
     async def writer_with_outbox(db, *, operation, resolved_meal):
@@ -371,8 +371,9 @@ async def test_durable_outbox_work_rides_the_transaction(pg):
             committed_items=({"entry_id": 1, "daily_log_id": 1},),
             meal_totals={"calories": 100.0},
             render_actions=({"action": "invalidate_briefing", "user_id": 1},),
-            outbox_events=({"kind": "memory_reflection",
-                            "payload": {"meal": "x"}},))
+            outbox_events=(OutboxEvent(kind="memory_reflection",
+                                       payload={"meal": "x"},
+                                       dedup_key="u1:reflect:2026-08-05"),))
 
     class _Op:
         id, revision, user_id, source_turn_id = "op_outbox", 0, 1, "t:1"
@@ -395,14 +396,15 @@ async def test_a_duplicate_does_not_re_enqueue_the_outbox(pg):
     from sqlalchemy import func, select
 
     from core.commit_coordinator import commit_or_load_existing
-    from core.meal_commit import MealCommitResult
+    from core.meal_commit import MealCommitResult, OutboxEvent
     from db.models import BackgroundJob
 
     async def writer(db, *, operation, resolved_meal):
         return MealCommitResult(
             committed_items=({"entry_id": 1, "daily_log_id": 1},),
             meal_totals={"calories": 100.0},
-            outbox_events=({"kind": "analytics_record"},))
+            outbox_events=(OutboxEvent(kind="analytics_record",
+                                       dedup_key="u1:analytics:t2"),))
 
     class _Op:
         id, revision, user_id, source_turn_id = "op_dup_outbox", 0, 1, "t:2"
@@ -417,3 +419,30 @@ async def test_a_duplicate_does_not_re_enqueue_the_outbox(pg):
         n = (await s.execute(
             select(func.count()).select_from(BackgroundJob))).scalar()
     assert n == 1, f"three deliveries queued {n} jobs — duplicates re-enqueued"
+
+
+def test_an_untyped_outbox_dict_is_normalised_or_refused_at_construction():
+    """The enforcement moved EARLIER than the coordinator, and got stronger.
+
+    Rehydration-at-construction (the C6 fix: a duplicate rebuilt from JSON
+    must equal the winner) means a dict in outbox_events becomes an
+    OutboxEvent immediately — passing through the SAME validation the type
+    enforces. So an invalid dict cannot exist inside a result at all, and a
+    well-formed one carries every guarantee the type does. There is no path
+    on which an unvalidated dict reaches the queue.
+    """
+    from core.meal_commit import (MealCommitResult, OutboxEvent,
+                                  UnserializableResult)
+
+    # invalid: no dedup decision -> refused where the producer is on the stack
+    with pytest.raises(UnserializableResult, match="dedup_key"):
+        MealCommitResult(meal_totals={"calories": 1.0},
+                         outbox_events=({"kind": "sneaky_dict"},))
+
+    # well-formed: normalised into the type, equal across the round trip
+    r = MealCommitResult(
+        meal_totals={"calories": 1.0},
+        outbox_events=({"kind": "ok", "dedup_key": "u1:ok"},))
+    assert isinstance(r.outbox_events[0], OutboxEvent)
+    assert r == MealCommitResult.from_payload(r.to_payload()), \
+        "winner and duplicate must hold the same type (C6)"

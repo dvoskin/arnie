@@ -122,7 +122,13 @@ class NutritionProvenance(str, Enum):
     CATALOG = "catalog"
     #: The user typed the numbers themselves.
     USER_STATED = "user_stated"
-    #: The user picked from options the system generated.
+    #: NARROW BY DESIGN: the user selected an explicit NUTRITIONAL VALUE
+    #: option ("~300 cal") — not merely a food identity or a quantity chip.
+    #: Picking "Elite 42g" identifies the PRODUCT; the numbers still come from
+    #: the catalog, so that row is CATALOG here and `Provenance.USER_SELECTED`
+    #: on the event. Answer provenance and pricing provenance are different
+    #: axes, and this enum owns only the second — collapsing them is the exact
+    #: conflation it exists to remove.
     USER_SELECTED = "user_selected"
     #: The CLIENT calculated them locally (a quick-log tap). Structured input,
     #: not authority — the boundary still validates it.
@@ -134,12 +140,14 @@ class NutritionProvenance(str, Enum):
     #: Not recorded. The honest default; never an authority claim.
     UNKNOWN = "unknown"
 
-    @property
-    def is_authoritative(self) -> bool:
-        """Whether this pricing may be presented without a hedge."""
-        return self in (NutritionProvenance.CATALOG,
-                        NutritionProvenance.USER_STATED,
-                        NutritionProvenance.MANUAL_OVERRIDE)
+    # NO `is_authoritative` PROPERTY, deliberately (removed before any
+    # consumer existed). "Authoritative" is at least five different questions —
+    # source authority, confidence, verification, presentation hedging, commit
+    # eligibility — and one boolean would quietly come to govern all of them.
+    # A high-confidence resolver output can be committable and still owe a
+    # source disclosure; a user-stated number is authoritative as a statement
+    # and can be factually wrong. When a policy consumer arrives it gets a
+    # narrowly named predicate for its one question.
 
 
 class ResolutionStatus(str, Enum):
@@ -283,6 +291,260 @@ class CanonicalEvent:
 
 
 # ── clarification ────────────────────────────────────────────────────────────
+#
+# B-0b (chip directive, 2026-08-05): the typed layer the four legacy producers
+# migrate ONTO. `ClarificationAttribute`/`ResponseType`/`ClarificationStatus`
+# close what were free strings; `SemanticPatch` makes every answer — chip tap
+# or typed text — a validated, applicable change instead of a string the
+# answer turn re-interprets. Cross-domain by construction: food supplies food
+# patches, workouts will supply theirs, and the application boundary is shared.
+
+
+class ClarificationAttribute(str, Enum):
+    """WHAT a field asks about. A closed set, because `attribute="prepration"`
+    (a typo) was representable and silently unanswerable — the adapter today
+    infers this from rendered PROSE, which is the reversal the whole migration
+    exists to undo."""
+    # food
+    QUANTITY = "quantity"
+    CONSUMED_FRACTION = "consumed_fraction"
+    FOOD_IDENTITY = "food_identity"
+    PRODUCT_VARIANT = "product_variant"
+    PACKAGE_SIZE = "package_size"
+    PREPARATION = "preparation"
+    SERVING_BASIS = "serving_basis"
+    # workout (Phase O; defined so the shared layer never needs a food edit)
+    EXERCISE_IDENTITY = "exercise_identity"
+    SET_COUNT = "set_count"
+    REP_COUNT = "rep_count"
+    EXTERNAL_LOAD = "external_load"
+    DURATION = "duration"
+    DISTANCE = "distance"
+    EQUIPMENT = "equipment"
+    EFFORT = "effort"
+
+
+class ResponseType(str, Enum):
+    SINGLE_SELECT = "single_select"
+    MULTI_SELECT = "multi_select"
+    FREE_TEXT = "free_text"
+    #: A select whose options could not be generated. C15: this must become
+    #: free text EXPLICITLY, repair, or fail closed — never a blank row the
+    #: client "fixes" by parsing prose.
+    FREE_TEXT_FALLBACK = "free_text_fallback"
+
+
+class ClarificationStatus(str, Enum):
+    UNRESOLVED = "unresolved"
+    ANSWERED = "answered"
+    SKIPPED = "skipped"
+    ESTIMATED = "estimated"          # user said "estimate it"
+    EXPIRED = "expired"
+
+
+class CandidateSource(str, Enum):
+    """WHERE a candidate value came from — the evidence hierarchy, as data.
+
+    Order here mirrors the resolution directive's authority ladder; the
+    weighting lives in the selector, not in this enum, but the NAMES are closed
+    so telemetry can group and a selector cannot be handed a source it has no
+    policy for.
+    """
+    USER_HISTORY = "user_history"
+    CATALOG = "catalog"              # OFF / USDA / product data
+    WEB_EVIDENCE = "web_evidence"
+    ONTOLOGY = "ontology"
+    MODEL_PROPOSAL = "model_proposal"
+    MODE_DEFAULT = "mode_default"
+
+
+# ── semantic patches ─────────────────────────────────────────────────────────
+#
+# THE PATCH IS THE MEANING; the label is only presentation (C10/C11 targets).
+# A chip tap submits (operation, revision, field, option) and the SERVER loads
+# the stored patch; a typed answer parses into the SAME patch type. Both then
+# cross one application boundary. No dict merges: every patch names the event
+# and field it changes, and the domain validates it before it applies.
+
+@dataclass(frozen=True)
+class SemanticPatch:
+    """Base of every typed answer. Domain subclasses add the value."""
+    event_id: str
+    field_id: str
+    provenance: Provenance = Provenance.UNKNOWN
+
+    def __post_init__(self):
+        if not self.event_id:
+            raise ValueError(f"{type(self).__name__} needs the event it "
+                             f"changes — a patch with no target is a guess")
+        if not self.field_id:
+            raise ValueError(f"{type(self).__name__} needs the field it "
+                             f"answers — C9's lesson is that unowned answers "
+                             f"get re-parsed from prose")
+
+
+@dataclass(frozen=True)
+class SetQuantity(SemanticPatch):
+    """The user's answer to "how much" — a CanonicalQuantity, so dimensional
+    validity is enforced where the patch is BUILT, not where it lands."""
+    quantity: Optional[CanonicalQuantity] = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        if not isinstance(self.quantity, CanonicalQuantity):
+            raise ValueError("SetQuantity carries a CanonicalQuantity — a bare "
+                             "number cannot say what dimension it is")
+
+
+@dataclass(frozen=True)
+class SetConsumedFraction(SemanticPatch):
+    """How much of the thing was actually eaten (0 < fraction <= 1]."""
+    fraction: Optional[Decimal] = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        f = self.fraction
+        if f is None or not (Decimal("0") < Decimal(f) <= Decimal("1")):
+            raise ValueError(f"consumed fraction must be in (0, 1], got {f!r}")
+        object.__setattr__(self, "fraction", Decimal(f))
+
+
+@dataclass(frozen=True)
+class SelectFoodEntity(SemanticPatch):
+    """Resolve WHICH food this is — an entity id, never a fuzzy label."""
+    entity_id: str = ""
+
+    def __post_init__(self):
+        super().__post_init__()
+        if not self.entity_id:
+            raise ValueError("SelectFoodEntity without an entity_id is the "
+                             "string-matching defect this type replaces")
+
+
+@dataclass(frozen=True)
+class SelectProductVariant(SemanticPatch):
+    """Which catalog product/serving — stable ids, e.g. off:3017620422003."""
+    entity_id: str = ""
+    serving_id: str = ""
+
+    def __post_init__(self):
+        super().__post_init__()
+        if not self.entity_id:
+            raise ValueError("SelectProductVariant needs the product's id")
+
+
+@dataclass(frozen=True)
+class SetPreparation(SemanticPatch):
+    """Grilled / fried / … — an ontology preparation id, not free text."""
+    preparation_id: str = ""
+
+    def __post_init__(self):
+        super().__post_init__()
+        if not self.preparation_id:
+            raise ValueError("SetPreparation needs a preparation id")
+
+
+@dataclass(frozen=True)
+class SetServingBasis(SemanticPatch):
+    """Which label basis the numbers are per (per-container, per-serving…)."""
+    basis_id: str = ""
+
+    def __post_init__(self):
+        super().__post_init__()
+        if not self.basis_id:
+            raise ValueError("SetServingBasis needs a basis id")
+
+
+# ── candidate space (Phases D–F feed on these) ───────────────────────────────
+
+@dataclass(frozen=True)
+class UncertaintyEvidence:
+    """WHY a field is unresolved, carried as data so the ambiguity engine and
+    the selector reason from the same facts: the value range the uncertainty
+    spans and the calorie consequence of guessing wrong."""
+    low: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    unit_id: str = ""
+    calorie_spread: Optional[Decimal] = None
+    basis: str = ""
+
+
+@dataclass(frozen=True)
+class UnresolvedField:
+    """One unresolved semantic field, identified by SEMANTICS — operation,
+    event, attribute, revision — never by list position or display text.
+    (The adapter's position+text ids are measurement-only and die with it.)"""
+    operation_id: str
+    revision: int
+    event_id: str
+    attribute: ClarificationAttribute
+    allowed_dimensions: tuple = ()
+    allowed_units: tuple = ()
+    materiality: Optional[float] = None
+    uncertainty: UncertaintyEvidence = field(default_factory=UncertaintyEvidence)
+
+    def __post_init__(self):
+        if not self.operation_id or not self.event_id:
+            raise ValueError("field identity is operation/event/attribute/"
+                             "revision — all of them")
+        object.__setattr__(self, "attribute",
+                           ClarificationAttribute(self.attribute))
+
+    @property
+    def field_id(self) -> str:
+        """Derived, stable, and content-addressed — reordering a list or
+        rewording a question cannot change it."""
+        return (f"{self.operation_id}:{self.event_id}:"
+                f"{self.attribute.value}:{self.revision}")
+
+
+@dataclass(frozen=True)
+class CandidateValue:
+    """One possible answer, with its evidence. Candidates are SEMANTIC — the
+    selector picks among them and only then are labels rendered."""
+    candidate_id: str
+    semantic_value: Any
+    source: CandidateSource
+    probability: float = 0.0
+    confidence: float = 0.0
+    evidence_ids: tuple = ()
+
+    def __post_init__(self):
+        object.__setattr__(self, "source", CandidateSource(self.source))
+        if not self.candidate_id:
+            raise ValueError("a candidate needs an id")
+        for name in ("probability", "confidence"):
+            v = getattr(self, name)
+            if not 0.0 <= float(v) <= 1.0:
+                raise ValueError(f"{name} out of range: {v}")
+
+
+@dataclass(frozen=True)
+class ClarificationGroup:
+    """One event's fields, grouped — the structure that makes a mixed chip row
+    (Elite / Core Power / Whole thing / About half) unconstructable."""
+    event_id: str
+    label: str = ""
+    fields: tuple = ()
+
+
+@dataclass(frozen=True)
+class ClarificationInteraction:
+    """One clarification exchange: a voice introduction plus grouped fields.
+
+    Replaces question-as-container (C8's producers): the sentence stops being
+    the vessel of semantics and becomes presentation over typed fields.
+    """
+    interaction_id: str
+    operation_id: str
+    revision: int
+    introduction: str = ""
+    groups: tuple = ()
+
+    def __post_init__(self):
+        if not self.interaction_id or not self.operation_id:
+            raise ValueError("an interaction is addressed by operation and id")
+
 
 @dataclass(frozen=True)
 class ClarificationOption:
@@ -298,6 +560,14 @@ class ClarificationOption:
     option_id: str = ""
     field_id: str = ""
     confidence: Confidence = field(default_factory=Confidence)
+    #: THE AUTHORITATIVE MEANING (C10 target). Canonical producers attach the
+    #: typed patch a tap applies; the measurement adapter leaves None because
+    #: the legacy shapes it reads never carried one — which is exactly the gap
+    #: being closed. When options become production-authoritative, a None
+    #: patch on a produced option fails, and `value` becomes presentation-era
+    #: legacy.
+    patch: Optional[SemanticPatch] = None
+    source: Optional[CandidateSource] = None
 
     @property
     def send_value(self) -> str:

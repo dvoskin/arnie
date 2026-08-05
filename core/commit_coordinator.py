@@ -51,22 +51,30 @@ class CommitInProgress(RuntimeError):
 
 
 async def _enqueue_outbox(db, *, operation, result, user_id: int) -> None:
-    """Queue each durable event in the mutation's own transaction."""
+    """Queue each durable event in the mutation's own transaction.
+
+    A WRITER must supply `OutboxEvent` instances — the type validates kind,
+    payload JSON-safety and the dedup decision at construction, where the
+    producer is on the stack. A dict here means someone bypassed the type,
+    and refusing it now (zero producers exist) is what keeps the untyped
+    shape from ever acquiring one.
+    """
     events = getattr(result, "outbox_events", ()) or ()
     if not events:
         return
+    from core.meal_commit import OutboxEvent
     from db.queries import enqueue_background_job
 
     for event in events:
-        kind = (event or {}).get("kind", "")
-        if not kind:
-            raise ValueError(
-                "an outbox event needs a kind — durable work that cannot say "
-                "what it is cannot be swept")
+        if not isinstance(event, OutboxEvent):
+            raise TypeError(
+                f"outbox events are OutboxEvent, got {type(event).__name__} — "
+                f"the type is where kind, payload and the duplicate decision "
+                f"are validated")
         await enqueue_background_job(
-            db, user_id=user_id, kind=kind,
-            payload=event.get("payload") or {},
-            dedup_key=event.get("dedup_key"),
+            db, user_id=user_id, kind=event.kind,
+            payload={"version": event.version, **event.payload},
+            dedup_key=event.dedup_key or None,
             turn_id=getattr(operation, "source_turn_id", None) or None,
             commit=False)          # rides THIS transaction; never its own
 
