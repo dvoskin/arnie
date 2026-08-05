@@ -49,9 +49,13 @@ CHICKEN = _food("Grilled chicken", 320, protein=43.0, carbs=0.0, fats=15.0)
 RICE = _food("White rice", 205, protein=4.3, carbs=45.0, fats=0.4)
 
 
-def _meal(*items, oid="op_meal", revision=0, user_id=1, day=DAY, **kw):
+TZ = "America/New_York"
+
+
+def _meal(*items, oid="op_meal", revision=0, user_id=1, day=DAY, tz=TZ, **kw):
     return ResolvedMeal(operation_id=oid, revision=revision, user_id=user_id,
-                        logging_day=day, items=items or (CHICKEN, RICE), **kw)
+                        logging_day=day, user_timezone=tz,
+                        items=items or (CHICKEN, RICE), **kw)
 
 
 MEAL = _meal()
@@ -89,7 +93,7 @@ def test_an_empty_meal_is_refused():
     made."""
     with pytest.raises(MealNotResolved, match="empty meal"):
         ResolvedMeal(operation_id="o", revision=0, user_id=1,
-                     logging_day=DAY, items=())
+                     logging_day=DAY, user_timezone=TZ, items=())
 
 
 # ── postgres: everything that depends on the database ────────────────────────
@@ -415,7 +419,7 @@ def test_the_logging_day_has_no_default():
     every other part of the write succeeds."""
     with pytest.raises(MealNotResolved, match="explicit logging_day"):
         ResolvedMeal(operation_id="o", revision=0, user_id=1,
-                     logging_day=None, items=(CHICKEN,))
+                     logging_day=None, user_timezone=TZ, items=(CHICKEN,))
 
 
 @pytest.mark.asyncio
@@ -543,3 +547,21 @@ async def test_each_intent_writes_its_own_lane(pg):
     assert sources == {"canonical:create", "canonical:correction",
                        "canonical:replacement"}
     assert all(s.startswith("canonical:") for s in sources)
+
+
+@pytest.mark.parametrize("bad", ["", "Naples, USA", "EST5", "somewhere"])
+def test_a_meal_needs_a_real_timezone(bad):
+    """`safe_timezone()` degrades junk to UTC — right at read time, where a bad
+    row must not 500 every chat turn, and wrong at a mutation boundary. Free
+    text really shipped in this column ("Naples, USA"), and a meal filed on UTC
+    days for a user who is not on UTC is wrong in the one direction nobody
+    checks."""
+    with pytest.raises(MealNotResolved, match="timezone"):
+        _meal(CHICKEN, tz=bad)
+
+
+def test_the_timezone_that_produced_the_day_travels_with_it():
+    """Carried so the day is auditable rather than merely asserted."""
+    meal = _meal(CHICKEN, tz="Europe/Berlin")
+    assert meal.user_timezone == "Europe/Berlin"
+    assert meal.logging_day == DAY

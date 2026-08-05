@@ -35,6 +35,7 @@ from datetime import date as _date
 from enum import Enum
 from decimal import Decimal
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from core.meal_commit import MealCommitResult
 from core.semantics import CanonicalEvent, ResolutionStatus
@@ -165,6 +166,7 @@ class ResolvedMeal:
     revision: int
     user_id: int
     logging_day: _date
+    user_timezone: str
     items: tuple = ()
     intent: MealIntent = MealIntent.CREATE
     source_turn_id: str = ""
@@ -189,6 +191,27 @@ class ResolvedMeal:
                 "misfiles the meal around midnight and for any historical log "
                 "('that was dinner last night') — resolve it upstream from the "
                 "user's timezone and the source turn's timestamp")
+        # THE ZONE THE DAY WAS COMPUTED IN, carried so the day is auditable
+        # rather than merely asserted, and VALIDATED rather than degraded.
+        #
+        # `_user_today` resolves through `safe_timezone`, which turns junk into
+        # UTC — correct at read time, where a bad row must not 500 every chat
+        # turn, and wrong here. A user in Naples whose stored timezone is free
+        # text ("Naples, USA" really shipped) would silently have their meals
+        # filed on UTC days, off by hours in the one direction nobody checks.
+        # The mutation boundary refuses what the read path tolerates.
+        if not self.user_timezone:
+            raise MealNotResolved(
+                "a canonical meal commit requires the timezone its logging_day "
+                "was computed in — without it the day is an assertion nobody "
+                "can check")
+        try:
+            ZoneInfo(self.user_timezone)
+        except Exception as exc:
+            raise MealNotResolved(
+                f"{self.user_timezone!r} is not a real IANA timezone — "
+                f"safe_timezone() degrades junk to UTC at read time, which "
+                f"would silently file this meal on the wrong day") from exc
         if not self.items:
             raise MealNotResolved(
                 "refusing to commit an empty meal — writing nothing "

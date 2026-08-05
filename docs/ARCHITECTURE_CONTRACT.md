@@ -27,6 +27,47 @@ is that an invariant enforced only in documentation or prompts does not count as
 | I16 | A narrated success has a matching successful operation | **unverifiable** (no turn↔operation join) | none → join (audit item 28.2), then reject at render |
 | I17 | No subsystem reconstructs state already held by a canonical ID | **violated** (ask/write disconnect; `user_food_matches` third identity) | none → FoodResolution join (8.1) |
 
+### 1b · Canonical mutation boundary (C1–C6)
+
+I1–I17 describe the system as a whole. These six are the canonical lane's own,
+and unlike the table above they are **executable** —
+`tests/test_the_canonical_invariants.py` fails when one breaks. An invariant
+that lives only in a table is a hope; this rearchitecture exists because of a
+list of properties everyone believed and nothing checked.
+
+| # | Invariant | Status | Enforced by |
+|---|---|---|---|
+| C1 | Every committed row belongs to exactly one `MealCommitResult` | holds in the canonical lane | `test_c1_*` — rows written across two operations are disjoint and fully owned |
+| C2 | Every `MealCommitResult` corresponds to exactly one operation revision | holds | `UNIQUE (operation_id, operation_revision)`, proved under real concurrency in `test_two_connections_one_commit.py` |
+| C3 | No renderer derives totals independently | **partial** | ratchet on macro aggregation. The *other* shape — three owners of the day's REMAINING calories, disagreeing by one — is I9 and is **not** detected |
+| C4 | No mutation bypasses the commit coordinator | **4 legacy writers remain** | ratchet: `api/app.py`, `api/quick_log.py`, `handlers/tool_executor.py` ×2. This is the migration's scoreboard |
+| C5 | No `PendingOperation` transitions directly to COMMITTED | holds | `_ALLOWED_TRANSITIONS`; COMMITTING is the only state that says a write was in flight, so a retry can tell "never started" from "may have written" |
+| C6 | Every duplicate returns the identical **persisted** result | holds | `test_c6_*` — identical to the stored row, not merely equivalent |
+
+C3 and C4 **cannot** hold yet: the legacy lane is still the production writer,
+and it is meant to be. They are ratchets against a measured baseline — they
+permit exactly what exists today and fail the moment it grows. That is the
+difference between "not done" and "getting worse".
+
+### 1c · The migration converges or it is not a migration
+
+**Every production mutation migrated must permanently reduce legacy code.** The
+new architecture must never become an additional layer that coexists
+indefinitely with the old one. Migrations stall at 80–90% precisely because the
+last legacy paths are never deleted, and two systems that both survive will
+diverge — one special-case bug fix at a time, applied to whichever lane the
+reporter happened to hit.
+
+So each mutation owner moves through all five steps, and the last one is not
+optional:
+
+    move one mutation owner -> shadow -> validate -> promote -> DELETE legacy
+
+`C4`'s count is what makes this checkable rather than aspirational: promoting a
+path without deleting its predecessor leaves the number unchanged, and the
+ratchet says so. Lowering `_LEGACY_FOOD_WRITERS` is the last step of each
+migration, not bookkeeping afterwards.
+
 ## 2 · Ownership map
 
 "Owner" = the one component allowed to make the decision or write the state. Everything else is an
