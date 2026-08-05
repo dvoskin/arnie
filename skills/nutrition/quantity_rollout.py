@@ -128,6 +128,24 @@ def cohort_label(user_id) -> str:
 
 def state() -> dict:
     """What `/health` publishes, so Stage 1 can verify the switch is OFF
-    before anything is enabled — rather than inferring it from silence."""
-    return {"halted": halted(), "percent": percent(),
-            "allowlist_size": len(allowlist())}
+    before anything is enabled — rather than inferring it from silence.
+
+    `effective` leads, matching every other entry on that endpoint: one word
+    that answers "what is production doing", with the numbers behind it for
+    the reader who needs to know WHY. `allowlist_size` is a SIZE and never the
+    ids — the endpoint is public.
+    """
+    pct, allow = percent(), allowlist()
+    if halted():
+        effective = "halted"
+    elif allow and pct <= 0:
+        effective = "allowlist"
+    elif pct > 0:
+        effective = f"cohort_{pct:g}pct"
+    else:
+        effective = "off"
+    return {"effective": effective, "halted": halted(), "percent": pct,
+            "allowlist_size": len(allow),
+            "env_set": any(os.getenv(v) is not None for v in (
+                "B1_QUANTITY_HALT", "B1_QUANTITY_ALLOWLIST",
+                "B1_QUANTITY_PERCENT"))}

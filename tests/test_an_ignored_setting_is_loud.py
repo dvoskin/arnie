@@ -133,3 +133,57 @@ def test_env_valid_is_absent_for_a_non_enum_flag(monkeypatch):
 
     entry = public_pipeline_summary().get("FOOD_COMPOSER", {})
     assert "env_valid" not in entry
+
+
+def test_a_non_flag_entry_survives_the_public_reshaper(monkeypatch):
+    """CAUGHT ON THE FIRST REAL B-1 DEPLOY, by the probe stage that exists to
+    verify OFF from outside.
+
+    The reshaper's rule is "never echo arbitrary environment content on a
+    public endpoint" — but it was written as an allowlist of the two fields a
+    FLAG happens to have, which silently destroyed any entry shaped
+    differently. `B1_QUANTITY` reports {effective, halted, percent,
+    allowlist_size} and arrived as `{"effective": null, "env_set": null}`.
+
+    That is not "B-1 is off". It is "this endpoint cannot say" — and the two
+    read identically to anyone checking a deploy, which is the entire failure
+    mode Stage 1 exists to prevent.
+    """
+    from api.diagnostics import public_pipeline_summary
+
+    for var in ("B1_QUANTITY_HALT", "B1_QUANTITY_ALLOWLIST",
+                "B1_QUANTITY_PERCENT"):
+        monkeypatch.delenv(var, raising=False)
+
+    entry = public_pipeline_summary().get("B1_QUANTITY", {})
+    assert entry.get("effective") == "off"
+    assert entry.get("percent") == 0.0, "the NUMBER, not a flattened null"
+    assert entry.get("allowlist_size") == 0
+    assert entry.get("halted") is False
+
+
+def test_the_public_summary_still_never_echoes_env_content():
+    """The rule the allowlist was protecting. Widening what passes through
+    must not widen THIS."""
+    from api.diagnostics import public_pipeline_summary
+
+    for key, entry in public_pipeline_summary().items():
+        if isinstance(entry, dict):
+            assert "env_raw" not in entry, key
+
+
+def test_the_rollout_state_names_its_mode(monkeypatch):
+    """`effective` leads, like every other entry: one word for "what is
+    production doing", with the numbers behind it for whoever needs why."""
+    from skills.nutrition.quantity_rollout import state
+
+    monkeypatch.delenv("B1_QUANTITY_HALT", raising=False)
+    monkeypatch.setenv("B1_QUANTITY_ALLOWLIST", "144")
+    monkeypatch.setenv("B1_QUANTITY_PERCENT", "0")
+    assert state()["effective"] == "allowlist"
+
+    monkeypatch.setenv("B1_QUANTITY_PERCENT", "5")
+    assert state()["effective"] == "cohort_5pct"
+
+    monkeypatch.setenv("B1_QUANTITY_HALT", "true")
+    assert state()["effective"] == "halted", "a halt outranks everything"

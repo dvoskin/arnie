@@ -265,8 +265,22 @@ def public_pipeline_summary() -> dict:
         elif "error" in entry:
             out[key] = {"error": entry["error"]}
         else:
-            summary = {"effective": entry.get("effective"),
-                       "env_set": entry.get("env_set")}
+            # DROP `env_raw`; KEEP THE REST. The rule this implements is
+            # "never echo arbitrary environment content on a public
+            # endpoint" — and writing it as a two-field allowlist made it
+            # silently destructive to any entry shaped differently from a
+            # flag. B1_QUANTITY reports {halted, percent, allowlist_size};
+            # it arrived here as {"effective": null, "env_set": null},
+            # which is not "B-1 is off" but "this endpoint cannot say" —
+            # and those read identically to anyone checking a deploy.
+            #
+            # Caught by the B-1 probe's Stage 1 on the first real deploy,
+            # which is what that stage exists for: verify OFF from outside
+            # rather than inferring it from nothing having happened.
+            #
+            # Counts and booleans are not env content. `allowlist_size` is a
+            # SIZE, deliberately, and not the ids.
+            summary = {k: v for k, v in entry.items() if k != "env_raw"}
             # `env_set: true` was true and useless during the six-day resolver
             # gap: the var WAS set — to `true`, a word the parser does not
             # accept, so it silently ran the fallback. `env_valid: false` is
