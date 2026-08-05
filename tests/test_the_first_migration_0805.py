@@ -351,3 +351,69 @@ def test_post_commit_actions_go_through_one_dispatcher():
         render_actions._HANDLERS.update(original)
 
     assert ran == 1 and len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_durable_outbox_work_rides_the_transaction(pg):
+    """DURABLE vs BEST-EFFORT are different guarantees and must not share a
+    channel. Outbox events land in `background_jobs` inside the mutation's own
+    transaction — either the meal and the work it owes are both durable, or
+    neither happened."""
+    from sqlalchemy import select
+
+    from core.canonical_writer import ResolvedMeal
+    from core.commit_coordinator import commit_or_load_existing
+    from core.meal_commit import MealCommitResult
+    from db.models import BackgroundJob
+
+    async def writer_with_outbox(db, *, operation, resolved_meal):
+        return MealCommitResult(
+            committed_items=({"entry_id": 1, "daily_log_id": 1},),
+            meal_totals={"calories": 100.0},
+            render_actions=({"action": "invalidate_briefing", "user_id": 1},),
+            outbox_events=({"kind": "memory_reflection",
+                            "payload": {"meal": "x"}},))
+
+    class _Op:
+        id, revision, user_id, source_turn_id = "op_outbox", 0, 1, "t:1"
+
+    async with pg() as s:
+        await commit_or_load_existing(
+            s, operation=_Op(), resolved_meal=_meal(), writer=writer_with_outbox)
+        await s.commit()
+
+    async with pg() as s:
+        jobs = (await s.execute(select(BackgroundJob))).scalars().all()
+    assert len(jobs) == 1 and jobs[0].kind == "memory_reflection"
+
+
+@pytest.mark.asyncio
+async def test_a_duplicate_does_not_re_enqueue_the_outbox(pg):
+    """The original delivery already owns the durable work. Re-enqueueing on
+    every retry would multiply the work a flaky network causes — the opposite
+    of what idempotency is for."""
+    from sqlalchemy import func, select
+
+    from core.commit_coordinator import commit_or_load_existing
+    from core.meal_commit import MealCommitResult
+    from db.models import BackgroundJob
+
+    async def writer(db, *, operation, resolved_meal):
+        return MealCommitResult(
+            committed_items=({"entry_id": 1, "daily_log_id": 1},),
+            meal_totals={"calories": 100.0},
+            outbox_events=({"kind": "analytics_record"},))
+
+    class _Op:
+        id, revision, user_id, source_turn_id = "op_dup_outbox", 0, 1, "t:2"
+
+    for _ in range(3):
+        async with pg() as s:
+            await commit_or_load_existing(s, operation=_Op(),
+                                          resolved_meal=_meal(), writer=writer)
+            await s.commit()
+
+    async with pg() as s:
+        n = (await s.execute(
+            select(func.count()).select_from(BackgroundJob))).scalar()
+    assert n == 1, f"three deliveries queued {n} jobs — duplicates re-enqueued"

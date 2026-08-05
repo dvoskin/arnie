@@ -105,6 +105,43 @@ class Confidence:
             raise ValueError(f"confidence out of range: {self.score}")
 
 
+class NutritionProvenance(str, Enum):
+    """WHO SUPPLIED THE NUMBERS — distinct from who chose the food.
+
+    `Provenance` answers "where did this VALUE come from" for a quantity the
+    user expressed. This answers the narrower question the ledger needs for
+    every committed row: which system produced the calories and macros.
+
+    NO DEFAULT THAT CLAIMS AUTHORITY. An unset field must not read as
+    `SERVER_RESOLVED` — that is the resolver asserting it priced something it
+    never saw, and it is unfalsifiable after the fact because the row looks
+    identical to a genuinely resolved one. `UNKNOWN` is the only safe default:
+    it says the pricing system was not recorded, which is true.
+    """
+    #: A product/food database supplied the panel.
+    CATALOG = "catalog"
+    #: The user typed the numbers themselves.
+    USER_STATED = "user_stated"
+    #: The user picked from options the system generated.
+    USER_SELECTED = "user_selected"
+    #: The CLIENT calculated them locally (a quick-log tap). Structured input,
+    #: not authority — the boundary still validates it.
+    CLIENT_ESTIMATED = "client_estimated"
+    #: The server's nutrition resolver priced it.
+    SERVER_RESOLVED = "server_resolved"
+    #: A human overrode a previously committed value.
+    MANUAL_OVERRIDE = "manual_override"
+    #: Not recorded. The honest default; never an authority claim.
+    UNKNOWN = "unknown"
+
+    @property
+    def is_authoritative(self) -> bool:
+        """Whether this pricing may be presented without a hedge."""
+        return self in (NutritionProvenance.CATALOG,
+                        NutritionProvenance.USER_STATED,
+                        NutritionProvenance.MANUAL_OVERRIDE)
+
+
 class ResolutionStatus(str, Enum):
     """UNKNOWN IS A VALID ANSWER. Forcing a match is how a false one gets a
     piece weight, merges two foods, or overwrites a correction target."""

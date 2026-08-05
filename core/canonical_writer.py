@@ -38,7 +38,8 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from core.meal_commit import MealCommitResult
-from core.semantics import CanonicalEvent, ResolutionStatus
+from core.semantics import (CanonicalEvent, NutritionProvenance,
+                            ResolutionStatus)
 
 logger = logging.getLogger(__name__)
 
@@ -92,13 +93,9 @@ class ResolvedFood:
     raw_input: str = ""
     attributes: dict = field(default_factory=dict)
     #: WHO SUPPLIED THE NUMBERS — a different fact from who chose the food.
-    #: `event.provenance` says the user picked "Chicken breast"; this says the
-    #: calories came from the client's local calculation rather than a catalog
-    #: or the server resolver. A client-priced value is structured input, not
-    #: authority, and the result must preserve which system priced it:
-    #:   catalog | user_stated | user_selected | client_estimated |
-    #:   server_resolved | manual_override
-    nutrition_provenance: str = "server_resolved"
+    #: Defaults to UNKNOWN, never SERVER_RESOLVED: an unset field claiming the
+    #: resolver priced it is a lie the row cannot be audited out of later.
+    nutrition_provenance: NutritionProvenance = NutritionProvenance.UNKNOWN
 
     def __post_init__(self):
         if not isinstance(self.event, CanonicalEvent):
@@ -122,6 +119,15 @@ class ResolvedFood:
                 object.__setattr__(self, name, float(value))
         if self.calories < 0:
             raise MealNotResolved(f"{self.name!r} has negative calories")
+        # Coerce a string at the boundary so callers may pass either, but an
+        # invalid one fails HERE rather than reaching storage as free text.
+        try:
+            object.__setattr__(self, "nutrition_provenance",
+                               NutritionProvenance(self.nutrition_provenance))
+        except ValueError as exc:
+            raise MealNotResolved(
+                f"{self.nutrition_provenance!r} is not a NutritionProvenance — "
+                f"who priced a row is a closed set, not free text") from exc
 
     @property
     def name(self) -> str:
@@ -427,7 +433,7 @@ async def _read_back(db, written) -> tuple:
             # Persisted with the result, so a duplicate replay and every later
             # reader can tell client-priced from catalog-priced without a
             # schema change — meal_commits.result_payload is the durable home.
-            "nutrition_provenance": item.nutrition_provenance,
+            "nutrition_provenance": item.nutrition_provenance.value,
             # Where the row LIVES, not just what it is. The quick-log response
             # contract returns daily_log_id, and the idempotency claim stores
             # it so a replay can answer without a join — a result that cannot

@@ -1,6 +1,8 @@
 # Quick-log promotion — production verification record
 
-**Status: INCOMPLETE — awaiting the promoted build in production.**
+**Status: COMPLETE — verified against production 2026-08-05.**
+
+Promoted build `a66e9ba8c86a`, test identity `ios:canonical-parity-test-0805` (user 144), day log 479.
 
 Migration 2/4 does not begin until this record is complete. That is the point
 of the record: "promoted" is a claim about production, and the tests passing is
@@ -19,18 +21,42 @@ Each has a recorded outcome. An unrecorded step is a failed step.
 
 | # | step | how | outcome |
 |---|---|---|---|
-| 1 | promoted build is live | `/health` → `commit` == the promoted sha | ☐ pending |
-| 2 | production reports the promoted state | `/health` → `food_pipeline.QUICK_LOG_FOOD_WRITER == "canonical"` | ☐ pending |
-| 3 | corpus runs against the deployed sha | `python scripts/parity_corpus.py --promoted` | ☐ pending |
-| 4 | canonical writes are visible | `event=canonical_meal_written` lines > 0 in `/admin/food-traces` | ☐ pending |
-| 5 | duplicate returns the ORIGINAL ids | corpus case `DUPLICATE of cp-02`: same `entry_id` AND `daily_log_id` as cp-02 | ☐ pending |
-| 6 | the ledger shows the canonical lane | `SELECT count(*) FROM ledger_events WHERE source = 'canonical:create'` > 0 | ☐ pending |
-| 7 | one row per non-replayed tap | food rows for the test user == non-replay corpus cases (9) | ☐ pending |
-| 8 | nutrition provenance persisted | `meal_commits.result_payload` → `committed_items[].nutrition_provenance == "client_estimated"` | ☐ pending |
-| 9 | latency impact | tap p50/p95 before vs after, from `turn_metrics` where `command='log_food'` | ☐ pending |
+| 1 | promoted build is live | `/health` → `commit` | ✅ `a66e9ba8c86a` |
+| 2 | production reports the promoted state | `/health` → `food_pipeline.QUICK_LOG_FOOD_WRITER` | ✅ `"canonical"` |
+| 3 | corpus runs against the deployed sha | `parity_corpus.py --promoted` | ✅ 10/10 responses as expected |
+| 4 | canonical writes are visible | `event=canonical_meal_written` | ✅ **9 lines**, all `lane=canonical:create`, one per non-replayed tap |
+| 5 | duplicate returns the ORIGINAL ids | corpus `DUPLICATE of cp-02` | ✅ `entry=2818 log=479`, identical to cp-02; claim row `status=completed entry=2818 log=479` |
+| 6 | the ledger shows the canonical lane | `ledger_events` group by source | ✅ **9 `created`, source=`canonical:create`, zero legacy-sourced** |
+| 7 | one row per non-replayed tap | `food_entries` for user 144 | ✅ **9 rows** for 10 taps (1 duplicate wrote nothing) |
+| 8 | nutrition provenance persisted | `meal_commits.result_payload` | ✅ 9 `meal_commits`, all `committed`, **9/9 `client_estimated`** |
+| 9 | latency | `turn_metrics.total_ms`, `command='log_food'` | ✅ n=9, **p50 24ms, p95 87ms** (see caveat) |
 
-Steps 3–5 are one command; 6–8 are one SQL read; step 9 is a comparison
-against the pre-promotion window.
+### Fidelity across the corpus
+
+Every value survived the boundary unchanged: unicode
+(`Гречка с курицей` / `1 порция`), apostrophe (`Trader Joe's Yogurt`),
+decimals (`137.5cal 11.3P`), zero-calorie (`Black coffee` 0.0), large values
+(1850cal), absent quantity (`None`, not `""`), and the unkeyed tap — which
+correctly deduped nothing and took a hash-derived turn id
+(`quick_log:144:ios:h:ce5e4f45…`) rather than a client key.
+
+### Step 9 caveat, stated rather than implied
+
+There is **no pre-promotion comparison window**: `turn_metrics` holds no prior
+`ios`/`log_food` rows at all, because quick-log had no organic tap traffic
+(zero in the 24h before promotion). The canonical numbers are recorded as an
+absolute baseline for future comparison, not as a "faster/slower than legacy"
+claim — which the data cannot support.
+
+### One payload verbatim (step 8 evidence)
+
+```json
+{"schema_version": 1, "result": {"committed_items": [
+  {"entry_id": 2817, "nutrition_provenance": "client_estimated",
+   "daily_log_id": 479, "name": "Chicken breast", "entity_id": "",
+   "quantity": "", "calories": 320.0, "estimated": false}],
+ "meal_totals": {"calories": 320.0, "protein": 43.0, ...}}}
+```
 
 ## Why there is no pre-promotion shadow window
 

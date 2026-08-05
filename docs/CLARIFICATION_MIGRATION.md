@@ -1,6 +1,6 @@
 # Clarification migration — Phase B approach and sequencing
 
-Source: architecture review received 2026-08-06, folded into sequencing per the
+Source: architecture review received 2026-08-05, folded into sequencing per the
 author's framing ("notes to consider … incorporate into approach and
 sequencing"). This is the plan-of-record for migrating conversational food —
 the two remaining `tool_executor` writers — onto the canonical spine.
@@ -91,17 +91,29 @@ a chain of translated representations:
 
 ## Sequencing (coordinated with the migration directive's phases)
 
-    2. freeze producers                       DONE — C8 ratchet, this commit
-    3. strengthen semantic types              enums + SemanticPatch + Interaction
-    4. staged policy emits canonical fields   start: one-item quantity ask
-    5. canonical client payload               iOS renders groups; parser off
-    6. canonical answer application           patches from chips AND text
-    7. one vertical flow proven               chicken → ask → answer → revised
+    B-0  freeze producers                     DONE — C8 ratchet (a66e9ba)
+    B-0b strengthen semantic types            NEXT — ClarificationAttribute,
+                                              ResponseType, ClarificationStatus,
+                                              SemanticPatch, ClarificationInteraction
+    B-1  ONE-ITEM QUANTITY SLICE ONLY         the whole of the next milestone:
+                                              "I had chicken" → quantity ask →
+                                              chip OR text answer → revised
                                               ResolvedMeal → canonical commit →
-                                              matching narration/card/totals
-    8. multi-item, bundles, partial answers
-    9. DELETE adapters + legacy producers     C8 baselines → 0; adapter has a
-                                              deletion milestone, not tenure
+                                              narration/card/totals agree.
+                                              Staged policy emits canonical
+                                              fields for THIS case only; the
+                                              canonical client payload and
+                                              typed answer application ship
+                                              inside this slice, not after it.
+    B-2  multi-item, bundles, partial answers  ONLY after B-1 is green in prod
+    B-3  DELETE adapters + legacy producers    C8 baselines → 0; the adapter
+                                              has a deletion milestone, not
+                                              tenure
+
+Scope discipline for B-1: it is a VERTICAL slice, not a horizontal layer. One
+attribute (quantity), one item, both answer modalities, all the way to the
+ledger and back to the card. Widening before it is proven in production is how
+the four producers happened the first time.
 
 Steps 3–6 ride the same PendingOperation persistence already built
 (`core/pending_repository.py`, flags off) — Phase B is where it stops being

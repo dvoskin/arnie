@@ -7,6 +7,14 @@ rollback. The quick_log promotion inlined a one-action handler; the second
 endpoint would have copied it, and the third would have diverged from both.
 This is the one dispatcher instead.
 
+NOT THE OUTBOX. These are BEST-EFFORT and IN-PROCESS: losing one costs a stale
+read that self-heals on the next request. Work that must NOT be lost — memory
+updates, analytics, coaching analysis — belongs in `MealCommitResult.
+outbox_events`, which the coordinator writes to `background_jobs` inside the
+mutation's transaction and the scheduler sweeps. Putting durable work here
+would make it survive only as long as this process does; putting cache
+invalidation in the outbox would make a stale cache a database row.
+
 RULES. Actions run AFTER the caller's commit, never inside it. Unknown actions
 are logged and skipped — a new writer emitting a new action must not break an
 old endpoint that predates it (forward compatibility is the point of actions

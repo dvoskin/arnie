@@ -115,7 +115,17 @@ class MealCommitResult:
     day_totals: dict = None
     assumptions: tuple = ()
     warnings: tuple = ()
+    #: BEST-EFFORT, POST-COMMIT, IN-PROCESS. Cache invalidation and the like:
+    #: losing one costs a stale read that self-heals. Runs AFTER the caller
+    #: commits, and a failure must never turn a committed mutation into an
+    #: error.
     render_actions: tuple = ()
+    #: DURABLE, IN-TRANSACTION. Work that must not be lost — memory updates,
+    #: analytics, coaching analysis. The coordinator enqueues these into
+    #: `background_jobs` inside the SAME transaction as the rows, so either
+    #: both are durable or neither happened. Never re-enqueued on a duplicate:
+    #: the original delivery already owns them.
+    outbox_events: tuple = ()
 
     def __post_init__(self):
         # NORMALISED AT CONSTRUCTION, so the type does not depend on how the
@@ -124,7 +134,8 @@ class MealCommitResult:
         # winner/duplicate asymmetry this class exists to remove, reintroduced
         # one layer down and caught by its own test.
         for name in ("committed_items", "updated_items", "removed_items",
-                     "assumptions", "warnings", "render_actions"):
+                     "assumptions", "warnings", "render_actions",
+                     "outbox_events"):
             object.__setattr__(self, name, tuple(getattr(self, name) or ()))
         object.__setattr__(self, "meal_totals",
                            _totals(self.meal_totals, "meal_totals"))
@@ -146,6 +157,8 @@ class MealCommitResult:
             "warnings": _json_safe(list(self.warnings), "warnings"),
             "render_actions": _json_safe(list(self.render_actions),
                                          "render_actions"),
+            "outbox_events": _json_safe(list(self.outbox_events),
+                                        "outbox_events"),
         }
 
     @classmethod
@@ -161,6 +174,7 @@ class MealCommitResult:
             assumptions=tuple(data.get("assumptions") or ()),
             warnings=tuple(data.get("warnings") or ()),
             render_actions=tuple(data.get("render_actions") or ()),
+            outbox_events=tuple(data.get("outbox_events") or ()),
         )
 
 

@@ -246,7 +246,8 @@ def _resolved_meal(user, payload, turn_id):
     """
     from core.canonical_writer import (MealIntent, ResolvedFood, ResolvedMeal,
                                        operation_id_for)
-    from core.semantics import (CanonicalEvent, Confidence, Provenance,
+    from core.semantics import (CanonicalEvent, Confidence,
+                                NutritionProvenance, Provenance,
                                 ResolutionStatus)
     from core.timezones import safe_timezone
     from db.queries import _user_today
@@ -283,7 +284,7 @@ def _resolved_meal(user, payload, turn_id):
             meal_type=payload.meal_type, source_type="ios",
             # The user chose the FOOD; the client's local calculation priced
             # it. Structured input, not authority (§7).
-            nutrition_provenance="client_estimated",
+            nutrition_provenance=NutritionProvenance.CLIENT_ESTIMATED,
             raw_input=payload.food_name),))
 
 

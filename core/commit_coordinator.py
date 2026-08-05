@@ -50,6 +50,27 @@ class CommitInProgress(RuntimeError):
         self.operation_id, self.revision = operation_id, revision
 
 
+async def _enqueue_outbox(db, *, operation, result, user_id: int) -> None:
+    """Queue each durable event in the mutation's own transaction."""
+    events = getattr(result, "outbox_events", ()) or ()
+    if not events:
+        return
+    from db.queries import enqueue_background_job
+
+    for event in events:
+        kind = (event or {}).get("kind", "")
+        if not kind:
+            raise ValueError(
+                "an outbox event needs a kind — durable work that cannot say "
+                "what it is cannot be swept")
+        await enqueue_background_job(
+            db, user_id=user_id, kind=kind,
+            payload=event.get("payload") or {},
+            dedup_key=event.get("dedup_key"),
+            turn_id=getattr(operation, "source_turn_id", None) or None,
+            commit=False)          # rides THIS transaction; never its own
+
+
 async def commit_or_load_existing(
         db, *, operation, resolved_meal,
         writer: Callable[..., Any],
@@ -96,6 +117,19 @@ async def commit_or_load_existing(
         raise TypeError(
             "the writer must return a MealCommitResult, so the winner and a "
             f"later duplicate answer with the same type; got {type(result).__name__}")
+
+    # DURABLE POST-COMMIT WORK, ENQUEUED INSIDE THIS TRANSACTION.
+    #
+    # On the WINNER path only. A duplicate is answered from storage, and the
+    # original delivery already enqueued these — re-enqueueing on every retry
+    # would multiply the work a flaky network causes, which is the opposite of
+    # what idempotency is for.
+    #
+    # Best-effort `render_actions` are NOT handled here: they run after the
+    # caller commits, and doing them inside would make a cache invalidation
+    # able to roll back a meal.
+    await _enqueue_outbox(db, operation=operation, result=result,
+                          user_id=user_id)
 
     await record_result(db, operation_id=operation_id, revision=revision,
                         result=result)
