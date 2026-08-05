@@ -365,8 +365,15 @@ def test_the_helpers_route_through_the_authority():
 
     for fn in (PendingOperation.record_failure, PendingOperation.cancel):
         src = inspect.getsource(fn)
-        assert "transition_to(" in src, f"{fn.__name__} bypasses the authority"
-        assert "replace(" not in src, f"{fn.__name__} still replaces directly"
+        # EITHER DOOR, because both enforce the table and the field allowlist.
+        # `_transition_unchecked` is the authority; `transition_to` is the
+        # public guard on top of it that additionally refuses failure targets.
+        # What must never appear is a bare `replace`, which is how the invalid
+        # transitions existed in the first place.
+        assert "_transition_unchecked(" in src or "self.transition_to(" in src, (
+            f"{fn.__name__} bypasses the authority")
+        assert "replace(" not in src or "_transition_unchecked" in src, (
+            f"{fn.__name__} still replaces directly")
 
 
 # ── terminal invariants hold however the object was built ────────────────────
@@ -411,3 +418,93 @@ def test_the_happy_path_still_works():
              .record_failure("transient"))
     assert retry.may_retry
     assert retry.transition_to(PendingStatus.RESOLVING).is_open
+
+
+# ── failure is entered by recording one ──────────────────────────────────────
+
+def _fresh():
+    from core.semantics import PendingOperation
+    return PendingOperation(id="p", user_id="u", domain="food", max_attempts=3)
+
+
+@pytest.mark.parametrize("target", ["retryable_failure", "failed"])
+def test_a_failure_state_cannot_be_entered_directly(target):
+    """THE BOUND LIVED IN `record_failure`, SO THE PUBLIC DOOR BYPASSED IT.
+    Verified before fixing: `transition_to(RETRYABLE_FAILURE)` produced a
+    failure state with attempt_count=0 and no error, then self-transitioned
+    five more times without `max_attempts` ever engaging. "Bounded by
+    max_attempts" was not true of the door callers actually use.
+    """
+    from core.semantics import InvalidPendingTransition, PendingStatus
+
+    with pytest.raises(InvalidPendingTransition, match="record_failure"):
+        _fresh().transition_to(PendingStatus(target))
+
+
+def test_the_retryable_self_transition_is_closed_too():
+    """The loop that made the bound unreachable."""
+    from core.semantics import InvalidPendingTransition, PendingStatus
+
+    once = _fresh().record_failure("first")
+    with pytest.raises(InvalidPendingTransition):
+        once.transition_to(PendingStatus.RETRYABLE_FAILURE)
+
+
+def test_every_recorded_failure_increments_exactly_once():
+    first = _fresh().record_failure("first")
+    second = first.record_failure("second")
+    assert (first.attempt_count, second.attempt_count) == (1, 2)
+    assert second.last_error == "second"
+
+
+def test_the_bound_now_actually_engages():
+    """What the earlier claim asserted and the code did not do."""
+    from core.semantics import PendingStatus
+
+    op = _fresh()
+    for i in range(3):
+        op = op.record_failure(f"attempt {i + 1}")
+    assert op.status is PendingStatus.FAILED and op.attempt_count == 3
+
+
+# ── a transition may not rewrite semantic payload ────────────────────────────
+
+@pytest.mark.parametrize("field,value", [
+    ("user_id", "someone-else"),
+    ("domain", "workout"),
+    ("id", "another-operation"),
+    ("mode", "quick"),
+])
+def test_a_transition_cannot_change_who_or_what_it_is(field, value):
+    """`**changes` reached `replace()` unfiltered, so a lifecycle move could
+    rewrite `user_id` AND `domain` — verified, not hypothesised. A transition
+    changes lifecycle state; semantic payload belongs to methods that revise
+    the operation."""
+    from core.semantics import InvalidPendingTransition, PendingStatus
+
+    with pytest.raises(InvalidPendingTransition, match="semantic payload"):
+        _fresh().transition_to(PendingStatus.AWAITING_CLARIFICATION,
+                               **{field: value})
+
+
+def test_lifecycle_fields_are_still_settable():
+    """A guard that blocks everything is not a guard, it is a wall."""
+    from core.semantics import PendingStatus
+
+    op = (_fresh().transition_to(PendingStatus.READY_TO_COMMIT)
+          .transition_to(PendingStatus.COMMITTING)
+          .transition_to(PendingStatus.COMMITTED, commit_key="mc_9",
+                         version=2))
+    assert op.commit_key == "mc_9" and op.version == 2
+
+
+def test_record_failure_uses_the_primitive_not_the_public_door():
+    """If it called `transition_to`, it would refuse itself — the check that
+    closes the bypass would close the only legitimate path into failure."""
+    import inspect
+
+    from core.semantics import PendingOperation
+
+    src = inspect.getsource(PendingOperation.record_failure)
+    assert "_transition_unchecked(" in src
+    assert "self.transition_to(" not in src

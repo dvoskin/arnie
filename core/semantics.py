@@ -373,10 +373,29 @@ def storage_projection(status: "PendingStatus") -> str:
 class InvalidPendingTransition(ValueError):
     """A lifecycle change the model does not permit."""
 
-    def __init__(self, current, target):
-        super().__init__(f"{current.value} -> {target.value} is not allowed")
-        self.current, self.target = current, target
+    def __init__(self, current, target, why: str = ""):
+        msg = f"{current.value} -> {target.value} is not allowed"
+        super().__init__(f"{msg}: {why}" if why else msg)
+        self.current, self.target, self.why = current, target, why
 
+
+#: FAILURE IS ENTERED BY RECORDING ONE, never by asking for the state. The
+#: bound on retries lives in `record_failure`, so a caller reaching
+#: `transition_to(RETRYABLE_FAILURE)` directly entered a failure state with no
+#: attempt counted and no error — and could then self-transition forever,
+#: because `max_attempts` was never consulted. "Bounded by max_attempts" was
+#: not true of the public door.
+_FAILURE_TARGETS = frozenset({PendingStatus.RETRYABLE_FAILURE,
+                              PendingStatus.FAILED})
+
+#: WHAT A TRANSITION MAY CHANGE. `**changes` reached `replace()` unfiltered, so
+#: a lifecycle move could rewrite `user_id` and `domain` — verified, not
+#: hypothesised. A transition changes lifecycle state; semantic payload belongs
+#: to methods that revise the operation.
+_LIFECYCLE_FIELDS = frozenset({
+    "attempt_count", "last_error", "terminal_reason", "commit_key",
+    "answer_claim_key", "version", "expires_at",
+})
 
 #: THE ONLY LEGAL MOVES. Preventing invalid state SHAPES is not the same as
 #: preventing invalid TRANSITIONS, and the model did the first while permitting
@@ -516,8 +535,26 @@ class PendingOperation:
         retried. One boundary means one place to be right, and one place to add
         the next rule.
         """
+        if target in _FAILURE_TARGETS:
+            raise InvalidPendingTransition(
+                self.status, target,
+                "failure states are entered by record_failure(), which counts "
+                "the attempt and records the error")
+        return self._transition_unchecked(target, **changes)
+
+    def _transition_unchecked(self, target: "PendingStatus",
+                              **changes) -> "PendingOperation":
+        """The primitive. Enforces the table and the field allowlist, and is
+        the only thing permitted to enter a failure state — which is why
+        `record_failure` calls it and `transition_to` does not expose it."""
         if target not in _ALLOWED_TRANSITIONS.get(self.status, set()):
             raise InvalidPendingTransition(self.status, target)
+        forbidden = set(changes) - _LIFECYCLE_FIELDS
+        if forbidden:
+            raise InvalidPendingTransition(
+                self.status, target,
+                f"a transition may not change {sorted(forbidden)} — "
+                "lifecycle moves do not rewrite semantic payload")
         return replace(self, status=target, **changes)
 
     def record_failure(self, error: str) -> "PendingOperation":
@@ -530,7 +567,7 @@ class PendingOperation:
         """
         attempts = self.attempt_count + 1
         exhausted = attempts >= self.max_attempts
-        return self.transition_to(
+        return self._transition_unchecked(
             PendingStatus.FAILED if exhausted
             else PendingStatus.RETRYABLE_FAILURE,
             attempt_count=attempts,
