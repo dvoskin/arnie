@@ -25,7 +25,12 @@ from sqlalchemy import create_engine, text           # noqa: E402
 url = os.environ["DATABASE_URL"]
 if url.startswith("postgres://"):
     url = url.replace("postgres://", "postgresql://", 1)
-eng = create_engine(url, pool_pre_ping=True)
+# Pinned to UTC like every other engine. This script does not import
+# db.database for anything else, so nothing would have REFUSED an
+# unpinned engine here — it would simply have run on the server's
+# timezone, which is the quieter half of the same defect.
+from db.database import pin_session_utc  # noqa: E402
+eng = pin_session_utc(create_engine(url, pool_pre_ping=True))
 client = Anthropic()
 
 RUBRIC = """Classify each food by HOW IT IS MADE (NOVA-style), not how healthy it sounds:

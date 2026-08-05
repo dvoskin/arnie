@@ -16,7 +16,8 @@ import sys
 
 # Reuse the app's URL resolver so we hit the same DB the bot does
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from db.database import _resolve_database_url  # noqa: E402
+from db.database import (_resolve_database_url,  # noqa: E402
+                         pin_session_utc)
 from sqlalchemy import create_engine, text     # noqa: E402
 
 ORPHAN_REV = "d4e5f6a7b8c9"
@@ -30,7 +31,9 @@ def main():
     url = url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
 
     print(f"Connecting to: {url.split('@')[-1] if '@' in url else url}")
-    engine = create_engine(url)
+    # Same clock as the application — and required, since importing
+    # db.database registers the guard that refuses unpinned Postgres.
+    engine = pin_session_utc(create_engine(url))
 
     with engine.begin() as conn:
         # 1) Show current state

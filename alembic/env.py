@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # App metadata — single source of truth for the schema.
-from db.database import Base  # noqa: E402
+from db.database import Base, pin_session_utc  # noqa: E402
 from db import models  # noqa: E402,F401  (import registers all tables on Base)
 
 config = context.config
@@ -74,6 +74,18 @@ def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+    # MIGRATIONS RUN ON THE SAME CLOCK AS THE APPLICATION.
+    #
+    # Not optional, and not merely tidy: importing `db.models` above registers
+    # the guard that refuses any unpinned Postgres engine, so without this
+    # `alembic upgrade heads` — which runs pre-deploy — fails outright. It did.
+    #
+    # It is also correct on its own terms. A migration that backfills or
+    # defaults a timestamp column writes with the database clock, and a
+    # migration writing local time into columns the application reads as UTC is
+    # the same defect this pinning exists to remove, arriving through the one
+    # path that touches every row at once.
+    pin_session_utc(connectable)
     with connectable.connect() as connection:
         context.configure(
             connection=connection,

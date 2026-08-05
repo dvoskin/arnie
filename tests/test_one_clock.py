@@ -282,3 +282,54 @@ def test_sqlite_is_left_alone_and_still_usable():
     engine = make_engine("sqlite+aiosqlite:///:memory:")
     assert engine.sync_engine.dialect.name == "sqlite"
     assert not getattr(engine.sync_engine, database._UTC_PINNED, False)
+
+
+# ── the deploy path ──────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_alembic_can_still_reach_a_postgres_database():
+    """THE REGRESSION THIS FILE ALMOST CAUSED.
+
+    `alembic/env.py` imports `db.models`, which registers the guard that
+    refuses unpinned Postgres engines — and then builds its own SYNCHRONOUS
+    engine via `engine_from_config`. The first version of the guard therefore
+    made `alembic upgrade heads` fail outright, and that command runs
+    pre-deploy. Every deploy would have broken.
+
+    Run as a subprocess because that is how the deploy runs it: a fresh
+    interpreter, the real env.py, the real engine construction.
+    """
+    import subprocess
+    import sys
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "alembic", "current"],
+        capture_output=True, text=True, timeout=180,
+        env={**os.environ, "DATABASE_URL": PG})
+    assert proc.returncode == 0, (
+        "alembic cannot open a Postgres connection — the pre-deploy "
+        f"`alembic upgrade heads` would fail:\n{proc.stderr[-1500:]}")
+    assert "SessionTimezoneNotPinned" not in proc.stderr
+
+
+@pytest.mark.asyncio
+async def test_migrations_run_on_a_utc_session():
+    """A migration that backfills or defaults a timestamp writes with the
+    DATABASE clock. Running it unpinned would put local time into columns the
+    application reads as UTC — the same defect, arriving through the one path
+    that touches every row at once."""
+    from alembic.config import Config
+
+    from alembic import script
+
+    cfg = Config("alembic.ini")
+    heads = script.ScriptDirectory.from_config(cfg).get_heads()
+    assert heads, "no alembic head — the chain is broken"
+
+    engine = make_engine(PG)
+    try:
+        async with engine.connect() as c:
+            assert (await c.execute(text("SHOW timezone"))).scalar().upper() \
+                == "UTC"
+    finally:
+        await engine.dispose()
