@@ -723,6 +723,7 @@ async def add_food_entry(db: AsyncSession, daily_log_id: int,
                          ledger_source: Optional[str] = None,
                          user_id: Optional[int] = None,
                          claim_id: Optional[int] = None,
+                         commit: bool = True,
                          **kwargs) -> FoodEntry:
     """Write one food row, and — when the caller names a `ledger_source` — its
     `created` event, in ONE transaction.
@@ -752,6 +753,15 @@ async def add_food_entry(db: AsyncSession, daily_log_id: int,
     reached by the timing that matters most. Completing it HERE puts the claim,
     the row and the event in one transaction: after a crash the claim is either
     completed with its result, or the row was never written at all.
+
+    `commit=False` hands the transaction back to the caller, which is what lets
+    a MULTI-ITEM meal be one mutation. Committing per row is the reason a
+    three-food turn can leave two foods on the board and lose the third: each
+    row is its own transaction, so there is no state in which the meal as a
+    whole either has or has not landed. The caller then owns the commit AND the
+    briefing invalidation below — see the note there for why that one must not
+    happen early. Mirrors the `commit=False` that `record_ledger_event` already
+    takes, one layer down, for the same reason.
     """
     entry = FoodEntry(daily_log_id=daily_log_id, **kwargs)
     db.add(entry)
@@ -781,6 +791,14 @@ async def add_food_entry(db: AsyncSession, daily_log_id: int,
             rec.result_entry_id = entry.id
             rec.result_daily_log_id = daily_log_id
             rec.completed_at = datetime.utcnow()
+    if not commit:
+        # NOT invalidating the briefing here is deliberate, not an omission.
+        # The row is still invisible to every other connection, so dropping the
+        # cache now lets a concurrent Coach open repopulate it from PRE-write
+        # state — the stale-copy bug the invalidation exists to fix, with worse
+        # timing, and it would survive a rollback that removed the row. The
+        # caller invalidates after its commit.
+        return entry
     await db.commit()
     await db.refresh(entry)
     # Drop cached briefing so the next Coach open regenerates against the new
