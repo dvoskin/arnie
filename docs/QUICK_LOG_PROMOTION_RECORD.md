@@ -10,8 +10,8 @@ TWO STATUSES, kept separate on purpose:
 
 * **Quick-log canonical promotion: COMPLETE, production-verified on
   `a66e9ba8c86a`.** That is the build every ✅ below was measured against.
-* **Later heads (e.g. `7402be0d`+): test-verified; deployment verification
-  pending.** They change runtime behaviour (provenance typing, outbox
+* **Later heads: test-verified, and smoke-verified only where the log below
+  says so.** They change runtime behaviour (provenance typing, outbox
   enqueueing, coordinator sequencing), so "the record is complete" must never
   be read as "the current head is verified."
 
@@ -101,6 +101,17 @@ nothing).
 Identity `ios:canonical-parity-test-0805`, minted through the real
 `POST /api/v1/auth/session` device path. Namespaced and obvious. No other
 user's data is touched by any step here.
+
+## Post-deploy smoke log
+
+APPEND-ONLY, and deliberately not part of the step table above — the table is
+evidence for one migration on one build, and folding later runs into it is
+exactly how a record becomes the perpetual health certificate this one refuses
+to be. Each row is the five-item smoke this document defines, nothing more.
+
+| build | when | sha ✓ | writer ✓ | keyed tap | duplicate identity | provenance | duplicate jobs |
+|---|---|---|---|---|---|---|---|
+| `998f3f430c8e` | 2026-08-05 | ✅ | ✅ `canonical` | ✅ entry 2835 / log 479, `canonical:create` | ✅ same ids, `idempotent_replay=true`, **1** `meal_commits` row, **1** food row | ✅ `client_estimated` | ✅ none |
 
 ## Rollback
 
