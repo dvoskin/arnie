@@ -3696,11 +3696,17 @@ def _b1_material(data, *, message: str, mode: str) -> Optional[dict]:
                                         identity_evidence_fetched,
                                         pipeline_enabled, stage_items)
         if not pipeline_enabled():
+            logger.info("event=b1_no_material reason=pipeline_off")
             return None
         from core.turn_identity import current_turn_id as _tid
         items, _group = stage_items(data, turn_id=(_tid() or ""),
                                     message=message, mode=mode)
         if not items:
+            # An ask with no ITEMS — "was there oil on that?" names no food to
+            # stage. Legitimate, and it must be nameable: a silent None here
+            # is indistinguishable from B-1 never running, which is what made
+            # two production sessions unreadable.
+            logger.info("event=b1_no_material reason=no_staged_items")
             return None
         items = derive_semantics(items, data, message=message, mode=mode)
         return {"staged_items": tuple(items),
@@ -3709,8 +3715,8 @@ def _b1_material(data, *, message: str, mode: str) -> Optional[dict]:
                 "message": message,
                 "identity_evidence": identity_evidence_fetched(data, None)}
     except Exception:
-        logger.debug("b1 material not derived on the interpreter ask",
-                     exc_info=True)
+        logger.warning("event=b1_no_material reason=derivation_failed",
+                       exc_info=True)
         return None
 
 

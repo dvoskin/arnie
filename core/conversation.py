@@ -1615,6 +1615,15 @@ async def _run_turn(
                 # and from then on the meal completes canonically — apply,
                 # repair, cancel or commit — with no later flag check.
                 try:
+                    if not _sft.get("b1_material"):
+                        # SAY SO. Without this, "B-1 was never consulted" and
+                        # "B-1 declined" are indistinguishable in the traces —
+                        # the same cannot-say defect /health had, and it cost
+                        # two production sessions to diagnose by hand. An ask
+                        # that produced no material is a REACHABILITY fact and
+                        # belongs in the decline mix like any other reason.
+                        from core import b1_metrics as _b1m
+                        _b1m.declined(user_id=user.id, reason="no_material")
                     if _sft.get("b1_material"):
                         from core import b1_quantity_operation as _b1
                         from core.language import command_locale
