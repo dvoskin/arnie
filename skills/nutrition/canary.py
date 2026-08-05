@@ -105,17 +105,26 @@ class HaltDecision:
 
 
 # ── cohort selection ──────────────────────────────────────────────────────────
-def bucket_for(user_id) -> Optional[int]:
+def bucket_for(user_id, salt: str = "nutrition_resolver") -> Optional[int]:
     """This user's stable bucket in [0, BUCKETS), or None for an unknown user.
 
     Hashed rather than `user_id % BUCKETS` because sequential ids are not
     uniformly distributed against anything you would later want to correlate —
     signup order, in particular, tracks tenure, and a canary that is secretly a
     cohort of the oldest accounts is measuring tenure and calling it safety.
+
+    `salt` NAMES THE ROLLOUT, and every rollout must pass its own. The salt was
+    hardcoded here while there was one cohort; a second feature reusing it
+    would draw the SAME users at the same percentage — its 5% cohort would be
+    the resolver's 5% cohort exactly. Every measurement of the new feature
+    would then be confounded by resolver-V2 membership, which is the same
+    error this docstring already warns about one paragraph up, arriving from
+    the other direction. The default preserves the resolver's existing buckets
+    so widening it stays monotonic across this change.
     """
     if user_id is None:
         return None
-    digest = hashlib.sha1(f"nutrition_resolver:{user_id}".encode("utf-8"))
+    digest = hashlib.sha1(f"{salt}:{user_id}".encode("utf-8"))
     return int(digest.hexdigest()[:8], 16) % BUCKETS
 
 

@@ -541,6 +541,45 @@ _RANGE_RE = re.compile(
     r"^\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)(?!\s*/)\s+(.*)$")
 
 
+#: Approximation words that PRECEDE a real quantity. "about 6 ounces" is six
+#: ounces, hedged — not an unparseable phrase, and certainly not one of
+#: something called "about".
+#:
+#: `_QTY_RE` is anchored, so a leading hedge missed the match entirely and the
+#: function fell through to its last line: `return 1.0, low`, i.e. amount=1
+#: with the WHOLE STRING as the unit. Measured: "about 6 ounces" ->
+#: `amount=1.0, unit='about', grams=None`, and the same for "around", "maybe",
+#: "like", "roughly", "~". That is not a preserved hedge, it is a misparse
+#: producing a value no consumer can use — and it lands on the single most
+#: natural way to answer "how much?".
+#:
+#: This is the SAME rule the mixed-number arm already applies to the remainder
+#: ("of", "a", "an" are stripped there), applied to the lead. The hedge itself
+#: is not lost: `original_user_wording` keeps the user's sentence verbatim, and
+#: uncertainty is carried by provenance and `uncertainty_g`, not by pretending
+#: the amount is one.
+_LEAD_HEDGES = ("about", "approximately", "approx", "around", "roughly",
+                "maybe", "like", "prob", "probably", "somewhere around",
+                "close to", "just under", "just over", "a little over",
+                "a little under", "or so", "ish")
+
+
+def _strip_hedge(text: str) -> str:
+    """Drop leading approximation words, repeatedly ("maybe about 6 oz")."""
+    t = (text or "").strip()
+    if t.startswith("~"):
+        t = t[1:].strip()
+    changed = True
+    while changed and t:
+        changed = False
+        low = t.lower()
+        for hedge in _LEAD_HEDGES:
+            if low.startswith(hedge + " "):
+                t, changed = t[len(hedge):].strip(), True
+                break
+    return t
+
+
 def _parse_amount(text: str) -> tuple:
     """(amount, remainder). Digits, fractions, mixed numbers and number words.
 
@@ -549,7 +588,7 @@ def _parse_amount(text: str) -> tuple:
     text, which is lowercased downstream anyway. The user's own spelling is
     preserved separately (`original_user_wording`), not recovered from here.
     """
-    t = (text or "").strip()
+    t = _strip_hedge((text or "").strip())
     if not t:
         return 1.0, ""
 
