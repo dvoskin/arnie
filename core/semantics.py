@@ -35,7 +35,7 @@ instead of one uncontrolled pass.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Optional
@@ -416,6 +416,12 @@ class PendingOperation:
     attempt_count: int = 0
     max_attempts: int = 3
     last_error: str = ""
+    #: WHY a terminal operation ended. The storage lifecycle cannot tell a user
+    #: cancellation from a permanent validation failure from exhausted retries
+    #: — all three project onto "cancelled" — so support and recovery tooling
+    #: would read an infrastructure failure as somebody changing their mind.
+    #: Persisted with the operation, never inferred from the row.
+    terminal_reason: str = ""
     version: int = 0
     expires_at: Optional[str] = None
 
@@ -423,12 +429,49 @@ class PendingOperation:
     def is_open(self) -> bool:
         return not self.status.is_terminal
 
+    def __post_init__(self):
+        # THE STATE THAT MUST NOT EXIST. An exhausted RETRYABLE_FAILURE is open,
+        # stored active, and forbidden to retry — the same "over and yet
+        # continuing" ambiguity that `FAILED` had, one level down. Rejected at
+        # construction so no code path can produce it, rather than described in
+        # a comment and left reachable.
+        if (self.status is PendingStatus.RETRYABLE_FAILURE
+                and self.attempt_count >= self.max_attempts):
+            raise ValueError(
+                f"retryable failure with {self.attempt_count}/"
+                f"{self.max_attempts} attempts used is not retryable — "
+                "record_failure() transitions it to FAILED")
+
     @property
     def may_retry(self) -> bool:
         """A retryable failure with attempts left. Terminal failure never
         retries — that is the whole reason the two states are separate."""
         return (self.status is PendingStatus.RETRYABLE_FAILURE
                 and self.attempt_count < self.max_attempts)
+
+    def record_failure(self, error: str) -> "PendingOperation":
+        """Count an attempt and land in the RIGHT state, in one step.
+
+        The transition to FAILED happens HERE, when the attempt is recorded,
+        not in a later cleanup pass. A sweeper would leave a window in which
+        the operation is open, stored active, and unable to retry — which is
+        the ambiguity being removed, reintroduced as a race.
+        """
+        attempts = self.attempt_count + 1
+        exhausted = attempts >= self.max_attempts
+        return replace(
+            self,
+            status=(PendingStatus.FAILED if exhausted
+                    else PendingStatus.RETRYABLE_FAILURE),
+            attempt_count=attempts,
+            last_error=error,
+            terminal_reason=("attempts_exhausted" if exhausted
+                             else self.terminal_reason))
+
+    def cancel(self, reason: str = "user_cancelled") -> "PendingOperation":
+        """Terminal by the USER's decision, and distinguishable from failure."""
+        return replace(self, status=PendingStatus.CANCELLED,
+                       terminal_reason=reason)
 
     def required_unresolved(self, mode: str) -> tuple:
         return tuple(f for f in self.unresolved_fields
@@ -487,3 +530,52 @@ class SemanticTurn:
         decline — a statement that the rules do not apply."""
         return bool(self.raw_text) and not any(
             c.isascii() and c.isalpha() for c in self.raw_text)
+
+
+# ── what the adoption must enforce, as checkable requirements ────────────────
+#
+# `answer_claim_key` and `commit_key` are FIELDS. Fields are not guarantees,
+# and the gap between them is where a meal commits twice. These constants
+# record what the adoption has to build so the requirement is importable and
+# testable rather than sitting in a commit message.
+
+#: The claim already exists, unwired: `pending_store.claim()` is a conditional
+#: UPDATE where exactly one caller sees rowcount 1.
+ANSWER_CLAIM_ENFORCEMENT = "pending_store.claim(): UPDATE ... WHERE answered_at IS NULL"
+
+#: The commit boundary does NOT exist. An application-level
+#: `if not already_committed(key)` is insufficient under concurrent workers:
+#: both read "not committed", both write. Only the database can arbitrate.
+COMMIT_KEY_ENFORCEMENT = "UNIQUE (pending_operation_id, revision)"
+
+#: And a duplicate must RETURN THE FIRST RESULT, not skip silently. A caller
+#: that gets nothing back cannot tell "already done" from "nothing happened",
+#: and will either re-report or report a commit that did not occur on this
+#: turn — which is the phantom-log failure in a new costume.
+COMMIT_DUPLICATE_BEHAVIOUR = "return the original MealCommitResult"
+
+
+def adoption_requirements() -> dict:
+    """What is enforced today versus what the adoption must add.
+
+    `enforced` is measured, not asserted: the claim is enforced because a
+    conditional UPDATE exists; the commit is not, because no constraint does.
+    """
+    return {
+        "answer_consumption": {
+            "mechanism": ANSWER_CLAIM_ENFORCEMENT,
+            "enforced": True,
+            "note": "built in pending_store, currently unwired",
+        },
+        "ledger_mutation": {
+            "mechanism": COMMIT_KEY_ENFORCEMENT,
+            "enforced": False,
+            "note": "no constraint exists; a worker can claim, commit, crash "
+                    "before marking consumed, and a retry commits again",
+        },
+        "duplicate_commit": {
+            "mechanism": COMMIT_DUPLICATE_BEHAVIOUR,
+            "enforced": False,
+            "note": "skipping silently is indistinguishable from doing nothing",
+        },
+    }
