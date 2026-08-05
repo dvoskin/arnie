@@ -335,6 +335,42 @@ def test_a_decimal_is_converted_only_where_the_field_is_known():
             committed_items=[{"cal": Decimal("1")}]).to_payload()
 
 
+def test_totals_are_floats_the_moment_the_result_exists():
+    """The conversion is a property of the RESULT, not of writing it.
+
+    Converted at `to_payload` time instead, a winner would hold
+    `Decimal("0.1")` where a duplicate rebuilt from JSON holds `0.1` — not
+    equal, and not the same type to any consumer reading `meal_totals`.
+    """
+    from decimal import Decimal
+
+    built = meal_commit.MealCommitResult(
+        meal_totals={"calories": Decimal("0.1"), "protein": Decimal("43.5")},
+        day_totals={"calories": 1820})
+
+    assert built.meal_totals == {"calories": 0.1, "protein": 43.5}
+    assert all(type(v) is float for v in built.meal_totals.values())
+    assert type(built.day_totals["calories"]) is int, \
+        "an int round-trips through JSON exactly; there is nothing to convert"
+
+    # ...and that is precisely what makes the two build paths interchangeable.
+    assert built == meal_commit.MealCommitResult.from_payload(built.to_payload())
+
+
+@pytest.mark.parametrize("bad", [
+    {"calories": "520"},                 # a string that looks like a number
+    {"calories": float("inf")},          # not representable in JSON
+    {"calories": True},                  # a bool is not a total
+    {"calories": None},
+    {3: 520.0},                          # a non-string key
+])
+def test_a_total_that_cannot_be_a_float_is_refused_at_construction(bad):
+    """Refused where the caller that supplied it is still on the stack, rather
+    than at the storage boundary long after."""
+    with pytest.raises(meal_commit.UnserializableResult):
+        meal_commit.MealCommitResult(meal_totals=bad)
+
+
 def test_the_result_type_does_not_depend_on_how_it_was_built():
     """A winner built from LISTS and a duplicate rebuilt from JSON as TUPLES
     compared unequal — the winner/duplicate asymmetry, one layer down."""

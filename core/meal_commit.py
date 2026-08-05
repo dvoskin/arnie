@@ -96,9 +96,17 @@ class MealCommitResult:
     the representation: both callers get a `MealCommitResult`, built from the
     same JSON, so there is nothing to reconcile.
 
-    Numeric fields are floats because they cross a JSON boundary. Where a
-    caller holds a `Decimal`, `to_payload` converts it HERE, deliberately and
-    in one place, rather than a generic walker doing it silently everywhere.
+    TOTALS ARE FINITE FLOATS KEYED BY STRINGS. That is a property of the
+    RESULT, enforced at construction — not a property of serialization. A
+    `Decimal` is converted here, deliberately, in one place; a generic walker
+    doing it silently everywhere is what the previous version got wrong.
+
+    Converting at `to_payload` time instead would leave a winner holding
+    `Decimal("0.1")` where the duplicate rebuilt from JSON holds `0.1`. Those
+    are not equal, and they are not the same type to any consumer — the exact
+    winner/duplicate asymmetry this class exists to remove, moved one layer up.
+    So a total that cannot be a finite float is refused at the moment it is
+    built, where the caller that supplied it is still on the stack.
     """
     committed_items: tuple = ()
     updated_items: tuple = ()
@@ -118,8 +126,10 @@ class MealCommitResult:
         for name in ("committed_items", "updated_items", "removed_items",
                      "assumptions", "warnings", "render_actions"):
             object.__setattr__(self, name, tuple(getattr(self, name) or ()))
-        object.__setattr__(self, "meal_totals", dict(self.meal_totals or {}))
-        object.__setattr__(self, "day_totals", dict(self.day_totals or {}))
+        object.__setattr__(self, "meal_totals",
+                           _totals(self.meal_totals, "meal_totals"))
+        object.__setattr__(self, "day_totals",
+                           _totals(self.day_totals, "day_totals"))
 
     def to_payload(self) -> dict:
         """The canonical JSON form. Validated, not coerced."""
@@ -160,6 +170,11 @@ def _totals(values, path: str) -> dict:
     The ONE place a Decimal is converted, and it is converted deliberately
     because totals cross a JSON boundary and both sides of that boundary agree
     they are numbers.
+
+    Called from `__post_init__`, so this is the CONTRACT for the field rather
+    than a step in writing it: an int stays an int (JSON round-trips it
+    exactly), a Decimal becomes a float, and anything else is refused before a
+    result carrying it can exist.
     """
     out = {}
     for key, value in (values or {}).items():
