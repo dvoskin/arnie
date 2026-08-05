@@ -48,6 +48,7 @@ WATCHED = frozenset({
     "identity_preserved", "deferred_collapse", "deferred_commit",
     "structured_food", "structured_food_fallback", "turn_trace",
     "food_composer", "identity_shadow_disagree",
+    "canonical_shadow", "canonical_meal_written",
 })
 
 _lock = threading.Lock()

@@ -30,6 +30,7 @@ returns the ORIGINAL committed result. An ABSENT key deduplicates nothing on
 purpose: only the client can tell a retry from a second helping, and dropping
 food the user really ate is the worse failure.
 """
+import logging
 from contextlib import contextmanager
 from typing import Literal, Optional
 
@@ -53,6 +54,8 @@ from db.queries import (
     get_or_create_today_log,
     resolve_user,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["quick-log"])
 
@@ -198,6 +201,13 @@ async def _write_food(db, user, payload, turn_id, claim, trace) -> dict:
         )
 
     trace.note(entry=entry.id, claim="completed_in_txn")
+
+    # SHADOW (flag-gated, off by default). Runs the canonical spine for real in
+    # a savepoint that is always rolled back, and compares. Placed AFTER the
+    # legacy write has committed so it cannot affect this request under any
+    # failure, and before the response so its finding rides the same trace.
+    await _shadow_canonical(db, user, payload, entry, log, turn_id)
+
     trace.done()
     await trace.persist(db)
     return {
@@ -206,6 +216,71 @@ async def _write_food(db, user, payload, turn_id, claim, trace) -> dict:
         "daily_log_id": log.id,
         "turn_id": turn_id,
     }
+
+
+async def _shadow_canonical(db, user, payload, entry, log, turn_id) -> None:
+    """Build this tap as a ResolvedMeal and compare against what just landed.
+
+    A TAP IS ALREADY CANONICAL-SHAPED: one item, priced by the client, no
+    clarification and no held state, and the day was resolved here from the
+    user's timezone. That is why it is the first migration — everything the
+    canonical contract demands is already in hand, so a divergence means a real
+    disagreement rather than a missing input.
+    """
+    from core.canonical_shadow import compare_with_legacy, shadow_enabled
+
+    if not shadow_enabled():
+        return
+    try:
+        from core.canonical_writer import (MealIntent, ResolvedFood,
+                                           ResolvedMeal)
+        from core.semantics import (CanonicalEvent, Confidence, Provenance,
+                                    ResolutionStatus)
+        from core.timezones import safe_timezone
+
+        # THE ZONE THAT ACTUALLY PRODUCED THE DAY, not the one on the row.
+        # `safe_timezone` degrades junk to UTC, so recording the raw column
+        # would claim the day was computed somewhere it was not. Where it
+        # degraded, that becomes a WARNING rather than a silence.
+        zone = str(getattr(safe_timezone(user.timezone), "zone", "UTC"))
+        warnings = ()
+        if (user.timezone or "") and zone != user.timezone:
+            warnings = (f"stored timezone {user.timezone!r} is not a valid "
+                        f"IANA zone; the logging day was computed in {zone}",)
+
+        meal = ResolvedMeal(
+            operation_id=turn_id, revision=0, user_id=user.id,
+            logging_day=log.date, user_timezone=zone,
+            intent=MealIntent.CREATE, source_turn_id=turn_id,
+            meal_type=payload.meal_type, warnings=warnings,
+            items=(ResolvedFood(
+                event=CanonicalEvent(
+                    id=f"{turn_id}:0", domain="food",
+                    entity_id="", surface_text=payload.food_name,
+                    # A TAP IS THE USER'S OWN STATEMENT. They chose the food
+                    # and the numbers on their screen; nothing was inferred,
+                    # so this is resolved by construction rather than by a
+                    # matcher's opinion.
+                    resolution_status=ResolutionStatus.RESOLVED,
+                    provenance=Provenance.USER_SELECTED,
+                    confidence=Confidence(value=1.0, basis="user_selected")),
+                calories=payload.calories, protein=payload.protein,
+                carbs=payload.carbs, fats=payload.fats,
+                quantity_text=payload.quantity or "",
+                meal_type=payload.meal_type, source_type="ios",
+                raw_input=payload.food_name),))
+
+        await compare_with_legacy(
+            db, meal=meal, lane="quick_log",
+            legacy={"item_count": 1, "names": (entry.parsed_food_name,),
+                    "totals": {"calories": entry.calories,
+                               "protein": entry.protein,
+                               "carbs": entry.carbs, "fats": entry.fats},
+                    "day_calories": log.total_calories})
+    except Exception as exc:      # a diagnostic may never break the write
+        logger.warning("event=canonical_shadow lane=quick_log outcome=error "
+                       "stage=build error=%s: %s",
+                       type(exc).__name__, str(exc)[:200])
 
 
 # ── Exercise ────────────────────────────────────────────────────────────────
