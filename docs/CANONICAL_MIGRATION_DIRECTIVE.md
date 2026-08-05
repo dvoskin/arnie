@@ -466,6 +466,69 @@ So, in force from B-1:
 field-parser fixtures, a classifier corpus, adversarial destructive-command
 tests, and production measurement. Tracked in `DELETION_INVENTORY.md`.
 
+**B-1 progress ledger** — kept current, because "the tests are green" and "the
+slice is done" are different claims and were conflated once already.
+
+| area | state |
+|---|---|
+| eligibility predicate, one owner, evaluated once | DONE |
+| pre-ownership rollout gate (halt / allowlist / cohort) | DONE |
+| candidates: user history + calibrated ontology only | DONE |
+| deterministic selection, ≤3 + Other, no near-duplicates by grams OR label | DONE |
+| typed `ClarificationInteraction`, persisted with patches | DONE |
+| `PendingOperation` created before the question is sent | DONE |
+| answer ownership: chip · exact label · typed · command | DONE |
+| terminal ownership (C10): no mid-flight fallback, gate unreachable by AST | DONE |
+| settlement: one canonical commit, replay on re-delivery | DONE |
+| locale pinned at the ask, English-only Tier 1 | DONE |
+| repair / cancel / internal-failure copy from committed truth | DONE (facts + deterministic fallbacks) |
+| **card + totals verification against the committed result** | TODO |
+| **Arnie voice over the committed facts** | TODO — after lifecycle/committed-truth verification, BEFORE broad rollout |
+| **instrumentation: latency, abandonment, correction-within-10-min, "Other" rate** | TODO |
+| **live operation probe: exact row correlation, duplicate/stale/foreign proof** | TODO |
+| **Telegram/iMessage label-text path proven in production** | TODO |
+| **iOS B-1b: ID-addressed payload + real chip-path proof** | TODO |
+| **rollout: allowlist → 1% → 5% → 25% → 100% of eligible turns** | TODO |
+| **deletion: legacy quantity producer, option builder, answer reconstruction, prose-chip path; lower C8/C9** | TODO |
+
+**B-1 presentation boundary.** B-1 completes the canonical response FACTS and
+their deterministic fallbacks. Production-quality Arnie voice may be refined
+after end-to-end lifecycle and committed-truth verification, and must land
+before broad rollout — not after it.
+
+The ordering is the whole point:
+
+```text
+commit  →  committed facts  →  deterministic copy  →  (later) voice
+```
+
+**Voice is post-commit, and may never reinterpret, recompute, or override a
+committed fact.** It phrases what the row says; it does not decide what the
+row says. The failure this forbids is measured and specific: a reply reading
+"logged, 970/98g" while nothing had been written (2026-08-03), and a card whose
+totals disagreed with the prose beside it because three owners each computed
+their own. A renderer that can recompute is a second owner of the number.
+
+So the sequence for the copy in `b1_answer_turn.copy_for` is: deterministic
+templates now (they cannot drift), voice at B-2.8 rendering the SAME
+`MealCommitResult` fields, with the fallbacks retained — a voice pass that
+fails must degrade to the deterministic sentence, never to silence and never
+to an invented one.
+
+Two scope facts to state rather than let green tests imply otherwise:
+
+* **The chip path has no production channel yet.** `answer_from_chip` is
+  implemented and tested, but nothing in production submits an `option_id` —
+  Telegram and iMessage return the label text, which binds to the stored patch
+  through the label-selection path. The structured tap's PRODUCTION proof is
+  owed at B-1b and must be recorded as owed, not as landed.
+* **Pricing is stubbed in the lifecycle suites.** They monkeypatch
+  `_analyze_food` deliberately, to measure the lifecycle rather than the
+  enrichment ladder. "One commit, one row, correct provenance" is proven;
+  "the number is right for 6 oz of chicken" is `analyze()`'s contract, tested
+  where that lives. The live probe is what first exercises real pricing
+  through this path.
+
 **B-1.5 deletion boundary:** delete the matching legacy preparation ownership
 at promotion — the preparation question producer, its option builder
 (`_PREPARATION_OPTIONS`), and answer-turn preparation reconstruction.

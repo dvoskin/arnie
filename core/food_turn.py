@@ -5654,6 +5654,25 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 _staged_payload = []
             return {"action": "ask", "text": _text,
                     "tool_calls": _ready_calls,
+                    # WHAT B-1 NEEDS TO JUDGE THIS TURN, carried rather than
+                    # decided here. `run()` never touches a database — it is a
+                    # pure interpret-and-decide pass — and B-1's predicate has
+                    # clauses only the caller can evaluate (which client is
+                    # asking, which locale, whether this user is in the
+                    # rollout). Splitting the predicate across two files would
+                    # give it two owners, which is the defect the whole
+                    # migration exists to remove, so the DECISION stays whole
+                    # in one place and this just hands it the material.
+                    #
+                    # Absent when the pipeline did not stage the asked item —
+                    # in which case B-1 declines, and the legacy ask below is
+                    # exactly today's behaviour.
+                    "b1_material": {
+                        "staged_items": _decision.staged_items,
+                        "asked_item_id": _q.staged_item_id,
+                        "items": data.get("items") or [],
+                        "message": message,
+                    },
                     # The settled foods, held as the rows they would have been.
                     # `staged_items` above carries the ASKED item as a
                     # resolution to apply an answer to; this carries the ones

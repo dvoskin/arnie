@@ -181,6 +181,39 @@ def test_near_duplicates_are_suppressed():
     assert len(qc.select(crowded, field=field, food_name="chicken breast")) == 1
 
 
+def test_near_duplicates_are_suppressed_by_LABEL_not_only_by_grams():
+    """MEASURED ON THE FIRST WIRED TURN. Chicken breast's real ontology
+    bracket (130.5 / 174 / 435 g) is well separated numerically — 1.33x
+    between the first two, comfortably past the gram threshold — and renders
+    as `5 oz / 6 oz / 16 oz`.
+
+    Nobody reads 5 and 6 ounces as two different answers. A row that offers
+    three chips and two choices is the "% choosing Other" failure the
+    directive names, arriving through the one gap a grams-only check leaves:
+    the user compares LABELS.
+    """
+    real = _candidates(
+        ("ont_low", 130.5, CandidateSource.ONTOLOGY, 0.2, 0.6),
+        ("ont_mid", 174.0, CandidateSource.ONTOLOGY, 0.5, 0.6),
+        ("ont_high", 435.0, CandidateSource.ONTOLOGY, 0.3, 0.6),
+    )
+    field = qc.quantity_field(operation_id=OP, revision=REV, item=_item())
+    labels = [o.label for o in qc.select(real, field=field,
+                                         food_name="chicken breast")]
+    assert labels == ["6 oz", "16 oz"], labels
+    assert "5 oz" not in labels, \
+        "the better-evidenced candidate keeps the slot; ranked order breaks " \
+        "the tie"
+
+
+def test_label_dedupe_does_not_eat_a_genuinely_spread_row():
+    """The guard must not collapse rows that were always fine."""
+    field = qc.quantity_field(operation_id=OP, revision=REV, item=_item())
+    assert [o.label for o in qc.select(REAL, field=field,
+                                       food_name="chicken breast")] == \
+        ["3 oz", "5 oz", "8 oz"]
+
+
 def test_at_most_three_numeric_options():
     many = _candidates(*[(f"c{i}", 50.0 * (i + 1), CandidateSource.ONTOLOGY,
                           0.3, 0.6) for i in range(6)])

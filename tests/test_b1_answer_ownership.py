@@ -1,0 +1,492 @@
+"""B-1 part 3: an owned answer completes canonically, or not at all.
+
+The required assertions, one test each. Two of them are about things that must
+be UNREACHABLE rather than merely unused, and those are checked against the
+source: a rule enforced only by discipline is a rule that regresses on the
+next edit.
+
+Two distinctions this file pins, because both are easy to collapse and both
+matter to the user:
+
+  * AN UNREADABLE USER ANSWER repairs — we ask the same field again, because
+    the user can answer it.
+  * A CORRUPT STORED OPERATION fails internally — asking again would invite an
+    answer we still could not apply, so the user is told plainly and the
+    operation terminates rather than looping.
+
+and:
+
+  * TAPPING AN OFFERED OPTION is `USER_SELECTED`, even on a channel with no
+    structured tap, where "6 oz" comes back as literal text. The meaning is
+    still loaded from the stored patch.
+  * TYPING A QUANTITY WE DID NOT OFFER is `USER_STATED`.
+"""
+import json
+
+import pytest
+import pytest_asyncio
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from core import b1_answer_turn as answer_turn
+from core import b1_quantity_operation as b1
+from core.semantics import Provenance
+from db.models import (Base, DailyLog, FoodEntry, LedgerEvent, MealCommit,
+                       PendingOperation, User)
+from skills.nutrition.ambiguity import AmbiguityType, FoodAmbiguity
+from skills.nutrition.staging import (FoodIdentity, QuantityIntent,
+                                      StagedFoodItem)
+
+INTERPRETED = {"food": "chicken breast", "calories": 187, "protein": 35,
+               "carbs": 0, "fats": 4}
+
+
+def _staged():
+    return StagedFoodItem(
+        staged_item_id="si_1", original_text="some chicken breast",
+        identity=FoodIdentity(canonical_name="chicken breast"),
+        quantity=QuantityIntent(descriptor="some"), vague_measure="some",
+        ambiguities=(FoodAmbiguity(
+            ambiguity_id="a1", staged_item_id="si_1",
+            ambiguity_type=AmbiguityType.CONSUMED_QUANTITY,
+            field_name="estimated_mass_g", materiality_score=2.0,
+            calorie_span=180.0),))
+
+
+def _material():
+    return dict(staged_items=(_staged(),), asked_item_id="si_1",
+                items=[dict(INTERPRETED)],
+                message="I had some chicken breast")
+
+
+@pytest_asyncio.fixture
+async def engine(tmp_path):
+    from db.database import make_engine
+
+    eng = make_engine(f"sqlite+aiosqlite:///{tmp_path / 'ans.db'}")
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield eng
+    await eng.dispose()
+
+
+@pytest_asyncio.fixture
+async def sessions(engine):
+    return async_sessionmaker(engine, class_=AsyncSession,
+                              expire_on_commit=False)
+
+
+@pytest_asyncio.fixture
+async def user(sessions, monkeypatch):
+    async with sessions() as s:
+        u = User(telegram_id="b1:ans", name="Ans", timezone="UTC")
+        s.add(u)
+        await s.commit()
+    monkeypatch.setenv("B1_QUANTITY_ALLOWLIST", str(u.id))
+    monkeypatch.delenv("B1_QUANTITY_HALT", raising=False)
+    return u
+
+
+@pytest.fixture(autouse=True)
+def _priced(monkeypatch):
+    class _Analysis:
+        calories, protein, carbs, fat = 231.0, 43.0, 0.0, 5.0
+        fiber = sugar = sodium = None
+        micros, micros_estimated, assumptions = None, False, ()
+        provenance = None
+        confidence = "likely"
+
+    seen = {}
+
+    async def _fake(db, user, food_name, inp):
+        seen["quantity"] = inp.get("quantity")
+        return _Analysis()
+
+    monkeypatch.setattr("handlers.tool_executor._analyze_food", _fake)
+    return seen
+
+
+@pytest_asyncio.fixture
+async def opened(sessions, user):
+    """An owned, unanswered operation — the state every test below starts in."""
+    async with sessions() as s:
+        u = await s.get(User, user.id)
+        ask = await b1.try_take_ownership(
+            s, user=u, material=_material(), turn_id="t_1",
+            client_capable=True, locale="en")
+        await s.commit()
+    assert ask is not None
+    return ask
+
+
+async def _answer(sessions, user, **kw):
+    async with sessions() as s:
+        u = await s.get(User, user.id)
+        out = await answer_turn.handle(s, user=u, source_turn_id="t_2", **kw)
+        await s.commit()
+        return out
+
+
+def _field_id(ask):
+    return ask.interaction.groups[0].fields[0].field_id
+
+
+async def _counts(sessions):
+    async with sessions() as s:
+        return {
+            "food": (await s.execute(
+                select(func.count()).select_from(FoodEntry))).scalar(),
+            "commits": (await s.execute(
+                select(func.count()).select_from(MealCommit))).scalar(),
+            "ledger": (await s.execute(
+                select(func.count()).select_from(LedgerEvent))).scalar(),
+        }
+
+
+async def _row(sessions):
+    async with sessions() as s:
+        return (await s.execute(select(PendingOperation))).scalar_one()
+
+
+# ── unreachability, checked against the source ───────────────────────────────
+
+def test_the_answer_path_cannot_consult_the_rollout_gate():
+    """Not "does not" — CANNOT. The gate is asked once, before ownership; a
+    read here would be the mid-flight fallback the directive forbids, and a
+    convention is one careless import away from breaking.
+
+    By AST, not by substring: the module's own docstring explains at length
+    WHY the gate is absent, and a text search cannot tell an explanation from
+    an import. That is the same defect as a grep-based ratchet, one file over.
+    """
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(answer_turn))
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(a.name for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imported.add(node.module or "")
+            imported.update(f"{node.module}.{a.name}" for a in node.names)
+    assert not [m for m in imported if "quantity_rollout" in m], \
+        f"the answer path imports the rollout gate: {imported}"
+
+    called = {n.func.attr for n in ast.walk(tree)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
+    called |= {n.func.id for n in ast.walk(tree)
+               if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    assert "may_take_ownership" not in called
+    assert "in_cohort" not in called and "halted" not in called
+
+
+@pytest.mark.asyncio
+async def test_an_owned_turn_never_reaches_the_legacy_interpreter(
+        sessions, user, opened, monkeypatch):
+    """`_sft_run` is the broad food interpreter. Reaching it with an answer in
+    hand is how "6 oz" became a second meal."""
+    called = {"n": 0}
+
+    async def _boom(*a, **kw):
+        called["n"] += 1
+        raise AssertionError("the legacy interpreter was reached")
+
+    monkeypatch.setattr("core.food_turn.run", _boom)
+    out = await _answer(sessions, user, message="6 oz")
+    assert out.applied
+    assert called["n"] == 0
+
+
+# ── the answer modalities ────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_an_exact_persisted_label_maps_to_the_stored_patch(
+        sessions, user, opened):
+    """Telegram and iMessage have no structured tap: an offered chip comes
+    back as its literal label. The meaning must still be LOADED, not re-parsed
+    — and it is a selection, not a statement."""
+    label = opened.interaction.groups[0].fields[0].options[0].label
+    stored = opened.interaction.groups[0].fields[0].options[0].patch
+
+    out = await _answer(sessions, user, message=label)
+    assert out.applied
+    assert out.patch == stored, "the label bound to its stored patch"
+    assert out.patch.provenance is Provenance.USER_SELECTED
+
+
+@pytest.mark.asyncio
+async def test_a_structured_tap_selects(sessions, user, opened):
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=0)
+    assert out.applied
+    assert out.patch.provenance is Provenance.USER_SELECTED
+
+
+@pytest.mark.asyncio
+async def test_a_free_typed_quantity_is_a_statement(sessions, user, opened,
+                                                    _priced):
+    out = await _answer(sessions, user, message="about 6 ounces")
+    assert out.applied
+    assert out.patch.provenance is Provenance.USER_STATED
+    assert _priced["quantity"] == "170.1g"
+
+
+@pytest.mark.asyncio
+async def test_chip_and_typed_agree_on_the_quantity_and_differ_on_provenance(
+        sessions, user, opened):
+    """C14. The offered label and its own number typed by hand are the same
+    answer; only who produced it differs."""
+    option = opened.interaction.groups[0].fields[0].options[0]
+    tapped = await _answer(sessions, user, field_id=_field_id(opened),
+                           option_id=option.option_id, revision=0)
+    assert tapped.patch.quantity.grams == option.patch.quantity.grams
+    assert tapped.patch.provenance is Provenance.USER_SELECTED
+
+
+# ── failing closed ───────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_a_stale_revision_cannot_mutate_state(sessions, user, opened):
+    before = await _row(sessions)
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=99)
+    assert out.refused
+    after = await _row(sessions)
+    assert after.revision == before.revision
+    assert after.status == b1.AWAITING
+    assert (await _counts(sessions))["food"] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_foreign_field_cannot_mutate_state(sessions, user, opened):
+    out = await _answer(sessions, user,
+                        field_id="op_other:food_x:quantity:0",
+                        option_id="opt_ont_mid", revision=0)
+    assert out.refused
+    assert (await _row(sessions)).revision == 0
+
+
+@pytest.mark.asyncio
+async def test_an_invalid_option_id_cannot_mutate_state(sessions, user, opened):
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_nope", revision=0)
+    assert out.refused
+    assert (await _row(sessions)).revision == 0
+
+
+@pytest.mark.asyncio
+async def test_refused_does_not_bump_the_revision(sessions, user, opened):
+    """A stale-tap storm must not walk the revision forward — that would
+    invalidate the very chips still on the user's screen."""
+    for _ in range(3):
+        await _answer(sessions, user, field_id=_field_id(opened),
+                      option_id="opt_nope", revision=0)
+    assert (await _row(sessions)).revision == 0
+
+
+@pytest.mark.asyncio
+async def test_repair_keeps_the_same_operation_and_field_and_revision(
+        sessions, user, opened):
+    out = await _answer(sessions, user, message="it was pretty good")
+    assert out.repair
+    row = await _row(sessions)
+    assert row.status == b1.AWAITING, "the operation stays open to be answered"
+    assert row.revision == 0, "a repair changes no persisted semantic state"
+    assert out.field_id == _field_id(opened), "the SAME field is re-asked"
+    assert out.operation_id == opened.operation_id
+
+
+# ── corrupt storage is not the user's problem ────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_a_corrupt_stored_operation_fails_internally_not_as_a_repair(
+        sessions, user, opened):
+    """Asking again would invite an answer we still could not apply — the user
+    would answer into a void twice. It terminates, visibly, instead."""
+    async with sessions() as s:
+        row = (await s.execute(select(PendingOperation))).scalar_one()
+        payload = json.loads(row.canonical_payload)
+        payload["interaction"] = {"schema_version": 99}
+        row.canonical_payload = json.dumps(payload)
+        await s.commit()
+
+    out = await _answer(sessions, user, message="6 oz")
+    assert out.failed, "a corrupt operation is an internal failure"
+    assert not out.repair
+    row = await _row(sessions)
+    assert row.status not in (b1.AWAITING,), \
+        "a meal nobody can settle must not stay open forever"
+    assert (await _counts(sessions))["food"] == 0
+
+
+# ── settlement ───────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_a_successful_answer_produces_exactly_one_canonical_commit(
+        sessions, user, opened):
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=0)
+    assert out.applied and out.result is not None
+    counts = await _counts(sessions)
+    assert counts == {"food": 1, "commits": 1, "ledger": 1}
+    async with sessions() as s:
+        assert [e.source for e in
+                (await s.execute(select(LedgerEvent))).scalars()] == \
+            ["canonical:create"]
+    assert (await _row(sessions)).status == b1.COMMITTED
+
+
+@pytest.mark.asyncio
+async def test_two_racing_identical_answers_produce_one_effect(
+        sessions, user, opened):
+    """One winner; the other replays or is refused. Never two meals."""
+    async with sessions() as s:
+        u = await s.get(User, user.id)
+        first = await answer_turn.handle(
+            s, user=u, source_turn_id="t_2", field_id=_field_id(opened),
+            option_id="opt_ont_mid", revision=0)
+        second = await answer_turn.handle(
+            s, user=u, source_turn_id="t_2", field_id=_field_id(opened),
+            option_id="opt_ont_mid", revision=0)
+        await s.commit()
+
+    assert first.applied
+    assert second.applied or second.refused
+    if second.applied:
+        assert second.result.committed_items == first.result.committed_items
+    assert (await _counts(sessions))["food"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_committed_operation_replays_the_stored_result_exactly(
+        sessions, user, opened):
+    first = await _answer(sessions, user, field_id=_field_id(opened),
+                          option_id="opt_ont_mid", revision=0)
+    again = await _answer(sessions, user, field_id=_field_id(opened),
+                          option_id="opt_ont_mid", revision=0)
+    assert again.result == first.result, "the SAME result object, rebuilt"
+    assert (await _counts(sessions))["food"] == 1
+
+
+@pytest.mark.asyncio
+async def test_cancel_writes_no_food_row_and_no_meal_commit(sessions, user,
+                                                            opened):
+    out = await _answer(sessions, user, message="never mind")
+    assert out.cancelled
+    assert await _counts(sessions) == {"food": 0, "commits": 0, "ledger": 0}
+    assert (await _row(sessions)).status == b1.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_an_estimate_uses_a_persisted_option_not_a_new_value(
+        sessions, user, opened):
+    offered = {o.patch.quantity.grams
+               for o in opened.interaction.groups[0].fields[0].options}
+    out = await _answer(sessions, user, message="I don't know")
+    assert out.applied
+    assert out.patch.quantity.grams in offered, \
+        "an estimate may not synthesise a value the user never saw"
+    assert out.patch.provenance is Provenance.MODE_DEFAULT
+    assert (await _counts(sessions))["food"] == 1
+
+
+# ── locale ───────────────────────────────────────────────────────────────────
+
+# ── the presentation boundary ────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_the_response_facts_come_off_the_committed_result(sessions, user,
+                                                                opened):
+    """Voice renders THESE, and is never handed the result object — a renderer
+    holding the raw commit is a renderer that can recompute, and a renderer
+    that can recompute is a second owner of the number."""
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=0)
+    facts = answer_turn.facts_for(out)
+
+    assert facts["entry_id"] == out.result.committed_items[0]["entry_id"]
+    assert facts["calories"] == out.result.meal_totals["calories"]
+    assert facts["protein"] == out.result.meal_totals["protein"]
+    assert facts["operation_id"] == out.operation_id
+    # TWO QUESTIONS, deliberately not collapsed: they chose the portion, so
+    # nothing is being assumed AT them — but the FIGURE is still one we
+    # produced, which is what the row's estimated flag records.
+    assert facts["estimated"] is False, "the user chose this portion"
+    assert facts["system_supplied_figure"] is True, \
+        "a tap is not the user's own figure — that distinction is the " \
+        "2026-08-04 disclosure fix and must survive to the row"
+
+
+@pytest.mark.asyncio
+async def test_a_tap_is_not_told_that_we_guessed(sessions, user, opened):
+    """Saying "(my estimate)" to someone who just tapped "6 oz" tells them we
+    guessed when they decided. The opposite error to the 2026-08-04 one, and
+    the same conflation underneath."""
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=0)
+    assert "(my estimate)" not in answer_turn.copy_for(out)
+
+
+@pytest.mark.asyncio
+async def test_a_typed_figure_is_the_users_own(sessions, user, opened):
+    out = await _answer(sessions, user, message="about 6 ounces")
+    facts = answer_turn.facts_for(out)
+    assert facts["estimated"] is False
+    assert facts["system_supplied_figure"] is False, \
+        "they produced this number themselves"
+
+
+@pytest.mark.asyncio
+async def test_an_assumed_portion_is_disclosed_in_the_facts_and_the_copy(
+        sessions, user, opened):
+    out = await _answer(sessions, user, message="I don't know")
+    assert answer_turn.facts_for(out)["estimated"] is True
+    assert "(my estimate)" in answer_turn.copy_for(out), \
+        "an assumption the user did not supply must be visible to them"
+
+
+@pytest.mark.asyncio
+async def test_the_copy_states_only_what_was_committed(sessions, user, opened):
+    """The failure this forbids is specific and measured: a reply reading
+    "logged, 970/98g" while nothing had been written."""
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=0)
+    said = answer_turn.copy_for(out)
+    assert f"{out.result.meal_totals['calories']:.0f} cal" in said
+    assert "chicken breast" in said
+
+
+@pytest.mark.asyncio
+async def test_every_non_commit_outcome_has_deterministic_copy(sessions, user,
+                                                               opened):
+    """A voice pass that fails degrades to these — never to silence, and never
+    to an invented sentence."""
+    repaired = await _answer(sessions, user, message="it was pretty good")
+    assert answer_turn.copy_for(repaired) and "?" in answer_turn.copy_for(repaired)
+
+    refused = await _answer(sessions, user, field_id=_field_id(opened),
+                            option_id="opt_nope", revision=0)
+    assert "older question" in answer_turn.copy_for(refused)
+
+    cancelled = await _answer(sessions, user, message="never mind")
+    assert "nothing logged" in answer_turn.copy_for(cancelled).lower()
+
+
+@pytest.mark.asyncio
+async def test_the_locale_comes_from_the_operation_not_the_current_message(
+        sessions, user):
+    """The question was asked in Russian. An English-looking reply two turns
+    later must not re-detect its way into the English command lexicon."""
+    async with sessions() as s:
+        u = await s.get(User, user.id)
+        await b1.try_take_ownership(s, user=u, material=_material(),
+                                    turn_id="t_ru", client_capable=True,
+                                    locale="ru")
+        await s.commit()
+
+    out = await _answer(sessions, user, message="cancel")
+    assert not out.cancelled, \
+        "an English command must not fire under a Russian operation"
+    assert out.repair
+    assert (await _row(sessions)).status == b1.AWAITING

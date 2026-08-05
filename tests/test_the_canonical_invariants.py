@@ -484,8 +484,15 @@ def test_c8_every_clarification_producer_is_a_known_one():
 _OPTION_PAYLOAD_BASELINE = {
     # DEBT — heuristic producers the chip pipeline replaces.
     "core/food_turn.py": 7,             # the primary assembler (7 shapes)
-    "core/conversation.py": 1,          # write-side relay into the pending
-                                        # payload; dies at B-1
+    "core/conversation.py": 2,          # 1 write-side relay into the pending
+                                        # payload (DEBT, dies at B-1) + 1
+                                        # CANONICAL projection of the B-1
+                                        # interaction onto the legacy key, so
+                                        # a pre-B-1b client still renders
+                                        # chips. Both counted here because
+                                        # the ratchet counts FILES; the
+                                        # second falls with QuickReplyEngine
+                                        # at promotion.
     "core/context_builder.py": 1,       # read-side relay of the SAME stash
                                         # onto the chat wire; dies with it
     "skills/nutrition/clarify_ui.py": 1,  # dormant staged-pipeline UI model
@@ -497,6 +504,11 @@ _OPTION_PAYLOAD_BASELINE = {
     # serializes its own typed options; this entry rises as B-1 lands and the
     # DEBT entries above fall.
     "core/semantics.py": 1,
+    # CANONICAL — B-1's wire payload (ids + labels, the patch stays server
+    # side) and its projection onto the legacy `questions` shape. ONE
+    # producer rendered two ways, which is why they cannot disagree; the
+    # projection dies with the client parser at promotion.
+    "core/b1_quantity_operation.py": 2,
 }
 
 #: `AmbiguityOption(...)` constructors — the staged pipeline's option shape

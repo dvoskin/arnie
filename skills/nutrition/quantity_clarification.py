@@ -359,8 +359,21 @@ def select(candidates_in, *, field, food_name: str = "") -> tuple:
     if not chosen:
         return ()
 
-    labels = labels_for(tuple(float(c.semantic_value.grams) for c in chosen),
-                        food_name)
+    # DEDUPE AGAIN ON WHAT THE USER ACTUALLY READS.
+    #
+    # The pass above compares GRAMS; a chip row is compared by eye. Measured
+    # on the first wired turn: chicken breast's ontology bracket
+    # (130.5 / 174 / 435 g) is well separated numerically — 1.33x between the
+    # first two — and renders as "5 oz / 6 oz / 16 oz". Nobody reads 5 and 6
+    # ounces as two different answers, so that row offers three chips and two
+    # choices, and the third is a pound of chicken.
+    #
+    # The test is the label's own re-parsed mass, which is the same
+    # philosophy `_everyday_labels` already applies to accept a rendering at
+    # all: if two labels MEAN nearly the same thing when read back, they are
+    # one option. Ranked order breaks the tie, so the better-evidenced
+    # candidate keeps its slot.
+    chosen, labels = _collapse_by_label(chosen, ranked, food_name)
 
     options = []
     for cand, label in zip(chosen, labels):
@@ -384,6 +397,47 @@ def select(candidates_in, *, field, food_name: str = "") -> tuple:
 def _near(a: float, b: float) -> bool:
     lo, hi = min(a, b), max(a, b)
     return lo > 0 and hi / lo < NEAR_DUPLICATE_RATIO
+
+
+def _collapse_by_label(chosen, ranked, food_name: str):
+    """Drop options whose LABELS say the same thing, then re-render.
+
+    Re-rendering after each drop is not wasted work: `_everyday_labels` picks
+    a rendering per anchor relative to its neighbours, so removing one anchor
+    can legitimately change how the survivors are said.
+    """
+    rank = {id(c): i for i, c in enumerate(ranked)}
+    while True:
+        labels = labels_for(tuple(float(c.semantic_value.grams)
+                                  for c in chosen), food_name)
+        drop = None
+        for i in range(len(chosen) - 1):
+            a, b = _label_mass(labels[i], food_name), \
+                _label_mass(labels[i + 1], food_name)
+            if labels[i] == labels[i + 1] or (
+                    a and b and _near(a, b)):
+                # Keep the better-evidenced one; ranked order decided that.
+                drop = (i if rank.get(id(chosen[i]), 99)
+                        > rank.get(id(chosen[i + 1]), 99) else i + 1)
+                break
+        if drop is None:
+            return chosen, labels
+        chosen = chosen[:drop] + chosen[drop + 1:]
+        if len(chosen) <= 1:
+            return chosen, labels_for(
+                tuple(float(c.semantic_value.grams) for c in chosen),
+                food_name)
+
+
+def _label_mass(label: str, food_name: str) -> Optional[float]:
+    """What this label means when READ BACK — the only definition of "these
+    two chips say the same thing" that matches how a user compares them."""
+    try:
+        from skills.nutrition.normalize import normalize_quantity
+        grams = normalize_quantity(label, food_name or "").grams
+        return float(grams) if grams else None
+    except Exception:
+        return None
 
 
 def labels_for(grams: tuple, food_name: str = "") -> tuple:

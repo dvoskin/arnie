@@ -1,0 +1,299 @@
+"""B-1 part 3: an owned answer completes canonically, or not at all.
+
+    owning()  ->  verify  ->  claim  ->  chip | text  ->  APPLIED / REPAIR
+                                                        / CANCELLED / REFUSED
+                                                     ->  settle | cancel
+
+WHAT IS DELIBERATELY ABSENT FROM THIS MODULE
+--------------------------------------------
+`skills.nutrition.quantity_rollout`. Not "unused" — ABSENT, and a test reads
+this file's source to keep it that way. The gate is asked once, before
+ownership exists; asking it again here is the mid-flight fallback the
+directive forbids, and a rule enforced only by discipline is one careless
+import from breaking.
+
+`core.food_turn.run`. Handing an answer to the broad food interpreter is how
+"6 oz" became a second meal. There is no call to it here and no branch that
+could reach one: an owned turn returns from this module or from nowhere.
+
+TWO DISTINCTIONS THAT LOOK ALIKE AND ARE NOT
+--------------------------------------------
+An UNREADABLE USER ANSWER repairs. The user said something we could not parse;
+they can say it again, and the field is still answerable.
+
+A CORRUPT STORED OPERATION fails. We cannot apply ANY answer to it, so asking
+again invites a second answer into the same void. It terminates visibly
+instead. Presenting our own storage failure as a question to the user is both
+dishonest and an infinite loop.
+
+An OFFERED LABEL is a selection. On Telegram and iMessage a chip comes back as
+its literal text ("6 oz"), not as an option id — but it is still the option we
+offered, so its meaning is LOADED from the stored patch and its provenance is
+`USER_SELECTED`. Only a quantity we never offered is `USER_STATED`.
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Any, Optional
+
+from core import b1_quantity_operation as ops
+from core.clarification_answer import (Outcome, answer_from_chip,
+                                       answer_from_text)
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class AnswerTurn:
+    """What an owned answer turn did. Rendered by the caller, never by here."""
+    outcome: Outcome
+    operation_id: str = ""
+    field_id: str = ""
+    patch: Any = None
+    result: Any = None
+    reason: str = ""
+    #: Set when OUR state, not the user's answer, was the problem.
+    internal_failure: bool = False
+
+    @property
+    def applied(self) -> bool:
+        return self.outcome is Outcome.APPLIED and not self.internal_failure
+
+    @property
+    def repair(self) -> bool:
+        return self.outcome is Outcome.REPAIR and not self.internal_failure
+
+    @property
+    def cancelled(self) -> bool:
+        return self.outcome is Outcome.CANCELLED
+
+    @property
+    def refused(self) -> bool:
+        return self.outcome is Outcome.REFUSED and not self.internal_failure
+
+    @property
+    def failed(self) -> bool:
+        return self.internal_failure
+
+
+async def handle(db, *, user, source_turn_id: str, message: str = "",
+                 field_id: str = "", option_id: str = "",
+                 revision: Optional[int] = None) -> Optional[AnswerTurn]:
+    """Answer an owned operation, or return None if none owns this user.
+
+    None means "not ours" and ONLY that — the caller proceeds exactly as it
+    does today. Every other return means the canonical path handled the turn
+    and the legacy lane must not run.
+    """
+    owned = await ops.owning(db, user)
+    if owned is None:
+        return None
+
+    if not owned.readable:
+        # OUR failure, not theirs. Terminate rather than re-ask: no answer to
+        # this operation could be applied, so a repair question would collect
+        # a second answer into the same void.
+        await ops.fail(db, owned=owned, user=user,
+                       reason="stored interaction unreadable")
+        logger.error("event=b1_operation_corrupt operation=%s user=%s",
+                     owned.operation_id, user.id)
+        return AnswerTurn(Outcome.REFUSED, operation_id=owned.operation_id,
+                          internal_failure=True,
+                          reason="stored interaction unreadable")
+
+    interaction = owned.interaction
+    live_field = interaction.groups[0].fields[0]
+
+    # ALREADY SETTLED. A tap on a chip still on screen after the meal landed
+    # is a real delivery; `settle` replays the stored result rather than
+    # writing a second meal (the revision would differ, so the coordinator's
+    # claim cannot catch it).
+    if not owned.awaiting:
+        answer = _read(owned, interaction, live_field, message=message,
+                       field_id=field_id, option_id=option_id,
+                       revision=revision)
+        if answer.outcome is not Outcome.APPLIED:
+            return _turn(answer, owned, live_field)
+        result = await ops.settle(db, user=user, owned=owned,
+                                  patch=answer.patch,
+                                  source_turn_id=source_turn_id)
+        return AnswerTurn(Outcome.APPLIED, operation_id=owned.operation_id,
+                          field_id=live_field.field_id, patch=answer.patch,
+                          result=result, reason="replay")
+
+    answer = _read(owned, interaction, live_field, message=message,
+                   field_id=field_id, option_id=option_id, revision=revision)
+
+    if answer.outcome is Outcome.CANCELLED:
+        await ops.cancel(db, owned=owned, user=user, reason=answer.reason)
+        return _turn(answer, owned, live_field)
+
+    if answer.outcome is not Outcome.APPLIED:
+        # REPAIR and REFUSED change no persisted semantic state, so the
+        # revision does NOT move. Bumping it would invalidate the very chips
+        # still on the user's screen — a stale-tap storm would walk the
+        # operation forward and lock the user out of answering at all.
+        logger.info("event=b1_answer_%s operation=%s field=%s reason=%s",
+                    answer.outcome.value, owned.operation_id,
+                    live_field.field_id, answer.reason)
+        return _turn(answer, owned, live_field)
+
+    result = await ops.settle(db, user=user, owned=owned, patch=answer.patch,
+                              source_turn_id=source_turn_id)
+    return AnswerTurn(Outcome.APPLIED, operation_id=owned.operation_id,
+                      field_id=live_field.field_id, patch=answer.patch,
+                      result=result, reason=answer.reason)
+
+
+def _read(owned, interaction, live_field, *, message: str, field_id: str,
+          option_id: str, revision: Optional[int]):
+    """The answer, from whichever modality carried it.
+
+    Order is specificity, not preference: an option id is unambiguous, an
+    exact offered label is nearly so, and free text is the general case.
+    """
+    if option_id:
+        return answer_from_chip(
+            interaction, field_id=field_id or live_field.field_id,
+            option_id=option_id,
+            revision=revision if revision is not None else interaction.revision)
+
+    selected = _label_selection(live_field, message)
+    if selected is not None:
+        return selected
+
+    return answer_from_text(
+        interaction, field_id=field_id or live_field.field_id,
+        text=message,
+        revision=revision if revision is not None else interaction.revision,
+        food_name=str(interaction.groups[0].label or ""),
+        # THE OPERATION'S LOCALE, never re-detected from this message. The
+        # question was asked in one language; a two-word reply is exactly
+        # where detection is least reliable, and a destructive command sits
+        # behind that decision.
+        locale=owned.locale)
+
+
+def _label_selection(field, message: str):
+    """An exact offered label, answered as the SELECTION it is.
+
+    Telegram and iMessage have no structured tap — the user presses a chip and
+    the platform sends its text. Re-parsing "6 oz" through the quantity parser
+    would land on the same number by luck and record the WRONG provenance:
+    they chose from what we offered, they did not state a figure. The meaning
+    comes from the stored patch either way, which is the whole contract.
+    """
+    from core.clarification_answer import AnswerResult
+
+    said = (message or "").strip().casefold()
+    if not said:
+        return None
+    for option in field.options:
+        if option.patch is None:
+            continue
+        if said in {(option.label or "").strip().casefold(),
+                    str(option.send_value or "").strip().casefold()}:
+            return AnswerResult(Outcome.APPLIED, patch=option.patch,
+                                reason="label_selection")
+    return None
+
+
+def _turn(answer, owned, field) -> AnswerTurn:
+    return AnswerTurn(answer.outcome, operation_id=owned.operation_id,
+                      field_id=field.field_id, reason=answer.reason)
+
+
+def facts_for(turn: AnswerTurn) -> dict:
+    """THE CANONICAL RESPONSE FACTS. Read off the committed result, nothing
+    derived.
+
+    Voice comes later and renders THESE — it does not get the result object,
+    because a renderer holding the raw commit is a renderer that can recompute,
+    and a renderer that can recompute is a second owner of the number. This is
+    the seam that makes "voice may never override a committed fact" a property
+    of the wiring rather than a rule someone remembers.
+    """
+    result = turn.result
+    items = list(getattr(result, "committed_items", ()) or ())
+    first = items[0] if items and isinstance(items[0], dict) else {}
+    totals = getattr(result, "meal_totals", None) or {}
+    quantity = getattr(turn.patch, "quantity", None)
+    return {
+        "outcome": turn.outcome.value,
+        "internal_failure": turn.internal_failure,
+        "operation_id": turn.operation_id,
+        "field_id": turn.field_id,
+        "name": str(first.get("name") or "").strip(),
+        "entry_id": first.get("entry_id"),
+        "calories": totals.get("calories"),
+        "protein": totals.get("protein"),
+        "day_calories": (getattr(result, "day_totals", None) or {}).get(
+            "calories"),
+        # THREE PROVENANCES, TWO QUESTIONS, AND THEY ARE NOT THE SAME QUESTION.
+        #
+        #   USER_STATED    they typed a figure       own=True   assumed=False
+        #   USER_SELECTED  they picked one we made   own=False  assumed=False
+        #   MODE_DEFAULT   we picked, they did not   own=False  assumed=True
+        #
+        # `is_estimated` (= not is_users_own) answers the ROW's question: did
+        # WE produce this number? It is True for a tapped chip, correctly —
+        # that is the 2026-08-04 fix, where a tap cleared the estimated flag
+        # and took the disclosure with it.
+        #
+        # `is_assumption` answers the COPY's question: did the user choose at
+        # all? Saying "(my estimate)" to someone who just tapped "6 oz" is
+        # wrong in the other direction — it tells them we guessed when they
+        # decided. Collapsing the two is how one of these disclosures always
+        # ends up lying.
+        "estimated": bool(getattr(
+            getattr(quantity, "provenance", None), "is_assumption", False)),
+        "system_supplied_figure": bool(
+            getattr(quantity, "is_estimated", False)),
+        "assumptions": list(getattr(result, "assumptions", ()) or ()),
+    }
+
+
+def copy_for(turn: AnswerTurn) -> str:
+    """The DETERMINISTIC fallback sentence, rendered from `facts_for`.
+
+    Not a model call, and not because voice is unwelcome — because B-1's job
+    is to prove the spine, and a sentence that can drift from the row it
+    describes is the defect the migration exists to remove ("logged, 970/98g"
+    while nothing was written, 2026-08-03).
+
+    THE ORDER IS LOAD-BEARING: commit → facts → copy → (later) voice. Voice
+    lands after committed-truth verification and before broad rollout, and it
+    phrases these same facts. It may never reinterpret, recompute or override
+    one. When a voice pass fails it degrades to this sentence — never to
+    silence, and never to an invented one.
+
+    Every number below comes off `MealCommitResult`. Nothing here adds,
+    scales, or rounds anything.
+    """
+    if turn.failed:
+        # HONEST, and not a question. Asking again would invite an answer we
+        # still could not apply.
+        return ("Something went wrong on my end holding that question — "
+                "nothing was logged. Send the food again and I'll redo it.")
+    if turn.cancelled:
+        return "Dropped it, nothing logged."
+    if turn.refused:
+        return ("That answer was for an older question. Tell me the amount "
+                "again and I'll log it.")
+    if turn.repair:
+        return "How much was it? A rough amount is fine."
+
+    facts = facts_for(turn)
+    if facts["entry_id"] is None and facts["calories"] is None:
+        return "Logged."
+
+    said = f"Logged {facts['name']}" if facts["name"] else "Logged"
+    if facts["calories"] is not None:
+        said += f" — {facts['calories']:.0f} cal"
+        if facts["protein"] is not None:
+            said += f", {facts['protein']:.0f}g protein"
+    if facts["estimated"]:
+        # THE ASSUMPTION IS DISCLOSED, because the user did not supply it.
+        said += " (my estimate)"
+    return said + "."

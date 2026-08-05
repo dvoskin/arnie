@@ -43,6 +43,8 @@ B1_PAYLOAD_VERSION = 1
 AWAITING = "awaiting_answer"
 COMMITTED = "committed"
 CANCELLED = "cancelled"
+#: OUR failure, not the user's — an operation nobody can settle.
+FAILED = "failed"
 
 
 @dataclass(frozen=True)
@@ -156,11 +158,19 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
     from core import pending_repository as repo
     from core.canonical_writer import operation_id_for
 
+    from datetime import timedelta
+
+    from core.clock import now as _now
+
     operation_id = operation_id_for("chat_quantity", user.id, turn_id)
     await repo.create_operation(
         db, operation_id=operation_id, user_id=user.id, status=AWAITING,
         storage_status="active", domain=DOMAIN, source_turn_id=turn_id,
-        payload=_encode(interaction, interpreter_item, locale or "en"))
+        payload=_encode(interaction, interpreter_item, locale or "en"),
+        # AN UNANSWERED QUESTION MUST NOT LIVE FOREVER. Without this the row
+        # stays `awaiting_answer` indefinitely and a message weeks later is
+        # read as an answer to a meal the user has long forgotten.
+        expires_at=_now() + timedelta(minutes=ASK_TTL_MINUTES))
     logger.info(
         "event=b1_interaction_shown operation=%s user=%s cohort=%s "
         "options=%d sources=%s", operation_id, user.id, cohort,
@@ -168,6 +178,199 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
         ",".join(sorted({(o.source.value if o.source else "none")
                          for o in interaction.groups[0].fields[0].options})))
     return operation_id
+
+
+#: How long an unanswered question stays answerable. Past it the operation
+#: expires rather than lingering as an open row a later turn trips over.
+ASK_TTL_MINUTES = 180
+
+
+#: Channels whose chips the SERVER renders, so an ID-addressed interaction is
+#: readable by construction. Telegram and iMessage have no client-side chip
+#: parser at all — they are why B-1 can be proven on real traffic without
+#: shipping Swift.
+_SERVER_RENDERED = frozenset({"telegram", "imessage", "bluebubbles", "sms"})
+
+
+def client_renders_interactions(source: Optional[str]) -> bool:
+    """Can this client read the canonical payload?
+
+    AN EXCLUSION, NOT A DOWNGRADE. A client that cannot read the interaction
+    is ineligible for B-1 and stays wholly legacy. The alternative — sending
+    it the canonical question rendered as prose — would keep the sentence
+    parser alive INSIDE the replacement, which is the exact defect B-1 exists
+    to delete, and it would block deleting `QuickReplyEngine.swift` at
+    promotion.
+
+    iOS is deliberately absent until B-1b ships a build that renders
+    fields/options and submits ids. Adding it here before then would be a
+    capability claim about software that does not exist yet.
+    """
+    return str(source or "").strip().lower() in _SERVER_RENDERED
+
+
+@dataclass(frozen=True)
+class CanonicalAsk:
+    """A question B-1 owns, with the durable state already written."""
+    operation_id: str
+    revision: int
+    interaction: Any
+    locale: str
+    cohort: str
+
+    def wire_payload(self) -> dict:
+        """What the client receives. IDs, not meanings (C11)."""
+        field = self.interaction.groups[0].fields[0]
+        return {
+            "operation_id": self.operation_id,
+            "revision": self.revision,
+            "interaction_id": self.interaction.interaction_id,
+            "locale": self.locale,
+            "groups": [{
+                "event_id": g.event_id,
+                "label": g.label,
+                "fields": [{
+                    "field_id": f.field_id,
+                    "attribute": f.attribute.value,
+                    "response_type": f.response_type.value,
+                    # LABELS ONLY. The patch stays on the server; a tap sends
+                    # `option_id` back and the meaning is loaded from storage,
+                    # so the label can never travel as semantics.
+                    "options": [{"option_id": o.option_id, "label": o.label}
+                                for o in f.options],
+                } for f in g.fields],
+            } for g in self.interaction.groups],
+        }
+
+    def legacy_questions(self) -> list:
+        """The same field, in the shape today's clients already read.
+
+        A PROJECTION of the canonical interaction, not a second producer:
+        both rows come from one field, so they cannot disagree. It exists so
+        an older client keeps working during the rollout — and it dies with
+        `QuickReplyEngine.swift` at B-1 promotion.
+        """
+        field = self.interaction.groups[0].fields[0]
+        return [{"item": self.interaction.groups[0].label or None,
+                 "text": self.interaction.introduction,
+                 "options": [o.label for o in field.options]}]
+
+
+async def try_take_ownership(db, *, user, material: dict, turn_id: str,
+                             client_capable: bool,
+                             locale: str = "en") -> Optional[CanonicalAsk]:
+    """Decide whether B-1 owns this turn, and if so, take ownership durably.
+
+    THE ONE PLACE THE PREDICATE IS EVALUATED. `food_turn` carries the material
+    here rather than judging half of it, because a predicate with two owners
+    drifts — and the half it could not see (client capability, locale, the
+    rollout cohort) is the half that decides whether owning this turn is safe.
+
+    ORDER MATTERS AND IS NOT INCIDENTAL:
+
+        eligibility  ->  rollout gate  ->  candidates  ->  PERSIST  ->  return
+
+    The gate is asked ONCE, here, before the row exists. Everything before the
+    write may decline freely: nothing has been taken, so the turn simply
+    proceeds as it does today. Everything after the write is owned, and
+    `owning()` will find it no matter what the gate later says.
+
+    Returning None is always safe. Raising is not, which is why the persist
+    step is the last thing that can fail: a question sent with no durable row
+    behind it is a question the user answers into a void.
+    """
+    from skills.nutrition import quantity_clarification as qc
+    from skills.nutrition import quantity_rollout as qr
+
+    decision = _MaterialDecision(material)
+    verdict = qc.is_eligible(decision, message=material.get("message") or "",
+                             client_capable=client_capable)
+    if not verdict.ok:
+        logger.info("event=b1_ineligible reason=%s user=%s",
+                    verdict.reason.value, getattr(user, "id", None))
+        return None
+
+    cohort = qr.cohort_label(user.id)
+    if not qr.may_take_ownership(user.id):
+        logger.info("event=b1_not_in_cohort cohort=%s user=%s", cohort, user.id)
+        return None
+
+    item = verdict.item
+    interpreter_item = _interpreter_item_for(material, item)
+    if not interpreter_item:
+        logger.info("event=b1_ineligible reason=no_interpreter_item user=%s",
+                    user.id)
+        return None
+
+    operation_id = _operation_id_for(user, turn_id)
+    field = qc.quantity_field(operation_id=operation_id, revision=0, item=item)
+    candidates = await qc.candidates(db, user_id=user.id, item=item,
+                                     message=material.get("message") or "")
+    options = qc.select(candidates, field=field,
+                        food_name=str(item.identity.canonical_name or ""))
+    if not options:
+        # No evidence, so no chips. B-1 declines rather than shipping a select
+        # with nothing in it — the legacy ask is still a better question than
+        # an empty canonical one, and C15 forbids the blank row either way.
+        logger.info("event=b1_no_candidates user=%s food=%s", user.id,
+                    item.identity.canonical_name)
+        return None
+
+    interaction = qc.build_interaction(
+        operation_id=operation_id, revision=0, item=item, options=options,
+        introduction=_introduction(item))
+
+    await open_operation(db, user=user, interpreter_item=interpreter_item,
+                         interaction=interaction, turn_id=turn_id,
+                         cohort=cohort, locale=locale)
+    return CanonicalAsk(operation_id=operation_id, revision=0,
+                        interaction=interaction, locale=locale, cohort=cohort)
+
+
+class _MaterialDecision:
+    """`is_eligible` reads a decision's `staged_items`; this is that shape,
+    rebuilt from what crossed the boundary. Not a mock — the staged items are
+    the real objects, only the container is local."""
+
+    def __init__(self, material: dict):
+        self.staged_items = tuple(material.get("staged_items") or ())
+
+
+def _operation_id_for(user, turn_id: str) -> str:
+    from core.canonical_writer import operation_id_for
+
+    return operation_id_for("chat_quantity", user.id, turn_id)
+
+
+def _interpreter_item_for(material: dict, staged) -> dict:
+    """The interpreter's row for the food being asked about.
+
+    Matched on the staged item's ORDINAL first, because two servings of the
+    same food in one turn share a name and differ only by position — and
+    falling back to a name match there would price the wrong one. B-1 is
+    single-item, so the fallback is exact-name and then the sole item.
+    """
+    items = [i for i in (material.get("items") or []) if isinstance(i, dict)]
+    if not items:
+        return {}
+    ordinal = int(getattr(staged, "ordinal", 0) or 0)
+    if 0 <= ordinal < len(items):
+        return dict(items[ordinal])
+    name = str(getattr(getattr(staged, "identity", None), "canonical_name", "")
+               or "").strip().lower()
+    for raw in items:
+        if str(raw.get("food") or "").strip().lower() == name:
+            return dict(raw)
+    return dict(items[0]) if len(items) == 1 else {}
+
+
+def _introduction(staged) -> str:
+    """Deterministic wording. The renderer owns voice at B-2.8; until then a
+    template that cannot drift is better than a model call that can, and the
+    question's MEANING lives in the field either way."""
+    label = str(getattr(getattr(staged, "identity", None), "canonical_name", "")
+                or "").strip() or "that"
+    return f"How much {label}?"
 
 
 #: How long a settled operation still answers for its meal. A tap that arrives
@@ -372,6 +575,25 @@ async def _writer(db, *, operation, resolved_meal):
     from core.canonical_writer import write_canonical_meal
     return await write_canonical_meal(db, operation=operation,
                                       resolved_meal=resolved_meal)
+
+
+async def fail(db, *, owned: OwnedOperation, user, reason: str) -> None:
+    """Close an operation WE cannot serve.
+
+    Distinct from `cancel`, which is the user's decision. This is ours: the
+    stored interaction cannot be read, so no answer could be applied to it,
+    and leaving the row `awaiting_answer` would collect answers into a void
+    turn after turn. Terminal, logged as an error, and never dressed up as a
+    question to the user.
+    """
+    from core import pending_repository as repo
+
+    await repo.save_revision(db, operation_id=owned.operation_id,
+                             expected_revision=owned.revision,
+                             status=FAILED, storage_status="closed",
+                             terminal_reason=(reason or "unserviceable")[:200])
+    logger.error("event=b1_failed operation=%s user=%s reason=%s",
+                 owned.operation_id, getattr(user, "id", None), reason)
 
 
 async def cancel(db, *, owned: OwnedOperation, user, reason: str = "") -> None:

@@ -1114,6 +1114,41 @@ async def _run_turn(
         if not structured_food_enabled():
             _to_legacy("kill_switch")
         if structured_food_enabled():
+            # ── B-1: is this turn ANSWERING a canonical operation? ──
+            #
+            # Asked BEFORE the legacy prior loads and before `_sft_run` is
+            # reachable. An owned answer never touches the broad food
+            # interpreter — that is how "6 oz" became a second meal — so the
+            # branch returns rather than falling through.
+            #
+            # The rollout gate is NOT consulted here and cannot be: the
+            # answer module does not import it, and a test reads its AST to
+            # keep that true. Ownership was decided once, at the ask.
+            try:
+                from core import b1_answer_turn as _b1_ans
+                from core.turn_identity import current_turn_id as _b1_tid
+                _b1_out = await _b1_ans.handle(
+                    db, user=user,
+                    source_turn_id=turn_id or _b1_tid() or "",
+                    message=_user_text or "")
+            except Exception:
+                # An owned operation whose ANSWER machinery threw is not a
+                # licence to hand the message to the interpreter — that is
+                # the duplicate-meal path. Log loudly and say nothing rather
+                # than log the wrong thing.
+                logger.error("b1 answer turn failed", exc_info=True)
+                _b1_out = None
+            if _b1_out is not None:
+                await db.commit()
+                logger.info(
+                    "event=b1_answer outcome=%s operation=%s user=%s",
+                    _b1_out.outcome.value, _b1_out.operation_id, user.id)
+                return TurnResult(
+                    response=Response.from_text(_b1_ans.copy_for(_b1_out)),
+                    tool_calls=[], just_completed=False,
+                    in_onboarding=in_onboarding, onboarding_field_saved=None,
+                    today_log=today_log, user=user)
+
             _sft_prior_pq = None
             _sft_prior = None
             try:
@@ -1546,9 +1581,71 @@ async def _run_turn(
                         # digits — "Fage 0%" — must not trip the say
                         # contract and vaporize the notice).
                         _sft["_held_stash"] = _sft_prior["items"]
+            _b1_ask = None
             if _sft and _sft["action"] == "ask":
-                # Hold: record the pending (with the original report stashed) so
-                # the ANSWER turn routes back through this pipeline and logs.
+                # ── B-1: does the canonical quantity path own this turn? ──
+                #
+                # ASKED HERE, ONCE, BEFORE ANYTHING IS PERSISTED. This is the
+                # only place all four inputs exist together — the staged
+                # decision (from food_turn), the database (for the user's own
+                # portion history), the client (can it render an ID-addressed
+                # payload?) and the locale. Evaluating the predicate anywhere
+                # else would mean evaluating half of it in two places.
+                #
+                # Everything before the write may decline freely; nothing has
+                # been taken and the legacy ask below is exactly today's
+                # behaviour. Once `_b1_ask` is non-None the operation EXISTS,
+                # and from then on the meal completes canonically — apply,
+                # repair, cancel or commit — with no later flag check.
+                try:
+                    if _sft.get("b1_material"):
+                        from core import b1_quantity_operation as _b1
+                        from core.language import command_locale
+                        from core.turn_identity import current_turn_id as _tid
+                        _prefs = getattr(user, "preferences", None)
+                        _b1_ask = await _b1.try_take_ownership(
+                            db, user=user, material=_sft["b1_material"],
+                            turn_id=_tid() or "",
+                            client_capable=_b1.client_renders_interactions(
+                                _source),
+                            locale=command_locale(
+                                getattr(_prefs, "preferred_language", None),
+                                _user_text or ""))
+                except Exception:
+                    # DECLINED, NOT FAILED. Nothing was persisted — the
+                    # operation is created as the last step — so the turn
+                    # falls through to the legacy ask it would have used
+                    # anyway. This is not the mid-flight fallback C10
+                    # forbids: no ownership was ever taken.
+                    logger.warning("b1 ownership attempt failed; staying "
+                                   "legacy", exc_info=True)
+                    _b1_ask = None
+
+                if _b1_ask is not None:
+                    # ONE question on the wire and ONE durable record. The
+                    # legacy `pending_questions` stash below is skipped
+                    # entirely — two pending representations for one meal is
+                    # the condition the migration exists to end.
+                    _sft["b1_interaction"] = _b1_ask.wire_payload()
+                    _sft["questions"] = _b1_ask.legacy_questions()
+                    _sft["options"] = [
+                        o["label"] for o in
+                        _b1_ask.wire_payload()["groups"][0]["fields"][0]["options"]]
+                    _sft.pop("b1_material", None)
+                    await db.commit()
+                    logger.info(
+                        "event=b1_owns_turn operation=%s cohort=%s user=%s",
+                        _b1_ask.operation_id, _b1_ask.cohort, user.id)
+
+            # Hold: record the pending (with the original report stashed) so
+            # the ANSWER turn routes back through this pipeline and logs.
+            #
+            # SKIPPED ENTIRELY when B-1 owns the turn: one meal gets one
+            # pending record. Writing both would put two representations of
+            # one question in two stores, which is precisely the condition
+            # (`payload_json` vs `pending_operations`) this migration exists
+            # to end — and the answer turn would then have to pick.
+            if _sft and _sft["action"] == "ask" and _b1_ask is None:
                 try:
                     from db.queries import record_pending_question
                     _pq_s = await record_pending_question(
