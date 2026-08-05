@@ -907,3 +907,74 @@ async def test_the_locale_comes_from_the_operation_not_the_current_message(
         "an English command must not fire under a Russian operation"
     assert out.repair
     assert (await _row(sessions)).status == b1.AWAITING
+
+
+# ── a settled operation must not swallow the NEXT meal ───────────────────────
+
+@pytest.mark.asyncio
+async def test_a_new_food_message_after_settlement_is_not_a_replay(
+        sessions, user, opened, _priced):
+    """PRODUCTION DATA LOSS, 2026-08-05. Two new meals were swallowed.
+
+        23:46  "I had some rice"    -> "Logged White rice, 64 cal"
+        23:49  "Had some oatmeal"   -> "Logged White rice, 64 cal"
+
+    Neither was written. `SETTLED_OWNERSHIP_MINUTES` made `owning()` claim
+    EVERY food message for 30 minutes after a commit, and free text like
+    "some oatmeal" parses as a quantity — precisely because the quantity
+    parser is good at its job — so it "applied" and replayed the finished
+    meal. The user was told it was logged twice. That is the phantom-log
+    failure this migration exists to delete, reintroduced by my own ownership
+    window.
+
+    WHY MY TESTS MISSED IT: every lifecycle test sent an ANSWER to the open
+    operation. None ever sent an unrelated new report afterwards, because I
+    only tested the paths I had imagined. Same fixture blindness as the
+    ambiguity-field-name bug, one layer up.
+
+    The rule: after settlement, only an answer that can ONLY be an answer
+    counts — a structured `option_id`, or the exact text of an offered option.
+    """
+    # Settle it.
+    first = await _answer(sessions, user, field_id=_field_id(opened),
+                          option_id="opt_ont_mid", revision=0)
+    assert first.applied
+    assert (await _counts(sessions))["food"] == 1
+
+    # A NEW, UNRELATED report arrives well inside the ownership window.
+    for message in ("I had some rice", "Had some oatmeal", "some chicken"):
+        out = await _answer(sessions, user, message=message)
+        assert out is None, (
+            f"{message!r} was claimed as a replay of the settled operation — "
+            f"the meal is lost and the user is told otherwise"
+        )
+
+    assert (await _counts(sessions))["food"] == 1, \
+        "the settled operation must neither replay nor write again"
+
+
+@pytest.mark.asyncio
+async def test_an_exact_option_label_after_settlement_still_replays(
+        sessions, user, opened, _priced):
+    """The case the window exists for: the chip is still on screen and the
+    user presses it again. That text can only be an answer."""
+    label = opened.interaction.groups[0].fields[0].options[1].label
+    first = await _answer(sessions, user, field_id=_field_id(opened),
+                          option_id="opt_ont_mid", revision=0)
+
+    again = await _answer(sessions, user, message=label)
+    assert again is not None and again.applied
+    assert again.result.committed_items == first.result.committed_items
+    assert (await _counts(sessions))["food"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_structured_tap_after_settlement_still_replays(
+        sessions, user, opened, _priced):
+    first = await _answer(sessions, user, field_id=_field_id(opened),
+                          option_id="opt_ont_mid", revision=0)
+    again = await _answer(sessions, user, field_id=_field_id(opened),
+                          option_id="opt_ont_mid", revision=0)
+    assert again is not None and again.applied
+    assert again.result.committed_items == first.result.committed_items
+    assert (await _counts(sessions))["food"] == 1

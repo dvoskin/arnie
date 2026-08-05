@@ -148,7 +148,32 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
     # is a real delivery; `settle` replays the stored result rather than
     # writing a second meal (the revision would differ, so the coordinator's
     # claim cannot catch it).
+    #
+    # ⚠ BUT ONLY AN UNAMBIGUOUS ANSWER MAY CLAIM A SETTLED OPERATION.
+    #
+    # MEASURED IN PRODUCTION 2026-08-05: for 30 minutes after a commit this
+    # branch read FREE TEXT as an answer, so "I had some rice" and "Had some
+    # oatmeal" — two NEW meals — were both swallowed as replays of the
+    # finished rice operation. The user was told "Logged White rice" twice and
+    # the oatmeal was never written. That is the phantom-log failure this
+    # whole migration exists to delete, reintroduced by my own ownership
+    # window.
+    #
+    # The distinction the window needs and did not have: after settlement,
+    # only an answer that can ONLY be an answer counts — a structured
+    # `option_id`, or the exact text of an option we offered. Free prose is a
+    # new report, and "some oatmeal" parses as a quantity precisely because
+    # the quantity parser is good at its job.
+    #
+    # Returning None here is not the mid-flight fallback C10 forbids: the
+    # operation is TERMINAL, so there is nothing in flight to strand.
     if not owned.awaiting:
+        if not option_id and _label_selection(live_field, message) is None:
+            logger.info(
+                "event=b1_not_a_replay operation=%s user=%s — settled "
+                "operation left alone; this message is a new report",
+                owned.operation_id, getattr(user, "id", None))
+            return None
         answer = _read(owned, interaction, live_field, message=message,
                        field_id=field_id, option_id=option_id,
                        revision=revision)
