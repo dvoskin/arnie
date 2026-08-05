@@ -223,3 +223,117 @@ async def test_the_migration_matches_the_model():
         with Operations.context(MigrationContext.configure(conn)):
             mig.downgrade()
     engine.dispose()
+
+
+# ── the result is recorded exactly once, or the caller is told ───────────────
+
+@pytest.mark.asyncio
+async def test_recording_against_a_missing_claim_raises(sessions):
+    """FOOD ROWS WITHOUT AN AUTHORITATIVE RESULT is the outcome this module
+    exists to prevent, and it was reachable: the UPDATE matched zero rows,
+    raised nothing, and the transaction committed. A wrong operation id or
+    revision was enough."""
+    a, _ = sessions
+    with pytest.raises(meal_commit.MissingCommitClaim) as exc:
+        await meal_commit.record_result(a, operation_id="never_claimed",
+                                        result={"x": 1})
+    assert "no claim exists" in exc.value.why
+
+
+@pytest.mark.asyncio
+async def test_recording_against_the_wrong_revision_raises(sessions):
+    a, _ = sessions
+    assert (await meal_commit.claim_commit(
+        a, operation_id="op_rev", revision=0, user_id=26)).won
+    with pytest.raises(meal_commit.MissingCommitClaim):
+        await meal_commit.record_result(a, operation_id="op_rev", revision=1,
+                                        result={"x": 1})
+
+
+@pytest.mark.asyncio
+async def test_the_original_result_cannot_be_overwritten(sessions):
+    """A second write would redefine "the original result" as "the most recent
+    one", which breaks the duplicate contract from the inside."""
+    a, b = sessions
+    assert (await meal_commit.claim_commit(
+        a, operation_id="op_imm", user_id=26)).won
+    await meal_commit.record_result(a, operation_id="op_imm",
+                                    result={"calories": 520})
+    await a.commit()
+
+    with pytest.raises(meal_commit.MissingCommitClaim) as exc:
+        await meal_commit.record_result(a, operation_id="op_imm",
+                                        result={"calories": 999})
+    assert "already has a result" in exc.value.why
+
+    dup = await meal_commit.claim_commit(b, operation_id="op_imm", user_id=26)
+    assert dup.result == {"calories": 520}, "the FIRST result must survive"
+
+
+@pytest.mark.asyncio
+async def test_a_duplicate_claim_does_not_discard_the_callers_work(sessions):
+    """A duplicate is a NORMAL outcome. `db.rollback()` on it would throw away
+    everything the caller had already staged in the same transaction — a defect
+    waiting for the first composite caller."""
+    from db.models import PendingOperation
+
+    a, b = sessions
+    assert (await meal_commit.claim_commit(
+        a, operation_id="op_sp", user_id=26)).won
+    await a.commit()
+
+    # Stage unrelated work, then hit a duplicate claim.
+    b.add(PendingOperation(operation_id="staged_before_the_claim", user_id=26,
+                           domain="food", status="resolving",
+                           storage_status="active", revision=0))
+    await b.flush()
+    dup = await meal_commit.claim_commit(b, operation_id="op_sp", user_id=26)
+    assert dup.is_duplicate
+    await b.commit()
+
+    from core import pending_repository as repo
+    assert await repo.load_operation(a, "staged_before_the_claim") is not None
+
+
+# ── the stored result is lossless or refused ─────────────────────────────────
+
+def test_a_lossy_value_is_refused_rather_than_stringified():
+    """`default=str` turned any unsupported object into a string, so a
+    duplicate received something structurally different from what the original
+    caller got — and nothing failed when it happened."""
+    class Domain:
+        pass
+
+    with pytest.raises(meal_commit.UnserializableResult) as exc:
+        meal_commit.encode_result({"items": [{"entry": Domain()}]})
+    assert "items[0].entry" in str(exc.value), "the path must name the value"
+
+
+def test_decimals_and_datetimes_round_trip_losslessly():
+    """Both appear in real totals and both have an exact text form."""
+    from datetime import datetime as dt
+    from decimal import Decimal
+
+    raw = meal_commit.encode_result(
+        {"calories": Decimal("520.5"), "at": dt(2026, 8, 4, 12, 30)})
+    out = meal_commit.decode_result(raw)
+    assert out["calories"] == "520.5"        # exact, not 520.50000000000001
+    assert out["at"] == "2026-08-04T12:30:00"
+
+
+def test_the_stored_result_is_versioned():
+    import json as _json
+
+    data = _json.loads(meal_commit.encode_result({"a": 1}))
+    assert data["schema_version"] == meal_commit.RESULT_SCHEMA_VERSION
+    assert data["result"] == {"a": 1}
+
+
+@pytest.mark.parametrize("raw", [
+    "{not json", "[]", '{"result": {}}',
+    '{"schema_version": 999, "result": {}}',
+])
+def test_an_uninterpretable_result_reads_as_none(raw):
+    """Answering a duplicate with a partially-understood payload would hand it
+    something the original caller never saw."""
+    assert meal_commit.decode_result(raw) is None
