@@ -536,10 +536,22 @@ def test_the_primitive_refuses_failure_without_accounting(changes, why):
 
 
 def test_the_primitive_refuses_a_terminal_failure_with_no_reason():
-    from core.semantics import InvalidPendingTransition, PendingStatus
+    """Refused on the CAUSE now, which fires before the reason check — a
+    stronger refusal than the one this test originally asserted. The reason
+    requirement still holds and is covered where a cause IS supplied."""
+    from core.semantics import (InvalidPendingTransition, PendingStatus,
+                                TransitionCause)
 
-    with pytest.raises(InvalidPendingTransition, match="say why"):
+    with pytest.raises(InvalidPendingTransition):
         _fresh()._transition_unchecked(PendingStatus.FAILED)
+
+    # With a legitimate cause, the missing reason is what stops it.
+    op = _fresh().record_failure("first").record_failure("second")
+    with pytest.raises(InvalidPendingTransition, match="say why"):
+        op._transition_unchecked(PendingStatus.FAILED,
+                                 _cause=TransitionCause.ATTEMPTS_EXHAUSTED,
+                                 last_error="third",
+                                 attempt_count=op.attempt_count + 1)
 
 
 def test_the_only_legitimate_caller_still_works():
@@ -564,3 +576,92 @@ def test_no_path_reaches_a_failure_state_without_accounting():
             door(PendingStatus.RETRYABLE_FAILURE)
     recorded = op.record_failure("the only way in")
     assert recorded.attempt_count == 1 and recorded.last_error
+
+
+# ── two entries into failure, and nothing else ───────────────────────────────
+
+def test_the_primitive_refuses_terminal_failure_without_a_cause():
+    """THE CLAIM WAS FALSE FOR `FAILED`. Verified before fixing:
+
+        op._transition_unchecked(FAILED, terminal_reason="permanent_failure")
+        -> attempts=0, last_error='', record_failure never called
+
+    "record_failure is the only way in" was a convention, and a convention is
+    not a check. `TransitionCause` makes it one: a raw caller has no cause, and
+    the primitive refuses a failure target without one.
+    """
+    from core.semantics import InvalidPendingTransition, PendingStatus
+
+    with pytest.raises(InvalidPendingTransition, match="fail_permanently"):
+        _fresh()._transition_unchecked(PendingStatus.FAILED,
+                                       terminal_reason="permanent_failure")
+
+
+def test_a_cause_still_cannot_forge_the_wrong_shape():
+    """The cause is not a bypass token. Each one admits exactly one shape."""
+    from core.semantics import (InvalidPendingTransition, PendingStatus,
+                                TransitionCause)
+
+    op = _fresh()
+    # A recorded failure is retryable until attempts run out — it may not jump.
+    with pytest.raises(InvalidPendingTransition, match="retryable until"):
+        op._transition_unchecked(PendingStatus.FAILED,
+                                 _cause=TransitionCause.FAILURE_RECORDED,
+                                 last_error="x", terminal_reason="y")
+    # Exhaustion is reached by recording the FINAL attempt, not asserted.
+    with pytest.raises(InvalidPendingTransition, match="final attempt"):
+        op._transition_unchecked(PendingStatus.FAILED,
+                                 _cause=TransitionCause.ATTEMPTS_EXHAUSTED,
+                                 last_error="x", terminal_reason="y")
+    # A permanent failure does not produce a RETRYABLE one.
+    with pytest.raises(InvalidPendingTransition, match="does not produce"):
+        op._transition_unchecked(PendingStatus.RETRYABLE_FAILURE,
+                                 _cause=TransitionCause.PERMANENT_FAILURE,
+                                 last_error="x", attempt_count=1)
+
+
+def test_permanent_failure_skips_the_retry_budget():
+    """A validation rejection is not worth three attempts. Burning the budget
+    on it would delay the terminal state without changing it."""
+    from core.semantics import PendingStatus
+
+    op = _fresh().fail_permanently("validation_rejected", "payload rejected")
+    assert op.status is PendingStatus.FAILED
+    assert op.attempt_count == 0 and not op.may_retry
+    assert op.terminal_reason == "validation_rejected"
+    assert op.last_error == "payload rejected"
+
+
+def test_exhaustion_and_permanent_failure_are_distinguishable():
+    """Both are FAILED; recovery tooling needs to tell an outage from a
+    rejection."""
+    op = _fresh()
+    exhausted = op
+    for i in range(3):
+        exhausted = exhausted.record_failure(f"attempt {i + 1}")
+    permanent = op.fail_permanently("validation_rejected", "bad payload")
+
+    assert exhausted.terminal_reason == "attempts_exhausted"
+    assert permanent.terminal_reason == "validation_rejected"
+    assert exhausted.attempt_count == 3 and permanent.attempt_count == 0
+
+
+def test_a_permanent_failure_needs_both_a_reason_and_an_error():
+    with pytest.raises(ValueError):
+        _fresh().fail_permanently("", "error")
+    with pytest.raises(ValueError):
+        _fresh().fail_permanently("reason", "")
+
+
+def test_no_route_into_any_failure_state_lacks_accounting():
+    """The property over EVERY door, stated once. This is the assertion whose
+    earlier version was true of RETRYABLE_FAILURE and false of FAILED."""
+    from core.semantics import InvalidPendingTransition, PendingStatus
+
+    op = _fresh()
+    for target in (PendingStatus.RETRYABLE_FAILURE, PendingStatus.FAILED):
+        for door in (op.transition_to, op._transition_unchecked):
+            with pytest.raises(InvalidPendingTransition):
+                door(target)
+    assert op.record_failure("x").last_error
+    assert op.fail_permanently("r", "e").last_error

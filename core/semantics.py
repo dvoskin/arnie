@@ -379,6 +379,21 @@ class InvalidPendingTransition(ValueError):
         self.current, self.target, self.why = current, target, why
 
 
+class TransitionCause(str, Enum):
+    """WHY a failure state is being entered, supplied by the method that owns
+    the accounting for it.
+
+    A raw caller has none, which is the point: the primitive refuses a failure
+    target without a cause, so "record_failure is the only way in" stops being
+    a convention and becomes a check. It was a convention, and it was false for
+    FAILED — `_transition_unchecked(FAILED, terminal_reason="x")` reached a
+    terminal failure with attempt_count=0 and no error.
+    """
+    FAILURE_RECORDED = "failure_recorded"       # an attempt failed
+    ATTEMPTS_EXHAUSTED = "attempts_exhausted"   # the last attempt failed
+    PERMANENT_FAILURE = "permanent_failure"     # will not be retried
+
+
 #: FAILURE IS ENTERED BY RECORDING ONE, never by asking for the state. The
 #: bound on retries lives in `record_failure`, so a caller reaching
 #: `transition_to(RETRYABLE_FAILURE)` directly entered a failure state with no
@@ -543,6 +558,7 @@ class PendingOperation:
         return self._transition_unchecked(target, **changes)
 
     def _transition_unchecked(self, target: "PendingStatus",
+                              _cause: "TransitionCause" = None,
                               **changes) -> "PendingOperation":
         """The primitive. Enforces the table, the field allowlist, AND the
         failure-accounting invariants.
@@ -562,23 +578,42 @@ class PendingOperation:
                 self.status, target,
                 f"a transition may not change {sorted(forbidden)} — "
                 "lifecycle moves do not rewrite semantic payload")
-        # ENTERING A FAILURE MEANS RECORDING ONE. Enforced here rather than in
-        # `record_failure` so the invariant holds for every caller, including
-        # one that reaches for the primitive.
+        # ENTERING A FAILURE MEANS RECORDING ONE, and the cause says which
+        # method is doing it. Three shapes are valid and nothing else is.
+        if target in _FAILURE_TARGETS:
+            if _cause is None:
+                raise InvalidPendingTransition(
+                    self.status, target,
+                    "use record_failure() or fail_permanently() — a failure "
+                    "state may not be entered without one")
+            if not changes.get("last_error"):
+                raise InvalidPendingTransition(
+                    self.status, target, "a failure must carry its error")
+
         if target is PendingStatus.RETRYABLE_FAILURE:
+            if _cause is not TransitionCause.FAILURE_RECORDED:
+                raise InvalidPendingTransition(
+                    self.status, target,
+                    f"{_cause.value} does not produce a retryable failure")
             if changes.get("attempt_count") != self.attempt_count + 1:
                 raise InvalidPendingTransition(
                     self.status, target,
                     "entering a retryable failure must increment "
                     f"attempt_count to {self.attempt_count + 1}")
-            if not changes.get("last_error"):
+
+        if target is PendingStatus.FAILED:
+            if not (changes.get("terminal_reason") or self.terminal_reason):
+                raise InvalidPendingTransition(
+                    self.status, target, "a terminal failure must say why")
+            if _cause is TransitionCause.ATTEMPTS_EXHAUSTED and \
+                    changes.get("attempt_count") != self.attempt_count + 1:
                 raise InvalidPendingTransition(
                     self.status, target,
-                    "a recorded failure must carry its error")
-        if target is PendingStatus.FAILED and not (
-                changes.get("terminal_reason") or self.terminal_reason):
-            raise InvalidPendingTransition(
-                self.status, target, "a terminal failure must say why")
+                    "exhaustion is reached by recording the final attempt")
+            if _cause is TransitionCause.FAILURE_RECORDED:
+                raise InvalidPendingTransition(
+                    self.status, target,
+                    "a recorded failure is retryable until attempts run out")
         return replace(self, status=target, **changes)
 
     def record_failure(self, error: str) -> "PendingOperation":
@@ -594,10 +629,26 @@ class PendingOperation:
         return self._transition_unchecked(
             PendingStatus.FAILED if exhausted
             else PendingStatus.RETRYABLE_FAILURE,
+            _cause=(TransitionCause.ATTEMPTS_EXHAUSTED if exhausted
+                    else TransitionCause.FAILURE_RECORDED),
             attempt_count=attempts,
             last_error=error,
             terminal_reason=("attempts_exhausted" if exhausted
                              else self.terminal_reason))
+
+    def fail_permanently(self, reason: str, error: str) -> "PendingOperation":
+        """Terminal without retrying — a rejection, not an outage.
+
+        Separate from `record_failure` because the two are different events. A
+        validation rejection is not worth three attempts, and burning the retry
+        budget on it would delay the terminal state without changing it.
+        """
+        if not reason or not error:
+            raise ValueError("a permanent failure needs a reason and an error")
+        return self._transition_unchecked(
+            PendingStatus.FAILED,
+            _cause=TransitionCause.PERMANENT_FAILURE,
+            last_error=error, terminal_reason=reason)
 
     def cancel(self, reason: str = "user_cancelled") -> "PendingOperation":
         """Terminal by the USER's decision, and distinguishable from failure."""
