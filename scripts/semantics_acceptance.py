@@ -137,19 +137,29 @@ def c_pending_owner():
 
     An owner is a symbol something actually READS.
     """
-    owners = []
-    for name, pattern in (("conversation.payload_json", r"payload_json"),
-                          ("deferred_calls", r"deferred_calls"),
-                          ("staged_items", r"staged_items")):
-        hits = [h for h in _grep(pattern)
-                if not h.startswith("skills/nutrition/pending_store.py")]
-        if hits:
-            owners.append(f"{name}({len(hits)})")
-    dead = [h for h in _grep(r"\bpending_store\b")
-            if not h.startswith("skills/nutrition/pending_store.py")]
-    note = "" if dead else "; pending_store.py is BUILT AND UNUSED (0 importers)"
-    return (PASS if len(owners) <= 1 else FAIL,
-            f"{len(owners)} live owners: {', '.join(owners)}{note}", [])
+    # MUTATION SITES, NOT REFERENCES. Counting symbol references measured the
+    # wrong thing: a count can fall while ownership stays fragmented, or rise
+    # from harmless readers and tests. The criterion is that ONE module has the
+    # authority to change pending lifecycle state, so the check inventories the
+    # ACTIONS that change it.
+    actions = {
+        "create": r"record_pending_question\(",
+        "update": r"\.payload_json\s*=",
+        "consume": r"\.answered_at\s*=",
+        "cancel": r"_clear_deferred\(|_drop_deferred",
+        "expire": r"pending_expired\(|_settle_expired_deferred\(",
+        "commit_held": r"execute_tool_calls\(",
+    }
+    sites, modules = {}, set()
+    for action, pattern in actions.items():
+        hits = [h for h in _grep(pattern,
+                                 exclude=("pending_store.py",))]
+        sites[action] = len(hits)
+        modules.update(h.split(":")[0] for h in hits)
+    spread = ", ".join(f"{a}={n}" for a, n in sites.items() if n)
+    return (PASS if len(modules) <= 1 else FAIL,
+            f"{sum(sites.values())} mutation sites across {len(modules)} "
+            f"modules ({spread})", sorted(modules))
 
 
 def c_commit_idempotent():

@@ -164,12 +164,24 @@ def test_terminal_states_close_the_operation():
                             status=PendingStatus.AWAITING_CLARIFICATION).is_open
 
 
-def test_the_idempotency_key_is_a_field_of_the_operation():
-    """Not of the message. Food's existing key is
-    `turn_idempotency_key(user_id, message, tool_calls)` over an in-process
-    dict: it dedupes a repeated MESSAGE rather than a repeated COMMIT, and
-    survives neither a restart nor a second worker."""
-    assert "idempotency_key" in PendingOperation.__dataclass_fields__
+def test_idempotency_is_two_keys_not_one():
+    """Not of the message, and NOT ONE GUARANTEE.
+
+    Food's existing key is `turn_idempotency_key(user_id, message, tool_calls)`
+    over an in-process dict: it dedupes a repeated MESSAGE rather than a
+    repeated COMMIT, and survives neither a restart nor a second worker.
+
+    But replacing it with a single key would still be wrong. Consuming the
+    ANSWER and writing the LEDGER are separate guarantees — a worker can claim
+    the answer, commit food, crash before marking the operation consumed, and a
+    retry can commit again. `pending_store.claim()` covers the first; only a
+    database-enforced key on (operation, revision) covers the second.
+    """
+    fields = PendingOperation.__dataclass_fields__
+    assert "answer_claim_key" in fields, "one consumer of the answer"
+    assert "commit_key" in fields, "one ledger mutation"
+    assert "idempotency_key" not in fields, (
+        "a single key cannot express two independent guarantees")
 
 
 # ── the turn envelope ────────────────────────────────────────────────────────

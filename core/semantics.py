@@ -319,7 +319,15 @@ class PendingStatus(str, Enum):
     COMMITTED = "committed"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
-    FAILED = "failed"
+    #: TWO FAILURE STATES, because one was a contradiction. `FAILED` was
+    #: terminal AND mapped to a claimable row, which says the operation is over
+    #: and may continue. A failed operation would have been reloaded as open on
+    #: the next turn and processed again with no explicit retry transition.
+    #:
+    #: Split rather than picked, because both models are real: a transient
+    #: write error should be retried, and a rejected commit should not be.
+    RETRYABLE_FAILURE = "retryable_failure"   # transient; the row stays open
+    FAILED = "failed"                         # terminal; needs a new operation
 
     @property
     def is_terminal(self) -> bool:
@@ -327,24 +335,39 @@ class PendingStatus(str, Enum):
                         PendingStatus.EXPIRED, PendingStatus.FAILED)
 
 
-#: This operation lifecycle -> the storage lifecycle of the row behind it.
-#: Written down because two enums with overlapping member names and different
-#: scopes is how a "single source of truth" quietly becomes two.
-_STORAGE_STATUS = {
+#: A LOSSY, ONE-WAY PROJECTION onto the row lifecycle. Not the persisted
+#: operation state, and the distinction is load-bearing.
+#:
+#: Five operation states project onto "active". A restart reading only the row
+#: therefore learns that something is open and CANNOT learn whether it was
+#: waiting on the user, ready to commit, already committing, or a failure worth
+#: retrying. Those need different next actions, so the operation status must be
+#: persisted alongside the row rather than reconstructed from it.
+#:
+#: `FAILED` projects to "cancelled" because the storage lifecycle has no failed
+#: state at all — a real gap, recorded here rather than smoothed over, and one
+#: the adoption has to close.
+_STORAGE_PROJECTION = {
     PendingStatus.RESOLVING: "active",
     PendingStatus.AWAITING_CLARIFICATION: "active",
     PendingStatus.READY_TO_COMMIT: "active",
     PendingStatus.COMMITTING: "active",
+    PendingStatus.RETRYABLE_FAILURE: "active",
     PendingStatus.COMMITTED: "consumed",
     PendingStatus.CANCELLED: "cancelled",
     PendingStatus.EXPIRED: "expired",
-    PendingStatus.FAILED: "active",     # recoverable; the row stays claimable
+    PendingStatus.FAILED: "cancelled",
 }
 
 
-def storage_status(status: "PendingStatus") -> str:
-    """The `pending_store.PendingStatus` value this operation state maps to."""
-    return _STORAGE_STATUS.get(status, "active")
+def storage_projection(status: "PendingStatus") -> str:
+    """The row status this operation state projects onto.
+
+    ONE-WAY. There is no inverse and there must not be one: five states share
+    "active", so reconstructing an operation status from a row status is
+    guessing. Persist both.
+    """
+    return _STORAGE_PROJECTION.get(status, "active")
 
 
 @dataclass(frozen=True)
@@ -379,13 +402,33 @@ class PendingOperation:
     assumptions: tuple = ()
     mode: str = ""
     source_turn_id: str = ""
-    idempotency_key: str = ""
+    #: TWO GUARANTEES, NOT ONE, and conflating them is how a meal commits
+    #: twice. `pending_store.claim()` proves exactly one caller CONSUMED the
+    #: answer; it says nothing about the ledger write that follows. A worker
+    #: can claim, commit food, crash before marking the operation consumed, and
+    #: a retry can commit again.
+    #:
+    #: `answer_claim_key`  — one consumer of the clarification answer
+    #: `commit_key`        — one ledger mutation, enforced by a UNIQUE
+    #:                       constraint on (operation, revision)
+    answer_claim_key: str = ""
+    commit_key: str = ""
+    attempt_count: int = 0
+    max_attempts: int = 3
+    last_error: str = ""
     version: int = 0
     expires_at: Optional[str] = None
 
     @property
     def is_open(self) -> bool:
         return not self.status.is_terminal
+
+    @property
+    def may_retry(self) -> bool:
+        """A retryable failure with attempts left. Terminal failure never
+        retries — that is the whole reason the two states are separate."""
+        return (self.status is PendingStatus.RETRYABLE_FAILURE
+                and self.attempt_count < self.max_attempts)
 
     def required_unresolved(self, mode: str) -> tuple:
         return tuple(f for f in self.unresolved_fields

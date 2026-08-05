@@ -74,28 +74,144 @@ def test_the_claim_is_a_conditional_update_not_a_read_then_write():
     assert "rowcount" in src, "the winner is no longer decided by the write"
 
 
-def test_the_three_live_owners_are_still_three():
-    """A ratchet on the fragmentation itself. This number must go DOWN as the
-    migration proceeds; it may not go up."""
-    live = {name: len(_prod_refs(name)) for name in
-            ("payload_json", "deferred_calls", "staged_items")}
-    assert all(v > 0 for v in live.values()), live
-    assert sum(live.values()) <= 60, (
-        f"pending state spread further rather than consolidating: {live}")
+#: WHO MUTATES pending state, by action. A reader is not an owner.
+_MUTATIONS = {
+    "create": r"record_pending_question\(",
+    "update": r"\.payload_json\s*=",
+    "consume": r"\.answered_at\s*=",
+    "cancel": r"_clear_deferred\(|_drop_deferred",
+    "expire": r"pending_expired\(|_settle_expired_deferred\(",
+    "commit_held": r"execute_tool_calls\(",
+}
+
+
+def _mutation_sites():
+    out = {}
+    for action, pattern in _MUTATIONS.items():
+        rx = re.compile(pattern)
+        hits = []
+        for root in PROD_ROOTS:
+            for p in (REPO / root).rglob("*.py"):
+                rel = str(p.relative_to(REPO))
+                if rel == "skills/nutrition/pending_store.py":
+                    continue
+                for i, line in enumerate(p.read_text().splitlines(), 1):
+                    if not line.strip().startswith("#") and rx.search(line):
+                        hits.append(rel)
+        out[action] = hits
+    return out
+
+
+def test_pending_mutation_authority_does_not_spread():
+    """A RATCHET ON AUTHORITY, not on references.
+
+    Counting symbol references measured the wrong thing — a count can fall
+    while ownership stays fragmented, or rise from harmless readers and tests.
+    The criterion is that one module may CHANGE pending lifecycle state, so
+    this inventories the actions that change it.
+
+    Measured 2026-08-04: 30 sites across 7 modules. `expire` alone is spread
+    over three. Both numbers must go DOWN as the adoption proceeds.
+    """
+    sites = _mutation_sites()
+    modules = {m for hits in sites.values() for m in hits}
+    total = sum(len(h) for h in sites.values())
+    assert total <= 30, (
+        f"pending mutation spread further: {total} sites, "
+        f"{ {k: len(v) for k, v in sites.items()} }")
+    assert len(modules) <= 7, f"now mutated from {len(modules)} modules: {modules}"
+
+
+def test_every_mutation_action_is_still_accounted_for():
+    """If an action stops matching, it was renamed or removed — and the ratchet
+    above would silently pass while measuring less."""
+    sites = _mutation_sites()
+    for action, hits in sites.items():
+        assert hits, f"no sites found for {action!r}; the pattern has rotted"
 
 
 def test_the_two_pending_status_enums_are_reconciled_in_code():
     """Two enums with overlapping member names and different SCOPES is how a
     single source of truth quietly becomes two. The mapping is code so the
     relationship cannot drift into folklore."""
-    from core.semantics import PendingStatus, storage_status
+    from core.semantics import PendingStatus, storage_projection
     from skills.nutrition.pending_store import PendingStatus as StoreStatus
 
     store_values = {s.value for s in StoreStatus}
     for status in PendingStatus:
-        assert storage_status(status) in store_values, (
+        assert storage_projection(status) in store_values, (
             f"{status} maps to a storage state that does not exist")
 
     # And the mapping is not the identity: the scopes genuinely differ.
-    assert storage_status(PendingStatus.COMMITTED) == "consumed"
-    assert storage_status(PendingStatus.AWAITING_CLARIFICATION) == "active"
+    assert storage_projection(PendingStatus.COMMITTED) == "consumed"
+    assert storage_projection(PendingStatus.AWAITING_CLARIFICATION) == "active"
+
+
+# ── the two failure states, and the two idempotency guarantees ───────────────
+
+def test_failed_is_not_both_terminal_and_claimable():
+    """THE CONTRADICTION THIS FIXES. `FAILED` was terminal AND projected onto a
+    claimable row — the operation is over and may continue. A failed operation
+    would have been reloaded as open on the next turn and reprocessed with no
+    explicit retry transition.
+
+    Split rather than picked, because both models are real: a transient write
+    error should retry, a rejected commit should not.
+    """
+    from core.semantics import PendingStatus, storage_projection
+
+    assert PendingStatus.FAILED.is_terminal
+    assert storage_projection(PendingStatus.FAILED) != "active", (
+        "a terminal failure must not leave a claimable row")
+
+    assert not PendingStatus.RETRYABLE_FAILURE.is_terminal
+    assert storage_projection(PendingStatus.RETRYABLE_FAILURE) == "active"
+
+
+def test_retry_is_bounded():
+    import dataclasses
+
+    from core.semantics import PendingOperation, PendingStatus
+
+    op = PendingOperation(id="p", user_id="u", domain="food",
+                          status=PendingStatus.RETRYABLE_FAILURE,
+                          attempt_count=2, max_attempts=3)
+    assert op.may_retry
+    assert not dataclasses.replace(op, attempt_count=3).may_retry
+    assert not dataclasses.replace(op, status=PendingStatus.FAILED).may_retry
+
+
+def test_the_projection_is_lossy_and_has_no_inverse():
+    """`_STORAGE_PROJECTION` is a projection, not the persisted state.
+
+    Five operation states share "active", so a restart reading only the row
+    learns that something is open and CANNOT learn whether it was waiting on
+    the user, ready to commit, already committing, or a retryable failure —
+    which need different next actions. Both must be persisted; the operation
+    status may never be reconstructed from the row status.
+    """
+    from collections import Counter
+
+    from core.semantics import PendingStatus, storage_projection
+
+    counts = Counter(storage_projection(s) for s in PendingStatus)
+    assert counts["active"] >= 5, (
+        "if this drops to 1 the projection became invertible and this test "
+        "should be replaced, not deleted")
+
+    import core.semantics as S
+    assert not hasattr(S, "operation_status_from_storage"), (
+        "an inverse cannot exist: five states share one row status")
+
+
+def test_answer_claim_and_commit_idempotency_are_separate_fields():
+    """TWO GUARANTEES, NOT ONE. `claim()` proves exactly one caller consumed
+    the ANSWER; it says nothing about the ledger write that follows. A worker
+    can claim, commit food, crash before marking the operation consumed, and a
+    retry can commit again.
+    """
+    from core.semantics import PendingOperation
+
+    fields = PendingOperation.__dataclass_fields__
+    assert "answer_claim_key" in fields and "commit_key" in fields
+    assert "attempt_count" in fields and "last_error" in fields
