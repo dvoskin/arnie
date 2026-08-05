@@ -22,6 +22,8 @@ justifies that, so the claim decays loudly if it stops being true.
 import pathlib
 import re
 
+import pytest
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
 PROD_ROOTS = ("core", "handlers", "skills", "api", "db")
 
@@ -181,9 +183,11 @@ def test_retry_is_bounded():
                           status=PendingStatus.RETRYABLE_FAILURE,
                           attempt_count=2, max_attempts=3)
     assert op.may_retry
-    assert not dataclasses.replace(op, status=PendingStatus.FAILED).may_retry
-    # The only route past the bound transitions rather than staying retryable.
-    assert op.record_failure("boom").status is PendingStatus.FAILED
+    # A terminal state cannot be built without a reason, so the FAILED case is
+    # reached the only way it can be — through the transition that supplies one.
+    terminal = op.record_failure("boom")
+    assert terminal.status is PendingStatus.FAILED and not terminal.may_retry
+    assert terminal.terminal_reason == "attempts_exhausted"
 
 
 def test_the_projection_is_lossy_and_has_no_inverse():
@@ -232,8 +236,6 @@ def test_an_exhausted_retryable_failure_is_unconstructable():
     Rejected at CONSTRUCTION rather than described in a comment, so no code
     path can produce it — including a future one nobody has written.
     """
-    import pytest
-
     from core.semantics import PendingOperation, PendingStatus
 
     with pytest.raises(ValueError, match="not retryable"):
@@ -300,3 +302,112 @@ def test_the_enforcement_gap_is_measured_not_asserted():
     assert req["duplicate_commit"]["enforced"] is False
     assert "UNIQUE" in req["ledger_mutation"]["mechanism"], (
         "an application-level check cannot arbitrate concurrent workers")
+
+
+# ── one transition authority ─────────────────────────────────────────────────
+
+def _committed():
+    from core.semantics import PendingOperation, PendingStatus
+    return (PendingOperation(id="p", user_id="u", domain="food")
+            .transition_to(PendingStatus.READY_TO_COMMIT)
+            .transition_to(PendingStatus.COMMITTING)
+            .transition_to(PendingStatus.COMMITTED, commit_key="mc_1"))
+
+
+@pytest.mark.parametrize("action", [
+    lambda op: op.record_failure("timeout"),
+    lambda op: op.cancel(),
+])
+def test_a_committed_meal_cannot_be_reopened(action):
+    """PREVENTING INVALID SHAPES IS NOT PREVENTING INVALID TRANSITIONS, and the
+    model did the first while permitting the second. `committed.record_failure()`
+    returned a retryable operation — a committed meal, reopened."""
+    from core.semantics import InvalidPendingTransition
+
+    with pytest.raises(InvalidPendingTransition):
+        action(_committed())
+
+
+def test_a_cancelled_operation_cannot_be_retried():
+    from core.semantics import (InvalidPendingTransition, PendingOperation)
+
+    cancelled = PendingOperation(id="p", user_id="u", domain="food").cancel()
+    with pytest.raises(InvalidPendingTransition):
+        cancelled.record_failure("db down")
+
+
+def test_every_terminal_state_is_a_dead_end():
+    """The property that makes the table worth having: terminal means terminal,
+    for all four, with no exceptions to remember."""
+    from core.semantics import _ALLOWED_TRANSITIONS, PendingStatus
+
+    for status in PendingStatus:
+        if status.is_terminal:
+            assert _ALLOWED_TRANSITIONS[status] == set(), (
+                f"{status.value} can still move")
+
+
+def test_the_table_covers_every_state():
+    """A state missing from the table would refuse ALL transitions and look
+    terminal — a silent freeze rather than an error."""
+    from core.semantics import _ALLOWED_TRANSITIONS, PendingStatus
+
+    assert set(_ALLOWED_TRANSITIONS) == set(PendingStatus)
+
+
+def test_the_helpers_route_through_the_authority():
+    """`record_failure` and `cancel` used to replace the status independently,
+    which is why the invalid transitions existed. One boundary means one place
+    to be right."""
+    import inspect
+
+    from core.semantics import PendingOperation
+
+    for fn in (PendingOperation.record_failure, PendingOperation.cancel):
+        src = inspect.getsource(fn)
+        assert "transition_to(" in src, f"{fn.__name__} bypasses the authority"
+        assert "replace(" not in src, f"{fn.__name__} still replaces directly"
+
+
+# ── terminal invariants hold however the object was built ────────────────────
+
+@pytest.mark.parametrize("status", ["failed", "cancelled", "expired"])
+def test_a_terminal_operation_cannot_be_built_without_a_reason(status):
+    """The property held only for callers using the helpers, so direct
+    construction could still produce a terminal row with no reason — which
+    recovery tooling reads as a user cancellation."""
+    from core.semantics import PendingOperation, PendingStatus
+
+    with pytest.raises(ValueError, match="terminal_reason"):
+        PendingOperation(id="p", user_id="u", domain="food",
+                         status=PendingStatus(status))
+
+
+def test_a_committed_operation_requires_a_commit_reference():
+    """COMMITTED needs a RESULT, not a failure reason: "it ended" is not the
+    interesting fact about a commit, "which write" is."""
+    from core.semantics import PendingOperation, PendingStatus
+
+    with pytest.raises(ValueError, match="commit_key"):
+        PendingOperation(id="p", user_id="u", domain="food",
+                         status=PendingStatus.COMMITTED)
+    assert _committed().commit_key == "mc_1"
+
+
+def test_the_happy_path_still_works():
+    """Guards against a table so strict nothing can proceed."""
+    from core.semantics import PendingOperation, PendingStatus
+
+    op = PendingOperation(id="p", user_id="u", domain="food")
+    op = op.transition_to(PendingStatus.AWAITING_CLARIFICATION)
+    op = op.transition_to(PendingStatus.READY_TO_COMMIT)
+    op = op.transition_to(PendingStatus.COMMITTING)
+    op = op.transition_to(PendingStatus.COMMITTED, commit_key="mc_2")
+    assert op.status.is_terminal and not op.is_open
+
+    # And a retry genuinely recovers.
+    retry = (PendingOperation(id="p2", user_id="u", domain="food",
+                              max_attempts=3)
+             .record_failure("transient"))
+    assert retry.may_retry
+    assert retry.transition_to(PendingStatus.RESOLVING).is_open

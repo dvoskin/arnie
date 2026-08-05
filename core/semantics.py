@@ -370,6 +370,52 @@ def storage_projection(status: "PendingStatus") -> str:
     return _STORAGE_PROJECTION.get(status, "active")
 
 
+class InvalidPendingTransition(ValueError):
+    """A lifecycle change the model does not permit."""
+
+    def __init__(self, current, target):
+        super().__init__(f"{current.value} -> {target.value} is not allowed")
+        self.current, self.target = current, target
+
+
+#: THE ONLY LEGAL MOVES. Preventing invalid state SHAPES is not the same as
+#: preventing invalid TRANSITIONS, and the model did the first while permitting
+#: `committed.record_failure()`, `failed.cancel()` and
+#: `cancelled.record_failure()` — a committed meal could be reopened.
+#:
+#: The terminal states have EMPTY sets, which is the property that matters: a
+#: meal that committed is done, and nothing may move it.
+_ALLOWED_TRANSITIONS = {
+    PendingStatus.RESOLVING: {
+        PendingStatus.AWAITING_CLARIFICATION, PendingStatus.READY_TO_COMMIT,
+        PendingStatus.CANCELLED, PendingStatus.RETRYABLE_FAILURE,
+        PendingStatus.FAILED, PendingStatus.EXPIRED},
+    PendingStatus.AWAITING_CLARIFICATION: {
+        PendingStatus.READY_TO_COMMIT, PendingStatus.CANCELLED,
+        PendingStatus.EXPIRED, PendingStatus.RETRYABLE_FAILURE,
+        PendingStatus.FAILED},
+    PendingStatus.READY_TO_COMMIT: {
+        PendingStatus.COMMITTING, PendingStatus.CANCELLED,
+        PendingStatus.RETRYABLE_FAILURE, PendingStatus.FAILED},
+    PendingStatus.COMMITTING: {
+        PendingStatus.COMMITTED, PendingStatus.RETRYABLE_FAILURE,
+        PendingStatus.FAILED},
+    PendingStatus.RETRYABLE_FAILURE: {
+        # SELF-TRANSITION IS REQUIRED, and was missing. A second failed attempt
+        # is retryable -> retryable, and forbidding it made `record_failure`
+        # raise on the second call — the table was stricter than the lifecycle
+        # it describes. Bounded by `max_attempts`, which the construction
+        # invariant enforces, so it cannot loop.
+        PendingStatus.RETRYABLE_FAILURE,
+        PendingStatus.RESOLVING, PendingStatus.COMMITTING,
+        PendingStatus.FAILED, PendingStatus.CANCELLED},
+    PendingStatus.COMMITTED: set(),
+    PendingStatus.CANCELLED: set(),
+    PendingStatus.EXPIRED: set(),
+    PendingStatus.FAILED: set(),
+}
+
+
 @dataclass(frozen=True)
 class PendingOperation:
     """One in-flight, multi-turn operation, in any domain.
@@ -441,6 +487,18 @@ class PendingOperation:
                 f"retryable failure with {self.attempt_count}/"
                 f"{self.max_attempts} attempts used is not retryable — "
                 "record_failure() transitions it to FAILED")
+        # A TERMINAL OPERATION MUST SAY WHY IT ENDED, however it was built. The
+        # property held only for callers using `cancel()`/`record_failure()`,
+        # so direct construction could still produce a terminal row with no
+        # reason — and recovery tooling reads that as a user cancellation.
+        if self.status in (PendingStatus.FAILED, PendingStatus.CANCELLED,
+                           PendingStatus.EXPIRED) and not self.terminal_reason:
+            raise ValueError(
+                f"{self.status.value} requires a terminal_reason")
+        # COMMITTED needs a RESULT REFERENCE, not a failure reason: "it ended"
+        # is not the interesting fact about a commit, "which write" is.
+        if self.status is PendingStatus.COMMITTED and not self.commit_key:
+            raise ValueError("a committed operation requires a commit_key")
 
     @property
     def may_retry(self) -> bool:
@@ -448,6 +506,19 @@ class PendingOperation:
         retries — that is the whole reason the two states are separate."""
         return (self.status is PendingStatus.RETRYABLE_FAILURE
                 and self.attempt_count < self.max_attempts)
+
+    def transition_to(self, target: "PendingStatus",
+                      **changes) -> "PendingOperation":
+        """THE SINGLE LIFECYCLE AUTHORITY. Every status change goes through it.
+
+        `record_failure` and `cancel` used to replace the status independently,
+        which is why a committed operation could be failed and a cancelled one
+        retried. One boundary means one place to be right, and one place to add
+        the next rule.
+        """
+        if target not in _ALLOWED_TRANSITIONS.get(self.status, set()):
+            raise InvalidPendingTransition(self.status, target)
+        return replace(self, status=target, **changes)
 
     def record_failure(self, error: str) -> "PendingOperation":
         """Count an attempt and land in the RIGHT state, in one step.
@@ -459,10 +530,9 @@ class PendingOperation:
         """
         attempts = self.attempt_count + 1
         exhausted = attempts >= self.max_attempts
-        return replace(
-            self,
-            status=(PendingStatus.FAILED if exhausted
-                    else PendingStatus.RETRYABLE_FAILURE),
+        return self.transition_to(
+            PendingStatus.FAILED if exhausted
+            else PendingStatus.RETRYABLE_FAILURE,
             attempt_count=attempts,
             last_error=error,
             terminal_reason=("attempts_exhausted" if exhausted
@@ -470,8 +540,8 @@ class PendingOperation:
 
     def cancel(self, reason: str = "user_cancelled") -> "PendingOperation":
         """Terminal by the USER's decision, and distinguishable from failure."""
-        return replace(self, status=PendingStatus.CANCELLED,
-                       terminal_reason=reason)
+        return self.transition_to(PendingStatus.CANCELLED,
+                                  terminal_reason=reason)
 
     def required_unresolved(self, mode: str) -> tuple:
         return tuple(f for f in self.unresolved_fields

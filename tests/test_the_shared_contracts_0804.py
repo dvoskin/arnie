@@ -155,11 +155,18 @@ def test_strict_cannot_commit_past_a_required_unresolved_field():
 
 
 def test_terminal_states_close_the_operation():
-    for s in (PendingStatus.COMMITTED, PendingStatus.CANCELLED,
-              PendingStatus.EXPIRED, PendingStatus.FAILED):
+    """Built through the invariants rather than around them: a terminal
+    operation must carry its reason, and a committed one its commit key, so
+    this constructs them the way production has to."""
+    for s in (PendingStatus.CANCELLED, PendingStatus.EXPIRED,
+              PendingStatus.FAILED):
         assert s.is_terminal
         assert not PendingOperation(id="p", user_id="u", domain="food",
-                                    status=s).is_open
+                                    status=s, terminal_reason="test").is_open
+    assert PendingStatus.COMMITTED.is_terminal
+    assert not PendingOperation(id="p", user_id="u", domain="food",
+                                status=PendingStatus.COMMITTED,
+                                commit_key="mc_1").is_open
     assert PendingOperation(id="p", user_id="u", domain="food",
                             status=PendingStatus.AWAITING_CLARIFICATION).is_open
 
