@@ -568,6 +568,7 @@ def _kick_whoop_refresh_if_stale(user, candidates) -> None:
     user so linked identities all see the update."""
     import asyncio
     from datetime import datetime as _dt, timedelta as _td
+    from core import clock as _clock
     uid = getattr(user, "id", None)
     if uid is None or uid in _whoop_refresh_inflight:
         return
@@ -575,7 +576,7 @@ def _kick_whoop_refresh_if_stale(user, candidates) -> None:
         return
     snaps = [c for c in candidates if (getattr(c, "source", "") or "").lower() == "whoop"]
     freshest = max((c.received_at for c in snaps if getattr(c, "received_at", None)), default=None)
-    if freshest is not None and (_dt.utcnow() - freshest) < _td(minutes=90):
+    if freshest is not None and (_clock.now() - freshest) < _td(minutes=90):
         return
     _whoop_refresh_inflight.add(uid)
     snap_uid = getattr(user, "linked_to_user_id", None) or uid

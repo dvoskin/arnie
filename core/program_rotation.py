@@ -15,6 +15,7 @@ first-primary-day, with no rotation state anywhere.)
 from __future__ import annotations
 
 from typing import Optional
+from core import clock
 
 
 def _norm(s: str) -> str:
@@ -121,7 +122,7 @@ async def recent_entries_by_day(db, user_id: int, days: int = 14):
     from sqlalchemy import select
     from db.models import DailyLog, ExerciseEntry
 
-    since = datetime.utcnow() - timedelta(days=days)
+    since = clock.now() - timedelta(days=days)
     rows = (await db.execute(
         select(DailyLog.date, ExerciseEntry.exercise_name)
         .join(ExerciseEntry, ExerciseEntry.daily_log_id == DailyLog.id)

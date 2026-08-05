@@ -44,6 +44,7 @@ from db.queries import (
 )
 from api.usda import search_food as _usda_search
 from core.units import CM_PER_IN, KG_PER_LB, LB_PER_KG
+from core import clock
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ async def _confirm_utc_sessions():
     """
     from sqlalchemy import text
 
+    from core import clock
     from db.database import engine
 
     if engine.sync_engine.dialect.name != "postgresql":
@@ -93,7 +95,16 @@ async def _confirm_utc_sessions():
             f"database sessions report timezone {zone!r}, not UTC — refusing "
             f"to start: every freshness and idempotency comparison would be "
             f"offset by that amount (docs/ONE_CLOCK_MIGRATION.md)")
-    logger.info("event=one_clock sessions=utc dialect=postgresql")
+
+    # STEP 2: measure this host against the database's clock, once, at boot.
+    # Not fatal — before the first sync the offset is zero and `clock.now()` is
+    # exactly `utcnow()`, which is the behaviour that shipped for a year. A
+    # failed measurement leaves the system no worse than it was; refusing to
+    # start over it would trade a real outage for a theoretical one.
+    async with engine.connect() as conn:
+        skew = await clock.sync(conn)
+    logger.info("event=one_clock sessions=utc dialect=postgresql skew_s=%s",
+                f"{skew:.3f}" if skew is not None else "unmeasured")
 
 
 @app.on_event("startup")
@@ -2955,7 +2966,7 @@ async def admin_flagged(hours: int = Query(48),
     from datetime import datetime, timedelta
     from db.models import ConversationLog, User
 
-    since = datetime.utcnow() - timedelta(hours=hours)
+    since = clock.now() - timedelta(hours=hours)
     async with AsyncSessionLocal() as db:
         rows = (await db.execute(
             select(ConversationLog, User.name)

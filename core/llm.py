@@ -50,8 +50,10 @@ def pick_model(user) -> "str | None":
     if created is None:
         return None
     from datetime import datetime, timedelta
+
+    from core import clock
     try:
-        return m if datetime.utcnow() - created <= timedelta(days=days) else None
+        return m if clock.now() - created <= timedelta(days=days) else None
     except TypeError:
         return None
 

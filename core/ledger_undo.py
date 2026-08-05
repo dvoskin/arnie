@@ -29,6 +29,7 @@ import os
 import re
 from datetime import datetime, timedelta
 from typing import Optional
+from core import clock
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ def _fresh(event, hours: float) -> bool:
     if ts is None:
         return False
     try:
-        return (datetime.utcnow() - ts) <= timedelta(hours=hours)
+        return (clock.now() - ts) <= timedelta(hours=hours)
     except Exception:
         return False
 

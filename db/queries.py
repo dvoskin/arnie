@@ -16,6 +16,7 @@ import uuid
 import os
 import pytz
 from core.units import LB_PER_KG
+from core import clock
 
 logger = logging.getLogger(__name__)
 
@@ -838,7 +839,7 @@ async def current_workout_group(db: AsyncSession, user_id: int,
         .limit(1))).first()
     if not row or not row[0] or not row[1]:
         return None
-    quiet = (datetime.utcnow() - row[1]).total_seconds() / 60.0
+    quiet = (clock.now() - row[1]).total_seconds() / 60.0
     return row[0] if quiet <= gap_minutes else None
 
 
@@ -888,7 +889,7 @@ async def get_workout_session(db: AsyncSession, user_id: int,
         "started_at": rows[0].timestamp,
         "last_set_at": last,
         "seconds_since_last_set": (
-            (datetime.utcnow() - last).total_seconds() if last else None),
+            (clock.now() - last).total_seconds() if last else None),
         "exercises": [{"name": k, "sets": v} for k, v in by_move.items()],
         "total_sets": len(rows),
     }
@@ -1265,7 +1266,7 @@ async def delete_water_entry(db: AsyncSession, entry_id: int, user_id: int,
 
 async def get_recent_weights(db: AsyncSession, user_id: int,
                              days: int = 14) -> List[BodyMetric]:
-    since = datetime.utcnow() - timedelta(days=days)
+    since = clock.now() - timedelta(days=days)
     result = await db.execute(
         select(BodyMetric)
         .where(and_(BodyMetric.user_id == user_id, BodyMetric.timestamp >= since))
@@ -3264,7 +3265,7 @@ async def frequent_foods(db, user_id: int, days: int = 30, limit: int = 8):
     from sqlalchemy import select
     from db.models import DailyLog, FoodEntry
 
-    since = datetime.utcnow() - timedelta(days=days)
+    since = clock.now() - timedelta(days=days)
     rows = (await db.execute(
         select(FoodEntry.parsed_food_name, FoodEntry.quantity, FoodEntry.calories,
                FoodEntry.protein, FoodEntry.carbs, FoodEntry.fats,
@@ -3560,7 +3561,7 @@ async def enqueue_background_job(
     from db.models import BackgroundJob
     try:
         if dedup_key:
-            cutoff = datetime.utcnow() - timedelta(minutes=dedup_window_min)
+            cutoff = clock.now() - timedelta(minutes=dedup_window_min)
             existing = (await db.execute(
                 select(BackgroundJob).where(and_(
                     BackgroundJob.user_id == user_id,
@@ -3649,7 +3650,7 @@ async def requeue_stale_jobs(db: AsyncSession, older_than_min: int = 15) -> int:
     killing its worker still reaches dead_letter rather than looping.
     """
     from db.models import BackgroundJob
-    cutoff = datetime.utcnow() - timedelta(minutes=older_than_min)
+    cutoff = clock.now() - timedelta(minutes=older_than_min)
     rows = (await db.execute(
         select(BackgroundJob).where(and_(
             BackgroundJob.status == "processing",
@@ -3679,7 +3680,7 @@ async def outbox_health(db: AsyncSession) -> dict:
             select(func.min(BackgroundJob.created_at))
             .where(BackgroundJob.status == "pending"))).scalar()
         out["oldest_pending_age_s"] = (
-            int((datetime.utcnow() - oldest).total_seconds()) if oldest else 0)
+            int((clock.now() - oldest).total_seconds()) if oldest else 0)
     except Exception as e:                       # pragma: no cover
         out["error"] = type(e).__name__
     return out

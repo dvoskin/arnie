@@ -136,42 +136,59 @@ tools — on a non-UTC server they would *report* offset ages (`latency_report`
 most visibly), but they write nothing, so no data is at risk. Fold them into
 step 2 rather than pinning six call sites piecemeal.
 
-## Step 2 — owed: one authoritative clock source
+## Step 2 — done: the database clock is the one clock
 
-Pinning the session removes the **timezone** axis. It does **not** merge the
-two clocks into one source. Host clock skew between the application and the
-database still exists — bounded by NTP at seconds rather than hours, but real
-against a 90-second staleness threshold, and unbounded if NTP fails on either
-host.
+**The choice was measured, not preferred.** Every freshness comparison in the
+codebase read a timestamp the DATABASE wrote (`server_default=func.now()`) and
+compared it against `datetime.utcnow()` — all cross-domain, and the values live
+in the database. So the database is the only clock that makes both sides of
+every comparison agree by construction. (Option (a) from the original plan, by
+mechanism rather than by rewrite.)
 
-There are **17** freshness comparisons against `utcnow()` today:
+**The mechanism is arithmetic, not I/O** — `core/clock.py`:
 
-| file | lines |
-|---|---|
-| `core/idempotency.py` | 293, 298 |
-| `core/conversation.py` | 1177, 1206 |
-| `core/chat_service.py` | 314 |
-| `core/ledger_undo.py` | 85 |
-| `core/llm.py` | 54 |
-| `db/queries.py` | 841, 891, 3682 |
-| `handlers/tool_executor.py` | 2569, 5560 |
-| `scheduler/proactive_scheduler.py` | 161, 586, 597, 1383 |
-| `api/native_data.py` | 578 |
+    clock.now() == datetime.utcnow() + (db_now − app_now)
 
-Pick **one** and apply it uniformly. Which matters less than consistency:
+* the offset is measured at boot (`api/app.py` startup, after the UTC check)
+  and re-measured every 15 minutes by the scheduler (`clock_resync`), because a
+  host whose NTP has failed drifts without bound and a single boot-time
+  measurement cannot see it;
+* the round trip straddles the reading, so the midpoint is the comparison
+  point — otherwise the query's own latency reads as drift;
+* before the first sync the offset is **zero** and `clock.now()` is exactly
+  `utcnow()`: a deployment that never syncs is no worse than before this
+  module existed, which is what made it adoptable without a flag;
+* a failed sync keeps the previous offset (a stale correction is closer than
+  none) and never raises;
+* skew ≥ 5s logs `event=clock_sync outcome=skewed` at error level — that is
+  NTP failing, and it is worth knowing before the 90-second staleness
+  threshold starts lying. **The measurement is the point as much as the
+  correction**: a drifting host was previously silent.
 
-* **Database clock everywhere** — timestamps written by `func.now()`, ages
-  computed in SQL. Immune to app-server skew, which matters because multiple
-  workers do not share a clock. Costs a rewrite of the comparisons that operate
-  on already-loaded objects (`core/llm.py:54` is not a query).
-* **UTC-normalised application timestamps everywhere** — `default=datetime.utcnow`
-  on every column, comparisons stay in Python. Much smaller diff; leaves
-  multi-worker skew, and raw-SQL inserts still take the database clock.
+**Converted: 25 comparison sites** (the original inventory said 17; the sweep
+that ran with a broader pattern found 26, the extra nine being
+`cutoff = utcnow() − timedelta(...)` values passed into SQL `WHERE` clauses).
+The 26th stays on the application clock **by design**:
+`bot/telegram_handler.py` compares `whoop_token_expires_at`, which the app
+computed from the OAuth `expires_in` — same-domain already. The rule is
+"compare with the clock that wrote it", and it cuts both ways.
 
-**Do not convert a subset.** An earlier attempt to convert 2 of the 43 columns
-was reverted precisely because a partial conversion creates two time domains
-inside one table — strictly worse than one consistent wrong domain, because it
-is no longer detectable.
+**Enforced, not remembered** — `tests/test_one_clock_step2_0805.py`:
+
+* a ratchet fails on any NEW `utcnow()` freshness comparison in production
+  code (the by-design exception is named, and goes stale loudly if removed);
+* the idempotency claim — the tightest threshold, and the one that decides
+  whether a meal is written twice — is pinned to `clock.now()` by its own test;
+* unmeasured is reported as `None`, never as `0.000` — a health surface
+  printing zero for "never measured" claims a guarantee nobody checked.
+
+Mutation-checked: a synthetic new `utcnow()` comparison, reverting idempotency
+to the app clock, and making `clock.now()` ignore the offset each turn the
+matching test red.
+
+**Remaining, folded here from step 1's known gap:** six read-only audit scripts
+use raw `psycopg.connect()` and report ages on the app clock. They write
+nothing; converting them is cleanup, not correctness.
 
 ## The gate
 

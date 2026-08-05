@@ -52,6 +52,7 @@ from core.prompts.arnie import build_arnie_system
 from core.recovery import is_recovery_text
 from core.reset import parse_reset_command, reset_today, reset_all
 from handlers.onboarding import build_onboarding_system
+from core import clock
 
 logger = logging.getLogger(__name__)
 
@@ -311,7 +312,7 @@ async def run_chat_turn(
         _prev = await get_recent_conversations(db, user.id, limit=1)
         if _prev:
             _p = _prev[0]
-            _age = ((datetime.utcnow() - _p.timestamp).total_seconds()
+            _age = ((clock.now() - _p.timestamp).total_seconds()
                     if _p.timestamp else 1e9)
             _same = (_p.raw_message or "") == text
             _fired_tools = bool((_p.skills_fired or "").strip())

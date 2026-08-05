@@ -45,6 +45,7 @@ from typing import Any, Optional
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
+from core import clock
 
 logger = logging.getLogger(__name__)
 
@@ -289,13 +290,18 @@ async def claim_request(
 
         # Nothing committed. Only now does the question "is the original still
         # running" matter, and only now can a takeover be safe.
-        started = existing.created_at or datetime.utcnow()
-        if datetime.utcnow() - started < timedelta(seconds=STALE_CLAIM_SECONDS):
+        # ONE CLOCK. `created_at` is written by the DATABASE, and this is the
+        # tightest threshold in the codebase — 90 seconds against a skew that
+        # NTP bounds at seconds and does not bound at all when it fails. A
+        # claim judged stale while its original is still running is taken
+        # over, and the meal is written twice.
+        started = existing.created_at or clock.now()
+        if clock.now() - started < timedelta(seconds=STALE_CLAIM_SECONDS):
             raise IdempotencyInProgress(key)
 
         logger.warning(
             f"event=idempotency_takeover key={key} age_s="
-            f"{(datetime.utcnow() - started).total_seconds():.0f} — the "
+            f"{(clock.now() - started).total_seconds():.0f} — the "
             f"original delivery never completed")
         existing.turn_id = turn_id
         existing.created_at = datetime.utcnow()

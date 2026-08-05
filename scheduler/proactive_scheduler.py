@@ -27,6 +27,7 @@ import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from core import clock
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +159,7 @@ def _last_exchange(rows):
         return None, c.raw_message, c.response
     if ts.tzinfo is not None:
         ts = ts.replace(tzinfo=None)
-    mins = (_dt.utcnow() - ts).total_seconds() / 60.0
+    mins = (clock.now() - ts).total_seconds() / 60.0
     # Preserve None vs "" distinction: None means the field was not stored;
     # "" means the message existed but had no text (e.g. button tap, media).
     return mins, c.raw_message, c.response
@@ -583,7 +584,7 @@ async def _within_proactive_budget(db, user_id, slot_key: str) -> bool:
         from core.delivery import TERMINAL_SUCCESS
         _status_ph = ", ".join(f":s{i}" for i in range(len(TERMINAL_SUCCESS)))
         _params = {"u": user_id,
-                   "cutoff": datetime.utcnow() - timedelta(hours=24)}
+                   "cutoff": clock.now() - timedelta(hours=24)}
         _params.update({f"s{i}": s for i, s in enumerate(TERMINAL_SUCCESS)})
         row = (await db.execute(_sql(
             "select count(*) as n, max(attempted_at) as last from delivery_attempts "
@@ -594,7 +595,7 @@ async def _within_proactive_budget(db, user_id, slot_key: str) -> bool:
             _last = row.last
             if isinstance(_last, str):   # SQLite hands raw-SQL datetimes back as text
                 _last = datetime.fromisoformat(_last)
-            minutes = (datetime.utcnow() - _last).total_seconds() / 60.0
+            minutes = (clock.now() - _last).total_seconds() / 60.0
         # Cadence scales with the user's reminder_frequency ('moderate' → 3/day, 180-min
         # gaps). Fail-open to 'moderate' if the pref can't be read.
         _freq = "moderate"
@@ -1380,7 +1381,7 @@ async def _user_spoke_recently(db, user_id: int, minutes: int = 180) -> bool:
         last = row.last
         if isinstance(last, str):   # SQLite hands raw-SQL datetimes back as text
             last = datetime.fromisoformat(last)
-        return (datetime.utcnow() - last).total_seconds() < minutes * 60
+        return (clock.now() - last).total_seconds() < minutes * 60
     except Exception as e:
         logger.warning(f"user_spoke_recently check failed (user {user_id}): {e}")
         return True
@@ -2350,7 +2351,7 @@ async def _proactive_text_sent_recently(db, user_id: int, text: str,
     try:
         from db.queries import get_recent_conversations
         from datetime import datetime as _dt, timedelta as _td
-        cutoff = _dt.utcnow() - _td(minutes=minutes)
+        cutoff = clock.now() - _td(minutes=minutes)
         norm = " ".join((text or "").split()).strip().lower()
         if not norm:
             return False
@@ -2455,7 +2456,7 @@ async def _run_conversation_hooks() -> None:
                 # ceiling regardless of pref. Checks recent rows for any
                 # source_type='proactive' and bails if one's within the window.
                 from datetime import datetime as _dt, timedelta as _td
-                _cooloff_cutoff = _dt.utcnow() - _td(minutes=90)
+                _cooloff_cutoff = clock.now() - _td(minutes=90)
                 _recently_proactive = any(
                     getattr(r, "source_type", "") == "proactive"
                     and getattr(r, "timestamp", _dt.min) >= _cooloff_cutoff
@@ -2566,6 +2567,32 @@ def start_scheduler():
         )
     else:
         reminders_status = "reminders DISABLED (PROACTIVE_MESSAGING_ENABLED not set)"
+    # RE-MEASURE THE CLOCK OFFSET (docs/ONE_CLOCK_MIGRATION.md step 2).
+    #
+    # Boot-time measurement alone would decay: two NTP-disciplined hosts drift
+    # slowly, but a host whose NTP has FAILED drifts without bound, and that is
+    # exactly the case a single measurement at startup cannot see. Every 15
+    # minutes is far more often than clocks move and far cheaper than the
+    # 90-second staleness threshold being wrong.
+    #
+    # Runs regardless of PROACTIVE_MESSAGING_ENABLED: it is data integrity, not
+    # outbound messaging.
+    async def _resync_clock():
+        from core import clock
+        from db.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            await clock.sync(db)
+
+    _scheduler.add_job(
+        _resync_clock,
+        CronTrigger(minute="5,20,35,50"),
+        id="clock_resync",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
     # Durable background-job sweep (P0.7): post-turn profile/memory work that
     # a deploy or crash dropped mid-task is still queued as a row — this tick
     # finishes it. Runs regardless of PROACTIVE_MESSAGING_ENABLED: it is data

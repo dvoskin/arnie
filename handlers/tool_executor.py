@@ -2539,6 +2539,7 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
         # row self-heals instead of serving stale nutrition forever.
         if m is not None and not m.user_confirmed:
             from datetime import datetime as _dt, timedelta as _td
+            from core import clock as _clock
             _lu = m.last_used or m.created_at
             # A GENERIC cache row standing in for a NAMED PRODUCT expires far
             # sooner than an ordinary one, because it is not merely stale — it is
@@ -2566,7 +2567,7 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
                     _horizon = _td(days=BRANDED_RECHECK_DAYS)
             except Exception:
                 pass
-            if _lu is not None and _lu < _dt.utcnow() - _horizon:
+            if _lu is not None and _lu < _clock.now() - _horizon:
                 logger.info(
                     f"food memory stale (>{_horizon.days}d) for {name_norm!r} "
                     f"— re-resolving")
@@ -5554,10 +5555,11 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             _loc_ts = getattr(user, "location_updated_at", None)
             if isinstance(_lat, (int, float)) and isinstance(_lng, (int, float)):
                 from datetime import datetime as _dt_loc
+                from core import clock as _clock
                 _age_h = None
                 if _loc_ts is not None:
                     try:
-                        _age_h = (_dt_loc.utcnow() - _loc_ts).total_seconds() / 3600
+                        _age_h = (_clock.now() - _loc_ts).total_seconds() / 3600
                     except Exception:
                         _age_h = None
                 if _age_h is None or _age_h > 3:

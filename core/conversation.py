@@ -1168,13 +1168,14 @@ async def _run_turn(
             _mins_since_write = None
             try:
                 from datetime import datetime as _dt_t
+                from core import clock as _clock
                 _latest = max((getattr(_fe, "timestamp", None)
                                for _fe in (getattr(today_log, "food_entries", None) or [])
                                if getattr(_fe, "timestamp", None) is not None),
                               default=None)
                 if _latest is not None:
                     _mins_since_write = (
-                        _dt_t.utcnow() - _latest).total_seconds() / 60.0
+                        _clock.now() - _latest).total_seconds() / 60.0
             except Exception:
                 _mins_since_write = None
             _route_mid = False
@@ -1200,10 +1201,11 @@ async def _run_turn(
                         _age = None
                         try:
                             from datetime import datetime as _dt_b
+                            from core import clock as _clock
                             _ts = getattr(_fe, "timestamp", None)
                             if _ts is not None:
                                 _age = max(0, int(
-                                    (_dt_b.utcnow() - _ts).total_seconds()
+                                    (_clock.now() - _ts).total_seconds()
                                     // 60))
                         except Exception:
                             _age = None
