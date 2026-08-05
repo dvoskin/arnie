@@ -2825,6 +2825,11 @@ def _is_legacy_fallback(decision) -> bool:
     policy answers False — and `_NoPolicy.mode` is None, so it is never a
     rollback and both foods are preserved.
     """
+    # THE LOCAL TYPE FIRST, and without importing anything. This is the answer
+    # when the policy module is gone, which is the case the whole branch is
+    # for.
+    if isinstance(decision, _LegacyFallback):
+        return True
     mode = getattr(decision, "mode", None)
     if mode is None:
         return False
@@ -2833,6 +2838,22 @@ def _is_legacy_fallback(decision) -> bool:
     except Exception:
         return False
     return mode is DecisionMode.LEGACY_FALLBACK
+
+
+class _LegacyFallback:
+    """The operator asked for the old matcher. Owned by THIS module.
+
+    It cannot be a `RefinementDecision`, because building one requires
+    importing the policy — and a rollback that depends on the module it exists
+    to bypass is not a rollback. Reproduced: with `FOOD_IDENTITY_STRICT=false`
+    AND the policy unimportable, the turn preserved both foods instead of
+    collapsing, so the emergency control was unavailable in precisely the
+    situation an operator reaches for it.
+    """
+    allowed = False
+    mode = None
+    reason = None
+    evidence = ("legacy matcher selected by rollback flag",)
 
 
 class _NoPolicy:
@@ -2880,6 +2901,12 @@ def _refinement_decision(key: str, candidates: list):
     """
     if not candidates:
         return None
+    # THE ROLLBACK IS ANSWERED BEFORE THE IMPORT IS ATTEMPTED. An operator
+    # disabling the registry does not need the registry's module, and making
+    # them depend on it means the escape hatch is missing exactly when the
+    # thing it escapes from is broken.
+    if not _identity_strict() or not _registry_enabled():
+        return _LegacyFallback()
     try:
         from skills.nutrition import refinement as _rf
     except Exception:
@@ -2889,11 +2916,6 @@ def _refinement_decision(key: str, candidates: list):
         logger.warning("refinement policy could not be imported; failing "
                        "closed", exc_info=True)
         return _NoPolicy()
-    if not _identity_strict() or not _registry_enabled():
-        return _rf.RefinementDecision(
-            allowed=False, reason=_rf.RefinementReason.NOT_RELATED,
-            mode=_rf.DecisionMode.LEGACY_FALLBACK,
-            evidence=("legacy matcher selected by rollback flag",))
     try:
         return _rf.evaluate_refinement(
             key, candidates[0],

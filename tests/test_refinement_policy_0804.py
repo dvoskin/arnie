@@ -229,11 +229,20 @@ def test_the_decision_says_which_mode_produced_it(monkeypatch):
     from core.food_turn import _refinement_decision
     from skills.nutrition.refinement import DecisionMode
 
-    assert _refinement_decision("white rice", ["white rice, cooked"]).mode \
-        is DecisionMode.POLICY
+    from core.food_turn import _is_legacy_fallback
+
+    d = _refinement_decision("white rice", ["white rice, cooked"])
+    assert d.mode is DecisionMode.POLICY
+    assert not _is_legacy_fallback(d)
+
+    # THE ROLLBACK IS IDENTIFIED BY TYPE, not by an enum imported from the
+    # module it must not depend on. `_LegacyFallback.mode` is None precisely
+    # because constructing a `DecisionMode` would reintroduce that dependency.
     monkeypatch.setenv("FOOD_IDENTITY_STRICT", "false")
-    assert _refinement_decision("white rice", ["white rice, cooked"]).mode \
-        is DecisionMode.LEGACY_FALLBACK
+    rollback = _refinement_decision("white rice", ["white rice, cooked"])
+    assert _is_legacy_fallback(rollback)
+    assert rollback.allowed is False
+    assert rollback.evidence, "a rollback must still say why it happened"
 
 
 def test_unevaluated_quantity_compatibility_is_not_reported_as_met():
@@ -290,3 +299,87 @@ def test_the_mode_branch_compares_the_enum_not_a_string():
     assert 'getattr(mode, "value"' not in src, (
         "the string contract came back through getattr")
     assert "is DecisionMode.LEGACY_FALLBACK" in src
+
+
+# ── the rollback may not depend on the module it bypasses ────────────────────
+
+class _PolicyGone:
+    """Make `skills.nutrition.refinement` genuinely unimportable.
+
+    BOTH the `sys.modules` entry and the parent package ATTRIBUTE must go.
+    `from pkg import mod` falls back to the attribute when the package already
+    has one, so a test that only clears `sys.modules` silently stops breaking
+    anything after the first successful import — which is how an earlier
+    version of this check passed while measuring nothing.
+    """
+
+    def __enter__(self):
+        import skills.nutrition as pkg
+        self.pkg = pkg
+        self.saved = getattr(pkg, "refinement", None)
+        sys.modules.pop("skills.nutrition.refinement", None)
+        if hasattr(pkg, "refinement"):
+            delattr(pkg, "refinement")
+        sys.modules["skills.nutrition.refinement"] = None
+        return self
+
+    def __exit__(self, *exc):
+        sys.modules.pop("skills.nutrition.refinement", None)
+        if self.saved is not None:
+            self.pkg.refinement = self.saved
+            sys.modules["skills.nutrition.refinement"] = self.saved
+        return False
+
+
+def test_the_policy_can_actually_be_made_unimportable():
+    """Guards the guard. If this stops raising, every test below is vacuous."""
+    with _PolicyGone():
+        with pytest.raises(ImportError):
+            from skills.nutrition import refinement          # noqa: F401
+
+
+def test_an_unloadable_policy_fails_closed_under_default_flags():
+    with _PolicyGone():
+        assert _names(_unique()) == ["White rice"], "both foods must survive"
+
+
+@pytest.mark.parametrize("flag", ["FOOD_IDENTITY_STRICT",
+                                  "FOOD_IDENTITY_REGISTRY"])
+def test_rollback_works_without_the_policy_module(flag, monkeypatch):
+    """THE EMERGENCY CONTROL MUST NOT DEPEND ON WHAT IT BYPASSES.
+
+    Reproduced before fixing: with the flag off AND the policy unimportable,
+    the turn preserved both foods instead of collapsing — so the escape hatch
+    was unavailable in precisely the situation an operator reaches for it. The
+    cause was that building the LEGACY_FALLBACK decision required importing the
+    policy, so the rollback was answered after the import rather than before.
+    """
+    monkeypatch.setenv(flag, "false")
+    with _PolicyGone():
+        assert _names(_unique()) == [], "the legacy matcher should collapse"
+
+
+@pytest.mark.parametrize("flag", ["FOOD_IDENTITY_STRICT",
+                                  "FOOD_IDENTITY_REGISTRY"])
+def test_rollback_without_the_policy_still_carries_on_ambiguity(flag,
+                                                                monkeypatch):
+    """Rolling back restores the OLD behaviour, which also refused to guess
+    between several candidates — with or without the policy present."""
+    monkeypatch.setenv(flag, "false")
+    with _PolicyGone():
+        assert _names(_ambiguous()) == ["Bread"]
+
+
+def test_the_rollback_result_is_owned_by_the_caller():
+    """`_LegacyFallback` is defined in `food_turn`, not in the policy module.
+    A rollback constructed out of the policy's own types is a rollback that
+    stops working exactly when it is needed."""
+    import inspect
+
+    import core.food_turn as FT
+
+    src = inspect.getsource(FT._refinement_decision)
+    rollback_at = src.index("_LegacyFallback()")
+    import_at = src.index("from skills.nutrition import refinement")
+    assert rollback_at < import_at, (
+        "the rollback is answered after the import it must not depend on")
