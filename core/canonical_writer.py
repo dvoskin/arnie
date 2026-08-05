@@ -91,6 +91,14 @@ class ResolvedFood:
     processing_level: Optional[str] = None
     raw_input: str = ""
     attributes: dict = field(default_factory=dict)
+    #: WHO SUPPLIED THE NUMBERS — a different fact from who chose the food.
+    #: `event.provenance` says the user picked "Chicken breast"; this says the
+    #: calories came from the client's local calculation rather than a catalog
+    #: or the server resolver. A client-priced value is structured input, not
+    #: authority, and the result must preserve which system priced it:
+    #:   catalog | user_stated | user_selected | client_estimated |
+    #:   server_resolved | manual_override
+    nutrition_provenance: str = "server_resolved"
 
     def __post_init__(self):
         if not isinstance(self.event, CanonicalEvent):
@@ -416,6 +424,10 @@ async def _read_back(db, written) -> tuple:
                 f"read back in the same transaction")
         committed.append({
             "entry_id": row.id,
+            # Persisted with the result, so a duplicate replay and every later
+            # reader can tell client-priced from catalog-priced without a
+            # schema change — meal_commits.result_payload is the durable home.
+            "nutrition_provenance": item.nutrition_provenance,
             # Where the row LIVES, not just what it is. The quick-log response
             # contract returns daily_log_id, and the idempotency claim stores
             # it so a replay can answer without a join — a result that cannot

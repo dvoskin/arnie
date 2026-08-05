@@ -402,3 +402,59 @@ def test_c7_deleted_ownership_stays_deleted():
             f"{rel} uses {sorted(returned)} again — that path was promoted to "
             f"the canonical writer and its legacy write was DELETED. Fix the "
             f"canonical lane instead of resurrecting the old one.")
+
+
+# ── C8 · Every clarification producer is a known one (Phase-2 freeze) ────────
+#
+# Four producers build the wire's `questions` payload today, in three shapes
+# (skills/nutrition/clarification_adapter.py documents them; measured
+# 2026-08-04, 39 of 40 asks shipped options:[] and iOS re-derived chips by
+# parsing prose). Collapsing them is the Phase-B migration. Until then the
+# population is FROZEN: a fifth producer, or a new site assembling the payload
+# by hand, widens exactly the surface Phase B has to collapse — the review's
+# instruction is "do not expand the old clarification architecture further."
+
+#: Sites that touch a `"questions"` wire payload. Counted at the payload
+#: chokepoint, not the helper, because a new producer that skips the helpers
+#: still has to put `questions` on the wire. MEASURED: four PRODUCERS in
+#: food_turn (chips+questions, points ×2, the literal-dict calorie fallback)
+#: plus ONE RELAY — conversation.py copies the list into the pending payload
+#: for the answer turn. A relay originates nothing, but it is part of the
+#: surface Phase B collapses, so it is frozen with the rest.
+_QUESTION_PAYLOAD_SITES = 5
+
+#: Constructors of the typed staged-pipeline question. clarify_policy owns
+#: both (bundled + default); food_turn holds the single staged-ask site.
+_CLARIFICATION_QUESTION_CONSTRUCTORS = 3
+
+
+def test_c8_every_clarification_producer_is_a_known_one():
+    """RATCHET, both directions, same rules as C4."""
+    payload_sites = []
+    ctor_sites = []
+    for rel in ("core/food_turn.py", "core/conversation.py",
+                "core/food_pipeline.py", "skills/nutrition/clarify_policy.py"):
+        src = (ROOT / rel).read_text()
+        for i, line in enumerate(src.splitlines(), 1):
+            stripped = line.split("#")[0]
+            if '"questions":' in stripped:
+                payload_sites.append(f"{rel}:{i}")
+            if "ClarificationQuestion(" in stripped \
+                    and "import" not in stripped:
+                ctor_sites.append(f"{rel}:{i}")
+
+    assert len(payload_sites) <= _QUESTION_PAYLOAD_SITES, (
+        f"a NEW clarification producer appeared: {payload_sites}. Phase B "
+        f"collapses the existing four into canonical ClarificationFields — "
+        f"widening the population first makes that migration larger. Emit "
+        f"through the existing producers or land the canonical path.")
+    assert len(payload_sites) == _QUESTION_PAYLOAD_SITES, (
+        f"only {len(payload_sites)} question-payload sites remain "
+        f"({payload_sites}) — LOWER _QUESTION_PAYLOAD_SITES to hold the "
+        f"ground the Phase-B migration just took")
+
+    assert len(ctor_sites) <= _CLARIFICATION_QUESTION_CONSTRUCTORS, (
+        f"new ClarificationQuestion constructor(s): {ctor_sites}")
+    assert len(ctor_sites) == _CLARIFICATION_QUESTION_CONSTRUCTORS, (
+        f"{len(ctor_sites)} constructors remain ({ctor_sites}) — LOWER "
+        f"_CLARIFICATION_QUESTION_CONSTRUCTORS accordingly")

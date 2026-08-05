@@ -27,6 +27,9 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
 import urllib.error
 import urllib.request
 
@@ -83,6 +86,37 @@ def live_commit() -> str | None:
         return None
 
 
+def check_scripts_compile() -> list:
+    """Every script byte-compiles, and the parity CLI imports.
+
+    The --promoted parity mode shipped with a literal newline inside an
+    f-string — a SyntaxError that nothing ran until the moment it was needed,
+    which is the worst moment. Scripts are operational tooling: a deploy whose
+    verification tooling cannot parse is not verifiable.
+    """
+    import py_compile
+
+    failures = []
+    for path in sorted((ROOT / "scripts").glob("*.py")):
+        try:
+            py_compile.compile(str(path), doraise=True)
+        except py_compile.PyCompileError as exc:
+            failures.append(f"{path.name}: {exc.msg[:120]}")
+    # Smoke the parity CLI's module surface without sending anything: parse
+    # only. (An import would open the token file; parse is the honest smoke
+    # for a __main__-style script.)
+    import ast
+    try:
+        tree = ast.parse((ROOT / "scripts" / "parity_corpus.py").read_text())
+        names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+        for required in ("send_corpus", "pull_traces"):
+            if required not in names:
+                failures.append(f"parity_corpus.py: {required}() missing")
+    except SyntaxError as exc:
+        failures.append(f"parity_corpus.py: {exc}")
+    return failures
+
+
 def main() -> int:
     sha = sys.argv[1] if len(sys.argv) > 1 else _sh("git", "rev-parse", "HEAD")
     if not sha:
@@ -96,6 +130,15 @@ def main() -> int:
     print(f"commit   {sha[:12]}")
     print(f"live     {live or 'unknown'}"
           + ("   <-- already deployed" if live and sha.startswith(live) else ""))
+    script_failures = check_scripts_compile()
+    if script_failures:
+        print("scripts  BROKEN")
+        for f in script_failures:
+            print(f"           {f}")
+        print("\nNOT DEPLOYABLE — operational scripts do not compile",
+              file=sys.stderr)
+        return 1
+    print("scripts  compile")
     print(f"checks   {verdict}")
     for name, conclusion in runs:
         print(f"           {conclusion:<12} {name}")

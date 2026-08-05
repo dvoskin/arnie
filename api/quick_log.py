@@ -61,6 +61,11 @@ router = APIRouter(prefix="/api/v1", tags=["quick-log"])
 
 CHANNEL = "ios"
 
+#: Surfaced on /health (diagnostics) so "which writer serves taps on this
+#: deployment" is a fact readable from outside, not an inference from a sha.
+#: The promotion verification record keys on this.
+FOOD_WRITER = "canonical"
+
 
 @contextmanager
 def _turn_scope(turn_id: str):
@@ -201,7 +206,7 @@ async def _write_food(db, user, payload, turn_id, claim, trace) -> dict:
     """
     from core.canonical_writer import DirectOperation, write_canonical_meal
     from core.commit_coordinator import commit_or_load_existing
-    from db.queries import _invalidate_briefing_for_log
+    from core.render_actions import dispatch
 
     with trace.stage("write"), _turn_scope(turn_id):
         meal = _resolved_meal(user, payload, turn_id)
@@ -217,13 +222,9 @@ async def _write_food(db, user, payload, turn_id, claim, trace) -> dict:
                              daily_log_id=item["daily_log_id"], commit=False)
         await db.commit()
 
-    # POST-COMMIT WORK, AS DATA. The writer returns what must happen after the
-    # commit rather than doing it — dropping the briefing cache while the rows
-    # were still invisible would let a concurrent Coach open repopulate it
-    # from pre-write state.
-    for action in result.render_actions:
-        if action.get("action") == "invalidate_briefing":
-            _invalidate_briefing_for_log(int(action["user_id"]), by_user=True)
+    # POST-COMMIT WORK, AS DATA, through the one dispatcher — the second
+    # endpoint copying a local handler loop is how dispatch logic diverges.
+    dispatch(result.render_actions)
 
     trace.note(entry=item["entry_id"], claim="completed_in_txn")
     trace.done()
@@ -280,6 +281,9 @@ def _resolved_meal(user, payload, turn_id):
             carbs=payload.carbs, fats=payload.fats,
             quantity_text=payload.quantity or "",
             meal_type=payload.meal_type, source_type="ios",
+            # The user chose the FOOD; the client's local calculation priced
+            # it. Structured input, not authority (§7).
+            nutrition_provenance="client_estimated",
             raw_input=payload.food_name),))
 
 

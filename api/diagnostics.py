@@ -208,6 +208,12 @@ def _food_pipeline(user_id: Optional[int] = None) -> dict:
     # perfect agreement — so the evidence used to promote a mutation owner and
     # DELETE its predecessor could be the evidence of nothing having run.
     try:
+        from api.quick_log import FOOD_WRITER
+        out["QUICK_LOG_FOOD_WRITER"] = FOOD_WRITER
+    except Exception as e:                           # pragma: no cover
+        out["QUICK_LOG_FOOD_WRITER"] = {"error": str(e)}
+
+    try:
         from core.canonical_shadow import shadow_enabled
         out["CANONICAL_WRITER_SHADOW"] = _flag(
             "CANONICAL_WRITER_SHADOW", shadow_enabled())

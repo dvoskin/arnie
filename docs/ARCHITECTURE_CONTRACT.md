@@ -44,6 +44,7 @@ list of properties everyone believed and nothing checked.
 | C5 | No `PendingOperation` transitions directly to COMMITTED | holds | `_ALLOWED_TRANSITIONS`; COMMITTING is the only state that says a write was in flight, so a retry can tell "never started" from "may have written" |
 | C6 | Every duplicate returns the identical **persisted** result | holds | `test_c6_*` — identical to the stored row, not merely equivalent |
 | C7 | Deleted ownership stays deleted | holds | `test_c7_*` — promoted owners' legacy imports are forbidden by name; a returning `add_food_entry` in `api/quick_log.py` fails CI |
+| C8 | Every clarification producer is a known one | ratchet, **4 producers + 1 relay frozen** | `test_c8_*`. The Phase-2 freeze from the clarification review: no fifth producer, no new `ClarificationQuestion` constructor, until Phase B collapses the four into canonical `ClarificationField`s |
 
 C3 and C4 **cannot** hold yet: the legacy lane is still the production writer,
 and it is meant to be. They are ratchets against a measured baseline — they

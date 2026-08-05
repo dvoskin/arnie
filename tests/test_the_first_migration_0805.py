@@ -277,3 +277,77 @@ def test_the_shadow_flag_is_reportable_from_outside(monkeypatch):
     assert off["effective"] is False and off["env_set"] is False, (
         "defaulted-off and deliberately-off must be distinguishable: they "
         "behave identically and need opposite fixes")
+
+
+# ── promotion follow-ups ─────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_nutrition_provenance_survives_into_the_stored_result(pg):
+    """WHO PRICED IT is a different fact from who chose it.
+
+    A quick-log tap carries client-calculated macros: the user picked
+    "Chicken breast" (USER_SELECTED on the event) but the numbers came from
+    the client's local computation. Structured input is not authority, and a
+    later reader — including a duplicate replay answered from storage — must
+    still be able to tell client-priced from catalog- or server-priced.
+    """
+    from core.canonical_writer import write_canonical_meal
+    from core.commit_coordinator import commit_or_load_existing
+
+    priced = ResolvedFood(
+        event=CanonicalEvent(id="e", domain="food", surface_text="Chicken",
+                             resolution_status=ResolutionStatus.RESOLVED),
+        calories=320.0, protein=43.0, nutrition_provenance="client_estimated")
+    meal = ResolvedMeal(operation_id="op_prov", revision=0, user_id=1,
+                        logging_day=DAY, user_timezone=TZ, items=(priced,))
+
+    class _Op:
+        id, revision, user_id = "op_prov", 0, 1
+
+    async with pg() as s:
+        result = await commit_or_load_existing(
+            s, operation=_Op(), resolved_meal=meal,
+            writer=write_canonical_meal)
+        await s.commit()
+
+    assert result.committed_items[0]["nutrition_provenance"] == "client_estimated"
+
+    from core import meal_commit
+    async with pg() as s:
+        stored = await meal_commit.existing_result(s, operation_id="op_prov")
+    assert stored.committed_items[0]["nutrition_provenance"] == "client_estimated", \
+        "provenance did not survive storage — a replay could not distinguish " \
+        "a client-priced log from a resolved one"
+
+
+def test_the_quick_log_food_writer_is_reported_on_health():
+    """"Which writer serves taps on this deployment" must be readable from
+    OUTSIDE. The promotion verification record keys on it, and inferring it
+    from a commit sha is exactly the guesswork /health exists to end."""
+    from api.diagnostics import public_pipeline_summary
+
+    assert public_pipeline_summary().get("QUICK_LOG_FOOD_WRITER") == "canonical"
+
+
+def test_post_commit_actions_go_through_one_dispatcher():
+    """An unknown action is skipped, not fatal — a newer writer emitting a new
+    action must not break an older endpoint. A failing action does not undo a
+    committed mutation either."""
+    from core import render_actions
+
+    calls = []
+    original = render_actions._HANDLERS.copy()
+    render_actions._HANDLERS["ok"] = lambda a: calls.append(a)
+    render_actions._HANDLERS["boom"] = lambda a: (_ for _ in ()).throw(
+        RuntimeError("cache host down"))
+    try:
+        ran = render_actions.dispatch((
+            {"action": "ok", "user_id": 1},
+            {"action": "from_a_newer_writer"},
+            {"action": "boom"},
+        ))
+    finally:
+        render_actions._HANDLERS.clear()
+        render_actions._HANDLERS.update(original)
+
+    assert ran == 1 and len(calls) == 1

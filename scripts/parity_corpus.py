@@ -76,23 +76,56 @@ def _get(path, headers):
 
 
 def send_corpus(token):
-    results = []
+    """Send the corpus and CHECK each response, rather than printing it.
+
+    The duplicate case is the one that matters most: a replay must return the
+    ORIGINAL entry_id and daily_log_id, not merely a 200 with the replay flag
+    set. A replay pointing at a different row would satisfy a flag check and
+    still be a duplicate write.
+    """
+    results, by_key, problems = [], {}, []
     for label, payload, key, expect_replay in CORPUS:
         headers = {"Authorization": f"Bearer {token}"}
         if key:
             headers["Idempotency-Key"] = key
         try:
             out = _post("/api/v1/food", payload, headers)
-            replay = bool(out.get("idempotent_replay"))
-            ok = "REPLAY" if replay else "ok"
-            flag = "" if replay == expect_replay else "  <-- expected replay=" + str(expect_replay)
-            print(f"  {label:<22} -> {ok:<7} entry={out.get('entry_id')}{flag}")
-            results.append((label, out))
         except Exception as exc:
             print(f"  {label:<22} -> FAILED {exc}")
+            problems.append(f"{label}: request failed: {exc}")
             results.append((label, {"error": str(exc)}))
+            time.sleep(1.2)
+            continue
+
+        replay = bool(out.get("idempotent_replay"))
+        note = ""
+        if replay != expect_replay:
+            note = f"  <-- expected replay={expect_replay}"
+            problems.append(f"{label}: replay={replay}, expected {expect_replay}")
+
+        if key and expect_replay and key in by_key:
+            original = by_key[key]
+            for field in ("entry_id", "daily_log_id"):
+                if out.get(field) != original.get(field):
+                    note += f"  <-- {field} {out.get(field)} != original {original.get(field)}"
+                    problems.append(
+                        f"{label}: replay returned {field}={out.get(field)}, "
+                        f"original was {original.get(field)}")
+        elif key and not replay:
+            by_key[key] = out
+
+        print(f"  {label:<22} -> {'REPLAY' if replay else 'ok':<7} "
+              f"entry={out.get('entry_id')} log={out.get('daily_log_id')}{note}")
+        results.append((label, out))
         time.sleep(1.2)      # keep the ring's ordering readable
-    return results
+
+    if problems:
+        print("\nPROBLEMS:")
+        for p in problems:
+            print("  ", p)
+    else:
+        print("\nall responses as expected, including duplicate identity")
+    return results, problems
 
 
 def pull_traces():
@@ -129,13 +162,18 @@ if __name__ == "__main__":
                      "promotion deploys, run with --promoted instead — there "
                      "is no shadow on a canonical endpoint.)")
         print(f"sending {len(CORPUS)} taps as ios:canonical-parity-test-0805:")
-        send_corpus(token)
+        _, problems = send_corpus(token)
         time.sleep(2)
     if promoted:
         d = _get("/admin/food-traces?event=canonical_meal_written&limit=50",
                  {"X-Admin-Token": ADMIN})
-        print(f"\ncanonical_meal_written lines: {d.get('matched')}")
+        print(f"\ncanonical_meal_written lines: {d.get('matched')} "
+              f"(one per non-replayed tap; a replay writes nothing, which is "
+              f"the point)")
         for l in d.get("lines", [])[-12:]:
             print("  ", l.get("message", "")[:150])
+        if d.get("matched", 0) == 0:
+            sys.exit("NO canonical writes observed — either the promoted build "
+                     "is not deployed, or taps are not reaching this worker.")
     else:
         pull_traces()
