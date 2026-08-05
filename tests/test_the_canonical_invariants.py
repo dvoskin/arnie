@@ -8,8 +8,8 @@ believed and nothing checked.
 
     C1  Every committed row belongs to exactly one MealCommitResult.
     C2  Every MealCommitResult corresponds to exactly one operation revision.
-    C3  No renderer derives totals independently.
-    C4  No mutation bypasses the commit coordinator.
+    C3  Every macro-aggregation site is a known one.
+    C4  Every direct food writer is a known one.
     C5  No PendingOperation transitions directly to COMMITTED.
     C6  Every duplicate returns the identical persisted MealCommitResult.
 
@@ -23,6 +23,7 @@ moves must lower the number, never raise it.
 import ast
 import os
 import pathlib
+import re
 from datetime import date
 
 import pytest
@@ -132,15 +133,17 @@ async def test_c2_one_result_per_operation_revision(pg):
     assert len(keys) == len(set(keys)) == 2
 
 
-# ── C3 (ratchet, PARTIAL) ────────────────────────────────────────────────────
+# ── C3 · Every macro-aggregation site is a known one ─────────────────────────
 #
-# "No renderer derives totals independently." This covers ONE shape of that:
-# aggregating macros across entries. The other shape — three owners of the
-# day's REMAINING calories, disagreeing by one because each rounds differently
-# — is arithmetic on an already-computed total and is not detected here. It is
-# tracked as I9 in docs/ARCHITECTURE_CONTRACT.md. Claiming otherwise would make
-# this gate read as broader than it is, which is the failure mode the whole
-# rearchitecture is about.
+# NAMED FOR WHAT IT PROVES. An earlier draft called this "no renderer derives
+# totals independently", which is the GOAL, not the check: this detects
+# `sum()` over a macro attribute and nothing else. The day's REMAINING
+# calories — three owners disagreeing by one because each rounds differently —
+# is arithmetic on an already-computed total and is invisible here. That is
+# tracked separately as I9.
+#
+# An invariant that claims more than it proves is the same defect as a guard
+# that fails open, and it is harder to notice because the test is green.
 
 #: Modules that aggregate macros across entries today. Each is named with what
 #: it is, because "debt" and "legitimately not a renderer" are different and a
@@ -196,16 +199,12 @@ def _modules_summing_macros() -> set:
     return found
 
 
-def test_c3_no_new_module_aggregates_macros_across_entries():
-    """RATCHET on ONE shape of C3: summing macros over entries.
+def test_c3_every_macro_aggregation_site_is_a_known_one():
+    """RATCHET. A new site fails; the known ones are named with what they are.
 
-    C3 in full — "no renderer derives totals independently" — also covers the
-    remaining-calorie arithmetic that has three owners disagreeing by one
-    (I9 in docs/ARCHITECTURE_CONTRACT.md). This does NOT detect that shape, and
-    the name says so rather than implying a coverage it does not have.
-
-    When rendering consumes MealCommitResult, the DEBT entries come out of the
-    baseline and this tightens toward the real invariant.
+    The GOAL this serves — rendering consumes MealCommitResult rather than
+    re-deriving — is broader than this check. As that lands, DEBT entries come
+    out of the baseline and this tightens toward it.
     """
     found = _modules_summing_macros()
     new = found - _TOTALS_BASELINE
@@ -220,7 +219,7 @@ def test_c3_no_new_module_aggregates_macros_across_entries():
         f"_TOTALS_BASELINE so the ratchet keeps tightening")
 
 
-# ── C4 (ratchet) ─────────────────────────────────────────────────────────────
+# ── C4 · Every direct food writer is a known one ─────────────────────────────
 
 def _food_write_sites() -> set:
     """Every call site that creates a food row."""
@@ -252,7 +251,7 @@ def _food_write_sites() -> set:
 _LEGACY_FOOD_WRITERS = 4
 
 
-def test_c4_no_new_mutation_bypasses_the_coordinator():
+def test_c4_every_direct_food_writer_is_a_known_one():
     """RATCHET, and the migration's actual scoreboard.
 
     Every mutation owner that moves onto the coordinator must LOWER this
@@ -346,3 +345,31 @@ async def test_c6_a_duplicate_returns_the_identical_persisted_result(pg):
 class _Op:
     def __init__(self, oid, revision=0, user_id=1):
         self.id, self.revision, self.user_id = oid, revision, user_id
+
+
+# ── the index and the enforcement must not drift ─────────────────────────────
+
+def test_the_contract_document_lists_exactly_these_invariants():
+    """THE DOCUMENT IS THE INDEX; THESE TESTS ARE THE ENFORCEMENT.
+
+    A reviewer needs one place to answer "what does the architecture
+    guarantee?" without reading test code. The usual failure of such a document
+    is drift: it describes a guarantee that was removed, or omits one that was
+    added, and it is trusted either way because nothing checks it.
+
+    So the index is checked against the enforcement, in both directions.
+    """
+    doc = (ROOT / "docs" / "ARCHITECTURE_CONTRACT.md").read_text()
+    documented = set(re.findall(r"^\| (C\d+) \|", doc, re.M))
+
+    here = pathlib.Path(__file__).read_text()
+    tested = {m.upper() for m in re.findall(r"^def test_(c\d+)_", here, re.M)} | \
+             {m.upper() for m in re.findall(r"^async def test_(c\d+)_", here, re.M)}
+
+    assert documented, "the contract document lists no C-invariants"
+    assert tested - documented == set(), (
+        f"enforced but undocumented: {sorted(tested - documented)} — a "
+        f"guarantee nobody can find is not a contract")
+    assert documented - tested == set(), (
+        f"documented but unenforced: {sorted(documented - tested)} — the index "
+        f"claims a guarantee no test holds, which is worse than claiming none")

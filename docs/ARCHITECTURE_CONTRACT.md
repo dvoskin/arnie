@@ -39,8 +39,8 @@ list of properties everyone believed and nothing checked.
 |---|---|---|---|
 | C1 | Every committed row belongs to exactly one `MealCommitResult` | holds in the canonical lane | `test_c1_*` — rows written across two operations are disjoint and fully owned |
 | C2 | Every `MealCommitResult` corresponds to exactly one operation revision | holds | `UNIQUE (operation_id, operation_revision)`, proved under real concurrency in `test_two_connections_one_commit.py` |
-| C3 | No renderer derives totals independently | **partial** | ratchet on macro aggregation. The *other* shape — three owners of the day's REMAINING calories, disagreeing by one — is I9 and is **not** detected |
-| C4 | No mutation bypasses the commit coordinator | **4 legacy writers remain** | ratchet: `api/app.py`, `api/quick_log.py`, `handlers/tool_executor.py` ×2. This is the migration's scoreboard |
+| C3 | Every macro-aggregation site is a known one | ratchet, 7 known | `test_c3_*`. Named for what it proves: it sees `sum()` over a macro attribute. The day's REMAINING calories — three owners disagreeing by one — is I9 and is **not** detected. The *goal* it serves (renderers consume `MealCommitResult`) is broader than the check |
+| C4 | Every direct food writer is a known one | ratchet, **4 legacy remain** | `test_c4_*`: `api/app.py`, `api/quick_log.py`, `handlers/tool_executor.py` ×2. The migration's scoreboard; the goal is zero |
 | C5 | No `PendingOperation` transitions directly to COMMITTED | holds | `_ALLOWED_TRANSITIONS`; COMMITTING is the only state that says a write was in flight, so a retry can tell "never started" from "may have written" |
 | C6 | Every duplicate returns the identical **persisted** result | holds | `test_c6_*` — identical to the stored row, not merely equivalent |
 
