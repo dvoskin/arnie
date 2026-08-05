@@ -391,6 +391,92 @@ async def test_an_estimate_uses_a_persisted_option_not_a_new_value(
     assert (await _counts(sessions))["food"] == 1
 
 
+# ── measurement ──────────────────────────────────────────────────────────────
+
+def test_the_modality_split_is_derived_in_one_place():
+    """The "Other" rate is `text / (chip + label + text)`. Deriving the split
+    at each call site is how one branch quietly starts counting a label tap as
+    free text and the rate stops meaning anything."""
+    from core import b1_metrics as m
+
+    assert m.modality_of(option_id="opt_1", reason="") == "chip"
+    assert m.modality_of(option_id="", reason="label_selection") == "label"
+    assert m.modality_of(option_id="", reason="estimate") == "command"
+    assert m.modality_of(option_id="", reason="cancel_meal") == "command"
+    assert m.modality_of(option_id="", reason="") == "text"
+
+
+@pytest.mark.asyncio
+async def test_a_typed_answer_is_counted_as_other_and_a_label_is_not(
+        sessions, user, opened, caplog):
+    """THE SIGNAL THE ROLLOUT DECISION TURNS ON. A technically correct option
+    system that frequently forces "Other" has failed, and only this can say
+    so — but only if a chip pressed on a channel without structured taps is
+    NOT counted as Other. It arrives as text and it is not text."""
+    import logging
+
+    label = opened.interaction.groups[0].fields[0].options[0].label
+    with caplog.at_level(logging.INFO):
+        await _answer(sessions, user, message=label)
+    assert "modality=label" in caplog.text
+    assert "modality=text" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_an_unoffered_quantity_is_counted_as_other(sessions, user,
+                                                         opened, caplog):
+    import logging
+
+    with caplog.at_level(logging.INFO):
+        await _answer(sessions, user, message="about 6 ounces")
+    assert "modality=text" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_the_answer_metric_carries_latency_and_provenance(
+        sessions, user, opened, caplog):
+    """Latency is the gap between the ask and the answer, so it can only come
+    off the stored row — anything the answer turn holds would measure the
+    answer turn."""
+    import logging
+    import re
+
+    with caplog.at_level(logging.INFO):
+        await _answer(sessions, user, field_id=_field_id(opened),
+                      option_id="opt_ont_mid", revision=0)
+    line = next(l for l in caplog.text.splitlines() if "event=b1_answered" in l)
+    assert "provenance=user_selected" in line
+    latency = re.search(r"latency_ms=(\d+)", line)
+    assert latency and int(latency.group(1)) >= 0
+    assert "event=b1_committed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_measurement_never_costs_the_turn(sessions, user, opened,
+                                                monkeypatch):
+    """A missing datapoint is a worse outcome than a lost meal only to a
+    dashboard."""
+    def _boom(**kw):
+        raise RuntimeError("metrics backend down")
+
+    monkeypatch.setattr("core.b1_metrics.answered", _boom)
+    monkeypatch.setattr("core.b1_metrics.committed", _boom)
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=0)
+    assert out.applied
+    assert (await _counts(sessions))["food"] == 1
+
+
+@pytest.mark.asyncio
+async def test_the_wire_offers_a_free_text_route(sessions, user, opened):
+    """C15 on the wire. Without it a `single_select` says "three chips and
+    nothing else", and a user whose portion is not among them has no visible
+    way to say so — the forced-"Other" failure shipped as a design."""
+    field = opened.wire_payload()["groups"][0]["fields"][0]
+    assert field["allows_free_text"] is True
+    assert field["response_type"] == "single_select"
+
+
 # ── locale ───────────────────────────────────────────────────────────────────
 
 # ── the presentation boundary ────────────────────────────────────────────────

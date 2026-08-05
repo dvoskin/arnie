@@ -160,7 +160,8 @@ async def test_every_decline_names_its_reason(sessions, user, caplog):
     with caplog.at_level(logging.INFO):
         await _attempt(sessions, user, material=_material(
             staged_items=(_staged(), _staged(staged_item_id="si_2"))))
-    assert "event=b1_ineligible reason=multiple_items" in caplog.text
+    assert "event=b1_declined" in caplog.text
+    assert "reason=multiple_items" in caplog.text
 
 
 @pytest.mark.asyncio

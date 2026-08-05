@@ -82,6 +82,14 @@ class OwnedOperation:
         return str(self.row.status or "")
 
     @property
+    def asked_at(self):
+        """When the QUESTION was sent. Latency and abandonment are properties
+        of the gap between two turns, and only the row spans it — deriving
+        either from anything the answer turn holds would measure the answer
+        turn instead."""
+        return self.row.created_at
+
+    @property
     def awaiting(self) -> bool:
         return self.status == AWAITING
 
@@ -171,12 +179,10 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
         # stays `awaiting_answer` indefinitely and a message weeks later is
         # read as an answer to a meal the user has long forgotten.
         expires_at=_now() + timedelta(minutes=ASK_TTL_MINUTES))
-    logger.info(
-        "event=b1_interaction_shown operation=%s user=%s cohort=%s "
-        "options=%d sources=%s", operation_id, user.id, cohort,
-        len(interaction.groups[0].fields[0].options),
-        ",".join(sorted({(o.source.value if o.source else "none")
-                         for o in interaction.groups[0].fields[0].options})))
+    from core import b1_metrics
+    b1_metrics.shown(operation_id=operation_id, user_id=user.id, cohort=cohort,
+                     locale=locale or "en",
+                     field=interaction.groups[0].fields[0])
     return operation_id
 
 
@@ -233,6 +239,16 @@ class CanonicalAsk:
                     "field_id": f.field_id,
                     "attribute": f.attribute.value,
                     "response_type": f.response_type.value,
+                    # C15's FREE-TEXT ROUTE, ON THE WIRE. Without it a
+                    # `single_select` tells the client "three chips and
+                    # nothing else", and a user whose portion is not among
+                    # them has no visible way to say so — the exact
+                    # forced-"Other" failure the rollout metric exists to
+                    # detect, shipped as a design instead of a bug. It is
+                    # also what makes that metric measurable at all: "Other
+                    # usage" is answers that arrived as text rather than as a
+                    # stored option.
+                    "allows_free_text": True,
                     # LABELS ONLY. The patch stays on the server; a tap sends
                     # `option_id` back and the meaning is loaded from storage,
                     # so the label can never travel as semantics.
@@ -286,20 +302,24 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
     verdict = qc.is_eligible(decision, message=material.get("message") or "",
                              client_capable=client_capable)
     if not verdict.ok:
-        logger.info("event=b1_ineligible reason=%s user=%s",
-                    verdict.reason.value, getattr(user, "id", None))
+        from core import b1_metrics
+        b1_metrics.declined(user_id=getattr(user, "id", None),
+                            reason=verdict.reason.value)
         return None
 
     cohort = qr.cohort_label(user.id)
     if not qr.may_take_ownership(user.id):
-        logger.info("event=b1_not_in_cohort cohort=%s user=%s", cohort, user.id)
+        from core import b1_metrics
+        b1_metrics.declined(user_id=user.id, reason="not_in_cohort",
+                            cohort=cohort)
         return None
 
     item = verdict.item
     interpreter_item = _interpreter_item_for(material, item)
     if not interpreter_item:
-        logger.info("event=b1_ineligible reason=no_interpreter_item user=%s",
-                    user.id)
+        from core import b1_metrics
+        b1_metrics.declined(user_id=user.id, reason="no_interpreter_item",
+                            cohort=cohort)
         return None
 
     operation_id = _operation_id_for(user, turn_id)
@@ -312,8 +332,9 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
         # No evidence, so no chips. B-1 declines rather than shipping a select
         # with nothing in it — the legacy ask is still a better question than
         # an empty canonical one, and C15 forbids the blank row either way.
-        logger.info("event=b1_no_candidates user=%s food=%s", user.id,
-                    item.identity.canonical_name)
+        from core import b1_metrics
+        b1_metrics.declined(user_id=user.id, reason="no_candidates",
+                            cohort=cohort)
         return None
 
     interaction = qc.build_interaction(

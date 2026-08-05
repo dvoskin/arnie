@@ -125,6 +125,8 @@ async def handle(db, *, user, source_turn_id: str, message: str = "",
     answer = _read(owned, interaction, live_field, message=message,
                    field_id=field_id, option_id=option_id, revision=revision)
 
+    _measure(owned, answer, option_id=option_id, user=user)
+
     if answer.outcome is Outcome.CANCELLED:
         await ops.cancel(db, owned=owned, user=user, reason=answer.reason)
         return _turn(answer, owned, live_field)
@@ -134,16 +136,15 @@ async def handle(db, *, user, source_turn_id: str, message: str = "",
         # revision does NOT move. Bumping it would invalidate the very chips
         # still on the user's screen — a stale-tap storm would walk the
         # operation forward and lock the user out of answering at all.
-        logger.info("event=b1_answer_%s operation=%s field=%s reason=%s",
-                    answer.outcome.value, owned.operation_id,
-                    live_field.field_id, answer.reason)
         return _turn(answer, owned, live_field)
 
     result = await ops.settle(db, user=user, owned=owned, patch=answer.patch,
                               source_turn_id=source_turn_id)
-    return AnswerTurn(Outcome.APPLIED, operation_id=owned.operation_id,
+    turn = AnswerTurn(Outcome.APPLIED, operation_id=owned.operation_id,
                       field_id=live_field.field_id, patch=answer.patch,
                       result=result, reason=answer.reason)
+    _measure_commit(owned, turn, user=user)
+    return turn
 
 
 def _read(owned, interaction, live_field, *, message: str, field_id: str,
@@ -202,6 +203,40 @@ def _label_selection(field, message: str):
 def _turn(answer, owned, field) -> AnswerTurn:
     return AnswerTurn(answer.outcome, operation_id=owned.operation_id,
                       field_id=field.field_id, reason=answer.reason)
+
+
+def _measure(owned, answer, *, option_id: str, user) -> None:
+    """One emit per answer, wherever it lands. Measurement may never cost the
+    turn, so every failure here is swallowed — a missing datapoint is a worse
+    outcome than a lost meal only to a dashboard."""
+    from core import b1_metrics
+
+    try:
+        quantity = getattr(answer.patch, "quantity", None)
+        b1_metrics.answered(
+            operation_id=owned.operation_id, user_id=getattr(user, "id", None),
+            outcome=answer.outcome.value,
+            modality=b1_metrics.modality_of(option_id=option_id,
+                                            reason=answer.reason),
+            asked_at=owned.asked_at, reason=answer.reason,
+            provenance=getattr(getattr(answer.patch, "provenance", None),
+                               "value", ""),
+            grams=getattr(quantity, "grams", None))
+    except Exception:
+        logger.debug("b1 answer metric failed", exc_info=True)
+
+
+def _measure_commit(owned, turn: AnswerTurn, *, user) -> None:
+    from core import b1_metrics
+
+    try:
+        facts = facts_for(turn)
+        b1_metrics.committed(
+            operation_id=owned.operation_id, user_id=getattr(user, "id", None),
+            entry_id=facts["entry_id"], calories=facts["calories"],
+            asked_at=owned.asked_at)
+    except Exception:
+        logger.debug("b1 commit metric failed", exc_info=True)
 
 
 def facts_for(turn: AnswerTurn) -> dict:
