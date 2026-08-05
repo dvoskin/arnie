@@ -213,6 +213,17 @@ def _food_pipeline(user_id: Optional[int] = None) -> dict:
     except Exception as e:                           # pragma: no cover
         out["QUICK_LOG_FOOD_WRITER"] = {"error": str(e)}
 
+    # B-1's rollout state, published for the same reason the shadow flag is:
+    # a deploy has to be verifiable as OFF from outside before anything is
+    # enabled. Inferring "it must be off, nothing happened" is how an unset
+    # flag once produced a clean empty window that looked like perfect
+    # agreement. Stage 1 of the live probe reads exactly this.
+    try:
+        from skills.nutrition.quantity_rollout import state as _b1_state
+        out["B1_QUANTITY"] = _b1_state()
+    except Exception as e:                           # pragma: no cover
+        out["B1_QUANTITY"] = {"error": str(e)}
+
     try:
         from core.canonical_shadow import shadow_enabled
         out["CANONICAL_WRITER_SHADOW"] = _flag(

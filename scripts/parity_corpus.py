@@ -19,12 +19,16 @@ Usage:
     python scripts/parity_corpus.py --traces   # pull traces only
 """
 import json
+import os
 import sys
 import time
 import urllib.request
 
 BASE = "https://arnie.onrender.com"
-ADMIN = "102594"
+#: FROM THE ENVIRONMENT ONLY. A literal here is a credential in the
+#: repository, readable by anyone with clone access and surviving every
+#: rotation. Absent -> the script refuses rather than running unauthenticated.
+ADMIN = os.getenv("ARNIE_ADMIN_TOKEN", "").strip()
 TOKEN_FILE = ("/private/tmp/claude-501/-Users-danielvoskin-Code-Learn/"
               "2f42fee2-1f7d-4fbc-82e3-cb39dcccb248/scratchpad/parity_token.txt")
 

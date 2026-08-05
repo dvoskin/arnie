@@ -289,6 +289,42 @@ def facts_for(turn: AnswerTurn) -> dict:
     }
 
 
+def card_for(turn: AnswerTurn) -> Optional[dict]:
+    """The macro card, built from the SAME facts as the sentence beside it.
+
+    THIS IS WHY IT IS NOT BUILT FROM THE TOOL CALL. The legacy card reads the
+    executed call and the prose reads the planner, so the two could disagree —
+    and did: three owners of the day total produced 789 and 788, and a card
+    once read "Meal removed" on turns where nothing was deleted. Here the
+    card and the copy are two renderings of one `facts_for()` result, so
+    "card and totals agree" is not a check that can fail, it is a shape that
+    cannot express the disagreement.
+
+    Returns None for every non-commit outcome, deliberately: a card that
+    survives a repair or a cancel is a stale card on a reply that logged
+    nothing, which is exactly the leak `_logged_entry_card`'s `entry_id` gate
+    exists to stop.
+    """
+    if not turn.applied or turn.result is None:
+        return None
+    facts = facts_for(turn)
+    if facts["entry_id"] is None:
+        return None
+    payload = {
+        "name": facts["name"],
+        "entry_id": facts["entry_id"],
+        "calories": int(round(facts["calories"] or 0)),
+        "protein_g": int(round(facts["protein"] or 0)),
+        "source": "manual",
+        # THE ASSUMPTION, ON THE ROW. "Logged fast" and "logged fast and
+        # quietly guessed" are different products, and this is the difference.
+        "estimated": facts["estimated"],
+    }
+    if facts["assumptions"]:
+        payload["assumptions"] = list(facts["assumptions"])
+    return {"type": "macro_card", "payload": payload}
+
+
 def copy_for(turn: AnswerTurn) -> str:
     """The DETERMINISTIC fallback sentence, rendered from `facts_for`.
 

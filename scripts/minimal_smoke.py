@@ -9,12 +9,16 @@ ONE migration and the ongoing check is smaller:
 Test identity `ios:canonical-parity-test-0805` only; no other user is touched.
 """
 import json
+import os
 import sys
 import time
 import urllib.request
 
 BASE = "https://arnie.onrender.com"
-ADMIN = "102594"
+#: FROM THE ENVIRONMENT ONLY. A literal here is a credential in the
+#: repository, readable by anyone with clone access and surviving every
+#: rotation. Absent -> the script refuses rather than running unauthenticated.
+ADMIN = os.getenv("ARNIE_ADMIN_TOKEN", "").strip()
 IDENTITY = "ios:canonical-parity-test-0805"
 KEY = f"smoke-{int(time.time())}"
 

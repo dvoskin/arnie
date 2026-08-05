@@ -477,6 +477,66 @@ async def test_the_wire_offers_a_free_text_route(sessions, user, opened):
     assert field["response_type"] == "single_select"
 
 
+# ── card and totals ──────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_the_card_and_the_sentence_cannot_disagree(sessions, user,
+                                                         opened):
+    """Not "agree" — CANNOT disagree. Both are renderings of one `facts_for`
+    result, so the shape has no way to express the mismatch that produced 789
+    vs 788 from three owners of the day total."""
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=0)
+    card = answer_turn.card_for(out)["payload"]
+    facts = answer_turn.facts_for(out)
+    said = answer_turn.copy_for(out)
+
+    assert card["calories"] == int(round(facts["calories"]))
+    assert card["protein_g"] == int(round(facts["protein"]))
+    assert card["entry_id"] == facts["entry_id"]
+    assert card["name"] == facts["name"]
+    assert f"{card['calories']} cal" in said
+    assert f"{card['protein_g']}g protein" in said
+
+
+@pytest.mark.asyncio
+async def test_the_card_mirrors_the_row_that_was_committed(sessions, user,
+                                                           opened):
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=0)
+    card = answer_turn.card_for(out)["payload"]
+    async with sessions() as s:
+        entry = (await s.execute(select(FoodEntry))).scalar_one()
+    assert card["entry_id"] == entry.id, "the card must be tappable"
+    assert card["calories"] == int(round(entry.calories))
+
+
+@pytest.mark.asyncio
+async def test_an_assumed_portion_is_marked_on_the_card(sessions, user,
+                                                        opened):
+    """"Logged fast" and "logged fast and quietly guessed" are different
+    products, and this is the difference."""
+    out = await _answer(sessions, user, message="I don't know")
+    assert answer_turn.card_for(out)["payload"]["estimated"] is True
+
+    chosen = await _answer(sessions, user, field_id=_field_id(opened),
+                           option_id="opt_ont_mid", revision=0)
+    card = answer_turn.card_for(chosen)
+    if card is not None:               # the replay path returns the same row
+        assert card["payload"]["estimated"] is False
+
+
+@pytest.mark.asyncio
+async def test_no_card_leaks_onto_a_reply_that_logged_nothing(sessions, user,
+                                                              opened):
+    """A stale card on a repair or a cancel is the leak `_logged_entry_card`'s
+    entry_id gate exists to stop, arriving through a new door."""
+    for kw in ({"message": "it was pretty good"},          # repair
+               {"message": "never mind"}):                 # cancel
+        out = await _answer(sessions, user, **kw)
+        assert answer_turn.card_for(out) is None, out.outcome
+
+
 # ── the two signals no turn can emit ─────────────────────────────────────────
 
 @pytest.mark.asyncio

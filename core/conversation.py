@@ -1143,8 +1143,15 @@ async def _run_turn(
                 logger.info(
                     "event=b1_answer outcome=%s operation=%s user=%s",
                     _b1_out.outcome.value, _b1_out.operation_id, user.id)
+                _b1_resp = Response.from_text(_b1_ans.copy_for(_b1_out))
+                _b1_card = _b1_ans.card_for(_b1_out)
+                if _b1_card is not None:
+                    # ONE facts object, two renderings. The card cannot
+                    # disagree with the sentence above it because neither
+                    # recomputes anything.
+                    _b1_resp.cards.append(_b1_card)
                 return TurnResult(
-                    response=Response.from_text(_b1_ans.copy_for(_b1_out)),
+                    response=_b1_resp,
                     tool_calls=[], just_completed=False,
                     in_onboarding=in_onboarding, onboarding_field_saved=None,
                     today_log=today_log, user=user)
