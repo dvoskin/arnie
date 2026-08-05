@@ -313,17 +313,38 @@ async def claim_request(
 
 
 async def complete_claim(db, claim: Claim, *, entry_id: Optional[int] = None,
-                         daily_log_id: Optional[int] = None) -> None:
+                         daily_log_id: Optional[int] = None,
+                         commit: bool = True) -> None:
     """Record where the committed result lives, so a replay can return it.
 
-    Best-effort by design: the domain rows are already committed at this point,
-    and failing the user's request because the bookkeeping row would not update
-    would turn a successful log into an error. A claim left `in_progress` is
-    recoverable — the next delivery takes it over after STALE_CLAIM_SECONDS.
+    With `commit=True` (the default, unchanged): best-effort AFTER the domain
+    rows committed — failing the user's request because the bookkeeping row
+    would not update would turn a successful log into an error, and a claim
+    left `in_progress` is recoverable via the stale-claim takeover.
+
+    With `commit=False`: the completion RIDES THE CALLER'S TRANSACTION, for
+    callers inside the commit coordinator — where the food rows, the
+    authoritative result and the claim must land together or not at all.
+    There the best-effort swallow is wrong two ways: the rows are NOT already
+    committed (nothing is), and an exception must reach the coordinator so the
+    whole mutation unwinds rather than committing food behind a broken claim.
+    Mirrors `add_food_entry(commit=False)` and
+    `record_ledger_event(commit=False)`.
     """
     if not claim.key or claim.record_id is None:
         return
     from db.models import IdempotencyRecord
+    if not commit:
+        record = await db.get(IdempotencyRecord, claim.record_id)
+        if record is None:
+            raise RuntimeError(
+                f"idempotency claim record {claim.record_id} vanished — "
+                f"refusing to commit food behind a missing claim")
+        record.status = "completed"
+        record.result_entry_id = entry_id
+        record.result_daily_log_id = daily_log_id
+        record.completed_at = datetime.utcnow()
+        return
     try:
         record = await db.get(IdempotencyRecord, claim.record_id)
         if record is None:

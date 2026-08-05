@@ -384,6 +384,11 @@ async def _read_back(db, written) -> tuple:
                 f"read back in the same transaction")
         committed.append({
             "entry_id": row.id,
+            # Where the row LIVES, not just what it is. The quick-log response
+            # contract returns daily_log_id, and the idempotency claim stores
+            # it so a replay can answer without a join — a result that cannot
+            # say which day it landed on cannot honour either.
+            "daily_log_id": row.daily_log_id,
             "name": row.parsed_food_name,
             "entity_id": item.event.entity_id or "",
             "quantity": row.quantity or "",
