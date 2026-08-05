@@ -1632,8 +1632,19 @@ async def _run_turn(
                         _b1_ask = await _b1.try_take_ownership(
                             db, user=user, material=_sft["b1_material"],
                             turn_id=_tid() or "",
+                            # THE CHANNEL, NOT THE MODALITY. `_source` is
+                            # `source_type or platform`, and `source_type`
+                            # carries text/voice/photo — so a Telegram text
+                            # message arrived as "text", matched no channel,
+                            # and declined `client_incapable` on the one
+                            # channel B-1 was built to prove. Measured in
+                            # production 2026-08-05, and it is the same
+                            # modality-vs-channel conflation
+                            # `feedback_arnie_platform_mislabel` already
+                            # records. Capability is a property of the
+                            # CLIENT, so it reads `platform`.
                             client_capable=_b1.client_renders_interactions(
-                                _source),
+                                platform),
                             locale=command_locale(
                                 getattr(_prefs, "preferred_language", None),
                                 _user_text or ""))

@@ -197,3 +197,47 @@ def test_out_of_scope_shapes_still_decline_against_real_derivation(
                              message=message, client_capable=True,
                              identity_evidence=True)
     assert verdict.reason is expected
+
+
+# ── capability takes the CHANNEL, never the modality ─────────────────────────
+
+def test_a_modality_is_refused_loudly_not_silently():
+    """MEASURED IN PRODUCTION 2026-08-05, the first real B-1 event ever
+    recorded: `b1_declined reason=client_incapable` on Telegram — the one
+    channel B-1 exists to prove.
+
+    `_source = source_type or platform`, and `source_type` carries
+    text/voice/photo alongside real origins. So a Telegram TEXT message
+    arrived as "text", matched no channel, and declined. The symptom is
+    indistinguishable from a correct exclusion, which is why it now logs an
+    error rather than returning a quiet False.
+
+    Same modality-vs-channel conflation `feedback_arnie_platform_mislabel`
+    already records.
+    """
+    from core import b1_quantity_operation as b1
+
+    for modality in ("text", "voice", "photo", "image"):
+        assert b1.client_renders_interactions(modality) is False
+        assert modality in b1._MODALITIES, \
+            f"{modality} must be named, or its misuse is silent again"
+
+    assert b1.client_renders_interactions("telegram") is True
+    assert b1.client_renders_interactions("imessage") is True
+    assert b1.client_renders_interactions("ios") is False
+
+
+def test_the_call_site_passes_the_platform():
+    """Checked at the call site, because that is where the two were confused.
+    A test of the helper alone would have passed throughout the outage."""
+    import inspect
+
+    from core import conversation
+
+    src = inspect.getsource(conversation)
+    idx = src.find("client_renders_interactions(")
+    assert idx > 0, "the capability check disappeared"
+    call = src[idx:idx + 120]
+    assert "platform" in call, f"capability must read the channel: {call!r}"
+    assert "_source" not in call, \
+        "`_source` is `source_type or platform` — it can be a modality"

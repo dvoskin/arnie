@@ -241,8 +241,19 @@ def channel_capability(source: Optional[str]) -> Optional[str]:
     return _CHANNEL_CAPABILITY.get(str(source or "").strip().lower())
 
 
+#: Values that are a MODALITY, not a channel. Passing one of these is the
+#: mistake that cost a production round: `source_type` carries text/voice/
+#: photo alongside real origins, so `source_type or platform` yields "text"
+#: for a Telegram message and matches no channel at all. Named here so the
+#: error is loud rather than a silent decline — the same modality-vs-channel
+#: conflation `feedback_arnie_platform_mislabel` already records.
+_MODALITIES = frozenset({"text", "voice", "photo", "image"})
+
+
 def client_renders_interactions(source: Optional[str]) -> bool:
     """Can this client read the canonical payload at all?
+
+    Takes the CHANNEL (`platform`), never `source_type`.
 
     AN EXCLUSION, NOT A DOWNGRADE. A client that cannot is ineligible for B-1
     and stays wholly legacy. The alternative — sending it the canonical
@@ -250,6 +261,17 @@ def client_renders_interactions(source: Optional[str]) -> bool:
     the replacement, which is the exact defect B-1 exists to delete, and it
     would block deleting `QuickReplyEngine.swift` at promotion.
     """
+    key = str(source or "").strip().lower()
+    if key in _MODALITIES:
+        # LOUD, not a silent False. A modality here means the caller passed
+        # `source_type`, and the symptom — every turn declining
+        # `client_incapable` on a channel that is capable — looks exactly
+        # like a correct exclusion.
+        logger.error(
+            "event=b1_capability_misused source=%s — that is a MODALITY, not "
+            "a channel; pass `platform`. B-1 will decline every turn until "
+            "this is fixed.", key)
+        return False
     return channel_capability(source) is not None
 
 
