@@ -488,6 +488,7 @@ slice is done" are different claims and were conflated once already.
 | **Arnie voice over the committed facts** | TODO — after lifecycle/committed-truth verification, BEFORE broad rollout |
 | **Telegram/iMessage label-text path proven in production** | TODO |
 | **iOS B-1b: ID-addressed payload + real chip-path proof** | TODO |
+| **reply-metadata binding for `LABEL_TEXT` channels** | TODO — owed with B-1b |
 | **rollout: allowlist → 1% → 5% → 25% → 100% of eligible turns** | TODO |
 | **deletion: legacy quantity producer, option builder, answer reconstruction, prose-chip path; lower C8/C9** | TODO |
 
@@ -514,6 +515,19 @@ templates now (they cannot drift), voice at B-2.8 rendering the SAME
 `MealCommitResult` fields, with the fallbacks retained — a voice pass that
 fails must degrade to the deterministic sentence, never to silence and never
 to an invented one.
+
+**The `LABEL_TEXT` correlation limit, stated rather than discovered later.**
+`"6 oz"` carries no identity. Once operation A has settled, a delayed reply
+naming an option that also exists on operation B is indistinguishable from a
+reply to B — `owning()` returns the most recent operation and binds there.
+
+This is a TRANSPORT limitation, not an architecture flaw: with no metadata on
+the reply there is nothing to correlate against. It is bounded, not solved, by
+`SETTLED_OWNERSHIP_MINUTES` and by iOS being excluded until taps are
+ID-addressed. **Owed with B-1b:** where a platform does expose reply metadata
+(Telegram's `reply_to_message`), bind it to `operation_id` and prefer it over
+inference. Until then `LABEL_TEXT` is a restricted capability and is named as
+one in code — its production evidence does not substitute for the chip path's.
 
 Two scope facts to state rather than let green tests imply otherwise:
 
@@ -744,6 +758,46 @@ domain results stay inside the envelope). **D-3** shared typed outbox
 contracts (event ID, kind enum, version, payload, dedup key, operation ID,
 user ID) for memory update, coaching analysis, trend recomputation,
 notification planning, timeline refresh, PR detection.
+
+### The destination this is walking toward (recorded 2026-08-05)
+
+B-1 turned out to be less "food clarification" than "a transaction system that
+happens to be clarifying food": explicit ownership, canonical operations,
+optimistic revisions, replay instead of duplicate execution, deterministic
+presentation, boundaries that are structural rather than conventional, and
+observability designed in rather than bolted on.
+
+So the long-term target is **one conversational execution framework that
+health domains plug into**, not parallel systems per domain. The concepts that
+should end up domain-agnostic:
+
+```text
+PendingOperation           an operation with unresolved fields
+ClarificationInteraction   what we are asking, ID-addressed
+SemanticPatch              a typed answer
+AnswerOutcome              applied / repair / cancelled / refused
+CanonicalResponseFacts     committed truth, extracted once
+Renderer                   phrases facts; never recomputes them
+```
+
+The backend should eventually think *"I have a pending operation with
+unresolved fields"* and not *"I have a pending food quantity."* Food becomes
+one implementation; workouts a second; medication, hydration, weight and
+supplements are then additions rather than rewrites.
+
+**This does NOT belong in B-1 or B-2, and pulling it forward would be the
+mistake this whole migration exists to avoid.** The rule of two still governs:
+extract only what two real domains have demonstrated needing. B-0b already
+followed it (`ClarificationAttribute` carries workout members; the spine is
+proven domain-neutral by a fake-domain test) and B-1 deliberately did not
+(`quantity_clarification` is food-specific, because a generalized option
+generator built before one vertical slice works is how the four legacy
+producers happened).
+
+What makes this a destination rather than a wish is that each phase already
+lowers the distance: every ratchet that falls, every legacy owner deleted, and
+every food-named-but-generic shape in `WORKOUT_CONTRACTS.md`'s owed-renames
+register is one fewer thing standing between here and it.
 
 ## Phase E — Structured workout logging
 

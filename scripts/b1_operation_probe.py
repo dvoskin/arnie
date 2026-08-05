@@ -82,16 +82,29 @@ class Probe:
                    f"live={env or 'not reported'}")
         return health
 
+    #: Every field the rollout state must publish. A MISSING one fails rather
+    #: than reading as a safe default: "percent is absent" and "percent is 0"
+    #: look identical to a `.get()` and mean opposite things about whether the
+    #: build even knows about B-1.
+    ROLLOUT_FIELDS = ("halted", "percent", "allowlist_size")
+
     def stage_one(self, health):
         """Deployed, feature OFF. Nothing canonical should exist yet."""
         rollout = (health.get("food_pipeline") or {}).get("B1_QUANTITY") or {}
         self.check("b1_rollout_state_is_published", bool(rollout),
                    json.dumps(rollout) if rollout else "/health does not "
                    "expose B1_QUANTITY")
+        missing = [f for f in self.ROLLOUT_FIELDS if f not in rollout]
+        self.check("b1_rollout_state_is_complete", not missing,
+                   f"missing {missing}" if missing else json.dumps(rollout))
+        if missing:
+            self.check("b1_is_disabled", None,
+                       "cannot judge with fields missing")
+            return
         self.check("b1_is_disabled",
-                   (rollout.get("percent") in (0, 0.0, None)
-                    and not rollout.get("allowlist_size"))
-                   if rollout else None,
+                   rollout["percent"] in (0, 0.0)
+                   and not rollout["allowlist_size"]
+                   and not rollout["halted"],
                    json.dumps(rollout))
 
     def stage_two(self):
@@ -139,18 +152,77 @@ class Probe:
                    str(field.get("allows_free_text")))
 
         # THE ANSWER, carrying the ids this probe was given.
+        chosen = options[0]
+        day_before = self._day_calories(auth)
         answer = self._req("/api/v1/chat", {
-            "message": options[0]["label"],
+            "message": chosen["label"],
             "client_message_id": f"{key}-a",
             "interaction": {"operation_id": self.operation_id,
                             "revision": interaction["revision"],
                             "field_id": field["field_id"],
-                            "option_id": options[0]["option_id"]}}, auth)
+                            "option_id": chosen["option_id"]}}, auth)
         self.check("the_answer_was_accepted", bool(answer.get("v")),
                    json.dumps(answer)[:200])
 
+        self._agreement(auth, answer, chosen, day_before)
         self._correlate()
         self._negatives(auth, key, interaction, field)
+
+    def _day_calories(self, auth):
+        try:
+            return float((self._req("/api/v1/day", headers=auth)
+                          .get("totals") or {}).get("calories") or 0.0)
+        except Exception:
+            return None
+
+    def _agreement(self, auth, answer, chosen, day_before):
+        """THE NUMBERS MUST AGREE, not merely exist.
+
+        A probe that checks "a row was written" passes on a row containing the
+        wrong number. Every value below is compared against another INDEPENDENT
+        source of the same fact, so a disagreement between the card, the row,
+        the day total and the answered quantity cannot hide.
+        """
+        cards = [c for c in (answer.get("cards") or [])
+                 if c.get("type") == "macro_card"]
+        card = (cards[0].get("payload") if cards else {}) or {}
+        self.check("the_reply_carried_exactly_one_card", len(cards) == 1,
+                   f"{len(cards)} cards")
+
+        entry_id = card.get("entry_id")
+        self.check("the_card_names_a_real_row", entry_id is not None,
+                   str(entry_id))
+
+        # PRICING IS REAL, not the interpreter's placeholder echoed back. The
+        # answered mass is a different portion from the one the interpreter
+        # assumed, so an unchanged calorie figure means the answer never
+        # reached the resolver.
+        calories = card.get("calories")
+        self.check("the_row_was_priced",
+                   isinstance(calories, (int, float)) and calories > 0,
+                   f"calories={calories}")
+
+        # THE CARD AND THE SENTENCE. They are two renderings of one facts
+        # object server-side; this proves that survived the wire.
+        text = " ".join(answer.get("bubbles") or []) or str(answer.get("v") or "")
+        self.check("the_sentence_states_the_card_figure",
+                   (f"{int(calories)} cal" in text) if calories else None,
+                   text[:160])
+
+        # THE DAY MOVED BY EXACTLY THIS MEAL.
+        day_after = self._day_calories(auth)
+        if day_before is None or day_after is None or not calories:
+            self.check("the_day_total_moved_by_this_meal", None,
+                       "day totals unavailable")
+        else:
+            delta = day_after - day_before
+            self.check("the_day_total_moved_by_this_meal",
+                       abs(delta - float(calories)) <= 1.0,
+                       f"day {day_before} -> {day_after} (delta {delta}, "
+                       f"meal {calories})")
+        self._committed = {"entry_id": entry_id, "calories": calories,
+                           "protein_g": card.get("protein_g"),
+                           "label": chosen["label"]}
 
     def _correlate(self):
         """Everything below matches on THIS operation id. Never on recency."""
@@ -215,6 +287,23 @@ class Probe:
                   and "lane=canonical:create" in l.get("message", "")]
         self.check("the_duplicate_answer_replayed", len(writes) == 1,
                    f"{len(writes)} canonical writes after the duplicate")
+
+        # THE REPLAY RETURNS THE ORIGINAL VALUES, not merely "a" result. A
+        # duplicate that answers with a DIFFERENT row would satisfy every
+        # count above and still be a second meal wearing the first one's name.
+        original = getattr(self, "_committed", {}) or {}
+        replay_card = next((c.get("payload") or {}
+                            for c in (replay.get("cards") or [])
+                            if c.get("type") == "macro_card"), {})
+        if not original or not replay_card:
+            self.check("the_replay_returned_the_original_values", None,
+                       "no card on one side of the comparison")
+        else:
+            same = all(replay_card.get(k) == original.get(k)
+                       for k in ("entry_id", "calories", "protein_g"))
+            self.check("the_replay_returned_the_original_values", same,
+                       f"first={original} replay={replay_card}")
+
         self.check("the_pending_operation_is_terminal",
                    "logged" in json.dumps(replay).lower(),
                    json.dumps(replay)[:160])
