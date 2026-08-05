@@ -76,8 +76,8 @@ if _IS_SQLITE:
         cur.close()
 
 # ── ONE CLOCK ────────────────────────────────────────────────────────────────
-# Every connection in this process reads and writes time in UTC, and that is
-# enforced here rather than assumed.
+# Every Postgres connection proves its session is UTC before it is used, or it
+# is refused.
 #
 # THE TWO CLOCKS HAVE TO AGREE, AND NOTHING MADE THEM. 43 columns are naive
 # `DateTime` filled by the DATABASE clock (`server_default=func.now()`), while
@@ -109,58 +109,138 @@ if _IS_SQLITE:
 # a correctness property that is true by luck of deployment and would fail
 # silently on a restore, a provider move, or a `SET timezone` in a dashboard.
 #
-# Setting the session timezone makes the DB clock UTC by construction, so the
-# two clocks coincide and every existing comparison means what it says. In
-# production this changes NOTHING — it makes production's behaviour the
-# behaviour everywhere, which is the point.
-#
 # THIS IS NOT THE WHOLE UNIFICATION. It removes the timezone axis outright; it
 # does not merge the two clocks into one source, so host clock skew between the
 # app and the database still exists — bounded by NTP at seconds rather than
 # hours, but real against a 90-second threshold. Collapsing every freshness
 # comparison onto ONE authoritative clock is tracked in
 # docs/ONE_CLOCK_MIGRATION.md and gates removal of the legacy lane.
-#
-# Registered on Engine rather than on `engine`, so it holds for every
-# connection opened in this process — including engines that tests and scripts
-# build themselves, which is where a divergent server timezone actually shows
-# up.
 from sqlalchemy import event as _event
 from sqlalchemy.engine import Engine as _Engine
 
-#: Drivers whose sessions carry a timezone. SQLite has none — it stores the
-#: literal string it is given — so it is left alone rather than sent SQL it
-#: cannot parse.
-_TZ_AWARE_DRIVERS = ("psycopg", "asyncpg", "pg8000", "psycopg2")
+
+class SessionTimezoneNotPinned(RuntimeError):
+    """A Postgres connection whose session timezone is not provably UTC.
+
+    RAISED, NOT LOGGED. An earlier version logged and returned, which handed
+    the application the exact connection the check exists to reject: a driver
+    error, a permission restriction or an unexpected cursor behaviour would be
+    recorded and then the unreliable connection used anyway, and every
+    freshness comparison made on it — idempotency's included — would be wrong
+    by hours with no further signal. Logging is not enforcement.
+
+    The contract is binary: UTC confirmed -> the connection may be used;
+    not confirmed -> nothing gets it.
+    """
 
 
-@_event.listens_for(_Engine, "connect")
-def _force_utc_session(dbapi_conn, _record):
-    module = (type(dbapi_conn).__module__ or "").lower()
-    if not any(d in module for d in _TZ_AWARE_DRIVERS):
-        return
+#: Set on an engine once `pin_session_utc` has attached its listener. The
+#: guard below reads it to tell "pinned" from "nobody pinned this".
+_UTC_PINNED = "_arnie_utc_pinned"
+
+
+def _confirm_utc(dbapi_conn) -> str:
+    """Set the session to UTC and READ IT BACK. Returns what the session says.
+
+    A module-level function rather than a closure so the failure path is
+    reachable from a test — a rejection nobody can trigger is a rejection
+    nobody has checked.
+
+    THE COMMIT IS LOAD-BEARING. `SET` is transactional and the pool rolls back
+    every connection it hands out, so without it the statement runs, raises
+    nothing, and is silently reverted: a fix that reads as correct and does
+    nothing. The read-back then confirms rather than assumes, which is the
+    difference between "we tried to pin it" and "it is pinned".
+    """
+    cur = dbapi_conn.cursor()
     try:
-        cur = dbapi_conn.cursor()
-        try:
-            cur.execute("SET TimeZone='UTC'")
-        finally:
-            cur.close()
-        # THE COMMIT IS THE WHOLE FIX. `SET` is transactional, and the pool
-        # rolls back every connection it hands out, so without this the
-        # statement runs, raises nothing, and is silently reverted — the
-        # timezone stays whatever the server chose while the code reads as
-        # though it were pinned. Verified: SET alone leaves the session on the
-        # server's timezone; SET + commit leaves it on UTC.
-        dbapi_conn.commit()
-    except Exception:                      # pragma: no cover - driver variance
-        # LOUD, not silent. A connection that could not be pinned to UTC is a
-        # connection whose freshness comparisons may be wrong by hours, and a
-        # quiet failure here would restore the exact condition this prevents.
-        logger.exception(
-            "event=session_timezone_not_set — this connection's stored "
-            "timestamps may not be UTC; freshness and idempotency comparisons "
-            "on it are unreliable")
+        cur.execute("SET TimeZone='UTC'")
+    finally:
+        cur.close()
+    dbapi_conn.commit()
+    cur = dbapi_conn.cursor()
+    try:
+        cur.execute("SHOW timezone")
+        return (cur.fetchone() or [None])[0]
+    finally:
+        cur.close()
 
+
+def pin_session_utc(engine):
+    """Require every connection this engine opens to be UTC. Returns `engine`.
+
+    KEYED ON THE DIALECT, not on the driver's module name. An earlier version
+    matched substrings like "psycopg" against `type(dbapi_conn).__module__`,
+    which is implementation detail: SQLAlchemy hands the sync `connect` event
+    an adapter proxy for async drivers, so a renamed or unanticipated adapter
+    silently matches nothing and the listener does nothing at all — failing
+    open in the quietest possible way. `dialect.name == "postgresql"` is public
+    API and true for psycopg, psycopg2, asyncpg and pg8000 alike.
+
+    Applied through a shared factory rather than globally to every engine in
+    the process, so forcing a session setting on someone else's database is a
+    deliberate act with an owner, not a side effect of importing this module.
+    Engines that skip the factory are refused by the guard below rather than
+    quietly running unpinned.
+    """
+    sync_engine = getattr(engine, "sync_engine", engine)
+    if sync_engine.dialect.name != "postgresql":
+        return engine                      # sqlite has no session timezone
+    if getattr(sync_engine, _UTC_PINNED, False):
+        return engine
+
+    @_event.listens_for(sync_engine, "connect")
+    def _set_utc(dbapi_conn, _record):
+        try:
+            actual = _confirm_utc(dbapi_conn)
+        except Exception as exc:
+            raise SessionTimezoneNotPinned(
+                "could not pin this Postgres session to UTC; refusing the "
+                "connection rather than letting freshness and idempotency "
+                "comparisons run against an unknown clock") from exc
+        if str(actual).upper() != "UTC":
+            raise SessionTimezoneNotPinned(
+                f"session timezone is {actual!r} after being set to UTC; "
+                f"refusing the connection")
+
+    setattr(sync_engine, _UTC_PINNED, True)
+    return engine
+
+
+def make_engine(url: str, **kwargs):
+    """The one way to build an engine. Production, tests and scripts all use
+    this, so the UTC guarantee cannot be missed by construction."""
+    return pin_session_utc(create_async_engine(url, **kwargs))
+
+
+@_event.listens_for(_Engine, "engine_connect")
+def _refuse_unpinned_postgres(conn):
+    """FAIL CLOSED for a Postgres engine nobody pinned.
+
+    `pin_session_utc` covers engines built through the factory. This covers the
+    engine somebody builds directly — in a test, a script, a migration — which
+    would otherwise run with the server's timezone and reintroduce the whole
+    defect silently.
+
+    An in-process attribute check, not a query: it costs nothing per checkout,
+    and a round trip here would be paid on every transaction. `conn.engine` is
+    public API and carries the real dialect, which is what the connect event
+    does not.
+    """
+    if conn.engine.dialect.name != "postgresql":
+        return
+    if not getattr(conn.engine, _UTC_PINNED, False):
+        raise SessionTimezoneNotPinned(
+            "this Postgres engine was never pinned to UTC — build it with "
+            "db.database.make_engine(), or call pin_session_utc(engine). "
+            "Running unpinned would make every freshness comparison depend on "
+            "the database server's timezone (see docs/ONE_CLOCK_MIGRATION.md)")
+
+
+# The application's own engine goes through the same gate as everything
+# else — without this the guard above would refuse it, which is exactly the
+# behaviour intended for an unpinned Postgres engine.
+pin_session_utc(engine)
 
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

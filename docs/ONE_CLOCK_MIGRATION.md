@@ -56,28 +56,58 @@ move, or a `SET timezone` in a dashboard.
 
 ## Step 1 — landed: the timezone axis is removed
 
-`db/database.py` pins **every** connection in the process to UTC via a
-`connect` listener on `Engine` (not on one engine — so engines built by tests
-and scripts are covered too, which is where a divergent server timezone
-actually shows up).
+The contract is binary, and it is enforced rather than attempted:
 
-The database clock is now UTC by construction, so the two clocks coincide and
-every existing comparison means what it says. **In production this changes
-nothing** — it makes production's behaviour the behaviour everywhere.
+> **UTC confirmed → the connection may be used. Not confirmed → nothing gets it.**
 
-Two things worth keeping in mind:
+`db/database.py`:
 
-* **The commit is the fix.** `SET` is transactional and the pool rolls back
-  every connection it hands out, so `SET TimeZone='UTC'` alone runs, raises
-  nothing, and is silently reverted. Verified both ways.
-* A connection that cannot be pinned logs `event=session_timezone_not_set` at
-  exception level rather than passing quietly.
+* **`make_engine(url, **kw)`** — the one way to build an engine. Production,
+  tests and scripts all use it, so the guarantee cannot be missed by
+  construction.
+* **`pin_session_utc(engine)`** attaches a `connect` listener that sets the
+  session to UTC, commits, and **reads it back**. Any failure, or any answer
+  that is not UTC, raises `SessionTimezoneNotPinned` — so the connection never
+  enters the pool.
+* **A global `engine_connect` guard** refuses any Postgres engine that was
+  never pinned. It is an in-process attribute check, not a query, so it costs
+  nothing per checkout.
+* **A startup check** in `api/app.py` proves at boot that this deployment's
+  sessions are UTC, and is **fatal** if not. The per-connection read-back would
+  otherwise surface the problem one request at a time; a misconfigured
+  deployment should fail its health check instead of serving traffic that
+  quietly mis-ages every claim.
+
+Three things that were wrong in the first attempt and are worth not repeating:
+
+* **Logging is not enforcement.** The first version logged the failure and
+  returned, which handed the application the exact connection the check exists
+  to reject. A driver error, a permission restriction or an unexpected cursor
+  would have been recorded and the unreliable connection used anyway.
+* **The commit is load-bearing.** `SET` is transactional and the pool rolls
+  back every connection it hands out, so `SET TimeZone='UTC'` alone runs,
+  raises nothing, and is silently reverted — a fix that reads as correct and
+  does nothing. Verified both ways.
+* **Driver detection must key on the dialect.** The first version matched
+  substrings like `"psycopg"` against `type(dbapi_conn).__module__`, which is
+  implementation detail: SQLAlchemy hands the sync `connect` event an *adapter
+  proxy* for async drivers, so a renamed or unanticipated adapter matches
+  nothing and the listener does nothing at all. `dialect.name == "postgresql"`
+  is public API and identical for psycopg, psycopg2, asyncpg and pg8000.
+  (Only psycopg is in use in production and CI.)
+
+The global reach is deliberate but narrow: the factory *applies* the setting
+only to engines it is given, while the global piece only *refuses* — so this
+module never silently forces a session setting on somebody else's database.
 
 Proof: `tests/test_one_clock.py` sets the **database's** default timezone away
 from UTC and requires a fresh connection to still be UTC — written that way so
 it stays meaningful on CI, where the server is already UTC and a bare
-"is it UTC?" assertion would pass without touching the mechanism. Mutation
-checked: removing the commit, or the listener, turns it red.
+"is it UTC?" assertion would pass without touching the mechanism. It also
+covers the refusal paths, including that a rejected connection is re-checked on
+every attempt rather than pooled and handed out again. Mutation checked:
+reverting to log-and-continue, dropping the read-back, or removing the
+unpinned-engine guard each turns the matching test red.
 
 ## Step 2 — owed: one authoritative clock source
 

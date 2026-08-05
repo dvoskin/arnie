@@ -34,8 +34,9 @@ from datetime import date
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
-                                    create_async_engine)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from db.database import make_engine
 
 from core import meal_commit
 from core.commit_coordinator import commit_or_load_existing
@@ -64,7 +65,9 @@ class _Op:
 
 @pytest.fixture
 async def pg():
-    engine = create_async_engine(PG, pool_size=5, max_overflow=5)
+    # via the factory: an unpinned Postgres engine is refused outright,
+    # which is what keeps the UTC guarantee from being opt-in.
+    engine = make_engine(PG, pool_size=5, max_overflow=5)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)

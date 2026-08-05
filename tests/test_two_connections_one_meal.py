@@ -20,8 +20,9 @@ import os
 import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
-                                    create_async_engine)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from db.database import make_engine
 
 from core import idempotency
 from core.idempotency import build_key, claim_request, fingerprint_of
@@ -52,7 +53,9 @@ pytestmark = pytest.mark.skipif(
 async def pg():
     """A clean schema per test, on an engine whose pool hands out REAL
     independent connections."""
-    engine = create_async_engine(PG, pool_size=5, max_overflow=5)
+    # via the factory: an unpinned Postgres engine is refused outright,
+    # which is what keeps the UTC guarantee from being opt-in.
+    engine = make_engine(PG, pool_size=5, max_overflow=5)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)

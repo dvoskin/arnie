@@ -68,6 +68,35 @@ async def _install_trace_buffer():
 
 
 @app.on_event("startup")
+async def _confirm_utc_sessions():
+    """Prove at BOOT that this deployment's database sessions are UTC.
+
+    Every connection already confirms its own timezone and is refused if it
+    cannot — but that surfaces at the first request, one request at a time. A
+    deployment whose database timezone is wrong should fail its health check
+    and stop, not serve traffic that quietly mis-ages every claim.
+
+    UNLIKE the trace buffer above, a failure here IS fatal. Freshness drives
+    idempotency, and idempotency decides whether a meal is written twice; there
+    is no degraded mode worth running. See docs/ONE_CLOCK_MIGRATION.md.
+    """
+    from sqlalchemy import text
+
+    from db.database import engine
+
+    if engine.sync_engine.dialect.name != "postgresql":
+        return                       # sqlite has no session timezone
+    async with engine.connect() as conn:
+        zone = (await conn.execute(text("SHOW timezone"))).scalar()
+    if str(zone).upper() != "UTC":   # pragma: no cover - the pin already raises
+        raise RuntimeError(
+            f"database sessions report timezone {zone!r}, not UTC — refusing "
+            f"to start: every freshness and idempotency comparison would be "
+            f"offset by that amount (docs/ONE_CLOCK_MIGRATION.md)")
+    logger.info("event=one_clock sessions=utc dialect=postgresql")
+
+
+@app.on_event("startup")
 async def _kick_proactive_scheduler():
     """Belt-and-suspenders: start the proactive scheduler from the API process
     too, not only from the Telegram bot's _post_init. If a Telegram deploy ever

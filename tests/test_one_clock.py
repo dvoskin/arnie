@@ -34,7 +34,9 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
                                     create_async_engine)
 
-import db.database                       # noqa: F401 — registers the listener
+import db.database as database
+from db.database import (SessionTimezoneNotPinned, make_engine,
+                         pin_session_utc)
 from db.models import Base, IdempotencyRecord, User
 
 PG = os.getenv("TEST_POSTGRES_URL")
@@ -60,13 +62,13 @@ async def skewed_server():
     what a fresh connection would inherit — exactly the condition production
     would land in after a restore or a provider move.
     """
-    admin = create_async_engine(PG, isolation_level="AUTOCOMMIT")
+    admin = make_engine(PG, isolation_level="AUTOCOMMIT")
     async with admin.connect() as c:
         name = (await c.execute(text("SELECT current_database()"))).scalar()
         await c.execute(text(f'ALTER DATABASE "{name}" SET timezone TO '
                              f"'{OFFSET_TZ}'"))
     try:
-        engine = create_async_engine(PG)
+        engine = make_engine(PG)
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
@@ -176,3 +178,107 @@ async def test_concurrent_connections_are_each_pinned(skewed_server):
 
     zones = await asyncio.gather(*(tz_of() for _ in range(6)))
     assert {z.upper() for z in zones} == {"UTC"}, zones
+
+
+# ── the guarantee is ENFORCED, not attempted ─────────────────────────────────
+#
+# Logging a failure and continuing would hand the application the exact
+# connection this exists to reject. These three tests are the difference
+# between a check and a wish.
+
+@pytest.mark.asyncio
+async def test_a_connection_that_cannot_be_pinned_is_refused(monkeypatch):
+    """A driver error, a permission restriction, an unexpected cursor — any of
+    them must REJECT the connection, not log it and carry on."""
+    def _explode(_conn):
+        raise RuntimeError("driver refused SET")
+
+    monkeypatch.setattr(database, "_confirm_utc", _explode)
+    engine = make_engine(PG)
+    try:
+        with pytest.raises(SessionTimezoneNotPinned):
+            async with engine.connect() as c:
+                await c.execute(text("SELECT 1"))
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_session_that_reports_the_wrong_zone_is_refused(monkeypatch):
+    """The set may 'succeed' and the session still not be UTC. Confirming is
+    the point; the read-back is not decoration."""
+    monkeypatch.setattr(database, "_confirm_utc",
+                        lambda _conn: "America/New_York")
+    engine = make_engine(PG)
+    try:
+        with pytest.raises(SessionTimezoneNotPinned) as exc:
+            async with engine.connect() as c:
+                await c.execute(text("SELECT 1"))
+        assert "America/New_York" in str(exc.value)
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_refused_connection_does_not_reach_the_pool(monkeypatch):
+    """The point of raising rather than logging: no later checkout may quietly
+    receive the connection that failed its check."""
+    calls = {"n": 0}
+
+    def _explode(_conn):
+        calls["n"] += 1
+        raise RuntimeError("driver refused SET")
+
+    monkeypatch.setattr(database, "_confirm_utc", _explode)
+    engine = make_engine(PG)
+    try:
+        for _ in range(3):
+            with pytest.raises(SessionTimezoneNotPinned):
+                async with engine.connect() as c:
+                    await c.execute(text("SELECT 1"))
+        assert calls["n"] == 3, (
+            "a refused connection was pooled and reused — it was checked once "
+            "and handed out again unchecked")
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_an_engine_nobody_pinned_is_refused():
+    """The factory covers engines built through it. This covers the one built
+    directly in a test, a script or a migration, which would otherwise run on
+    the server's timezone and reintroduce the defect silently."""
+    engine = create_async_engine(PG)          # deliberately NOT via make_engine
+    try:
+        with pytest.raises(SessionTimezoneNotPinned, match="never pinned"):
+            async with engine.connect() as c:
+                await c.execute(text("SELECT 1"))
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_pinning_is_keyed_on_the_dialect_not_the_driver_module():
+    """An earlier version matched substrings against
+    `type(dbapi_conn).__module__`, which is implementation detail: SQLAlchemy
+    hands the sync connect event an ADAPTER PROXY for async drivers, so a
+    renamed adapter matches nothing and the listener silently does nothing.
+    The dialect is public API and identical across psycopg, psycopg2, asyncpg
+    and pg8000."""
+    engine = make_engine(PG)
+    try:
+        assert engine.sync_engine.dialect.name == "postgresql"
+        assert getattr(engine.sync_engine, database._UTC_PINNED, False)
+        async with engine.connect() as c:
+            assert (await c.execute(text("SHOW timezone"))).scalar().upper() \
+                == "UTC"
+    finally:
+        await engine.dispose()
+
+
+def test_sqlite_is_left_alone_and_still_usable():
+    """SQLite has no session timezone. Pinning must be a no-op rather than
+    sending it SQL it cannot parse — and the guard must not refuse it."""
+    engine = make_engine("sqlite+aiosqlite:///:memory:")
+    assert engine.sync_engine.dialect.name == "sqlite"
+    assert not getattr(engine.sync_engine, database._UTC_PINNED, False)
