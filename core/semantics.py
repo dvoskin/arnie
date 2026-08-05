@@ -544,9 +544,16 @@ class PendingOperation:
 
     def _transition_unchecked(self, target: "PendingStatus",
                               **changes) -> "PendingOperation":
-        """The primitive. Enforces the table and the field allowlist, and is
-        the only thing permitted to enter a failure state — which is why
-        `record_failure` calls it and `transition_to` does not expose it."""
+        """The primitive. Enforces the table, the field allowlist, AND the
+        failure-accounting invariants.
+
+        "Unchecked" names one thing only: it does not refuse failure TARGETS,
+        because it is how `record_failure` reaches them. It is otherwise the
+        strictest path in the model, and deliberately so — a private door that
+        is safe only when called correctly is the same bypass one underscore
+        further in, and this one had it: `_transition_unchecked(
+        RETRYABLE_FAILURE)` produced attempts=0 and retried forever.
+        """
         if target not in _ALLOWED_TRANSITIONS.get(self.status, set()):
             raise InvalidPendingTransition(self.status, target)
         forbidden = set(changes) - _LIFECYCLE_FIELDS
@@ -555,6 +562,23 @@ class PendingOperation:
                 self.status, target,
                 f"a transition may not change {sorted(forbidden)} — "
                 "lifecycle moves do not rewrite semantic payload")
+        # ENTERING A FAILURE MEANS RECORDING ONE. Enforced here rather than in
+        # `record_failure` so the invariant holds for every caller, including
+        # one that reaches for the primitive.
+        if target is PendingStatus.RETRYABLE_FAILURE:
+            if changes.get("attempt_count") != self.attempt_count + 1:
+                raise InvalidPendingTransition(
+                    self.status, target,
+                    "entering a retryable failure must increment "
+                    f"attempt_count to {self.attempt_count + 1}")
+            if not changes.get("last_error"):
+                raise InvalidPendingTransition(
+                    self.status, target,
+                    "a recorded failure must carry its error")
+        if target is PendingStatus.FAILED and not (
+                changes.get("terminal_reason") or self.terminal_reason):
+            raise InvalidPendingTransition(
+                self.status, target, "a terminal failure must say why")
         return replace(self, status=target, **changes)
 
     def record_failure(self, error: str) -> "PendingOperation":

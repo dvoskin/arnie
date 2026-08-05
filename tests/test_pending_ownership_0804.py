@@ -508,3 +508,59 @@ def test_record_failure_uses_the_primitive_not_the_public_door():
     src = inspect.getsource(PendingOperation.record_failure)
     assert "_transition_unchecked(" in src
     assert "self.transition_to(" not in src
+
+
+# ── the primitive is safe when misused ───────────────────────────────────────
+
+@pytest.mark.parametrize("changes,why", [
+    ({}, "no accounting at all"),
+    ({"attempt_count": 1}, "counted but no error"),
+    ({"last_error": "x"}, "error but no count"),
+    ({"attempt_count": 7, "last_error": "x"}, "count is not +1"),
+    ({"attempt_count": 0, "last_error": "x"}, "count did not move"),
+])
+def test_the_primitive_refuses_failure_without_accounting(changes, why):
+    """"UNCHECKED" NAMES ONE THING ONLY: it does not refuse failure TARGETS,
+    because it is how `record_failure` reaches them.
+
+    A private door that is safe only when called correctly is the same bypass
+    one underscore further in, and this one had it — verified before fixing:
+    `_transition_unchecked(RETRYABLE_FAILURE)` produced attempts=0 and retried
+    forever, exactly as the public door had.
+    """
+    from core.semantics import InvalidPendingTransition, PendingStatus
+
+    with pytest.raises(InvalidPendingTransition):
+        _fresh()._transition_unchecked(PendingStatus.RETRYABLE_FAILURE,
+                                       **changes)
+
+
+def test_the_primitive_refuses_a_terminal_failure_with_no_reason():
+    from core.semantics import InvalidPendingTransition, PendingStatus
+
+    with pytest.raises(InvalidPendingTransition, match="say why"):
+        _fresh()._transition_unchecked(PendingStatus.FAILED)
+
+
+def test_the_only_legitimate_caller_still_works():
+    """A primitive strict enough to refuse its own caller is not a fix."""
+    from core.semantics import PendingStatus
+
+    op = _fresh()
+    for i in range(3):
+        op = op.record_failure(f"attempt {i + 1}")
+    assert op.status is PendingStatus.FAILED
+    assert op.attempt_count == 3 and op.last_error == "attempt 3"
+
+
+def test_no_path_reaches_a_failure_state_without_accounting():
+    """The property, stated once over BOTH doors: every route into a retryable
+    failure increments exactly one attempt and carries an error."""
+    from core.semantics import InvalidPendingTransition, PendingStatus
+
+    op = _fresh()
+    for door in (op.transition_to, op._transition_unchecked):
+        with pytest.raises(InvalidPendingTransition):
+            door(PendingStatus.RETRYABLE_FAILURE)
+    recorded = op.record_failure("the only way in")
+    assert recorded.attempt_count == 1 and recorded.last_error
