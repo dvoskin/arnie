@@ -44,10 +44,24 @@ def _prod_refs(symbol: str, exclude_self: str = "") -> list:
 
 def test_pending_store_is_still_unwired():
     """If this fails, something adopted it — update the migration doc rather
-    than the assertion, because that is the outcome step 4 wants."""
-    refs = [r for r in _prod_refs("pending_store",
-                                  "skills/nutrition/pending_store.py")
-            if not r.startswith("core/semantics.py")]
+    than the assertion, because that is the outcome step 4 wants.
+
+    IMPORTS, NOT MENTIONS. The first version matched any line containing the
+    name, so writing "pending_store.claim() proves one consumer" in a DOCSTRING
+    read as adoption. It flagged `core/meal_commit.py` and `db/models.py` for
+    explaining what they relate to — a check that punishes documentation is one
+    that gets its documentation deleted.
+    """
+    rx = re.compile(r"^\s*(?:from|import)\s+.*\bpending_store\b")
+    refs = []
+    for root in PROD_ROOTS:
+        for p in (REPO / root).rglob("*.py"):
+            rel = str(p.relative_to(REPO))
+            if rel == "skills/nutrition/pending_store.py":
+                continue
+            for i, line in enumerate(p.read_text().splitlines(), 1):
+                if rx.match(line):
+                    refs.append(f"{rel}:{i}")
     assert not refs, f"pending_store is now imported by: {refs}"
 
 

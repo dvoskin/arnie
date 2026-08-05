@@ -777,6 +777,91 @@ class Feedback(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class PendingOperation(Base):
+    """A multi-turn operation, durable across restarts and workers.
+
+    NOT `conversation.payload_json`. That is a question's payload on a
+    pending_questions row; this is the OPERATION, with its own lifecycle,
+    revision and concurrency control.
+
+    `status` holds the full operation lifecycle. `storage_status` is a
+    PROJECTION kept for cheap open/closed queries — five operation states share
+    "active", so reconstructing `status` from it is guessing, and doing so is
+    the one thing this pair must never be used for.
+    """
+    __tablename__ = "pending_operations"
+    __table_args__ = (
+        Index("ix_pending_operations_open", "user_id", "domain",
+              "storage_status"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    operation_id = Column(String, nullable=False, unique=True)
+    user_id = Column(Integer, nullable=False)
+    domain = Column(String, nullable=False, server_default="food")
+
+    status = Column(String, nullable=False)
+    storage_status = Column(String, nullable=False, server_default="active")
+    #: Incremented whenever semantic content changes. Every write is
+    #: conditional on the revision the writer read, so a stale update fails
+    #: rather than overwriting a newer one.
+    revision = Column(Integer, nullable=False, server_default="0")
+    source_turn_id = Column(String, nullable=True)
+
+    #: Versioned JSON. An unknown future field must not break a read.
+    canonical_payload = Column(Text, nullable=True)
+    unresolved_fields = Column(Text, nullable=True)
+    assumptions = Column(Text, nullable=True)
+    mode = Column(String, nullable=True)
+
+    answer_claim_key = Column(String, nullable=True)
+    commit_key = Column(String, nullable=True)
+
+    attempt_count = Column(Integer, nullable=False, server_default="0")
+    max_attempts = Column(Integer, nullable=False, server_default="3")
+    last_error = Column(Text, nullable=True)
+    terminal_reason = Column(String, nullable=True)
+
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, nullable=True)
+    committed_at = Column(DateTime, nullable=True)
+
+
+class MealCommit(Base):
+    """One ledger mutation, made unrepeatable by the database.
+
+    `pending_store.claim()` guarantees one consumer of the clarification
+    ANSWER. This guarantees one WRITE of the meal that follows — a different
+    promise, and the gap between them is a real sequence: claim, commit, crash
+    before marking consumed, retry, commit again.
+
+    An application check cannot arbitrate that (two workers both read "not
+    committed" and both write), so uniqueness is a CONSTRAINT.
+
+    `result_payload` exists so a duplicate can be answered with what the FIRST
+    attempt produced. Skipping silently leaves the caller unable to tell
+    "already done" from "nothing happened".
+    """
+    __tablename__ = "meal_commits"
+    __table_args__ = (
+        UniqueConstraint("operation_id", "operation_revision",
+                         name="uq_meal_commits_operation_revision"),
+        Index("ix_meal_commits_user", "user_id", "created_at"),
+    )
+
+    commit_id = Column(Integer, primary_key=True)
+    operation_id = Column(String, nullable=False)
+    #: A corrected meal is a NEW mutation of the SAME operation. The revision
+    #: lets that through while still refusing a duplicate of either.
+    operation_revision = Column(Integer, nullable=False, server_default="0")
+    commit_key = Column(String, nullable=True)
+    status = Column(String, nullable=False, server_default="claimed")
+    result_payload = Column(Text, nullable=True)
+    user_id = Column(Integer, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class PendingQuestion(Base):
     """
     An open conversational loop — a question Arnie asked that's awaiting an answer.
