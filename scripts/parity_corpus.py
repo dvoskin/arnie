@@ -134,8 +134,7 @@ if __name__ == "__main__":
     if promoted:
         d = _get("/admin/food-traces?event=canonical_meal_written&limit=50",
                  {"X-Admin-Token": ADMIN})
-        print(f"
-canonical_meal_written lines: {d.get('matched')}")
+        print(f"\ncanonical_meal_written lines: {d.get('matched')}")
         for l in d.get("lines", [])[-12:]:
             print("  ", l.get("message", "")[:150])
     else:
