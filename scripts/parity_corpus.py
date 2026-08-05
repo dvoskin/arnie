@@ -11,7 +11,11 @@ macro passthrough (decimals, zeros, large values), day-total accumulation
 across taps, duplicate delivery, and the absent-vs-present quantity split.
 
 Usage:
-    python scripts/parity_corpus.py            # send corpus + pull traces
+    python scripts/parity_corpus.py            # shadow mode: needs the flag on
+    python scripts/parity_corpus.py --promoted # post-promotion verification:
+                                               # sends the same corpus at the
+                                               # CANONICAL endpoint and reads
+                                               # event=canonical_meal_written
     python scripts/parity_corpus.py --traces   # pull traces only
 """
 import json
@@ -113,15 +117,26 @@ def pull_traces():
 
 if __name__ == "__main__":
     token = open(TOKEN_FILE).read().strip()
+    promoted = "--promoted" in sys.argv
     if "--traces" not in sys.argv:
         health = _get("/health", {})
         flag = (health.get("food_pipeline", {})
                 .get("CANONICAL_WRITER_SHADOW", {}))
         print(f"deployed={health.get('commit')} shadow={flag}")
-        if not flag.get("effective"):
+        if not promoted and not flag.get("effective"):
             sys.exit("REFUSING to send the corpus: the shadow is OFF, and an "
-                     "empty window would read as perfect parity.")
+                     "empty window would read as perfect parity. (After the "
+                     "promotion deploys, run with --promoted instead — there "
+                     "is no shadow on a canonical endpoint.)")
         print(f"sending {len(CORPUS)} taps as ios:canonical-parity-test-0805:")
         send_corpus(token)
         time.sleep(2)
-    pull_traces()
+    if promoted:
+        d = _get("/admin/food-traces?event=canonical_meal_written&limit=50",
+                 {"X-Admin-Token": ADMIN})
+        print(f"
+canonical_meal_written lines: {d.get('matched')}")
+        for l in d.get("lines", [])[-12:]:
+            print("  ", l.get("message", "")[:150])
+    else:
+        pull_traces()

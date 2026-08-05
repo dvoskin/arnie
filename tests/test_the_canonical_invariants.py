@@ -247,8 +247,9 @@ def _food_write_sites() -> set:
 #: succeeds. Counted, not pinned to exact lines: a line moves for unrelated
 #: reasons, and a brittle gate gets deleted rather than obeyed.
 #:
-#: api/app.py · api/quick_log.py · handlers/tool_executor.py ×2
-_LEGACY_FOOD_WRITERS = 4
+#: api/app.py · handlers/tool_executor.py ×2 — quick_log was DELETED at its
+#: promotion (the first migrated owner), which is what moved this from 4.
+_LEGACY_FOOD_WRITERS = 3
 
 
 def test_c4_every_direct_food_writer_is_a_known_one():
@@ -373,3 +374,31 @@ def test_the_contract_document_lists_exactly_these_invariants():
     assert documented - tested == set(), (
         f"documented but unenforced: {sorted(documented - tested)} — the index "
         f"claims a guarantee no test holds, which is worse than claiming none")
+
+
+#: After an owner is promoted, its legacy write path must STAY deleted — a
+#: special-case fix quietly reintroducing the old call is how two architectures
+#: end up alive and diverging. Names, not line counts: a returning import is
+#: unambiguous in a way a count is not.
+_FORBIDDEN_AFTER_PROMOTION = {
+    "api/quick_log.py": ("add_food_entry",),   # canonical since Phase 1 step 1
+}
+
+
+def test_c7_deleted_ownership_stays_deleted():
+    for rel, names in _FORBIDDEN_AFTER_PROMOTION.items():
+        src = (ROOT / rel).read_text()
+        tree = ast.parse(src)
+        used = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                used |= {a.name for a in node.names}
+            elif isinstance(node, ast.Call):
+                fn = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+                if fn:
+                    used.add(fn)
+        returned = used & set(names)
+        assert not returned, (
+            f"{rel} uses {sorted(returned)} again — that path was promoted to "
+            f"the canonical writer and its legacy write was DELETED. Fix the "
+            f"canonical lane instead of resurrecting the old one.")

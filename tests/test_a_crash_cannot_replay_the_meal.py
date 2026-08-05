@@ -28,6 +28,27 @@ from db.models import FoodEntry, IdempotencyRecord
 
 
 @pytest_asyncio.fixture
+async def engine(tmp_path):
+    """OVERRIDES conftest's shared :memory: engine, deliberately.
+
+    These tests kill a session mid-transaction and assert what survived. On
+    the shared StaticPool connection that question has no honest answer: the
+    driver commits the outermost savepoint on release, and the dying session's
+    transaction lingers for the next session to trip over. A file database
+    through make_engine gives real per-session connections, real WAL, and the
+    documented driver-level transaction recipe — the semantics production has.
+    """
+    from db.database import make_engine
+    from db.models import Base
+
+    eng = make_engine(f"sqlite+aiosqlite:///{tmp_path / 'crash.db'}")
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield eng
+    await eng.dispose()
+
+
+@pytest_asyncio.fixture
 async def patched_session_local(monkeypatch, engine):
     from api import quick_log
     factory = async_sessionmaker(engine, class_=AsyncSession,
@@ -57,21 +78,29 @@ async def test_the_claim_is_completed_by_the_write_itself(
 
 
 @pytest.mark.asyncio
-async def test_a_crash_after_the_write_leaves_no_replayable_claim(
+async def test_a_crash_mid_commit_leaves_nothing_and_the_retry_writes_once(
     patched_session_local, db, make_user, monkeypatch,
 ):
-    """THE regression. The old shape completed the claim after this point; a
-    crash here left the meal committed and the claim open."""
+    """PROMOTED SEMANTICS — the invariant got STRONGER, so the test did.
+
+    The legacy shape committed the food row first and completed the claim
+    beside it, so "crash after the write" left a committed meal to protect
+    from replay. On the canonical spine the claim, the rows, the immutable
+    result and the claim completion share ONE transaction: a crash anywhere
+    inside leaves NOTHING — no orphan food, no half-truth to reconcile — and
+    the retry is a clean first write.
+
+    The crash is injected at the last step (claim completion), the point
+    where the legacy shape had already committed food.
+    """
     from api import quick_log as QL
 
     await make_user(telegram_id="ios:crash-after")
 
-    # Kill the POST-COMMIT completion specifically. Patching
-    # `core.idempotency.complete_claim` would do nothing — quick_log binds the
-    # name at import — and a test that cannot fail is worse than no test, so
-    # the handler's own binding is what gets replaced.
+    real_complete = QL.complete_claim
+
     def _die(*a, **kw):
-        raise RuntimeError("process died after the food committed")
+        raise RuntimeError("process died mid-commit")
     monkeypatch.setattr(QL, "complete_claim", _die)
 
     try:
@@ -79,21 +108,43 @@ async def test_a_crash_after_the_write_leaves_no_replayable_claim(
                              client_request_id="CRASH-1")
     except RuntimeError:
         pass
+    # The test engine is one shared sqlite connection, so the crashed
+    # handler's un-rolled-back state can linger on the TEST session's open
+    # transaction. In production each request owns its connection and the
+    # rollback is real; here it has to be made explicit or the assertions
+    # below read fixture residue instead of committed state.
+    await db.rollback()
 
     rows = (await db.execute(
         select(FoodEntry).where(FoodEntry.parsed_food_name == "Stew")
     )).scalars().all()
+    assert rows == [], (
+        "a crash mid-commit left food behind — the single-transaction "
+        "guarantee is broken and the claim now has something to lie about"
+    )
     rec = (await db.execute(select(IdempotencyRecord))).scalars().one()
+    assert rec.status == "in_progress", (
+        "nothing committed, so the claim must still be open for the retry"
+    )
 
-    assert len(rows) == 1
-    assert rec.status == "completed", (
-        "the meal committed but the claim did not — after STALE_CLAIM_SECONDS "
-        "a retry takes this claim over and eats the stew twice"
-    )
-    assert rec.result_entry_id == rows[0].id, (
-        "a completed claim must point AT the committed row, or a replay cannot "
-        "return the original result"
-    )
+    # The retry: first blocked while the claim looks live, then — once the
+    # stale window opens — a clean takeover that writes EXACTLY once.
+    monkeypatch.setattr(QL, "complete_claim", real_complete)
+    monkeypatch.setattr(idempotency, "STALE_CLAIM_SECONDS", 0)
+    retry = await log_food_entry(BODY, identity="ios:crash-after",
+                                 client_request_id="CRASH-1")
+
+    # End the fixture session's WAL read snapshot — it predates the retry's
+    # commit, and a repeatable read cannot see rows committed after it began.
+    await db.rollback()
+    rows = (await db.execute(
+        select(FoodEntry).where(FoodEntry.parsed_food_name == "Stew")
+    )).scalars().all()
+    rec = (await db.execute(select(IdempotencyRecord))).scalars().one()
+    assert len(rows) == 1, "the retry wrote twice, or not at all"
+    assert retry["entry_id"] == rows[0].id
+    assert rec.status == "completed"
+    assert rec.result_entry_id == rows[0].id
 
 
 @pytest.mark.asyncio
@@ -128,34 +179,41 @@ async def test_a_stale_takeover_cannot_reach_a_completed_claim(
 async def test_a_stale_claim_reconciles_against_the_ledger_instead_of_rerunning(
     patched_session_local, db, make_user, monkeypatch,
 ):
-    """The directive's case 1, on a claim shaped the OLD way.
+    """THE DEPLOY-BOUNDARY CASE, manufactured explicitly.
 
-    Simulates production as it stands: a claim left `in_progress` by the
-    post-commit path, with its write already committed. The stale window is
-    forced open so takeover is the only thing a timer could conclude — and the
-    ledger must overrule it.
+    The legacy writer could crash between committing the food and completing
+    the claim, leaving `in_progress` + a committed row. The canonical spine
+    cannot PRODUCE that state any more — one transaction — but the database
+    still HOLDS such claims from before the promotion deploys, and the first
+    retry that arrives afterwards must reconcile against the ledger rather
+    than trust a timer and write the meal again.
     """
-    from api import quick_log as QL
+    from db.models import DailyLog, LedgerEvent
 
-    await make_user(telegram_id="ios:reconcile")
-    real_complete = QL.complete_claim
-    monkeypatch.setattr(QL, "complete_claim",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("died")))
-    try:
-        await log_food_entry(BODY, identity="ios:reconcile",
-                             client_request_id="RECON-1")
-    except RuntimeError:
-        pass
+    user = await make_user(telegram_id="ios:reconcile")
+    turn_id = "ios:RECON-1"
 
-    # Force the claim back to the pre-fix shape and make it maximally stale.
-    rec = (await db.execute(select(IdempotencyRecord))).scalars().one()
-    rec.status, rec.result_entry_id, rec.completed_at = "in_progress", None, None
+    # The pre-promotion partial state, byte for byte: an in_progress claim, a
+    # committed food row, and the `created` event that proves the write —
+    # stamped with the claim's turn id, which is the join reconciliation uses.
+    claim = await idempotency.claim_request(
+        db, channel="ios", command="log_food", user_id=user.id,
+        client_key="RECON-1", payload=BODY, turn_id=turn_id)
+    assert not claim.replay
+
+    log = DailyLog(user_id=user.id, date=__import__("datetime").date.today())
+    db.add(log)
+    await db.flush()
+    row = FoodEntry(daily_log_id=log.id, parsed_food_name="Stew",
+                    calories=400, protein=30, carbs=30, fats=15)
+    db.add(row)
+    await db.flush()
+    db.add(LedgerEvent(user_id=user.id, domain="food", event_type="created",
+                       entry_id=row.id, daily_log_id=log.id,
+                       source="quick_log:ios", turn_id=turn_id))
     await db.commit()
-    monkeypatch.setattr(idempotency, "STALE_CLAIM_SECONDS", 0)
-    # Restore ONLY this symbol. `monkeypatch.undo()` would also revert the
-    # session fixture and point the retry at a database that does not exist.
-    monkeypatch.setattr(QL, "complete_claim", real_complete)
 
+    monkeypatch.setattr(idempotency, "STALE_CLAIM_SECONDS", 0)
     retry = await log_food_entry(BODY, identity="ios:reconcile",
                                  client_request_id="RECON-1")
 
@@ -163,8 +221,8 @@ async def test_a_stale_claim_reconciles_against_the_ledger_instead_of_rerunning(
         select(FoodEntry).where(FoodEntry.parsed_food_name == "Stew")
     )).scalars().all()
     assert len(rows) == 1, (
-        "a stale in_progress claim whose work HAD committed was taken over and "
-        "re-executed — the timer answered a question it cannot answer"
+        "a stale in_progress claim whose work HAD committed was taken over "
+        "and re-executed — the timer answered a question it cannot answer"
     )
     assert retry.get("idempotent_replay") is True
     assert retry["entry_id"] == rows[0].id

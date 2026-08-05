@@ -172,7 +172,12 @@ def test_both_tap_log_surfaces_record_their_writes():
     # route with no declared policy — a real census, against every route,
     # rather than a substring tally in two modules. This survives as the cheap
     # local tripwire it was always described as.
-    for module, expected in ((QL, 3), (APP, 2)):
+    # quick_log's FOOD surface was promoted onto the canonical spine, which
+    # carries provenance inside write_canonical_meal (ledger_source =
+    # meal.intent.ledger_source, same transaction as the rows — proven by
+    # test_history_is_written_with_the_rows). So its tally dropped from 3 to
+    # 2 (exercise + weight), and the canonical marker is asserted instead.
+    for module, expected in ((QL, 2), (APP, 2)):
         source = inspect.getsource(module)
         assert source.count("record_created_from_row(db, user.id, entry") == 0, \
             f"{module.__name__}: a tap-log records history at the call site " \
@@ -180,3 +185,6 @@ def test_both_tap_log_surfaces_record_their_writes():
         assert source.count("ledger_source=") >= expected, \
             f"{module.__name__}: every tap-log surface must pass provenance " \
             f"through the add_* helper, not record a second event"
+    assert "write_canonical_meal" in inspect.getsource(QL), \
+        "quick_log food left the canonical spine — its provenance guarantee " \
+        "travelled with it, so this tripwire no longer covers the food surface"

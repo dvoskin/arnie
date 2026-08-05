@@ -207,10 +207,76 @@ def pin_session_utc(engine):
     return engine
 
 
+def fix_sqlite_savepoints(engine):
+    """Make SAVEPOINT mean savepoint on sqlite. Returns `engine`.
+
+    pysqlite (and aiosqlite wrapping it) never emits BEGIN before SAVEPOINT —
+    it only autobegins before DML — so releasing the OUTERMOST savepoint
+    commits it as its own transaction. Found the hard way: `claim_commit`'s
+    `begin_nested()` at the start of a fresh transaction left a DURABLE
+    MealCommit row while the food that followed rolled back — food without an
+    authoritative claim-to-rows pairing, the exact state the coordinator
+    exists to make impossible, manufactured by the test driver itself.
+
+    This is the workaround the SQLAlchemy docs prescribe: take over
+    transaction control from the driver (isolation_level=None) and emit BEGIN
+    ourselves. Postgres needs none of this; the guard is dialect-keyed like
+    the UTC pin above.
+    """
+    sync_engine = getattr(engine, "sync_engine", engine)
+    if sync_engine.dialect.name != "sqlite":
+        return engine
+    if getattr(sync_engine, "_arnie_savepoints_fixed", False):
+        return engine
+
+    @_event.listens_for(sync_engine, "connect")
+    def _driver_level_autocommit(dbapi_conn, _record):
+        # ON THE ADAPTER, exactly as the SQLAlchemy docs prescribe — it
+        # marshals the assignment to the driver's worker thread. Reaching
+        # through to the inner aiosqlite connection touches sqlite3 from the
+        # wrong thread and raises ProgrammingError on first use. Measured, not
+        # assumed: bare engine leaks savepoint contents through a crash; this
+        # recipe leaves nothing; the reach-in variant cannot connect at all.
+        dbapi_conn.isolation_level = None
+        # WAL + busy_timeout travel WITH the engine, not just the app's
+        # module-level one. Without WAL a file database runs DELETE-journal,
+        # where any open READ transaction blocks every writer — so a test
+        # fixture holding a read snapshot deadlocks the very session under
+        # test, and "database is locked" reads as a concurrency bug in the
+        # code being tested rather than a missing pragma in the harness.
+        cur = dbapi_conn.cursor()
+        try:
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=30000")
+            cur.execute("PRAGMA synchronous=NORMAL")
+        finally:
+            cur.close()
+
+    @_event.listens_for(sync_engine, "begin")
+    def _emit_begin(conn):
+        # No try/except. With driver-level transaction handling off there is
+        # no implicit BEGIN to collide with, and a collision that somehow
+        # happens anyway is a state bug that must surface, not be papered
+        # over with a blind ROLLBACK that swallows the original error.
+        #
+        # DEFERRED, deliberately, after measuring IMMEDIATE. Taking the write
+        # lock at BEGIN reads as the safer choice and self-deadlocks twice
+        # over: a handler that nests a second session waits 30s on its own
+        # outer transaction, and a fixture session holding a "read" then
+        # blocks the very writer under test. Engines built here do not run
+        # concurrent sqlite writers — concurrency truth lives in the Postgres
+        # suites — so deferred plus WAL is exactly enough.
+        conn.exec_driver_sql("BEGIN")
+
+    sync_engine._arnie_savepoints_fixed = True
+    return engine
+
+
 def make_engine(url: str, **kwargs):
     """The one way to build an engine. Production, tests and scripts all use
-    this, so the UTC guarantee cannot be missed by construction."""
-    return pin_session_utc(create_async_engine(url, **kwargs))
+    this, so the UTC guarantee — and honest savepoints on sqlite — cannot be
+    missed by construction."""
+    return fix_sqlite_savepoints(pin_session_utc(create_async_engine(url, **kwargs)))
 
 
 @_event.listens_for(_Engine, "engine_connect")

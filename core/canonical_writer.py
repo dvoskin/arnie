@@ -120,6 +120,38 @@ class ResolvedFood:
         return self.event.surface_text or self.event.entity_id or "unnamed"
 
 
+def operation_id_for(lane: str, user_id: int, turn_id: str) -> str:
+    """A GLOBALLY unique operation id.
+
+    `meal_commits` is unique on (operation_id, operation_revision) and
+    deliberately does NOT include user_id — operation identity is meant to be
+    global, and widening the constraint would weaken exactly the guarantee it
+    exists to give. So the id itself has to carry the scope.
+
+    It cannot simply be the turn id. `make_turn_id` returns `f"{channel}:{cid}"`
+    verbatim when the client supplies an Idempotency-Key, with NO user in it —
+    so two users sending the same key would share an operation, and the second
+    would be handed the first's committed result. The idempotency layer is not
+    exposed to this (`build_key` includes the user id); the turn id is.
+    """
+    return f"{lane}:{int(user_id)}:{turn_id}"
+
+
+class DirectOperation:
+    """The operation for a mutation that HAS no pending operation.
+
+    A tap or an edit is one user action, one mutation, one revision — the meal
+    itself is the operation. Chat turns that pass through clarification get a
+    real persisted PendingOperation instead; this is for the surfaces that
+    commit in the same request they arrive in.
+    """
+
+    def __init__(self, meal):
+        self.id = meal.operation_id
+        self.revision = meal.revision
+        self.user_id = meal.user_id
+
+
 class MealIntent(str, Enum):
     """WHICH LANE owns this mutation, which is not the same question as which
     modality the user typed it in.

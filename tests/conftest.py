@@ -74,6 +74,17 @@ from db import models  # noqa: E402,F401  (registers tables)
 
 @pytest_asyncio.fixture
 async def engine():
+    # The shared :memory: engine, deliberately BARE. Its StaticPool gives every
+    # session one connection — fine for the logical assertions 7,500 tests
+    # make, and wrong for exactly one family: crash/transaction-boundary tests,
+    # where the pysqlite driver commits the outermost savepoint on release and
+    # a dying session's transaction lingers on the shared connection. Those
+    # tests override this fixture with a real file database via make_engine
+    # (see test_a_crash_cannot_replay_the_meal.py); moving EVERY test onto real
+    # per-session connections was tried and rejected — sqlite is a single-
+    # writer database, so genuinely concurrent fixtures either deadlock on
+    # deferred upgrades or self-deadlock under BEGIN IMMEDIATE when a handler
+    # nests a second session. Concurrency truth lives in the Postgres suites.
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

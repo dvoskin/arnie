@@ -88,9 +88,15 @@ MARKERS = {
     # event per operation it runs. Routes that hand off to the executor own
     # the turn's identity, not the write, so this is where their history comes
     # from and reading only the handler reported them as leaving none.
+    # `write_canonical_meal` writes the `created` event INSIDE the same
+    # transaction as the rows it describes (core/canonical_writer.py, proven
+    # by test_history_is_written_with_the_rows) — a promoted route carries
+    # provenance by construction, so the spine's entry points are markers.
     "ledger_event": ("ledger_source", "record_ledger_event",
                      "record_created_from_row", "record_surface_mutation",
-                     "turn.audit", "execute_tool_calls") + _CHAT_LANE,
+                     "turn.audit", "execute_tool_calls",
+                     "write_canonical_meal", "commit_or_load_existing")
+                    + _CHAT_LANE,
     "request_trace": ("RequestTrace", "trace.stage", "mutation_turn")
                      + _CHAT_LANE,
     # `turn.complete` counts, but it is the WEAKER form — a second commit, with
@@ -110,7 +116,8 @@ MARKERS = {
     # required guarantee, and counting it twice would let a route satisfy two
     # requirements with one mechanism and look complete on neither.
     "audit_trail": ("record_ledger_event", "record_surface_mutation",
-                    "log_conversation", "ledger_source", "turn.audit"),
+                    "log_conversation", "ledger_source", "turn.audit",
+                    "write_canonical_meal"),
     # Includes the webhook shapes: signature verification IS authorization,
     # and B7 made these fail closed. Reading only for a `Depends(...)`
     # identity would have called every signed webhook unauthorized.

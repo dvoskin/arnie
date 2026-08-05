@@ -183,49 +183,83 @@ async def test_the_same_tap_delivered_twice_commits_one_exercise_row(
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not __import__("os").getenv("TEST_POSTGRES_URL"),
+                    reason="two deliveries racing needs two real connections; "
+                           "the sqlite fixture shares ONE, so either's "
+                           "rollback destroys the other's in-flight work — a "
+                           "fixture artifact, not a production semantic")
 async def test_two_concurrent_deliveries_of_one_tap_commit_one_row(
-    patched_session_local, db, make_user,
+    make_user, monkeypatch,
 ):
-    """The double-tap race. Two deliveries of one logical request, no ordering.
+    """The double-tap race, on the database that runs in production.
 
     The invariant is ONE ROW. The loser may either receive the winner's result
     (the winner finished first) or a retryable 409 (the winner is still
     writing) — both are correct, and which one happens depends on scheduling.
     What is never correct is two rows.
 
-    Note this exercises async interleaving on ONE connection: the test engine
-    is `sqlite+aiosqlite:///:memory:`, which SQLAlchemy backs with a StaticPool,
-    so two sessions share a connection and cannot truly race at the storage
-    layer. The cross-process guarantee is the unique index, pinned separately
-    in `test_the_database_rejects_a_duplicate_claim`.
+    PG-gated since the promotion: the canonical spine holds its transaction
+    open across the whole mutation, which on the shared-connection sqlite
+    fixture lets delivery B's rollback destroy delivery A's staged work. Real
+    connections do not share transactions; the same race at the coordinator
+    level is proven in test_two_connections_one_commit.py.
     """
+    import asyncio
+    import os
+
     from fastapi import HTTPException
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    await make_user(telegram_id="ios:tap-race")
-    body = FoodLogBody(food_name="Protein shake", quantity="1 scoop",
-                       calories=130, protein=25, carbs=3, fats=2)
+    from api import quick_log as QL
+    from db.database import make_engine
+    from db.models import Base, User
 
-    results = await asyncio.gather(
-        log_food_entry(body, identity="ios:tap-race", client_request_id="RACE-1"),
-        log_food_entry(body, identity="ios:tap-race", client_request_id="RACE-1"),
-        return_exceptions=True,
-    )
+    engine = make_engine(os.environ["TEST_POSTGRES_URL"],
+                         pool_size=5, max_overflow=5)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, class_=AsyncSession,
+                                     expire_on_commit=False)
+        monkeypatch.setattr(QL, "AsyncSessionLocal", factory)
+        async with factory() as s:
+            s.add(User(telegram_id="ios:tap-race"))
+            await s.commit()
 
-    rows = (await db.execute(
-        select(FoodEntry).where(FoodEntry.parsed_food_name == "Protein shake")
-    )).scalars().all()
-    assert len(rows) == 1, (
-        f"the double-tap race committed {len(rows)} rows — dedup does not hold "
-        f"under interleaving (results: {results})"
-    )
+        body = FoodLogBody(food_name="Protein shake", quantity="1 scoop",
+                           calories=130, protein=25, carbs=3, fats=2)
+        results = await asyncio.gather(
+            log_food_entry(body, identity="ios:tap-race",
+                           client_request_id="RACE-1"),
+            log_food_entry(body, identity="ios:tap-race",
+                           client_request_id="RACE-1"),
+            return_exceptions=True,
+        )
 
-    for r in results:
-        assert isinstance(r, (dict, HTTPException)), (
-            f"a delivery failed in an unhandled way: {r!r}")
-        if isinstance(r, HTTPException):
-            assert r.status_code == 409
+        async with factory() as s:
+            rows = (await s.execute(
+                select(FoodEntry)
+                .where(FoodEntry.parsed_food_name == "Protein shake")
+            )).scalars().all()
+        assert len(rows) == 1, f"the double tap wrote {len(rows)} rows"
 
-
+        entry_ids, retryable = set(), 0
+        for r in results:
+            if isinstance(r, HTTPException):
+                assert r.status_code == 409, r
+                assert r.detail.get("retryable") is True, (
+                    "the loser must be told to retry, not to report a bug")
+                retryable += 1
+            elif isinstance(r, Exception):
+                raise AssertionError(f"a delivery failed outright: {r!r}")
+            else:
+                entry_ids.add(r["entry_id"])
+        assert entry_ids <= {rows[0].id}, (
+            f"a delivery answered with a row that does not exist: {entry_ids}")
+        assert (len(entry_ids) == 1 and retryable <= 1), results
+    finally:
+        await engine.dispose()
 @pytest.mark.asyncio
 async def test_the_database_rejects_a_duplicate_claim(db, make_user):
     """The structural guarantee, independent of any application check.

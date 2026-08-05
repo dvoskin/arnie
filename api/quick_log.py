@@ -38,6 +38,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from api.auth import current_identity
+from core.commit_coordinator import CommitInProgress
 from core.idempotency import (
     IdempotencyConflict,
     IdempotencyInProgress,
@@ -50,8 +51,7 @@ from db.database import AsyncSessionLocal
 from db.queries import (
     add_body_metric,
     add_exercise_entry,
-    add_food_entry,
-    get_or_create_today_log,
+    get_or_create_today_log,   # exercise + weight; food is canonical now
     resolve_user,
 )
 
@@ -160,132 +160,127 @@ async def log_food_entry(
                         "turn_id": claim.turn_id, **claim.stored_result}
             trace.note(idempotency="claimed" if claim.key else "unkeyed")
 
-            return await _write_food(db, user, payload, turn_id, claim, trace)
+            try:
+                return await _write_food(db, user, payload, turn_id, claim,
+                                         trace)
+            except CommitInProgress:
+                # The COORDINATOR's version of "the original is still
+                # running": a durable commit claim with no recorded result.
+                # In the promoted flow the claim, rows, result and completion
+                # share one transaction, so this is reachable only while
+                # another delivery is mid-write — the same situation the
+                # idempotency layer answers with a retryable 409, and the two
+                # layers must speak with one voice.
+                trace.note(commit="in_progress")
+                trace.done(outcome="conflict")
+                raise HTTPException(
+                    status_code=409,
+                    detail={"error": "request_in_progress",
+                            "command": "log_food", "retryable": True,
+                            "message": "The original delivery of this request "
+                                       "is still being committed."})
 
 
 async def _write_food(db, user, payload, turn_id, claim, trace) -> dict:
-    """The committed half — split out so the handler above reads as one shape:
-    identity, claim, write. Takes the trace rather than opening its own, so a
-    request stays ONE line however many functions it passes through."""
+    """The committed half, on the canonical spine.
+
+    PROMOTED (Phase 1, step 1): this is the first production mutation owner on
+
+        ResolvedMeal -> commit_or_load_existing -> write_canonical_meal
+                     -> MealCommitResult
+
+    The legacy `add_food_entry` call this replaces committed per row and
+    completed the claim via a side channel. Here the food rows, their ledger
+    event, the immutable result and the claim completion land in ONE
+    transaction, and a duplicate delivery — client retry or crash replay —
+    receives the original result from `meal_commits` rather than re-running.
+
+    A tap was the right first owner because it is already canonical-shaped:
+    one item, priced by the client, no clarification, and the day resolved
+    here from the user's timezone.
+    """
+    from core.canonical_writer import DirectOperation, write_canonical_meal
+    from core.commit_coordinator import commit_or_load_existing
+    from db.queries import _invalidate_briefing_for_log
+
     with trace.stage("write"), _turn_scope(turn_id):
-        log = await get_or_create_today_log(db, user.id, user.timezone or "UTC")
-        # A TAP IS A TURN (audit O-1). Without the `created` event
-        # `ledger_undo` takes the last one unconditionally, so "undo that"
-        # after a tap-log removed the previous CHAT-logged item — a row the
-        # user never mentioned.
-        #
-        # `ledger_source` makes `add_food_entry` write that event inside the
-        # row's OWN transaction, rather than this endpoint committing it
-        # separately afterwards: two commits meant a crash between them left a
-        # food row with no history at all. Written inside the turn scope
-        # either way, so the event carries the turn id.
-        entry = await add_food_entry(
-            db,
-            daily_log_id=log.id,
-            user_id=user.id,
-            ledger_source="quick_log:ios",
-            # The claim completes INSIDE this transaction. Completing it
-            # afterwards left a window where the meal was committed and the
-            # claim was not, and a retry took the stale claim over and wrote
-            # the meal again — the one failure the claim exists to prevent.
-            claim_id=claim.record_id,
-            raw_input=payload.food_name,
-            parsed_food_name=payload.food_name,
-            quantity=payload.quantity,
-            calories=payload.calories,
-            protein=payload.protein,
-            carbs=payload.carbs,
-            fats=payload.fats,
-            meal_type=payload.meal_type,
-            source_type="ios",
-        )
+        meal = _resolved_meal(user, payload, turn_id)
+        result = await commit_or_load_existing(
+            db, operation=DirectOperation(meal), resolved_meal=meal,
+            writer=write_canonical_meal)
+        item = result.committed_items[0]
+        # The claim completes INSIDE this transaction, same as before the
+        # promotion — completing it afterwards left a window where the meal
+        # was committed and the claim was not, and a retry took the stale
+        # claim over and wrote the meal again.
+        await complete_claim(db, claim, entry_id=item["entry_id"],
+                             daily_log_id=item["daily_log_id"], commit=False)
+        await db.commit()
 
-    trace.note(entry=entry.id, claim="completed_in_txn")
+    # POST-COMMIT WORK, AS DATA. The writer returns what must happen after the
+    # commit rather than doing it — dropping the briefing cache while the rows
+    # were still invisible would let a concurrent Coach open repopulate it
+    # from pre-write state.
+    for action in result.render_actions:
+        if action.get("action") == "invalidate_briefing":
+            _invalidate_briefing_for_log(int(action["user_id"]), by_user=True)
 
-    # SHADOW (flag-gated, off by default). Runs the canonical spine for real in
-    # a savepoint that is always rolled back, and compares. Placed AFTER the
-    # legacy write has committed so it cannot affect this request under any
-    # failure, and before the response so its finding rides the same trace.
-    await _shadow_canonical(db, user, payload, entry, log, turn_id)
-
+    trace.note(entry=item["entry_id"], claim="completed_in_txn")
     trace.done()
     await trace.persist(db)
     return {
         "ok": True,
-        "entry_id": entry.id,
-        "daily_log_id": log.id,
+        "entry_id": item["entry_id"],
+        "daily_log_id": item["daily_log_id"],
         "turn_id": turn_id,
     }
 
 
-async def _shadow_canonical(db, user, payload, entry, log, turn_id) -> None:
-    """Build this tap as a ResolvedMeal and compare against what just landed.
+def _resolved_meal(user, payload, turn_id):
+    """One tap as a validated canonical meal.
 
-    A TAP IS ALREADY CANONICAL-SHAPED: one item, priced by the client, no
-    clarification and no held state, and the day was resolved here from the
-    user's timezone. That is why it is the first migration — everything the
-    canonical contract demands is already in hand, so a divergence means a real
-    disagreement rather than a missing input.
+    A TAP IS THE USER'S OWN STATEMENT: they chose the food and the numbers on
+    their screen, so it is resolved by construction rather than by a matcher's
+    opinion, and priced by the client rather than by the resolver.
     """
-    from core.canonical_shadow import (compare_with_legacy,
-                                       operation_id_for, shadow_enabled)
+    from core.canonical_writer import (MealIntent, ResolvedFood, ResolvedMeal,
+                                       operation_id_for)
+    from core.semantics import (CanonicalEvent, Confidence, Provenance,
+                                ResolutionStatus)
+    from core.timezones import safe_timezone
+    from db.queries import _user_today
 
-    if not shadow_enabled():
-        return
-    try:
-        from core.canonical_writer import (MealIntent, ResolvedFood,
-                                           ResolvedMeal)
-        from core.semantics import (CanonicalEvent, Confidence, Provenance,
-                                    ResolutionStatus)
-        from core.timezones import safe_timezone
+    # THE ZONE THAT ACTUALLY PRODUCES THE DAY, not the raw column.
+    # `safe_timezone` degrades junk to UTC — right for a read path, and
+    # recorded here as a WARNING rather than a silence, because a meal filed
+    # on UTC days for a user who is not on UTC is wrong in the one direction
+    # nobody checks. `_user_today` applies the same degradation plus the
+    # 4am rollover, so the day is exactly the one the legacy path chose.
+    zone = str(getattr(safe_timezone(user.timezone), "zone", "UTC"))
+    warnings = ()
+    if (user.timezone or "") and zone != user.timezone:
+        warnings = (f"stored timezone {user.timezone!r} is not a valid IANA "
+                    f"zone; the logging day was computed in {zone}",)
 
-        # THE ZONE THAT ACTUALLY PRODUCED THE DAY, not the one on the row.
-        # `safe_timezone` degrades junk to UTC, so recording the raw column
-        # would claim the day was computed somewhere it was not. Where it
-        # degraded, that becomes a WARNING rather than a silence.
-        zone = str(getattr(safe_timezone(user.timezone), "zone", "UTC"))
-        warnings = ()
-        if (user.timezone or "") and zone != user.timezone:
-            warnings = (f"stored timezone {user.timezone!r} is not a valid "
-                        f"IANA zone; the logging day was computed in {zone}",)
-
-        meal = ResolvedMeal(
-            operation_id=operation_id_for('quick_log', user.id, turn_id),
-            revision=0, user_id=user.id,
-            logging_day=log.date, user_timezone=zone,
-            intent=MealIntent.CREATE, source_turn_id=turn_id,
-            meal_type=payload.meal_type, warnings=warnings,
-            items=(ResolvedFood(
-                event=CanonicalEvent(
-                    id=f"{turn_id}:0", domain="food",
-                    entity_id="", surface_text=payload.food_name,
-                    # A TAP IS THE USER'S OWN STATEMENT. They chose the food
-                    # and the numbers on their screen; nothing was inferred,
-                    # so this is resolved by construction rather than by a
-                    # matcher's opinion.
-                    resolution_status=ResolutionStatus.RESOLVED,
-                    provenance=Provenance.USER_SELECTED,
-                    confidence=Confidence(value=1.0, basis="user_selected")),
-                calories=payload.calories, protein=payload.protein,
-                carbs=payload.carbs, fats=payload.fats,
-                quantity_text=payload.quantity or "",
-                meal_type=payload.meal_type, source_type="ios",
-                raw_input=payload.food_name),))
-
-        await compare_with_legacy(
-            db, meal=meal, lane="quick_log",
-            legacy={"item_count": 1, "names": (entry.parsed_food_name,),
-                    "totals": {"calories": entry.calories,
-                               "protein": entry.protein,
-                               "carbs": entry.carbs, "fats": entry.fats},
-                    "day_totals": {"calories": log.total_calories,
-                                   "protein": log.total_protein,
-                                   "carbs": log.total_carbs,
-                                   "fats": log.total_fats}})
-    except Exception as exc:      # a diagnostic may never break the write
-        logger.warning("event=canonical_shadow lane=quick_log outcome=error "
-                       "stage=build error=%s: %s",
-                       type(exc).__name__, str(exc)[:200])
+    return ResolvedMeal(
+        operation_id=operation_id_for("quick_log", user.id, turn_id),
+        revision=0, user_id=user.id,
+        logging_day=_user_today(user.timezone or "UTC"),
+        user_timezone=zone,
+        intent=MealIntent.CREATE, source_turn_id=turn_id,
+        meal_type=payload.meal_type, warnings=warnings,
+        items=(ResolvedFood(
+            event=CanonicalEvent(
+                id=f"{turn_id}:0", domain="food",
+                entity_id="", surface_text=payload.food_name,
+                resolution_status=ResolutionStatus.RESOLVED,
+                provenance=Provenance.USER_SELECTED,
+                confidence=Confidence(score=1.0, basis="user_selected")),
+            calories=payload.calories, protein=payload.protein,
+            carbs=payload.carbs, fats=payload.fats,
+            quantity_text=payload.quantity or "",
+            meal_type=payload.meal_type, source_type="ios",
+            raw_input=payload.food_name),))
 
 
 # ── Exercise ────────────────────────────────────────────────────────────────

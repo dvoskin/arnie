@@ -156,43 +156,12 @@ async def test_the_shadow_is_off_by_default(pg, monkeypatch):
     assert await _rows(pg, FoodEntry) == 1
 
 
-@pytest.mark.asyncio
-async def test_a_failure_while_BUILDING_the_shadow_is_contained(pg,
-                                                                monkeypatch):
-    """THE GAP THAT ALMOST SHIPPED.
-
-    The earlier tests covered a failure INSIDE `compare_with_legacy`. They did
-    not cover one while building the ResolvedMeal — and `api/quick_log.py` had
-    no module logger, so its `except` block would have raised NameError from
-    inside the handler and taken the user's tap down with it. A shadow that can
-    break the request it shadows is worse than no shadow.
-    """
-    import api.quick_log as quick_log
-
-    assert hasattr(quick_log, "logger"), \
-        "the handler's except block logs; without a logger it raises instead"
-
-    class _User:
-        id, timezone = 1, "America/New_York"
-
-    class _Payload:                    # missing every field the meal needs
-        food_name = None
-        calories = None
-
-    class _Entry:
-        id, parsed_food_name, calories = 1, "x", 1.0
-        protein = carbs = fats = None
-
-    class _Log:
-        id, date, total_calories = 1, DAY, 1.0
-
-    async with pg() as s:
-        # Must return, not raise, whatever the payload looks like.
-        await quick_log._shadow_canonical(s, _User(), _Payload(), _Entry(),
-                                          _Log(), "tap_broken")
-        s.add(FoodEntry(daily_log_id=1, parsed_food_name="after", calories=1))
-        await s.commit()
-    assert await _rows(pg, FoodEntry) == 2, "the request did not survive"
+# test_a_failure_while_BUILDING_the_shadow_is_contained was DELETED at the
+# quick_log promotion: it exercised `_shadow_canonical`, the builder the
+# promotion replaced with the real canonical write. A test must protect a
+# product invariant, not a deleted function. The containment it guarded lives
+# on in the handler's CommitInProgress -> 409 path and compare_with_legacy's
+# never-raises contract, both still tested.
 
 
 @pytest.mark.asyncio
