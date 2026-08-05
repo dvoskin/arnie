@@ -56,6 +56,18 @@ app = FastAPI(title="Arnie API", docs_url=None, redoc_url=None)
 
 
 @app.on_event("startup")
+async def _install_trace_buffer():
+    """Capture structured-food trace lines so `/admin/food-traces` can serve
+    them. Idempotent, and a failure here costs diagnostics rather than the
+    process — the app must start whether or not it can be observed."""
+    try:
+        from core import trace_buffer
+        trace_buffer.install()
+    except Exception as e:      # pragma: no cover
+        logger.warning(f"trace buffer not installed (not fatal): {e}")
+
+
+@app.on_event("startup")
 async def _kick_proactive_scheduler():
     """Belt-and-suspenders: start the proactive scheduler from the API process
     too, not only from the Telegram bot's _post_init. If a Telegram deploy ever
@@ -2764,6 +2776,38 @@ async def admin_broadcast_send(confirm: str = Query(""),
         except Exception:
             pass
     return JSONResponse({"dry_run": False, "sent": sent, "failed": failed, "failures": failures})
+
+
+@app.get("/admin/food-traces")
+async def admin_food_traces(since: str = Query("1h"),
+                            event: str = Query(""),
+                            limit: int = Query(200, ge=1, le=2000),
+                            _admin: _AdminAuth = Depends(require_admin)):
+    """The structured-food trace lines, readable without dashboard access.
+
+    Every shadow in the semantics migration emits telemetry — identity_shadow,
+    clarification_shadow, refinement_refused, none_reason on the fallback — and
+    none of it could be read by anyone without Render. A shadow whose output
+    nobody can see measures nothing.
+
+    `since` accepts 15m / 2h / 1d. The response carries its OWN LIMITS —
+    per-process, lost on restart, bounded ring with an eviction count — because
+    a partial view mistaken for a complete one is precisely how an audit
+    reports that work is done when it is not.
+    """
+    from core import trace_buffer
+
+    units = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    raw = (since or "").strip().lower()
+    seconds = None
+    if raw:
+        try:
+            seconds = float(raw[:-1]) * units[raw[-1]] if raw[-1] in units \
+                else float(raw)
+        except (ValueError, KeyError):
+            seconds = 3600.0
+    return trace_buffer.recent(since_seconds=seconds, event=event.strip(),
+                               limit=limit)
 
 
 @app.get("/admin/audit")
