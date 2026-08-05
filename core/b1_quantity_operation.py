@@ -598,6 +598,133 @@ async def _writer(db, *, operation, resolved_meal):
                                       resolved_meal=resolved_meal)
 
 
+async def sweep_abandoned(db, *, limit: int = 200) -> int:
+    """Expire questions nobody answered, and COUNT them.
+
+    Runs on a timer, not on a turn, because nobody is having a turn when a
+    user abandons one — which is exactly why abandonment is the signal most
+    likely to be missing from a dashboard that otherwise looks complete. A
+    clarification the user walked away from is the loudest possible statement
+    that the question was not worth asking, and without this it is invisible.
+
+    It also stops an unanswered row lingering as `awaiting_answer` forever,
+    where a message weeks later would be read as an answer to a meal the user
+    has long forgotten.
+    """
+    import json as _json
+
+    from sqlalchemy import select
+
+    from core import b1_metrics
+    from core import pending_repository as repo
+    from core.clock import now as _now
+    from db.models import PendingOperation
+
+    rows = (await db.execute(
+        select(PendingOperation)
+        .where(PendingOperation.domain == DOMAIN,
+               PendingOperation.status == AWAITING,
+               PendingOperation.expires_at.isnot(None),
+               PendingOperation.expires_at < _now())
+        .limit(limit))).scalars().all()
+
+    swept = 0
+    for row in rows:
+        try:
+            data = _json.loads(row.canonical_payload or "{}")
+        except Exception:
+            data = {}
+        if data.get("slice") != "b1_quantity":
+            continue
+        outcome = await repo.mark_expired(db, operation_id=row.operation_id,
+                                          expected_revision=int(row.revision or 0))
+        if not outcome.ok:
+            # Somebody answered between the query and the write. Their answer
+            # wins — this is a sweep, not a race to close.
+            continue
+        b1_metrics.abandoned(operation_id=row.operation_id,
+                             user_id=row.user_id,
+                             asked_at=row.created_at)
+        swept += 1
+    return swept
+
+
+async def note_corrections(db, *, limit: int = 200) -> int:
+    """Count B-1 rows corrected soon after they landed.
+
+    THE SHARPEST QUALITY SIGNAL IN THE SET: the user saw the number and it was
+    wrong enough to fix. A rising rate here invalidates a green corpus, which
+    is precisely why it cannot be inferred from anything inside the answer
+    turn — the evidence arrives minutes later, from a different turn.
+    """
+    from datetime import timedelta
+
+    from sqlalchemy import select
+
+    from core import b1_metrics
+    from core.clock import now as _now
+    from db.models import LedgerEvent, PendingOperation
+
+    # KEYED ON THE ENTRY, not the operation: `ledger_events` records which
+    # ROW changed and which turn changed it, and has no operation column. The
+    # entry id comes from the operation's own stored result, which is the only
+    # thing joining the two.
+    window = timedelta(minutes=b1_metrics.CORRECTION_WINDOW_MINUTES)
+    since = _now() - (window * 3)
+    rows = (await db.execute(
+        select(PendingOperation)
+        .where(PendingOperation.domain == DOMAIN,
+               PendingOperation.status == COMMITTED,
+               PendingOperation.updated_at.isnot(None),
+               PendingOperation.updated_at >= since)
+        .limit(limit))).scalars().all()
+    if not rows:
+        return 0
+
+    noted = 0
+    for row in rows:
+        entry_id = await _committed_entry_id(db, row.operation_id)
+        if entry_id is None:
+            continue
+        events = (await db.execute(
+            select(LedgerEvent)
+            .where(LedgerEvent.domain == DOMAIN,
+                   LedgerEvent.entry_id == entry_id)
+            .order_by(LedgerEvent.id))).scalars().all()
+        created = next((e for e in events if e.event_type == "created"), None)
+        if created is None or created.created_at is None:
+            continue
+        for event in events:
+            if event.id == created.id or event.created_at is None:
+                continue
+            gap = event.created_at - created.created_at
+            if gap <= window:
+                b1_metrics.corrected(
+                    operation_id=row.operation_id, user_id=row.user_id,
+                    entry_id=entry_id, minutes=gap.total_seconds() / 60.0)
+                noted += 1
+                break
+    return noted
+
+
+async def _committed_entry_id(db, operation_id: str):
+    from sqlalchemy import select
+
+    from core.meal_commit import _result_of
+    from db.models import MealCommit
+
+    row = (await db.execute(
+        select(MealCommit)
+        .where(MealCommit.operation_id == operation_id,
+               MealCommit.status == "committed")
+        .order_by(MealCommit.operation_revision.desc()).limit(1)
+    )).scalar_one_or_none()
+    result = None if row is None else _result_of(row)
+    items = list(getattr(result, "committed_items", ()) or ())
+    first = items[0] if items and isinstance(items[0], dict) else {}
+    return first.get("entry_id")
+
+
 async def fail(db, *, owned: OwnedOperation, user, reason: str) -> None:
     """Close an operation WE cannot serve.
 

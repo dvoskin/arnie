@@ -477,6 +477,99 @@ async def test_the_wire_offers_a_free_text_route(sessions, user, opened):
     assert field["response_type"] == "single_select"
 
 
+# ── the two signals no turn can emit ─────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_abandonment_is_swept_and_counted(sessions, user, opened,
+                                                caplog, monkeypatch):
+    """NOBODY IS HAVING A TURN WHEN A USER ABANDONS ONE. That is why this
+    runs on a timer, and why it is the signal most likely to be missing from a
+    dashboard that otherwise looks complete — a question walked away from is
+    the loudest statement that it was not worth asking."""
+    import logging
+    from datetime import timedelta
+
+    from core.clock import now as _now
+
+    async with sessions() as s:
+        row = (await s.execute(select(PendingOperation))).scalar_one()
+        row.expires_at = _now() - timedelta(minutes=1)
+        await s.commit()
+
+    with caplog.at_level(logging.INFO):
+        async with sessions() as s:
+            swept = await b1.sweep_abandoned(s)
+            await s.commit()
+
+    assert swept == 1
+    assert "event=b1_abandoned" in caplog.text
+    assert "open_ms=" in caplog.text
+    row = await _row(sessions)
+    assert row.status == "expired", \
+        "an unanswered row must not linger as awaiting_answer, or a message " \
+        "weeks later reads as an answer to a forgotten meal"
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_never_closes_an_operation_someone_just_answered(
+        sessions, user, opened):
+    """A sweep, not a race to close: if an answer landed between the query and
+    the write, the answer wins."""
+    from datetime import timedelta
+
+    from core.clock import now as _now
+
+    async with sessions() as s:
+        row = (await s.execute(select(PendingOperation))).scalar_one()
+        row.expires_at = _now() - timedelta(minutes=1)
+        await s.commit()
+
+    await _answer(sessions, user, field_id=_field_id(opened),
+                  option_id="opt_ont_mid", revision=0)
+    async with sessions() as s:
+        assert await b1.sweep_abandoned(s) == 0
+        await s.commit()
+    assert (await _row(sessions)).status == b1.COMMITTED
+    assert (await _counts(sessions))["food"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_correction_soon_after_the_commit_is_counted(
+        sessions, user, opened, caplog):
+    """The sharpest quality signal in the set: the user saw the number and it
+    was wrong enough to fix. A rising rate here invalidates a green corpus —
+    and the evidence arrives minutes later, from a different turn, so no
+    answer turn could ever emit it."""
+    import logging
+
+    out = await _answer(sessions, user, field_id=_field_id(opened),
+                        option_id="opt_ont_mid", revision=0)
+    entry_id = out.result.committed_items[0]["entry_id"]
+
+    async with sessions() as s:
+        created = (await s.execute(select(LedgerEvent))).scalar_one()
+        s.add(LedgerEvent(user_id=user.id, domain="food", entry_id=entry_id,
+                          event_type="updated", source="dashboard:food_log",
+                          created_at=created.created_at))
+        await s.commit()
+
+    with caplog.at_level(logging.INFO):
+        async with sessions() as s:
+            noted = await b1.note_corrections(s)
+    assert noted == 1
+    assert "event=b1_corrected" in caplog.text
+    assert f"entry={entry_id}" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_an_untouched_commit_is_not_counted_as_corrected(sessions, user,
+                                                               opened):
+    await _answer(sessions, user, field_id=_field_id(opened),
+                  option_id="opt_ont_mid", revision=0)
+    async with sessions() as s:
+        assert await b1.note_corrections(s) == 0
+
+
 # ── locale ───────────────────────────────────────────────────────────────────
 
 # ── the presentation boundary ────────────────────────────────────────────────

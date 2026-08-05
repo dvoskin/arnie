@@ -2612,6 +2612,38 @@ def start_scheduler():
         coalesce=True,
     )
 
+    # B-1 measurement that no TURN can produce. Abandonment happens when a
+    # user walks away — nobody is having a turn then — and a correction
+    # arrives minutes later from a different turn than the one that
+    # committed. Both are data integrity and product truth rather than
+    # outbound messaging, so like the job sweep they run regardless of
+    # PROACTIVE_MESSAGING_ENABLED. Offset to :20/:50 to stay off the other
+    # jobs' minutes.
+    async def _sweep_b1():
+        from core import b1_quantity_operation as _b1
+        from db.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as _s:
+            try:
+                swept = await _b1.sweep_abandoned(_s)
+                noted = await _b1.note_corrections(_s)
+                await _s.commit()
+                if swept or noted:
+                    logger.info("event=b1_sweep abandoned=%d corrected=%d",
+                                swept, noted)
+            except Exception:
+                await _s.rollback()
+                logger.warning("b1 sweep failed", exc_info=True)
+
+    _scheduler.add_job(
+        _sweep_b1,
+        CronTrigger(minute="20,50"),
+        id="b1_quantity_sweep",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
     # Conversation-hook re-asks always run — they're conversation continuity,
     # not proactive nudges, and don't require PROACTIVE_MESSAGING_ENABLED.
     # Offset to :15 and :45 so a hook re-ask and a slot nudge can't fire in the
