@@ -27,8 +27,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass
-from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -68,51 +68,162 @@ class CommitClaim:
     won: bool
     operation_id: str
     revision: int
-    result: Optional[dict] = None
+    #: A `MealCommitResult` when the winner recorded one — the SAME type the
+    #: winner holds, so both callers answer the same question with the same
+    #: object. None means the claim exists with no result yet, which is the
+    #: crash window and must stay distinguishable from an empty result.
+    result: Optional["MealCommitResult"] = None
 
     @property
     def is_duplicate(self) -> bool:
         return not self.won
 
 
-# ── serialization ────────────────────────────────────────────────────────────
+# ── the result ───────────────────────────────────────────────────────────────
 
-def _plain(value: Any, path: str = "result") -> Any:
-    """A JSON-safe copy, or an exception naming what could not be stored.
+@dataclass(frozen=True)
+class MealCommitResult:
+    """What one meal mutation produced, in a shape that survives storage.
 
-    NO `default=str`. That silently turns a Decimal, a datetime or a domain
-    object into a string, so a duplicate receives something structurally
-    different from what the original caller got — and nothing fails at the
-    moment it happens. For an authoritative replay result, a lossy conversion
-    is worse than a refusal.
+    THE WINNER AND THE DUPLICATE RECEIVE THE SAME TYPE. The previous version
+    stored whatever the caller passed and handed a duplicate the decoded JSON —
+    so a `Decimal` became a string and a tuple became a list, and the two
+    callers got structurally different answers to the same question. Text
+    preserves a VALUE; it does not preserve a TYPE.
 
-    Decimal and datetime ARE converted, because both have a lossless canonical
-    text form and both appear in real totals. Everything else must be made
-    plain by the caller, which is where the meaning lives.
+    Fixing that by tagging types would make the payload harder to read for
+    every consumer in order to serve one. The simpler answer is that this IS
+    the representation: both callers get a `MealCommitResult`, built from the
+    same JSON, so there is nothing to reconcile.
+
+    Numeric fields are floats because they cross a JSON boundary. Where a
+    caller holds a `Decimal`, `to_payload` converts it HERE, deliberately and
+    in one place, rather than a generic walker doing it silently everywhere.
     """
-    if value is None or isinstance(value, (bool, int, float, str)):
+    committed_items: tuple = ()
+    updated_items: tuple = ()
+    removed_items: tuple = ()
+    meal_totals: dict = None
+    day_totals: dict = None
+    assumptions: tuple = ()
+    warnings: tuple = ()
+    render_actions: tuple = ()
+
+    def __post_init__(self):
+        # NORMALISED AT CONSTRUCTION, so the type does not depend on how the
+        # object was built. Without this a winner built from lists compared
+        # UNEQUAL to the duplicate rebuilt from JSON as tuples — the exact
+        # winner/duplicate asymmetry this class exists to remove, reintroduced
+        # one layer down and caught by its own test.
+        for name in ("committed_items", "updated_items", "removed_items",
+                     "assumptions", "warnings", "render_actions"):
+            object.__setattr__(self, name, tuple(getattr(self, name) or ()))
+        object.__setattr__(self, "meal_totals", dict(self.meal_totals or {}))
+        object.__setattr__(self, "day_totals", dict(self.day_totals or {}))
+
+    def to_payload(self) -> dict:
+        """The canonical JSON form. Validated, not coerced."""
+        return {
+            "committed_items": _json_safe(list(self.committed_items),
+                                          "committed_items"),
+            "updated_items": _json_safe(list(self.updated_items),
+                                        "updated_items"),
+            "removed_items": _json_safe(list(self.removed_items),
+                                        "removed_items"),
+            "meal_totals": _totals(self.meal_totals, "meal_totals"),
+            "day_totals": _totals(self.day_totals, "day_totals"),
+            "assumptions": _json_safe(list(self.assumptions), "assumptions"),
+            "warnings": _json_safe(list(self.warnings), "warnings"),
+            "render_actions": _json_safe(list(self.render_actions),
+                                         "render_actions"),
+        }
+
+    @classmethod
+    def from_payload(cls, data) -> "MealCommitResult":
+        if not isinstance(data, dict):
+            raise UnserializableResult("a commit result must be an object")
+        return cls(
+            committed_items=tuple(data.get("committed_items") or ()),
+            updated_items=tuple(data.get("updated_items") or ()),
+            removed_items=tuple(data.get("removed_items") or ()),
+            meal_totals=dict(data.get("meal_totals") or {}),
+            day_totals=dict(data.get("day_totals") or {}),
+            assumptions=tuple(data.get("assumptions") or ()),
+            warnings=tuple(data.get("warnings") or ()),
+            render_actions=tuple(data.get("render_actions") or ()),
+        )
+
+
+def _totals(values, path: str) -> dict:
+    """Totals, as finite floats keyed by strings.
+
+    The ONE place a Decimal is converted, and it is converted deliberately
+    because totals cross a JSON boundary and both sides of that boundary agree
+    they are numbers.
+    """
+    out = {}
+    for key, value in (values or {}).items():
+        if not isinstance(key, str):
+            raise UnserializableResult(
+                f"{path} key {key!r} is {type(key).__name__}, not a string")
+        if isinstance(value, Decimal):
+            value = float(value)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise UnserializableResult(
+                f"{path}.{key} is {type(value).__name__}, not a number")
+        if isinstance(value, float) and not math.isfinite(value):
+            raise UnserializableResult(f"{path}.{key} is {value}, not finite")
+        out[key] = value
+    return out
+
+
+def _json_safe(value: Any, path: str = "result") -> Any:
+    """VALIDATE, do not convert. Anything not already JSON-native is refused.
+
+    The previous version converted — Decimal to string, datetime to string,
+    tuple to list — which is why a duplicate received a different shape from
+    the winner. Conversion belongs in `to_payload`, where the field is known
+    and the choice is explicit.
+
+    Three things this refuses that the converting version accepted:
+
+      * NON-STRING DICT KEYS. `str(k)` collapsed {1: "a", "1": "b"} into one
+        entry — genuine silent data loss.
+      * NON-FINITE FLOATS. NaN and Infinity are not JSON, and `json.dumps`
+        emits them anyway unless told not to.
+      * every domain object, with the path named so the caller can fix it.
+    """
+    if value is None or isinstance(value, (bool, int, str)):
         return value
-    if isinstance(value, Decimal):
-        return str(value)                    # exact; float() would not be
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise UnserializableResult(
+                f"{path} is {value}, which is not valid JSON")
+        return value
     if isinstance(value, dict):
-        return {str(k): _plain(v, f"{path}.{k}") for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_plain(v, f"{path}[{i}]") for i, v in enumerate(value)]
+        for key in value:
+            if not isinstance(key, str):
+                raise UnserializableResult(
+                    f"{path} key {key!r} is {type(key).__name__}, not a "
+                    "string — stringifying it can collapse distinct keys")
+        return {k: _json_safe(v, f"{path}.{k}") for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v, f"{path}[{i}]") for i, v in enumerate(value)]
     raise UnserializableResult(
-        f"{path} is {type(value).__name__}, which cannot be stored without "
-        "losing its shape — convert it before recording the result")
+        f"{path} is {type(value).__name__}, which is not JSON — convert it in "
+        "MealCommitResult.to_payload(), where the field is known")
 
 
-def encode_result(result: Any) -> str:
-    """Versioned, validated, and lossless or refused."""
+def encode_result(result) -> str:
+    """Versioned canonical JSON. Accepts a `MealCommitResult` or a payload."""
+    payload = (result.to_payload() if isinstance(result, MealCommitResult)
+               else _json_safe(result))
     return json.dumps({"schema_version": RESULT_SCHEMA_VERSION,
-                       "result": _plain(result)})
+                       "result": payload}, allow_nan=False)
 
 
 def decode_result(raw: Optional[str]) -> Optional[Any]:
-    """The stored result, or None when there is none.
+    """The stored result, or None when there is none or it cannot be read.
 
     Fails closed on a version it cannot interpret: answering a duplicate with a
     partially-understood payload would hand it something the original caller
@@ -175,8 +286,7 @@ async def claim_commit(db, *, operation_id: str, revision: int = 0,
             operation_id, revision)
         return CommitClaim(won=False, operation_id=operation_id,
                            revision=revision,
-                           result=decode_result(
-                               getattr(existing, "result_payload", None)))
+                           result=_result_of(existing))
     logger.info("event=meal_commit outcome=claimed operation=%s revision=%d",
                 operation_id, revision)
     return CommitClaim(won=True, operation_id=operation_id, revision=revision)
@@ -226,11 +336,26 @@ async def record_result(db, *, operation_id: str, revision: int = 0,
                 operation_id, revision)
 
 
-async def existing_result(db, *, operation_id: str,
-                          revision: int = 0) -> Optional[Any]:
+async def existing_result(db, *, operation_id: str, revision: int = 0
+                          ) -> Optional["MealCommitResult"]:
     """What a previous commit of this (operation, revision) produced, if any."""
-    row = await _load(db, operation_id, revision)
-    return decode_result(getattr(row, "result_payload", None))
+    return _result_of(await _load(db, operation_id, revision))
+
+
+def _result_of(row) -> Optional["MealCommitResult"]:
+    """The stored result as the SAME TYPE the winner held.
+
+    Returning raw JSON here is what made the duplicate contract asymmetric: the
+    winner had a result object and the duplicate got a dict.
+    """
+    data = decode_result(getattr(row, "result_payload", None))
+    if data is None:
+        return None
+    try:
+        return MealCommitResult.from_payload(data)
+    except UnserializableResult:
+        logger.warning("event=commit_result_unreadable reason=bad_shape")
+        return None
 
 
 async def _load(db, operation_id: str, revision: int):

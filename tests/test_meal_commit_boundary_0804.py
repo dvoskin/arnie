@@ -70,14 +70,18 @@ async def test_the_loser_gets_the_winners_result(sessions):
     a, b = sessions
     claim = await meal_commit.claim_commit(a, operation_id="op_2", user_id=26)
     assert claim.won
-    await meal_commit.record_result(
-        a, operation_id="op_2",
-        result={"entry_ids": [11, 12], "calories": 520})
+    winner = meal_commit.MealCommitResult(
+        committed_items=[{"entry_id": 11}, {"entry_id": 12}],
+        meal_totals={"calories": 520})
+    await meal_commit.record_result(a, operation_id="op_2", result=winner)
     await a.commit()
 
     dup = await meal_commit.claim_commit(b, operation_id="op_2", user_id=26)
     assert dup.is_duplicate
-    assert dup.result == {"entry_ids": [11, 12], "calories": 520}
+    # THE SAME TYPE, not decoded JSON. The winner held a MealCommitResult and
+    # so does the duplicate — there is nothing to reconcile between them.
+    assert isinstance(dup.result, meal_commit.MealCommitResult)
+    assert dup.result == winner
 
 
 @pytest.mark.asyncio
@@ -257,17 +261,20 @@ async def test_the_original_result_cannot_be_overwritten(sessions):
     a, b = sessions
     assert (await meal_commit.claim_commit(
         a, operation_id="op_imm", user_id=26)).won
-    await meal_commit.record_result(a, operation_id="op_imm",
-                                    result={"calories": 520})
+    await meal_commit.record_result(
+        a, operation_id="op_imm",
+        result=meal_commit.MealCommitResult(meal_totals={"calories": 520}))
     await a.commit()
 
     with pytest.raises(meal_commit.MissingCommitClaim) as exc:
-        await meal_commit.record_result(a, operation_id="op_imm",
-                                        result={"calories": 999})
+        await meal_commit.record_result(
+            a, operation_id="op_imm",
+            result=meal_commit.MealCommitResult(meal_totals={"calories": 999}))
     assert "already has a result" in exc.value.why
 
     dup = await meal_commit.claim_commit(b, operation_id="op_imm", user_id=26)
-    assert dup.result == {"calories": 520}, "the FIRST result must survive"
+    assert dup.result.meal_totals == {"calories": 520}, \
+        "the FIRST result must survive"
 
 
 @pytest.mark.asyncio
@@ -309,16 +316,31 @@ def test_a_lossy_value_is_refused_rather_than_stringified():
     assert "items[0].entry" in str(exc.value), "the path must name the value"
 
 
-def test_decimals_and_datetimes_round_trip_losslessly():
-    """Both appear in real totals and both have an exact text form."""
-    from datetime import datetime as dt
+def test_a_decimal_is_converted_only_where_the_field_is_known():
+    """CONVERSION MOVED, it did not disappear.
+
+    The generic walker turned every Decimal into a string, so a duplicate
+    received `"520.5"` where the winner had `Decimal("520.5")`. Now conversion
+    happens in `to_payload` for TOTALS — where both sides of the JSON boundary
+    agree the value is a number — and is refused anywhere else, because
+    elsewhere nobody knows what the right conversion is.
+    """
     from decimal import Decimal
 
-    raw = meal_commit.encode_result(
-        {"calories": Decimal("520.5"), "at": dt(2026, 8, 4, 12, 30)})
-    out = meal_commit.decode_result(raw)
-    assert out["calories"] == "520.5"        # exact, not 520.50000000000001
-    assert out["at"] == "2026-08-04T12:30:00"
+    ok = meal_commit.MealCommitResult(meal_totals={"calories": Decimal("520.5")})
+    assert ok.to_payload()["meal_totals"]["calories"] == 520.5   # a number
+
+    with pytest.raises(meal_commit.UnserializableResult):
+        meal_commit.MealCommitResult(
+            committed_items=[{"cal": Decimal("1")}]).to_payload()
+
+
+def test_the_result_type_does_not_depend_on_how_it_was_built():
+    """A winner built from LISTS and a duplicate rebuilt from JSON as TUPLES
+    compared unequal — the winner/duplicate asymmetry, one layer down."""
+    from_lists = meal_commit.MealCommitResult(committed_items=[{"id": 1}])
+    from_tuples = meal_commit.MealCommitResult(committed_items=({"id": 1},))
+    assert from_lists == from_tuples
 
 
 def test_the_stored_result_is_versioned():
