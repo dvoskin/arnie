@@ -25,8 +25,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core import meal_commit, pending_repository as repo
-from core.canonical_writer import (MealNotResolved, ResolvedFood,
-                                   write_canonical_meal)
+from core.canonical_writer import (MealIntent, MealNotResolved, ResolvedFood,
+                                   ResolvedMeal, write_canonical_meal)
 from core.commit_coordinator import commit_or_load_existing
 from core.meal_commit import MealCommitResult
 from core.semantics import CanonicalEvent, ResolutionStatus
@@ -47,13 +47,19 @@ def _food(name, calories, *, entity_id="", status=ResolutionStatus.RESOLVED,
 
 CHICKEN = _food("Grilled chicken", 320, protein=43.0, carbs=0.0, fats=15.0)
 RICE = _food("White rice", 205, protein=4.3, carbs=45.0, fats=0.4)
-MEAL = [CHICKEN, RICE]
+
+
+def _meal(*items, oid="op_meal", revision=0, user_id=1, day=DAY, **kw):
+    return ResolvedMeal(operation_id=oid, revision=revision, user_id=user_id,
+                        logging_day=day, items=items or (CHICKEN, RICE), **kw)
+
+
+MEAL = _meal()
 
 
 class _Op:
-    def __init__(self, oid="op_meal", revision=0, user_id=1, day=DAY):
+    def __init__(self, oid="op_meal", revision=0, user_id=1):
         self.id, self.revision, self.user_id = oid, revision, user_id
-        self.logging_day = day
 
 
 # ── sqlite: the type refuses what must never reach the ledger ────────────────
@@ -78,12 +84,12 @@ def test_an_unresolved_food_cannot_be_built(status):
         _food("Chicken", 300, status=status)
 
 
-@pytest.mark.asyncio
-async def test_an_empty_meal_is_refused():
+def test_an_empty_meal_is_refused():
     """Writing nothing successfully is how a turn reports a log it never
     made."""
     with pytest.raises(MealNotResolved, match="empty meal"):
-        await write_canonical_meal(None, operation=_Op(), resolved_meal=[])
+        ResolvedMeal(operation_id="o", revision=0, user_id=1,
+                     logging_day=DAY, items=())
 
 
 # ── postgres: everything that depends on the database ────────────────────────
@@ -164,7 +170,7 @@ async def test_a_failure_mid_meal_leaves_nothing(pg):
             with pytest.raises(RuntimeError):
                 await write_canonical_meal(
                     s, operation=_Op(),
-                    resolved_meal=[CHICKEN, RICE, _food("Broccoli", 55)])
+                    resolved_meal=_meal(CHICKEN, RICE, _food("Broccoli", 55)))
             await s.rollback()
     finally:
         q.add_food_entry = original
@@ -253,9 +259,9 @@ async def test_history_is_written_with_the_rows(pg):
 
     async with pg() as s:
         events = (await s.execute(select(LedgerEvent))).scalars().all()
-    assert len(events) == len(MEAL)
+    assert len(events) == len(MEAL.items)
     assert {e.event_type for e in events} == {"created"}
-    assert {e.source for e in events} == {"structured_food"}
+    assert {e.source for e in events} == {"canonical:create"}
 
 
 # 4. duplicate delivery returns the same result
@@ -267,20 +273,20 @@ async def test_a_duplicate_delivery_returns_the_same_result(pg):
     first's result and write nothing."""
     async with pg() as s:
         first = await commit_or_load_existing(
-            s, operation=_Op("op_dup"), resolved_meal=MEAL,
+            s, operation=_Op("op_dup"), resolved_meal=_meal(oid="op_dup"),
             writer=write_canonical_meal)
         await s.commit()
 
     async with pg() as s:
         second = await commit_or_load_existing(
-            s, operation=_Op("op_dup"), resolved_meal=MEAL,
+            s, operation=_Op("op_dup"), resolved_meal=_meal(oid="op_dup"),
             writer=write_canonical_meal)
         await s.commit()
 
     assert second == first
     assert isinstance(second, MealCommitResult)
-    assert await _count(pg, FoodEntry) == len(MEAL), "the meal was written twice"
-    assert await _count(pg, LedgerEvent) == len(MEAL)
+    assert await _count(pg, FoodEntry) == len(MEAL.items), "the meal was written twice"
+    assert await _count(pg, LedgerEvent) == len(MEAL.items)
 
 
 # 5. rollback removes food, result and operation transition together
@@ -302,7 +308,7 @@ async def test_rollback_removes_food_result_and_transition_together(pg):
     async with pg() as s:
         with pytest.raises(RuntimeError):
             await commit_or_load_existing(
-                s, operation=_Op("op_undo"), resolved_meal=MEAL,
+                s, operation=_Op("op_undo"), resolved_meal=_meal(oid="op_undo"),
                 writer=write_canonical_meal, finaliser=_fail_at_the_end)
         await s.rollback()
 
@@ -329,11 +335,11 @@ async def test_a_successful_commit_moves_all_three_together(pg):
 
     async with pg() as s:
         result = await commit_or_load_existing(
-            s, operation=_Op("op_ok"), resolved_meal=MEAL,
+            s, operation=_Op("op_ok"), resolved_meal=_meal(oid="op_ok"),
             writer=write_canonical_meal, finaliser=repo.mark_committed)
         await s.commit()
 
-    assert await _count(pg, FoodEntry) == len(MEAL)
+    assert await _count(pg, FoodEntry) == len(MEAL.items)
     async with pg() as s:
         stored = await meal_commit.existing_result(s, operation_id="op_ok")
         assert stored == result, "the stored result is not the one returned"
@@ -372,10 +378,10 @@ async def test_resolving_the_day_does_not_touch_the_callers_transaction(pg):
 async def test_two_meals_on_the_same_day_share_one_log(pg):
     """The day is a container, not part of the meal."""
     async with pg() as s:
-        await write_canonical_meal(s, operation=_Op("m1"), resolved_meal=[CHICKEN])
+        await write_canonical_meal(s, operation=_Op("m1"), resolved_meal=_meal(CHICKEN, oid="m1"))
         await s.commit()
     async with pg() as s:
-        await write_canonical_meal(s, operation=_Op("m2"), resolved_meal=[RICE])
+        await write_canonical_meal(s, operation=_Op("m2"), resolved_meal=_meal(RICE, oid="m2"))
         await s.commit()
 
     assert await _count(pg, DailyLog) == 1
@@ -398,3 +404,142 @@ async def test_post_commit_work_is_returned_as_data(pg):
         await s.commit()
     assert {"action": "invalidate_briefing", "user_id": 1} \
         in result.render_actions
+
+
+# ── the meal-level contract ──────────────────────────────────────────────────
+
+def test_the_logging_day_has_no_default():
+    """`date.today()` is the APPLICATION SERVER's calendar date, not the
+    user's. Around midnight, and for any historical log, a default misfiles the
+    meal onto a day the user will not think to look at — silently, because
+    every other part of the write succeeds."""
+    with pytest.raises(MealNotResolved, match="explicit logging_day"):
+        ResolvedMeal(operation_id="o", revision=0, user_id=1,
+                     logging_day=None, items=(CHICKEN,))
+
+
+@pytest.mark.asyncio
+async def test_a_bare_list_of_items_is_not_a_meal():
+    """Meal-level facts — the day, the intent, the disclosures — belong in the
+    type rather than reassembled at the mutation boundary from whatever the
+    operation happens to carry."""
+    with pytest.raises(MealNotResolved, match="validated ResolvedMeal"):
+        await write_canonical_meal(None, operation=_Op(),
+                                   resolved_meal=[CHICKEN, RICE])
+
+
+@pg_only
+@pytest.mark.asyncio
+async def test_a_meal_written_under_the_wrong_operation_is_refused(pg):
+    """The coordinator claims under the OPERATION's id while the rows come from
+    the MEAL. A mismatch commits one meal under another's claim, and the
+    duplicate that follows is then handed a result describing food it never
+    asked for."""
+    async with pg() as s:
+        with pytest.raises(MealNotResolved, match="operation mismatch"):
+            await write_canonical_meal(s, operation=_Op("op_a"),
+                                       resolved_meal=_meal(oid="op_b"))
+        with pytest.raises(MealNotResolved, match="revision mismatch"):
+            await write_canonical_meal(s, operation=_Op("op_a", revision=1),
+                                       resolved_meal=_meal(oid="op_a"))
+        with pytest.raises(MealNotResolved, match="user mismatch"):
+            await write_canonical_meal(s, operation=_Op("op_a", user_id=2),
+                                       resolved_meal=_meal(oid="op_a"))
+
+
+@pg_only
+@pytest.mark.asyncio
+async def test_the_day_written_is_the_day_the_meal_names(pg):
+    """Not today's date on whichever host happens to run the turn."""
+    from datetime import timedelta
+
+    yesterday = DAY - timedelta(days=1)
+    async with pg() as s:
+        await write_canonical_meal(
+            s, operation=_Op(), resolved_meal=_meal(day=yesterday))
+        await s.commit()
+
+    async with pg() as s:
+        log = (await s.execute(select(DailyLog))).scalar_one()
+    assert log.date == yesterday, "the meal landed on the wrong day"
+
+
+# ── disclosure survives to the stored result ─────────────────────────────────
+
+@pg_only
+@pytest.mark.asyncio
+async def test_assumptions_and_warnings_reach_the_stored_result(pg):
+    """A duplicate delivery is answered FROM THE STORED RESULT and never
+    re-runs the interpretation. If disclosure is dropped here, the ledger can
+    be right while the second confirmation quietly omits what the first one
+    disclosed."""
+    said = ("Assumed a cup of rice is 158g",)
+    warned = ("Chicken portion was estimated",)
+
+    async with pg() as s:
+        result = await commit_or_load_existing(
+            s, operation=_Op("op_disc"),
+            resolved_meal=_meal(oid="op_disc", assumptions=said,
+                                warnings=warned),
+            writer=write_canonical_meal)
+        await s.commit()
+
+    assert result.assumptions == said
+    assert result.warnings == warned
+
+    async with pg() as s:
+        stored = await meal_commit.existing_result(s, operation_id="op_disc")
+    assert stored.assumptions == said, "disclosure did not survive storage"
+    assert stored.warnings == warned
+    assert stored == result, (
+        "the duplicate would be answered with a different confirmation from "
+        "the one the first delivery gave")
+
+
+# ── provenance is two fields, not one ────────────────────────────────────────
+
+@pg_only
+@pytest.mark.asyncio
+async def test_the_lane_and_the_modality_are_recorded_separately(pg):
+    """`ledger_source` = which lane owns the mutation; `source_type` = how the
+    user entered it. Collapsing them flattens photo, typed chat, correction,
+    import and barcode into one label."""
+    photo = _food("Burger", 550, source_type="image", from_photo=True)
+    typed = _food("Fries", 340, source_type="text")
+
+    async with pg() as s:
+        await write_canonical_meal(
+            s, operation=_Op(), resolved_meal=_meal(photo, typed))
+        await s.commit()
+
+    async with pg() as s:
+        events = (await s.execute(select(LedgerEvent))).scalars().all()
+        rows = (await s.execute(select(FoodEntry))).scalars().all()
+
+    assert {e.source for e in events} == {"canonical:create"}, \
+        "the LANE must be the same for both items"
+    assert {r.source_type for r in rows} == {"image", "text"}, \
+        "the MODALITY must be preserved per item"
+
+
+@pg_only
+@pytest.mark.asyncio
+async def test_each_intent_writes_its_own_lane(pg):
+    """The canonical lane's own prefix is what makes adoption measurable —
+    `ledger_events.source LIKE 'canonical:%%'` is the shadow phase's query, and
+    a shared label would have destroyed it."""
+    for intent in (MealIntent.CREATE, MealIntent.CORRECTION,
+                   MealIntent.REPLACEMENT):
+        async with pg() as s:
+            await write_canonical_meal(
+                s, operation=_Op(f"op_{intent.value}"),
+                resolved_meal=_meal(CHICKEN, oid=f"op_{intent.value}",
+                                    intent=intent))
+            await s.commit()
+
+    async with pg() as s:
+        sources = {e.source for e in
+                   (await s.execute(select(LedgerEvent))).scalars().all()}
+    assert sources == {"canonical:create", "canonical:correction",
+                       "canonical:replacement"}
+    assert all(s.startswith("canonical:") for s in sources)

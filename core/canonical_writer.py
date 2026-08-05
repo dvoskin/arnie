@@ -17,6 +17,13 @@ a column's own coercion — and a total computed from inputs would then describe
 a meal that is not on the board. The card and the prose have disagreed with the
 ledger before; totals derived from the rows cannot.
 
+PROVENANCE IS TWO FIELDS, NOT ONE. `ledger_source` names the mutation LANE and
+its owner (`canonical:create`, matching the existing `structured_food:*` /
+`legacy:ios` / `quick_log:ios` convention); `source_type` names the user's
+input MODALITY. They answer different questions and must never be collapsed —
+the canonical lane's own prefix is what makes adoption measurable during the
+shadow phase.
+
 NOT WIRED. `run_turn` still uses the legacy path.
 """
 from __future__ import annotations
@@ -25,6 +32,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import date as _date
+from enum import Enum
 from decimal import Decimal
 from typing import Optional
 
@@ -111,6 +119,88 @@ class ResolvedFood:
         return self.event.surface_text or self.event.entity_id or "unnamed"
 
 
+class MealIntent(str, Enum):
+    """WHICH LANE owns this mutation, which is not the same question as which
+    modality the user typed it in.
+
+    Two provenance fields must not disagree:
+
+        `ledger_source` — the mutation lane and its owner
+        `source_type`   — the user's input modality (text, voice, image)
+
+    The database already follows that convention — `structured_food:
+    food_interpreter_v2`, `legacy:ios`, `quick_log:ios`, `dashboard:food_log` —
+    and the first version of this writer broke it by hardcoding a bare
+    `"structured_food"` with no owner. The canonical lane gets its own prefix
+    so adoption is MEASURABLE: `ledger_events.source LIKE 'canonical:%'` is the
+    query that says how much traffic this path actually owns, which is exactly
+    what the shadow phase needs and what a shared label would have destroyed.
+    """
+    CREATE = "create"
+    CORRECTION = "correction"
+    REPLACEMENT = "replacement"
+
+    @property
+    def ledger_source(self) -> str:
+        return f"canonical:{self.value}"
+
+
+@dataclass(frozen=True)
+class ResolvedMeal:
+    """One meal, validated as a whole, with the context a meal actually has.
+
+    The first version took an arbitrary iterable of `ResolvedFood` and pieced
+    the meal-level facts together from the operation — which left the day, the
+    intent, the assumptions and the warnings outside the type, and a default of
+    `date.today()` standing in for the one of them that decides which day the
+    food lands on.
+
+    LOGGING DAY IS REQUIRED. It has no safe default: the application server's
+    local calendar date is not the user's, so around midnight — and for "that
+    was dinner last night" — a fallback misfiles the meal silently, onto a day
+    the user will not think to look at. It must be resolved upstream from the
+    user's timezone and the source turn's timestamp, and this refuses to guess.
+    """
+    operation_id: str
+    revision: int
+    user_id: int
+    logging_day: _date
+    items: tuple = ()
+    intent: MealIntent = MealIntent.CREATE
+    source_turn_id: str = ""
+    meal_type: Optional[str] = None
+    assumptions: tuple = ()
+    warnings: tuple = ()
+
+    def __post_init__(self):
+        object.__setattr__(self, "items", tuple(self.items or ()))
+        object.__setattr__(self, "assumptions", tuple(self.assumptions or ()))
+        object.__setattr__(self, "warnings", tuple(self.warnings or ()))
+        object.__setattr__(self, "intent", MealIntent(self.intent))
+
+        if not self.operation_id:
+            raise MealNotResolved("a meal commit needs an operation id")
+        if not self.user_id:
+            raise MealNotResolved("a meal commit needs a user")
+        if not isinstance(self.logging_day, _date):
+            raise MealNotResolved(
+                "a canonical meal commit requires an explicit logging_day: "
+                "the server's local date is not the user's, so a default "
+                "misfiles the meal around midnight and for any historical log "
+                "('that was dinner last night') — resolve it upstream from the "
+                "user's timezone and the source turn's timestamp")
+        if not self.items:
+            raise MealNotResolved(
+                "refusing to commit an empty meal — writing nothing "
+                "successfully is how a turn reports a log it never made")
+        for item in self.items:
+            if not isinstance(item, ResolvedFood):
+                raise MealNotResolved(
+                    f"every item must be a ResolvedFood, got "
+                    f"{type(item).__name__} — the checks that it is priced and "
+                    f"resolved live in that type")
+
+
 async def _log_for(db, user_id: int, day: _date):
     """The day's container, resolved WITHOUT touching the caller's transaction.
 
@@ -165,31 +255,39 @@ async def write_canonical_meal(db, *, operation, resolved_meal
     """
     from db.queries import add_food_entry
 
-    user_id = int(getattr(operation, "user_id", 0) or 0)
-    if not user_id:
-        raise ValueError("a meal commit needs a user")
-    items = list(resolved_meal or ())
-    if not items:
+    if not isinstance(resolved_meal, ResolvedMeal):
         raise MealNotResolved(
-            "refusing to commit an empty meal — an operation that reaches the "
-            "ledger with nothing to write is a bug upstream, and writing "
-            "nothing successfully is how a turn reports a log it never made")
-    for item in items:
-        if not isinstance(item, ResolvedFood):
-            raise MealNotResolved(
-                f"every item must be a ResolvedFood, got "
-                f"{type(item).__name__} — the check that it is priced and "
-                f"resolved lives in that type")
+            f"the writer takes a validated ResolvedMeal, not "
+            f"{type(resolved_meal).__name__} — meal-level facts (the logging "
+            f"day, the intent, the assumptions, the warnings) belong inside "
+            f"the type rather than reassembled at the mutation boundary")
+    meal = resolved_meal
 
-    day = getattr(operation, "logging_day", None) or _date.today()
-    log = await _log_for(db, user_id, day)
+    # THE MEAL AND THE OPERATION MUST BE THE SAME MUTATION. The coordinator
+    # claims under the operation's id and revision while the rows are written
+    # from the meal, so a mismatch commits one meal under another's claim —
+    # and the duplicate that follows would then be handed a result describing
+    # food it never asked for.
+    for field_name, from_op, from_meal in (
+            ("operation", getattr(operation, "id", None), meal.operation_id),
+            ("revision", int(getattr(operation, "revision", 0) or 0),
+             int(meal.revision)),
+            ("user", int(getattr(operation, "user_id", 0) or 0),
+             int(meal.user_id))):
+        if from_op != from_meal:
+            raise MealNotResolved(
+                f"{field_name} mismatch: the coordinator claimed "
+                f"{from_op!r} and the meal describes {from_meal!r}")
+
+    user_id, items = meal.user_id, meal.items
+    log = await _log_for(db, user_id, meal.logging_day)
 
     written = []
     for item in items:
         entry = await add_food_entry(
             db, log.id,
             commit=False,                 # the meal is ONE mutation
-            ledger_source="structured_food",
+            ledger_source=meal.intent.ledger_source,
             user_id=user_id,
             raw_input=item.raw_input or item.name,
             parsed_food_name=item.name,
@@ -200,8 +298,8 @@ async def write_canonical_meal(db, *, operation, resolved_meal
             micros_estimated=bool(item.micros_estimated),
             estimated_flag=bool(item.estimated or item.from_photo),
             confidence_score=item.confidence_score,
-            source_type=item.source_type,
-            meal_type=item.meal_type,
+            source_type=item.source_type,        # the user's INPUT MODALITY
+            meal_type=item.meal_type or meal.meal_type,
             from_photo=bool(item.from_photo),
             processing_level=item.processing_level,
             **{m: getattr(item, m) for m in _MACROS})
@@ -212,14 +310,23 @@ async def write_canonical_meal(db, *, operation, resolved_meal
     day_totals = await _day_totals(db, log.id)
 
     logger.info(
-        "event=canonical_meal_written operation=%s items=%d cal=%s",
-        getattr(operation, "id", "?"), len(committed),
-        meal_totals.get("calories"))
+        "event=canonical_meal_written operation=%s revision=%d lane=%s "
+        "items=%d cal=%s day=%s", meal.operation_id, meal.revision,
+        meal.intent.ledger_source, len(committed),
+        meal_totals.get("calories"), meal.logging_day.isoformat())
 
     return MealCommitResult(
         committed_items=tuple(committed),
         meal_totals=meal_totals,
         day_totals=day_totals,
+        # DISCLOSURE IS PART OF THE RESULT, not of the turn that produced it.
+        # The stored result must be enough to reproduce the exact user-facing
+        # confirmation, because a duplicate delivery is answered from it and
+        # never re-runs the interpretation. Dropping these here would let the
+        # ledger be right while the second confirmation quietly omits the
+        # assumptions the first one disclosed.
+        assumptions=meal.assumptions,
+        warnings=meal.warnings,
         # POST-COMMIT WORK, RETURNED AS DATA. Dropping the briefing cache while
         # these rows are still invisible would let a concurrent Coach open
         # repopulate it from pre-write state, and it would outlive a rollback
