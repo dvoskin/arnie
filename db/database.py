@@ -75,6 +75,93 @@ if _IS_SQLITE:
         cur.execute("PRAGMA synchronous=NORMAL")
         cur.close()
 
+# ── ONE CLOCK ────────────────────────────────────────────────────────────────
+# Every connection in this process reads and writes time in UTC, and that is
+# enforced here rather than assumed.
+#
+# THE TWO CLOCKS HAVE TO AGREE, AND NOTHING MADE THEM. 43 columns are naive
+# `DateTime` filled by the DATABASE clock (`server_default=func.now()`), while
+# freshness is judged in Python against `datetime.utcnow()`. Postgres `now()`
+# returns timestamptz; storing it in a `timestamp without time zone` column
+# converts it using the SESSION's TimeZone. So the offset between those two
+# clocks is whatever the database server's timezone happens to be — an ambient
+# default, settable per-server, per-database, per-role or by a client PGTZ, and
+# recorded nowhere in this repo.
+#
+# Both failure directions are silent:
+#
+#   * WEST of UTC, stored times read as OLD. `idempotency.STALE_CLAIM_SECONDS`
+#     is 90, so on a US-Eastern server every claim looks 4 hours stale, every
+#     duplicate delivery "takes over" a claim that is actually still running,
+#     and the meal is written twice. Idempotency does not report an error; it
+#     reports success, twice.
+#   * EAST of UTC, stored times read as FUTURE. The age is negative, so it never
+#     reaches the threshold, every retry raises IdempotencyInProgress, and the
+#     key wedges permanently.
+#
+# Worse, four columns are written by the database clock on INSERT and by
+# `datetime.utcnow()` on UPDATE — idempotency_records.created_at among them.
+# On a non-UTC server one column then holds a MIX of local and UTC values with
+# nothing recording which is which, so the damage is not repairable after the
+# fact.
+#
+# Production runs UTC today, which is exactly what makes this dangerous: it is
+# a correctness property that is true by luck of deployment and would fail
+# silently on a restore, a provider move, or a `SET timezone` in a dashboard.
+#
+# Setting the session timezone makes the DB clock UTC by construction, so the
+# two clocks coincide and every existing comparison means what it says. In
+# production this changes NOTHING — it makes production's behaviour the
+# behaviour everywhere, which is the point.
+#
+# THIS IS NOT THE WHOLE UNIFICATION. It removes the timezone axis outright; it
+# does not merge the two clocks into one source, so host clock skew between the
+# app and the database still exists — bounded by NTP at seconds rather than
+# hours, but real against a 90-second threshold. Collapsing every freshness
+# comparison onto ONE authoritative clock is tracked in
+# docs/ONE_CLOCK_MIGRATION.md and gates removal of the legacy lane.
+#
+# Registered on Engine rather than on `engine`, so it holds for every
+# connection opened in this process — including engines that tests and scripts
+# build themselves, which is where a divergent server timezone actually shows
+# up.
+from sqlalchemy import event as _event
+from sqlalchemy.engine import Engine as _Engine
+
+#: Drivers whose sessions carry a timezone. SQLite has none — it stores the
+#: literal string it is given — so it is left alone rather than sent SQL it
+#: cannot parse.
+_TZ_AWARE_DRIVERS = ("psycopg", "asyncpg", "pg8000", "psycopg2")
+
+
+@_event.listens_for(_Engine, "connect")
+def _force_utc_session(dbapi_conn, _record):
+    module = (type(dbapi_conn).__module__ or "").lower()
+    if not any(d in module for d in _TZ_AWARE_DRIVERS):
+        return
+    try:
+        cur = dbapi_conn.cursor()
+        try:
+            cur.execute("SET TimeZone='UTC'")
+        finally:
+            cur.close()
+        # THE COMMIT IS THE WHOLE FIX. `SET` is transactional, and the pool
+        # rolls back every connection it hands out, so without this the
+        # statement runs, raises nothing, and is silently reverted — the
+        # timezone stays whatever the server chose while the code reads as
+        # though it were pinned. Verified: SET alone leaves the session on the
+        # server's timezone; SET + commit leaves it on UTC.
+        dbapi_conn.commit()
+    except Exception:                      # pragma: no cover - driver variance
+        # LOUD, not silent. A connection that could not be pinned to UTC is a
+        # connection whose freshness comparisons may be wrong by hours, and a
+        # quiet failure here would restore the exact condition this prevents.
+        logger.exception(
+            "event=session_timezone_not_set — this connection's stored "
+            "timestamps may not be UTC; freshness and idempotency comparisons "
+            "on it are unreliable")
+
+
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
