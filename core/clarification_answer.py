@@ -261,6 +261,46 @@ def _grams_from_text(text: str, food_name: str = ""):
     grams = getattr(nq, "grams", None) if nq is not None else None
     if not grams:
         return None
+
+    # WE ASKED BECAUSE "SOME" WAS NOT ENOUGH. "SOME" IS STILL NOT ENOUGH.
+    #
+    # `normalize_quantity` maps a bare vague measure onto the ontology's
+    # portion for the food — correct in its own context, and exactly how the
+    # interpreter turns "some rice" into a number. At THIS boundary it is
+    # wrong: it accepts, as the answer to "how much?", the very vagueness that
+    # produced the question.
+    #
+    # Measured: `_grams_from_text("I had some salmon")` returned 174 g while a
+    # chicken-breast question was open, so a new meal COMMITTED THE CHICKEN at
+    # its default and the salmon was lost. Same shape as the 2026-08-05
+    # oatmeal loss, on the AWAITING path the settled and expired guards never
+    # covered — because that path is the one that is supposed to accept
+    # answers.
+    #
+    # The parser already draws the distinction; nothing here needs to detect
+    # anything. `normalization_source` names WHERE the grams came from, and
+    # only one of its values means "the user told us nothing and we filled it
+    # in from the food's typical portion":
+    #
+    #   "6 oz"            -> mass_conversion   an amount was stated
+    #   "about 6 ounces"  -> mass_conversion   hedged, still stated
+    #   "a cup"           -> vessel            a vessel was stated
+    #   "half a breast"   -> piece_weight      a fraction was stated
+    #   "some"            -> ontology          <- nothing was stated
+    #
+    # NOT `user_stated_amount`, which was the obvious choice and is wrong: it
+    # is None for "about 6 ounces" too, because the hedge strips the literal
+    # amount. Keying on it refused four legitimate answer routes, and the
+    # existing suite caught that immediately — which is what it is for.
+    #
+    # Returning None here means REPAIR: ask the same field again, narrower.
+    # Never a commit of a number the user did not give us.
+    if str(getattr(nq, "normalization_source", "") or "") == "ontology":
+        logger.info(
+            "event=b1_answer_not_stated text=%r grams=%s — the quantity came "
+            "from the vague fallback, not from the user; repairing rather "
+            "than committing", (text or "")[:60], grams)
+        return None
     try:
         return Decimal(str(grams))
     except (InvalidOperation, ValueError):
