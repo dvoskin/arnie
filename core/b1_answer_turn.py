@@ -271,7 +271,9 @@ def _label_selection(field, message: str):
     option = _option_for_label(field, message)
     if option is None:
         return None
+    from core.clarification_answer import AnswerModality
     return AnswerResult(Outcome.APPLIED, patch=option.patch,
+                        modality=AnswerModality.LABEL_SELECTION,
                         reason="label_selection")
 
 
@@ -354,7 +356,12 @@ async def _observe(db, owned, answer, *, user, source_turn_id: str,
                 attribute=getattr(getattr(field, "attribute", None), "value",
                                   "quantity"),
                 outcome=answer.outcome.value,
-                modality=_modality(option_id=option_id, reason=answer.reason),
+                # COPIED. `_modality` derived this from `reason`, and that
+                # dependency broke twice — a reworded message reclassified a
+                # refusal as free-text usage, and the same trick lost policy
+                # attribution. The route knows what it is; nothing here reads
+                # prose.
+                modality=_modality_of(answer),
                 selected_source=selected_source,
                 offered=_offered_mix(field),
                 round_index=int(prior) + 1,
@@ -429,9 +436,27 @@ def _latency_ms(owned):
         return None
 
 
-def _modality(*, option_id: str, reason: str) -> str:
-    from core import b1_metrics
-    return b1_metrics.modality_of(option_id=option_id, reason=reason)
+def _modality_of(answer) -> str:
+    """The route's own account of itself, or a LOUD unknown.
+
+    FAILS CLOSED, deliberately. A missing modality used to default into the
+    free-text bucket, which is the metric that decides whether the option
+    pipeline is working — so a route that forgot to say what it was would have
+    argued, quietly and forever, that users reject our options. `unknown` is
+    visible as itself and shouts on the way past.
+    """
+    from core.clarification_answer import AnswerModality
+
+    m = getattr(answer, "modality", None)
+    if m is None:
+        logger.error(
+            "event=b1_modality_missing outcome=%s reason=%r — an answer route "
+            "did not declare how it arrived; recording UNKNOWN rather than "
+            "defaulting into the free-text rate",
+            getattr(getattr(answer, "outcome", None), "value", "?"),
+            (getattr(answer, "reason", "") or "")[:80])
+        return AnswerModality.UNKNOWN.value
+    return m.value if hasattr(m, "value") else str(m)
 
 
 def _measure(owned, answer, *, option_id: str, user,

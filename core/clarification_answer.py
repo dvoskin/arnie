@@ -55,6 +55,33 @@ class Outcome(str, Enum):
     REFUSED = "refused"
 
 
+class AnswerModality(str, Enum):
+    """HOW the answer reached us — stamped where it is known, never inferred.
+
+    This was derived from the diagnostic `reason` string, and that dependency
+    broke twice: once when an improved error message reclassified a refusal as
+    free-text usage, and once when policy attribution was read out of the same
+    prose. `reason` is written for a human reading a trace. Rewording it must
+    never change what the system recorded about its own behaviour, and the
+    only way to guarantee that is for the route to say what it is at the point
+    where it alone knows.
+
+    "Other usage" — the single number the observation window exists to read —
+    is computed from this field. A wrong value here is not a mislabelled log
+    line; it is a wrong answer to the question the whole slice is asking.
+    """
+    OPTION_ID = "option_id"            # a structured tap: ids, not words
+    LABEL_SELECTION = "label_selection"  # they typed back exactly what we offered
+    USER_TEXT = "user_text"            # a quantity of their own  <- "Other"
+    COMMAND = "command"                # not sure / cancel / skip
+    REPAIR = "repair"                  # we could not read it; ask again
+    #: Never assigned by a route. Present so a MISSING modality is visible as
+    #: itself rather than defaulting into one of the real ones — a silent
+    #: default would land in USER_TEXT and inflate exactly the metric that
+    #: decides whether the option pipeline is working.
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True)
 class AnswerResult:
     """An outcome and, when it applied, THE patch that applied.
@@ -81,6 +108,8 @@ class AnswerResult:
     #: decides itself, and stamping every result would make the field mean
     #: "some policy ran" rather than "this policy decided".
     decision_policy_version: Optional[str] = None
+    #: HOW the answer arrived. Set by the route that owns it; never derived.
+    modality: Optional["AnswerModality"] = None
 
     def __post_init__(self):
         from core.semantics import SemanticPatch
@@ -118,15 +147,18 @@ def answer_from_chip(interaction, *, field_id: str, option_id: str,
     """
     if revision != interaction.revision:
         return AnswerResult(
-            Outcome.REFUSED,
+            Outcome.REFUSED, modality=AnswerModality.OPTION_ID,
             reason=f"stale revision {revision} != {interaction.revision}")
     try:
         patch = interaction.patch_for(field_id, option_id)
     except KeyError as exc:
-        return AnswerResult(Outcome.REFUSED, reason=str(exc))
+        return AnswerResult(Outcome.REFUSED, reason=str(exc),
+                            modality=AnswerModality.OPTION_ID)
     except ValueError as exc:          # an option with no patch
-        return AnswerResult(Outcome.REFUSED, reason=str(exc))
-    return AnswerResult(Outcome.APPLIED, patch=patch)
+        return AnswerResult(Outcome.REFUSED, reason=str(exc),
+                            modality=AnswerModality.OPTION_ID)
+    return AnswerResult(Outcome.APPLIED, patch=patch,
+                        modality=AnswerModality.OPTION_ID)
 
 
 def answer_from_text(interaction, *, field_id: str, text: str,
@@ -153,17 +185,19 @@ def answer_from_text(interaction, *, field_id: str, text: str,
 
     if revision != interaction.revision:
         return AnswerResult(
-            Outcome.REFUSED,
+            Outcome.REFUSED, modality=AnswerModality.USER_TEXT,
             reason=f"stale revision {revision} != {interaction.revision}")
 
     said = (text or "").strip()
     if not said:
-        return AnswerResult(Outcome.REPAIR, reason="empty answer")
+        return AnswerResult(Outcome.REPAIR, reason="empty answer",
+                            modality=AnswerModality.REPAIR)
 
     try:
         field = interaction.field(field_id)
     except KeyError as exc:
-        return AnswerResult(Outcome.REFUSED, reason=str(exc))
+        return AnswerResult(Outcome.REFUSED, reason=str(exc),
+                            modality=AnswerModality.USER_TEXT)
 
     commanded = _command(said, field, locale)
     if commanded is not None:
@@ -171,12 +205,13 @@ def answer_from_text(interaction, *, field_id: str, text: str,
 
     grams = _grams_from_text(said, food_name)
     if grams is None:
-        return AnswerResult(Outcome.REPAIR, reason=f"no quantity in {said!r}")
+        return AnswerResult(Outcome.REPAIR, reason=f"no quantity in {said!r}",
+                            modality=AnswerModality.REPAIR)
 
     from skills.nutrition.quantity_clarification import _quantity
 
     return AnswerResult(
-        Outcome.APPLIED,
+        Outcome.APPLIED, modality=AnswerModality.USER_TEXT,
         patch=SetQuantity(
             event_id=field.event_id, field_id=field.field_id,
             quantity=_quantity(grams, provenance=Provenance.USER_STATED,
@@ -207,7 +242,8 @@ def _command(said: str, field, locale: str = "en") -> Optional[AnswerResult]:
     if command in (ClarificationCommand.CANCEL_MEAL,
                    ClarificationCommand.SKIP_ITEM,
                    ClarificationCommand.RESTART):
-        return AnswerResult(Outcome.CANCELLED, reason=command.value)
+        return AnswerResult(Outcome.CANCELLED, reason=command.value,
+                            modality=AnswerModality.COMMAND)
     if command in (ClarificationCommand.ESTIMATE,
                    ClarificationCommand.KEEP_AS_READ,
                    ClarificationCommand.COMMIT_READY):
@@ -299,13 +335,13 @@ def _estimate(field, reason: str) -> AnswerResult:
             ",".join(str(getattr(getattr(o, "source", None), "value", "?"))
                      for o in (getattr(field, "options", ()) or ())))
         return AnswerResult(
-            Outcome.REPAIR,
+            Outcome.REPAIR, modality=AnswerModality.COMMAND,
             reason=f"{reason}: no evidence supports an estimate here",
             decision_policy_version=ESTIMATE_POLICY_VERSION)
     priced.sort(key=lambda o: o.patch.quantity.grams)
     middle = priced[len(priced) // 2].patch
     return AnswerResult(
-        Outcome.APPLIED, reason=reason,
+        Outcome.APPLIED, reason=reason, modality=AnswerModality.COMMAND,
         decision_policy_version=ESTIMATE_POLICY_VERSION,
         patch=replace(middle,
                       quantity=replace(middle.quantity,

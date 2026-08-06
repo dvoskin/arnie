@@ -130,8 +130,10 @@ async def _state(user):
 # ── answer routes, each DEMONSTRATED rather than labelled ────────────────────
 
 @pytest.mark.parametrize("answer,rows_expected,status_expected,modality,label", [
-    ("6 oz",       1, "committed", "label",   "the exact text of an offered option"),
-    ("137 grams",  1, "committed", "text",    "a quantity we never offered"),
+    ("6 oz",       1, "committed", "label_selection",
+     "the exact text of an offered option"),
+    ("137 grams",  1, "committed", "user_text",
+     "a quantity we never offered"),
     ("not sure",   0, "awaiting_answer", "command",
      "estimate with NO supporting evidence — stays unresolved"),
     ("cancel",     0, "cancelled", "command", "explicit cancel"),
@@ -658,3 +660,61 @@ async def test_a_supported_estimate_also_names_its_policy(
     assert obs.policy_version == ESTIMATE_POLICY_VERSION, (
         f"a policy-governed COMMIT was recorded without its policy: "
         f"{obs.policy_version!r}")
+
+
+# ── B-1.9 commit 1: modality is declared, never derived ─────────────────────
+
+def test_every_answer_route_declares_a_modality():
+    """No route may leave it unset. Derived from the SOURCE, not a list.
+
+    A hand-maintained inventory of construction sites is a list someone
+    forgets to update — which is precisely the failure being designed out. So
+    this reads `clarification_answer` and asserts every `AnswerResult(...)`
+    carries a modality, and fails on the next one added without it.
+    """
+    import pathlib
+    import re
+
+    src = pathlib.Path(__file__).resolve().parent.parent / "core" / "clarification_answer.py"
+    text = src.read_text()
+    missing = []
+    for m in re.finditer(r"return AnswerResult\(", text):
+        depth, i = 0, m.end() - 1
+        while i < len(text):
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        call = text[m.end():i]
+        if "modality=" not in call:
+            line = text[:m.start()].count("\n") + 1
+            missing.append(line)
+    assert not missing, (
+        f"AnswerResult built without a modality at line(s) {missing} — a route "
+        f"that does not declare how it arrived is counted as UNKNOWN, and the "
+        f"answer to 'do users accept our options' quietly loses a case")
+
+
+def test_a_missing_modality_fails_closed_rather_than_becoming_free_text():
+    """The default is the dangerous part.
+
+    An absent modality used to fall through to the free-text bucket — the
+    metric that decides whether the option pipeline is working. A route that
+    forgot to declare itself would therefore have argued, silently and
+    permanently, that users reject our options.
+    """
+    from core.b1_answer_turn import _modality_of
+    from core.clarification_answer import AnswerModality, AnswerResult, Outcome
+
+    silent = AnswerResult(Outcome.REPAIR, reason="estimate: looks like a command")
+    assert _modality_of(silent) == AnswerModality.UNKNOWN.value, (
+        "a route that declared nothing was given a real modality anyway")
+
+    declared = AnswerResult(Outcome.APPLIED, patch=None, reason="",
+                            modality=AnswerModality.COMMAND) \
+        if False else AnswerResult(Outcome.REPAIR, reason="",
+                                   modality=AnswerModality.COMMAND)
+    assert _modality_of(declared) == "command"
