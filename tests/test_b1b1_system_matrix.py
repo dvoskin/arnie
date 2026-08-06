@@ -54,6 +54,59 @@ async def _ask(edges, user, food="Chicken breast", cal=280, amount=6, unit="oz")
     return await operations(user)
 
 
+@pytest.fixture
+def density(monkeypatch):
+    """A deterministic per-100g source: 2 cal/g, 0.2 g protein/g, 0.1 carb, 0.05 fat.
+
+    WHY A FAKE WITH ROUND NUMBERS. Repricing can only be PROVEN against an
+    expected value, and `assert calories` is satisfied by the very defect this
+    is meant to catch — B-1.75 persisted the answered quantity correctly while
+    the ask-time calories survived unchanged. With a known density, 50 g must
+    be exactly 100 cal and nothing else, so a stale number cannot pass.
+    """
+    import api.usda as usda
+
+    async def _hit(query, page_size=5):
+        return [{"fdc_id": 1, "_match": "exact", "description": query,
+                 "per100g": {"calories": 200.0, "protein": 20.0,
+                             "carbs": 10.0, "fat": 5.0}}]
+    monkeypatch.setattr(usda, "search_food", _hit)
+    return {"cal_per_g": 2.0, "protein_per_g": 0.2,
+            "carbs_per_g": 0.1, "fat_per_g": 0.05}
+
+
+async def _persisted_ask(user):
+    """The interaction as STORED — the only evidence of what was offered.
+
+    A parameter labelled "a quantity that was offered" is not evidence that it
+    was offered. Candidate selection dedupes and re-ranks on evidence, so the
+    option row has to be read back before an answer can be called offered or
+    not offered.
+    """
+    import json
+    ops = await operations(user)
+    assert ops, "no operation to read"
+    field = json.loads(ops[-1].canonical_payload)["interaction"]["groups"][0]["fields"][0]
+    return {
+        "labels": [o["label"] for o in field["options"]],
+        "grams": [float((o.get("patch") or {}).get("quantity", {}).get("grams") or 0)
+                  for o in field["options"]],
+        "sources": [o.get("source") for o in field["options"]],
+    }
+
+
+async def _observation(user):
+    """The durable record of WHICH ROUTE owned the answer."""
+    import db.database as D
+    from sqlalchemy import select
+    from db.models import B1AnswerObservation
+    async with D.AsyncSessionLocal() as s:
+        r = await s.execute(select(B1AnswerObservation)
+                            .order_by(B1AnswerObservation.id))
+        rows = list(r.scalars().all())
+    return rows[-1] if rows else None
+
+
 async def _state(user):
     """The facts a scenario is judged on. Never the reply."""
     ops = await operations(user)
@@ -67,32 +120,64 @@ async def _state(user):
         "meal_commits": len(mc),
         "quantity": board[-1].quantity if board else None,
         "calories": board[-1].calories if board else None,
+        "protein": board[-1].protein if board else None,
+        "carbs": board[-1].carbs if board else None,
+        "fats": board[-1].fats if board else None,
+        "row_id": board[-1].id if board else None,
     }
 
 
-# ── answer routes ────────────────────────────────────────────────────────────
+# ── answer routes, each DEMONSTRATED rather than labelled ────────────────────
 
-@pytest.mark.parametrize("answer,rows_expected,label", [
-    ("6 oz",            1, "typed quantity that was offered"),
-    ("137 grams",       1, "typed quantity we never offered"),
-    ("not sure",        1, "estimate route — MODE_DEFAULT"),
-    ("cancel",          0, "explicit cancel writes nothing"),
+@pytest.mark.parametrize("answer,rows_expected,status_expected,modality,label", [
+    ("6 oz",       1, "committed", "label",   "the exact text of an offered option"),
+    ("137 grams",  1, "committed", "text",    "a quantity we never offered"),
+    ("not sure",   1, "committed", "command", "the estimate route"),
+    ("cancel",     0, "cancelled", "command", "explicit cancel"),
 ])
 @pytest.mark.asyncio
-async def test_each_answer_route_reaches_the_right_terminal_state(
-        edges, b1_live, app_db, answer, rows_expected, label):
-    """One operation, one terminal state, and the row count the route implies."""
+async def test_each_answer_route_reaches_its_own_terminal_state(
+        edges, b1_live, app_db, answer, rows_expected, status_expected,
+        modality, label):
+    """EXACT status, and the route PROVEN from the persisted record.
+
+    Two things this used to get wrong. `status in ("committed","cancelled")`
+    accepted an accidental cancellation of a valid quantity answer and only
+    failed indirectly through the row count. And nothing checked WHICH route
+    owned the answer, so every case could have travelled the same generic
+    typed-quantity path while the parameter label asserted otherwise.
+
+    `modality` is the durable answer to that: an exact stored label binds as a
+    SELECTION, a quantity we never offered is the user STATING one, and a
+    command is neither.
+    """
     ops = await _ask(edges, b1_live)
     assert ops, "the ask did not open an operation; the scenario proves nothing"
+
+    offered = await _persisted_ask(b1_live)
+    if answer == "6 oz":
+        assert "6 oz" in offered["labels"], (
+            f"this case claims to answer with an OFFERED option and "
+            f"{offered['labels']} does not contain it")
+    if answer == "137 grams":
+        assert "137" not in " ".join(offered["labels"]), (
+            f"this case claims to answer with something NOT offered, but "
+            f"{offered['labels']} contains it")
 
     await say(b1_live, answer)
     st = await _state(b1_live)
 
     assert st["operations"] == 1, f"{label}: {st}"
+    assert st["status"] == status_expected, f"{label}: {st}"
     assert st["food_rows"] == rows_expected, f"{label}: {st}"
     assert st["meal_commits"] == rows_expected, (
         f"{label}: meal commits and food rows disagree — {st}")
-    assert st["status"] in ("committed", "cancelled"), f"{label}: {st}"
+
+    obs = await _observation(b1_live)
+    assert obs is not None, f"{label}: no durable observation of the answer"
+    assert obs.modality == modality, (
+        f"{label}: answered via {obs.modality!r}, expected {modality!r} — the "
+        f"route that owned this answer is not the one this case names")
 
 
 @pytest.mark.asyncio
@@ -116,44 +201,154 @@ async def test_a_malformed_answer_repairs_without_writing_or_moving_revision(
 
 
 @pytest.mark.asyncio
-async def test_duplicate_delivery_cannot_write_twice(edges, b1_live, app_db):
-    """The same answer twice is one meal, and the SAME meal."""
+async def test_the_same_transport_delivery_twice_is_deduped(
+        edges, b1_live, app_db):
+    """One message arriving twice on the wire. Handled ABOVE B-1.
+
+    Verified by mutation: disabling `settle`'s replay guard does not change
+    this outcome, so the protection here is transport-level idempotency, not
+    B-1's. Recorded as its own scenario precisely so it cannot be mistaken for
+    the canonical replay proof below — the two live in different layers and
+    only one of them is B-1's to keep working.
+    """
     await _ask(edges, b1_live)
-    await say(b1_live, "6 oz")
+    await say(b1_live, "6 oz", msg_id=777001)
+    before = (await rows(b1_live))[0].id
+
+    await say(b1_live, "6 oz", msg_id=777001)      # the SAME delivery
+
+    board = await rows(b1_live)
+    assert len(board) == 1 and board[0].id == before, (
+        f"a redelivered message wrote twice: {[(r.id, r.quantity) for r in board]}")
+
+
+@pytest.mark.asyncio
+async def test_a_second_structured_answer_replays_the_persisted_result(
+        edges, b1_live, app_db):
+    """B-1'S OWN IDEMPOTENCY — the guard in `settle`, and the one that matters.
+
+    A chip stays on screen after the meal lands, so a second tap is a real
+    delivery that transport dedup does NOT catch: it is a distinct message
+    carrying the same option. Settlement advances the revision, so without the
+    guard the second pass forms its own valid claim and writes a SECOND meal —
+    the coordinator cannot see it, because the two claims are genuinely
+    distinct.
+
+    Answering through the structured boundary is the only way to reach that
+    branch; two `say()` calls are declined earlier by ownership and prove
+    something else. Mutation-verified: disable the guard and this fails.
+    """
+    from tests.test_a_conversation_across_turns import (_live_field_and_option,
+                                                        _structured)
+
+    await _ask(edges, b1_live)
+    field_id, option_id, revision = await _live_field_and_option(b1_live)
+
+    await _structured(b1_live, field_id=field_id, option_id=option_id,
+                      revision=revision)
     first = (await rows(b1_live))[0]
-    before = (first.id, first.calories, first.quantity)
+    before = (first.id, first.calories, first.protein, first.quantity)
+    commits_before = len(await commits(b1_live))
 
-    await say(b1_live, "6 oz")
-    st = await _state(b1_live)
-    after_row = (await rows(b1_live))[0]
+    # The same tap again, against the now-settled operation.
+    await _structured(b1_live, field_id=field_id, option_id=option_id,
+                      revision=revision)
 
-    assert st["food_rows"] == 1 and st["meal_commits"] == 1, st
-    assert (after_row.id, after_row.calories, after_row.quantity) == before, (
-        f"the replay changed the meal under the user: {before} -> "
-        f"{(after_row.id, after_row.calories, after_row.quantity)}")
+    board = await rows(b1_live)
+    assert len(board) == 1, (
+        f"a second structured answer wrote a second meal: "
+        f"{[(r.id, r.quantity, r.calories) for r in board]}")
+    after = (board[0].id, board[0].calories, board[0].protein, board[0].quantity)
+    assert after == before, f"the replay changed the meal: {before} -> {after}"
+    assert len(await commits(b1_live)) == commits_before, (
+        "a second commit claim executed for one meal")
 
 
-# ── quantity basis ───────────────────────────────────────────────────────────
+# ── quantity basis: the answer must REPRICE, not merely persist ─────────────
 
 @pytest.mark.parametrize("unit,amount", [("g", 100), ("oz", 6),
                                          ("cup cooked", 1), ("breast", 1)])
 @pytest.mark.asyncio
-async def test_the_answered_mass_replaces_any_ask_time_basis(
-        edges, b1_live, app_db, unit, amount):
-    """A mass answer overrides whatever basis the ask carried.
+async def test_the_answered_mass_reprices_every_macro(
+        edges, b1_live, app_db, density, unit, amount):
+    """B-1.75, asserted against an EXPECTED value rather than truthiness.
 
-    B-1.75: the ask-time macros described a DIFFERENT quantity, so leaving them
-    in the pricing input let a policy meant for arbitrating sources arbitrate
-    the user's own answer instead.
+    The defect was: the answered quantity persisted correctly while the
+    ask-time calories survived unchanged. `assert calories` passes with that
+    bug fully present — the row has a number, it is simply the wrong one.
+
+    So the ask-time nutrition is seeded deliberately incompatible (280 cal for
+    the ask-time basis), a deterministic 2 cal/g source is available, and 50 g
+    must therefore be exactly 100 cal. Every macro is checked, because
+    calories alone can be right while protein rides in stale.
     """
-    await _ask(edges, b1_live, amount=amount, unit=unit)
+    ask_time_cal = 280
+    await _ask(edges, b1_live, cal=ask_time_cal, amount=amount, unit=unit)
     await say(b1_live, "50 g")
     st = await _state(b1_live)
 
     assert st["food_rows"] == 1, st
     assert "50" in (st["quantity"] or ""), (
         f"ask-time basis {amount}{unit} survived into the row: {st}")
-    assert st["calories"], f"a committed row with no calories: {st}"
+    assert st["calories"] != ask_time_cal, (
+        f"the ask-time calories survived the answer — this is B-1.75: {st}")
+    assert st["calories"] == pytest.approx(50 * density["cal_per_g"], rel=0.02), (
+        f"50 g at 2 cal/g must be 100 cal, got {st['calories']} ({unit})")
+    assert st["protein"] == pytest.approx(50 * density["protein_per_g"], rel=0.05), st
+    assert st["carbs"] == pytest.approx(50 * density["carbs_per_g"], rel=0.05), st
+    assert st["fats"] == pytest.approx(50 * density["fat_per_g"], rel=0.05), st
+
+
+@pytest.mark.asyncio
+async def test_a_different_answer_prices_differently(edges, b1_live, app_db,
+                                                     density):
+    """The relational form, which no stale-macro implementation can satisfy.
+
+    Two answers to the same food must produce proportional nutrition. A row
+    that ignores the answer commits the same number twice, whatever its
+    absolute value happens to be.
+    """
+    await _ask(edges, b1_live)
+    await say(b1_live, "50 g")
+    small = (await rows(b1_live))[-1]
+
+    await _ask(edges, b1_live)
+    await say(b1_live, "100 g")
+    large = (await rows(b1_live))[-1]
+
+    assert large.calories == pytest.approx(2 * small.calories, rel=0.05), (
+        f"doubling the answer did not double the price: "
+        f"{small.calories} -> {large.calories}")
+    assert large.protein == pytest.approx(2 * small.protein, rel=0.08), (
+        f"protein did not follow: {small.protein} -> {large.protein}")
+
+
+# ── presentation agrees with what was written ───────────────────────────────
+
+@pytest.mark.asyncio
+async def test_the_card_and_the_day_agree_with_the_committed_row(
+        edges, b1_live, app_db, density):
+    """Claimed in this file's coverage, so it is demonstrated here.
+
+    Three owners of one number produced 789 and 788 once. The card, the row
+    and the day total come from one commit and must agree exactly.
+    """
+    await _ask(edges, b1_live)
+    result = await say(b1_live, "50 g")
+
+    board = await rows(b1_live)
+    assert len(board) == 1, board
+    row = board[0]
+
+    cards = getattr(getattr(result, "response", None), "cards", None) or []
+    assert cards, "a committing turn rendered no card"
+    blob = str(cards)
+    assert str(int(row.calories)) in blob.replace(",", ""), (
+        f"the card does not carry the committed calories {row.calories}: {blob[:300]}")
+
+    day = sum(float(r.calories or 0) for r in board)
+    assert day == pytest.approx(row.calories, rel=0.001), (
+        f"the day total ({day}) disagrees with its only row ({row.calories})")
 
 
 # ── the turn is watched ──────────────────────────────────────────────────────
@@ -188,3 +383,61 @@ async def test_every_committing_turn_ran_its_health_check(
         f"the turn committed but reported no write: {ran.get('wrote_this_turn')}")
     assert "phantom_log_claim" not in (result.health_flags or []), (
         f"a real commit was flagged as a phantom: {result.health_flags}")
+
+
+# ── candidate routes, which the earlier commit claimed and did not cover ─────
+
+@pytest.mark.asyncio
+async def test_a_history_candidate_is_offered_when_one_exists(
+        edges, b1_live, app_db):
+    """The candidate axis, asserted on the PERSISTED source rather than the amount.
+
+    The previous version of this file crossed several ANSWER routes and
+    claimed to cross every CANDIDATE route, while `_ask()` only ever seeded an
+    ontology-backed item. Reading the stored option's `source` is the only way
+    to tell a history candidate from an ontology one that happens to land on a
+    similar number.
+    """
+    from datetime import date
+
+    import db.database as D
+    from db.models import DailyLog, FoodEntry
+
+    async with D.AsyncSessionLocal() as s:
+        log = DailyLog(user_id=b1_live, date=date.today())
+        s.add(log)
+        await s.flush()
+        s.add(FoodEntry(daily_log_id=log.id,
+                        parsed_food_name="Chicken breast",
+                        quantity="182 g", calories=300.0,
+                        estimated_flag=False))
+        await s.commit()
+
+    await _ask(edges, b1_live)
+    offered = await _persisted_ask(b1_live)
+
+    assert "user_history" in (offered["sources"] or []), (
+        f"a trusted exact prior exists and history contributed no candidate: "
+        f"{list(zip(offered['labels'], offered['sources']))}")
+    idx = offered["sources"].index("user_history")
+    assert offered["grams"][idx] == pytest.approx(182.0, rel=0.02), (
+        f"the history option does not carry the amount actually logged: "
+        f"{offered['grams'][idx]}")
+
+
+@pytest.mark.asyncio
+async def test_with_no_history_every_candidate_comes_from_the_ontology(
+        edges, b1_live, app_db):
+    """The control. Without a prior, history must contribute nothing.
+
+    Asserted so the test above cannot pass for the wrong reason — a fixture
+    that always produces a history option would satisfy it without the
+    matcher working at all.
+    """
+    await _ask(edges, b1_live)
+    offered = await _persisted_ask(b1_live)
+
+    assert offered["sources"], "the ask offered nothing"
+    assert "user_history" not in offered["sources"], (
+        f"history contributed a candidate with no prior to draw on: "
+        f"{list(zip(offered['labels'], offered['sources']))}")

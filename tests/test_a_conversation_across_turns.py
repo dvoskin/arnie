@@ -54,7 +54,7 @@ from tests.test_a_full_day_of_food import (  # noqa: F401
 _MSG_IDS = itertools.count(9000)
 
 
-async def say(user_id, text, *, platform=None):
+async def say(user_id, text, *, platform=None, msg_id=None):
     """One inbound message, carrying a DISTINCT transport message id.
 
     Production's turn id comes from the transport — `telegram:9132`,
@@ -78,7 +78,12 @@ async def say(user_id, text, *, platform=None):
         return await run_chat_turn(
             s, user, text, platform=platform or CAPABLE,
             schedule_background=False,
-            client_msg_id=str(next(_MSG_IDS)))
+            # `msg_id` lets a caller REDELIVER an identity rather than send a
+            # new message. Two calls with the same text are two messages; a
+            # duplicate webhook delivery is the SAME message arriving twice,
+            # and only the second proves idempotency.
+            client_msg_id=str(msg_id if msg_id is not None
+                              else next(_MSG_IDS)))
 
 #: The channel B-1 actually runs on. iOS is deliberately `client_incapable`
 #: until B-1b, so driving this on "ios" would prove nothing — and that is
