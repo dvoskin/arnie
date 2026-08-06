@@ -6,29 +6,34 @@ am inferring, it says so.
 
 ---
 
-## 1. Status right now — action required
+## 1. Status — resolved and verified
+
+*Updated 2026-08-06 after deploy and live verification. §1 was previously an
+open incident notice; the incident is closed.*
 
 | | |
 |---|---|
-| Production SHA | `d6fb068` — **contains the data-loss defect** |
-| `main` | `47fc344` — **contains the fix**, not yet deployed |
+| Production SHA | `80b7786` — **contains the fix** |
+| `main` | `2ae83cb` |
 | `B1_QUANTITY` in prod | `effective=allowlist`, `halted=false`, `percent=0.0`, `allowlist_size=1` |
-| Blast radius | **exactly one user** (id 26, the operator). `percent=0.0`, so no one enters the cohort by hash. |
-| Test suite on `main` | 7842 passed, 0 failed, 0 errors, 82 skipped |
+| Blast radius during the incident | **exactly one user** (id 26, the operator). `percent=0.0`, so no one entered the cohort by hash. |
+| Meals lost | 2, both belonging to that same user |
+| Test suite | 7842 passed, 0 failed, 0 errors, 82 skipped |
+| Data-loss defect | **fixed, deployed, and reproduced-then-verified in production** (§6b) |
 
-**Two ways to make production safe. Either is sufficient:**
+No action outstanding on the incident. One accuracy defect was found *during*
+the verification and is deliberately deferred, not dropped — see §6c.
+
+**For reference, the kill switch:**
 
 ```bash
-# Option A — deploy main (47fc344). Preferred: fixes it properly.
-# Option B — stop new ownership immediately, no deploy needed:
-#   set B1_QUANTITY_HALT=1   (or unset B1_QUANTITY_ALLOWLIST) and restart
+B1_QUANTITY_HALT=1
 ```
 
-`B1_QUANTITY_HALT` is a **pre-ownership** switch by design — it prevents new
-canonical operations from being created; it does not tear down an operation
-already in flight (see §6, invariant C10). Since the last commit was hours ago,
-no operation is in its ownership window, so halting is a complete mitigation
-from the moment it takes effect.
+It is a **pre-ownership** switch by design — it prevents new canonical
+operations from being created; it does not tear down an operation already in
+flight (see §9, invariant C10). It was not needed in the end: the fix deployed
+before another ownership window opened.
 
 ---
 
@@ -203,6 +208,85 @@ pass.
 
 ---
 
+## 6b. The fix, verified in production
+
+Deployed `80b7786`. The same four-message sequence was then run live on Telegram
+against a fixed baseline (last existing row: entry **2849**).
+
+**Trace, in order — the middle line is the fix:**
+
+```
+b1_shown        operation=…:9132  options=2 sources=ontology free_text=True
+b1_answered     operation=…:9132  outcome=applied modality=text provenance=user_stated
+canonical_meal_written operation=…:9132 revision=1 lane=canonical:create cal=96.0
+b1_committed    operation=…:9132  entry=2851
+
+b1_not_a_replay operation=…:9132  — settled operation left alone; this message is a new report
+
+b1_shown        operation=…:9139  options=3 sources=ontology free_text=True
+b1_answered     operation=…:9139  outcome=applied modality=text provenance=user_stated
+canonical_meal_written operation=…:9139 revision=1 lane=canonical:create cal=150.0
+b1_committed    operation=…:9139  entry=2852
+```
+
+**Database verification:**
+
+| check | result |
+|---|---|
+| new food rows | 2 — entry 2851 (chicken breast), 2852 (oatmeal). Both meals written. |
+| `meal_commits` | exactly 1 per operation, all three `committed`, all `revision=1` |
+| ledger events | 1 `created` per entry, source `canonical:create` |
+| non-canonical ledger writes | **0** |
+| pending operations | all three terminal |
+
+Under the old code, message 3 replied *"Logged White rice, steamed, 64 cal"* and
+wrote nothing. It now declines the claim and opens its own operation.
+
+**Two things proven for the first time**, beyond the fix itself:
+
+1. a settled operation correctly **declines** a message not addressed to it;
+2. a **second** operation can open and commit after a first settles — until this
+   run, exactly one operation had ever existed in production.
+
+The fix was also verified by mutation before deploy: with the guard removed the
+new regression test fails with the exact production symptom; restored, all 49
+ownership tests pass.
+
+## 6c. Found during verification, deliberately deferred — B-1.75
+
+Comparing each operation's stored ask-time item against its committed row
+surfaced a separate defect. It is recorded here because it was found here, and
+in `docs/CANONICAL_MIGRATION_DIRECTIVE.md` as **B-1.75** because that is where
+it will be fixed.
+
+| entry | item at ask | committed | outcome |
+|---|---|---|---|
+| 2849 rice | 100 **g** → 161/4/34/1 | 39.6 g → 64/1.4/13.4/0.5 | scaled correctly (×0.396) |
+| 2851 chicken | 6 **oz** → 280/52/0/7 | 87 g → 96/20/**4**/0 | fuzzy override — carbs on a chicken breast |
+| 2852 oatmeal | 1 **cup cooked** → 150/5/27/3 | 45 g → **150/5/27/3** | pass-through, identical to the digit |
+
+`core/b1_quantity_operation.py` builds the pricing input as
+`inp = {**item, "quantity": quantity_text}` — the answered quantity layered on
+top of the ask-time `amount`, `unit` **and macros**. `_analyze_food`
+(`handlers/tool_executor.py:2896`) reads `calories/protein/carbs/fats` straight
+out of that dict as authoritative. So the pricer receives two contradictory
+statements of the same fact and picks one; which one it picks depends on the
+branch it takes. Gram-based items survive because the two statements happen to
+agree. Every other basis does not.
+
+**This is not a nutrition-accuracy finding**, and no improvement to the resolver
+can fix it — the contradiction exists before the resolver is called. The fix is
+a **deletion** (replace the quantity fields rather than shadowing them), never
+scaling arithmetic, which would violate the standing no-heuristics rule.
+
+**Sequencing decision (2026-08-06):** downstream nutrition refinement owns this;
+it does not gate B-1. It *does* gate B-1 **promotion**, since promotion asserts
+that the answered quantity produces the committed numbers — so it must close
+before the legacy quantity path is deleted.
+
+It also explains itself: the fixtures were gram-based, which is the one case
+that works. Same root cause as §7.
+
 ## 7. The common root cause
 
 Four of the six defects are the same failure, not four different ones:
@@ -260,12 +344,22 @@ The `repair → applied` pair is terminal ownership working correctly: an
 unparseable answer re-asked the **same field** instead of falling to the
 interpreter and becoming a second meal.
 
+Verified again on 2026-08-06 across two further operations (§6b), which added
+**settled-operation decline** and **a second operation after settlement** to the
+proven list. Duplicate-answer replay is also proven — two `b1_replayed` events,
+still one row.
+
 ### Not yet proven in production
 
 - stale revision / foreign `field_id` refusal
 - structured chip tap — **blocked until B-1b**; no channel sends `option_id` yet
 - staged rollout past the allowlist (1% → 5% → 25% → 100%)
 - voice rendering over committed facts
+- **history-sourced options** — all five asks so far were `sources=ontology`,
+  none from user history. Expected at this sample size (token-set-exact match
+  against rows with `estimated_flag=False`, and no prior chicken/oatmeal rows
+  qualify), but it is one of the two indicators named as able to falsify the
+  design, so it needs watching as the cohort widens rather than assuming.
 
 ### Known tooling gap
 
@@ -321,14 +415,26 @@ Live before B-1, unrelated to it, now fixed:
 
 ## 11. Next
 
-1. **Deploy `47fc344`**, or halt the cohort. (§1)
-2. Build the local multi-turn Telegram harness. (§8)
-3. Re-verify the remaining gates by hand-sent message: stale revision, foreign
-   `field_id`.
+1. ~~Deploy the fix, or halt the cohort~~ — **done**, `80b7786`, verified live (§6b).
+2. **Build the local multi-turn Telegram harness.** (§8) In progress. The
+   absence of this is why the incident reached a user instead of CI, and it
+   also removes the need to hand-send messages for items 3 and 5.
+3. Prove the remaining negative gates: stale revision, foreign `field_id`.
+   Currently hand-sent; moves into the harness once it exists.
 4. Fix `/admin/food-traces?q=` to fail loudly rather than return everything.
 5. B-1b: iOS renders the canonical interaction — unblocks the chip tap path and
-   makes the probe usable.
-6. Only then: widen 1% → 5% → 25% → 100%, then scoped legacy deletion.
+   makes `scripts/b1_operation_probe.py` usable.
+6. **B-1.75** (§6c) — before promotion, not before rollout.
+7. Only then: widen 1% → 5% → 25% → 100%, then scoped legacy deletion.
+
+---
+
+## Changelog
+
+- **2026-08-05** — written during the incident; §1 was an open action notice.
+- **2026-08-06** — fix deployed (`80b7786`) and verified live; §1 rewritten as
+  resolved; §6b (verification) and §6c (B-1.75, deferred) added; §8 and §11
+  updated.
 
 Unrelated, flagged during this work: `reask_refused` is firing for user `ios:5`
 on the legacy lane. Not investigated.
