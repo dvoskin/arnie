@@ -163,7 +163,7 @@ def answer_from_chip(interaction, *, field_id: str, option_id: str,
 
 def answer_from_text(interaction, *, field_id: str, text: str,
                      revision: int, food_name: str = "",
-                     locale: str = "en") -> AnswerResult:
+                     locale: str = "en", context=None) -> AnswerResult:
     """A typed answer, through the NARROW parser only.
 
     The broad interpreter is not reachable from here, by construction. That is
@@ -199,7 +199,7 @@ def answer_from_text(interaction, *, field_id: str, text: str,
         return AnswerResult(Outcome.REFUSED, reason=str(exc),
                             modality=AnswerModality.USER_TEXT)
 
-    commanded = _command(said, field, locale)
+    commanded = _command(said, field, locale, context)
     if commanded is not None:
         return commanded
 
@@ -219,7 +219,8 @@ def answer_from_text(interaction, *, field_id: str, text: str,
             provenance=Provenance.USER_STATED))
 
 
-def _command(said: str, field, locale: str = "en") -> Optional[AnswerResult]:
+def _command(said: str, field, locale: str = "en",
+             context=None) -> Optional[AnswerResult]:
     """Deterministic commands, through the parser that already owns them.
 
     A local word list was the first version, matched by substring, and it was
@@ -247,7 +248,7 @@ def _command(said: str, field, locale: str = "en") -> Optional[AnswerResult]:
     if command in (ClarificationCommand.ESTIMATE,
                    ClarificationCommand.KEEP_AS_READ,
                    ClarificationCommand.COMMIT_READY):
-        return _estimate(field, command.value)
+        return _estimate(field, command.value, context)
     return None
 
 
@@ -273,11 +274,11 @@ ESTIMATE_POLICY_VERSION = "estimate_evidence_v1"
 #: table without anyone editing it.
 _LEGACY_SOURCE_SCOPE = {
     "user_history": "this_user",
-    "catalog": "this_product",
+    "catalog": "this_product_quantity",
 }
 
 
-def _estimate_is_supported(field):
+def _estimate_is_supported(field, context=None):
     """May "not sure" commit, or must it stay unresolved?
 
     THE MEASURED CASE. "Not sure" committed 435 g of chicken breast — 718 cal,
@@ -313,35 +314,44 @@ def _estimate_is_supported(field):
     return [o for o in getattr(field, "options", ()) or ()
             if o.patch is not None
             and getattr(o.patch, "quantity", None) is not None
-            and _authorizes_assumption(o)]
+            and _authorizes_assumption(o, context)]
 
 
-def _authorizes_assumption(option) -> bool:
-    """Read the evidence, fall back to the migration table, never guess.
+def _authorizes_assumption(option, context=None) -> bool:
+    """Read the evidence IN CONTEXT, fall back to the migration table, never
+    guess.
 
-    An option carrying real `QuantityCandidateEvidence` answers for itself —
-    that is the contract, and `authorizes_assumption` is derived from the
-    declared scope and its required subject id rather than from any name.
+    An option carrying real `QuantityCandidateEvidence` answers for itself,
+    and it answers about a specific person and entity — scope alone proves the
+    evidence names *a* user, not *this* one. Without a context we cannot make
+    that comparison, so evidence-bearing options fail SHUT rather than being
+    authorised on scope alone; a caller that knows who is asking must say so.
+
     Until every producer attaches evidence (commit 4), an option without it is
-    mapped from its source ONCE, here, and anything unmapped is treated as a
-    population prior. Unknown fails SHUT: a lane we cannot characterise does
-    not get to assert a portion on someone's behalf.
+    mapped from its source ONCE, here. Anything unmapped is a population
+    prior. This branch dies with commit 4.
     """
     from core.semantics import EvidenceScope
 
     evidence = getattr(option, "evidence", None)
     if evidence is not None:
-        return bool(getattr(evidence, "authorizes_assumption", False))
+        if context is None:
+            logger.warning(
+                "event=b1_evidence_without_context option=%s — evidence "
+                "cannot be matched to a subject, refusing to authorise",
+                getattr(option, "option_id", "?"))
+            return False
+        return bool(evidence.authorizes_assumption(context))
 
     source = str(getattr(getattr(option, "source", None), "value", "") or "")
     scope = _LEGACY_SOURCE_SCOPE.get(source)
     if scope is None:
         return False
     return EvidenceScope(scope) in (EvidenceScope.THIS_USER,
-                                    EvidenceScope.THIS_PRODUCT)
+                                    EvidenceScope.THIS_PRODUCT_QUANTITY)
 
 
-def _estimate(field, reason: str) -> AnswerResult:
+def _estimate(field, reason: str, context=None) -> AnswerResult:
     """"I don't know — you decide."
 
     A real answer, not a failure to answer, and the alternative is worse than
@@ -359,7 +369,7 @@ def _estimate(field, reason: str) -> AnswerResult:
 
     from core.semantics import Provenance, SetQuantity
 
-    priced = _estimate_is_supported(field)
+    priced = _estimate_is_supported(field, context)
     if not priced:
         # UNRESOLVED IS THE CORRECT STATE. No write, the operation stays open,
         # and the user is asked again — rather than being handed a number

@@ -15,8 +15,11 @@ import pytest
 from core.semantics import (CandidateSelectionDecision, CandidateSet,
                             CandidateSource, CanonicalQuantity,
                             ConversionEvidence, EstimateEvidence,
-                            EvidenceScope, EVIDENCE_SCHEMA_VERSION,
+                            EvidenceContext, EvidenceScope,
+                            EVIDENCE_SCHEMA_VERSION,
                             QuantityCandidateEvidence, ServingBasis)
+
+CTX = EvidenceContext(user_id=26, canonical_entity_id="food:chicken_breast")
 
 
 def _ev(**kw):
@@ -44,23 +47,27 @@ def test_applicability_comes_from_scope_not_from_the_source_name():
     """
     mine = _ev(source_type=CandidateSource.USER_HISTORY,
                subject_scope=EvidenceScope.THIS_USER, subject_user_id=26)
-    assert mine.authorizes_assumption
+    assert mine.authorizes_assumption(CTX)
 
     # Same lane name, population scope: it may be offered, never assumed.
     general = _ev(source_type=CandidateSource.USER_HISTORY,
                   subject_scope=EvidenceScope.POPULATION,
                   subject_user_id=None)
-    assert not general.authorizes_assumption
+    assert not general.authorizes_assumption(CTX)
 
-    # A lane whose name means nothing to us, but which declares its subject.
+    # A lane whose name means nothing to us, but which declares its subject —
+    # and is matched against the variant actually selected.
     product = _ev(source_type=CandidateSource.CATALOG,
-                  subject_scope=EvidenceScope.THIS_PRODUCT,
+                  subject_scope=EvidenceScope.THIS_PRODUCT_QUANTITY,
+                  serving_basis=ServingBasis.STANDARD_SERVING,
                   subject_user_id=None, product_variant_id="off:5901234")
-    assert product.authorizes_assumption
+    assert product.authorizes_assumption(
+        EvidenceContext(user_id=26, canonical_entity_id="food:chicken_breast",
+                        product_variant_id="off:5901234"))
 
     ontology = _ev(source_type=CandidateSource.ONTOLOGY,
                    subject_scope=EvidenceScope.POPULATION, subject_user_id=None)
-    assert not ontology.authorizes_assumption
+    assert not ontology.authorizes_assumption(CTX)
 
 
 def test_a_scope_without_its_subject_cannot_be_constructed():
@@ -68,8 +75,9 @@ def test_a_scope_without_its_subject_cannot_be_constructed():
     with pytest.raises(ValueError, match="name the user"):
         _ev(subject_scope=EvidenceScope.THIS_USER, subject_user_id=None)
     with pytest.raises(ValueError, match="name the variant"):
-        _ev(subject_scope=EvidenceScope.THIS_PRODUCT, subject_user_id=None,
-            product_variant_id="")
+        _ev(subject_scope=EvidenceScope.THIS_PRODUCT_QUANTITY,
+            serving_basis=ServingBasis.PACKAGE,
+            subject_user_id=None, product_variant_id="")
 
 
 # ── fail shut on anything we cannot interpret ───────────────────────────────
@@ -142,7 +150,7 @@ def test_every_contract_round_trips_as_its_concrete_type():
     assert CandidateSelectionDecision.from_payload(d.to_payload()) == d
 
     est = EstimateEvidence(chosen=ev, policy_version="estimate_evidence_v1",
-                           considered=(ev,))
+                           context=CTX, considered=(ev,))
     assert EstimateEvidence.from_payload(est.to_payload()) == est
 
 
@@ -181,7 +189,7 @@ def test_estimate_evidence_refuses_a_population_prior():
     prior = _ev(source_type=CandidateSource.ONTOLOGY,
                 subject_scope=EvidenceScope.POPULATION, subject_user_id=None)
     with pytest.raises(ValueError, match="cannot authorise an assumption"):
-        EstimateEvidence(chosen=prior, policy_version="estimate_evidence_v1")
+        EstimateEvidence(chosen=prior, policy_version="estimate_evidence_v1", context=CTX)
 
 
 def test_a_decision_must_name_its_policy():
@@ -189,7 +197,7 @@ def test_a_decision_must_name_its_policy():
     with pytest.raises(ValueError, match="policy version"):
         CandidateSelectionDecision(field_id="f1", selected=(ev,))
     with pytest.raises(ValueError, match="policy"):
-        EstimateEvidence(chosen=ev, policy_version="")
+        EstimateEvidence(chosen=ev, policy_version="", context=CTX)
 
 
 def test_an_exclusion_carries_its_reason():
@@ -202,3 +210,109 @@ def test_an_exclusion_carries_its_reason():
         policy_version="sel_v1")
     (_, reason), = d.excluded
     assert "collapsed" in reason
+
+
+# ── 2.1: applicability is CONTEXTUAL ────────────────────────────────────────
+
+def test_evidence_about_another_user_cannot_authorize():
+    """THE HOLE 2.1 CLOSES. Scope proved the evidence named *a* user.
+
+    `subject_user_id` was stored and never compared, so evidence about user
+    123 would have authorised an assumption for user 456 — structurally valid,
+    semantically wrong, and exactly what CF-1 exists to prevent.
+    """
+    mine = _ev(subject_user_id=26)
+    assert mine.authorizes_assumption(
+        EvidenceContext(user_id=26, canonical_entity_id="food:chicken_breast"))
+    assert not mine.authorizes_assumption(
+        EvidenceContext(user_id=456, canonical_entity_id="food:chicken_breast"))
+
+
+def test_evidence_about_another_entity_cannot_authorize():
+    """Evidence about rice says nothing about salmon, however well sourced."""
+    rice = _ev(canonical_entity_id="food:white_rice")
+    assert not rice.authorizes_assumption(
+        EvidenceContext(user_id=26, canonical_entity_id="food:salmon"))
+    assert rice.authorizes_assumption(
+        EvidenceContext(user_id=26, canonical_entity_id="food:white_rice"))
+
+
+def test_product_evidence_matches_the_selected_variant():
+    pkg = _ev(source_type=CandidateSource.CATALOG,
+              subject_scope=EvidenceScope.THIS_PRODUCT_QUANTITY,
+              serving_basis=ServingBasis.PACKAGE,
+              subject_user_id=None, product_variant_id="off:5901234")
+    right = EvidenceContext(user_id=26, canonical_entity_id="food:chicken_breast",
+                            product_variant_id="off:5901234")
+    wrong = EvidenceContext(user_id=26, canonical_entity_id="food:chicken_breast",
+                            product_variant_id="off:9999999")
+    assert pkg.authorizes_assumption(right)
+    assert not pkg.authorizes_assumption(wrong)
+    assert not pkg.authorizes_assumption(
+        EvidenceContext(user_id=26, canonical_entity_id="food:chicken_breast"))
+
+
+def test_population_evidence_never_authorizes_at_any_confidence():
+    prior = _ev(source_type=CandidateSource.ONTOLOGY,
+                subject_scope=EvidenceScope.POPULATION, subject_user_id=None,
+                confidence=Decimal("0.99"))
+    assert prior.applies_to(CTX), "a population prior still APPLIES; it may be offered"
+    assert not prior.authorizes_assumption(CTX)
+
+
+def test_identifying_a_product_is_not_knowing_how_much_was_eaten():
+    """P1 from review. Knowing a jar is Brand X honey does not establish that
+    three tablespoons were eaten — identity is not consumption."""
+    with pytest.raises(ValueError, match="without stating an amount"):
+        _ev(source_type=CandidateSource.CATALOG,
+            subject_scope=EvidenceScope.THIS_PRODUCT_QUANTITY,
+            serving_basis=ServingBasis.MASS,      # identifies, does not portion
+            subject_user_id=None, product_variant_id="off:5901234")
+    ok = _ev(source_type=CandidateSource.CATALOG,
+             subject_scope=EvidenceScope.THIS_PRODUCT_QUANTITY,
+             serving_basis=ServingBasis.STANDARD_SERVING,
+             subject_user_id=None, product_variant_id="off:5901234")
+    assert ok.serving_basis is ServingBasis.STANDARD_SERVING
+
+
+# ── 2.1: conversion invariants ──────────────────────────────────────────────
+
+def test_a_cited_authority_without_a_value_converts_nothing():
+    with pytest.raises(ValueError, match="no positive value"):
+        ConversionEvidence(from_basis=ServingBasis.VOLUME,
+                           to_basis=ServingBasis.MASS,
+                           source_record_id="usda:fdc:170379", factor=None)
+    with pytest.raises(ValueError, match="no positive value"):
+        ConversionEvidence(from_basis=ServingBasis.VOLUME,
+                           to_basis=ServingBasis.MASS,
+                           source_record_id="usda:fdc:170379",
+                           factor=Decimal("0"))
+
+
+def test_a_same_basis_conversion_cannot_quietly_rescale():
+    with pytest.raises(ValueError, match="silent rescale"):
+        ConversionEvidence(from_basis=ServingBasis.MASS,
+                           to_basis=ServingBasis.MASS, factor=Decimal("1.15"))
+    assert ConversionEvidence(from_basis=ServingBasis.MASS,
+                              to_basis=ServingBasis.MASS, factor=Decimal("1"))
+
+
+def test_a_conversion_must_land_on_this_candidates_basis():
+    """Otherwise a volume candidate could carry an unrelated piece-to-mass row
+    and pass construction while proving nothing about itself."""
+    with pytest.raises(ValueError, match="does not land on this candidate"):
+        _ev(serving_basis=ServingBasis.VOLUME,
+            conversion_evidence=ConversionEvidence(
+                from_basis=ServingBasis.PIECE, to_basis=ServingBasis.MASS,
+                source_record_id="usda:fdc:1", factor=Decimal("174")))
+
+
+def test_an_assumption_records_who_it_was_made_for():
+    ev = _ev()
+    with pytest.raises(ValueError, match="WHO it was made for"):
+        EstimateEvidence(chosen=ev, policy_version="estimate_evidence_v1")
+    with pytest.raises(ValueError, match="not about this person"):
+        EstimateEvidence(chosen=ev, policy_version="estimate_evidence_v1",
+                         context=EvidenceContext(
+                             user_id=456,
+                             canonical_entity_id="food:chicken_breast"))

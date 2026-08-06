@@ -1629,12 +1629,40 @@ class EvidenceScope(str, Enum):
     """
     #: This user's own record. `subject_user_id` REQUIRED.
     THIS_USER = "this_user"
-    #: A specific product/variant — a label, a package. `product_variant_id`
-    #: REQUIRED.
-    THIS_PRODUCT = "this_product"
+    #: A QUANTITY-BEARING record for a specific variant — a package size, a
+    #: declared serving. `product_variant_id` REQUIRED, and the basis must
+    #: actually denote an amount.
+    #:
+    #: NAMED FOR THE QUANTITY, NOT THE PRODUCT. `THIS_PRODUCT` was too broad:
+    #: knowing a jar is Brand X honey does not establish that three
+    #: tablespoons were eaten. Identity is not consumption, and a scope that
+    #: conflates them would let future product metadata authorise a default
+    #: merely by recognising the item.
+    THIS_PRODUCT_QUANTITY = "this_product_quantity"
     #: People in general. Legitimate for OFFERING choices; never sufficient to
     #: assert a portion on someone's behalf.
     POPULATION = "population"
+
+
+@dataclass(frozen=True)
+class EvidenceContext:
+    """WHO is answering, about WHAT. The other half of applicability.
+
+    Evidence naming *a* user is not evidence about *this* user, and the two
+    were indistinguishable while authorisation read only the scope. The stored
+    subject ids existed and were never compared to anything.
+    """
+    user_id: Optional[int]
+    canonical_entity_id: str
+    product_variant_id: Optional[str] = None
+
+
+#: Bases that actually denote an amount of a product. A record scoped
+#: THIS_PRODUCT_QUANTITY must speak in one of these, or it identifies the
+#: product without saying how much of it.
+_QUANTITY_BEARING_BASES = frozenset({
+    "package", "standard_serving", "fraction_of_package",
+})
 
 
 @dataclass(frozen=True)
@@ -1658,12 +1686,26 @@ class ConversionEvidence:
         object.__setattr__(self, "from_basis", ServingBasis(self.from_basis))
         object.__setattr__(self, "to_basis", ServingBasis(self.to_basis))
         object.__setattr__(self, "factor", _dec_in(self.factor))
-        if self.from_basis is not self.to_basis and not self.source_record_id:
+        if self.from_basis is not self.to_basis:
+            if not self.source_record_id:
+                raise ValueError(
+                    f"a conversion from {self.from_basis.value} to "
+                    f"{self.to_basis.value} needs a source that licenses it — "
+                    f"an unsourced factor is an invented density, and the "
+                    f"portion it produces is one the user never gave")
+            # AN AUTHORITY WITHOUT A VALUE IS NOT EXECUTABLE EVIDENCE. Citing
+            # a density row and carrying no number cannot convert anything;
+            # whatever performed the conversion did so on its own authority.
+            if self.factor is None or self.factor <= 0:
+                raise ValueError(
+                    f"a conversion from {self.from_basis.value} to "
+                    f"{self.to_basis.value} cites {self.source_record_id!r} "
+                    f"but carries factor={self.factor!r} — an authority with "
+                    f"no positive value converts nothing")
+        elif self.factor is not None and self.factor != 1:
             raise ValueError(
-                f"a conversion from {self.from_basis.value} to "
-                f"{self.to_basis.value} needs a source that licenses it — an "
-                f"unsourced factor is an invented density, and the portion it "
-                f"produces is one the user never gave")
+                f"a same-basis conversion carries factor={self.factor} — "
+                f"nothing changed, so any factor but 1 is a silent rescale")
 
     def to_payload(self) -> dict:
         return {"from_basis": self.from_basis.value,
@@ -1726,24 +1768,65 @@ class QuantityCandidateEvidence:
             raise ValueError(
                 "THIS_USER evidence must name the user it is about — a scope "
                 "without a subject is a claim without a claimant")
-        if (self.subject_scope is EvidenceScope.THIS_PRODUCT
-                and not str(self.product_variant_id or "").strip()):
+        if self.subject_scope is EvidenceScope.THIS_PRODUCT_QUANTITY:
+            if not str(self.product_variant_id or "").strip():
+                raise ValueError(
+                    "THIS_PRODUCT_QUANTITY evidence must name the variant it "
+                    "is about")
+            if self.serving_basis.value not in _QUANTITY_BEARING_BASES:
+                raise ValueError(
+                    f"THIS_PRODUCT_QUANTITY evidence speaks in "
+                    f"{self.serving_basis.value}, which identifies the product "
+                    f"without stating an amount of it — knowing a jar is Brand "
+                    f"X honey does not establish that three tablespoons were "
+                    f"eaten")
+        # THE CONVERSION MUST CONNECT THIS CANDIDATE'S OWN BASIS. Otherwise a
+        # volume candidate could carry an unrelated piece-to-mass row and pass
+        # construction while proving nothing about itself.
+        conv = self.conversion_evidence
+        if conv is not None and conv.to_basis is not self.serving_basis:
             raise ValueError(
-                "THIS_PRODUCT evidence must name the variant it is about")
+                f"conversion ends in {conv.to_basis.value} but the candidate "
+                f"is expressed in {self.serving_basis.value}; a conversion "
+                f"that does not land on this candidate's basis licenses "
+                f"nothing about it")
 
-    @property
-    def authorizes_assumption(self) -> bool:
-        """May we assert this portion on the user's behalf when they say "not
+    def applies_to(self, context: "EvidenceContext") -> bool:
+        """Is this evidence about the thing currently being asked about?
+
+        The entity must match in every case — evidence about rice says nothing
+        about salmon however well-sourced it is. Beyond that the subject must
+        match its own scope: user evidence must name THIS user, product
+        evidence THIS variant.
+        """
+        if self.canonical_entity_id != (context.canonical_entity_id or ""):
+            return False
+        if self.subject_scope is EvidenceScope.THIS_USER:
+            return (self.subject_user_id is not None
+                    and self.subject_user_id == context.user_id)
+        if self.subject_scope is EvidenceScope.THIS_PRODUCT_QUANTITY:
+            return bool(self.product_variant_id
+                        and self.product_variant_id == context.product_variant_id)
+        return True          # population evidence applies to anyone
+
+    def authorizes_assumption(self, context: "EvidenceContext") -> bool:
+        """May we assert this portion on someone's behalf when they say "not
         sure"?
 
-        READ FROM THE CONTRACT, never from the source's name. This replaces
-        the frozenset of source strings that shipped as a stand-in: a lane
-        added tomorrow is judged on what it declares its evidence is ABOUT,
-        and a population prior can never authorise an assumption no matter
-        what it is called or how confident it claims to be.
+        CONTEXTUAL, and that was the hole. Scope alone proves the evidence
+        names *a* user or *a* product; it does not prove it describes THIS
+        user eating THIS entity. The subject ids were stored and never
+        compared, so evidence about user 123 would have authorised an
+        assumption for user 456 — structurally valid and semantically wrong,
+        which is the precise thing CF-1 exists to prevent.
+
+        Population evidence can never authorise, at any confidence, however it
+        is named.
         """
-        return self.subject_scope in (EvidenceScope.THIS_USER,
-                                      EvidenceScope.THIS_PRODUCT)
+        return (self.applies_to(context)
+                and self.subject_scope in (
+                    EvidenceScope.THIS_USER,
+                    EvidenceScope.THIS_PRODUCT_QUANTITY))
 
     def to_payload(self) -> dict:
         return {
@@ -1793,6 +1876,7 @@ class EstimateEvidence:
     """
     chosen: QuantityCandidateEvidence
     policy_version: str
+    context: Optional[EvidenceContext] = None
     considered: tuple = ()
 
     def __post_init__(self):
@@ -1801,23 +1885,38 @@ class EstimateEvidence:
             raise ValueError(
                 "an assumption must name the policy that made it, or the rate "
                 "it produces cannot be attributed to a rule")
-        if not self.chosen.authorizes_assumption:
+        if self.context is None:
+            raise ValueError(
+                "an assumption must record WHO it was made for and about "
+                "WHAT — without that it cannot be shown to have been about "
+                "the person it was applied to")
+        if not self.chosen.authorizes_assumption(self.context):
             raise ValueError(
                 f"{self.chosen.subject_scope.value} evidence cannot authorise "
-                f"an assumption — it is not about this user or this product, "
-                f"and asserting from it manufactures certainty")
+                f"an assumption for user={self.context.user_id} "
+                f"entity={self.context.canonical_entity_id!r} — it is not "
+                f"about this person consuming this thing, and asserting from "
+                f"it manufactures certainty")
 
     def to_payload(self) -> dict:
         return {"chosen": self.chosen.to_payload(),
                 "policy_version": self.policy_version,
+                "context": {"user_id": self.context.user_id,
+                            "canonical_entity_id": self.context.canonical_entity_id,
+                            "product_variant_id": self.context.product_variant_id},
                 "considered": [c.to_payload() for c in self.considered]}
 
     @classmethod
     def from_payload(cls, d: dict) -> "EstimateEvidence":
+        c = d.get("context") or {}
         return cls(chosen=QuantityCandidateEvidence.from_payload(d["chosen"]),
                    policy_version=d["policy_version"],
-                   considered=tuple(QuantityCandidateEvidence.from_payload(c)
-                                    for c in d.get("considered", ())))
+                   context=EvidenceContext(
+                       user_id=c.get("user_id"),
+                       canonical_entity_id=c.get("canonical_entity_id", ""),
+                       product_variant_id=c.get("product_variant_id")),
+                   considered=tuple(QuantityCandidateEvidence.from_payload(x)
+                                    for x in d.get("considered", ())))
 
 
 @dataclass(frozen=True)

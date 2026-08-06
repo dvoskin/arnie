@@ -186,7 +186,8 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
             return None
         answer = _read(owned, interaction, live_field, message=message,
                        field_id=field_id, option_id=option_id,
-                       revision=revision)
+                       revision=revision,
+                       context=_evidence_context(owned, user))
         if answer.outcome is not Outcome.APPLIED:
             return _turn(answer, owned, live_field)
         result = await ops.settle(db, user=user, owned=owned,
@@ -197,7 +198,9 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
                           result=result, reason="replay")
 
     answer = _read(owned, interaction, live_field, message=message,
-                   field_id=field_id, option_id=option_id, revision=revision)
+                   field_id=field_id, option_id=option_id,
+                   revision=revision,
+                   context=_evidence_context(owned, user))
 
     _measure(owned, answer, option_id=option_id, user=user,
              field=live_field, message=message)
@@ -228,8 +231,26 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
     return turn
 
 
+def _evidence_context(owned, user):
+    """WHO is answering, about WHAT — assembled once, from the operation.
+
+    The entity comes from the stored interpreter item rather than from this
+    message: the operation already decided what food is under discussion, and
+    re-deriving it from a two-word reply is the same re-interpretation the
+    answer turn exists to avoid.
+    """
+    from core.semantics import EvidenceContext
+
+    item = getattr(owned, "item", None) or {}
+    return EvidenceContext(
+        user_id=getattr(user, "id", None),
+        canonical_entity_id=str(item.get("entity_id") or ""),
+        product_variant_id=(str(item.get("product_variant_id"))
+                            if item.get("product_variant_id") else None))
+
+
 def _read(owned, interaction, live_field, *, message: str, field_id: str,
-          option_id: str, revision: Optional[int]):
+          option_id: str, revision: Optional[int], context=None):
     """The answer, from whichever modality carried it.
 
     Order is specificity, not preference: an option id is unambiguous, an
@@ -250,6 +271,7 @@ def _read(owned, interaction, live_field, *, message: str, field_id: str,
         text=message,
         revision=revision if revision is not None else interaction.revision,
         food_name=str(interaction.groups[0].label or ""),
+        context=context,
         # THE OPERATION'S LOCALE, never re-detected from this message. The
         # question was asked in one language; a two-word reply is exactly
         # where detection is least reliable, and a destructive command sits
