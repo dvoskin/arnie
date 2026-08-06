@@ -1137,7 +1137,7 @@ rather than the user — true, and still true — but low traffic must change th
 | | step | exit condition |
 |---|---|---|
 | **B-1a** | measurement wording | ✅ versioned `b1_quantity_q2` |
-| **B-1b.1** | deterministic system-validation matrix | green against production-like Postgres with real enrichment |
+| **B-1b.1** | deterministic system-validation matrix | **matrix built, axes green; NOT green** — needs Postgres backing + real enrichment (see below) |
 | **B-1b.2** | production-sequence corpus | green under Postgres and real pricing |
 | **B-1b.3** | instrumented human simulation | internal panel shows the interaction is understandable |
 | **B-1b.4** | natural-traffic confirmation | continuous; confirms rather than gates |
@@ -1266,13 +1266,13 @@ cannot masquerade as a gap in the system.
 | behaviour | automated sequence | internal human | organic | status |
 |---|---|---|---|---|
 | history option offered | pending B-1b.1 | pending | none yet | blocked on B-1b.1 |
-| typed non-offered amount | pending B-1b.1 | pending | 2 observations | blocked on B-1b.1 |
-| real `analyze()` pricing | pending B-1b.1 | pending | verified (entry 2860) | partial |
+| typed non-offered amount | ✅ matrix (sqlite) | pending | 2 observations | partial — needs PG |
+| real `analyze()` pricing | estimate lane only | pending | ✅ density lane (2860) | partial — needs USDA key |
 | duplicate delivery | ✅ harness | unnecessary | ✅ proven | **sufficient** |
 | settled op declines new meal | ✅ harness | pending | ✅ proven | **sufficient** |
 | expired op declines new meal | ✅ harness | pending | none yet | **sufficient** |
 | stale revision / foreign field | ✅ harness | pending | none yet | **sufficient** |
-| estimate / "not sure" route | pending B-1b.1 | pending | 1 observation | partial |
+| estimate / "not sure" route | ✅ matrix (sqlite) | pending | 1 observation | partial — needs PG |
 | abandonment preference | not simulable | pending B-1b.3 | none yet | **provisional** |
 | long-term correction rate | not simulable | limited | none yet | **unresolved** |
 
