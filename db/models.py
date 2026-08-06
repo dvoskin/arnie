@@ -1687,9 +1687,15 @@ class CandidateSelectionDecisionRow(Base):
         UniqueConstraint("decision_id", name="uq_selection_decision_id"),
         # One decision per set, policy and surface. A second decision under
         # the same conditions is a duplicate write, not a new fact.
+        # EVERY FIELD THE SELECTION CONTEXT CLAIMS TO DETERMINE THE OUTCOME
+        # BY, `maximum_options` included. Omitting it collided a three-option
+        # text row and a five-option structured row under one identity, so the
+        # second could never be written and the first was replayed in its
+        # place.
         UniqueConstraint("candidate_set_id", "selection_policy_version",
-                         "surface", "locale", "renderer_contract_version",
-                         name="uq_selection_decision_conditions"),
+                         "surface", "locale", "maximum_options",
+                         "renderer_contract_version",
+                         name="uq_selection_decision_conditions_v2"),
         Index("ix_selection_decisions_set", "candidate_set_id"),
     )
 
@@ -1722,6 +1728,15 @@ class CandidateExclusionRow(Base):
     """
     __tablename__ = "candidate_exclusions"
     __table_args__ = (
+        # MEMBERSHIP ENFORCED BY THE DATABASE, not only by the aggregate. The
+        # dataclass catches a foreign candidate on the primary write path, but
+        # a migration, a script or a future writer bypasses the dataclass —
+        # and an exclusion naming a candidate from another set would make the
+        # partition arithmetic wrong wherever it was read.
+        ForeignKeyConstraint(
+            ["candidate_set_id", "candidate_id"],
+            ["candidate_records.candidate_set_id",
+             "candidate_records.candidate_id"], ondelete="RESTRICT"),
         UniqueConstraint("decision_id", "candidate_id",
                          name="uq_exclusion_within_decision"),
         Index("ix_candidate_exclusions_reason", "reason"),
@@ -1731,6 +1746,9 @@ class CandidateExclusionRow(Base):
     decision_id = Column(
         String, ForeignKey("candidate_selection_decisions.decision_id",
                            ondelete="RESTRICT"), nullable=False)
+    #: Carried so set membership is checkable in SQL. Without it the row could
+    #: only say "some candidate", and only the application knew which set.
+    candidate_set_id = Column(String, nullable=False, default="")
     candidate_id = Column(String, nullable=False)
     #: semantic_duplicate / render_collision / selection_cap. Closed, so the
     #: population can be counted.
@@ -1750,6 +1768,14 @@ class PresentedOptionRow(Base):
     """
     __tablename__ = "presented_candidate_options"
     __table_args__ = (
+        # The option the user tapped must resolve to a candidate IN THE SET IT
+        # CLAIMS. Enforced here as well as in the aggregate, because the chain
+        # from a tap back to its justification is the thing this table exists
+        # for and a dangling middle link would break it silently.
+        ForeignKeyConstraint(
+            ["candidate_set_id", "candidate_id"],
+            ["candidate_records.candidate_set_id",
+             "candidate_records.candidate_id"], ondelete="RESTRICT"),
         UniqueConstraint("decision_id", "option_id",
                          name="uq_presented_option_id"),
         UniqueConstraint("decision_id", "selected_position",

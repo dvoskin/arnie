@@ -83,9 +83,29 @@ def _record(universe=None, *, selected=("c2", "c1"),
 
 @pytest_asyncio.fixture
 async def engine(tmp_path):
+    """SQLite WITH FOREIGN KEYS ON.
+
+    SQLite ignores foreign keys unless the pragma is set per connection, so
+    without this every database-integrity gate in this file would pass against
+    an engine that enforces nothing — green, and proving the opposite of what
+    it claims. Production is Postgres, which enforces them always; this makes
+    the local run agree with it.
+    """
+    from sqlalchemy import event, text
+
     eng = make_engine(f"sqlite+aiosqlite:///{tmp_path / 'universe.db'}")
+
+    @event.listens_for(eng.sync_engine, "connect")
+    def _fk_on(dbapi_connection, _record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        assert (await conn.execute(
+            text("PRAGMA foreign_keys"))).scalar() == 1, (
+            "foreign keys are off; every integrity gate here would be a lie")
     yield eng
     await eng.dispose()
 
@@ -443,3 +463,224 @@ async def test_the_ask_path_persists_its_universe_before_asking(sessions,
     asked = {o.option_id
              for o in ask.interaction.groups[0].fields[0].options}
     assert shown == asked, "the row persisted is not the row shown"
+
+
+# ── 3b.2 — a decision is idempotent SEPARATELY from its set ─────────────────
+
+def _ctx(**kw):
+    base = dict(surface=SelectionSurface.LABEL_TEXT, locale="en",
+                maximum_options=3, renderer_contract_version="labels_v1")
+    base.update(kw)
+    return CandidateSelectionContext(**base)
+
+
+def _decision_over(universe, *, context=None, policy="sel_v1",
+                   selected=("c2", "c1")):
+    decision = CandidateSelectionDecision(
+        candidate_set_id=universe.candidate_set_id,
+        selection_policy_version=policy, context=context or _ctx(),
+        selected_candidate_ids=tuple(selected),
+        exclusions=(CandidateExclusion(candidate_id="c3",
+                                       reason=ExclusionReason.SELECTION_CAP),))
+    return CandidateDecisionRecord(
+        candidate_set=universe, decision=decision,
+        presented=tuple(PresentedCandidateOption(
+            option_id=f"opt_{c}_{policy}", candidate_id=c,
+            candidate_set_id=universe.candidate_set_id,
+            interaction_revision=0, selected_position=i,
+            rendered_label=f"label {i}",
+            renderer_contract_version=context.renderer_contract_version
+            if context else "labels_v1")
+            for i, c in enumerate(selected)))
+
+
+@pytest.mark.parametrize("label,kw", [
+    ("a new selector version", {"policy": "sel_v2"}),
+    ("a different surface",
+     {"context": _ctx(surface=SelectionSurface.ID_ADDRESSED)}),
+    ("a different slot count", {"context": _ctx(maximum_options=5)}),
+    ("a different renderer",
+     {"context": _ctx(renderer_contract_version="labels_v2")}),
+    ("a different locale", {"context": _ctx(locale="ru")}),
+])
+@pytest.mark.asyncio
+async def test_a_new_decision_over_an_existing_universe_is_written(
+        sessions, user, label, kw):
+    """P0. `save()` RETURNED THE MOMENT THE SET EXISTED.
+
+    So a second decision over the same immutable universe could never be
+    persisted — and that is the normal case, not an edge one: the same
+    universe rendered for Telegram and for iOS, or reduced again after the
+    selector is versioned up, is a new decision over an old set. The set is
+    write-once; the decision is not.
+    """
+    universe = _universe()
+    async with sessions() as s:
+        await repo.save(s, _decision_over(universe))
+        await s.commit()
+    async with sessions() as s:
+        await repo.save(s, _decision_over(universe, **kw))
+        await s.commit()
+
+    async with sessions() as s:
+        sets = (await s.execute(select(func.count()).select_from(
+            CandidateSetRow))).scalar()
+        decisions = (await s.execute(select(func.count()).select_from(
+            CandidateSelectionDecisionRow))).scalar()
+    assert sets == 1, "the universe was rewritten"
+    assert decisions == 2, f"{label} did not produce its own decision"
+
+
+@pytest.mark.asyncio
+async def test_maximum_options_is_part_of_the_decisions_identity(sessions,
+                                                                 user):
+    """Three text options and five structured ones are different rows, and
+    were colliding under one durable identity."""
+    universe = _universe()
+    three = _decision_over(universe)
+    five = _decision_over(universe, context=_ctx(maximum_options=5))
+    assert (repo._decision_id(universe.candidate_set_id, three.decision)
+            != repo._decision_id(universe.candidate_set_id, five.decision))
+
+    async with sessions() as s:
+        await repo.save(s, three)
+        await repo.save(s, five)
+        await s.commit()
+    async with sessions() as s:
+        rows = (await s.execute(select(
+            CandidateSelectionDecisionRow.maximum_options))).scalars().all()
+    assert sorted(rows) == [3, 5]
+
+
+@pytest.mark.asyncio
+async def test_the_same_conditions_replay_rather_than_duplicate(sessions,
+                                                                user):
+    universe = _universe()
+    async with sessions() as s:
+        await repo.save(s, _decision_over(universe))
+        await repo.save(s, _decision_over(universe))
+        await s.commit()
+    async with sessions() as s:
+        assert (await s.execute(select(func.count()).select_from(
+            CandidateSelectionDecisionRow))).scalar() == 1
+        assert (await s.execute(select(func.count()).select_from(
+            CandidateExclusionRow))).scalar() == 1
+
+
+@pytest.mark.asyncio
+async def test_the_same_conditions_selecting_differently_fails_loudly(
+        sessions, user):
+    """The selector is meant to be reproducible from set + policy + context.
+    If it is not, the stored record no longer explains the screen."""
+    universe = _universe()
+    async with sessions() as s:
+        await repo.save(s, _decision_over(universe))
+        await s.commit()
+    async with sessions() as s:
+        other = CandidateDecisionRecord(
+            candidate_set=universe,
+            decision=CandidateSelectionDecision(
+                candidate_set_id=universe.candidate_set_id,
+                selection_policy_version="sel_v1", context=_ctx(),
+                selected_candidate_ids=("c1",),
+                exclusions=(CandidateExclusion(
+                    candidate_id="c2",
+                    reason=ExclusionReason.SEMANTIC_DUPLICATE),
+                    CandidateExclusion(
+                        candidate_id="c3",
+                        reason=ExclusionReason.SELECTION_CAP))))
+        with pytest.raises(repo.DeterminismViolation, match="now selects"):
+            await repo.save(s, other)
+
+
+# ── 3b.2 — membership enforced by the DATABASE, not only the aggregate ──────
+
+@pytest.mark.asyncio
+async def test_a_foreign_candidate_cannot_be_excluded_or_presented(sessions,
+                                                                   user):
+    """THE AGGREGATE IS NOT THE ONLY WRITER.
+
+    A migration, a script, or a future write path does not go through the
+    dataclass. An exclusion or an option naming a candidate from another set —
+    or from no set — makes the partition arithmetic wrong wherever it is read,
+    so the database refuses it too.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    async with sessions() as s:
+        await repo.save(s, _decision_over(_universe()))
+        await s.commit()
+
+    async with sessions() as s:
+        decision_id = (await s.execute(
+            select(CandidateSelectionDecisionRow.decision_id))).scalars().first()
+        s.add(CandidateExclusionRow(decision_id=decision_id,
+                                    candidate_set_id="cs_somewhere_else",
+                                    candidate_id="c1", reason="selection_cap"))
+        with pytest.raises(IntegrityError):
+            await s.flush()
+        await s.rollback()
+
+    async with sessions() as s:
+        decision_id = (await s.execute(
+            select(CandidateSelectionDecisionRow.decision_id))).scalars().first()
+        s.add(PresentedOptionRow(
+            decision_id=decision_id, candidate_set_id="cs_test",
+            option_id="opt_ghost", candidate_id="c_nonexistent",
+            interaction_revision=0, selected_position=9,
+            rendered_label="ghost", renderer_contract_version="labels_v1"))
+        with pytest.raises(IntegrityError):
+            await s.flush()
+        await s.rollback()
+
+
+# ── 3b.2 — one durable authority for evidence ──────────────────────────────
+
+@pytest.mark.asyncio
+async def test_replay_and_analytics_read_the_same_evidence(sessions, user):
+    """P1. TWO COPIES MEANT TWO TRUTHS.
+
+    The candidate payload embedded its evidence AND every record was written
+    to `candidate_evidence_records`; replay read the first and the funnel
+    grouped the second. They could disagree — the system would behave
+    correctly while reporting the wrong provenance, which is worse than
+    reporting nothing.
+
+    The evidence rows are now the sole authority, and the payload carries no
+    copy to drift from.
+    """
+    async with sessions() as s:
+        await repo.save(s, _record())
+        await s.commit()
+
+    async with sessions() as s:
+        payloads = (await s.execute(select(CandidateRow.payload))).scalars().all()
+        assert all("evidence" not in p for p in payloads), (
+            "the candidate payload still carries a second copy of evidence")
+
+        record = await repo.load(s, "cs_test", user_id=USER_ID)
+        replayed = sorted(e.source_type.value
+                          for c in record.candidate_set.candidates
+                          for e in c.evidence)
+        counted = (await s.execute(
+            select(CandidateEvidenceRow.source_type))).scalars().all()
+    assert replayed == sorted(counted), (
+        "replay and the funnel disagree about where candidates came from")
+
+
+@pytest.mark.asyncio
+async def test_evidence_survives_the_round_trip_intact(sessions, user):
+    """Rebuilt from rows, the candidates must still satisfy every contract
+    gate — including that the evidence produces the offered quantity."""
+    async with sessions() as s:
+        await repo.save(s, _record())
+        await s.commit()
+    async with sessions() as s:
+        back = await repo.load(s, "cs_test", user_id=USER_ID)
+
+    history = back.candidate_set.candidate("c2")
+    assert history.evidence[0].source.record_version
+    assert history.evidence[0].observed_quantity.grams == history.quantity.grams
+    assert history.authorizes_assumption(back.candidate_set.context)
+    ontology = back.candidate_set.candidate("c1")
+    assert not ontology.authorizes_assumption(back.candidate_set.context)

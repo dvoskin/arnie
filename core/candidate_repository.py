@@ -34,12 +34,20 @@ class DeterminismViolation(RuntimeError):
 
 def _decision_id(candidate_set_id: str, decision) -> str:
     """Deterministic, so the same decision under the same conditions is the
-    same row on replay rather than a second one."""
+    same row on replay rather than a second one.
+
+    EVERY FIELD THE CONTEXT CLAIMS TO DETERMINE THE OUTCOME BY, including
+    `maximum_options`. Omitting it collided two legitimately different
+    decisions — three text options and five structured ones, same surface and
+    renderer — under one durable identity, so the second could never be
+    written and the first would be replayed in its place.
+    """
     import hashlib
 
     ctx = decision.context
     raw = "|".join((candidate_set_id, decision.selection_policy_version,
                     ctx.surface.value, ctx.locale,
+                    str(ctx.maximum_options),
                     ctx.renderer_contract_version))
     return "dec_" + hashlib.sha256(raw.encode()).hexdigest()[:24]
 
@@ -53,20 +61,33 @@ async def save(db, record, *, domain: str = "food") -> str:
     ask nobody was ever shown; an operation without its universe is an ask we
     cannot explain.
 
-    IDEMPOTENT ON THE SAME INPUTS. A retried ask finds the stored set and
-    returns it. Regenerating the same key from different semantic inputs
-    raises `DeterminismViolation` — silence there would mean the record and
-    the screen disagreed about why.
+    THREE INDEPENDENT IDEMPOTENCIES, not one. The set, the decision and the
+    presented row are separate append-only records with separate identities,
+    and short-circuiting on the set alone meant a second decision over the
+    SAME immutable universe could never be written — which is the normal case,
+    not an edge one: the same universe rendered for Telegram and for iOS, or
+    reduced again after the selector is versioned up, is a new decision over
+    an old set.
+    """
+    set_id = await ensure_candidate_set(db, record.candidate_set, domain=domain)
+    decision_id = await ensure_selection_decision(db, record.decision)
+    await ensure_presented_options(db, record, decision_id=decision_id)
+    return set_id
+
+
+async def ensure_candidate_set(db, universe, *, domain: str = "food") -> str:
+    """The generated universe. Written once; never rewritten.
+
+    Same key and same fingerprint is a replay and returns the stored set. Same
+    key and a DIFFERENT fingerprint is a determinism violation: returning the
+    stored universe would justify the options on screen with a record
+    describing other inputs.
     """
     from sqlalchemy import select
 
-    from db.models import (CandidateEvidenceRow, CandidateExclusionRow,
-                           CandidateRow, CandidateSelectionDecisionRow,
-                           CandidateSetRow, PresentedOptionRow)
+    from db.models import (CandidateEvidenceRow, CandidateRow, CandidateSetRow)
 
-    universe, decision = record.candidate_set, record.decision
     set_id = universe.candidate_set_id
-
     existing = (await db.execute(
         select(CandidateSetRow).where(
             CandidateSetRow.candidate_set_id == set_id))).scalar_one_or_none()
@@ -102,7 +123,14 @@ async def save(db, record, *, domain: str = "food") -> str:
         db.add(CandidateRow(
             candidate_set_id=set_id, candidate_id=cand.candidate_id,
             candidate_kind="quantity", position=position,
-            semantic_hash=cand.semantic_hash, payload=cand.to_payload()))
+            semantic_hash=cand.semantic_hash,
+            # THE PAYLOAD CARRIES NO EVIDENCE. `candidate_evidence_records` is
+            # the sole durable authority for it — two copies meant replay
+            # could trust one while the funnel counted the other, and the
+            # system would behave correctly while reporting the wrong
+            # provenance. Nothing is more dangerous than a metric that is
+            # confidently wrong.
+            payload=_candidate_payload_without_evidence(cand)))
     await db.flush()
 
     for cand in universe.candidates:
@@ -118,9 +146,48 @@ async def save(db, record, *, domain: str = "food") -> str:
                 subject_user_id=ev.subject_user_id,
                 subject_variant_id=ev.product_variant_id,
                 payload=ev.to_payload()))
+    await db.flush()
+    return set_id
 
+
+def _candidate_payload_without_evidence(cand) -> dict:
+    payload = cand.to_payload()
+    payload.pop("evidence", None)
+    return payload
+
+
+async def ensure_selection_decision(db, decision) -> str:
+    """The reduction. A NEW decision over an existing set is legitimate.
+
+    A retry of the same conditions must find the stored decision and prove it
+    identical; a genuinely different one — new policy, new surface, new slot
+    count, new renderer — is a new append-only record over the same immutable
+    universe.
+    """
+    from sqlalchemy import select
+
+    from db.models import (CandidateExclusionRow,
+                           CandidateSelectionDecisionRow)
+
+    set_id = decision.candidate_set_id
     decision_id = _decision_id(set_id, decision)
     ctx = decision.context
+    existing = (await db.execute(
+        select(CandidateSelectionDecisionRow).where(
+            CandidateSelectionDecisionRow.decision_id
+            == decision_id))).scalar_one_or_none()
+    if existing is not None:
+        stored = tuple(existing.selected_candidate_ids or ())
+        if stored != tuple(decision.selected_candidate_ids):
+            # SAME CONDITIONS, DIFFERENT OUTCOME. The selector is supposed to
+            # be reproducible from the set plus the policy plus the context;
+            # if it is not, the stored record no longer explains the screen.
+            raise DeterminismViolation(
+                f"{decision_id} already selected {list(stored)} but the same "
+                f"set under the same policy and context now selects "
+                f"{list(decision.selected_candidate_ids)}")
+        return decision_id
+
     db.add(CandidateSelectionDecisionRow(
         decision_id=decision_id, candidate_set_id=set_id,
         selection_policy_version=decision.selection_policy_version,
@@ -132,18 +199,40 @@ async def save(db, record, *, domain: str = "food") -> str:
 
     for exclusion in decision.exclusions:
         db.add(CandidateExclusionRow(
-            decision_id=decision_id, candidate_id=exclusion.candidate_id,
+            decision_id=decision_id, candidate_set_id=set_id,
+            candidate_id=exclusion.candidate_id,
             reason=exclusion.reason.value))
+    await db.flush()
+    return decision_id
+
+
+async def ensure_presented_options(db, record, *, decision_id: str) -> None:
+    """The row as shown. Written once per decision."""
+    from sqlalchemy import select
+
+    from db.models import PresentedOptionRow
+
+    if not record.presented:
+        return
+    already = (await db.execute(select(PresentedOptionRow.option_id).where(
+        PresentedOptionRow.decision_id == decision_id))).scalars().all()
+    if already:
+        shown = {p.option_id for p in record.presented}
+        if set(already) != shown:
+            raise DeterminismViolation(
+                f"{decision_id} already presented {sorted(already)} but is "
+                f"now presenting {sorted(shown)}")
+        return
     for shown in record.presented:
         db.add(PresentedOptionRow(
-            decision_id=decision_id, candidate_set_id=set_id,
+            decision_id=decision_id,
+            candidate_set_id=record.candidate_set.candidate_set_id,
             option_id=shown.option_id, candidate_id=shown.candidate_id,
             interaction_revision=shown.interaction_revision,
             selected_position=shown.selected_position,
             rendered_label=shown.rendered_label,
             renderer_contract_version=shown.renderer_contract_version))
     await db.flush()
-    return set_id
 
 
 async def load(db, candidate_set_id: str, *, user_id: int) -> Optional[Any]:
@@ -167,9 +256,9 @@ async def load(db, candidate_set_id: str, *, user_id: int) -> Optional[Any]:
                                 EvidenceContext, ExclusionReason,
                                 PresentedCandidateOption, QuantityCandidate,
                                 SelectionSurface)
-    from db.models import (CandidateExclusionRow, CandidateRow,
-                           CandidateSelectionDecisionRow, CandidateSetRow,
-                           PresentedOptionRow)
+    from db.models import (CandidateEvidenceRow, CandidateExclusionRow,
+                           CandidateRow, CandidateSelectionDecisionRow,
+                           CandidateSetRow, PresentedOptionRow)
 
     row = (await db.execute(select(CandidateSetRow).where(
         CandidateSetRow.candidate_set_id == candidate_set_id,
@@ -181,6 +270,18 @@ async def load(db, candidate_set_id: str, *, user_id: int) -> Optional[Any]:
         select(CandidateRow)
         .where(CandidateRow.candidate_set_id == candidate_set_id)
         .order_by(CandidateRow.position))).scalars().all()
+    # EVIDENCE COMES FROM THE EVIDENCE ROWS. One authority: replay and the
+    # funnel must read the same records, or the system can behave correctly
+    # while reporting the wrong provenance — a metric that is confidently
+    # wrong, which is worse than a missing one.
+    evidence_rows = (await db.execute(
+        select(CandidateEvidenceRow)
+        .where(CandidateEvidenceRow.candidate_set_id == candidate_set_id)
+        .order_by(CandidateEvidenceRow.evidence_index))).scalars().all()
+    by_candidate = {}
+    for evidence in evidence_rows:
+        by_candidate.setdefault(evidence.candidate_id, []).append(
+            evidence.payload)
     universe = CandidateSet(
         candidate_set_id=row.candidate_set_id, operation_id=row.operation_id,
         user_id=row.user_id,
@@ -191,8 +292,11 @@ async def load(db, candidate_set_id: str, *, user_id: int) -> Optional[Any]:
         interaction_revision=row.interaction_revision, field_id=row.field_id,
         generator_version=row.generator_version,
         generation_input_fingerprint=row.generation_input_fingerprint,
-        candidates=tuple(QuantityCandidate.from_payload(c.payload)
-                         for c in candidate_rows),
+        candidates=tuple(
+            QuantityCandidate.from_payload(
+                {**c.payload, "evidence": by_candidate.get(c.candidate_id,
+                                                           [])})
+            for c in candidate_rows),
         rejections=tuple(CandidateGenerationRejection.from_payload(r)
                          for r in (row.rejections or ())))
 

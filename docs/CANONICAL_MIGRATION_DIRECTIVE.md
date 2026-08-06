@@ -1471,6 +1471,47 @@ silence: the day the gate started declining, it would have gone green having
 exercised nothing. It asserts now. It caught two real setup defects
 immediately (`client_incapable`, then `no_quantity_question`).
 
+**3b.2 — durable identity and integrity completed** *(review of `6c5e87b`)*.
+Four defects, all confirmed by reading the code before fixing:
+
+* **P0 — a decision could never be written over an existing set.** `save()`
+  returned the moment the set existed, so a second decision over the same
+  immutable universe was impossible — and that is the NORMAL case: the same
+  universe rendered for Telegram and for iOS, or reduced again after the
+  selector versions up. Split into `ensure_candidate_set` /
+  `ensure_selection_decision` / `ensure_presented_options`, three independent
+  idempotencies. The set is write-once; the decision is not.
+* **P0 — `maximum_options` was missing from the decision's identity**, in both
+  the id hash and the unique constraint, while the selection context claimed
+  the outcome was determined by it. A three-option text row and a five-option
+  structured row collided under one identity: the second could never be
+  written and the first was replayed in its place.
+* **P1 — membership was enforced only by the aggregate.** Exclusions and
+  presented options had a foreign key to the DECISION and none to the
+  candidate, so either could name a candidate from another set, or from no
+  set, at the database level. Composite foreign keys added; `candidate_set_id`
+  added to `candidate_exclusions` and backfilled from the decision it already
+  pointed at.
+* **P1 — evidence had two durable authorities.** The candidate payload
+  embedded its evidence AND every record was written to
+  `candidate_evidence_records`; replay read the first, the funnel grouped the
+  second. They could disagree, and the system would behave correctly while
+  reporting the wrong provenance — a metric that is confidently wrong, which
+  is worse than a missing one. The evidence rows are now the sole authority
+  and the payload carries no copy to drift from.
+
+`b1uni002`, **forward only** — `b1uni001` is pushed and `main` auto-deploys.
+
+**A gate that was proving nothing.** Enabling the composite foreign keys
+revealed that **SQLite ignores foreign keys unless the pragma is set per
+connection**, so every database-integrity assertion in the storage suite would
+have passed against an engine enforcing none of them. The fixture now sets
+`PRAGMA foreign_keys=ON` and asserts it took. Same class as the three
+instruments this slice has already caught lying by silence.
+
+**3b — status: DONE.** 8061 pass on SQLite and 8061 on Postgres (21 skips),
+26 storage gates.
+
 **Superseded plan for 3b:** Atomic write of the immutable set and its typed decision
 *before options are rendered*, fail-closed; append-only; candidate set bound to
 its operation's user at write **and** read; database constraints as well as
