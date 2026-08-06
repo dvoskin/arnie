@@ -37,6 +37,8 @@ Fixtures come from `test_a_full_day_of_food.py`, which already pins the four
 outside edges (LLM, Tavily, USDA, Open Food Facts) and rebinds the app's
 sessionmaker in place. Everything between is real.
 """
+import itertools
+
 import pytest
 
 # Fixtures are reused, not reimplemented — one definition of "the outside
@@ -45,6 +47,36 @@ import pytest
 from tests.test_a_full_day_of_food import (  # noqa: F401
     app_db, edges, seeded, rows, turn, item,
 )
+
+#: Transport message ids, the way a real channel supplies them.
+_MSG_IDS = itertools.count(9000)
+
+
+async def say(user_id, text, *, platform=None):
+    """One inbound message, carrying a DISTINCT transport message id.
+
+    Production's turn id comes from the transport — `telegram:9132`,
+    `telegram:9139` — and the operation id is derived from it. Without one,
+    `run_chat_turn` falls back to hashing the message CONTENT, so a
+    conversation that says the same thing twice collides on
+    `pending_operations.operation_id` and raises a UNIQUE violation that
+    cannot happen in production.
+
+    That matters more than it looks. The tempting fix is to make the test send
+    artificially varied text — which would hide the collision by ensuring the
+    harness never exercises a shape production hits constantly (ask the same
+    question about the same food twice in a day). Supplying the id instead
+    keeps the harness production-shaped, which is the whole requirement.
+    """
+    import db.database as D
+    from core.chat_service import run_chat_turn
+    from db.queries import reload_user
+    async with D.AsyncSessionLocal() as s:
+        user = await reload_user(s, user_id)
+        return await run_chat_turn(
+            s, user, text, platform=platform or CAPABLE,
+            schedule_background=False,
+            client_msg_id=str(next(_MSG_IDS)))
 
 #: The channel B-1 actually runs on. iOS is deliberately `client_incapable`
 #: until B-1b, so driving this on "ios" would prove nothing — and that is
@@ -107,7 +139,7 @@ def vague(food, **kw):
 async def ask_for(edges, user_id, message, plan):
     """One turn that should raise a B-1 quantity question. Returns the ops."""
     edges.plans.append(plan)
-    await turn(user_id, message, platform=CAPABLE)
+    await say(user_id, message, platform=CAPABLE)
     return await operations(user_id)
 
 
@@ -153,7 +185,7 @@ async def test_a_new_meal_after_settlement_is_logged_not_replayed(edges, b1_live
     assert ops, "no operation to settle — see test_b1_engages_at_all"
     first = ops[-1].operation_id
 
-    await turn(b1_live, "6 oz", platform=CAPABLE)
+    await say(b1_live, "6 oz", platform=CAPABLE)
     after_answer = await rows(b1_live)
     assert len(after_answer) == 1, (
         f"the answer should have committed exactly one meal, got "
@@ -166,7 +198,7 @@ async def test_a_new_meal_after_settlement_is_logged_not_replayed(edges, b1_live
         "items": [vague("Oatmeal", cal=150, amount=1, unit="cup cooked")],
         "ready": [],
     })
-    await turn(b1_live, "Had some oatmeal", platform=CAPABLE)
+    await say(b1_live, "Had some oatmeal", platform=CAPABLE)
 
     board = await rows(b1_live)
     assert len(board) == 1, (
@@ -180,7 +212,7 @@ async def test_a_new_meal_after_settlement_is_logged_not_replayed(edges, b1_live
         f"one. operations={[o.operation_id for o in ops2]}")
     assert ops2[-1].operation_id != first
 
-    await turn(b1_live, "45 g", platform=CAPABLE)
+    await say(b1_live, "45 g", platform=CAPABLE)
     final = await rows(b1_live)
     names = [r.parsed_food_name for r in final]
     assert len(final) == 2, f"both meals must be on the board, got {names}"
@@ -197,15 +229,15 @@ async def test_the_second_operation_commits_canonically_too(edges, b1_live):
     was untested everywhere. Each must own its own commit at its own revision.
     """
     await ask_for(edges, b1_live, "I had some chicken breast", B1_ELIGIBLE)
-    await turn(b1_live, "6 oz", platform=CAPABLE)
+    await say(b1_live, "6 oz", platform=CAPABLE)
     edges.plans.append({
         "action": "ask",
         "points": [{"label": "Oatmeal", "q": "How much?"}],
         "items": [vague("Oatmeal", cal=150, amount=1, unit="cup cooked")],
         "ready": [],
     })
-    await turn(b1_live, "Had some oatmeal", platform=CAPABLE)
-    await turn(b1_live, "45 g", platform=CAPABLE)
+    await say(b1_live, "Had some oatmeal", platform=CAPABLE)
+    await say(b1_live, "45 g", platform=CAPABLE)
 
     ops = await operations(b1_live)
     assert len(ops) == 2, [o.operation_id for o in ops]
@@ -235,10 +267,10 @@ async def test_the_exact_option_label_after_settlement_still_replays(edges, b1_l
     question?" rather than on time alone.
     """
     await ask_for(edges, b1_live, "I had some chicken breast", B1_ELIGIBLE)
-    await turn(b1_live, "6 oz", platform=CAPABLE)
+    await say(b1_live, "6 oz", platform=CAPABLE)
     assert len(await rows(b1_live)) == 1
 
-    await turn(b1_live, "6 oz", platform=CAPABLE)     # the same answer again
+    await say(b1_live, "6 oz", platform=CAPABLE)     # the same answer again
     board = await rows(b1_live)
     assert len(board) == 1, (
         f"a duplicate answer wrote a second meal: "
@@ -265,7 +297,7 @@ async def test_the_lane_still_works_with_b1_off(edges, seeded, monkeypatch):
         "items": [item("White rice", 205, amount=100, unit="g")],
         "ready": [item("White rice", 205, amount=100, unit="g")],
     })
-    await turn(seeded, "100 g of white rice", platform=CAPABLE)
+    await say(seeded, "100 g of white rice", platform=CAPABLE)
 
     assert not await operations(seeded), (
         "a halted cohort must not create a canonical operation")
