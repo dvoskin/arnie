@@ -41,6 +41,8 @@ import itertools
 
 import pytest
 
+from core.clarification_answer import Outcome
+
 # Fixtures are reused, not reimplemented — one definition of "the outside
 # edges are pinned" for the whole food lane. pytest resolves them from this
 # module's namespace.
@@ -476,3 +478,86 @@ async def test_an_unreadable_ownership_lookup_never_falls_through_to_legacy(
     assert not await rows(b1_live), (
         "an unreadable ownership lookup fell through and wrote a meal anyway: "
         f"{[(r.parsed_food_name, r.quantity) for r in await rows(b1_live)]}")
+
+
+# ── The two gates no channel can reach yet ────────────────────────────────────
+#
+# `revision` and `field_id` arrive only from a client that renders the canonical
+# interaction, and none does until B-1b — Telegram and iMessage answer in prose.
+# So these drive the answer boundary directly with a real, persisted operation
+# behind them, rather than a constructed one. That is the honest middle: the
+# operation, its interaction, its options and its stored payload are all real
+# and were produced by a real conversation; only the transport is simulated,
+# because the transport does not exist yet.
+
+async def _structured(user_id, **kw):
+    """Answer as a canonical client would, against the live stored operation."""
+    import db.database as D
+    from core import b1_answer_turn
+    from db.queries import reload_user
+    async with D.AsyncSessionLocal() as s:
+        user = await reload_user(s, user_id)
+        out = await b1_answer_turn.handle(
+            s, user=user, source_turn_id=f"telegram:{next(_MSG_IDS)}", **kw)
+        await s.commit()
+        return out
+
+
+async def _live_field_and_option(user_id):
+    """The real field_id and option_id, read from the persisted interaction.
+
+    `field_id` lives on the OPTION rather than the field: the field computes it
+    as a property, so only the options carry it across storage. Reading it from
+    where it is actually persisted — rather than from the object we would have
+    built in memory — is the difference between testing the contract and
+    testing our own constructor. B-0c exists because those diverge.
+    """
+    import json
+    ops = await operations(user_id)
+    payload = json.loads(ops[-1].canonical_payload)
+    option = payload["interaction"]["groups"][0]["fields"][0]["options"][0]
+    return option["field_id"], option["option_id"], ops[-1].revision
+
+
+@pytest.mark.asyncio
+async def test_a_stale_revision_cannot_mutate_a_moved_operation(edges, b1_live):
+    """A client answering the question as it was two revisions ago must lose.
+
+    The revision is the whole concurrency story: `settle` advances it, and the
+    commit claim is keyed on (operation_id, revision). A stale answer that was
+    allowed through would form a claim against a revision that no longer
+    describes the operation — which is how the same meal gets written twice
+    under two different numbers.
+    """
+    await ask_for(edges, b1_live, "I had some chicken breast", B1_ELIGIBLE)
+    field_id, option_id, revision = await _live_field_and_option(b1_live)
+
+    out = await _structured(b1_live, field_id=field_id, option_id=option_id,
+                            revision=revision - 5)
+    assert out is not None, "a stale answer must be handled, not passed to legacy"
+    assert out.outcome is not Outcome.APPLIED, (
+        f"a stale revision was applied: {out.outcome}")
+    assert not await rows(b1_live), (
+        f"a stale revision wrote a meal: "
+        f"{[(r.parsed_food_name, r.quantity) for r in await rows(b1_live)]}")
+
+
+@pytest.mark.asyncio
+async def test_an_answer_to_a_field_we_never_asked_about_is_refused(
+        edges, b1_live):
+    """A field_id from another operation — or from nowhere — must not resolve.
+
+    Options are addressed by id precisely so that an answer cannot be aimed at
+    the wrong question. If a foreign field_id fell through to the narrow
+    parser, the id would be decorative and every guarantee resting on it would
+    be too.
+    """
+    await ask_for(edges, b1_live, "I had some chicken breast", B1_ELIGIBLE)
+    _, option_id, revision = await _live_field_and_option(b1_live)
+
+    out = await _structured(b1_live, field_id="fld_from_another_operation",
+                            option_id=option_id, revision=revision)
+    assert out is not None, "a foreign field must be handled, not passed to legacy"
+    assert out.outcome is not Outcome.APPLIED, (
+        f"an answer to a field we never asked about was applied: {out.outcome}")
+    assert not await rows(b1_live), "a foreign field_id wrote a meal"
