@@ -257,9 +257,24 @@ def _command(said: str, field, locale: str = "en") -> Optional[AnswerResult]:
 #: attributable to the rule that produced them.
 ESTIMATE_POLICY_VERSION = "estimate_evidence_v1"
 
-#: Sources that say something about THIS user or THIS product. Everything else
-#: is a population prior.
-_SUPPORTS_AN_ESTIMATE = frozenset({"user_history", "catalog"})
+#: CF-1 CLOSED. This was `frozenset({"user_history", "catalog"})` — source
+#: NAMES, matched as strings. It worked only because those two lanes happen to
+#: be entity-specific today, and it would have drifted silently the moment a
+#: lane was added whose name says nothing about what its evidence is about.
+#:
+#: Applicability is now read from `EvidenceScope` on the candidate's evidence:
+#: the contract states what the evidence is ABOUT, and a lane added tomorrow
+#: is judged on that rather than on what it is called.
+#:
+#: The mapping below exists only while the producers are migrated (commit 4).
+#: It is the LAST place a source name decides anything, it is scoped to that
+#: migration, and `_scope_of` prefers real evidence wherever an option carries
+#: it — so a producer that starts attaching evidence stops consulting this
+#: table without anyone editing it.
+_LEGACY_SOURCE_SCOPE = {
+    "user_history": "this_user",
+    "catalog": "this_product",
+}
 
 
 def _estimate_is_supported(field):
@@ -295,12 +310,35 @@ def _estimate_is_supported(field):
     chicken and honey refuse, white rice and ground turkey commit the user's
     own logged portion.
     """
-    supported = [o for o in getattr(field, "options", ()) or ()
-                 if o.patch is not None
-                 and getattr(o.patch, "quantity", None) is not None
-                 and str(getattr(getattr(o, "source", None), "value", "") or "")
-                 in _SUPPORTS_AN_ESTIMATE]
-    return supported
+    return [o for o in getattr(field, "options", ()) or ()
+            if o.patch is not None
+            and getattr(o.patch, "quantity", None) is not None
+            and _authorizes_assumption(o)]
+
+
+def _authorizes_assumption(option) -> bool:
+    """Read the evidence, fall back to the migration table, never guess.
+
+    An option carrying real `QuantityCandidateEvidence` answers for itself —
+    that is the contract, and `authorizes_assumption` is derived from the
+    declared scope and its required subject id rather than from any name.
+    Until every producer attaches evidence (commit 4), an option without it is
+    mapped from its source ONCE, here, and anything unmapped is treated as a
+    population prior. Unknown fails SHUT: a lane we cannot characterise does
+    not get to assert a portion on someone's behalf.
+    """
+    from core.semantics import EvidenceScope
+
+    evidence = getattr(option, "evidence", None)
+    if evidence is not None:
+        return bool(getattr(evidence, "authorizes_assumption", False))
+
+    source = str(getattr(getattr(option, "source", None), "value", "") or "")
+    scope = _LEGACY_SOURCE_SCOPE.get(source)
+    if scope is None:
+        return False
+    return EvidenceScope(scope) in (EvidenceScope.THIS_USER,
+                                    EvidenceScope.THIS_PRODUCT)
 
 
 def _estimate(field, reason: str) -> AnswerResult:

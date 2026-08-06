@@ -1584,3 +1584,309 @@ def adoption_requirements() -> dict:
             "note": "skipping silently is indistinguishable from doing nothing",
         },
     }
+
+# ── B-1.9 commit 2: typed quantity-candidate evidence ────────────────────────
+#
+# WHY THESE EXIST. A candidate carried a `CandidateSource` and nothing else, so
+# "may this evidence authorise an assumption?" was answered by matching source
+# NAMES against a frozenset — `{"user_history", "catalog"}`. That worked only
+# because those sources happen to be entity-specific today, and it drifts the
+# moment one is added whose name says nothing about what its evidence is ABOUT.
+#
+# The question was never "what is this source called". It is "what is this
+# evidence about, and can it speak for THIS person eating THIS thing". So the
+# contract states that, and every consumer reads it instead of inferring.
+
+EVIDENCE_SCHEMA_VERSION = 1
+
+
+class ServingBasis(str, Enum):
+    """The unit a portion is NATURALLY expressed in for this evidence.
+
+    Measured 2026-08-06: a honey question offered `30g / 80g / 200g` to a user
+    who logs tablespoons, and they typed "1 tbsp" — below the lowest option.
+    The candidates were not wrong about the food; they were expressed in a
+    basis the person does not think in. Basis is therefore a property of the
+    evidence, carried to the point of rendering, never re-derived from a label.
+    """
+    MASS = "mass"
+    VOLUME = "volume"
+    COUNT = "count"
+    PIECE = "piece"
+    PACKAGE = "package"
+    FRACTION_OF_PACKAGE = "fraction_of_package"
+    FRACTION_OF_ENTITY = "fraction_of_entity"
+    STANDARD_SERVING = "standard_serving"
+
+
+class EvidenceScope(str, Enum):
+    """WHO OR WHAT the evidence is about. The load-bearing field.
+
+    An ontology distribution is a true statement about people in general and a
+    false basis for asserting what one person ate. That distinction is the
+    whole of the estimate-sufficiency rule, and it is a property of the
+    evidence rather than of the name of the lane that produced it.
+    """
+    #: This user's own record. `subject_user_id` REQUIRED.
+    THIS_USER = "this_user"
+    #: A specific product/variant — a label, a package. `product_variant_id`
+    #: REQUIRED.
+    THIS_PRODUCT = "this_product"
+    #: People in general. Legitimate for OFFERING choices; never sufficient to
+    #: assert a portion on someone's behalf.
+    POPULATION = "population"
+
+
+@dataclass(frozen=True)
+class ConversionEvidence:
+    """How a quantity crossed bases, and on whose authority.
+
+    UNSUPPORTED CONVERSIONS CANNOT BE CONSTRUCTED. "1 cup of chicken is 140 g"
+    is a real claim requiring a real source; inventing a density to make a
+    number comparable is how a portion the user never gave becomes a portion
+    they are told they ate. A conversion with no basis change is expressible
+    (`from_basis == to_basis`); one with a basis change and no source is not.
+    """
+    from_basis: ServingBasis
+    to_basis: ServingBasis
+    #: What licensed it — a USDA density row, a package panel, a piece weight.
+    #: Required whenever the basis actually changes.
+    source_record_id: str = ""
+    factor: Optional[Decimal] = None
+
+    def __post_init__(self):
+        object.__setattr__(self, "from_basis", ServingBasis(self.from_basis))
+        object.__setattr__(self, "to_basis", ServingBasis(self.to_basis))
+        object.__setattr__(self, "factor", _dec_in(self.factor))
+        if self.from_basis is not self.to_basis and not self.source_record_id:
+            raise ValueError(
+                f"a conversion from {self.from_basis.value} to "
+                f"{self.to_basis.value} needs a source that licenses it — an "
+                f"unsourced factor is an invented density, and the portion it "
+                f"produces is one the user never gave")
+
+    def to_payload(self) -> dict:
+        return {"from_basis": self.from_basis.value,
+                "to_basis": self.to_basis.value,
+                "source_record_id": self.source_record_id,
+                "factor": _dec_out(self.factor)}
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "ConversionEvidence":
+        return cls(from_basis=ServingBasis(d["from_basis"]),
+                   to_basis=ServingBasis(d["to_basis"]),
+                   source_record_id=d.get("source_record_id", ""),
+                   factor=_dec_in(d.get("factor")))
+
+
+@dataclass(frozen=True)
+class QuantityCandidateEvidence:
+    """One quantity we could offer, and everything that justifies it.
+
+    `authorizes_assumption` is the CF-1 replacement: derived from the declared
+    scope and its required subject id, not from the source's name. A lane
+    added tomorrow is judged on what it says its evidence is about.
+    """
+    canonical_entity_id: str
+    quantity: "CanonicalQuantity"
+    serving_basis: ServingBasis
+    source_type: CandidateSource
+    source_record_id: str
+    subject_scope: EvidenceScope
+    subject_user_id: Optional[int] = None
+    product_variant_id: Optional[str] = None
+    conversion_evidence: Optional[ConversionEvidence] = None
+    confidence: Optional[Decimal] = None
+    uncertainty_g: Optional[Decimal] = None
+    evidence_version: int = EVIDENCE_SCHEMA_VERSION
+
+    def __post_init__(self):
+        # FAIL SHUT on an unknown basis, source, scope or version. A value we
+        # cannot interpret must not travel as if we could.
+        object.__setattr__(self, "serving_basis", ServingBasis(self.serving_basis))
+        object.__setattr__(self, "source_type", CandidateSource(self.source_type))
+        object.__setattr__(self, "subject_scope", EvidenceScope(self.subject_scope))
+        object.__setattr__(self, "confidence", _dec_in(self.confidence))
+        object.__setattr__(self, "uncertainty_g", _dec_in(self.uncertainty_g))
+        if int(self.evidence_version) != EVIDENCE_SCHEMA_VERSION:
+            raise ValueError(
+                f"evidence_version {self.evidence_version} is not "
+                f"{EVIDENCE_SCHEMA_VERSION}; a record written under another "
+                f"contract must be migrated, not guessed at")
+        if not str(self.canonical_entity_id or "").strip():
+            raise ValueError("evidence with no canonical entity cannot be "
+                             "matched to anything")
+        if not str(self.source_record_id or "").strip():
+            raise ValueError(
+                f"{self.source_type.value} evidence with no source record "
+                f"cannot be audited, and an unauditable justification is not "
+                f"one")
+        # THE SUBJECT MUST BE NAMED, not implied by the scope.
+        if self.subject_scope is EvidenceScope.THIS_USER and not self.subject_user_id:
+            raise ValueError(
+                "THIS_USER evidence must name the user it is about — a scope "
+                "without a subject is a claim without a claimant")
+        if (self.subject_scope is EvidenceScope.THIS_PRODUCT
+                and not str(self.product_variant_id or "").strip()):
+            raise ValueError(
+                "THIS_PRODUCT evidence must name the variant it is about")
+
+    @property
+    def authorizes_assumption(self) -> bool:
+        """May we assert this portion on the user's behalf when they say "not
+        sure"?
+
+        READ FROM THE CONTRACT, never from the source's name. This replaces
+        the frozenset of source strings that shipped as a stand-in: a lane
+        added tomorrow is judged on what it declares its evidence is ABOUT,
+        and a population prior can never authorise an assumption no matter
+        what it is called or how confident it claims to be.
+        """
+        return self.subject_scope in (EvidenceScope.THIS_USER,
+                                      EvidenceScope.THIS_PRODUCT)
+
+    def to_payload(self) -> dict:
+        return {
+            "evidence_version": self.evidence_version,
+            "canonical_entity_id": self.canonical_entity_id,
+            "quantity": self.quantity.to_payload(),
+            "serving_basis": self.serving_basis.value,
+            "source_type": self.source_type.value,
+            "source_record_id": self.source_record_id,
+            "subject_scope": self.subject_scope.value,
+            "subject_user_id": self.subject_user_id,
+            "product_variant_id": self.product_variant_id,
+            "conversion_evidence": (self.conversion_evidence.to_payload()
+                                    if self.conversion_evidence else None),
+            "confidence": _dec_out(self.confidence),
+            "uncertainty_g": _dec_out(self.uncertainty_g),
+        }
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "QuantityCandidateEvidence":
+        conv = d.get("conversion_evidence")
+        return cls(
+            canonical_entity_id=d["canonical_entity_id"],
+            quantity=CanonicalQuantity.from_payload(d["quantity"]),
+            serving_basis=ServingBasis(d["serving_basis"]),
+            source_type=CandidateSource(d["source_type"]),
+            source_record_id=d["source_record_id"],
+            subject_scope=EvidenceScope(d["subject_scope"]),
+            subject_user_id=d.get("subject_user_id"),
+            product_variant_id=d.get("product_variant_id"),
+            conversion_evidence=(ConversionEvidence.from_payload(conv)
+                                 if conv else None),
+            confidence=_dec_in(d.get("confidence")),
+            uncertainty_g=_dec_in(d.get("uncertainty_g")),
+            evidence_version=int(d.get("evidence_version",
+                                       EVIDENCE_SCHEMA_VERSION)))
+
+
+@dataclass(frozen=True)
+class EstimateEvidence:
+    """What licensed assuming a portion, when one was assumed.
+
+    Separate from the candidate because the QUESTION is different: a candidate
+    justifies being OFFERED, and this justifies being CHOSEN on the user's
+    behalf. Committing the second while only holding the first is how "not
+    sure" logged 435 g of chicken breast.
+    """
+    chosen: QuantityCandidateEvidence
+    policy_version: str
+    considered: tuple = ()
+
+    def __post_init__(self):
+        object.__setattr__(self, "considered", tuple(self.considered or ()))
+        if not str(self.policy_version or "").strip():
+            raise ValueError(
+                "an assumption must name the policy that made it, or the rate "
+                "it produces cannot be attributed to a rule")
+        if not self.chosen.authorizes_assumption:
+            raise ValueError(
+                f"{self.chosen.subject_scope.value} evidence cannot authorise "
+                f"an assumption — it is not about this user or this product, "
+                f"and asserting from it manufactures certainty")
+
+    def to_payload(self) -> dict:
+        return {"chosen": self.chosen.to_payload(),
+                "policy_version": self.policy_version,
+                "considered": [c.to_payload() for c in self.considered]}
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "EstimateEvidence":
+        return cls(chosen=QuantityCandidateEvidence.from_payload(d["chosen"]),
+                   policy_version=d["policy_version"],
+                   considered=tuple(QuantityCandidateEvidence.from_payload(c)
+                                    for c in d.get("considered", ())))
+
+
+@dataclass(frozen=True)
+class CandidateSet:
+    """EVERY candidate generated, not the handful that survived.
+
+    Persisting only the shown options makes retrieval failure and selection
+    failure indistinguishable — "history never appeared" reads the same
+    whether the matcher found nothing or the selector dropped it. They are
+    different engineering problems and the data must separate them.
+    """
+    field_id: str
+    candidates: tuple = ()
+    generator_version: str = ""
+
+    def __post_init__(self):
+        # A TUPLE, copied. A caller keeping the list it passed in could
+        # otherwise mutate what we recorded after the fact.
+        object.__setattr__(self, "candidates", tuple(self.candidates or ()))
+
+    def to_payload(self) -> dict:
+        return {"field_id": self.field_id,
+                "generator_version": self.generator_version,
+                "candidates": [c.to_payload() for c in self.candidates]}
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "CandidateSet":
+        return cls(field_id=d["field_id"],
+                   generator_version=d.get("generator_version", ""),
+                   candidates=tuple(QuantityCandidateEvidence.from_payload(c)
+                                    for c in d.get("candidates", ())))
+
+
+@dataclass(frozen=True)
+class CandidateSelectionDecision:
+    """What was offered, what was not, and why — explainable from features.
+
+    Exclusions are recorded WITH REASONS because "why wasn't my usual portion
+    there?" is a question the option pipeline has to be able to answer about
+    itself. A decision that only records its winners cannot be debugged, only
+    re-run and hoped at.
+    """
+    field_id: str
+    selected: tuple = ()
+    excluded: tuple = ()          # (evidence, reason) pairs
+    policy_version: str = ""
+
+    def __post_init__(self):
+        object.__setattr__(self, "selected", tuple(self.selected or ()))
+        object.__setattr__(self, "excluded", tuple(
+            (e, str(r)) for e, r in (self.excluded or ())))
+        if not str(self.policy_version or "").strip():
+            raise ValueError(
+                "a selection decision must name its policy version, or two "
+                "decisions made under different rules become one population")
+
+    def to_payload(self) -> dict:
+        return {"field_id": self.field_id,
+                "policy_version": self.policy_version,
+                "selected": [c.to_payload() for c in self.selected],
+                "excluded": [{"evidence": e.to_payload(), "reason": r}
+                             for e, r in self.excluded]}
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "CandidateSelectionDecision":
+        return cls(
+            field_id=d["field_id"],
+            policy_version=d.get("policy_version", ""),
+            selected=tuple(QuantityCandidateEvidence.from_payload(c)
+                           for c in d.get("selected", ())),
+            excluded=tuple((QuantityCandidateEvidence.from_payload(x["evidence"]),
+                            x["reason"]) for x in d.get("excluded", ())))
