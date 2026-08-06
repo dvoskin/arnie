@@ -971,23 +971,86 @@ recreating the same fragmentation under better type names.
 ## Status board
 
 Kept current. This is the single answer to "where are we"; the phase sections
-above are the detail.
+above are the detail. **Everything open lives here** — a finding recorded only
+in a session, a commit message or a side document is a finding that gets lost,
+which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
+
+Last reconciled 2026-08-06 against the task list, `docs/B1_PRODUCTION_LOG_0805.md`
+and the commit history.
 
 ```text
 Phase A    COMPLETE          production-verified on a66e9ba8
-
 B-0        COMPLETE          ratchets enforced continuously (C8, C9)
-B-0b       CONTRACT SURFACE COMPLETE
-B-0c       COMPLETE          serialization, validation, immutability,
-                             persistence proof
-B-1        NEXT              one-item mass-quantity vertical slice
-B-1.5      quantity + independent preparation
-B-1.6      conditional added-fat dependency
-B-1.7      accuracy policy over one topology
-B-1.8      constrained fallback and repair
+B-0b       COMPLETE          contract surface
+B-0c       COMPLETE          serialization, validation, immutability, persistence
+B-1        BACKEND COMPLETE  production-proven; promotion still gated (below)
+B-1.75     COMPLETE          answered quantity is the only quantity authority
+D4.1       IN PROGRESS       observation window — the current phase
+B-1b       BLOCKED ON D4.1   iOS structured interactions
+B-1.5/.6/.7/.8              resume after promotion
 B-2+       expansion
 B-3/B-4    ownership consolidation and deletion
-C          finish canonical conversational food
-D          generalize only proven shared contracts
-E/F        structured then conversational workouts
+C/D/E/F    canonical food, shared contracts, workouts
 ```
+
+### The current phase, in order
+
+| # | item | state |
+|---|---|---|
+| 1 | Deploy `4535d1e` (`b1obs002`) — latency and the question stamps | **waiting on deploy** |
+| 2 | Voice pass on `ask_copy()`, bump `QUESTION_VERSION` | open — see note below |
+| 3 | D4.1 observation window | instrumented, collecting |
+| 4 | Analyse: option quality · history · free text · repairs · voice | after 3 |
+| 5 | B-1b iOS structured interactions | after 4 |
+| 6 | Rollout 1% → 5% → 25% → 100% | after 5 |
+| 7 | D7 scoped legacy deletion + lower ratchets | after 6 |
+| 8 | Resume B-1.5 → B-1.6 → B-1.7 → B-1.8 → B-2 | after 7 |
+
+**On item 2.** B-1's ask is rendered by a deterministic template
+(`ask_copy()` / `_introduction()`), deliberately — a model composing the
+question is exactly the defect that had production asking "How was the chicken
+breast cooked?" over a quantity field. But the placeholder wording is a
+CONFOUND for D4.1: free-text rate is the primary signal of option quality, and
+clumsy phrasing inflates it for reasons that have nothing to do with the
+options. Fixing it before the window is instrument hygiene, the same class as
+fixing the trace ring first. It stays a template, not a model call.
+
+### B-1 promotion gates
+
+Promotion means deleting the legacy quantity path. Blocked until all hold:
+
+```text
+[ ] D4.1 says the option pipeline is good enough to keep
+[ ] B-1b shipped and a canonical-rendering client is sufficiently deployed
+[ ] 100% of eligible turns canonical, production-proven
+[ ] no canonical operation ever fell back mid-flight (C10)
+[ ] rollback tested
+```
+
+### Open findings — deferred, not dropped
+
+Each is real, none blocks the current phase, and none may be closed silently.
+
+| finding | evidence | owner |
+|---|---|---|
+| `/admin/food-traces?q=` is ignored — substring queries return EVERYTHING, not nothing | measured 08-05 | instrument fix, unscheduled |
+| `phantom_log_claim` fires in the harness but showed `flags=None` on both production incident turns; `skills_fired` is NULL even on turns that wrote rows, so the column cannot say why | measured 08-06 | **unrecorded until now** — needs a cause before it is trusted as a safety net |
+| the legacy lane re-logged a meal already on the board (entry 2862 duplicated 2861, `legacy_reason=interpreter_none`) | measured 08-06, row deleted | D7 — the path B-1 replaces |
+| `reask_refused` firing for user `ios:5` on the legacy lane | observed 08-05 | uninvestigated |
+| `scripts/b1_operation_probe.py` cannot exercise B-1 — it drives `/api/v1/chat`, which is `PLATFORM="ios"`, excluded until B-1b | by design | B-1b |
+| zero history-sourced options across all asks so far | 7 asks, all `sources=ontology` | D4.1 decides whether this is recall or ranking |
+| two voices: B-1 turns render from a template, legacy turns from the composer, so the assistant sounds different depending on which lane owns the turn | measured 08-06 | item 2 above |
+
+### Earlier items — superseded or still live
+
+Reconciled rather than carried forward silently:
+
+```text
+P3  chips on every question        SUPERSEDED for quantity by B-1; still open
+                                   for every other attribute (B-1.5+)
+P4  undercount as a commit gate    STILL LIVE, unscheduled
+P5  resolving state, latency copy  STILL LIVE, unscheduled
+Phase 1b invariants I2/I7/I8       STILL LIVE, unscheduled
+adversarial gap hunt before push   STILL LIVE, unscheduled
+```
+
