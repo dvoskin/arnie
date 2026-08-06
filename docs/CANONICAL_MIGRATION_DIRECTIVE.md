@@ -136,10 +136,12 @@ sequence-level production evidence before expansion**, which is what this rule
 buys. Generalising an option generator without it would repeat the failure at
 a layer where the cost is a user's trust rather than a test run.
 
-Its first application is the **B-1 internal evidence window (B-1b)**: B-1's
-option pipeline does not widen, and the structured client (B-1d) does not
-begin, until the window says which candidate source actually produces answers
-people accept and do not correct. It is deliberately labelled inside B-1 — it
+Its first application is the **B-1 production-evidence ladder (B-1b)**:
+B-1's option pipeline does not widen until the evidence says which candidate
+source actually produces answers people accept and do not correct. Note what
+the rule does NOT say — it does not require that evidence to be organic. Class
+matters, not provenance: deterministic behaviour is proven deterministically,
+and only natural preference requires natural traffic. It is deliberately labelled inside B-1 — it
 is not Phase D work, and naming it `D4.1` implied Phase D was starting before
 B-1 closed.
 
@@ -1093,89 +1095,186 @@ B-1        SLICE NOT CLOSED  see the seven-line state below — "backend
                              slice look finished while its predecessor
                              still runs
 B-1.75     COMPLETE          answered quantity is the only quantity authority
-B-1b       IN PROGRESS       internal evidence window — the current phase
-B-1d       BLOCKED ON EVIDENCE  structured iOS client
+B-1b.1/.2  NEXT              deterministic matrix + sequence corpus
+B-1b.3     PLANNED           instrumented human simulation
+B-1b.4     CONTINUOUS        organic confirmation, low volume, gates nothing
+B-1c       COMPLETE          detector coverage and precision
+B-1d       UNBLOCKS AFTER B-1b.1 + B-1b.2 — not after organic volume
 B-1.5/.6/.7/.8              resume after promotion
 B-2+       expansion
 B-3/B-4    ownership consolidation and deletion
 C/D/E/F    canonical food, shared contracts, workouts
 ```
 
-### B-1 state — the authoritative seven lines
+### B-1 state — the authoritative lines
 
 ```text
 B-1 lifecycle implementation       COMPLETE
 B-1 production lifecycle proof     COMPLETE
-B-1 product evidence               IN PROGRESS
-B-1 structured client              BLOCKED ON EVIDENCE
+B-1a wording                       COMPLETE      versioned b1_quantity_q2
+B-1c safety observability          COMPLETE      coverage and precision proven
+B-1b.1 system validation           NEXT
+B-1b.2 sequence simulation         NEXT
+B-1b.3 human simulation            PLANNED
+B-1b.4 organic confirmation        CONTINUOUS / LOW VOLUME
+B-1d structured iOS client         UNBLOCKS AFTER B-1b.1 + B-1b.2
 B-1 promotion                      BLOCKED
 B-1 predecessor deletion           NOT STARTED
 B-1 slice closure                  NOT COMPLETE
 ```
 
 Quote these lines rather than a single adjective. "B-1 is done" is true of the
-first two and false of the last five, and the whole point of the slice loop is
-that the last five are where migrations are actually won or lost.
+first four and false of the rest, and the slice loop is won or lost in the rest.
 
-### Closing B-1 — the first promotion and deletion cycle
+### Closing B-1 — the production-evidence ladder
 
-B-1's lifecycle is production-proven. The **slice** is not closed until its
-predecessor is deleted and its ratchets are lowered.
+**Augmented 2026-08-06 from team review.** The earlier plan made organic
+traffic the sole sequencing gate: observe, wait, then build. That was an
+overcorrection. Synthetic *acceptance* data would measure our model of the user
+rather than the user — true, and still true — but low traffic must change the
+**label and confidence** of evidence, not suspend the migration.
 
-| | step | state |
+| | step | exit condition |
 |---|---|---|
-| **B-1a** | Measurement calibration — instrumentation wording, versioned | ✅ `b1_quantity_q2` |
-| **B-1b** | Internal evidence window | **current** |
-| **B-1c** | Close the safety-observability gap (detector silence) | runs in parallel; blocks *public rollout*, not internal collection |
-| **B-1d** | Structured iOS client against the validated contract | after the B-1b window |
-| **B-1e** | Promote → delete the legacy quantity path → lower ratchets | after B-1d |
+| **B-1a** | measurement wording | ✅ versioned `b1_quantity_q2` |
+| **B-1b.1** | deterministic system-validation matrix | green against production-like Postgres with real enrichment |
+| **B-1b.2** | production-sequence corpus | green under Postgres and real pricing |
+| **B-1b.3** | instrumented human simulation | internal panel shows the interaction is understandable |
+| **B-1b.4** | natural-traffic confirmation | continuous; confirms rather than gates |
+| **B-1c** | safety observability | ✅ coverage and precision proven |
+| **B-1d** | structured iOS client | **may start after B-1b.1 + B-1b.2** — does not wait for organic volume |
+| **B-1e** | promote → delete predecessor → lower ratchets | after B-1d proof |
 
-**B-1a — allowed scope, now closed.** Make the question unambiguous · make the
-free-text and "not sure" routes visible · version-stamp the wording · preserve
-the QuestionIntent, options and patches · no dynamic LLM diction. Found and
-fixed: `ClarificationCommand.ESTIMATE` was fully implemented and advertised
-nowhere, so "not sure" usage would have measured zero.
+**B-1d is deliberately not gated on B-1b.3 being statistically significant.**
+Start it once the system matrix and sequence corpus are green and no structural
+redesign of the candidate contract is known — then run B-1b.3 *through the iOS
+client*, because the structured `option_id` path is the actual intended
+interaction and testing it in prose is testing something else.
 
-**B-1b evidence validity boundary — `719022b`, DB clock 2026-08-06 14:13:30.**
-Candidate-source observations taken before this point are **invalid and
-excluded**, not merely old. `_history_grams` fetched the 50 most recent
-non-estimated rows across *all* foods and matched the name afterwards, so a
-daily logger had roughly a week of recall whatever the 90-day window claimed —
-measured on a rice question with fifteen exact in-window priors that offered
-only ontology portions.
+### Evidence classes — what a given source may legitimately prove
 
-Every observation before the boundary therefore measured a truncated index
-rather than the product. History could not appear, and pooling across the line
-would bias its availability toward zero — manufacturing precisely the
-conclusion the bug would have produced ("users are not served by their own
-history"). **Candidate-source measurement restarts at the boundary.**
+| class | what it can prove | valid source |
+|---|---|---|
+| **System correctness** | ownership, persistence, settlement, idempotency, replay, pricing, card/totals agreement, telemetry | automated production-like scenarios |
+| **Candidate quality** | source availability, option spread, degenerate forks, history recall, ontology coverage, ranking | real account history + deterministic dry runs |
+| **Interaction usability** | whether the wording and choices are understandable; whether people know they can type an amount or say "not sure" | structured internal human testing |
+| **Natural preference** | true acceptance, free-text preference, abandonment, correction over time | **real production usage only** |
 
-Enforced, not merely stated: `scripts/b1_option_scorecard.py` filters every
-query on `EVIDENCE_VALID_FROM` and prints the boundary in its header. A
-boundary that lives only in prose is one that gets pooled by accident later.
+**No simulated result may be reported as natural preference.** Absence of
+organic traffic changes the label, never the sequence.
 
-**B-1b — what the window must answer.** Candidate source availability · option
-selected · free-text amount · "Other" usage · "not sure" usage · repair rate ·
-latency · abandonment · correction within ten minutes · card/totals agreement ·
-real enrichment through `analyze()`. This decides whether the candidate
-*product* is viable, not whether the code works.
+### B-1b.1 — the deterministic system-validation matrix
 
-**B-1e — delete only what overlaps B-1:** the legacy single-item mass-quantity
-question producer, its answer reconstruction, its quantity-specific pending
-ownership, and any prose option derivation used for that slice. Then lower C8
-and C9 in the same commit.
+Canonical path, production-like Postgres, **real enrichment enabled**. Every
+axis crossed:
+
+```text
+candidate source   history · calibrated ontology · fallback · none
+answer route       exact label · typed offered · typed NOT offered ·
+                   "not sure"/MODE_DEFAULT · malformed -> REPAIR · cancel ·
+                   stale · foreign · duplicate delivery
+quantity basis     grams · ounces · mass answer replacing non-mass ask-time
+                   data · conflicting ask-time macros removed before pricing
+outcome            commit · repair · cancel · refuse · internal failure · replay
+```
+
+Each scenario verifies **database state, never reply text**: exactly one
+operation · expected revision · expected terminal state · 0 or 1 meal commit ·
+0 or 1 food row · resolved quantity and provenance · real `analyze()` result ·
+card and totals agreement · expected telemetry · duplicate execution
+impossible · health detector executed · no legacy fallback after ownership.
+
+### B-1b.2 — the production-sequence corpus
+
+Naturally occurring *sequences*, not isolated states:
+
+```text
+clarification -> answer -> unrelated new meal
+clarification -> answer -> duplicate answer
+clarification -> delayed answer after another operation opens
+clarification -> cancel -> new meal
+clarification -> repair -> valid answer
+clarification -> internal failure -> retry
+clarification -> deploy/restart -> answer
+clarification -> duplicate webhook delivery
+clarification -> prior meal referenced in the reply -> new question
+clarification -> correction within ten minutes
+```
+
+Through real routing, real persistence, **fresh database sessions between
+turns**, real pricing, production-equivalent platform capabilities, the
+expected deployment configuration, and durable telemetry queries.
+
+> **Simulate sequences, not desired outcomes.** A scenario must begin from raw
+> user messages and production-shaped account history and pass through real
+> routing, candidate generation, persistence, answer application, enrichment
+> and commit. It may control the user's next reply; it may **not** directly
+> construct the internal state it exists to validate, unless the test
+> explicitly targets that isolated contract.
+>
+> Every defect this slice produced that shipped green came from violating this:
+> a fixture built the state it then asserted, so the assertion could not fail.
+
+### B-1b.3 — instrumented human simulation
+
+Preference cannot be inferred from synthetic answers, so recruit rather than
+wait. 5–10 people · 10–15 sessions each · 50–150 interactions, mixing familiar
+foods, foods with history, foods with no ontology row, vague portions, branded
+foods that B-1 excludes, and deliberately awkward quantities. Real product
+surface; participants answer naturally and are **not told which option is
+expected**.
+
+Capture: selected option · typed amount · "Other" · "not sure" · repair ·
+abandonment · time to answer · immediate correction · qualitative reason after
+selected sessions.
+
+This is **usability** evidence, not retention evidence. It is sufficient to
+validate the interaction contract and to begin B-1d.
+
+### B-1b.4 — natural-traffic confirmation
+
+A confirmation stream, not the gate. Confirms: no behaviour absent from the
+corpus · real users understand the wording · correction and abandonment are not
+materially worse · no channel-specific issue · candidate-source distribution
+resembles the tested corpus. **Low sample size is reported explicitly** and
+blocks nothing unless it reveals a severe contradiction.
 
 ### B-1 promotion gates
 
-Promotion means deleting the legacy quantity path. Blocked until all hold:
+Promotion means deleting the legacy quantity path. Blocked until all hold.
+**No arbitrary organic sample count is required** unless traffic later becomes
+sufficient to justify one.
 
 ```text
-[ ] the B-1b evidence window says the option pipeline is good enough to keep
-[ ] B-1d shipped and the canonical structured client is sufficiently deployed
-[ ] 100% of eligible turns canonical, production-proven
-[ ] no canonical operation ever fell back mid-flight (C10)
+[ ] production-like system matrix green            (B-1b.1)
+[ ] production-sequence corpus green               (B-1b.2)
+[ ] real analyze() pricing verified through the canonical path
+[ ] internal human simulation shows the interaction is understandable (B-1b.3)
+[ ] no known severe candidate-generation defect remains
+[ ] structured iOS option_id path production-proven (B-1d)
+[ ] natural traffic, where available, shows no contradictory severe signal
+[ ] B-1c detector coverage and precision remain live
+[ ] 100% of eligible turns canonical under the rollout cohort
 [ ] rollback tested
 ```
+
+### Coverage ledger — "not seen organically" is not "not tested"
+
+Kept current. Four columns per required behaviour, so a gap in one column
+cannot masquerade as a gap in the system.
+
+| behaviour | automated sequence | internal human | organic | status |
+|---|---|---|---|---|
+| history option offered | pending B-1b.1 | pending | none yet | blocked on B-1b.1 |
+| typed non-offered amount | pending B-1b.1 | pending | 2 observations | blocked on B-1b.1 |
+| real `analyze()` pricing | pending B-1b.1 | pending | verified (entry 2860) | partial |
+| duplicate delivery | ✅ harness | unnecessary | ✅ proven | **sufficient** |
+| settled op declines new meal | ✅ harness | pending | ✅ proven | **sufficient** |
+| expired op declines new meal | ✅ harness | pending | none yet | **sufficient** |
+| stale revision / foreign field | ✅ harness | pending | none yet | **sufficient** |
+| estimate / "not sure" route | pending B-1b.1 | pending | 1 observation | partial |
+| abandonment preference | not simulable | pending B-1b.3 | none yet | **provisional** |
+| long-term correction rate | not simulable | limited | none yet | **unresolved** |
 
 ### B-1b finding 1 — the `piece` fallback produces unusable option sets
 
