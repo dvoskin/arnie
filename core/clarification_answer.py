@@ -321,27 +321,32 @@ def _authorizes_assumption(option, context=None) -> bool:
     """Read the evidence IN CONTEXT, fall back to the migration table, never
     guess.
 
-    An option carrying real `QuantityCandidateEvidence` answers for itself,
-    and it answers about a specific person and entity — scope alone proves the
+    An option carrying a real `QuantityCandidate` answers for itself, and it
+    answers about a specific person and entity — scope alone proves the
     evidence names *a* user, not *this* one. Without a context we cannot make
-    that comparison, so evidence-bearing options fail SHUT rather than being
+    that comparison, so candidate-bearing options fail SHUT rather than being
     authorised on scope alone; a caller that knows who is asking must say so.
 
-    Until every producer attaches evidence (commit 4), an option without it is
-    mapped from its source ONCE, here. Anything unmapped is a population
-    prior. This branch dies with commit 4.
+    THE QUESTION IS ASKED OF THE CANDIDATE, NOT OF ONE EVIDENCE RECORD. A
+    candidate may be supported by several sources, and it is authorised if
+    ANY ONE of them is sufficient on its own — population records sitting
+    alongside neither help nor dilute.
+
+    Until every producer attaches a candidate (commit 4), an option without
+    one is mapped from its source ONCE, here. Anything unmapped is a
+    population prior. This branch dies with commit 4.
     """
     from core.semantics import EvidenceScope
 
-    evidence = getattr(option, "evidence", None)
-    if evidence is not None:
+    candidate = getattr(option, "candidate", None)
+    if candidate is not None:
         if context is None:
             logger.warning(
-                "event=b1_evidence_without_context option=%s — evidence "
+                "event=b1_evidence_without_context option=%s — a candidate "
                 "cannot be matched to a subject, refusing to authorise",
                 getattr(option, "option_id", "?"))
             return False
-        return bool(evidence.authorizes_assumption(context))
+        return bool(candidate.authorizes_assumption(context))
 
     source = str(getattr(getattr(option, "source", None), "value", "") or "")
     scope = _LEGACY_SOURCE_SCOPE.get(source)

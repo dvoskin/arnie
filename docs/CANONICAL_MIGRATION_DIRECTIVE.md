@@ -1095,6 +1095,9 @@ B-1        SLICE NOT CLOSED  see the seven-line state below — "backend
                              slice look finished while its predecessor
                              still runs
 B-1.75     COMPLETE          answered quantity is the only quantity authority
+B-1.9      IN PROGRESS       1 PASS(+2 CF) · 2 DONE · 2.1 DONE (P0 fixed) ·
+                             3a DONE contracts · 3b NEXT persistence ·
+                             4-10 open. Runs BEFORE B-1 closure.
 B-1b.1/.2  NEXT              deterministic matrix + sequence corpus
 B-1b.3     PLANNED           instrumented human simulation
 B-1b.4     CONTINUOUS        organic confirmation, low volume, gates nothing
@@ -1226,6 +1229,21 @@ canonical quantity, serving basis, source type and record, conversion
 evidence, confidence, uncertainty, policy version, provenance. **No candidate
 without typed evidence enters an interaction.**
 
+**2 — status: DONE** *(commits `f93e77c` + `cd17234`, 2026-08-06)*. CF-1 is
+closed: sufficiency now reads declared scope and subject, not a source name.
+
+* **Commit 2 shipped a P0 and review caught it.** `authorizes_assumption`
+  proved the evidence *named* a user or product and never that it described
+  the one being asked about — all three subject ids were stored and none was
+  compared to anything, so evidence about user 123 would have authorised an
+  assumption for user 456. Fixed in **2.1** with `EvidenceContext` and
+  identity comparison, assembled **from the operation** rather than
+  re-derived from the incoming message.
+* `THIS_PRODUCT` → **`THIS_PRODUCT_QUANTITY`**, requiring a quantity-bearing
+  basis. Identity is not consumption: knowing a jar is Brand X honey does not
+  establish that three tablespoons were eaten.
+* Evidence-bearing options **fail shut** without a context.
+
 **3 — instrument the whole universe, not the selected three.** Persist all
 generated candidates, their evidence sources, serving bases, conversions,
 which were selected, which excluded, the selection reasons, policy version,
@@ -1233,6 +1251,119 @@ the answer, its modality, and any later correction — so that *retrieval*
 failure, *conversion* failure, *selection* failure, *presentation-basis*
 failure and *ranking* failure stop being one undifferentiated "bad options"
 problem.
+
+**3 is SPLIT — 3a contracts, 3b persistence** *(2026-08-06)*. The schema is
+not cut until the shape is settled, because a migration is the one artefact
+this programme may not amend after pushing
+(`feedback_arnie_never_amend_a_pushed_migration`).
+
+**3a — the architectural correction. `candidate_id` belongs to the CANDIDATE,
+never to the evidence.** The first implementation put identity on
+`QuantityCandidateEvidence`, which encodes *one candidate = one evidence
+record* into the persisted shape. That assumption does not survive real
+candidate generation, where one offered amount may be supported at once by
+exact user history, package metadata and a canonical serving record. Caught in
+review before any schema existed. Three levels now:
+
+```text
+CandidateSet
+└── QuantityCandidate          candidate_id · normalized offered quantity
+    │                          · presentation serving basis
+    └── evidence[]             QuantityCandidateEvidence
+                               observed quantity · observed basis
+                               · provenance · applicability · conversion
+```
+
+The split also fixes an ownership ambiguity: with a quantity on both objects
+and no stated authority, `candidate.quantity = 21 g` beside
+`evidence.observed = 30 g` was representable and meaningless. The candidate
+owns the **offered** value; evidence owns what its source **observed**;
+crossing them requires a sourced conversion, and agreeing on one basis
+requires agreeing on the number.
+
+Further corrections taken in 3a:
+
+* **Selection is reproducible only with its context.** A policy version alone
+  does not determine the outcome — the same universe yields three text options
+  on Telegram and five structured ones on iOS.
+  `CandidateSelectionContext(surface, locale, maximum_options,
+  renderer_contract_version)` is persisted, so the claim becomes *set + policy
+  + context = same decision*.
+* **A source id is not durable evidence.** A `food_entries` id points at
+  whatever that row says now, not what it said at generation. Evidence
+  snapshots `observed_quantity`, `observed_basis`, `observed_at` and a
+  `SourceReference(dataset_id, dataset_version, record_key, record_version)` —
+  so `portion:chicken_breast:large` cannot silently mean 174 g before an
+  ontology refresh and 190 g after while presenting as one claim.
+* **`RENDER_COLLISION`, not `DUPLICATE_LABEL`.** A label is presentation. Two
+  candidates can be semantically distinct, collide in English and not collide
+  in another locale; recording that as a duplicate would assert they meant the
+  same thing when they did not. Reproducible only against
+  `renderer_contract_version`, which is why that field is required.
+* **No generic exclusion reason.** "Not selected" restates the fact already
+  recorded. The enum is exactly `semantic_duplicate · render_collision ·
+  selection_cap` — one per real policy branch.
+* **Generation failures are not selection decisions.**
+  `CandidateGenerationRejection` holds inputs that could not form a candidate.
+  Forcing them into the universe would mean constructing invalid candidates
+  just to mark them excluded, defeating the construction-time gates and
+  corrupting the denominator of every selection metric. It also separates
+  "found nothing" from "found a row that could not be used".
+* **Keyword-only construction** on every new contract. These records grow
+  fields as the slice does, and a positional call silently reinterprets an old
+  argument as a new field.
+* **Selected order is data**, not database insertion order — it decides which
+  option is first, and therefore prominence and selection rate.
+* **Opaque candidate ids.** Never built from user id, food name, label,
+  confidence or evidence ordering; `semantic_hash` carries merge identity
+  separately, where it can be compared without being an address.
+
+The load-bearing gate: `selected ∪ excluded == every generated candidate` and
+`selected ∩ excluded == ∅`. With it, three failures that look identical in
+production separate — **retrieval** (absent from the set), **selection**
+(present and excluded with a typed reason), **user rejection** (present in
+`selected`, so it *was* shown). Without it the first two are one observation
+and the third is guesswork over displayed options.
+
+**3a — status: DONE, contracts only.** 7987 pass on SQLite, 0 failed. No
+schema, no producer change, no behaviour change.
+
+**3b — persistence.** Atomic write of the immutable set and its typed decision
+*before options are rendered*, fail-closed; append-only; candidate set bound to
+its operation's user at write **and** read; database constraints as well as
+domain validation, because migrations and future write paths bypass a
+dataclass; `generation_input_fingerprint` so that the same key regenerated from
+different inputs **fails loudly** instead of silently returning the old
+universe; the interaction referencing its `candidate_set_id` directly, so
+settlement proves `option_id → candidate_id → candidate_set_id → the exact
+revision shown`.
+
+**Commit 3 gates.** Ticked only against executed proof.
+
+```text
+[x] QuantityCandidate owns the normalized offered quantity
+[x] evidence owns observed source facts, not candidate identity
+[x] new contracts are keyword-only
+[x] a candidate may carry multiple evidence records
+[x] selection context is persisted and versioned
+[x] selected ordering is durable
+[x] label collisions cannot erase distinct semantics silently
+[x] every exclusion maps to a real policy branch
+[x] invalid generation attempts are separate from valid exclusions
+[ ] generator inputs carry a reproducibility fingerprint      3b
+[ ] same key + different fingerprint fails loudly             3b
+[ ] source evidence is snapshotted, not merely referenced     3a shape,
+                                                              3b producers
+[ ] ontology source identity includes dataset version         3b producers
+[ ] the interaction directly references the candidate set shown  3b
+[ ] candidate set and decision are append-only                3b
+[ ] database constraints enforce cross-record integrity       3b
+[ ] user ownership is checked at persistence AND retrieval    3b
+```
+
+**Stop condition, unchanged:** the system can distinguish retrieval failure
+from selection failure from user rejection **using durable records alone** —
+not by re-running the generator, and not by inferring from displayed options.
 
 **4 — the generator.** Approved sources only: exact canonical-entity user
 history · validated entity portion evidence · validated product/package
@@ -1292,7 +1423,7 @@ Standing rules, added 2026-08-06. They bind every slice, not just this one.
 Recorded so nothing is lost and the order is not re-litigated per slice.
 
 ```text
-B-1.9  candidate-system correction      <- current
+B-1.9  candidate-system correction      <- current, at 3b (persistence)
 B-1    promote + DELETE predecessor + lower ratchets
 B-1.5  quantity + preparation_category  (largest exclusion class in production)
 B-1.6  conditional dependencies         generic field-activation engine,

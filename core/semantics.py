@@ -1644,6 +1644,50 @@ class EvidenceScope(str, Enum):
     POPULATION = "population"
 
 
+class ExclusionReason(str, Enum):
+    """WHY a generated candidate did not become an option.
+
+    Typed, and deliberately one member per place the selector actually drops
+    something — not a free string. A reason field that accepts prose becomes a
+    second vocabulary nobody maintains: the same cause arrives spelled four
+    ways and the population cannot be counted. Adding a drop site to the
+    selector must mean adding a member here, which is the point.
+
+    THERE IS NO GENERIC MEMBER. "Not selected" restates the fact already
+    recorded by appearing in this list and answers nothing; every exclusion
+    names the policy branch that produced it, because the question analysis
+    has to answer is why the user's expected candidate disappeared.
+
+    NONE OF THESE MEAN THE USER REJECTED THE CANDIDATE. Rejection is an event
+    on the answer turn, recorded against an option that WAS shown. Keeping the
+    two vocabularies apart is what lets "we never offered it" be separated
+    from "we offered it and they typed something else".
+
+    Inputs that could not form a candidate at all are NOT here — those are
+    generation failures, not selection decisions. See
+    `GenerationRejectionReason`.
+    """
+    #: Quantity-equivalent to an already-accepted candidate, independently of
+    #: how either would be worded. The selector's accept rule is information
+    #: gain, and this one added none.
+    SEMANTIC_DUPLICATE = "semantic_duplicate"
+    #: DISTINCT IN MEANING, COLLIDING IN WORDS. Its rendered label read back
+    #: to the same mass as a neighbour's — `5 oz` and `6 oz` are two chips and
+    #: one choice.
+    #:
+    #: NAMED AS A RENDERING OUTCOME, NOT A SEMANTIC ONE, because that is what
+    #: it is: a judgement about wording, under one renderer, in one locale.
+    #: Calling it a duplicate would assert the candidates meant the same
+    #: thing when they demonstrably did not, and would hide that another
+    #: locale may not collide at all. Reproducible only against the
+    #: `renderer_contract_version` in the selection context, which is why that
+    #: field is not optional.
+    RENDER_COLLISION = "render_collision"
+    #: Survived deduplication, but the display limit was already full when it
+    #: was reached.
+    SELECTION_CAP = "selection_cap"
+
+
 @dataclass(frozen=True)
 class EvidenceContext:
     """WHO is answering, about WHAT. The other half of applicability.
@@ -1721,32 +1765,90 @@ class ConversionEvidence:
                    factor=_dec_in(d.get("factor")))
 
 
-@dataclass(frozen=True)
-class QuantityCandidateEvidence:
-    """One quantity we could offer, and everything that justifies it.
+@dataclass(frozen=True, kw_only=True)
+class SourceReference:
+    """WHICH RECORD, IN WHICH VERSION OF WHICH DATASET.
 
-    `authorizes_assumption` is the CF-1 replacement: derived from the declared
-    scope and its required subject id, not from the source's name. A lane
-    added tomorrow is judged on what it says its evidence is about.
+    A bare key is not a durable identity when the thing it names can change.
+    `portion:chicken_breast:large` can mean 174 g today and 190 g after an
+    ontology refresh, and evidence citing only the key would present two
+    incomparable claims as one. The same applies to a mutable row: a
+    `food_entries` id points at whatever that row says NOW, which is not
+    necessarily what it said when the candidate was generated.
     """
-    canonical_entity_id: str
-    quantity: "CanonicalQuantity"
-    serving_basis: ServingBasis
+    dataset_id: str
+    dataset_version: str
+    record_key: str
+    #: A content hash, row version, or — best — an immutable event id. Empty
+    #: only where the dataset itself is immutable per version.
+    record_version: str = ""
+
+    def __post_init__(self):
+        for name in ("dataset_id", "dataset_version", "record_key"):
+            if not str(getattr(self, name) or "").strip():
+                raise ValueError(
+                    f"a source reference needs its {name} — an unauditable "
+                    f"justification is not one")
+
+    def to_payload(self) -> dict:
+        return {"dataset_id": self.dataset_id,
+                "dataset_version": self.dataset_version,
+                "record_key": self.record_key,
+                "record_version": self.record_version}
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "SourceReference":
+        return cls(dataset_id=d["dataset_id"],
+                   dataset_version=d["dataset_version"],
+                   record_key=d["record_key"],
+                   record_version=d.get("record_version", ""))
+
+
+@dataclass(frozen=True, kw_only=True)
+class QuantityCandidateEvidence:
+    """One reason a candidate exists, AND what the source actually said.
+
+    NOT the candidate. A statement of the form "this source, about this
+    subject, observed this amount on this basis, which supports the quantity
+    its candidate names". The offered amount belongs to the candidate; what
+    was OBSERVED belongs here. Without that split both objects could claim a
+    quantity — candidate 21 g, evidence 30 g — with no defined authority
+    between them.
+
+    It is also a SNAPSHOT. A source id alone cannot explain a candidate after
+    the row behind it is corrected or deleted; the observed value is recorded
+    here so the system can still say "candidate X existed because event Y
+    contained 182 g at the time".
+
+    `applies_to` asks only about the SUBJECT — whether this record is about
+    the person or variant at hand. The entity match lives on the candidate,
+    because that is where the entity lives.
+    """
     source_type: CandidateSource
-    source_record_id: str
+    source: SourceReference
+    #: WHAT THE SOURCE SAID, as it said it. Not the offered value.
+    observed_quantity: "CanonicalQuantity"
+    observed_basis: ServingBasis
     subject_scope: EvidenceScope
+    observed_at: Optional[Any] = None
     subject_user_id: Optional[int] = None
     product_variant_id: Optional[str] = None
+    #: How `observed_basis` reached the candidate's basis. Required whenever
+    #: the two differ.
     conversion_evidence: Optional[ConversionEvidence] = None
     confidence: Optional[Decimal] = None
     uncertainty_g: Optional[Decimal] = None
+    #: WHICH SCHEMA READS THIS PAYLOAD. Distinct from the generator version,
+    #: the selection policy version, and the version of the source data — four
+    #: different questions, and collapsing them makes it impossible to say
+    #: which one changed.
     evidence_version: int = EVIDENCE_SCHEMA_VERSION
 
     def __post_init__(self):
-        # FAIL SHUT on an unknown basis, source, scope or version. A value we
+        # FAIL SHUT on an unknown source, basis, scope or version. A value we
         # cannot interpret must not travel as if we could.
-        object.__setattr__(self, "serving_basis", ServingBasis(self.serving_basis))
         object.__setattr__(self, "source_type", CandidateSource(self.source_type))
+        object.__setattr__(self, "observed_basis", ServingBasis(self.observed_basis))
         object.__setattr__(self, "subject_scope", EvidenceScope(self.subject_scope))
         object.__setattr__(self, "confidence", _dec_in(self.confidence))
         object.__setattr__(self, "uncertainty_g", _dec_in(self.uncertainty_g))
@@ -1755,52 +1857,23 @@ class QuantityCandidateEvidence:
                 f"evidence_version {self.evidence_version} is not "
                 f"{EVIDENCE_SCHEMA_VERSION}; a record written under another "
                 f"contract must be migrated, not guessed at")
-        if not str(self.canonical_entity_id or "").strip():
-            raise ValueError("evidence with no canonical entity cannot be "
-                             "matched to anything")
-        if not str(self.source_record_id or "").strip():
-            raise ValueError(
-                f"{self.source_type.value} evidence with no source record "
-                f"cannot be audited, and an unauditable justification is not "
-                f"one")
         # THE SUBJECT MUST BE NAMED, not implied by the scope.
         if self.subject_scope is EvidenceScope.THIS_USER and not self.subject_user_id:
             raise ValueError(
                 "THIS_USER evidence must name the user it is about — a scope "
                 "without a subject is a claim without a claimant")
-        if self.subject_scope is EvidenceScope.THIS_PRODUCT_QUANTITY:
-            if not str(self.product_variant_id or "").strip():
-                raise ValueError(
-                    "THIS_PRODUCT_QUANTITY evidence must name the variant it "
-                    "is about")
-            if self.serving_basis.value not in _QUANTITY_BEARING_BASES:
-                raise ValueError(
-                    f"THIS_PRODUCT_QUANTITY evidence speaks in "
-                    f"{self.serving_basis.value}, which identifies the product "
-                    f"without stating an amount of it — knowing a jar is Brand "
-                    f"X honey does not establish that three tablespoons were "
-                    f"eaten")
-        # THE CONVERSION MUST CONNECT THIS CANDIDATE'S OWN BASIS. Otherwise a
-        # volume candidate could carry an unrelated piece-to-mass row and pass
-        # construction while proving nothing about itself.
-        conv = self.conversion_evidence
-        if conv is not None and conv.to_basis is not self.serving_basis:
+        if (self.subject_scope is EvidenceScope.THIS_PRODUCT_QUANTITY
+                and not str(self.product_variant_id or "").strip()):
             raise ValueError(
-                f"conversion ends in {conv.to_basis.value} but the candidate "
-                f"is expressed in {self.serving_basis.value}; a conversion "
-                f"that does not land on this candidate's basis licenses "
-                f"nothing about it")
+                "THIS_PRODUCT_QUANTITY evidence must name the variant it is "
+                "about")
 
     def applies_to(self, context: "EvidenceContext") -> bool:
-        """Is this evidence about the thing currently being asked about?
+        """Is this record about the SUBJECT currently being asked about?
 
-        The entity must match in every case — evidence about rice says nothing
-        about salmon however well-sourced it is. Beyond that the subject must
-        match its own scope: user evidence must name THIS user, product
-        evidence THIS variant.
+        Subject only. The entity is checked by the candidate that owns this
+        evidence, so that a candidate cannot be partly about salmon.
         """
-        if self.canonical_entity_id != (context.canonical_entity_id or ""):
-            return False
         if self.subject_scope is EvidenceScope.THIS_USER:
             return (self.subject_user_id is not None
                     and self.subject_user_id == context.user_id)
@@ -1808,6 +1881,153 @@ class QuantityCandidateEvidence:
             return bool(self.product_variant_id
                         and self.product_variant_id == context.product_variant_id)
         return True          # population evidence applies to anyone
+
+    def to_payload(self) -> dict:
+        return {
+            "evidence_version": self.evidence_version,
+            "source_type": self.source_type.value,
+            "source": self.source.to_payload(),
+            "observed_quantity": self.observed_quantity.to_payload(),
+            "observed_basis": self.observed_basis.value,
+            "observed_at": (self.observed_at.isoformat()
+                            if hasattr(self.observed_at, "isoformat") else None),
+            "subject_scope": self.subject_scope.value,
+            "subject_user_id": self.subject_user_id,
+            "product_variant_id": self.product_variant_id,
+            "conversion_evidence": (self.conversion_evidence.to_payload()
+                                    if self.conversion_evidence else None),
+            "confidence": _dec_out(self.confidence),
+            "uncertainty_g": _dec_out(self.uncertainty_g),
+        }
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "QuantityCandidateEvidence":
+        from datetime import datetime as _dt
+
+        conv = d.get("conversion_evidence")
+        seen = d.get("observed_at")
+        return cls(
+            source_type=CandidateSource(d["source_type"]),
+            source=SourceReference.from_payload(d["source"]),
+            observed_quantity=CanonicalQuantity.from_payload(
+                d["observed_quantity"]),
+            observed_basis=ServingBasis(d["observed_basis"]),
+            observed_at=(_dt.fromisoformat(seen) if seen else None),
+            subject_scope=EvidenceScope(d["subject_scope"]),
+            subject_user_id=d.get("subject_user_id"),
+            product_variant_id=d.get("product_variant_id"),
+            conversion_evidence=(ConversionEvidence.from_payload(conv)
+                                 if conv else None),
+            confidence=_dec_in(d.get("confidence")),
+            uncertainty_g=_dec_in(d.get("uncertainty_g")),
+            evidence_version=int(d.get("evidence_version",
+                                       EVIDENCE_SCHEMA_VERSION)))
+
+
+@dataclass(frozen=True, kw_only=True)
+class QuantityCandidate:
+    """ONE POSSIBLE ANSWER, above the one or more records that support it.
+
+    The candidate owns the identity and the claim: this much of this entity,
+    normalized, expressed on this basis. Its evidence says why, and what each
+    source observed. Two sources that agree on an amount merge into one
+    candidate holding two evidence records, and no provenance is lost.
+
+    `candidate_id` IS OPAQUE. It is not built from the user, the food name,
+    the label, the confidence or the evidence ordering — an id that encodes
+    those leaks them wherever it travels and changes meaning when they do.
+    `semantic_hash` carries the deduplication identity instead, separately,
+    where it can be compared without being an address.
+    """
+    candidate_id: str
+    canonical_entity_id: str
+    #: THE NORMALIZED AMOUNT BEING OFFERED. The single authority on what this
+    #: candidate means; evidence carries what was observed.
+    quantity: "CanonicalQuantity"
+    serving_basis: ServingBasis
+    evidence: tuple = ()
+    #: Content identity for merge/integrity checks. Never an address.
+    semantic_hash: str = ""
+
+    def __post_init__(self):
+        object.__setattr__(self, "serving_basis", ServingBasis(self.serving_basis))
+        object.__setattr__(self, "evidence", tuple(self.evidence or ()))
+        if not str(self.candidate_id or "").strip():
+            raise ValueError(
+                "a candidate needs an id — an unnamed candidate cannot be "
+                "referenced by the option it becomes, so the option's "
+                "justification could never be looked up")
+        if not str(self.canonical_entity_id or "").strip():
+            raise ValueError("a candidate with no canonical entity cannot be "
+                             "matched to anything")
+        if not self.evidence:
+            raise ValueError(
+                f"candidate {self.candidate_id!r} has no evidence — a "
+                f"quantity offered for no recorded reason is the thing this "
+                f"whole record exists to make impossible")
+        for ev in self.evidence:
+            # THE BASIS MUST BEAR A QUANTITY when a record claims to be about
+            # this specific product's amount. Identity is not consumption:
+            # knowing a jar is Brand X honey does not establish that three
+            # tablespoons were eaten.
+            if (ev.subject_scope is EvidenceScope.THIS_PRODUCT_QUANTITY
+                    and self.serving_basis.value not in _QUANTITY_BEARING_BASES):
+                raise ValueError(
+                    f"candidate {self.candidate_id!r} carries "
+                    f"THIS_PRODUCT_QUANTITY evidence but is expressed in "
+                    f"{self.serving_basis.value}, which identifies the product "
+                    f"without stating an amount of it")
+            conv = ev.conversion_evidence
+            # A CONVERSION MUST LAND ON THIS CANDIDATE'S OWN BASIS. Otherwise
+            # a volume candidate could carry an unrelated piece-to-mass row and
+            # pass construction while proving nothing about itself.
+            if conv is not None and conv.to_basis is not self.serving_basis:
+                raise ValueError(
+                    f"conversion ends in {conv.to_basis.value} but candidate "
+                    f"{self.candidate_id!r} is expressed in "
+                    f"{self.serving_basis.value}; a conversion that does not "
+                    f"land on this candidate's basis licenses nothing about it")
+            if ev.observed_basis is not self.serving_basis:
+                # CROSSING BASES REQUIRES AUTHORITY. Evidence observed in
+                # millilitres cannot support a mass candidate on its own; a
+                # sourced conversion is exactly what makes it able to.
+                if conv is None:
+                    raise ValueError(
+                        f"evidence observed in {ev.observed_basis.value} "
+                        f"supports candidate {self.candidate_id!r} expressed "
+                        f"in {self.serving_basis.value} with no conversion — "
+                        f"the basis changed on nobody's authority")
+                if conv.from_basis is not ev.observed_basis:
+                    raise ValueError(
+                        f"the conversion starts from {conv.from_basis.value} "
+                        f"but the evidence observed "
+                        f"{ev.observed_basis.value}; it converts something "
+                        f"this record did not see")
+            else:
+                # SAME BASIS, SO THE NUMBERS MUST AGREE. Otherwise a candidate
+                # could offer 21 g citing evidence that observed 30 g, and
+                # nothing in the record says which is authoritative or where
+                # the difference came from.
+                seen = getattr(ev.observed_quantity, "grams", None)
+                offered = getattr(self.quantity, "grams", None)
+                if (seen is not None and offered is not None
+                        and Decimal(str(seen)) != Decimal(str(offered))):
+                    raise ValueError(
+                        f"candidate {self.candidate_id!r} offers {offered} g "
+                        f"on the same basis as evidence that observed "
+                        f"{seen} g — a difference with no conversion behind "
+                        f"it has no authority")
+
+    def applies_to(self, context: "EvidenceContext") -> bool:
+        """Is this candidate about the thing currently being asked about?
+
+        The entity must match in every case — a candidate about rice says
+        nothing about salmon however well-sourced it is — and at least one of
+        its evidence records must be about this subject.
+        """
+        if self.canonical_entity_id != (context.canonical_entity_id or ""):
+            return False
+        return any(ev.applies_to(context) for ev in self.evidence)
 
     def authorizes_assumption(self, context: "EvidenceContext") -> bool:
         """May we assert this portion on someone's behalf when they say "not
@@ -1820,52 +2040,96 @@ class QuantityCandidateEvidence:
         assumption for user 456 — structurally valid and semantically wrong,
         which is the precise thing CF-1 exists to prevent.
 
-        Population evidence can never authorise, at any confidence, however it
-        is named.
+        ONE SUFFICIENT RECORD IS ENOUGH, and it must be sufficient alone: a
+        population record beside a matching user record does not weaken it,
+        and two population records do not add up to one. Population evidence
+        can never authorise, at any confidence, however it is named.
         """
-        return (self.applies_to(context)
-                and self.subject_scope in (
-                    EvidenceScope.THIS_USER,
-                    EvidenceScope.THIS_PRODUCT_QUANTITY))
+        if self.canonical_entity_id != (context.canonical_entity_id or ""):
+            return False
+        return any(ev.applies_to(context)
+                   and ev.subject_scope in (EvidenceScope.THIS_USER,
+                                            EvidenceScope.THIS_PRODUCT_QUANTITY)
+                   for ev in self.evidence)
 
     def to_payload(self) -> dict:
-        return {
-            "evidence_version": self.evidence_version,
-            "canonical_entity_id": self.canonical_entity_id,
-            "quantity": self.quantity.to_payload(),
-            "serving_basis": self.serving_basis.value,
-            "source_type": self.source_type.value,
-            "source_record_id": self.source_record_id,
-            "subject_scope": self.subject_scope.value,
-            "subject_user_id": self.subject_user_id,
-            "product_variant_id": self.product_variant_id,
-            "conversion_evidence": (self.conversion_evidence.to_payload()
-                                    if self.conversion_evidence else None),
-            "confidence": _dec_out(self.confidence),
-            "uncertainty_g": _dec_out(self.uncertainty_g),
-        }
+        return {"candidate_id": self.candidate_id,
+                "canonical_entity_id": self.canonical_entity_id,
+                "quantity": self.quantity.to_payload(),
+                "serving_basis": self.serving_basis.value,
+                "semantic_hash": self.semantic_hash,
+                "evidence": [e.to_payload() for e in self.evidence]}
 
     @classmethod
-    def from_payload(cls, d: dict) -> "QuantityCandidateEvidence":
-        conv = d.get("conversion_evidence")
-        return cls(
-            canonical_entity_id=d["canonical_entity_id"],
-            quantity=CanonicalQuantity.from_payload(d["quantity"]),
-            serving_basis=ServingBasis(d["serving_basis"]),
-            source_type=CandidateSource(d["source_type"]),
-            source_record_id=d["source_record_id"],
-            subject_scope=EvidenceScope(d["subject_scope"]),
-            subject_user_id=d.get("subject_user_id"),
-            product_variant_id=d.get("product_variant_id"),
-            conversion_evidence=(ConversionEvidence.from_payload(conv)
-                                 if conv else None),
-            confidence=_dec_in(d.get("confidence")),
-            uncertainty_g=_dec_in(d.get("uncertainty_g")),
-            evidence_version=int(d.get("evidence_version",
-                                       EVIDENCE_SCHEMA_VERSION)))
+    def from_payload(cls, d: dict) -> "QuantityCandidate":
+        return cls(candidate_id=d["candidate_id"],
+                   canonical_entity_id=d["canonical_entity_id"],
+                   quantity=CanonicalQuantity.from_payload(d["quantity"]),
+                   serving_basis=ServingBasis(d["serving_basis"]),
+                   semantic_hash=d.get("semantic_hash", ""),
+                   evidence=tuple(QuantityCandidateEvidence.from_payload(e)
+                                  for e in d.get("evidence", ())))
 
 
-@dataclass(frozen=True)
+class GenerationRejectionReason(str, Enum):
+    """WHY A PRODUCER'S RAW MATERIAL NEVER BECAME A CANDIDATE.
+
+    Kept apart from `ExclusionReason` on purpose. An exclusion is a decision
+    about a VALID candidate; these are inputs that could not form one. Forcing
+    them into the universe would mean constructing invalid candidates just to
+    mark them excluded — which defeats the construction-time gates and
+    corrupts the denominator of every selection metric.
+    """
+    #: The source carried no mass, so no candidate could express it.
+    NO_QUANTITY = "no_quantity"
+    #: A basis the contract does not know. Fails shut rather than travelling.
+    UNKNOWN_BASIS = "unknown_basis"
+    #: The bases differ and nothing licenses crossing them.
+    UNSUPPORTED_CONVERSION = "unsupported_conversion"
+    #: Scope claimed a subject the record did not name.
+    MISSING_SUBJECT = "missing_subject"
+    #: The quantity itself would not construct.
+    MALFORMED_QUANTITY = "malformed_quantity"
+
+
+@dataclass(frozen=True, kw_only=True)
+class CandidateGenerationRejection:
+    """A producer's input that could not become a candidate, and why.
+
+    Diagnostics, not universe membership. This is what makes "the matcher
+    found a history row and it was unusable" distinguishable from "the matcher
+    found nothing" — both of which otherwise present as an absent candidate.
+    """
+    producer: CandidateSource
+    source_record_key: str
+    reason: GenerationRejectionReason
+    generator_version: str
+    detail: str = ""
+
+    def __post_init__(self):
+        object.__setattr__(self, "producer", CandidateSource(self.producer))
+        object.__setattr__(self, "reason",
+                           GenerationRejectionReason(self.reason))
+        if not str(self.generator_version or "").strip():
+            raise ValueError("a rejection must name the generator version")
+
+    def to_payload(self) -> dict:
+        return {"producer": self.producer.value,
+                "source_record_key": self.source_record_key,
+                "reason": self.reason.value,
+                "generator_version": self.generator_version,
+                "detail": self.detail}
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "CandidateGenerationRejection":
+        return cls(producer=CandidateSource(d["producer"]),
+                   source_record_key=d.get("source_record_key", ""),
+                   reason=GenerationRejectionReason(d["reason"]),
+                   generator_version=d["generator_version"],
+                   detail=d.get("detail", ""))
+
+
+@dataclass(frozen=True, kw_only=True)
 class EstimateEvidence:
     """What licensed assuming a portion, when one was assumed.
 
@@ -1874,7 +2138,7 @@ class EstimateEvidence:
     behalf. Committing the second while only holding the first is how "not
     sure" logged 435 g of chicken breast.
     """
-    chosen: QuantityCandidateEvidence
+    chosen: QuantityCandidate
     policy_version: str
     context: Optional[EvidenceContext] = None
     considered: tuple = ()
@@ -1892,11 +2156,12 @@ class EstimateEvidence:
                 "the person it was applied to")
         if not self.chosen.authorizes_assumption(self.context):
             raise ValueError(
-                f"{self.chosen.subject_scope.value} evidence cannot authorise "
-                f"an assumption for user={self.context.user_id} "
-                f"entity={self.context.canonical_entity_id!r} — it is not "
-                f"about this person consuming this thing, and asserting from "
-                f"it manufactures certainty")
+                f"candidate {self.chosen.candidate_id!r} holds no evidence "
+                f"that authorises an assumption for "
+                f"user={self.context.user_id} "
+                f"entity={self.context.canonical_entity_id!r} — nothing it "
+                f"carries is about this person consuming this thing, and "
+                f"asserting from it manufactures certainty")
 
     def to_payload(self) -> dict:
         return {"chosen": self.chosen.to_payload(),
@@ -1909,17 +2174,17 @@ class EstimateEvidence:
     @classmethod
     def from_payload(cls, d: dict) -> "EstimateEvidence":
         c = d.get("context") or {}
-        return cls(chosen=QuantityCandidateEvidence.from_payload(d["chosen"]),
+        return cls(chosen=QuantityCandidate.from_payload(d["chosen"]),
                    policy_version=d["policy_version"],
                    context=EvidenceContext(
                        user_id=c.get("user_id"),
                        canonical_entity_id=c.get("canonical_entity_id", ""),
                        product_variant_id=c.get("product_variant_id")),
-                   considered=tuple(QuantityCandidateEvidence.from_payload(x)
+                   considered=tuple(QuantityCandidate.from_payload(x)
                                     for x in d.get("considered", ())))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class CandidateSet:
     """EVERY candidate generated, not the handful that survived.
 
@@ -1927,65 +2192,334 @@ class CandidateSet:
     failure indistinguishable — "history never appeared" reads the same
     whether the matcher found nothing or the selector dropped it. They are
     different engineering problems and the data must separate them.
+
+    `user_id` IS PART OF THE RECORD, not merely of the operation it belongs
+    to. Evidence here can quote one person's logging history, so the set must
+    be bound to its owner at the durable boundary — a candidate set must never
+    become retrievable just because someone supplied its id.
     """
+    candidate_set_id: str
+    operation_id: str
+    user_id: int
+    interaction_revision: int
     field_id: str
+    generator_version: str
+    #: A DIGEST OF THE SEMANTIC INPUTS THIS SET WAS BUILT FROM. Its job is to
+    #: expose nondeterminism: regenerating the same revision from different
+    #: inputs must fail loudly rather than silently returning the old
+    #: universe. Covers meaning, never incidental object representation.
+    generation_input_fingerprint: str
     candidates: tuple = ()
-    generator_version: str = ""
+    #: Inputs that could not form a candidate. Diagnostics, NOT universe
+    #: members — see `CandidateGenerationRejection`.
+    rejections: tuple = ()
 
     def __post_init__(self):
-        # A TUPLE, copied. A caller keeping the list it passed in could
+        # TUPLES, copied. A caller keeping the list it passed in could
         # otherwise mutate what we recorded after the fact.
         object.__setattr__(self, "candidates", tuple(self.candidates or ()))
+        object.__setattr__(self, "rejections", tuple(self.rejections or ()))
+        object.__setattr__(self, "interaction_revision",
+                           int(self.interaction_revision))
+        for name in ("candidate_set_id", "operation_id", "field_id",
+                     "generation_input_fingerprint"):
+            if not str(getattr(self, name) or "").strip():
+                raise ValueError(f"a candidate set needs its {name}")
+        if self.interaction_revision < 0:
+            raise ValueError(
+                f"revision {self.interaction_revision} is not a revision")
+        if not self.user_id:
+            raise ValueError(
+                "a candidate set must name the user it was generated for")
+        if not str(self.generator_version or "").strip():
+            # WHICH GENERATOR PRODUCED THIS UNIVERSE. Without it, sets built
+            # under different rules are pooled and the difference between them
+            # is read as a change in users.
+            raise ValueError(
+                "a candidate set must name the generator that produced it")
+        ids = [c.candidate_id for c in self.candidates]
+        if len(set(ids)) != len(ids):
+            # TWO CANDIDATES SHARING AN ID IS AN UNRESOLVABLE REFERENCE. The
+            # option would point at both, and every later question about it
+            # ("what was this chip's evidence?") has two answers.
+            dupes = sorted({i for i in ids if ids.count(i) > 1})
+            raise ValueError(
+                f"candidate ids must be unique within a set; repeated: "
+                f"{dupes}")
+
+    @property
+    def candidate_ids(self) -> frozenset:
+        return frozenset(c.candidate_id for c in self.candidates)
+
+    def candidate(self, candidate_id: str):
+        for c in self.candidates:
+            if c.candidate_id == candidate_id:
+                return c
+        return None
 
     def to_payload(self) -> dict:
-        return {"field_id": self.field_id,
+        return {"candidate_set_id": self.candidate_set_id,
+                "operation_id": self.operation_id,
+                "user_id": self.user_id,
+                "interaction_revision": self.interaction_revision,
+                "field_id": self.field_id,
                 "generator_version": self.generator_version,
-                "candidates": [c.to_payload() for c in self.candidates]}
+                "generation_input_fingerprint": self.generation_input_fingerprint,
+                "candidates": [c.to_payload() for c in self.candidates],
+                "rejections": [r.to_payload() for r in self.rejections]}
 
     @classmethod
     def from_payload(cls, d: dict) -> "CandidateSet":
-        return cls(field_id=d["field_id"],
+        return cls(candidate_set_id=d["candidate_set_id"],
+                   operation_id=d["operation_id"],
+                   user_id=int(d["user_id"]),
+                   interaction_revision=int(d["interaction_revision"]),
+                   field_id=d["field_id"],
                    generator_version=d.get("generator_version", ""),
-                   candidates=tuple(QuantityCandidateEvidence.from_payload(c)
-                                    for c in d.get("candidates", ())))
+                   generation_input_fingerprint=d[
+                       "generation_input_fingerprint"],
+                   candidates=tuple(QuantityCandidate.from_payload(c)
+                                    for c in d.get("candidates", ())),
+                   rejections=tuple(
+                       CandidateGenerationRejection.from_payload(r)
+                       for r in d.get("rejections", ())))
 
 
-@dataclass(frozen=True)
+class SelectionSurface(str, Enum):
+    """WHERE the options were going. Part of what determined the decision."""
+    #: The sentence is the whole interface; options are words in it.
+    LABEL_TEXT = "label_text"
+    #: The client renders chips and answers by id.
+    ID_ADDRESSED = "id_addressed"
+
+
+@dataclass(frozen=True, kw_only=True)
+class CandidateSelectionContext:
+    """THE OTHER HALF OF REPRODUCIBILITY.
+
+    A policy version alone does not determine the outcome: the same universe
+    under the same policy yields three text options on Telegram and five
+    structured ones on iOS, and can word them differently by locale. Without
+    this, two decisions that legitimately differ look like a policy that
+    changed underneath us.
+
+    The claim this makes possible is the real one:
+
+        candidate set + policy version + selection context = same decision
+    """
+    surface: SelectionSurface
+    locale: str
+    maximum_options: int
+    #: Which renderer produced the labels the collapse pass compared. Load
+    #: bearing because `RENDER_COLLISION` is a judgement about wording, so it
+    #: is only reproducible against the renderer that did the wording.
+    renderer_contract_version: str
+
+    def __post_init__(self):
+        object.__setattr__(self, "surface", SelectionSurface(self.surface))
+        object.__setattr__(self, "maximum_options", int(self.maximum_options))
+        if self.maximum_options < 1:
+            raise ValueError(
+                f"maximum_options={self.maximum_options} could never produce "
+                f"an option")
+        for name in ("locale", "renderer_contract_version"):
+            if not str(getattr(self, name) or "").strip():
+                raise ValueError(f"a selection context needs its {name}")
+
+    def to_payload(self) -> dict:
+        return {"surface": self.surface.value, "locale": self.locale,
+                "maximum_options": self.maximum_options,
+                "renderer_contract_version": self.renderer_contract_version}
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "CandidateSelectionContext":
+        return cls(surface=SelectionSurface(d["surface"]),
+                   locale=d["locale"],
+                   maximum_options=int(d["maximum_options"]),
+                   renderer_contract_version=d["renderer_contract_version"])
+
+
+@dataclass(frozen=True, kw_only=True)
+class CandidateExclusion:
+    """One candidate that did not become an option, and the closed reason why.
+
+    A record rather than a pair in a parallel array: the id and its reason
+    cannot drift out of alignment if they are the same object.
+    """
+    candidate_id: str
+    reason: ExclusionReason
+
+    def __post_init__(self):
+        object.__setattr__(self, "reason", ExclusionReason(self.reason))
+        if not str(self.candidate_id or "").strip():
+            raise ValueError("an exclusion must name the candidate excluded")
+
+    def to_payload(self) -> dict:
+        return {"candidate_id": self.candidate_id, "reason": self.reason.value}
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "CandidateExclusion":
+        return cls(candidate_id=d["candidate_id"],
+                   reason=ExclusionReason(d["reason"]))
+
+
+@dataclass(frozen=True, kw_only=True)
 class CandidateSelectionDecision:
     """What was offered, what was not, and why — explainable from features.
 
-    Exclusions are recorded WITH REASONS because "why wasn't my usual portion
-    there?" is a question the option pipeline has to be able to answer about
-    itself. A decision that only records its winners cannot be debugged, only
-    re-run and hoped at.
+    Holds IDS, not copies of the candidates. A decision that embedded its own
+    copy could disagree with the set it claims to describe, and then two
+    persisted records would each be evidence for a different history.
+
+    `selected_candidate_ids` IS ORDERED AND THE ORDER IS DATA. It decides
+    which option appears first, and therefore prominence and selection rates.
+    Recovering it from database insertion order would make the analysis depend
+    on how rows happened to be written.
     """
-    field_id: str
-    selected: tuple = ()
-    excluded: tuple = ()          # (evidence, reason) pairs
-    policy_version: str = ""
+    candidate_set_id: str
+    selection_policy_version: str
+    context: CandidateSelectionContext
+    selected_candidate_ids: tuple = ()
+    exclusions: tuple = ()
 
     def __post_init__(self):
-        object.__setattr__(self, "selected", tuple(self.selected or ()))
-        object.__setattr__(self, "excluded", tuple(
-            (e, str(r)) for e, r in (self.excluded or ())))
-        if not str(self.policy_version or "").strip():
+        object.__setattr__(
+            self, "selected_candidate_ids",
+            tuple(str(i) for i in (self.selected_candidate_ids or ())))
+        # COERCED, SO AN UNKNOWN REASON RAISES HERE rather than persisting as
+        # prose. A free-text reason becomes a second vocabulary nobody
+        # maintains: the same cause arrives spelled four ways and the
+        # exclusion population cannot be counted.
+        object.__setattr__(self, "exclusions", tuple(
+            x if isinstance(x, CandidateExclusion)
+            else CandidateExclusion(candidate_id=x[0], reason=x[1])
+            for x in (self.exclusions or ())))
+        if not str(self.candidate_set_id or "").strip():
+            raise ValueError(
+                "a decision must name the candidate set it reduced")
+        if not str(self.selection_policy_version or "").strip():
             raise ValueError(
                 "a selection decision must name its policy version, or two "
                 "decisions made under different rules become one population")
+        sel = list(self.selected_candidate_ids)
+        exc = [x.candidate_id for x in self.exclusions]
+        if len(set(sel)) != len(sel):
+            raise ValueError(f"a candidate is selected twice: {sorted(sel)}")
+        if len(set(exc)) != len(exc):
+            raise ValueError(f"a candidate is excluded twice: {sorted(exc)}")
+        both = set(sel) & set(exc)
+        if both:
+            raise ValueError(
+                f"selected and excluded at once: {sorted(both)} — a candidate "
+                f"has exactly one terminal status, and a record claiming both "
+                f"makes the funnel add up to the wrong total")
+        if len(sel) > self.context.maximum_options:
+            raise ValueError(
+                f"{len(sel)} options selected but the context allowed "
+                f"{self.context.maximum_options}")
+
+    @property
+    def excluded_candidate_ids(self) -> frozenset:
+        return frozenset(x.candidate_id for x in self.exclusions)
 
     def to_payload(self) -> dict:
-        return {"field_id": self.field_id,
-                "policy_version": self.policy_version,
-                "selected": [c.to_payload() for c in self.selected],
-                "excluded": [{"evidence": e.to_payload(), "reason": r}
-                             for e, r in self.excluded]}
+        return {"candidate_set_id": self.candidate_set_id,
+                "selection_policy_version": self.selection_policy_version,
+                "context": self.context.to_payload(),
+                "selected_candidate_ids": list(self.selected_candidate_ids),
+                "exclusions": [x.to_payload() for x in self.exclusions]}
 
     @classmethod
     def from_payload(cls, d: dict) -> "CandidateSelectionDecision":
         return cls(
-            field_id=d["field_id"],
-            policy_version=d.get("policy_version", ""),
-            selected=tuple(QuantityCandidateEvidence.from_payload(c)
-                           for c in d.get("selected", ())),
-            excluded=tuple((QuantityCandidateEvidence.from_payload(x["evidence"]),
-                            x["reason"]) for x in d.get("excluded", ())))
+            candidate_set_id=d["candidate_set_id"],
+            selection_policy_version=d.get("selection_policy_version", ""),
+            context=CandidateSelectionContext.from_payload(d["context"]),
+            selected_candidate_ids=tuple(d.get("selected_candidate_ids", ())),
+            exclusions=tuple(CandidateExclusion.from_payload(x)
+                             for x in d.get("exclusions", ())))
+
+
+@dataclass(frozen=True, kw_only=True)
+class CandidateDecisionRecord:
+    """One clarification's complete generated set AND the decision over it.
+
+    Two records, kept separate because they answer different questions —
+    "what could we have offered?" and "what did we offer, and why not the
+    rest?" — but validated together, because only together can they be
+    checked. The invariant below is what makes the whole commit worth
+    anything:
+
+        selected ∪ excluded == every candidate generated
+        selected ∩ excluded == ∅
+
+    With it, three failures that look identical in production become
+    distinguishable from durable records alone:
+
+      RETRIEVAL FAILURE   the candidate is absent from the set entirely — the
+                          matcher never found it, or found something it could
+                          not use (see the set's `rejections`).
+      SELECTION FAILURE   present in the set and in `exclusions` with a typed
+                          reason — we found it and dropped it.
+      USER REJECTION      present in `selected_candidate_ids`, so it WAS
+                          shown, and the answer turn recorded something else.
+                          Not a property of this record at all, which is
+                          precisely why it must never be inferred from one.
+
+    Without the partition the first two are the same observation, and the
+    third is guesswork over displayed options.
+    """
+    candidate_set: CandidateSet
+    decision: CandidateSelectionDecision
+
+    def __post_init__(self):
+        if self.candidate_set.candidate_set_id != self.decision.candidate_set_id:
+            raise ValueError(
+                f"the decision reduces set "
+                f"{self.decision.candidate_set_id!r} but is filed against "
+                f"{self.candidate_set.candidate_set_id!r} — a decision about "
+                f"another set's candidates explains nothing about this one")
+        generated = self.candidate_set.candidate_ids
+        decided = (frozenset(self.decision.selected_candidate_ids)
+                   | self.decision.excluded_candidate_ids)
+        vanished = generated - decided
+        if vanished:
+            raise ValueError(
+                f"generated but neither selected nor excluded: "
+                f"{sorted(vanished)} — a candidate that disappears between "
+                f"generation and observation is the exact blind spot this "
+                f"record exists to remove")
+        invented = decided - generated
+        if invented:
+            raise ValueError(
+                f"decided but never generated: {sorted(invented)} — an option "
+                f"referencing a candidate the set does not contain has no "
+                f"persisted justification behind it")
+
+    @property
+    def operation_id(self) -> str:
+        return self.candidate_set.operation_id
+
+    @property
+    def user_id(self) -> int:
+        return self.candidate_set.user_id
+
+    @property
+    def revision(self) -> int:
+        return self.candidate_set.interaction_revision
+
+    @property
+    def selected(self) -> tuple:
+        """The candidates shown, IN THE ORDER SHOWN — objects, not ids."""
+        return tuple(self.candidate_set.candidate(i)
+                     for i in self.decision.selected_candidate_ids)
+
+    def to_payload(self) -> dict:
+        return {"candidate_set": self.candidate_set.to_payload(),
+                "decision": self.decision.to_payload()}
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "CandidateDecisionRecord":
+        return cls(candidate_set=CandidateSet.from_payload(d["candidate_set"]),
+                   decision=CandidateSelectionDecision.from_payload(
+                       d["decision"]))
