@@ -296,6 +296,14 @@ async def candidates(db, *, user_id, item, message: str = "") -> tuple:
     return tuple(out)
 
 
+#: How far back the history scan will read before it gives up. Bounds a
+#: pathological account rather than a normal one: 90 days of heavy logging is
+#: a few hundred rows, and this is an order of magnitude above that. Reaching
+#: it is logged, because the bug this replaced was a cap that truncated in
+#: silence.
+HISTORY_SCAN_CAP = 2000
+
+
 async def _history_grams(db, user_id, food_name: str) -> Optional[float]:
     """The user's most recent NON-ESTIMATED log of this exact food, in grams.
 
@@ -317,18 +325,45 @@ async def _history_grams(db, user_id, food_name: str) -> Optional[float]:
     if len(tokens) < 2:
         return None
     cutoff = date.today() - timedelta(days=90)
+    # THE CAP MUST NOT TRUNCATE BEFORE THE FOOD FILTER.
+    #
+    # This was `.limit(50)` over ALL foods, with the name compared afterwards
+    # in Python. For anyone logging more than a handful of items a day, 50
+    # rows is about a week — so the 90-day window above was dead code, and a
+    # food not eaten in the last few days was invisible no matter how often it
+    # had been logged. Measured 2026-08-06: a rice question with FIFTEEN exact
+    # non-estimated priors offered only ontology options, because the 50 most
+    # recent rows reached back just to 2026-07-29.
+    #
+    # Not pre-filtered in SQL either. `normalize_name` strips punctuation, so
+    # "grass-fed" becomes the single token "grassfed" and a portable LIKE
+    # would silently miss exactly the rows this is meant to find — trading a
+    # visible cap for an invisible one.
+    #
+    # Two columns, bounded by the 90-day window, matched here. The scan is
+    # small because it is columns rather than entities, and a B-1 ask is not
+    # a hot path.
     rows = (await db.execute(
-        select(FoodEntry, DailyLog.date)
+        select(FoodEntry.parsed_food_name, FoodEntry.quantity)
         .join(DailyLog, FoodEntry.daily_log_id == DailyLog.id)
         .where(DailyLog.user_id == user_id, DailyLog.date >= cutoff,
                FoodEntry.estimated_flag.is_(False),
                FoodEntry.quantity.isnot(None))
-        .order_by(DailyLog.date.desc(), FoodEntry.id.desc()).limit(50))).all()
-    for fe, _d in rows:
-        if _content_tokens(fe.parsed_food_name or "") != tokens:
+        .order_by(DailyLog.date.desc(), FoodEntry.id.desc())
+        .limit(HISTORY_SCAN_CAP))).all()
+    # A CAP THAT SAYS WHEN IT BITES. The defect above was silent truncation;
+    # a backstop that hides the same way is the same defect with a larger
+    # number, so hitting this is a LOUD event rather than a quiet ceiling.
+    if len(rows) >= HISTORY_SCAN_CAP:
+        logger.warning(
+            "event=b1_history_scan_capped user=%s cap=%d — the 90-day window "
+            "no longer fits; history recall is now truncated and will "
+            "under-report", user_id, HISTORY_SCAN_CAP)
+    for name, quantity in rows:
+        if _content_tokens(name or "") != tokens:
             continue
         from skills.nutrition.normalize import normalize_quantity
-        nq = normalize_quantity(fe.quantity or "", fe.parsed_food_name or "")
+        nq = normalize_quantity(quantity or "", name or "")
         if nq is not None and getattr(nq, "grams", None):
             return float(nq.grams)
     return None
