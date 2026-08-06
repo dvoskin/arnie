@@ -31,6 +31,24 @@ import collections
 import sys
 
 
+#: B-1b EVIDENCE VALIDITY BOUNDARY.
+#:
+#: Before `719022b`, `_history_grams` fetched the 50 most recent non-estimated
+#: rows across ALL foods and matched the name afterwards — about a week of
+#: recall for a daily logger, whatever the 90-day window claimed. So every
+#: candidate-source observation taken before this point measured a truncated
+#: index, not the product: history could not appear, and its absence would
+#: read as "users are not served by their own history".
+#:
+#: Pooling across this line would silently mix two different systems and bias
+#: history's availability toward zero — the exact conclusion the bug would
+#: have manufactured. Candidate-source measurement RESTARTS here.
+#:
+#: DB clock at the confirmed production deploy of 719022b.
+EVIDENCE_VALID_FROM = "2026-08-06 14:13:30"
+EVIDENCE_BOUNDARY_SHA = "719022b"
+
+
 def _connect(url: str):
     import psycopg
     return psycopg.connect(url.replace("+psycopg", ""), connect_timeout=25)
@@ -59,8 +77,9 @@ def by_question_version(cur, *, days: int) -> None:
                                                                AS free_text
         FROM b1_answer_observations
         WHERE observed_at > now() - make_interval(days => %s)
+          AND observed_at >= %s::timestamp
         GROUP BY question_version ORDER BY question_version
-        """, (days,))
+        """, (days, EVIDENCE_VALID_FROM))
     rows = cur.fetchall()
     if not rows:
         return
@@ -88,11 +107,15 @@ def scorecard(cur, *, days: int, min_n: int) -> None:
         FROM b1_answer_observations o
         LEFT JOIN b1_correction_observations c ON c.entry_id = o.entry_id
         WHERE o.observed_at > now() - make_interval(days => %s)
-        """, (days,))
+          AND o.observed_at >= %s::timestamp
+        """, (days, EVIDENCE_VALID_FROM))
     rows = cur.fetchall()
     if not rows:
-        print(f"no observations in the last {days} days — the window has not "
-              f"produced data yet, which is NOT the same as a zero rate")
+        print(f"no VALID observations in the last {days} days.\n"
+              f"  The window has not produced data yet, which is NOT the same "
+              f"as a zero rate.\n"
+              f"  Counting only observations at or after "
+              f"{EVIDENCE_VALID_FROM} ({EVIDENCE_BOUNDARY_SHA}).")
         return
 
     per = collections.defaultdict(lambda: collections.Counter())
@@ -113,7 +136,8 @@ def scorecard(cur, *, days: int, min_n: int) -> None:
             per[k]["latency_sum"] += int(latency)
             per[k]["latency_n"] += 1
 
-    print(f"\nB-1 OPTION SCORECARD — last {days} days, {len(rows)} answers\n")
+    print(f"\nB-1 OPTION SCORECARD — last {days} days, {len(rows)} answers")
+    print(f"  valid from {EVIDENCE_VALID_FROM} ({EVIDENCE_BOUNDARY_SHA}) — earlier observations measured a\n  truncated history index and are excluded, not merely old.\n")
     head = (f"{'attribute':<12} {'source':<15} {'n':>5} {'applied':>8} "
             f"{'repair':>8} {'commit':>8} {'corrected':>10} {'p50 ms':>8}")
     print(head)
@@ -157,7 +181,8 @@ def offered_vs_selected(cur, *, days: int) -> None:
         SELECT offered, selected_source
         FROM b1_answer_observations
         WHERE observed_at > now() - make_interval(days => %s)
-        """, (days,))
+          AND observed_at >= %s::timestamp
+        """, (days, EVIDENCE_VALID_FROM))
     offered_n, selected_n = collections.Counter(), collections.Counter()
     asks = 0
     for offered, selected in cur.fetchall():
@@ -195,8 +220,9 @@ def free_text_examples(cur, *, days: int, limit: int) -> None:
           ON cl.turn_id = o.source_turn_id AND cl.user_id = o.user_id
         WHERE o.selected_source = 'free_text'
           AND o.observed_at > now() - make_interval(days => %s)
+          AND o.observed_at >= %s::timestamp
         ORDER BY o.observed_at DESC LIMIT %s
-        """, (days, limit))
+        """, (days, EVIDENCE_VALID_FROM, limit))
     rows = cur.fetchall()
     print(f"FREE TEXT — {len(rows)} most recent\n")
     if not rows:

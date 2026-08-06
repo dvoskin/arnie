@@ -1136,6 +1136,24 @@ the QuestionIntent, options and patches · no dynamic LLM diction. Found and
 fixed: `ClarificationCommand.ESTIMATE` was fully implemented and advertised
 nowhere, so "not sure" usage would have measured zero.
 
+**B-1b evidence validity boundary — `719022b`, DB clock 2026-08-06 14:13:30.**
+Candidate-source observations taken before this point are **invalid and
+excluded**, not merely old. `_history_grams` fetched the 50 most recent
+non-estimated rows across *all* foods and matched the name afterwards, so a
+daily logger had roughly a week of recall whatever the 90-day window claimed —
+measured on a rice question with fifteen exact in-window priors that offered
+only ontology portions.
+
+Every observation before the boundary therefore measured a truncated index
+rather than the product. History could not appear, and pooling across the line
+would bias its availability toward zero — manufacturing precisely the
+conclusion the bug would have produced ("users are not served by their own
+history"). **Candidate-source measurement restarts at the boundary.**
+
+Enforced, not merely stated: `scripts/b1_option_scorecard.py` filters every
+query on `EVIDENCE_VALID_FROM` and prints the boundary in its header. A
+boundary that lives only in prose is one that gets pooled by accident later.
+
 **B-1b — what the window must answer.** Candidate source availability · option
 selected · free-text amount · "Other" usage · "not sure" usage · repair rate ·
 latency · abandonment · correction within ten minutes · card/totals agreement ·
