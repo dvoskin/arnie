@@ -441,3 +441,44 @@ async def test_with_no_history_every_candidate_comes_from_the_ontology(
     assert "user_history" not in offered["sources"], (
         f"history contributed a candidate with no prior to draw on: "
         f"{list(zip(offered['labels'], offered['sources']))}")
+
+
+# ── which engine actually backed all of the above ───────────────────────────
+
+@pytest.mark.asyncio
+async def test_the_matrix_reports_the_engine_it_ran_on(app_db, edges, b1_live):
+    """B-1b.1's environment gate, asserted rather than assumed.
+
+    "The suite passed with TEST_POSTGRES_URL set" and "these scenarios ran on
+    Postgres" are different claims, and the harness made them look identical
+    for as long as it was SQLite either way. Conflating them is how an engine
+    difference hides a defect — this repo has already lost one there, a model
+    default the migrations never created, invisible because every suite builds
+    its schema from the models.
+
+    So the backing store is a fact the file states about itself. With no
+    `TEST_POSTGRES_URL` this passes on SQLite and says so; with one it must
+    genuinely be Postgres, in an isolated schema, or the run is not the
+    production-like evidence B-1b.1 requires.
+    """
+    import os
+
+    from sqlalchemy import text
+
+    import db.database as D
+
+    dialect = app_db.dialect.name
+    if not os.getenv("TEST_POSTGRES_URL"):
+        assert dialect == "sqlite", dialect
+        pytest.skip("no TEST_POSTGRES_URL — matrix ran SQLite-backed, which is "
+                    "valid for logic and does NOT satisfy B-1b.1")
+
+    assert dialect == "postgresql", (
+        f"TEST_POSTGRES_URL is set and the harness still bound {dialect} — "
+        f"the run would be reported as Postgres-backed and would not be")
+    async with D.AsyncSessionLocal() as s:
+        path = (await s.execute(text("SHOW search_path"))).scalar()
+    assert "harness_" in (path or ""), (
+        f"the harness is sharing a schema ({path!r}) — these scenarios write "
+        f"real rows and count them, so a neighbour's leftovers would surface "
+        f"as an off-by-one somewhere unrelated rather than as a failure here")

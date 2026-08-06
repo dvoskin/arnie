@@ -40,6 +40,7 @@ app a test mode it would then have to keep working.
 import json
 import os
 import re
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -252,21 +253,53 @@ def assert_turn_ran(llm_stub, response, *, expect_plans_used):
 
 @pytest_asyncio.fixture
 async def app_db():
-    """A real schema on a shared in-memory engine, bound into the app.
+    """A real schema bound into the app — on POSTGRES when one is offered.
 
-    StaticPool because the app opens a session per call and a default in-memory
-    SQLite would hand each one its own empty database.
+    `TEST_POSTGRES_URL` switches the backing store to a private schema on the
+    real engine. Without it, the shared in-memory SQLite engine as before
+    (StaticPool, because the app opens a session per call and a default
+    in-memory SQLite would hand each one its own empty database).
+
+    WHY THE SWITCH EXISTS. B-1b.1 asks for production-like Postgres, and
+    "the suite passed with TEST_POSTGRES_URL set" is not the same claim as
+    "these scenarios ran on Postgres" — the harness was SQLite either way, so
+    every conversation-level assertion in this repo was proving itself against
+    an engine production does not use. That difference is not academic here:
+    it is exactly where a model default the migrations never created stayed
+    invisible, because every suite builds its schema from the models.
+
+    A PRIVATE SCHEMA PER FIXTURE, not a shared one. These tests write real
+    rows and read them back by count; a neighbour's leftovers would not fail
+    loudly, they would fail as an off-by-one in an unrelated assertion.
     """
+    import os
+
     import db.database as D
-    from db.database import Base, _migrate
+    from db.database import Base, _migrate, make_engine
     from db import models  # noqa: F401 — registers tables
 
-    eng = create_async_engine(
-        "sqlite+aiosqlite:///:memory:", poolclass=StaticPool,
-        connect_args={"check_same_thread": False})
-    async with eng.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await _migrate(conn)
+    pg = os.getenv("TEST_POSTGRES_URL")
+    schema = None
+    if pg:
+        from sqlalchemy import text
+        schema = f"harness_{uuid.uuid4().hex[:12]}"
+        # make_engine, never create_async_engine: the codebase refuses an
+        # unpinned Postgres engine by construction (the one-clock rule).
+        eng = make_engine(pg.replace("+psycopg", "+asyncpg")
+                          if "+asyncpg" not in pg and "+psycopg" in pg else pg,
+                          connect_args={"server_settings":
+                                        {"search_path": schema}})
+        async with eng.begin() as conn:
+            await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+        async with eng.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    else:
+        eng = create_async_engine(
+            "sqlite+aiosqlite:///:memory:", poolclass=StaticPool,
+            connect_args={"check_same_thread": False})
+        async with eng.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await _migrate(conn)
 
     original = D.AsyncSessionLocal.kw.get("bind")
     D.AsyncSessionLocal.configure(bind=eng)
@@ -274,7 +307,23 @@ async def app_db():
         yield eng
     finally:
         D.AsyncSessionLocal.configure(bind=original)
+        # DISPOSE FIRST, THEN DROP. `DROP SCHEMA ... CASCADE` needs every other
+        # connection to have let go; issuing it while this engine still holds
+        # pooled connections deadlocks against itself — observed as
+        # asyncpg DeadlockDetectedError on the first full Postgres run. The
+        # drop therefore runs on a throwaway connection after the pool is gone.
         await eng.dispose()
+        if schema:
+            from sqlalchemy import text
+            cleanup = make_engine(pg.replace("+psycopg", "+asyncpg")
+                                  if "+asyncpg" not in pg and "+psycopg" in pg
+                                  else pg)
+            try:
+                async with cleanup.begin() as conn:
+                    await conn.execute(
+                        text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+            finally:
+                await cleanup.dispose()
 
 
 @pytest_asyncio.fixture
