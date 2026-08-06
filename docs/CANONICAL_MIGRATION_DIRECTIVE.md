@@ -583,6 +583,41 @@ All modes use one PendingOperation, one revision model, one answer system, one
 commit path. Mode assumptions produce typed patches or typed assumptions with
 `MODE_DEFAULT` provenance — never masquerading as user statements.
 
+### B-1.75 — Repricing after a quantity patch *(observed in production, deferred)*
+
+**Not a nutrition-accuracy item, and not fixable by improving the resolver.**
+`core/b1_quantity_operation.py` builds the pricing input as
+`inp = {**item, "quantity": quantity_text}` — the answered quantity layered on
+top of the ask-time `amount`, `unit`, and macros. `_analyze_food`
+(`handlers/tool_executor.py:2896`) reads `calories/protein/carbs/fats` straight
+out of that dict as the authoritative figures, so it receives two contradictory
+statements of the same fact and picks one.
+
+Measured live 2026-08-06, three operations, three different outcomes:
+
+| entry | item at ask | committed | result |
+|---|---|---|---|
+| 2849 rice | 100 **g** → 161/4/34/1 | 39.6 g → 64/1.4/13.4/0.5 | scaled correctly (×0.396) |
+| 2851 chicken | 6 **oz** → 280/52/0/7 | 87 g → 96/20/**4**/0 | fuzzy override — carbs on a chicken breast |
+| 2852 oatmeal | 1 **cup cooked** → 150/5/27/3 | 45 g → **150/5/27/3** | pass-through, identical to the digit |
+
+Gram-based items survive; every other basis does not. That is also why no test
+caught it — the fixtures were gram-based.
+
+**The fix is a deletion, not a guard:** the item handed to pricing must have its
+quantity fields *replaced*, not shadowed, so pricing derives from `food_name` +
+answered grams exactly once. Adding scaling arithmetic here would violate the
+standing no-heuristics rule and would leave the contradictory input in place.
+
+**Sequencing (Danny, 2026-08-06):** downstream nutrition refinement owns this;
+it does not gate B-1. Recorded here so it is not rediscovered. It *does* gate
+B-1 **promotion**, because promotion asserts the answered quantity produces the
+committed numbers — so this must close before the legacy quantity path is
+deleted, whichever phase closes it.
+
+Regression test owed with the fix: ask-time basis in a non-gram unit, answer in
+grams, assert the committed macros scale from the stated basis.
+
 ### B-1.8 — Harden answer classification and repair
 
 Includes **Tier 2 of the command layer**: a pending-aware constrained
