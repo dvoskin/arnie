@@ -561,3 +561,95 @@ async def test_an_answer_to_a_field_we_never_asked_about_is_refused(
     assert out.outcome is not Outcome.APPLIED, (
         f"an answer to a field we never asked about was applied: {out.outcome}")
     assert not await rows(b1_live), "a foreign field_id wrote a meal"
+
+
+# ── The ask the user is shown must be the ask we persisted ────────────────────
+
+def _bubbles(result) -> str:
+    """Everything the user actually saw this turn, as one string."""
+    resp = getattr(result, "response", None)
+    parts = getattr(resp, "bubbles", None) or ([str(resp)] if resp else [])
+    return " ".join(str(p) for p in parts)
+
+
+@pytest.mark.asyncio
+async def test_the_user_is_asked_the_question_we_stored(edges, b1_live):
+    """The stored `introduction` must reach the bubble, verbatim.
+
+    IT DID NOT, IN PRODUCTION. B-1 wrote `introduction="How much Chicken
+    breast?"` with options 6 oz / 16 oz, and the user was shown "How was the
+    chicken breast cooked? Grilled, baked, or fried?" — the ownership block
+    rewrote `questions` and `options` and left `_sft["text"]` as the
+    interpreter had composed it. Every unit test passed, because every unit
+    test asserted what `legacy_questions()` RETURNED and none asserted what the
+    user was SHOWN. That gap is this file's whole reason for existing, and this
+    is the assertion that closes it for the ask.
+    """
+    edges.plans.append(B1_ELIGIBLE)
+    result = await say(b1_live, "I had some chicken breast")
+
+    ops = await operations(b1_live)
+    assert ops, "no operation — B-1 did not take the turn"
+    import json
+    stored = json.loads(ops[-1].canonical_payload)["interaction"]
+    introduction = stored["introduction"]
+    assert introduction, "the operation stored no question at all"
+
+    shown = _bubbles(result)
+    assert introduction in shown, (
+        f"the user was not asked the question we stored.\n"
+        f"  stored: {introduction!r}\n"
+        f"  shown : {shown!r}")
+
+
+@pytest.mark.asyncio
+async def test_every_offered_option_is_visible_where_there_are_no_chips(
+        edges, b1_live):
+    """On a LABEL_TEXT channel the sentence IS the option list.
+
+    Telegram and iMessage render no chips, so an option missing from the text
+    is an option that does not exist. This is also what makes D4 measurable:
+    "Other usage" is only evidence about option QUALITY if the options were
+    visible — otherwise every answer is free text by construction and the
+    metric reads 100% Other for a rendering reason.
+    """
+    edges.plans.append(B1_ELIGIBLE)
+    result = await say(b1_live, "I had some chicken breast")
+
+    import json
+    ops = await operations(b1_live)
+    field = json.loads(ops[-1].canonical_payload)["interaction"]["groups"][0]["fields"][0]
+    labels = [o["label"] for o in field["options"]]
+    assert labels, "the ask offered nothing"
+
+    shown = _bubbles(result)
+    missing = [l for l in labels if l not in shown]
+    assert not missing, (
+        f"options were computed, stored, and never shown: {missing}\n"
+        f"  shown: {shown!r}")
+
+
+@pytest.mark.asyncio
+async def test_the_reply_does_not_ask_about_something_we_never_raised(
+        edges, b1_live):
+    """A quantity field must not be narrated as a preparation question.
+
+    The production failure was not a missing sentence but a DIFFERENT one, and
+    a test that only checks "the introduction appears" would still pass if the
+    cooking question were appended alongside it. This pins the other half: the
+    field's attribute is `quantity`, so the reply must not be asking how the
+    food was cooked.
+    """
+    edges.plans.append(B1_ELIGIBLE)
+    result = await say(b1_live, "I had some chicken breast")
+
+    import json
+    ops = await operations(b1_live)
+    field = json.loads(ops[-1].canonical_payload)["interaction"]["groups"][0]["fields"][0]
+    assert field["attribute"] == "quantity", field["attribute"]
+
+    shown = _bubbles(result).lower()
+    for prep in ("grilled", "fried", "baked", "how was", "cooked"):
+        assert prep not in shown, (
+            f"the reply asked about preparation on a QUANTITY field "
+            f"({prep!r} appears): {shown!r}")

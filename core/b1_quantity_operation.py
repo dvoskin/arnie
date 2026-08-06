@@ -351,6 +351,71 @@ class CanonicalAsk:
                  "text": self.interaction.introduction,
                  "options": [o.label for o in field.options]}]
 
+    def ask_facts(self) -> "CanonicalAskFacts":
+        """THE FACTS A RENDERER MAY READ, and nothing else.
+
+        The mirror of `b1_answer_turn.facts_for()` on the ask side, and for the
+        same reason: a renderer holding the interaction is a renderer that can
+        re-derive the question, and a renderer that can re-derive the question
+        is a second owner of it. Voice, when it arrives, renders THESE.
+        """
+        field = self.interaction.groups[0].fields[0]
+        return CanonicalAskFacts(
+            introduction=self.interaction.introduction,
+            option_labels=tuple(o.label for o in field.options),
+            attribute=getattr(field.attribute, "value", str(field.attribute)),
+            allows_free_text=True)
+
+    def ask_copy(self, *, capability: Optional[str] = LABEL_TEXT) -> str:
+        """The DETERMINISTIC question, rendered from `ask_facts()` only.
+
+        WHY THIS EXISTS. B-1 stored `introduction="How much Chicken breast?"`
+        with options `6 oz` / `16 oz`, and production asked the user "How was
+        the chicken breast cooked? Grilled, baked, or fried?" — because the
+        ownership block rewrote `questions` and `options` and left `_sft["text"]`
+        as the interpreter had composed it. The canonical question was written
+        to the database and never spoken. The user then answered a question we
+        had not asked, and the quantity parser was handed a preparation.
+
+        CAPABILITY DECIDES WHETHER THE OPTIONS ARE IN THE SENTENCE, because on
+        Telegram and iMessage the sentence IS the interface — there are no
+        chips, so options omitted here are options that do not exist. A client
+        that renders them itself (iOS, from B-1b) gets the introduction alone,
+        or the same list appears twice.
+
+        No model call. `copy_for`'s reasoning applies unchanged: a sentence
+        that can drift from the field it describes is the defect this migration
+        removes, and B-1's presentation boundary asks for the deterministic
+        fallback now and voice before broad rollout.
+        """
+        facts = self.ask_facts()
+        question = (facts.introduction or "").strip() or "How much was it?"
+        if capability != LABEL_TEXT or not facts.option_labels:
+            return question
+        labels = list(facts.option_labels)
+        if len(labels) == 1:
+            offered = labels[0]
+        else:
+            offered = f"{', '.join(labels[:-1])} or {labels[-1]}"
+        # The free-text route said out loud (C15). A user whose portion is not
+        # on the list must be able to see that saying their own is allowed —
+        # otherwise "Other usage" measures our phrasing, not their portions.
+        return f"{question} Roughly {offered}, or tell me the amount."
+
+
+@dataclass(frozen=True)
+class CanonicalAskFacts:
+    """What was asked, as facts rather than as a sentence.
+
+    Frozen and label-only for the same reason `wire_payload` is: the patch and
+    the option ids stay on the server, so nothing a renderer touches can travel
+    back as semantics.
+    """
+    introduction: str
+    option_labels: tuple
+    attribute: str
+    allows_free_text: bool
+
 
 async def try_take_ownership(db, *, user, material: dict, turn_id: str,
                              client_capable: bool,

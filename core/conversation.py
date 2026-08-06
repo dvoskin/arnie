@@ -1668,6 +1668,22 @@ async def _run_turn(
                     _sft["options"] = [
                         o["label"] for o in
                         _b1_ask.wire_payload()["groups"][0]["fields"][0]["options"]]
+                    # AND THE SENTENCE. This block rewrote the other three and
+                    # left `text` as the interpreter composed it, so B-1 stored
+                    # "How much Chicken breast?" with options 6 oz / 16 oz and
+                    # production asked "How was the chicken breast cooked?".
+                    # The canonical question reached the database and never the
+                    # user, who then answered a question we had not asked — and
+                    # the quantity parser was handed a preparation. Measured
+                    # live 2026-08-06 on operations :9146 and :9151.
+                    #
+                    # It belongs HERE, beside the other three, because four
+                    # renderings of one field in four places is how they drift;
+                    # `_sft["text"]` is returned verbatim as the bubble further
+                    # down, so this is the last point at which they are still
+                    # one thing.
+                    _sft["text"] = _b1_ask.ask_copy(
+                        capability=_b1.channel_capability(platform))
                     _sft.pop("b1_material", None)
                     await db.commit()
                     logger.info(
