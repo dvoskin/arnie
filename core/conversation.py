@@ -1191,13 +1191,22 @@ async def _run_turn(
                         # row landed, so it says so rather than letting a
                         # detector infer it from the sentence it just wrote.
                         wrote_this_turn=bool(getattr(_b1_facts, "entry_id", None)),
+                        # ONLY REPAIR ASKS. `!= "applied"` was too broad and
+                        # broad in the DANGEROUS direction: `asked_this_turn`
+                        # SUPPRESSES phantom detection, so lumping CANCELLED
+                        # and REFUSED in with it would hide a false
+                        # confirmation on exactly the paths most likely to
+                        # emit one — a refused or internally-failed turn that
+                        # still says "logged". Of the four outcomes only
+                        # REPAIR re-asks the field; the other three end the
+                        # turn.
+                        #
                         # `.value`, not the enum: `_B1Outcome` is imported
                         # inside the except handler above and is unbound on
                         # the happy path. Reading it here raised NameError
-                        # into the swallow below and the check ran zero
-                        # times — the third time that has happened in this
-                        # block, which is why the except now shouts.
-                        asked_this_turn=(_b1_out.outcome.value != "applied"),
+                        # into the swallow below and the check ran zero times.
+                        asked_this_turn=(
+                            str(getattr(_b1_out.outcome, "value", "")) == "repair"),
                         stop_reason="b1_answer",
                         retried=False, tool_error=bool(_b1_out.internal_failure),
                         source_type=_source, tool_names=set(),

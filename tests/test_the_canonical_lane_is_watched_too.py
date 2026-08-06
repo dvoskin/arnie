@@ -150,3 +150,41 @@ def test_the_original_data_loss_is_still_caught():
     for said in ("I had some rice", "Had some oatmeal"):
         assert phantom(said, "Logged White rice, steamed, 64 cal, 1g protein.",
                        False, wrote_this_turn=False, asked_this_turn=False), said
+
+
+def test_a_failed_turn_that_claims_a_log_is_still_a_phantom():
+    """The hole a broad `asked_this_turn` would have opened.
+
+    `asked_this_turn` SUPPRESSES detection, so mapping it from "outcome is not
+    applied" would have silenced the phantom check on CANCELLED, REFUSED and
+    internal-failure turns — exactly the paths most likely to emit log-like
+    copy without a write behind it. Of the four outcomes only REPAIR re-asks
+    the field.
+
+    So: nothing written, nothing asked, and a reply that says it logged.
+    That must still fire, whatever went wrong upstream.
+    """
+    from core.turn_health import looks_like_phantom_log_claim as phantom
+
+    assert phantom("I had some rice", "Logged White rice, 64 cal.", False,
+                   wrote_this_turn=False, asked_this_turn=False), (
+        "an internally-failed turn claiming a log was not flagged — this is "
+        "the case the detector exists for")
+
+
+def test_only_a_repair_counts_as_having_asked():
+    """Pin the mapping against the enum, not against a string I remembered.
+
+    `Outcome` has four members and exactly one of them produces a question.
+    If a member is added later, this fails rather than silently widening the
+    suppression.
+    """
+    from core.clarification_answer import Outcome
+
+    asks = {o for o in Outcome
+            if str(o.value) == "repair"}
+    assert asks == {Outcome.REPAIR}, asks
+    assert {o.value for o in Outcome} == {
+        "applied", "cancelled", "repair", "refused"}, (
+        "the outcome set changed — re-check which of them actually ask a "
+        "question before trusting `asked_this_turn`")
