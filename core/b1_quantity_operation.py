@@ -75,6 +75,12 @@ class OwnedOperation:
     #: re-detected, so a later answer cannot be judged by a different lexicon
     #: than the one that produced the chips.
     locale: str = "en"
+    #: THE EXACT DECISION THIS OPERATION SHOWED. A universe may hold several;
+    #: this names the one whose options the user actually read, so replay
+    #: reconstructs that question rather than another valid one over the same
+    #: candidates. Empty on operations opened before 3b.3.
+    decision_id: str = ""
+    candidate_set_id: str = ""
 
     @property
     def expired(self) -> bool:
@@ -144,7 +150,8 @@ class _AnswerOperation:
         self.source_turn_id = row.source_turn_id or ""
 
 
-def _encode(interaction, interpreter_item: dict, locale: str) -> str:
+def _encode(interaction, interpreter_item: dict, locale: str,
+            decision_id: str = "", candidate_set_id: str = "") -> str:
     if not isinstance(interpreter_item, dict):
         # NAMED, not coerced. `build_interaction` takes the STAGED item and
         # this takes the INTERPRETER's dict; they are different objects about
@@ -165,12 +172,21 @@ def _encode(interaction, interpreter_item: dict, locale: str) -> str:
         # two-word reply ("6 oz") is a guess with a destructive command
         # behind it.
         "locale": locale,
+        # WHICH QUESTION THIS OPERATION ASKED, not merely which universe it
+        # could have asked from. One immutable set may hold several decisions
+        # — Telegram and iOS, a newer selector, a different slot count — all
+        # legitimate. Resolving by set alone on the answer turn could return a
+        # different valid decision over the same universe, which is a true
+        # statement about the system and a false one about this turn.
+        "decision_id": decision_id,
+        "candidate_set_id": candidate_set_id,
     })
 
 
 async def open_operation(db, *, user, interpreter_item: dict, interaction,
                          turn_id: str, cohort: str = "",
-                         locale: str = "en") -> str:
+                         locale: str = "en", decision_id: str = "",
+                         candidate_set_id: str = "") -> str:
     """Take ownership of this meal. Call ONLY after the rollout gate said yes.
 
     `interpreter_item` is the interpreter's own reading — the food name and
@@ -201,7 +217,9 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
     await repo.create_operation(
         db, operation_id=operation_id, user_id=user.id, status=AWAITING,
         storage_status="active", domain=DOMAIN, source_turn_id=turn_id,
-        payload=_encode(interaction, interpreter_item, locale or "en"),
+        payload=_encode(interaction, interpreter_item, locale or "en",
+                        decision_id=decision_id,
+                        candidate_set_id=candidate_set_id),
         # AN UNANSWERED QUESTION MUST NOT LIVE FOREVER. Without this the row
         # stays `awaiting_answer` indefinitely and a message weeks later is
         # read as an answer to a meal the user has long forgotten.
@@ -566,7 +584,9 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
     from core import candidate_repository as universe_repo
 
     try:
-        await universe_repo.save(db, decision_record, domain=DOMAIN)
+        candidate_set_id = await universe_repo.save(db, decision_record,
+                                                    domain=DOMAIN)
+        decision_id = universe_repo.decision_id_for(decision_record)
     except Exception:
         logger.warning(
             "event=b1_universe_not_persisted operation=%s — declining rather "
@@ -583,7 +603,9 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
 
     await open_operation(db, user=user, interpreter_item=interpreter_item,
                          interaction=interaction, turn_id=turn_id,
-                         cohort=cohort, locale=locale)
+                         cohort=cohort, locale=locale,
+                         decision_id=decision_id,
+                         candidate_set_id=candidate_set_id)
     return CanonicalAsk(operation_id=operation_id, revision=0,
                         interaction=interaction, locale=locale, cohort=cohort)
 
@@ -765,11 +787,17 @@ async def owning(db, user) -> Optional[OwnedOperation]:
                 "event=b1_payload_unreadable operation=%s — the operation "
                 "still owns this meal; the turn repairs rather than falling "
                 "back", row.operation_id, exc_info=True)
-            return OwnedOperation(row=row, interaction=None, item={},
-                                  locale=str(data.get("locale") or "en"))
-        return OwnedOperation(row=row, interaction=interaction,
-                              item=dict(data.get("item") or {}),
-                              locale=str(data.get("locale") or "en"))
+            return OwnedOperation(
+                row=row, interaction=None, item={},
+                locale=str(data.get("locale") or "en"),
+                decision_id=str(data.get("decision_id") or ""),
+                candidate_set_id=str(data.get("candidate_set_id") or ""))
+        return OwnedOperation(
+            row=row, interaction=interaction,
+            item=dict(data.get("item") or {}),
+            locale=str(data.get("locale") or "en"),
+            decision_id=str(data.get("decision_id") or ""),
+            candidate_set_id=str(data.get("candidate_set_id") or ""))
     return None
 
 

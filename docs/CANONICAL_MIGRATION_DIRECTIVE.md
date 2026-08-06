@@ -1512,6 +1512,42 @@ instruments this slice has already caught lying by silence.
 **3b — status: DONE.** 8061 pass on SQLite and 8061 on Postgres (21 skips),
 26 storage gates.
 
+**3b.3 — replay bound to the exact decision** *(review of `edae1d8`)*. Making
+several decisions per universe legal — the 3b.2 fix — broke the read path,
+which still behaved as though there were one. Three P0s, all reproduced first:
+
+* **`load()` returned an arbitrary decision.** `.first()` over an unordered
+  query, so once a universe held a Telegram decision and an iOS one, replay
+  returned whichever row the database produced. That is the same failure as
+  regenerating: a true statement about the system and a false one about this
+  turn. `load_by_decision_id()` is the authoritative read now, `load()` orders
+  deterministically and is administrative, and **the operation stores the
+  `decision_id`** so the answer turn names the question it is answering
+  instead of inferring it.
+* **Decision equality compared only the winners.** Same options, different
+  reason for dropping the rest — `SEMANTIC_DUPLICATE` becoming
+  `SELECTION_CAP` — was accepted and silently discarded, so the caller
+  believed one explanation and the record held another. A decision whose
+  explanation can drift is not evidence. The whole canonical decision is
+  compared now: selection AND order, exclusions AND reasons, full context,
+  policy, set.
+* **Presented equality compared only option ids.** `6 oz` becoming `8 oz`
+  under the same id was accepted and dropped. The whole ordered row is
+  compared now — id, candidate, set, revision, position, label, renderer.
+
+Plus the P1: **the repository recovers from a lost race** instead of
+surfacing an `IntegrityError` to a turn that did nothing wrong. Losing the
+insert is a replay — the winner wrote the same universe — so it rolls back to
+a savepoint, re-reads, and validates the fingerprint. Concurrency is proven at
+all three boundaries, including two legitimately different decisions over one
+set both persisting.
+
+No migration: `decision_id` and `candidate_set_id` live in the operation's
+existing JSON payload.
+
+**3b — status: DONE.** 8073 pass on SQLite and 8073 on Postgres (21 skips),
+38 storage gates.
+
 **Superseded plan for 3b:** Atomic write of the immutable set and its typed decision
 *before options are rendered*, fail-closed; append-only; candidate set bound to
 its operation's user at write **and** read; database constraints as well as

@@ -589,7 +589,7 @@ async def test_the_same_conditions_selecting_differently_fails_loudly(
                     CandidateExclusion(
                         candidate_id="c3",
                         reason=ExclusionReason.SELECTION_CAP))))
-        with pytest.raises(repo.DeterminismViolation, match="now selects"):
+        with pytest.raises(repo.DeterminismViolation, match="now decides"):
             await repo.save(s, other)
 
 
@@ -684,3 +684,267 @@ async def test_evidence_survives_the_round_trip_intact(sessions, user):
     assert history.authorizes_assumption(back.candidate_set.context)
     ontology = back.candidate_set.candidate("c1")
     assert not ontology.authorizes_assumption(back.candidate_set.context)
+
+
+# ── 3b.3 — replay is bound to the exact decision, not to the universe ───────
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.asyncio
+async def test_each_decision_reloads_itself_whatever_the_insertion_order(
+        sessions, user, reverse):
+    """P0. ALLOWING SEVERAL DECISIONS BROKE THE READ PATH.
+
+    `load(candidate_set_id)` ran `.first()` over an unordered query, so once a
+    universe held a Telegram decision and an iOS one, replay returned whichever
+    row the database produced. That is the same failure as regenerating: a
+    true statement about the system and a false one about this turn.
+
+    Parameterised on insertion order because the defect was invisible in one
+    direction — the first write happened to be the one wanted.
+    """
+    universe = _universe()
+    telegram = _decision_over(universe)
+    ios = _decision_over(universe,
+                         context=_ctx(surface=SelectionSurface.ID_ADDRESSED))
+    writes = [ios, telegram] if reverse else [telegram, ios]
+    async with sessions() as s:
+        for record in writes:
+            await repo.save(s, record)
+        await s.commit()
+
+    async with sessions() as s:
+        for record, want in ((telegram, SelectionSurface.LABEL_TEXT),
+                             (ios, SelectionSurface.ID_ADDRESSED)):
+            back = await repo.load_by_decision_id(
+                s, repo.decision_id_for(record), user_id=USER_ID)
+            assert back is not None
+            assert back.decision.context.surface is want
+            assert back.candidate_set.candidate_ids == {"c1", "c2", "c3"}
+
+
+@pytest.mark.asyncio
+async def test_the_operation_records_which_question_it_asked(sessions, user):
+    """END TO END. The answer turn must be able to name the question it is
+    answering rather than infer it from the universe."""
+    from core import b1_quantity_operation as b1
+    from skills.nutrition.ambiguity import AmbiguityType, FoodAmbiguity
+    from skills.nutrition.staging import (FoodIdentity, QuantityIntent,
+                                          StagedFoodItem)
+
+    item = StagedFoodItem(
+        staged_item_id="si_1", original_text="some chicken breast",
+        identity=FoodIdentity(canonical_name="chicken breast"),
+        quantity=QuantityIntent(descriptor="some"), vague_measure="some",
+        ambiguities=(FoodAmbiguity(
+            ambiguity_id="a1", staged_item_id="si_1",
+            ambiguity_type=AmbiguityType.CONSUMED_QUANTITY,
+            field_name="estimated_mass_g", materiality_score=2.0,
+            calorie_span=180.0),))
+    async with sessions() as s:
+        u = await s.get(User, USER_ID)
+        ask = await b1.try_take_ownership(
+            s, user=u, material={"items": [{"food": "chicken breast",
+                                            "calories": 300}],
+                                 "staged_items": (item,),
+                                 "asked_item_id": "si_1",
+                                 "message": "some chicken breast",
+                                 "identity_evidence": True},
+            turn_id="t_decision", client_capable=True)
+        await s.commit()
+    assert ask is not None
+
+    async with sessions() as s:
+        owned = await b1.owning(s, await s.get(User, USER_ID))
+        assert owned is not None
+        assert owned.decision_id, "the operation did not record its decision"
+        replayed = await repo.load_by_decision_id(
+            s, owned.decision_id, user_id=USER_ID)
+    assert replayed is not None
+    assert {p.option_id for p in replayed.presented} == {
+        o.option_id for o in ask.interaction.groups[0].fields[0].options}
+
+
+# ── 3b.3 — the WHOLE decision, and the WHOLE row, must match on replay ──────
+
+@pytest.mark.asyncio
+async def test_a_changed_exclusion_reason_fails_loudly(sessions, user):
+    """P0. COMPARING THE WINNERS WAS NOT COMPARING THE DECISION.
+
+    Same options, different explanation of why the rest were dropped: the
+    write was silently ignored, so the caller believed one reason and the
+    record held another. A decision whose explanation can drift is not
+    evidence of anything.
+    """
+    universe = _universe()
+    async with sessions() as s:
+        await repo.save(s, _decision_over(universe))
+        await s.commit()
+
+    changed = CandidateDecisionRecord(
+        candidate_set=universe,
+        decision=CandidateSelectionDecision(
+            candidate_set_id=universe.candidate_set_id,
+            selection_policy_version="sel_v1", context=_ctx(),
+            selected_candidate_ids=("c2", "c1"),
+            exclusions=(CandidateExclusion(
+                candidate_id="c3",
+                reason=ExclusionReason.SEMANTIC_DUPLICATE),)))
+    async with sessions() as s:
+        with pytest.raises(repo.DeterminismViolation, match="now decides"):
+            await repo.save(s, changed)
+
+
+@pytest.mark.parametrize("label,mutate", [
+    ("a different label", {"rendered_label": "8 oz"}),
+    ("a different candidate binding", {"candidate_id": "c3"}),
+    ("a different position", {"selected_position": 7}),
+    ("a different revision", {"interaction_revision": 4}),
+])
+@pytest.mark.asyncio
+async def test_a_changed_presented_row_fails_loudly(sessions, user, label,
+                                                    mutate):
+    """P0. COMPARING OPTION IDS WAS NOT COMPARING THE ROW.
+
+    `6 oz` becoming `8 oz` under the same option id was accepted and dropped,
+    so the stored row and the row the caller believed it wrote diverged with
+    no error — exactly the replay contradiction this table exists to detect.
+    """
+    universe = _universe()
+    async with sessions() as s:
+        await repo.save(s, _decision_over(universe))
+        await s.commit()
+
+    base = _decision_over(universe)
+    first = base.presented[0]
+    fields = dict(option_id=first.option_id, candidate_id=first.candidate_id,
+                  candidate_set_id=first.candidate_set_id,
+                  interaction_revision=first.interaction_revision,
+                  selected_position=first.selected_position,
+                  rendered_label=first.rendered_label,
+                  renderer_contract_version=first.renderer_contract_version)
+    fields.update(mutate)
+
+    # BYPASSING THE AGGREGATE ON PURPOSE. Three of these four mutations are
+    # refused by `CandidateDecisionRecord` itself, which is correct — but the
+    # aggregate is not the only writer, and the directive requires the check
+    # at BOTH boundaries. This hands the repository a row the aggregate would
+    # never have built, exactly as a migration or a future write path could.
+    class _Bypass:
+        candidate_set = universe
+        decision = base.decision
+        presented = (PresentedCandidateOption(**fields), base.presented[1])
+
+    async with sessions() as s:
+        with pytest.raises(repo.DeterminismViolation,
+                           match="now presenting"):
+            await repo.ensure_presented_options(
+                s, _Bypass(), decision_id=repo.decision_id_for(base))
+
+
+@pytest.mark.asyncio
+async def test_the_complete_unchanged_decision_replays_idempotently(sessions,
+                                                                    user):
+    universe = _universe()
+    async with sessions() as s:
+        for _ in range(3):
+            await repo.save(s, _decision_over(universe))
+        await s.commit()
+    async with sessions() as s:
+        assert (await s.execute(select(func.count()).select_from(
+            CandidateSelectionDecisionRow))).scalar() == 1
+        assert (await s.execute(select(func.count()).select_from(
+            PresentedOptionRow))).scalar() == 2
+        assert (await s.execute(select(func.count()).select_from(
+            CandidateExclusionRow))).scalar() == 1
+
+
+# ── 3b.3 — concurrency at all three boundaries ─────────────────────────────
+
+@pytest.mark.asyncio
+async def test_concurrent_identical_decisions_create_exactly_one(sessions,
+                                                                 user):
+    """Now that idempotency is split three ways, each boundary races
+    separately. The database arbitrates; the repository must lose cleanly
+    rather than leaving a half-written record behind."""
+    universe = _universe()
+
+    async def _attempt():
+        async with sessions() as s:
+            try:
+                await repo.save(s, _decision_over(universe))
+                await s.commit()
+                return "wrote"
+            except Exception:
+                await s.rollback()
+                return "lost"
+
+    outcomes = await asyncio.gather(*(_attempt() for _ in range(3)),
+                                    return_exceptions=True)
+    assert any(o == "wrote" for o in outcomes), outcomes
+    async with sessions() as s:
+        assert (await s.execute(select(func.count()).select_from(
+            CandidateSetRow))).scalar() == 1
+        assert (await s.execute(select(func.count()).select_from(
+            CandidateSelectionDecisionRow))).scalar() == 1
+        assert (await s.execute(select(func.count()).select_from(
+            PresentedOptionRow))).scalar() == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_distinct_decisions_over_one_set_both_persist(
+        sessions, user):
+    """The set is write-once and the decisions are not, so a race between two
+    LEGITIMATELY different decisions must end with both stored."""
+    universe = _universe()
+    records = [_decision_over(universe),
+               _decision_over(universe,
+                              context=_ctx(surface=SelectionSurface.ID_ADDRESSED))]
+
+    async def _attempt(record):
+        last = None
+        for attempt in range(6):
+            async with sessions() as s:
+                try:
+                    await repo.save(s, record)
+                    await s.commit()
+                    return "wrote"
+                except Exception as exc:      # noqa: BLE001
+                    last = exc
+                    await s.rollback()
+            # SQLite serialises writers with a file lock, so a loser must back
+            # off rather than spin straight into the same lock. Postgres does
+            # not need this; the retry shape is the same either way.
+            await asyncio.sleep(0.05 * (attempt + 1))
+        return f"lost: {type(last).__name__}: {last}"
+
+    outcomes = await asyncio.gather(*(_attempt(r) for r in records))
+    assert outcomes == ["wrote", "wrote"], outcomes
+    async with sessions() as s:
+        assert (await s.execute(select(func.count()).select_from(
+            CandidateSetRow))).scalar() == 1
+        assert (await s.execute(select(func.count()).select_from(
+            CandidateSelectionDecisionRow))).scalar() == 2
+
+
+@pytest.mark.asyncio
+async def test_replay_never_runs_the_generator_or_the_selector(sessions, user,
+                                                               monkeypatch):
+    """If either runs during replay, replay is a second opinion from a system
+    that may have changed — not a record of what happened."""
+    from skills.nutrition import quantity_clarification as qc
+
+    async with sessions() as s:
+        await repo.save(s, _decision_over(_universe()))
+        await s.commit()
+
+    async def _boom(*a, **k):
+        raise AssertionError("the generator ran during replay")
+
+    def _boom_sync(*a, **k):
+        raise AssertionError("the selector ran during replay")
+
+    monkeypatch.setattr(qc, "generate", _boom)
+    monkeypatch.setattr(qc, "reduce_universe", _boom_sync)
+    async with sessions() as s:
+        back = await repo.load(s, "cs_test", user_id=USER_ID)
+    assert back is not None and back.candidate_set.candidates

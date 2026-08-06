@@ -23,6 +23,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from sqlalchemy.exc import IntegrityError
+
 logger = logging.getLogger(__name__)
 
 #: Raised when a universe is regenerated for the same key from DIFFERENT
@@ -50,6 +52,11 @@ def _decision_id(candidate_set_id: str, decision) -> str:
                     str(ctx.maximum_options),
                     ctx.renderer_contract_version))
     return "dec_" + hashlib.sha256(raw.encode()).hexdigest()[:24]
+
+
+def decision_id_for(record) -> str:
+    """The durable identity of the question a record represents."""
+    return _decision_id(record.candidate_set.candidate_set_id, record.decision)
 
 
 async def save(db, record, *, domain: str = "food") -> str:
@@ -88,25 +95,17 @@ async def ensure_candidate_set(db, universe, *, domain: str = "food") -> str:
     from db.models import (CandidateEvidenceRow, CandidateRow, CandidateSetRow)
 
     set_id = universe.candidate_set_id
-    existing = (await db.execute(
-        select(CandidateSetRow).where(
-            CandidateSetRow.candidate_set_id == set_id))).scalar_one_or_none()
+    existing = await _existing_set(db, set_id)
     if existing is not None:
-        if (existing.generation_input_fingerprint
-                != universe.generation_input_fingerprint):
-            raise DeterminismViolation(
-                f"{set_id} already exists with fingerprint "
-                f"{existing.generation_input_fingerprint!r} but was "
-                f"regenerated as {universe.generation_input_fingerprint!r} — "
-                f"the same question produced a different universe, and "
-                f"returning the stored one would justify the options with a "
-                f"record of other inputs")
-        if existing.user_id != universe.user_id:
-            raise DeterminismViolation(
-                f"{set_id} belongs to user {existing.user_id}, not "
-                f"{universe.user_id}")
+        _assert_same_universe(existing, universe)
         return set_id
 
+    # A CONCURRENT WRITER MAY WIN BETWEEN THE READ ABOVE AND THIS INSERT.
+    # The database arbitrates — that is what the unique constraint is for —
+    # and losing the race is a REPLAY, not an error: the winner wrote the same
+    # universe, and the loser must recover to it rather than surface an
+    # IntegrityError to a turn that did nothing wrong.
+    savepoint = await db.begin_nested()
     db.add(CandidateSetRow(
         candidate_set_id=set_id, domain=domain,
         operation_id=universe.operation_id, user_id=universe.user_id,
@@ -117,7 +116,15 @@ async def ensure_candidate_set(db, universe, *, domain: str = "food") -> str:
         generator_version=universe.generator_version,
         generation_input_fingerprint=universe.generation_input_fingerprint,
         rejections=[r.to_payload() for r in universe.rejections]))
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await savepoint.rollback()
+        lost = await _existing_set(db, set_id)
+        if lost is None:
+            raise
+        _assert_same_universe(lost, universe)
+        return set_id
 
     for position, cand in enumerate(universe.candidates):
         db.add(CandidateRow(
@@ -150,10 +157,46 @@ async def ensure_candidate_set(db, universe, *, domain: str = "food") -> str:
     return set_id
 
 
+async def _existing_set(db, set_id: str):
+    from sqlalchemy import select
+
+    from db.models import CandidateSetRow
+
+    return (await db.execute(select(CandidateSetRow).where(
+        CandidateSetRow.candidate_set_id == set_id))).scalar_one_or_none()
+
+
+def _assert_same_universe(existing, universe) -> None:
+    if (existing.generation_input_fingerprint
+            != universe.generation_input_fingerprint):
+        raise DeterminismViolation(
+            f"{universe.candidate_set_id} already exists with fingerprint "
+            f"{existing.generation_input_fingerprint!r} but was regenerated "
+            f"as {universe.generation_input_fingerprint!r} — the same "
+            f"question produced a different universe, and returning the "
+            f"stored one would justify the options with a record of other "
+            f"inputs")
+    if existing.user_id != universe.user_id:
+        raise DeterminismViolation(
+            f"{universe.candidate_set_id} belongs to user "
+            f"{existing.user_id}, not {universe.user_id}")
+
+
 def _candidate_payload_without_evidence(cand) -> dict:
     payload = cand.to_payload()
     payload.pop("evidence", None)
     return payload
+
+
+def _canonical_decision(*, selected, exclusions, policy, set_id, surface,
+                        locale, maximum_options, renderer) -> tuple:
+    """Everything a decision asserts, in one comparable value.
+
+    Order matters for the selection (it decides prominence); exclusions are
+    sorted because their storage order is not a fact about the decision.
+    """
+    return (set_id, policy, surface, locale, int(maximum_options), renderer,
+            tuple(selected), tuple(sorted(exclusions)))
 
 
 async def ensure_selection_decision(db, decision) -> str:
@@ -167,7 +210,7 @@ async def ensure_selection_decision(db, decision) -> str:
     from sqlalchemy import select
 
     from db.models import (CandidateExclusionRow,
-                           CandidateSelectionDecisionRow)
+                           CandidateSelectionDecisionRow)  # noqa: F401
 
     set_id = decision.candidate_set_id
     decision_id = _decision_id(set_id, decision)
@@ -177,15 +220,41 @@ async def ensure_selection_decision(db, decision) -> str:
             CandidateSelectionDecisionRow.decision_id
             == decision_id))).scalar_one_or_none()
     if existing is not None:
-        stored = tuple(existing.selected_candidate_ids or ())
-        if stored != tuple(decision.selected_candidate_ids):
-            # SAME CONDITIONS, DIFFERENT OUTCOME. The selector is supposed to
-            # be reproducible from the set plus the policy plus the context;
-            # if it is not, the stored record no longer explains the screen.
+        # THE WHOLE DECISION, NOT ITS WINNERS.
+        #
+        # Comparing `selected_candidate_ids` alone accepted a retry that kept
+        # the same options and changed WHY the others were dropped —
+        # `SEMANTIC_DUPLICATE` becoming `SELECTION_CAP` under one identity.
+        # The write was silently ignored, so the caller believed one
+        # explanation and the record held another. A decision record whose
+        # explanation can drift is not evidence.
+        stored_exclusions = (await db.execute(
+            select(CandidateExclusionRow).where(
+                CandidateExclusionRow.decision_id == decision_id))).scalars().all()
+        stored = _canonical_decision(
+            selected=tuple(existing.selected_candidate_ids or ()),
+            exclusions=tuple((x.candidate_id, x.reason)
+                             for x in stored_exclusions),
+            policy=existing.selection_policy_version,
+            set_id=existing.candidate_set_id,
+            surface=existing.surface, locale=existing.locale,
+            maximum_options=existing.maximum_options,
+            renderer=existing.renderer_contract_version)
+        incoming = _canonical_decision(
+            selected=tuple(decision.selected_candidate_ids),
+            exclusions=tuple((x.candidate_id, x.reason.value)
+                             for x in decision.exclusions),
+            policy=decision.selection_policy_version, set_id=set_id,
+            surface=ctx.surface.value, locale=ctx.locale,
+            maximum_options=ctx.maximum_options,
+            renderer=ctx.renderer_contract_version)
+        if stored != incoming:
             raise DeterminismViolation(
-                f"{decision_id} already selected {list(stored)} but the same "
-                f"set under the same policy and context now selects "
-                f"{list(decision.selected_candidate_ids)}")
+                f"{decision_id} is already stored as {stored} but the same "
+                f"set under the same policy and context now decides "
+                f"{incoming} — the selector is meant to be reproducible from "
+                f"set + policy + context, and if it is not, the stored record "
+                f"no longer explains the screen")
         return decision_id
 
     db.add(CandidateSelectionDecisionRow(
@@ -206,6 +275,13 @@ async def ensure_selection_decision(db, decision) -> str:
     return decision_id
 
 
+def _shown_tuple(shown) -> tuple:
+    """Every field that decides what the user actually read."""
+    return (shown.option_id, shown.candidate_id, shown.candidate_set_id,
+            int(shown.interaction_revision), int(shown.selected_position),
+            shown.rendered_label, shown.renderer_contract_version)
+
+
 async def ensure_presented_options(db, record, *, decision_id: str) -> None:
     """The row as shown. Written once per decision."""
     from sqlalchemy import select
@@ -214,14 +290,26 @@ async def ensure_presented_options(db, record, *, decision_id: str) -> None:
 
     if not record.presented:
         return
-    already = (await db.execute(select(PresentedOptionRow.option_id).where(
-        PresentedOptionRow.decision_id == decision_id))).scalars().all()
+    already = (await db.execute(
+        select(PresentedOptionRow)
+        .where(PresentedOptionRow.decision_id == decision_id)
+        .order_by(PresentedOptionRow.selected_position))).scalars().all()
     if already:
-        shown = {p.option_id for p in record.presented}
-        if set(already) != shown:
+        # THE WHOLE ROW, IN ORDER.
+        #
+        # Comparing option ids alone accepted a retry that kept the ids and
+        # changed the LABEL — `6 oz` becoming `8 oz` — or the candidate each
+        # id pointed at, or the position it occupied. The write was silently
+        # dropped, so the stored row and the row the caller believed it wrote
+        # diverged with no error. That is exactly the replay contradiction
+        # this table exists to detect.
+        stored = tuple(_shown_tuple(p) for p in already)
+        incoming = tuple(sorted((_shown_tuple(p) for p in record.presented),
+                                key=lambda t: t[4]))
+        if stored != incoming:
             raise DeterminismViolation(
-                f"{decision_id} already presented {sorted(already)} but is "
-                f"now presenting {sorted(shown)}")
+                f"{decision_id} already presented {stored} but is now "
+                f"presenting {incoming}")
         return
     for shown in record.presented:
         db.add(PresentedOptionRow(
@@ -235,8 +323,42 @@ async def ensure_presented_options(db, record, *, decision_id: str) -> None:
     await db.flush()
 
 
-async def load(db, candidate_set_id: str, *, user_id: int) -> Optional[Any]:
+async def load_by_decision_id(db, decision_id: str, *,
+                              user_id: int) -> Optional[Any]:
+    """THE AUTHORITATIVE READ. The exact question this person was shown.
+
+    One universe may now hold several decisions — Telegram and iOS, a new
+    selector version, a different slot count — all legitimate and all over the
+    same immutable set. `decision_id` is therefore the durable identity of the
+    question that was ASKED; the set id only identifies what could have been
+    asked.
+
+    Answer handling and replay must come through here. Anything that resolves
+    by set alone can return a different valid decision over the same universe,
+    which is the same failure as regenerating: a true statement about the
+    system that is not a true statement about this turn.
+    """
+    from sqlalchemy import select
+
+    from db.models import CandidateSelectionDecisionRow
+
+    row = (await db.execute(select(CandidateSelectionDecisionRow).where(
+        CandidateSelectionDecisionRow.decision_id
+        == decision_id))).scalar_one_or_none()
+    if row is None:
+        return None
+    return await load(db, row.candidate_set_id, user_id=user_id,
+                      decision_id=decision_id)
+
+
+async def load(db, candidate_set_id: str, *, user_id: int,
+               decision_id: Optional[str] = None) -> Optional[Any]:
     """Rebuild a `CandidateDecisionRecord` FROM STORAGE. No regeneration.
+
+    WITHOUT `decision_id` THIS IS AN ADMINISTRATIVE READ. It returns the
+    OLDEST decision over the set, deterministically, so a listing is stable —
+    but a set may hold several decisions and only the caller knows which one
+    was shown. For answer handling and replay use `load_by_decision_id`.
 
     If replay regenerates, replay is not evidence — it is a second opinion
     from a system that may have changed. Everything returned here was written
@@ -300,10 +422,17 @@ async def load(db, candidate_set_id: str, *, user_id: int) -> Optional[Any]:
         rejections=tuple(CandidateGenerationRejection.from_payload(r)
                          for r in (row.rejections or ())))
 
-    decision_row = (await db.execute(
-        select(CandidateSelectionDecisionRow).where(
-            CandidateSelectionDecisionRow.candidate_set_id
-            == candidate_set_id))).scalars().first()
+    decisions = select(CandidateSelectionDecisionRow).where(
+        CandidateSelectionDecisionRow.candidate_set_id == candidate_set_id)
+    if decision_id:
+        decisions = decisions.where(
+            CandidateSelectionDecisionRow.decision_id == decision_id)
+    # ORDERED, ALWAYS. `.first()` over an unordered query returned whichever
+    # row the database happened to produce, so replay could hand back a
+    # different valid decision over the same universe depending on insertion
+    # order. Deterministic by id, which is stable across backends.
+    decision_row = (await db.execute(decisions.order_by(
+        CandidateSelectionDecisionRow.id))).scalars().first()
     if decision_row is None:
         return None
 
@@ -341,8 +470,14 @@ async def load(db, candidate_set_id: str, *, user_id: int) -> Optional[Any]:
 
 
 async def load_for_operation(db, operation_id: str, *, user_id: int,
-                             revision: int = 0):
-    """The universe behind one operation revision, for the answer turn."""
+                             revision: int = 0,
+                             decision_id: Optional[str] = None):
+    """The universe behind one operation revision.
+
+    `decision_id` SHOULD BE PASSED by anything replaying a real turn — the
+    operation stores it precisely so the answer turn can name the question it
+    is answering rather than infer it.
+    """
     from sqlalchemy import select
 
     from db.models import CandidateSetRow
@@ -351,7 +486,8 @@ async def load_for_operation(db, operation_id: str, *, user_id: int,
         CandidateSetRow.operation_id == operation_id,
         CandidateSetRow.interaction_revision == revision,
         CandidateSetRow.user_id == user_id))).scalars().first()
-    return None if set_id is None else await load(db, set_id, user_id=user_id)
+    return None if set_id is None else await load(
+        db, set_id, user_id=user_id, decision_id=decision_id)
 
 
 async def why_not(db, candidate_set_id: str, *, user_id: int,
