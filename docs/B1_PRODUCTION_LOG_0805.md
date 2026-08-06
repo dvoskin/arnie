@@ -18,7 +18,7 @@ open incident notice; the incident is closed.*
 | `B1_QUANTITY` in prod | `effective=allowlist`, `halted=false`, `percent=0.0`, `allowlist_size=1` |
 | Blast radius during the incident | **exactly one user** (id 26, the operator). `percent=0.0`, so no one entered the cohort by hash. |
 | Meals lost | 2, both belonging to that same user |
-| Test suite | 7842 passed, 0 failed, 0 errors, 82 skipped |
+| Test suite | 7847 passed, 0 failed, 0 errors, 82 skipped |
 | Data-loss defect | **fixed, deployed, and reproduced-then-verified in production** (§6b) |
 
 No action outstanding on the incident. One accuracy defect was found *during*
@@ -286,13 +286,15 @@ can fix it — the contradiction exists before the resolver is called. The fix i
 a **deletion** (replace the quantity fields rather than shadowing them), never
 scaling arithmetic, which would violate the standing no-heuristics rule.
 
-**Sequencing decision (2026-08-06):** downstream nutrition refinement owns this;
-it does not gate B-1. It *does* gate B-1 **promotion**, since promotion asserts
-that the answered quantity produces the committed numbers — so it must close
-before the legacy quantity path is deleted.
+**Sequencing (2026-08-06, revised):** initially deferred to downstream nutrition
+work. Now **first in the execution order** as directive D1, gating B-1
+promotion — promotion asserts that the answered quantity produces the committed
+numbers, so it must close before the legacy quantity path is deleted.
 
-It also explains itself: the fixtures were gram-based, which is the one case
-that works. Same root cause as §7.
+**Acceptance is behavioural, not reproductive.** Prove that committed nutrition
+responds to the answered quantity across gram, ounce, cup, piece and free-text
+bases, and let whichever bases are already correct stay green. Writing "the
+oatmeal regression" as a test would encode the misreading above.
 
 ## 7. The common root cause
 
