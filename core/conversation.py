@@ -1187,6 +1187,17 @@ async def _run_turn(
                         # once already.
                         response_text="|||".join(_b1_resp.bubbles or []),
                         has_tool_calls=bool(getattr(_b1_facts, "entry_id", None)),
+                        # The FACT, not the proxy. This lane knows whether a
+                        # row landed, so it says so rather than letting a
+                        # detector infer it from the sentence it just wrote.
+                        wrote_this_turn=bool(getattr(_b1_facts, "entry_id", None)),
+                        # `.value`, not the enum: `_B1Outcome` is imported
+                        # inside the except handler above and is unbound on
+                        # the happy path. Reading it here raised NameError
+                        # into the swallow below and the check ran zero
+                        # times — the third time that has happened in this
+                        # block, which is why the except now shouts.
+                        asked_this_turn=(_b1_out.outcome.value != "applied"),
                         stop_reason="b1_answer",
                         retried=False, tool_error=bool(_b1_out.internal_failure),
                         source_type=_source, tool_names=set(),
@@ -1196,8 +1207,12 @@ async def _run_turn(
                             "TURN_HEALTH %s flags=%s",
                             f"{platform}:{user.id}", ",".join(_b1_flags))
                 except Exception:
-                    # Telemetry may never cost the reply the user already has.
-                    logger.debug("b1 turn-health failed", exc_info=True)
+                    # Telemetry may never cost the reply the user already has —
+                    # but it must not fail QUIETLY either. At DEBUG this hid
+                    # two of my own bugs in this very block, and a health check
+                    # that silently never runs looks exactly like a healthy
+                    # system. Loud, and still harmless.
+                    logger.warning("b1 turn-health failed", exc_info=True)
                 return TurnResult(
                     response=_b1_resp, health_flags=_b1_flags,
                     tool_calls=[], just_completed=False,
@@ -4385,6 +4400,14 @@ user_message=_user_text or "")
             source_type=_source,
             tool_names={tc["name"] for tc in tool_calls},
             prior_assistant_text=_prior_assistant if isinstance(_prior_assistant, str) else "",
+            # A TURN THAT ASKS IS NOT CLAIMING TO HAVE LOGGED. Measured
+            # 2026-08-06: "Already got chicken breast on the books at 718 cal.
+            # Now, salmon, how much did you have?" was flagged as a phantom
+            # log. It names a PRIOR meal and asks about the current one —
+            # honest reporting, and exactly what the assistant should do. The
+            # turn's own action settles it; no phrasing rule can.
+            asked_this_turn=bool(
+                isinstance(_sft, dict) and _sft.get("action") == "ask"),
         )
         # The model wrapped its reply in a code fence — markers already
         # stripped at the bubble chokepoint, recorded here so a formatting

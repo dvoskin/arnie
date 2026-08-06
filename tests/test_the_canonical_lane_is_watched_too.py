@@ -97,3 +97,56 @@ async def test_a_committed_answer_is_not_reported_as_a_phantom(
     assert "phantom_log_claim" not in (result.health_flags or []), (
         f"a turn that really committed was flagged as a phantom: "
         f"{result.health_flags}")
+
+
+# ── Precision: a claim about a PRIOR meal is not a phantom ───────────────────
+
+def test_a_reply_that_asks_is_not_claiming_to_have_logged():
+    """The real false positive, 2026-08-06.
+
+    "Already got chicken breast on the books at 718 cal. Now, salmon, how much
+    did you have?" was flagged as a phantom log. It names a PRIOR meal and asks
+    about the current one — honest reporting, and exactly what the assistant
+    should be doing.
+
+    SOLVED WITH FACTS, NOT MORE REGEX. Every phrasing rule that separates "I
+    just logged it" from "that is already logged" is defeated by the next
+    sentence someone writes; the turn's own action is not. A turn that ASKS has
+    not claimed to log anything, whatever words it used to say so.
+    """
+    from core.turn_health import looks_like_phantom_log_claim as phantom
+
+    reply = ("Already got chicken breast on the books at 718 cal, 89g protein. "
+             "Now, salmon, how much did you have? Small fillet or bigger?")
+    assert phantom("I had some salmon", reply, False), (
+        "without the turn's facts this is indistinguishable from a phantom — "
+        "which is the point: the text alone cannot settle it")
+    assert not phantom("I had some salmon", reply, False, asked_this_turn=True)
+
+
+def test_a_turn_that_wrote_is_never_a_phantom():
+    """`wrote_this_turn` is the fact `has_tool_calls` was standing in for.
+
+    The proxy is false on the canonical lane even for a successful commit, so
+    a caller that knows what landed must say so rather than let the detector
+    infer it from prose.
+    """
+    from core.turn_health import looks_like_phantom_log_claim as phantom
+
+    claim = "Logged White rice, steamed, 64 cal, 1g protein."
+    assert phantom("I had some rice", claim, False, wrote_this_turn=False)
+    assert not phantom("I had some rice", claim, False, wrote_this_turn=True)
+
+
+def test_the_original_data_loss_is_still_caught():
+    """Precision must not cost coverage.
+
+    The 2026-08-05 turns wrote nothing and asked nothing — they asserted a log
+    that did not happen. That is the case this detector exists for, and no
+    amount of false-positive tuning may quietly exclude it.
+    """
+    from core.turn_health import looks_like_phantom_log_claim as phantom
+
+    for said in ("I had some rice", "Had some oatmeal"):
+        assert phantom(said, "Logged White rice, steamed, 64 cal, 1g protein.",
+                       False, wrote_this_turn=False, asked_this_turn=False), said

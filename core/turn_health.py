@@ -690,7 +690,9 @@ def extract_leaked_tool_calls(text: str) -> list:
 
 
 def looks_like_phantom_log_claim(user_text: str, response_text: str,
-                                 has_tool_calls: bool) -> bool:
+                                 has_tool_calls: bool, *,
+                                 wrote_this_turn: bool | None = None,
+                                 asked_this_turn: bool = False) -> bool:
     """True when the user reported a loggable SET or FOOD but the model claimed it
     was recorded ("noted", "on the board", "logged") WITHOUT firing any tool — a
     confirmation with no write behind it, which silently drops the entry.
@@ -700,6 +702,28 @@ def looks_like_phantom_log_claim(user_text: str, response_text: str,
     clarifying question ("was that a weight PR?"), an actually-logged turn (a tool
     fired), or generic chat. Drives quality repair so the model owns the miss and
     re-logs on the retry."""
+    # ── FACTS FIRST, LANGUAGE LAST ────────────────────────────────────────
+    #
+    # Both of these are things we KNOW about the turn. Deciding from them
+    # avoids reading the assistant's prose to infer what the system did, which
+    # is how this fired on a correct turn: "Already got chicken breast on the
+    # books at 718 cal. Now, salmon, how much did you have?" contains a
+    # recorded-claim phrase about a PRIOR meal and asks a question about the
+    # current one. No amount of extra regex distinguishes those two readings
+    # reliably; the turn's own facts do it exactly.
+    if wrote_this_turn:
+        # Something landed. A recorded claim is then simply true.
+        return False
+    if asked_this_turn and not wrote_this_turn:
+        # A turn that ASKS is not claiming to have logged. Any recorded-claim
+        # phrase in it refers to something already on the board — which is
+        # honest reporting, and is what the assistant should be doing.
+        return False
+
+    # `has_tool_calls` remains the fallback for callers that cannot say what
+    # was written. It is a PROXY — on the canonical lane it is false even for
+    # a successful commit — so a caller that knows should pass
+    # `wrote_this_turn` instead of relying on it.
     if has_tool_calls:
         return False
     u = (user_text or "").strip()
@@ -782,6 +806,10 @@ def detect_turn_flags(
     source_type: str | None = None,
     tool_names: set | None = None,
     prior_assistant_text: str = "",
+    #: What the turn actually DID, when the caller knows. Passed through to
+    #: the detectors so they decide from facts rather than from prose.
+    wrote_this_turn: bool | None = None,
+    asked_this_turn: bool = False,
 ) -> list[str]:
     """
     Return the list of health flags for a completed turn. Empty list = clean turn.
@@ -808,7 +836,9 @@ def detect_turn_flags(
         flags.append("mechanics_narration")
     if looks_like_empty_praise(response_text):
         flags.append("empty_praise")
-    if looks_like_phantom_log_claim(user_text, response_text, has_tool_calls):
+    if looks_like_phantom_log_claim(user_text, response_text, has_tool_calls,
+                                    wrote_this_turn=wrote_this_turn,
+                                    asked_this_turn=asked_this_turn):
         flags.append("phantom_log_claim")
     # Image turn where log_body_weight fired without log_food — almost always a
     # nutrition-analysis false positive (macro gram numbers mistaken for body weight).
