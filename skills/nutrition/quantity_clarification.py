@@ -645,8 +645,10 @@ def _measure_in(message: str, name: str) -> str:
 
 # ── selection ────────────────────────────────────────────────────────────────
 
-#: WHICH POLICY REDUCED A UNIVERSE. Ranking, the accept rule, and the cap.
-SELECTION_POLICY_VERSION = "b1_quantity_select_v1"
+#: WHICH POLICY REDUCED A UNIVERSE. Owned by `candidate_selection`, re-exported
+#: here because the ask path and the proofs both read it from this module.
+from skills.nutrition.candidate_selection import (  # noqa: E402
+    SELECTION_POLICY_VERSION)
 
 #: WHICH RENDERER WORDED THE OPTIONS. Load bearing: `RENDER_COLLISION` is a
 #: judgement about wording, so it is only reproducible against the renderer
@@ -672,24 +674,26 @@ def selection_context(*, capability, locale: str = "en"):
         renderer_contract_version=RENDERER_CONTRACT_VERSION)
 
 
-def reduce_universe(universe, *, field, context, food_name: str = ""):
-    """Which candidates become offers, what each one MEANS, and why not the
-    rest.
+def reduce_universe(universe, *, field, context, food_name: str = "",
+                    policy_version=None):
+    """Turn a universe into the row the user reads, and the record of why.
 
-    NOT top-N by probability — that returns near-duplicates, which is how
-    `4.8 / 5.0 / 5.2` reached a screen. Rank by `prior x source confidence`,
-    then accept a candidate only if it says something the already accepted
-    ones do not: information gain, expressed as distance.
+    THREE STAGES WITH THREE OWNERS, and the separation is the point:
 
-    THE RANKING IS UNCHANGED. What is new is that every drop is RECORDED with
-    a typed reason instead of being a `continue`, so "why wasn't my usual
-    portion there?" has an answer that does not require rerunning the
-    selector.
+        select      what each candidate MEANS      pure, versioned, no labels
+        present     what each candidate SAYS       renders, reports collisions
+        record      what was offered and why not   the durable decision
 
-    Returns `(options, decision_record)`. Every returned option carries a
-    typed `SetQuantity` and the id of the candidate it came from, so there is
-    no path here that produces a label without a patch or without a
-    justification.
+    Selection used to render labels itself, which made a wording judgement
+    indistinguishable from a semantic one: `RENDER_COLLISION` was attributed
+    to the policy, and a locale that worded two candidates differently would
+    have silently changed what got SELECTED. Now the policy never sees a
+    label, and a collision is attributed to the renderer version that caused
+    it.
+
+    Returns `(options, decision_record)`. Every option carries a typed
+    `SetQuantity` and the id of the candidate it came from, so there is no
+    path here producing a label without a patch or without a justification.
     """
     from dataclasses import replace
 
@@ -698,42 +702,27 @@ def reduce_universe(universe, *, field, context, food_name: str = ""):
                                 ClarificationOption, ExclusionReason,
                                 PresentedCandidateOption, Provenance,
                                 SetQuantity)
+    from skills.nutrition import candidate_selection as policy
 
-    excluded = []
-    ranked = sorted(universe.candidates, key=_rank, reverse=True)
+    version = policy_version or policy.SELECTION_POLICY_VERSION
+    chosen, excluded = policy.select(universe, context=context,
+                                     policy_version=version)
+    excluded = list(excluded)
 
-    chosen = []
-    for cand in ranked:
-        grams = float(cand.quantity.grams)
-        if len(chosen) >= MAX_NUMERIC_OPTIONS:
-            excluded.append(CandidateExclusion(
-                candidate_id=cand.candidate_id,
-                reason=ExclusionReason.SELECTION_CAP))
-            continue
-        if any(_near(grams, float(c.quantity.grams)) for c in chosen):
-            excluded.append(CandidateExclusion(
-                candidate_id=cand.candidate_id,
-                reason=ExclusionReason.SEMANTIC_DUPLICATE))
-            continue
-        chosen.append(cand)
-    chosen.sort(key=lambda c: float(c.quantity.grams))
-
-    # DEDUPE AGAIN ON WHAT THE USER ACTUALLY READS.
+    # ── presentation ────────────────────────────────────────────────────────
     #
-    # The pass above compares GRAMS; a chip row is compared by eye. Measured
-    # on the first wired turn: chicken breast's ontology bracket
-    # (130.5 / 174 / 435 g) is well separated numerically — 1.33x between the
-    # first two — and renders as "5 oz / 6 oz / 16 oz". Nobody reads 5 and 6
-    # ounces as two different answers, so that row offers three chips and two
-    # choices, and the third is a pound of chicken.
-    #
-    # Recorded as RENDER_COLLISION rather than a duplicate: the candidates are
-    # semantically distinct and collide only under this renderer, in this
-    # locale.
-    chosen, labels, collided = _collapse_by_label(chosen, ranked, food_name)
-    excluded.extend(CandidateExclusion(
-        candidate_id=c.candidate_id,
-        reason=ExclusionReason.RENDER_COLLISION) for c in collided)
+    # DEDUPE ON WHAT THE USER ACTUALLY READS. Selection compares meaning; a
+    # chip row is compared by eye. Measured on the first wired turn: chicken
+    # breast's ontology bracket (130.5 / 174 / 435 g) is well separated
+    # numerically — 1.33x between the first two — and renders as
+    # "5 oz / 6 oz / 16 oz". Nobody reads 5 and 6 ounces as two different
+    # answers, so that row offers three chips and two choices, and the third
+    # is a pound of chicken.
+    ranked = sorted(universe.candidates, key=policy.rank_of, reverse=True)
+    chosen, labels, collided = _collapse_by_label(list(chosen), ranked,
+                                                  food_name)
+    excluded.extend((c.candidate_id, ExclusionReason.RENDER_COLLISION)
+                    for c in collided)
 
     options, presented = [], []
     for position, (cand, label) in enumerate(zip(chosen, labels)):
@@ -761,22 +750,13 @@ def reduce_universe(universe, *, field, context, food_name: str = ""):
 
     decision = CandidateSelectionDecision(
         candidate_set_id=universe.candidate_set_id,
-        selection_policy_version=SELECTION_POLICY_VERSION, context=context,
+        selection_policy_version=version, context=context,
         selected_candidate_ids=tuple(c.candidate_id for c in chosen),
-        exclusions=tuple(excluded))
+        exclusions=tuple(CandidateExclusion(candidate_id=cid, reason=reason)
+                         for cid, reason in excluded))
     record = CandidateDecisionRecord(candidate_set=universe, decision=decision,
                                      presented=tuple(presented))
     return tuple(options), record
-
-
-def _rank(cand) -> float:
-    """`prior x confidence`, both read off the persisted candidate.
-
-    Recomputing either from the source would make the ranking unexplainable
-    from the record — the exact property the universe exists to provide.
-    """
-    best = max((float(e.confidence or 0) for e in cand.evidence), default=0.0)
-    return float(cand.prior or 0) * best
 
 
 def select(candidates_in, *, field, food_name: str = "") -> tuple:
@@ -811,6 +791,15 @@ def select(candidates_in, *, field, food_name: str = "") -> tuple:
             maximum_options=MAX_NUMERIC_OPTIONS,
             renderer_contract_version=RENDERER_CONTRACT_VERSION))
     return options
+
+
+def _rank(cand) -> float:
+    """Kept as a re-export: the offline scorecard ranks candidates the same
+    way the policy does, and duplicating the formula there would let the two
+    drift."""
+    from skills.nutrition.candidate_selection import rank_of
+
+    return rank_of(cand)
 
 
 def _near(a: float, b: float) -> bool:

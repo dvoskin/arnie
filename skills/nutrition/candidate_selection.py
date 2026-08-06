@@ -1,0 +1,184 @@
+"""WHICH candidates become offers. A versioned, pure policy.
+
+    CandidateSet + CandidateSelectionContext + policy version
+        -> selected candidates, and a typed reason for every other one
+
+That is the whole contract. The selector reads PERSISTED FEATURES of
+candidates it is given and nothing else: it retrieves no evidence, mutates no
+candidate, converts no quantity and renders no label. Anything it needed to go
+and fetch would be a feature the decision record could not explain afterwards,
+which defeats the point of persisting the universe at all.
+
+WHY LABELS ARE NOT HERE. Collapsing two options because they READ the same is
+a real rule — `5 oz` and `6 oz` are two chips and one choice — but it is a
+judgement about wording, under one renderer, in one locale. Selection decides
+what a candidate MEANS; presentation decides what it SAYS. Keeping them
+separate is what lets `RENDER_COLLISION` be attributed to a renderer version
+rather than blamed on the policy, and what stops a locale that words two
+candidates differently from silently getting a different selection.
+
+POLICIES ARE REGISTERED, NOT REPLACED. A new policy is a new entry with a new
+version, so decisions taken under the old one keep meaning what they meant.
+`b1_quantity_select_v1` is the baseline: it reproduces the behaviour shipped
+before this module existed, to the option.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Callable, Dict
+
+logger = logging.getLogger(__name__)
+
+#: The policy production uses. Bumped only when the RULE changes — never for a
+#: refactor that selects the same candidates, because two versions that decide
+#: identically would split one population for no reason.
+SELECTION_POLICY_VERSION = "b1_quantity_select_v1"
+
+#: Two masses closer than this say the same thing. Kept at the shipped value:
+#: v1 exists to reproduce current behaviour, and a policy that also retunes a
+#: constant could not be compared with what it replaced.
+NEAR_DUPLICATE_RATIO = 1.25
+
+_POLICIES: Dict[str, Callable] = {}
+
+
+def register(version: str):
+    """Add a policy. Registration is how a version becomes selectable."""
+    def _register(fn):
+        if version in _POLICIES:
+            raise ValueError(
+                f"{version} is already registered — a policy version names "
+                f"one rule forever, so redefining it would silently change "
+                f"what past decisions claimed to be")
+        _POLICIES[version] = fn
+        return fn
+    return _register
+
+
+def registered() -> frozenset:
+    return frozenset(_POLICIES)
+
+
+def select(universe, *, context, policy_version: str = SELECTION_POLICY_VERSION):
+    """Run a registered policy. Returns `(selected, exclusions)`.
+
+    `selected` is ordered as the row will be read; `exclusions` are
+    `(candidate_id, ExclusionReason)` pairs. Every generated candidate appears
+    in exactly one of them — the aggregate proves that on construction, and
+    this returns the material for it.
+    """
+    try:
+        policy = _POLICIES[policy_version]
+    except KeyError:
+        raise ValueError(
+            f"{policy_version!r} is not a registered selection policy; "
+            f"known: {sorted(_POLICIES)}") from None
+    selected, exclusions = policy(universe, context)
+    _assert_partition(universe, selected, exclusions, policy_version)
+    return selected, exclusions
+
+
+def _assert_partition(universe, selected, exclusions, policy_version):
+    """A POLICY THAT LOSES A CANDIDATE IS A BUG IN THE POLICY.
+
+    The aggregate catches it later, but by then the message is about a record
+    rather than about the rule that produced it — and a new policy is exactly
+    where this mistake gets made.
+    """
+    decided = ([c.candidate_id for c in selected]
+               + [cid for cid, _r in exclusions])
+    if len(decided) != len(set(decided)):
+        raise ValueError(
+            f"{policy_version} decided a candidate twice: {sorted(decided)}")
+    if set(decided) != set(universe.candidate_ids):
+        missing = sorted(set(universe.candidate_ids) - set(decided))
+        invented = sorted(set(decided) - set(universe.candidate_ids))
+        raise ValueError(
+            f"{policy_version} did not account for every candidate — "
+            f"missing {missing}, invented {invented}")
+
+
+def rank_of(candidate) -> float:
+    """`prior x best evidence confidence`, both read off the candidate.
+
+    THE PERSISTED FEATURES AND NOTHING ELSE. Recomputing either from its
+    source would make the ranking unexplainable from the record, which is the
+    property the whole universe exists to provide.
+
+    It also gives the authority ladder for free rather than by a special case:
+    a user-history candidate carries prior 0.55 at confidence 0.9, an ontology
+    median 0.5 at 0.6 — so someone's own logged portion outranks the
+    population's typical one without the rule ever naming a source.
+    """
+    best = max((float(e.confidence or 0) for e in candidate.evidence),
+               default=0.0)
+    return float(candidate.prior or 0) * best
+
+
+def _near(a: float, b: float) -> bool:
+    lo, hi = min(a, b), max(a, b)
+    return lo > 0 and hi / lo < NEAR_DUPLICATE_RATIO
+
+
+def _says_the_same_thing(a, b) -> bool:
+    """Quantity-equivalent AND on the same basis.
+
+    THE BASIS CHECK IS NOT DECORATION. `1 piece` and `1 g` can be numerically
+    adjacent and mean nothing like each other; collapsing them because the
+    numbers are close would delete a genuinely distinct option and record it
+    as a duplicate. Distinct bases are distinct choices.
+    """
+    from core.semantics import measure_on
+
+    if a.serving_basis is not b.serving_basis:
+        return False
+    lhs = measure_on(a.quantity, a.serving_basis)
+    rhs = measure_on(b.quantity, b.serving_basis)
+    return lhs is not None and rhs is not None and _near(float(lhs),
+                                                         float(rhs))
+
+
+@register(SELECTION_POLICY_VERSION)
+def _v1(universe, context):
+    """THE BASELINE. Reproduces the behaviour shipped before this module.
+
+    NOT top-N by probability — that returns near-duplicates, which is how
+    `4.8 / 5.0 / 5.2` reached a screen. Rank by `prior x confidence`, then
+    accept a candidate only if it says something the already-accepted ones do
+    not: information gain, expressed as distance.
+
+    The cap comes from the CONTEXT, not from a constant here, because how many
+    options fit is a property of the surface — three in a sentence, more in a
+    chip row — and a policy that hardcoded it could not be reused across
+    channels.
+    """
+    from core.semantics import ExclusionReason
+
+    selected, exclusions = [], []
+    for cand in sorted(universe.candidates, key=rank_of, reverse=True):
+        if len(selected) >= context.maximum_options:
+            exclusions.append((cand.candidate_id,
+                               ExclusionReason.SELECTION_CAP))
+            continue
+        if any(_says_the_same_thing(cand, kept) for kept in selected):
+            exclusions.append((cand.candidate_id,
+                               ExclusionReason.SEMANTIC_DUPLICATE))
+            continue
+        selected.append(cand)
+
+    # ASCENDING, because a row of portions that does not climb reads as
+    # unordered. Presentation order, decided here because it is part of the
+    # decision the user sees.
+    selected.sort(key=_ascending_key)
+    return tuple(selected), tuple(exclusions)
+
+
+def _ascending_key(candidate):
+    from core.semantics import measure_on
+
+    amount = measure_on(candidate.quantity, candidate.serving_basis)
+    # Bases are grouped so a mixed row stays coherent; within a basis, by
+    # amount. Sorting across bases by raw number would interleave `2 pieces`
+    # between `85 g` and `226 g`.
+    return (candidate.serving_basis.value,
+            float(amount) if amount is not None else 0.0)

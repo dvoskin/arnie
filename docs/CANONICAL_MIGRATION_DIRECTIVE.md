@@ -1649,6 +1649,64 @@ numeric portions, unverified mass/volume/piece conversion, broad regex
 classification. A narrow parser may recognise formal quantities (`1 tbsp`,
 `50 g`, `½ package`); it does not decide what to offer.
 
+**5 — status: DONE** *(2026-08-06)*. `skills/nutrition/candidate_selection.py`.
+
+```text
+[x] same set + same context + same policy -> identical decision
+[x] every generated candidate is selected or excluded exactly once
+[x] every exclusion has the actual typed policy reason
+[x] the selector reads only persisted candidate features
+[x] the selector performs no generation or enrichment
+[x] option capacity respected without losing auditability
+[x] semantically equivalent candidates merge, better-evidenced survives
+[x] distinct serving bases are NOT collapsed when labels collide
+[x] exact user history outranks population evidence when applicable
+[x] population evidence still cannot authorise "not sure"
+[x] a new policy version writes a new append-only decision over one set
+[x] the visible row is unchanged — v1 IS the baseline
+```
+
+**THE RESTRUCTURE THE DIRECTIVE FORCED.** The selector rendered labels inside
+itself, so a wording judgement was indistinguishable from a semantic one:
+`RENDER_COLLISION` was attributed to the policy, and a locale that worded two
+candidates differently would silently have changed what got SELECTED. Three
+stages with three owners now:
+
+```text
+select    what each candidate MEANS      pure · versioned · never sees a label
+present   what each candidate SAYS       renders, reports its collisions
+record    what was offered and why not   the durable decision
+```
+
+Policies are **registered, not replaced** — re-registering a version raises,
+because a version names one rule forever and redefining it would change what
+past decisions claimed to be. The partition is checked inside `select()` as
+well as in the aggregate: a new policy is exactly where losing a candidate
+gets done, and catching it there names the RULE rather than the record.
+
+`_says_the_same_thing` requires a shared serving basis. `1 piece` and `1 g`
+can be numerically adjacent and mean nothing like each other; collapsing them
+would delete a distinct option and file it as a duplicate.
+
+The authority ladder falls out of persisted features rather than a special
+case: history carries prior 0.55 at confidence 0.9, the ontology median 0.5 at
+0.6. **No rule names a source.** The policy signature has nowhere to put a
+food name, so a per-food branch cannot be written without changing the
+contract — and a source scan holds the purity line, because a selector that
+reached for a label would decide identically today and differently the first
+time a locale worded two candidates apart.
+
+8098 pass on SQLite and 8098 on Postgres (21 skips), 18 selector gates.
+
+**Carried forward from the commit-4 review** *(non-blocking, for the
+observability pass)*: a candidate-universe read failure currently degrades to
+the same refusal as genuine insufficient evidence. The safety behaviour is
+right; the two need separating in telemetry —
+`estimate_refused:insufficient_evidence` vs
+`estimate_refused:universe_unavailable`. And `candidates()` / `select()`
+survive for offline tooling with production reachability structurally
+prohibited; their deletion belongs with the D7 legacy sweep.
+
 **5 — the selector.** Entity-agnostic, versioned, reproducible, observable,
 mutation-tested, and replaceable by a learned ranker later. Every inclusion
 and exclusion explainable from persisted features.
