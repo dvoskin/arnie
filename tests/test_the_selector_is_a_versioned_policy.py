@@ -304,3 +304,117 @@ def test_a_render_collision_is_recorded_against_the_renderer_not_the_policy():
     # The POLICY selected all three; presentation dropped one.
     chosen, excluded = policy.select(universe, context=_ctx())
     assert len(chosen) == 3 and excluded == ()
+
+
+# ── 5.1 — exact arithmetic, and purity proven by trap rather than by scan ───
+
+def test_ranking_and_thresholds_never_pass_through_a_float():
+    """P1. `float()` WAS A HOLE IN THE DETERMINISM THIS MODULE CLAIMS.
+
+    Two Decimal scores differing in the 18th place collapse to one binary
+    float, and generation order silently becomes the tie-breaker — an
+    accidental rule nobody wrote, reached only by inputs nobody would think to
+    test. The same applied to the near-duplicate ratio and to the final
+    ordering.
+    """
+    # A DECIMAL LITERAL, because `0.5000000000000000001` written as a Python
+    # float is already 0.5 before anything here sees it — which is the defect
+    # in miniature.
+    close = candidate("close", 141.7, prior=Decimal("0.5000000000000000001"),
+                      confidence=Decimal("0.6"))
+    other = candidate("other", 141.7, prior=Decimal("0.5"),
+                      confidence=Decimal("0.6"))
+    assert isinstance(policy.rank_of(close), Decimal)
+    assert isinstance(policy.NEAR_DUPLICATE_RATIO, Decimal)
+    # Distinguishable in Decimal; identical once either passes through float.
+    assert policy.rank_of(close) != policy.rank_of(other)
+    assert float(policy.rank_of(close)) == float(policy.rank_of(other))
+
+
+def test_the_near_duplicate_test_does_not_depend_on_the_decimal_context():
+    """`hi / lo < ratio` is exact only to the ambient context's precision, and
+    that context is process-wide state any library can change — the same trap
+    already found in conversion rounding."""
+    from decimal import ROUND_UP, localcontext
+
+    a, b = Decimal("100"), Decimal("124.9")
+    before = policy._near(a, b)
+    with localcontext() as ctx:
+        ctx.prec = 3
+        ctx.rounding = ROUND_UP
+        assert policy._near(a, b) is before
+    assert before is True
+    assert policy._near(Decimal("100"), Decimal("125")) is False
+
+
+def test_equal_ranks_break_ties_by_a_stated_rule():
+    """Ties used to be resolved by `sorted`'s stability — i.e. by whatever
+    order the generator happened to emit, a real rule written nowhere."""
+    first = candidate("first", 100.0, prior=0.5, confidence=0.6)
+    second = candidate("second", 500.0, prior=0.5, confidence=0.6)
+    assert policy.rank_of(first) == policy.rank_of(second)
+    chosen, _ = policy.select(_universe(first, second),
+                              context=_ctx(maximum_options=1))
+    assert _ids(chosen) == ["first"], "the earlier-generated candidate wins"
+
+
+def test_the_policy_touches_only_approved_candidate_fields():
+    """P2. A STRING SCAN CANNOT PROVE ABSENCE.
+
+    It catches an obvious call and misses an indirect one. This wraps every
+    candidate in a proxy that RAISES on any attribute outside the approved
+    set, so a future policy reaching for something new fails here rather than
+    quietly making decisions the persisted record cannot explain.
+    """
+    APPROVED = {"candidate_id", "canonical_entity_id", "quantity",
+                "serving_basis", "evidence", "semantic_hash", "prior",
+                "offered", "applies_to", "authorizes_assumption"}
+
+    class _Trap:
+        def __init__(self, inner):
+            object.__setattr__(self, "_inner", inner)
+
+        def __getattr__(self, name):
+            if name.startswith("__"):
+                return getattr(object.__getattribute__(self, "_inner"), name)
+            if name not in APPROVED:
+                raise AssertionError(
+                    f"the selector read {name!r}, which is not an approved "
+                    f"persisted candidate feature")
+            return getattr(object.__getattribute__(self, "_inner"), name)
+
+        def __setattr__(self, name, value):
+            raise AssertionError(f"the selector mutated {name!r}")
+
+    real = (candidate("c1", 85.0, prior=0.2),
+            candidate("c2", 141.7, source=CandidateSource.USER_HISTORY,
+                      prior=0.55, confidence=0.9),
+            candidate("c3", 226.0, prior=0.3))
+    universe = _universe(*real)
+
+    class _Watched:
+        candidate_ids = universe.candidate_ids
+        candidates = tuple(_Trap(c) for c in real)
+
+    chosen, excluded = policy.select(_Watched(), context=_ctx())
+    assert len(chosen) + len(excluded) == 3
+
+
+def test_the_policy_reads_only_approved_context_fields():
+    """The context decides capacity and surface; a policy reaching past those
+    would make decisions that a stored context could not reproduce."""
+    APPROVED = {"maximum_options", "surface", "locale",
+                "renderer_contract_version"}
+    seen = []
+
+    class _WatchedContext:
+        def __getattr__(self, name):
+            if name.startswith("__"):
+                raise AttributeError(name)
+            assert name in APPROVED, f"the selector read context.{name!r}"
+            seen.append(name)
+            return 3 if name == "maximum_options" else "x"
+
+    policy.select(_universe(candidate("c1", 85.0), candidate("c2", 500.0)),
+                  context=_WatchedContext())
+    assert "maximum_options" in seen

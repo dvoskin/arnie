@@ -25,6 +25,7 @@ before this module existed, to the option.
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from typing import Callable, Dict
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,10 @@ SELECTION_POLICY_VERSION = "b1_quantity_select_v1"
 #: Two masses closer than this say the same thing. Kept at the shipped value:
 #: v1 exists to reproduce current behaviour, and a policy that also retunes a
 #: constant could not be compared with what it replaced.
-NEAR_DUPLICATE_RATIO = 1.25
+#:
+#: DECIMAL, and compared by MULTIPLICATION rather than division — see
+#: `_near`.
+NEAR_DUPLICATE_RATIO = Decimal("1.25")
 
 _POLICIES: Dict[str, Callable] = {}
 
@@ -98,7 +102,7 @@ def _assert_partition(universe, selected, exclusions, policy_version):
             f"missing {missing}, invented {invented}")
 
 
-def rank_of(candidate) -> float:
+def rank_of(candidate) -> Decimal:
     """`prior x best evidence confidence`, both read off the candidate.
 
     THE PERSISTED FEATURES AND NOTHING ELSE. Recomputing either from its
@@ -109,15 +113,31 @@ def rank_of(candidate) -> float:
     a user-history candidate carries prior 0.55 at confidence 0.9, an ontology
     median 0.5 at 0.6 — so someone's own logged portion outranks the
     population's typical one without the rule ever naming a source.
+
+    DECIMAL THROUGHOUT. `float()` here was a real hole in the determinism this
+    module claims: two Decimal scores that differ in the 18th place collapse
+    to one binary float, and the original generation order silently becomes
+    the tie-breaker — an accidental rule nobody wrote, reached only by inputs
+    nobody would think to test.
     """
-    best = max((float(e.confidence or 0) for e in candidate.evidence),
-               default=0.0)
-    return float(candidate.prior or 0) * best
+    best = max((Decimal(str(e.confidence)) for e in candidate.evidence
+                if e.confidence is not None), default=Decimal(0))
+    prior = Decimal(str(candidate.prior)) if candidate.prior is not None \
+        else Decimal(0)
+    return prior * best
 
 
-def _near(a: float, b: float) -> bool:
+def _near(a: Decimal, b: Decimal) -> bool:
+    """Within `NEAR_DUPLICATE_RATIO`, decided WITHOUT DIVISION.
+
+    `hi / lo < ratio` is exact in Decimal only up to the ambient context's
+    precision, and the ambient decimal context is process-wide state any
+    library can change — the same trap already found in conversion rounding.
+    `hi < lo * ratio` is multiplication only: exact, and independent of
+    context.
+    """
     lo, hi = min(a, b), max(a, b)
-    return lo > 0 and hi / lo < NEAR_DUPLICATE_RATIO
+    return lo > 0 and hi < lo * NEAR_DUPLICATE_RATIO
 
 
 def _says_the_same_thing(a, b) -> bool:
@@ -134,8 +154,7 @@ def _says_the_same_thing(a, b) -> bool:
         return False
     lhs = measure_on(a.quantity, a.serving_basis)
     rhs = measure_on(b.quantity, b.serving_basis)
-    return lhs is not None and rhs is not None and _near(float(lhs),
-                                                         float(rhs))
+    return lhs is not None and rhs is not None and _near(lhs, rhs)
 
 
 @register(SELECTION_POLICY_VERSION)
@@ -155,7 +174,7 @@ def _v1(universe, context):
     from core.semantics import ExclusionReason
 
     selected, exclusions = [], []
-    for cand in sorted(universe.candidates, key=rank_of, reverse=True):
+    for cand in _by_rank(universe):
         if len(selected) >= context.maximum_options:
             exclusions.append((cand.candidate_id,
                                ExclusionReason.SELECTION_CAP))
@@ -173,12 +192,26 @@ def _v1(universe, context):
     return tuple(selected), tuple(exclusions)
 
 
+def _by_rank(universe):
+    """Highest rank first, with an EXPLICIT tie-break.
+
+    Equal ranks used to be resolved by `sorted`'s stability, i.e. by whatever
+    order the generator happened to emit — a real rule, written nowhere. It is
+    stated here instead: ties go to the earlier-generated candidate, which is
+    the authority ladder's own order.
+    """
+    ordered = list(enumerate(universe.candidates))
+    ordered.sort(key=lambda pair: (-rank_of(pair[1]), pair[0]))
+    return [cand for _position, cand in ordered]
+
+
 def _ascending_key(candidate):
     from core.semantics import measure_on
 
     amount = measure_on(candidate.quantity, candidate.serving_basis)
     # Bases are grouped so a mixed row stays coherent; within a basis, by
     # amount. Sorting across bases by raw number would interleave `2 pieces`
-    # between `85 g` and `226 g`.
+    # between `85 g` and `226 g`. Decimal, so two amounts that differ below
+    # float precision keep their order rather than tying arbitrarily.
     return (candidate.serving_basis.value,
-            float(amount) if amount is not None else 0.0)
+            amount if amount is not None else Decimal(0))

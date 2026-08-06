@@ -1095,9 +1095,14 @@ B-1        SLICE NOT CLOSED  see the seven-line state below — "backend
                              slice look finished while its predecessor
                              still runs
 B-1.75     COMPLETE          answered quantity is the only quantity authority
-B-1.9      IN PROGRESS       1 PASS(+2 CF) · 2 DONE · 2.1 DONE (P0 fixed) ·
-                             3a/3a.1/3a.2 contracts + 3b.1 producers + 3b persistence DONE ·
-                             4-10 open. Runs BEFORE B-1 closure.
+B-1.9      IN PROGRESS       5 of 10 stages, ~65-70% by engineering weight.
+                             1 PASS(+2 CF) · 2/2.1 evidence semantics ·
+                             3a/3a.1/3a.2 contracts · 3b/3b.1/3b.2/3b.3
+                             durable universe · 4 bridge deletion ·
+                             5/5.1 versioned selector — ALL DONE.
+                             6 NEXT: replay the failures as CLASSES.
+                             Then 7 integration · 8 freeze · 9 iOS ·
+                             10 promote+delete. Runs BEFORE B-1 closure.
 B-1b.1/.2  NEXT              deterministic matrix + sequence corpus
 B-1b.3     PLANNED           instrumented human simulation
 B-1b.4     CONTINUOUS        organic confirmation, low volume, gates nothing
@@ -1696,7 +1701,29 @@ contract — and a source scan holds the purity line, because a selector that
 reached for a label would decide identically today and differently the first
 time a locale worded two candidates apart.
 
-8098 pass on SQLite and 8098 on Postgres (21 skips), 18 selector gates.
+**5.1 — exactness and a purity proof that cannot be fooled** *(review of
+`2a47f40`)*. Two findings, both taken before the contract freeze rather than
+carried to it:
+
+* **P1 — the policy still computed in `float`.** Ranking, the near-duplicate
+  ratio and the final ordering all crossed `float()`, which contradicts the
+  determinism this module claims: two `Decimal` scores differing in the 18th
+  place collapse to one binary float, and **generation order silently becomes
+  the tie-breaker** — an accidental rule nobody wrote, reachable only by
+  inputs nobody would think to test. All three are `Decimal` now, and `_near`
+  compares by **multiplication rather than division** (`hi < lo * ratio`),
+  because `hi / lo` is exact only to the ambient decimal context's precision —
+  process-wide state any library can change, the same trap already found in
+  conversion rounding. Ties are now broken by a **stated** rule: the
+  earlier-generated candidate, which is the authority ladder's own order.
+* **P2 — the purity ratchet was a string scan.** A scan catches an obvious
+  call and misses an indirect one. The selector now runs against candidate and
+  context **proxies that raise on any attribute outside the approved set**, so
+  a future policy reaching for something new fails at the gate rather than
+  quietly making decisions the persisted record cannot explain. The scan is
+  kept as the cheap first line.
+
+8103 pass on SQLite and 8103 on Postgres (21 skips), 23 selector gates.
 
 **Carried forward from the commit-4 review** *(non-blocking, for the
 observability pass)*: a candidate-universe read failure currently degrades to
