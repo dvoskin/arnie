@@ -66,17 +66,12 @@ def _interaction(operation_id, revision=0):
     item = _staged()
     field = qc.quantity_field(operation_id=operation_id, revision=revision,
                               item=item)
-    candidates = tuple(
-        CandidateValue(candidate_id=cid,
-                       semantic_value=qc._quantity(g, provenance=prov),
-                       source=src, probability=p, confidence=c)
-        for cid, g, prov, src, p, c in (
-            ("ont_low", 85.0, Provenance.ONTOLOGY, CandidateSource.ONTOLOGY,
-             0.2, 0.6),
-            ("hist_last", 141.7, Provenance.USER_HISTORY,
-             CandidateSource.USER_HISTORY, 0.55, 0.9),
-            ("ont_high", 226.0, Provenance.ONTOLOGY, CandidateSource.ONTOLOGY,
-             0.3, 0.6)))
+    from tests._typed_candidates import candidates as _typed
+
+    candidates = _typed(
+        ("ont_low", 85.0, CandidateSource.ONTOLOGY, 0.2, 0.6),
+        ("hist_last", 141.7, CandidateSource.USER_HISTORY, 0.55, 0.9),
+        ("ont_high", 226.0, CandidateSource.ONTOLOGY, 0.3, 0.6))
     options = qc.select(candidates, field=field, food_name="chicken breast")
     return qc.build_interaction(operation_id=operation_id, revision=revision,
                                 item=item, options=options,

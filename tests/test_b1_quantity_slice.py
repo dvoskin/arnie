@@ -68,19 +68,29 @@ def _eligible_decision(**kw):
 
 
 def _candidates(*grams_and_sources):
-    out = []
-    for cid, grams, source, prob, conf in grams_and_sources:
-        prov = (Provenance.USER_HISTORY if source is CandidateSource.USER_HISTORY
-                else Provenance.ONTOLOGY)
-        out.append(CandidateValue(
-            candidate_id=cid,
-            # `basis` is set here because the real producer sets it, and a
-            # fixture that omits it would let traceability rot untested.
-            semantic_value=qc._quantity(grams, provenance=prov,
-                                        confidence=conf,
-                                        basis=f"{source.value} evidence"),
-            source=source, probability=prob, confidence=conf))
-    return tuple(out)
+    """Real typed candidates — the shape the generator now emits.
+
+    `basis` and the offered expression are set because the real producer sets
+    them, and a fixture that omitted either would let traceability rot
+    untested.
+    """
+    from tests._typed_candidates import candidates as _typed
+
+    return _typed(*grams_and_sources)
+
+
+def _ctx(user_id=26):
+    """WHO is answering, about WHAT.
+
+    Evidence-bearing options fail shut without this — scope alone proves a
+    candidate names *a* user, not *this* one. The answer turn builds it from
+    the stored operation; a test that drives the parser directly supplies it
+    the same way.
+    """
+    from core.semantics import EvidenceContext
+    from tests._typed_candidates import ENTITY
+
+    return EvidenceContext(user_id=user_id, canonical_entity_id=ENTITY)
 
 
 REAL = _candidates(
@@ -406,7 +416,8 @@ def test_i_dont_know_is_answered_not_re_asked():
     screen, re-provenanced because WE chose it."""
     ix = _interaction()
     r = answer_from_text(ix, field_id=_field_id(ix), text="I don't know",
-                         revision=REV, food_name="chicken breast")
+                         revision=REV, food_name="chicken breast",
+                         context=_ctx())
     assert r.outcome is Outcome.APPLIED
     assert r.patch.provenance is Provenance.MODE_DEFAULT, \
         "an assumed portion must stay disclosable — it is not the user's"
@@ -420,7 +431,8 @@ def test_an_estimate_synthesizes_nothing_and_stays_traceable():
     offered = {o.patch.quantity.grams: o for o in field.options}
 
     r = answer_from_text(ix, field_id=_field_id(ix), text="just estimate it",
-                         revision=REV, food_name="chicken breast")
+                         revision=REV, food_name="chicken breast",
+                         context=_ctx())
 
     assert r.outcome is Outcome.APPLIED
     assert r.patch.quantity.grams in offered, \
@@ -577,9 +589,20 @@ def test_only_a_directed_command_may_destroy_an_operation(text, destroys):
     "not sure", "your best guess",
 ])
 def test_uncertainty_phrasings_all_reach_the_estimate_path(text):
+    """WITH A CONTEXT, because the options now carry real candidates.
+
+    An evidence-bearing option fails shut without one — we cannot show that
+    evidence is about the person asking if nobody said who is asking. Passing
+    it here is what the answer turn does from the stored operation.
+    """
+    from core.semantics import EvidenceContext
+    from tests._typed_candidates import ENTITY
+
     ix = _interaction()
     r = answer_from_text(ix, field_id=_field_id(ix), text=text, revision=REV,
-                         food_name="chicken breast")
+                         food_name="chicken breast",
+                         context=EvidenceContext(
+                             user_id=26, canonical_entity_id=ENTITY))
     assert r.outcome is Outcome.APPLIED
     assert r.patch.provenance is Provenance.MODE_DEFAULT
 

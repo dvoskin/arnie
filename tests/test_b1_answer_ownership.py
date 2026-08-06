@@ -172,6 +172,18 @@ def _field_id(ask):
     return ask.interaction.groups[0].fields[0].field_id
 
 
+def _an_option_id(ask, index=0):
+    """READ OFF THE INTERACTION, never spelled out.
+
+    Candidate ids are opaque since B-1.9 commit 3b — deliberately, so that an
+    id cannot leak a user, a food or a label wherever it travels. A test that
+    hardcodes `opt_ont_mid` is asserting against a naming scheme rather than
+    against the option the ask actually offered.
+    """
+    options = ask.interaction.groups[0].fields[0].options
+    return options[min(index, len(options) - 1)].option_id
+
+
 async def _counts(sessions):
     async with sessions() as s:
         return {
@@ -259,7 +271,7 @@ async def test_an_exact_persisted_label_maps_to_the_stored_patch(
 @pytest.mark.asyncio
 async def test_a_structured_tap_selects(sessions, user, opened):
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     assert out.applied
     assert out.patch.provenance is Provenance.USER_SELECTED
 
@@ -291,7 +303,7 @@ async def test_chip_and_typed_agree_on_the_quantity_and_differ_on_provenance(
 async def test_a_stale_revision_cannot_mutate_state(sessions, user, opened):
     before = await _row(sessions)
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=99)
+                        option_id=_an_option_id(opened), revision=99)
     assert out.refused
     after = await _row(sessions)
     assert after.revision == before.revision
@@ -303,7 +315,7 @@ async def test_a_stale_revision_cannot_mutate_state(sessions, user, opened):
 async def test_a_foreign_field_cannot_mutate_state(sessions, user, opened):
     out = await _answer(sessions, user,
                         field_id="op_other:food_x:quantity:0",
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     assert out.refused
     assert (await _row(sessions)).revision == 0
 
@@ -367,7 +379,7 @@ async def test_a_corrupt_stored_operation_fails_internally_not_as_a_repair(
 async def test_a_successful_answer_produces_exactly_one_canonical_commit(
         sessions, user, opened):
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     assert out.applied and out.result is not None
     counts = await _counts(sessions)
     assert counts == {"food": 1, "commits": 1, "ledger": 1}
@@ -386,10 +398,10 @@ async def test_two_racing_identical_answers_produce_one_effect(
         u = await s.get(User, user.id)
         first = await answer_turn.handle(
             s, user=u, source_turn_id="t_2", field_id=_field_id(opened),
-            option_id="opt_ont_mid", revision=0)
+            option_id=_an_option_id(opened), revision=0)
         second = await answer_turn.handle(
             s, user=u, source_turn_id="t_2", field_id=_field_id(opened),
-            option_id="opt_ont_mid", revision=0)
+            option_id=_an_option_id(opened), revision=0)
         await s.commit()
 
     assert first.applied
@@ -403,9 +415,9 @@ async def test_two_racing_identical_answers_produce_one_effect(
 async def test_a_committed_operation_replays_the_stored_result_exactly(
         sessions, user, opened):
     first = await _answer(sessions, user, field_id=_field_id(opened),
-                          option_id="opt_ont_mid", revision=0)
+                          option_id=_an_option_id(opened), revision=0)
     again = await _answer(sessions, user, field_id=_field_id(opened),
-                          option_id="opt_ont_mid", revision=0)
+                          option_id=_an_option_id(opened), revision=0)
     assert again.result == first.result, "the SAME result object, rebuilt"
     assert (await _counts(sessions))["food"] == 1
 
@@ -486,7 +498,7 @@ async def test_the_answer_metric_carries_latency_and_provenance(
 
     with caplog.at_level(logging.INFO):
         await _answer(sessions, user, field_id=_field_id(opened),
-                      option_id="opt_ont_mid", revision=0)
+                      option_id=_an_option_id(opened), revision=0)
     line = next(l for l in caplog.text.splitlines() if "event=b1_answered" in l)
     assert "provenance=user_selected" in line
     latency = re.search(r"latency_ms=(\d+)", line)
@@ -505,7 +517,7 @@ async def test_measurement_never_costs_the_turn(sessions, user, opened,
     monkeypatch.setattr("core.b1_metrics.answered", _boom)
     monkeypatch.setattr("core.b1_metrics.committed", _boom)
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     assert out.applied
     assert (await _counts(sessions))["food"] == 1
 
@@ -569,7 +581,7 @@ async def test_a_failure_after_ownership_still_completes_canonically(
 
     monkeypatch.setattr("core.b1_quantity_operation.settle", _blow_up)
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     assert out is not None and out.failed
     assert (await _counts(sessions))["food"] == 0
 
@@ -591,7 +603,7 @@ def test_the_renderers_take_facts_not_the_result():
 @pytest.mark.asyncio
 async def test_one_extraction_feeds_every_renderer(sessions, user, opened):
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     facts = answer_turn.facts_for(out)
     card = answer_turn.card_for(facts)["payload"]
     said = answer_turn.copy_for(facts)
@@ -612,7 +624,7 @@ async def test_the_card_and_the_sentence_cannot_disagree(sessions, user,
     result, so the shape has no way to express the mismatch that produced 789
     vs 788 from three owners of the day total."""
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     card = answer_turn.card_for(answer_turn.facts_for(out))["payload"]
     facts = answer_turn.facts_for(out)
     said = answer_turn.copy_for(answer_turn.facts_for(out))
@@ -629,7 +641,7 @@ async def test_the_card_and_the_sentence_cannot_disagree(sessions, user,
 async def test_the_card_mirrors_the_row_that_was_committed(sessions, user,
                                                            opened):
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     card = answer_turn.card_for(answer_turn.facts_for(out))["payload"]
     async with sessions() as s:
         entry = (await s.execute(select(FoodEntry))).scalar_one()
@@ -646,7 +658,7 @@ async def test_an_assumed_portion_is_marked_on_the_card(sessions, user,
     assert answer_turn.card_for(answer_turn.facts_for(out))["payload"]["estimated"] is True
 
     chosen = await _answer(sessions, user, field_id=_field_id(opened_with_history),
-                           option_id="opt_ont_mid", revision=0)
+                           option_id=_an_option_id(opened_with_history), revision=0)
     card = answer_turn.card_for(answer_turn.facts_for(chosen))
     if card is not None:               # the replay path returns the same row
         assert card["payload"]["estimated"] is False
@@ -749,7 +761,7 @@ async def test_the_sweep_never_closes_an_operation_someone_just_answered(
         await s.commit()
 
     await _answer(sessions, user, field_id=_field_id(opened),
-                  option_id="opt_ont_mid", revision=0)
+                  option_id=_an_option_id(opened), revision=0)
     async with sessions() as s:
         assert await b1.sweep_abandoned(s) == 0
         await s.commit()
@@ -767,7 +779,7 @@ async def test_a_correction_soon_after_the_commit_is_counted(
     import logging
 
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     entry_id = out.result.committed_items[0]["entry_id"]
 
     async with sessions() as s:
@@ -793,7 +805,7 @@ async def test_a_correction_is_observed_exactly_once(sessions, user, opened):
     from db.models import B1CorrectionObservation
 
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     entry_id = out.result.committed_items[0]["entry_id"]
     async with sessions() as s:
         created = (await s.execute(select(LedgerEvent))).scalar_one()
@@ -825,7 +837,7 @@ async def test_only_qualifying_event_types_inside_the_window_count(
     from datetime import timedelta
 
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     entry_id = out.result.committed_items[0]["entry_id"]
     async with sessions() as s:
         created = (await s.execute(select(LedgerEvent))).scalar_one()
@@ -846,7 +858,7 @@ async def test_only_qualifying_event_types_inside_the_window_count(
 async def test_an_untouched_commit_is_not_counted_as_corrected(sessions, user,
                                                                opened):
     await _answer(sessions, user, field_id=_field_id(opened),
-                  option_id="opt_ont_mid", revision=0)
+                  option_id=_an_option_id(opened), revision=0)
     async with sessions() as s:
         assert await b1.note_corrections(s) == 0
 
@@ -862,7 +874,7 @@ async def test_the_response_facts_come_off_the_committed_result(sessions, user,
     holding the raw commit is a renderer that can recompute, and a renderer
     that can recompute is a second owner of the number."""
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     facts = answer_turn.facts_for(out)
 
     assert facts.entry_id == out.result.committed_items[0]["entry_id"]
@@ -884,7 +896,7 @@ async def test_a_tap_is_not_told_that_we_guessed(sessions, user, opened):
     guessed when they decided. The opposite error to the 2026-08-04 one, and
     the same conflation underneath."""
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     assert "(my estimate)" not in answer_turn.copy_for(answer_turn.facts_for(out))
 
 
@@ -911,7 +923,7 @@ async def test_the_copy_states_only_what_was_committed(sessions, user, opened):
     """The failure this forbids is specific and measured: a reply reading
     "logged, 970/98g" while nothing had been written."""
     out = await _answer(sessions, user, field_id=_field_id(opened),
-                        option_id="opt_ont_mid", revision=0)
+                        option_id=_an_option_id(opened), revision=0)
     said = answer_turn.copy_for(answer_turn.facts_for(out))
     assert f"{out.result.meal_totals['calories']:.0f} cal" in said
     assert "chicken breast" in said
@@ -980,7 +992,7 @@ async def test_a_new_food_message_after_settlement_is_not_a_replay(
     """
     # Settle it.
     first = await _answer(sessions, user, field_id=_field_id(opened),
-                          option_id="opt_ont_mid", revision=0)
+                          option_id=_an_option_id(opened), revision=0)
     assert first.applied
     assert (await _counts(sessions))["food"] == 1
 
@@ -1003,7 +1015,7 @@ async def test_an_exact_option_label_after_settlement_still_replays(
     user presses it again. That text can only be an answer."""
     label = opened.interaction.groups[0].fields[0].options[1].label
     first = await _answer(sessions, user, field_id=_field_id(opened),
-                          option_id="opt_ont_mid", revision=0)
+                          option_id=_an_option_id(opened), revision=0)
 
     again = await _answer(sessions, user, message=label)
     assert again is not None and again.applied
@@ -1015,9 +1027,9 @@ async def test_an_exact_option_label_after_settlement_still_replays(
 async def test_a_structured_tap_after_settlement_still_replays(
         sessions, user, opened, _priced):
     first = await _answer(sessions, user, field_id=_field_id(opened),
-                          option_id="opt_ont_mid", revision=0)
+                          option_id=_an_option_id(opened), revision=0)
     again = await _answer(sessions, user, field_id=_field_id(opened),
-                          option_id="opt_ont_mid", revision=0)
+                          option_id=_an_option_id(opened), revision=0)
     assert again is not None and again.applied
     assert again.result.committed_items == first.result.committed_items
     assert (await _counts(sessions))["food"] == 1

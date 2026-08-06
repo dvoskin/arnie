@@ -129,10 +129,11 @@ def _ontology_options(food_name: str, hist_grams=None):
 
     class _C:
         def __init__(self, g):
-            self.semantic_value = type("q", (), {"grams": g})()
+            self.quantity = type("q", (), {"grams": g})()
 
     chosen = [_C(g) for g in grams]
-    survivors, labels = _collapse_by_label(chosen, list(chosen), food_name)
+    survivors, labels, _collided = _collapse_by_label(
+        chosen, list(chosen), food_name)
     return tuple(zip(labels, [float(c.semantic_value.grams)
                               for c in survivors])), dist
 

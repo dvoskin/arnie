@@ -508,12 +508,42 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
                             cohort=cohort)
         return None
 
+    from core.semantics import EvidenceContext
+
+    # ONE FUNCTION OWNS THE ENTITY ID, and it is STAMPED INTO THE OPERATION.
+    # Generation computes it from the staged item; the answer turn rebuilds
+    # the evidence context from the stored row. If those two derived it
+    # independently they would disagree the moment either changed, every
+    # candidate would fail `applies_to`, and "not sure" would refuse in
+    # production while every test passed — a silent downgrade to REPAIR with
+    # no error anywhere.
+    entity_id = qc._entity_id_for(item)
+    interpreter_item = dict(interpreter_item)
+    interpreter_item["entity_id"] = entity_id
+
     operation_id = _operation_id_for(user, turn_id)
     field = qc.quantity_field(operation_id=operation_id, revision=0, item=item)
-    candidates = await qc.candidates(db, user_id=user.id, item=item,
-                                     message=material.get("message") or "")
-    options = qc.select(candidates, field=field,
-                        food_name=str(item.identity.canonical_name or ""))
+    # THE UNIVERSE IS BUILT BEFORE ANYTHING IS SHOWN, and the decision is
+    # taken over it — never over a list that was already reduced. Persisting
+    # only what the user saw makes "history never appeared" read identically
+    # whether the matcher found nothing or the selector dropped it.
+    universe = await qc.generate(
+        db, user_id=user.id, item=item,
+        message=material.get("message") or "", operation_id=operation_id,
+        revision=0, field_id=field.field_id,
+        context=EvidenceContext(user_id=user.id,
+                                canonical_entity_id=entity_id))
+    options, decision_record = qc.reduce_universe(
+        universe, field=field,
+        # THE SURFACE IS DERIVED FROM CAPABILITY, NOT FROM THE CHANNEL NAME.
+        # A capable client renders chips and answers by id; everything else
+        # gets the sentence, and the sentence is the whole interface. Reading
+        # a channel string here would repeat the modality-vs-channel
+        # conflation that already cost this slice a production round.
+        context=qc.selection_context(
+            capability=(ID_ADDRESSED if client_capable else LABEL_TEXT),
+            locale=locale),
+        food_name=str(item.identity.canonical_name or ""))
     if not options:
         # No evidence, so no chips. B-1 declines rather than shipping a select
         # with nothing in it — the legacy ask is still a better question than

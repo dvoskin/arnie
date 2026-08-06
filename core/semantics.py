@@ -749,6 +749,12 @@ class ClarificationOption:
     candidate_id: str = ""
     #: The candidate set that option belongs to.
     candidate_set_id: str = ""
+    #: THE TYPED CANDIDATE, in memory only. Deliberately absent from the wire
+    #: form: a client receives identifiers and labels, never semantics it
+    #: could reinterpret. A consumer that needs the candidate after a round
+    #: trip resolves `candidate_id` against the persisted universe rather
+    #: than trusting a copy that travelled.
+    candidate: Optional[Any] = None
 
     def __post_init__(self):
         if self.source is not None:
@@ -2301,6 +2307,12 @@ class QuantityCandidate:
     evidence: tuple = ()
     #: Content identity for merge/integrity checks. Never an address.
     semantic_hash: str = ""
+    #: THE GENERATOR'S PRIOR — how likely this candidate is, before any
+    #: selection rule runs. A RANKING FEATURE, persisted with the candidate
+    #: because "every inclusion and exclusion explainable from persisted
+    #: features" is not true if the features themselves are recomputed. The
+    #: selector reads it; the generator owns it.
+    prior: Optional[Decimal] = None
 
     def __post_init__(self):
         object.__setattr__(self, "serving_basis", ServingBasis(self.serving_basis))
@@ -2312,6 +2324,12 @@ class QuantityCandidate:
                 f"candidate {self.candidate_id!r} carries {bad} in its "
                 f"evidence — an untyped element passes every check by having "
                 f"no fields to check")
+        object.__setattr__(self, "prior", _dec_in(self.prior))
+        if self.prior is not None and not (
+                Decimal(0) <= self.prior <= Decimal(1)):
+            raise ValueError(
+                f"prior={self.prior} is outside [0,1]; a number that is not a "
+                f"probability must not be ranked as one")
         if not isinstance(self.offered, ServingExpression):
             raise ValueError(
                 f"offered must be a ServingExpression, got "
@@ -2457,6 +2475,7 @@ class QuantityCandidate:
                 "serving_basis": self.serving_basis.value,
                 "offered": self.offered.to_payload(),
                 "semantic_hash": self.semantic_hash,
+                "prior": _dec_out(self.prior),
                 "evidence": [e.to_payload() for e in self.evidence]}
 
     @classmethod
@@ -2467,6 +2486,7 @@ class QuantityCandidate:
                    serving_basis=ServingBasis(d["serving_basis"]),
                    offered=ServingExpression.from_payload(d["offered"]),
                    semantic_hash=d.get("semantic_hash", ""),
+                   prior=_dec_in(d.get("prior")),
                    evidence=tuple(QuantityCandidateEvidence.from_payload(e)
                                   for e in d.get("evidence", ())))
 

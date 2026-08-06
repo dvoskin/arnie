@@ -237,63 +237,265 @@ def _quantity(grams, *, provenance, unit_id: str = "g",
         confidence=Confidence(score=float(confidence), basis=basis))
 
 
-async def candidates(db, *, user_id, item, message: str = "") -> tuple:
-    """Everything this quantity could plausibly be, with its evidence.
+#: WHICH GENERATOR BUILT A UNIVERSE. Bumped when the candidate sources, their
+#: priors, or the shape of what they emit change — never for a bug fix that
+#: leaves the same candidates. Sets built under different versions are
+#: different populations and must not be pooled.
+GENERATOR_VERSION = "b1_quantity_gen_v1"
+
+#: The ontology is a dataset, and its rows mean different masses across
+#: refreshes. Evidence cites this so `portion:chicken_breast:large` cannot
+#: silently change value while looking like the same claim.
+ONTOLOGY_DATASET = "portion_ontology"
+ONTOLOGY_DATASET_VERSION = "2026-08-06"
+
+#: The user's own logs. MUTABLE — a correction rewrites the row — so evidence
+#: from here must carry the row version, never the id alone.
+HISTORY_DATASET = "food_entries"
+HISTORY_DATASET_VERSION = "live"
+
+
+async def generate(db, *, user_id, item, message: str = "", operation_id: str,
+                   revision: int = 0, field_id: str, context) -> Any:
+    """EVERYTHING this quantity could plausibly be, as a persistable universe.
 
     Ordered by the directive's authority ladder — the user's own history
     first, the calibrated ontology second — and NOT scored here. Producing
     evidence and choosing what to offer are different jobs with different
     owners (§Ownership); collapsing them is what made the legacy option
     builders unauditable.
-    """
-    from core.semantics import CandidateSource, CandidateValue, Provenance
 
-    out = []
+    THE GENERATOR OWNS THE CANDIDATE SET AND NOTHING ELSE. It does not rank,
+    does not render, and does not emit options — a producer that emits a
+    `ClarificationOption` has decided presentation, and no later stage can
+    then explain why an option looked the way it did.
+
+    Inputs that cannot form a candidate are returned as REJECTIONS rather than
+    dropped, because "the matcher found nothing" and "the matcher found a row
+    it could not use" are different failures that look identical downstream.
+    """
+    from core.semantics import (CandidateSet, CandidateSource,
+                                CandidateGenerationRejection,
+                                GenerationRejectionReason, Provenance)
+
+    out, rejected = [], []
     name = str(getattr(getattr(item, "identity", None), "canonical_name", "")
                or "").strip()
-    if not name:
-        return ()
+    entity = str(getattr(context, "canonical_entity_id", "") or "")
+    # COMPUTED FIRST, because a candidate's id is scoped to the set it belongs
+    # to — and the set's id is deterministic from its addressing triple, so
+    # replay of the same revision resolves to the same ids without rerunning
+    # anything.
+    set_id = _set_id(operation_id, revision, field_id)
 
     # 1 — THE USER'S OWN LOG. Ground truth for a repeat item; it beats a
     # generic ontology row for the same reason it beats USDA.
-    try:
-        grams = await _history_grams(db, user_id, name)
-    except Exception:
-        logger.debug("b1 history candidate unavailable", exc_info=True)
-        grams = None
-    if grams:
-        out.append(CandidateValue(
-            candidate_id="hist_last",
-            semantic_value=_quantity(grams, provenance=Provenance.USER_HISTORY,
-                                     confidence=0.9,
-                                     basis="the user's own last log"),
-            source=CandidateSource.USER_HISTORY,
-            probability=0.55, confidence=0.9))
+    seen = None
+    if name:
+        try:
+            seen = await _history_observation(db, user_id, name)
+        except Exception:
+            logger.debug("b1 history candidate unavailable", exc_info=True)
+    if seen is not None:
+        try:
+            out.append(_history_candidate(seen, entity=entity,
+                                          user_id=user_id, set_id=set_id))
+        except ValueError as exc:
+            rejected.append(CandidateGenerationRejection(
+                producer=CandidateSource.USER_HISTORY,
+                source=_history_source(seen.entry_id),
+                reason=GenerationRejectionReason.MALFORMED_QUANTITY,
+                generator_version=GENERATOR_VERSION, detail=str(exc)[:200]))
 
     # 2 — THE CALIBRATED ONTOLOGY, via the bracket that already ranked this
     # question. `_portion_stakes` walks exactly this chain and throws the
     # distribution away.
-    dist = _distribution_for(item, message, name)
+    dist = _distribution_for(item, message, name) if name else None
     if dist is not None and dist.lower_g:
         wide = dist.upper_g / max(dist.lower_g, 1e-6) >= MIN_USEFUL_SPREAD
-        anchors = ((("ont_low", dist.lower_g, 0.2),
-                    ("ont_mid", dist.median_g, 0.5),
-                    ("ont_high", dist.upper_g, 0.3)) if wide
-                   else (("ont_mid", dist.median_g, 0.6),))
-        for cid, g, prob in anchors:
-            if not g:
+        anchors = ((("low", dist.lower_g, 0.2), ("mid", dist.median_g, 0.5),
+                    ("high", dist.upper_g, 0.3)) if wide
+                   else (("mid", dist.median_g, 0.6),))
+        for anchor, grams, prior in anchors:
+            key = f"{name}:{getattr(dist, 'specificity', '')}:{anchor}"
+            if not grams:
+                # AN ANCHOR WITH NO MASS IS A GENERATION FAILURE, recorded as
+                # one. Silently skipping it made an ontology row with a hole
+                # indistinguishable from an ontology row that never matched.
+                rejected.append(CandidateGenerationRejection(
+                    producer=CandidateSource.ONTOLOGY,
+                    source=_ontology_source(key),
+                    reason=GenerationRejectionReason.NO_QUANTITY,
+                    generator_version=GENERATOR_VERSION,
+                    detail=f"{anchor} anchor carried no mass"))
                 continue
-            out.append(CandidateValue(
-                candidate_id=cid,
-                semantic_value=_quantity(
-                    g, provenance=Provenance.ONTOLOGY,
-                    confidence=float(getattr(dist, "confidence", 0.6) or 0.6),
-                    basis=f"portion ontology ({getattr(dist, 'specificity', '')})"),
-                source=CandidateSource.ONTOLOGY,
-                probability=prob,
-                confidence=float(getattr(dist, "confidence", 0.6) or 0.6)))
+            try:
+                out.append(_ontology_candidate(
+                    grams, key=key, anchor=anchor, prior=prior, entity=entity,
+                    set_id=set_id,
+                    confidence=float(getattr(dist, "confidence", 0.6) or 0.6)))
+            except ValueError as exc:
+                rejected.append(CandidateGenerationRejection(
+                    producer=CandidateSource.ONTOLOGY,
+                    source=_ontology_source(key),
+                    reason=GenerationRejectionReason.MALFORMED_QUANTITY,
+                    generator_version=GENERATOR_VERSION,
+                    detail=str(exc)[:200]))
 
-    return tuple(out)
+    return CandidateSet(
+        candidate_set_id=set_id,
+        operation_id=operation_id, user_id=user_id, context=context,
+        interaction_revision=revision, field_id=field_id,
+        generator_version=GENERATOR_VERSION,
+        generation_input_fingerprint=_fingerprint(
+            entity=entity, user_id=user_id, name=name, dist=dist, seen=seen),
+        candidates=tuple(out), rejections=tuple(rejected))
+
+
+async def candidates(db, *, user_id, item, message: str = "") -> tuple:
+    """The candidate list alone, for callers that do not persist a universe.
+
+    Kept because the offline scorecard and several proofs want the candidates
+    without an operation to hang them on. The ASK PATH does not use this — it
+    calls `generate`, because an ask must have a universe to be explained by.
+    """
+    from core.semantics import EvidenceContext
+
+    entity = _entity_id_for(item)
+    universe = await generate(
+        db, user_id=user_id, item=item, message=message,
+        operation_id="unpersisted", revision=0, field_id="unpersisted",
+        context=EvidenceContext(user_id=user_id, canonical_entity_id=entity))
+    return universe.candidates
+
+
+def _entity_id_for(item) -> str:
+    """The canonical entity a staged item is about."""
+    ident = getattr(item, "identity", None)
+    return (str(getattr(ident, "canonical_entity_id", "") or "").strip()
+            or f"food:{str(getattr(ident, 'canonical_name', '') or '').strip().lower()}")
+
+
+def _set_id(operation_id: str, revision: int, field_id: str) -> str:
+    """DETERMINISTIC, AND OPAQUE. A hash of the addressing triple, so the same
+    revision of the same field resolves to the same set on replay without the
+    id itself leaking a user, a food or a label."""
+    import hashlib
+
+    raw = f"{operation_id}|{int(revision)}|{field_id}".encode()
+    return "cs_" + hashlib.sha256(raw).hexdigest()[:24]
+
+
+def _candidate_id(set_id: str, semantic_hash: str) -> str:
+    import hashlib
+
+    return "cand_" + hashlib.sha256(
+        f"{set_id}|{semantic_hash}".encode()).hexdigest()[:24]
+
+
+def _semantic_hash(grams: Decimal, basis_value: str) -> str:
+    """CONTENT IDENTITY, not an address. Two producers arriving at the same
+    amount on the same basis describe the same candidate — which is what lets
+    them merge later without either losing its provenance."""
+    import hashlib
+
+    return hashlib.sha256(f"{basis_value}|{grams}".encode()).hexdigest()[:32]
+
+
+def _fingerprint(*, entity: str, user_id: int, name: str, dist, seen) -> str:
+    """A DIGEST OF THE SEMANTIC INPUTS, so regenerating the same revision from
+    different inputs fails loudly instead of silently returning the old
+    universe. Covers meaning, never incidental object representation.
+    """
+    import hashlib
+
+    parts = [entity, str(user_id), name,
+             str(getattr(dist, "specificity", "") or ""),
+             str(getattr(dist, "lower_g", "") or ""),
+             str(getattr(dist, "median_g", "") or ""),
+             str(getattr(dist, "upper_g", "") or ""),
+             str(getattr(seen, "entry_id", "") or ""),
+             str(getattr(seen, "grams", "") or "")]
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()[:32]
+
+
+def _history_source(entry_id):
+    from core.semantics import SourceReference
+
+    return SourceReference(dataset_id=HISTORY_DATASET,
+                           dataset_version=HISTORY_DATASET_VERSION,
+                           record_key=str(entry_id),
+                           # MUTABLE: a correction rewrites the row, so the
+                           # value at generation time is pinned here.
+                           record_version=f"entry:{entry_id}")
+
+
+def _ontology_source(key: str):
+    from core.semantics import SourceReference
+
+    return SourceReference(dataset_id=ONTOLOGY_DATASET,
+                           dataset_version=ONTOLOGY_DATASET_VERSION,
+                           record_key=key,
+                           immutable_within_version=True)
+
+
+def _mass_candidate(grams, *, entity, set_id, evidence, prior, provenance,
+                    basis_text):
+    """One mass candidate, said in grams, with its offered expression."""
+    from core.semantics import (QuantityCandidate, ServingBasis,
+                                ServingExpression)
+
+    q = _quantity(grams, provenance=provenance, basis=basis_text)
+    digest = _semantic_hash(q.grams, ServingBasis.MASS.value)
+    return QuantityCandidate(
+        candidate_id=_candidate_id(set_id, digest),
+        canonical_entity_id=entity, quantity=q,
+        serving_basis=ServingBasis.MASS,
+        offered=ServingExpression(amount=q.grams, unit_id="g",
+                                  basis=ServingBasis.MASS, normalized=q),
+        evidence=evidence, semantic_hash=digest, prior=Decimal(str(prior)))
+
+
+def _history_candidate(seen, *, entity, user_id, set_id):
+    from core.semantics import (CandidateSource, EvidenceScope, Provenance,
+                                QuantityCandidateEvidence, ServingBasis)
+
+    q = _quantity(seen.grams, provenance=Provenance.USER_HISTORY,
+                  confidence=0.9, basis="the user's own last log")
+    evidence = (QuantityCandidateEvidence(
+        source_type=CandidateSource.USER_HISTORY,
+        source=_history_source(seen.entry_id),
+        # THE VALUE AS OBSERVED, quantized the same way the candidate is —
+        # they are the same fact, and the contract requires them to agree.
+        observed_quantity=q, observed_basis=ServingBasis.MASS,
+        observed_at=seen.observed_at,
+        subject_scope=EvidenceScope.THIS_USER, subject_user_id=user_id,
+        confidence=Decimal("0.9")),)
+    return _mass_candidate(
+        seen.grams, entity=entity,
+        set_id=set_id, evidence=evidence, prior=0.55,
+        provenance=Provenance.USER_HISTORY,
+        basis_text="the user's own last log")
+
+
+def _ontology_candidate(grams, *, key, anchor, prior, entity, set_id,
+                        confidence):
+    from core.semantics import (CandidateSource, EvidenceScope, Provenance,
+                                QuantityCandidateEvidence, ServingBasis)
+
+    q = _quantity(grams, provenance=Provenance.ONTOLOGY,
+                  confidence=confidence, basis=f"portion ontology ({anchor})")
+    evidence = (QuantityCandidateEvidence(
+        source_type=CandidateSource.ONTOLOGY, source=_ontology_source(key),
+        observed_quantity=q, observed_basis=ServingBasis.MASS,
+        # POPULATION. True about people in general, and never sufficient to
+        # assert what one person ate.
+        subject_scope=EvidenceScope.POPULATION,
+        confidence=Decimal(str(round(float(confidence), 4)))),)
+    return _mass_candidate(
+        grams, entity=entity, set_id=set_id, evidence=evidence,
+        prior=prior, provenance=Provenance.ONTOLOGY,
+        basis_text=f"portion ontology ({anchor})")
 
 
 #: How far back the history scan will read before it gives up. Bounds a
@@ -304,7 +506,30 @@ async def candidates(db, *, user_id, item, message: str = "") -> tuple:
 HISTORY_SCAN_CAP = 2000
 
 
+class HistoryQuantity:
+    """One prior log, WITH ITS IDENTITY AND ITS VALUE AT THE TIME.
+
+    A bare number cannot be audited and a bare row id cannot be trusted: a
+    `food_entries` row is mutable, so an id alone points at whatever it says
+    now rather than at what it said when this candidate was generated. Both
+    travel, so the evidence can still state "candidate X existed because entry
+    2871 held 182 g on 2026-08-04".
+    """
+
+    __slots__ = ("grams", "entry_id", "observed_at")
+
+    def __init__(self, grams, entry_id, observed_at):
+        self.grams, self.entry_id, self.observed_at = grams, entry_id, observed_at
+
+
 async def _history_grams(db, user_id, food_name: str) -> Optional[float]:
+    """Back-compatible view of `_history_observation` — grams only."""
+    seen = await _history_observation(db, user_id, food_name)
+    return None if seen is None else seen.grams
+
+
+async def _history_observation(db, user_id,
+                               food_name: str) -> Optional["HistoryQuantity"]:
     """The user's most recent NON-ESTIMATED log of this exact food, in grams.
 
     Reuses `_logged_history_match`'s guards deliberately: >=2 content tokens
@@ -344,7 +569,8 @@ async def _history_grams(db, user_id, food_name: str) -> Optional[float]:
     # small because it is columns rather than entities, and a B-1 ask is not
     # a hot path.
     rows = (await db.execute(
-        select(FoodEntry.parsed_food_name, FoodEntry.quantity)
+        select(FoodEntry.parsed_food_name, FoodEntry.quantity, FoodEntry.id,
+               DailyLog.date)
         .join(DailyLog, FoodEntry.daily_log_id == DailyLog.id)
         .where(DailyLog.user_id == user_id, DailyLog.date >= cutoff,
                FoodEntry.estimated_flag.is_(False),
@@ -359,14 +585,32 @@ async def _history_grams(db, user_id, food_name: str) -> Optional[float]:
             "event=b1_history_scan_capped user=%s cap=%d — the 90-day window "
             "no longer fits; history recall is now truncated and will "
             "under-report", user_id, HISTORY_SCAN_CAP)
-    for name, quantity in rows:
+    for name, quantity, entry_id, logged_on in rows:
         if _content_tokens(name or "") != tokens:
             continue
         from skills.nutrition.normalize import normalize_quantity
         nq = normalize_quantity(quantity or "", name or "")
         if nq is not None and getattr(nq, "grams", None):
-            return float(nq.grams)
+            return HistoryQuantity(grams=float(nq.grams), entry_id=int(entry_id),
+                                   observed_at=_as_utc(logged_on))
     return None
+
+
+def _as_utc(logged_on):
+    """A logging DATE, read as an instant, in UTC.
+
+    Timezone-aware because the evidence contract refuses a naive one: a source
+    time that cannot be compared across a rollover boundary is a source time
+    that will eventually be compared wrongly.
+    """
+    from datetime import datetime, time, timezone
+
+    if logged_on is None:
+        return None
+    if isinstance(logged_on, datetime):
+        return (logged_on.replace(tzinfo=timezone.utc)
+                if logged_on.tzinfo is None else logged_on)
+    return datetime.combine(logged_on, time(0, 0), tzinfo=timezone.utc)
 
 
 def _distribution_for(item, message: str, name: str):
@@ -401,39 +645,78 @@ def _measure_in(message: str, name: str) -> str:
 
 # ── selection ────────────────────────────────────────────────────────────────
 
-def select(candidates_in, *, field, food_name: str = "") -> tuple:
-    """Which candidates become offers, and what each one MEANS.
+#: WHICH POLICY REDUCED A UNIVERSE. Ranking, the accept rule, and the cap.
+SELECTION_POLICY_VERSION = "b1_quantity_select_v1"
+
+#: WHICH RENDERER WORDED THE OPTIONS. Load bearing: `RENDER_COLLISION` is a
+#: judgement about wording, so it is only reproducible against the renderer
+#: that did the wording.
+RENDERER_CONTRACT_VERSION = "b1_labels_v1"
+
+
+def selection_context(*, capability, locale: str = "en"):
+    """The conditions the decision was made under.
+
+    Persisted with the decision because a policy version alone does not
+    determine the outcome: the same universe yields a text row on Telegram and
+    a structured one on iOS, and can word them differently by locale.
+    """
+    from core.semantics import CandidateSelectionContext, SelectionSurface
+
+    surface = (SelectionSurface.ID_ADDRESSED
+               if str(getattr(capability, "value", capability) or "")
+               == "id_addressed" else SelectionSurface.LABEL_TEXT)
+    return CandidateSelectionContext(
+        surface=surface, locale=locale or "en",
+        maximum_options=MAX_NUMERIC_OPTIONS,
+        renderer_contract_version=RENDERER_CONTRACT_VERSION)
+
+
+def reduce_universe(universe, *, field, context, food_name: str = ""):
+    """Which candidates become offers, what each one MEANS, and why not the
+    rest.
 
     NOT top-N by probability — that returns near-duplicates, which is how
-    `4.8 / 5.0 / 5.2` reached a screen. Rank by `probability x source
-    confidence`, then accept a candidate only if it says something the already
-    accepted ones do not: information gain, expressed as distance.
+    `4.8 / 5.0 / 5.2` reached a screen. Rank by `prior x source confidence`,
+    then accept a candidate only if it says something the already accepted
+    ones do not: information gain, expressed as distance.
 
-    Every returned option carries a typed `SetQuantity`. There is no path here
-    that produces a label without a patch, so "a canonical option always has a
-    patch" holds by construction rather than by review.
+    THE RANKING IS UNCHANGED. What is new is that every drop is RECORDED with
+    a typed reason instead of being a `continue`, so "why wasn't my usual
+    portion there?" has an answer that does not require rerunning the
+    selector.
+
+    Returns `(options, decision_record)`. Every returned option carries a
+    typed `SetQuantity` and the id of the candidate it came from, so there is
+    no path here that produces a label without a patch or without a
+    justification.
     """
     from dataclasses import replace
 
-    from core.semantics import ClarificationOption, Provenance, SetQuantity
+    from core.semantics import (CandidateDecisionRecord, CandidateExclusion,
+                                CandidateSelectionDecision,
+                                ClarificationOption, ExclusionReason,
+                                PresentedCandidateOption, Provenance,
+                                SetQuantity)
 
-    ranked = sorted(
-        (c for c in (candidates_in or ())
-         if getattr(c.semantic_value, "grams", None)),
-        key=lambda c: (float(c.probability) * float(c.confidence)),
-        reverse=True)
+    excluded = []
+    ranked = sorted(universe.candidates, key=_rank, reverse=True)
 
     chosen = []
     for cand in ranked:
+        grams = float(cand.quantity.grams)
         if len(chosen) >= MAX_NUMERIC_OPTIONS:
-            break
-        grams = float(cand.semantic_value.grams)
-        if any(_near(grams, float(c.semantic_value.grams)) for c in chosen):
+            excluded.append(CandidateExclusion(
+                candidate_id=cand.candidate_id,
+                reason=ExclusionReason.SELECTION_CAP))
+            continue
+        if any(_near(grams, float(c.quantity.grams)) for c in chosen):
+            excluded.append(CandidateExclusion(
+                candidate_id=cand.candidate_id,
+                reason=ExclusionReason.SEMANTIC_DUPLICATE))
             continue
         chosen.append(cand)
-    chosen.sort(key=lambda c: float(c.semantic_value.grams))
-    if not chosen:
-        return ()
+    chosen.sort(key=lambda c: float(c.quantity.grams))
 
     # DEDUPE AGAIN ON WHAT THE USER ACTUALLY READS.
     #
@@ -444,30 +727,90 @@ def select(candidates_in, *, field, food_name: str = "") -> tuple:
     # ounces as two different answers, so that row offers three chips and two
     # choices, and the third is a pound of chicken.
     #
-    # The test is the label's own re-parsed mass, which is the same
-    # philosophy `_everyday_labels` already applies to accept a rendering at
-    # all: if two labels MEAN nearly the same thing when read back, they are
-    # one option. Ranked order breaks the tie, so the better-evidenced
-    # candidate keeps its slot.
-    chosen, labels = _collapse_by_label(chosen, ranked, food_name)
+    # Recorded as RENDER_COLLISION rather than a duplicate: the candidates are
+    # semantically distinct and collide only under this renderer, in this
+    # locale.
+    chosen, labels, collided = _collapse_by_label(chosen, ranked, food_name)
+    excluded.extend(CandidateExclusion(
+        candidate_id=c.candidate_id,
+        reason=ExclusionReason.RENDER_COLLISION) for c in collided)
 
-    options = []
-    for cand, label in zip(chosen, labels):
+    options, presented = [], []
+    for position, (cand, label) in enumerate(zip(chosen, labels)):
         # A TAP IS A SELECTION, NOT A STATEMENT. The user accepted a figure we
         # produced; recording it as their own is the measured 2026-08-04
         # disclosure defect, and provenance is the only thing that keeps the
         # distinction once the answer applies.
-        quantity = replace(cand.semantic_value,
-                           provenance=Provenance.USER_SELECTED)
+        quantity = replace(cand.quantity, provenance=Provenance.USER_SELECTED)
+        option_id = f"opt_{cand.candidate_id}"
         options.append(ClarificationOption(
-            label=label,
-            option_id=f"opt_{cand.candidate_id}",
-            field_id=field.field_id,
+            label=label, option_id=option_id, field_id=field.field_id,
             patch=SetQuantity(event_id=field.event_id,
                               field_id=field.field_id, quantity=quantity,
                               provenance=Provenance.USER_SELECTED),
-            source=cand.source))
-    return tuple(options)
+            source=cand.evidence[0].source_type,
+            candidate_id=cand.candidate_id,
+            candidate_set_id=universe.candidate_set_id,
+            candidate=cand))
+        presented.append(PresentedCandidateOption(
+            option_id=option_id, candidate_id=cand.candidate_id,
+            candidate_set_id=universe.candidate_set_id,
+            interaction_revision=universe.interaction_revision,
+            selected_position=position, rendered_label=label,
+            renderer_contract_version=RENDERER_CONTRACT_VERSION))
+
+    decision = CandidateSelectionDecision(
+        candidate_set_id=universe.candidate_set_id,
+        selection_policy_version=SELECTION_POLICY_VERSION, context=context,
+        selected_candidate_ids=tuple(c.candidate_id for c in chosen),
+        exclusions=tuple(excluded))
+    record = CandidateDecisionRecord(candidate_set=universe, decision=decision,
+                                     presented=tuple(presented))
+    return tuple(options), record
+
+
+def _rank(cand) -> float:
+    """`prior x confidence`, both read off the persisted candidate.
+
+    Recomputing either from the source would make the ranking unexplainable
+    from the record — the exact property the universe exists to provide.
+    """
+    best = max((float(e.confidence or 0) for e in cand.evidence), default=0.0)
+    return float(cand.prior or 0) * best
+
+
+def select(candidates_in, *, field, food_name: str = "") -> tuple:
+    """The offered options alone, for callers with no universe to persist.
+
+    The ASK PATH DOES NOT USE THIS. It calls `reduce_universe`, because an ask
+    that cannot say why it offered what it offered is the thing this whole
+    commit removes.
+    """
+    from core.semantics import (CandidateSelectionContext, CandidateSet,
+                                EvidenceContext, SelectionSurface)
+
+    cands = tuple(candidates_in or ())
+    if not cands:
+        return ()
+    # THE SUBJECT IS READ OFF THE CANDIDATES, never invented. A placeholder
+    # user here would make the set's ownership check reject perfectly valid
+    # history evidence — the gate firing on the shim rather than on a defect.
+    owner = next((e.subject_user_id for c in cands for e in c.evidence
+                  if e.subject_user_id), 0) or 1
+    universe = CandidateSet(
+        candidate_set_id="cs_unpersisted", operation_id="unpersisted",
+        user_id=owner, interaction_revision=0, field_id=field.field_id,
+        context=EvidenceContext(
+            user_id=owner, canonical_entity_id=cands[0].canonical_entity_id),
+        generator_version=GENERATOR_VERSION,
+        generation_input_fingerprint="unpersisted", candidates=cands)
+    options, _record = reduce_universe(
+        universe, field=field, food_name=food_name,
+        context=CandidateSelectionContext(
+            surface=SelectionSurface.LABEL_TEXT, locale="en",
+            maximum_options=MAX_NUMERIC_OPTIONS,
+            renderer_contract_version=RENDERER_CONTRACT_VERSION))
+    return options
 
 
 def _near(a: float, b: float) -> bool:
@@ -483,9 +826,10 @@ def _collapse_by_label(chosen, ranked, food_name: str):
     can legitimately change how the survivors are said.
     """
     rank = {id(c): i for i, c in enumerate(ranked)}
+    dropped = []
     while True:
-        labels = labels_for(tuple(float(c.semantic_value.grams)
-                                  for c in chosen), food_name)
+        labels = labels_for(tuple(float(_grams_of(c)) for c in chosen),
+                            food_name)
         drop = None
         for i in range(len(chosen) - 1):
             a, b = _label_mass(labels[i], food_name), \
@@ -497,12 +841,25 @@ def _collapse_by_label(chosen, ranked, food_name: str):
                         > rank.get(id(chosen[i + 1]), 99) else i + 1)
                 break
         if drop is None:
-            return chosen, labels
+            return chosen, labels, tuple(dropped)
+        dropped.append(chosen[drop])
         chosen = chosen[:drop] + chosen[drop + 1:]
         if len(chosen) <= 1:
-            return chosen, labels_for(
-                tuple(float(c.semantic_value.grams) for c in chosen),
-                food_name)
+            return (chosen,
+                    labels_for(tuple(float(_grams_of(c)) for c in chosen),
+                               food_name),
+                    tuple(dropped))
+
+
+def _grams_of(cand):
+    """Mass off either shape.
+
+    The collapse pass is also driven by the offline dry run, which builds
+    lightweight stand-ins rather than full candidates — so this reads
+    `quantity` first and falls back to the older `semantic_value`.
+    """
+    q = getattr(cand, "quantity", None) or getattr(cand, "semantic_value", None)
+    return getattr(q, "grams", 0)
 
 
 def _label_mass(label: str, food_name: str) -> Optional[float]:
