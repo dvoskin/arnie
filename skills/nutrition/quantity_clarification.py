@@ -886,18 +886,24 @@ def _render_labels(chosen, food_name: str) -> tuple:
 
 
 def _expression_label(cand) -> str:
-    """`3 tbsp`, `2 pieces`, `½ package` — read off the candidate's own
-    offered expression rather than re-derived from a canonical number."""
+    """`3 tbsp`, `2 pieces`, `0.5 package` — read off the candidate's own
+    offered expression, with the unit written BY THE REGISTRY.
+
+    The obvious rule — append "s" when the amount is not one — produces
+    `240 mls`, `3 tbsps` and `2 ozs`, and no better rule fixes it, because
+    nothing in a canonical unit id says whether it is an abbreviation. It also
+    does not survive a second language. So the written forms are a table, and
+    the table is versioned.
+    """
+    from core import unit_registry
+
     offered = getattr(cand, "offered", None)
     if offered is None:
         return f"{float(_grams_of(cand) or 0):g}g"
     amount = offered.amount
-    whole = amount == amount.to_integral_value()
-    said = f"{int(amount)}" if whole else f"{amount.normalize():f}"
-    unit = offered.unit_id
-    if whole and int(amount) != 1 and not unit.endswith("s"):
-        unit = f"{unit}s"
-    return f"{said} {unit}"
+    said = (f"{int(amount)}" if amount == amount.to_integral_value()
+            else f"{amount.normalize():f}")
+    return f"{said} {unit_registry.say(amount, offered.unit_id)}"
 
 
 def _grams_of(cand):

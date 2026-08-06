@@ -113,17 +113,23 @@ def _selection_context(**kw):
     return CandidateSelectionContext(**base)
 
 
-def _ask(*candidates):
-    """A real interaction, through the real selector and renderer."""
+def _ask(*candidates, context=None, food_name="subject"):
+    """A real interaction, through the real selector and renderer.
+
+    `context` is the set's BOUND SUBJECT. Product-scoped evidence is refused
+    by a set whose context names no variant — correctly, and that is why the
+    product rows pass it explicitly rather than relying on a default.
+    """
     field = _field()
     universe = CandidateSet(
-        candidate_set_id="cs", operation_id="op", user_id=USER, context=CTX,
+        candidate_set_id="cs", operation_id="op", user_id=USER,
+        context=context or CTX,
         interaction_revision=0, field_id=field.field_id,
         generator_version="gen_v1", generation_input_fingerprint="fp",
         candidates=candidates)
     options, record = qc.reduce_universe(universe, field=field,
                                          context=_selection_context(),
-                                         food_name="subject")
+                                         food_name=food_name)
     interaction = qc.build_interaction(operation_id="op", revision=0,
                                        item=StagedFoodItem(
                                            staged_item_id="si",
@@ -142,7 +148,139 @@ def _not_sure(interaction):
                             food_name="subject", context=CTX)
 
 
+#: THE SCOPES, and where each is CONSTRUCTIBLE. `THIS_PRODUCT_QUANTITY`
+#: requires a basis that denotes an amount — knowing a jar is Brand X honey
+#: does not establish that three tablespoons were eaten — so it exists on
+#: three of the seven bases and not by omission.
+QUANTITY_BEARING = {ServingBasis.PACKAGE, ServingBasis.STANDARD_SERVING,
+                    ServingBasis.FRACTION_OF_PACKAGE}
+SCOPES = [EvidenceScope.POPULATION, EvidenceScope.THIS_USER,
+          EvidenceScope.THIS_PRODUCT_QUANTITY]
+
+#: scope x basis, with the impossible combinations EXCLUDED BY RULE rather
+#: than forgotten. `sufficient` is whether that scope may authorise an
+#: assumption at all.
+MATRIX = [
+    pytest.param(scope, basis, unit, amount, fields,
+                 scope is not EvidenceScope.POPULATION,
+                 id=f"{scope.value}-{basis.value}")
+    for scope in SCOPES
+    for basis, unit, amount, fields in BASES
+    if scope is not EvidenceScope.THIS_PRODUCT_QUANTITY
+    or basis in QUANTITY_BEARING
+]
+
+VARIANT = "sku:991"
+
+
+def _context_for(scope):
+    return (EvidenceContext(user_id=USER, canonical_entity_id=ENTITY,
+                            product_variant_id=VARIANT)
+            if scope is EvidenceScope.THIS_PRODUCT_QUANTITY else CTX)
+
+
 # ── CLASS A · an estimate may not commit from evidence about people ─────────
+
+@pytest.mark.parametrize("scope,basis,unit,amount,fields,sufficient", MATRIX)
+@pytest.mark.parametrize("history", ["history_empty", "history_rich"])
+def test_the_estimate_rule_holds_across_scope_basis_and_history(
+        scope, basis, unit, amount, fields, sufficient, history):
+    """THE CHICKEN CLASS, as the cross-product it claims to be.
+
+    Every scope x every serving basis x history present or absent, run through
+    the REAL ask and the REAL answer route. "Not sure" committed 435 g because
+    a generic bracket collapsed and the estimate took the upper of two; the
+    rule that fixed it is about WHAT THE EVIDENCE IS ABOUT, so it has to hold
+    for a food measured in packages exactly as for one in grams.
+
+    HISTORY-RICH PUTS BOTH CANDIDATES IN THE ROW. An earlier version of this
+    gate named the case and built only the user record, so it never tested
+    that a population prior sitting beside a sufficient one fails to dilute
+    it — the thing the name promised.
+    """
+    subject = _candidate(basis, unit, amount, fields, scope=scope, cid="c1",
+                         variant=VARIANT if
+                         scope is EvidenceScope.THIS_PRODUCT_QUANTITY else None)
+    candidates = [subject]
+    if history == "history_rich":
+        # A POPULATION PRIOR ALONGSIDE, far enough away not to be collapsed.
+        candidates.append(_candidate(
+            basis, unit, str(Decimal(amount) * 4),
+            {k: (str(Decimal(v) * 4) if k != "unit_id" else v)
+             for k, v in fields.items()},
+            scope=EvidenceScope.POPULATION, cid="pop", prior="0.2"))
+
+    context = _context_for(scope)
+    interaction, options, _record = _ask(*candidates, context=context)
+    assert options, f"{scope.value}/{basis.value} produced nothing to offer"
+
+    result = answer_from_text(
+        interaction, field_id=interaction.groups[0].fields[0].field_id,
+        text="I don't know", revision=0, food_name="subject", context=context)
+
+    if sufficient:
+        from core.semantics import Provenance
+        assert result.outcome is Outcome.APPLIED, result
+        assert result.patch.provenance is Provenance.MODE_DEFAULT, (
+            "an assumed portion must stay disclosable — it is not the user's")
+    else:
+        assert result.outcome is Outcome.REPAIR, result
+        assert result.patch is None, "a refused estimate carries no patch"
+        assert result.decision_policy_version, "the refusal must name a policy"
+
+
+@pytest.mark.parametrize("basis,unit,amount,fields", BASES,
+                         ids=[b.value for b, *_ in BASES])
+def test_product_evidence_about_another_variant_refuses_on_every_basis(
+        basis, unit, amount, fields):
+    """Identity is not consumption, run through the FULL route rather than by
+    calling `authorizes_assumption` directly — the earlier version asserted
+    the rule without proving the ask and answer honour it."""
+    if basis not in QUANTITY_BEARING:
+        pytest.skip(f"{basis.value} cannot carry product-quantity evidence")
+    interaction, _options, _record = _ask(
+        _candidate(basis, unit, amount, fields,
+                   scope=EvidenceScope.THIS_PRODUCT_QUANTITY,
+                   variant=VARIANT),
+        context=EvidenceContext(user_id=USER, canonical_entity_id=ENTITY,
+                                product_variant_id=VARIANT))
+    for variant, expected in ((VARIANT, Outcome.APPLIED),
+                              ("sku:000", Outcome.REPAIR),
+                              (None, Outcome.REPAIR)):
+        result = answer_from_text(
+            interaction, field_id=interaction.groups[0].fields[0].field_id,
+            text="I don't know", revision=0, food_name="subject",
+            context=EvidenceContext(user_id=USER, canonical_entity_id=ENTITY,
+                                    product_variant_id=variant))
+        assert result.outcome is expected, (variant, result)
+
+
+@pytest.mark.parametrize("basis,unit,amount,fields", BASES,
+                         ids=[b.value for b, *_ in BASES])
+def test_history_empty_refuses_on_every_basis(basis, unit, amount, fields):
+    """HISTORY-EMPTY, swept. Two population options and nothing about this
+    person: the degenerate bracket that committed 435 g."""
+    low = _candidate(basis, unit, amount, fields,
+                     scope=EvidenceScope.POPULATION, cid="low", prior="0.2")
+    high = _candidate(
+        basis, unit, str(Decimal(amount) * 5),
+        {k: (str(Decimal(v) * 5) if k != "unit_id" else v)
+         for k, v in fields.items()},
+        scope=EvidenceScope.POPULATION, cid="high", prior="0.3")
+    interaction, options, _record = _ask(low, high)
+    assert len(options) == 2, "the degenerate two-option bracket, as measured"
+
+    result = answer_from_text(
+        interaction, field_id=interaction.groups[0].fields[0].field_id,
+        text="I don't know", revision=0, food_name="subject", context=CTX)
+    assert result.outcome is Outcome.REPAIR
+    # THE MEASURED FAILURE WAS THE UPPER OF TWO COMMITTING. Nothing committed,
+    # so no option's quantity reached a patch — asserted against the outcome
+    # rather than against `result.patch`, which is None here by definition and
+    # made the previous form of this check unfalsifiable.
+    assert result.outcome is not Outcome.APPLIED
+
+
 
 @pytest.mark.parametrize("basis,unit,amount,fields", BASES,
                          ids=[b.value for b, *_ in BASES])
@@ -232,27 +370,32 @@ def test_history_empty_is_a_refusal_not_a_guess():
 
 # ── CLASS B · a basis may not change without an authority ──────────────────
 
-@pytest.mark.parametrize("observed,offered", [
-    (ServingBasis.VOLUME, ServingBasis.MASS),
-    (ServingBasis.PIECE, ServingBasis.MASS),
-    (ServingBasis.COUNT, ServingBasis.MASS),
-    (ServingBasis.PACKAGE, ServingBasis.MASS),
-    (ServingBasis.MASS, ServingBasis.VOLUME),
-])
-def test_conversion_unavailable_means_the_candidate_cannot_exist(observed,
-                                                                 offered):
-    """THE HONEY CLASS, generalised. A quantity seen in one basis may not be
-    offered in another on nobody's authority — that step is where an invented
-    density becomes a calorie."""
-    seen = CanonicalQuantity(grams=Decimal("21")) if observed is ServingBasis.MASS \
-        else _quantity({"milliliters": "15"} if observed is ServingBasis.VOLUME
-                       else {"count": "1"} if observed in (ServingBasis.PIECE,
-                                                           ServingBasis.COUNT)
-                       else {"amount": "1", "unit_id": "package"})
-    target = (CanonicalQuantity(grams=Decimal("21"))
-              if offered is ServingBasis.MASS
-              else CanonicalQuantity(milliliters=Decimal("15")))
-    unit = "g" if offered is ServingBasis.MASS else "ml"
+#: Every ordered pair of DIFFERENT bases — 7 x 6 = 42. Generated, because a
+#: hand-picked five can miss a basis-specific branch and did: the earlier
+#: version tested volume/piece/count/package -> mass and mass -> volume, and
+#: nothing at all involving fractions or standard servings.
+CROSS_BASIS = [
+    pytest.param(a, a_fields, b, b_unit, b_fields,
+                 id=f"{a.value}->{b.value}")
+    for a, _a_unit, _a_amount, a_fields in BASES
+    for b, b_unit, _b_amount, b_fields in BASES
+    if a is not b
+]
+
+
+@pytest.mark.parametrize("observed,observed_fields,offered,offered_unit,"
+                         "offered_fields", CROSS_BASIS)
+def test_no_basis_may_change_without_an_authority(observed, observed_fields,
+                                                  offered, offered_unit,
+                                                  offered_fields):
+    """THE HONEY CLASS, generalised to every directed pair.
+
+    A quantity seen in one basis may not be offered in another on nobody's
+    authority — that step is where an invented density becomes a calorie. All
+    42 pairs, so a basis-specific hole cannot hide in the ones nobody picked.
+    """
+    seen = _quantity(observed_fields)
+    target = _quantity(offered_fields)
     evidence = QuantityCandidateEvidence(
         source_type=CandidateSource.ONTOLOGY,
         source=_source(EvidenceScope.POPULATION), observed_quantity=seen,
@@ -263,7 +406,36 @@ def test_conversion_unavailable_means_the_candidate_cannot_exist(observed,
             candidate_id="c", canonical_entity_id=ENTITY, quantity=target,
             serving_basis=offered,
             offered=ServingExpression(
-                amount=measure_on(target, offered), unit_id=unit,
+                amount=measure_on(target, offered), unit_id=offered_unit,
+                basis=offered, normalized=target),
+            evidence=(evidence,), prior=Decimal("0.5"))
+
+
+@pytest.mark.parametrize("observed,observed_fields,offered,offered_unit,"
+                         "offered_fields", CROSS_BASIS)
+def test_a_conversion_must_start_where_the_evidence_actually_looked(
+        observed, observed_fields, offered, offered_unit, offered_fields):
+    """A sourced conversion is not a licence for any pair. It must begin at
+    the basis the evidence OBSERVED and end at the candidate's own."""
+    seen = _quantity(observed_fields)
+    target = _quantity(offered_fields)
+    wrong_start = next(b for b, *_ in BASES if b not in (observed, offered))
+    conversion = ConversionEvidence(
+        from_basis=wrong_start, to_basis=offered,
+        source=SourceReference(dataset_id="usda", dataset_version="2026-04",
+                               record_key="conv", immutable_within_version=True),
+        factor=Decimal("2"))
+    evidence = QuantityCandidateEvidence(
+        source_type=CandidateSource.ONTOLOGY,
+        source=_source(EvidenceScope.POPULATION), observed_quantity=seen,
+        observed_basis=observed, subject_scope=EvidenceScope.POPULATION,
+        conversion_evidence=conversion, confidence=Decimal("0.6"))
+    with pytest.raises(ValueError, match="did not see"):
+        QuantityCandidate(
+            candidate_id="c", canonical_entity_id=ENTITY, quantity=target,
+            serving_basis=offered,
+            offered=ServingExpression(
+                amount=measure_on(target, offered), unit_id=offered_unit,
                 basis=offered, normalized=target),
             evidence=(evidence,), prior=Decimal("0.5"))
 
@@ -351,6 +523,11 @@ def test_a_volume_native_food_stays_volume_native_through_the_row():
         assert cand.serving_basis is ServingBasis.VOLUME, (
             "a volume candidate was silently converted to mass")
         assert cand.offered.unit_id == "tbsp"
+    # THE LABELS THE USER READS, not merely the stored expression. Asserting
+    # only the expression let `3 tbsps` — the registry-less pluralisation —
+    # sit in the row unremarked.
+    assert [o.label for o in options] == ["1 tbsp", "3 tbsp"]
+    assert [p.rendered_label for p in record.presented] == ["1 tbsp", "3 tbsp"]
     # The selector never collapsed them across bases, and never rendered them
     # into grams to compare.
     assert record.decision.selected_candidate_ids == ("one", "three")
@@ -399,3 +576,54 @@ def test_the_generator_still_emits_only_mass_and_that_is_recorded():
             f"{absent} now reaches the generator — the coverage ledger in "
             f"this module's docstring is out of date, and the honey class "
             f"needs a production-path proof rather than a platform one")
+
+
+# ── what the user actually reads ───────────────────────────────────────────
+
+@pytest.mark.parametrize("basis,unit,amount,fields,expected", [
+    (ServingBasis.VOLUME, "ml", "240", {"milliliters": "240"}, "240 ml"),
+    (ServingBasis.VOLUME, "tbsp", "3", {"milliliters": "44.361"}, "3 tbsp"),
+    (ServingBasis.COUNT, "piece", "2", {"count": "2"}, "2 pieces"),
+    (ServingBasis.PIECE, "piece", "1", {"count": "1"}, "1 piece"),
+    (ServingBasis.PACKAGE, "package", "1",
+     {"amount": "1", "unit_id": "package"}, "1 package"),
+    (ServingBasis.PACKAGE, "package", "2",
+     {"amount": "2", "unit_id": "package"}, "2 packages"),
+    (ServingBasis.FRACTION_OF_PACKAGE, "package", "0.5",
+     {"amount": "0.5", "unit_id": "package"}, "0.5 packages"),
+    (ServingBasis.STANDARD_SERVING, "serving", "1",
+     {"amount": "1", "unit_id": "serving"}, "1 serving"),
+    (ServingBasis.STANDARD_SERVING, "serving", "2",
+     {"amount": "2", "unit_id": "serving"}, "2 servings"),
+])
+def test_non_mass_labels_come_from_the_unit_registry(basis, unit, amount,
+                                                     fields, expected):
+    """THE LABEL IS THE PRODUCT. Asserting the stored expression and not the
+    rendered string let `240 mls`, `3 tbsps` and `2 ozs` sit in the row
+    unremarked — appending "s" to a canonical unit id, which no rule can fix
+    because nothing in an id says whether it is an abbreviation.
+    """
+    _interaction, options, record = _ask(
+        _candidate(basis, unit, amount, fields,
+                   scope=EvidenceScope.POPULATION))
+    assert [o.label for o in options] == [expected]
+    assert [p.rendered_label for p in record.presented] == [expected]
+
+
+def test_mass_labels_still_come_from_the_everyday_renderer():
+    """Unchanged, and deliberately so: `_everyday_labels` is the accumulated
+    judgement about how people say weights — ounces for meat, cups for rice —
+    and the registry does not replace it."""
+    mass = (_candidate(ServingBasis.MASS, "g", "85", {"grams": "85"},
+                       scope=EvidenceScope.POPULATION, cid="low",
+                       prior="0.2"),
+            _candidate(ServingBasis.MASS, "g", "226", {"grams": "226"},
+                       scope=EvidenceScope.POPULATION, cid="high",
+                       prior="0.3"))
+    _ix, options, _record = _ask(*mass, food_name="chicken breast")
+    assert [o.label for o in options] == ["3 oz", "8 oz"]
+    assert not any(o.label.endswith("ozs") for o in options)
+    # A FOOD THE EVERYDAY RENDERER DOES NOT KNOW still renders in grams,
+    # unchanged — the registry path is for non-mass bases, not a replacement.
+    _ix2, plain, _r2 = _ask(*mass)
+    assert [o.label for o in plain] == ["85g", "226g"]

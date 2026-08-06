@@ -1799,7 +1799,34 @@ them. A gate fails the day that changes, so someone decides deliberately
 whether the ledger still describes reality — *"not produced" is not
 "not supported", and neither is "not tested"*.
 
-8142 pass on SQLite and 8142 on Postgres (21 skips).
+**6.1 — the matrix I claimed was broader than the matrix I wrote.** Eight
+corrections from the review of `4cbffed`:
+
+* **The cross-product was described, not implemented.** Population and
+  this-user were swept across seven bases; product evidence was ONE case,
+  history-empty ONE case, and the test named "population prior beside the
+  user's record" built only the user record — so the thing its name promised
+  was never tested. `MATRIX` is now generated: scope × basis × history, with
+  `THIS_PRODUCT_QUANTITY` present on the three quantity-bearing bases and
+  **excluded by rule** on the others rather than silently absent.
+* **"Every cross-basis pair" was five of forty-two.** Generated now from all
+  unequal pairs, twice: once proving no basis changes without an authority,
+  once proving a conversion must START where the evidence looked.
+* **Product evidence ran through `authorizes_assumption` directly.** It goes
+  through the full ask → "not sure" → answer route now, against the matching
+  variant, a foreign variant and no variant.
+* **Labels were never asserted** — only stored expressions. So `3 tbsps`,
+  `240 mls` and `2 ozs` sat in the row unremarked: `_expression_label`
+  appended "s" whenever the amount was not one. **No rule can fix that**,
+  because nothing in a canonical unit id says whether it is an abbreviation,
+  and it does not survive a second language. Written forms are now a
+  versioned table in `core/unit_registry` (`UNIT_DISPLAY_VERSION`), and the
+  rendered labels are asserted across every basis. Mass still goes through
+  `_everyday_labels`, unchanged.
+* **One assertion was vacuous** — `... and result.patch` inside an `any()`
+  after `result.patch` was established as `None`. It could never be true.
+
+8279 pass on SQLite and 8279 on Postgres (25 skips), 159 class gates.
 
 **Carried to the step-8 freeze** *(P2 from the 5.2 review)*: the purity proxy
 returns real evidence objects, so a future policy could branch on

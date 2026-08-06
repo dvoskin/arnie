@@ -51,32 +51,59 @@ class UnknownUnit(ValueError):
     """
 
 
+#: WHICH DISPLAY RULES WROTE A LABEL. Bumped when a rendering changes, so a
+#: persisted `rendered_label` can be read against the rules that produced it
+#: rather than against today's.
+UNIT_DISPLAY_VERSION = "unit_display_v1"
+
+
 @dataclass(frozen=True)
 class UnitDefinition:
     unit_id: str
     dimension: str
     #: Canonical units per 1 of this unit — grams, millilitres, or count.
     per_unit: Decimal
+    #: HOW THE UNIT IS SAID, singular and plural. REGISTERED, not derived:
+    #: appending "s" to a canonical unit id produces `240 mls`, `3 tbsps` and
+    #: `2 ozs`. Abbreviations do not pluralise in English at all, and a rule
+    #: that cannot know which ids are abbreviations cannot be written. It is
+    #: also not a rule that survives translation, which is the deeper reason
+    #: it belongs in a table.
+    singular: str = ""
+    plural: str = ""
+
+    def say(self, amount: Decimal) -> str:
+        """`1 piece`, `2 pieces`, `240 ml`, `3 tbsp`."""
+        one = self.singular or self.unit_id
+        many = self.plural or one
+        return one if amount == 1 else many
+
+
+def _abbrev(dimension, **kw):
+    """Units whose written form never changes with the amount."""
+    return {k: UnitDefinition(unit_id=k, dimension=dimension,
+                              per_unit=Decimal(v), singular=k, plural=k)
+            for k, v in kw.items()}
 
 
 def _mass(**kw):
-    return {k: UnitDefinition(unit_id=k, dimension=MASS, per_unit=Decimal(v))
-            for k, v in kw.items()}
+    return _abbrev(MASS, **kw)
 
 
 def _volume(**kw):
-    return {k: UnitDefinition(unit_id=k, dimension=VOLUME, per_unit=Decimal(v))
-            for k, v in kw.items()}
+    return _abbrev(VOLUME, **kw)
 
 
 _REGISTRY: dict = {}
 _REGISTRY.update(_mass(g="1", gram="1", grams="1", gm="1",
                        kg="1000", kilogram="1000", kilograms="1000"))
 _REGISTRY.update({u: UnitDefinition(unit_id=u, dimension=MASS,
-                                    per_unit=_G_PER_OZ)
+                                    per_unit=_G_PER_OZ,
+                                    singular="oz", plural="oz")
                   for u in ("oz", "ounce", "ounces")})
 _REGISTRY.update({u: UnitDefinition(unit_id=u, dimension=MASS,
-                                    per_unit=_G_PER_LB)
+                                    per_unit=_G_PER_LB,
+                                    singular="lb", plural="lb")
                   for u in ("lb", "lbs", "pound", "pounds")})
 _REGISTRY.update(_volume(ml="1", milliliter="1", millilitre="1",
                          milliliters="1", millilitres="1",
@@ -89,7 +116,8 @@ _REGISTRY.update(_volume(ml="1", milliliter="1", millilitre="1",
                          pint="473.176", pints="473.176",
                          quart="946.353", quarts="946.353"))
 _REGISTRY["floz"] = UnitDefinition(unit_id="floz", dimension=VOLUME,
-                                   per_unit=_ML_PER_FLOZ)
+                                   per_unit=_ML_PER_FLOZ,
+                                   singular="fl oz", plural="fl oz")
 
 #: COUNTABLE UNITS CARRY NO MASS OF THEIR OWN — the food decides, which is
 #: exactly why a piece candidate needs a cited piece weight to reach grams.
@@ -102,8 +130,30 @@ _COUNTABLE = (
     "breast", "breasts", "fillet", "fillets", "stick", "sticks",
     "pat", "pats", "handful", "handfuls",
 )
-_REGISTRY.update({u: UnitDefinition(unit_id=u, dimension=COUNT,
-                                    per_unit=Decimal(1)) for u in _COUNTABLE})
+#: COUNTABLE UNITS ARE WORDS, so they do inflect — and the plural is written
+#: here rather than computed, because "pieces" and "fries" do not come from
+#: one rule.
+#: Only for countable units the table actually holds.
+_PLURALS = {"handful": "handfuls"}
+_REGISTRY.update({
+    u: UnitDefinition(unit_id=u, dimension=COUNT, per_unit=Decimal(1),
+                      singular=u.rstrip("s") if u.endswith("s") else u,
+                      plural=_PLURALS.get(u.rstrip("s") if u.endswith("s")
+                                          else u,
+                                          (u if u.endswith("s")
+                                           else f"{u}s")))
+    for u in _COUNTABLE})
+
+
+def say(amount, unit_id: str) -> str:
+    """The unit, written for this amount, from the REGISTRY.
+
+    The alternative — appending "s" when the amount is not one — produces
+    `240 mls`, `3 tbsps` and `2 ozs`, and cannot be fixed by a better rule
+    because no rule can know which ids are abbreviations. It also does not
+    survive a second language, which is the deeper reason this is a table.
+    """
+    return resolve(unit_id).say(Decimal(str(amount)))
 
 
 def resolve(unit_id: str) -> UnitDefinition:
