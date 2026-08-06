@@ -31,7 +31,8 @@ from core.semantics import (CandidateDecisionRecord, CandidateExclusion,
                             EVIDENCE_SCHEMA_VERSION, ExclusionReason,
                             GenerationRejectionReason, QuantityCandidate,
                             PresentedCandidateOption, QuantityCandidateEvidence,
-                            SelectionSurface, ServingBasis, ServingExpression,
+                            RoundingMode, SelectionSurface, ServingBasis,
+                            ServingExpression,
                             SourceReference, measure_on)
 
 CTX = EvidenceContext(user_id=26, canonical_entity_id="food:chicken_breast")
@@ -116,6 +117,7 @@ def _prod_cand(**kw):
 
 def _set(**kw):
     base = dict(candidate_set_id="cs1", operation_id="op1", user_id=26,
+                context=kw.pop("context", CTX),
                 interaction_revision=0, field_id="f1",
                 generator_version="gen_v1",
                 generation_input_fingerprint="fp1",
@@ -234,12 +236,14 @@ def test_a_conversion_must_land_on_this_candidates_basis():
     conv = ConversionEvidence(from_basis=ServingBasis.PIECE,
                               to_basis=ServingBasis.MASS,
                               source=PIECE_W, factor=Decimal("174"))
+    vol = CanonicalQuantity(milliliters=Decimal("240"))
     with pytest.raises(ValueError, match="does not land"):
-        _cand(serving_basis=ServingBasis.VOLUME,
-              quantity=CanonicalQuantity(milliliters=Decimal("240")),
+        _cand(serving_basis=ServingBasis.VOLUME, quantity=vol,
+              offered=ServingExpression(amount=Decimal("240"), unit_id="ml",
+                                        basis=ServingBasis.VOLUME,
+                                        normalized=vol),
               evidence=(_ev(observed_basis=ServingBasis.VOLUME,
-                            observed_quantity=CanonicalQuantity(
-                                milliliters=Decimal("240")),
+                            observed_quantity=vol,
                             conversion_evidence=conv),))
 
 
@@ -689,10 +693,12 @@ def test_evidence_must_arrive_at_the_offered_quantity(label, basis, observed,
     conv = (ConversionEvidence(from_basis=obs_basis, to_basis=basis,
                                source=DENSITY, factor=Decimal(factor))
             if factor else None)
+    unit = {ServingBasis.MASS: "g", ServingBasis.VOLUME: "ml",
+            ServingBasis.PIECE: "piece", ServingBasis.PACKAGE: "package"}[basis]
     q = CanonicalQuantity(**{off_field: Decimal(off_val)})
     build = lambda: _cand(                                      # noqa: E731
         quantity=q, serving_basis=basis,
-        offered=ServingExpression(amount=Decimal(off_val), unit_id="u",
+        offered=ServingExpression(amount=Decimal(off_val), unit_id=unit,
                                   basis=basis, normalized=q),
         evidence=(_ev(observed_basis=obs_basis,
                       observed_quantity=CanonicalQuantity(
@@ -777,7 +783,8 @@ def test_a_candidate_carries_enough_to_render_its_basis():
                                   grams=Decimal("21.0")))
     said = ServingExpression(amount=Decimal("1"), unit_id="tbsp",
                              basis=ServingBasis.VOLUME, normalized=honey,
-                             conversion_evidence=conv)
+                             conversion_evidence=conv,
+                             quantize_exponent="1", policy_version="expr_v1")
     cand = _cand(quantity=honey, serving_basis=ServingBasis.VOLUME,
                  offered=said,
                  evidence=(_ev(observed_basis=ServingBasis.VOLUME,
@@ -792,7 +799,8 @@ def test_an_expression_that_crosses_bases_needs_its_authority():
                               milliliters=Decimal("15"), grams=Decimal("21"))
     with pytest.raises(ValueError, match="nobody's authority"):
         ServingExpression(amount=Decimal("1"), unit_id="tbsp",
-                          basis=ServingBasis.VOLUME, normalized=honey)
+                          basis=ServingBasis.VOLUME, normalized=honey,
+                          quantize_exponent="1", policy_version="expr_v1")
 
 
 def test_an_expression_must_state_an_amount_on_its_own_basis():
@@ -800,6 +808,7 @@ def test_an_expression_must_state_an_amount_on_its_own_basis():
         ServingExpression(amount=Decimal("1"), unit_id="tbsp",
                           basis=ServingBasis.VOLUME,
                           normalized=CanonicalQuantity(grams=Decimal("21")))
+
     with pytest.raises(ValueError, match="needs the unit"):
         _expr(unit="")
 
@@ -934,3 +943,183 @@ def test_measure_on_is_basis_aware():
     assert measure_on(ml, ServingBasis.MASS) is None
     assert measure_on(CanonicalQuantity(count=Decimal("2")),
                       ServingBasis.PIECE) == Decimal("2")
+
+
+# ── 3a.2 — the serving shown must normalize to the quantity committed ───────
+
+def _honey(ml="15", g="21"):
+    return CanonicalQuantity(amount=Decimal("1"), unit_id="tbsp",
+                             milliliters=Decimal(ml), grams=Decimal(g))
+
+
+def _density(ml, g):
+    return ConversionEvidence(
+        from_basis=ServingBasis.VOLUME, to_basis=ServingBasis.MASS,
+        source=DENSITY, factor=Decimal("1.4"),
+        input_quantity=CanonicalQuantity(milliliters=Decimal(ml)),
+        output_quantity=CanonicalQuantity(grams=Decimal(g)))
+
+
+@pytest.mark.parametrize("label,amount,unit,conv_ml,conv_g,ok", [
+    ("1 tbsp -> 15 ml -> 21 g", "1", "tbsp", "15", "21", True),
+    ("99 tbsp -> 15 ml -> 21 g", "99", "tbsp", "15", "21", False),
+    ("1 tbsp + conversion 100ml -> 140g", "1", "tbsp", "100", "140", False),
+    ("unknown unit", "1", "wibbles", "15", "21", False),
+    ("mass unit on a volume basis", "1", "g", "15", "21", False),
+])
+def test_the_displayed_serving_must_produce_the_committed_quantity(
+        label, amount, unit, conv_ml, conv_g, ok):
+    """P0. THE TWO NUMBERS WERE INDEPENDENT FIELDS SITTING SIDE BY SIDE.
+
+    `amount` and `unit_id` were checked for existence, `normalized` for having
+    some value on the basis, and nothing tied them together. This built
+    cleanly:
+
+        displayed   99 tbsp
+        normalized  15 ml
+        committed   21 g
+        conversion  100 ml -> 140 g   (internally valid, unrelated)
+
+    The user reads ninety-nine tablespoons and the tap commits one — the same
+    public contradiction as before, one layer later. The registry decides what
+    a tablespoon is; never a food name, never the renderer.
+    """
+    build = lambda: ServingExpression(                          # noqa: E731
+        amount=Decimal(amount), unit_id=unit, basis=ServingBasis.VOLUME,
+        normalized=_honey(), conversion_evidence=_density(conv_ml, conv_g),
+        quantize_exponent="1", policy_version="expr_v1")
+    if ok:
+        assert build().amount == Decimal(amount), label
+    else:
+        with pytest.raises(ValueError):
+            build()
+
+
+def test_an_unregistered_unit_fails_shut():
+    """A chip reading `1 wibble` is a chip nobody can price. Refused, not
+    defaulted to "1 of something"."""
+    from core import unit_registry
+
+    with pytest.raises(unit_registry.UnknownUnit):
+        unit_registry.resolve("wibbles")
+    assert unit_registry.canonical_amount(Decimal("1"), "tbsp") == Decimal("14.787")
+    assert unit_registry.dimension_of("cup") == unit_registry.VOLUME
+    with pytest.raises(ValueError, match="not a registered unit"):
+        _expr(unit="wibbles")
+
+
+def test_the_exact_unit_value_holds_unless_rounding_is_declared():
+    """1 tbsp is 14.787 ml. Saying 15 ml is a rounding, and rounding is
+    declared rather than tolerated — here as much as in a conversion."""
+    exact = CanonicalQuantity(milliliters=Decimal("14.787"))
+    assert ServingExpression(amount=Decimal("1"), unit_id="tbsp",
+                             basis=ServingBasis.VOLUME, normalized=exact)
+    with pytest.raises(ValueError, match="different amounts"):
+        ServingExpression(amount=Decimal("1"), unit_id="tbsp",
+                          basis=ServingBasis.VOLUME,
+                          normalized=CanonicalQuantity(
+                              milliliters=Decimal("15")))
+    assert ServingExpression(amount=Decimal("1"), unit_id="tbsp",
+                             basis=ServingBasis.VOLUME,
+                             normalized=CanonicalQuantity(
+                                 milliliters=Decimal("15")),
+                             quantize_exponent="1", policy_version="expr_v1")
+
+
+# ── 3a.2 — a candidate set is bound to its subject ──────────────────────────
+
+def test_a_set_rejects_a_candidate_about_another_food():
+    with pytest.raises(ValueError, match="in a set about"):
+        _set(candidates=(_cand(canonical_entity_id="food:salmon"),))
+
+
+def test_a_set_rejects_another_users_history_outright():
+    """AND NOT MERELY OUT-VOTES IT.
+
+    Applicability is an `any()` over evidence, so a population record beside a
+    foreign THIS_USER record made the candidate look applicable while the
+    foreign record was still persisted and still readable. A stored claim
+    about another user is a durable disclosure whether or not a selector
+    happens to read it.
+    """
+    foreign = _ev(subject_scope=EvidenceScope.THIS_USER, subject_user_id=99)
+    population = _ev(subject_scope=EvidenceScope.POPULATION,
+                     subject_user_id=None)
+    masked = _cand(evidence=(population, foreign))
+    assert masked.applies_to(CTX)          # the any() still says yes …
+    with pytest.raises(ValueError, match="must not be persisted here"):
+        _set(candidates=(masked,))         # … and the set refuses it anyway
+
+
+def test_a_set_rejects_evidence_about_another_variant():
+    with pytest.raises(ValueError, match="evidence about variant"):
+        _set(candidates=(_prod_cand(),))
+    assert _set(candidates=(_prod_cand(),),
+                context=EvidenceContext(
+                    user_id=26, canonical_entity_id="food:chicken_breast",
+                    product_variant_id="sku:991"))
+
+
+def test_the_set_user_and_its_context_must_be_the_same_person():
+    with pytest.raises(ValueError, match="its context is about user"):
+        _set(context=EvidenceContext(user_id=99,
+                                     canonical_entity_id="food:chicken_breast"))
+
+
+def test_the_bound_context_survives_storage():
+    s = _set()
+    assert CandidateSet.from_payload(s.to_payload()).context == CTX
+
+
+# ── 3a.2 — determinism and exact positions ─────────────────────────────────
+
+def test_rounding_does_not_depend_on_ambient_decimal_context():
+    """`Decimal.quantize()` reads the process-wide context when no mode is
+    given, so any library anywhere could have changed a stored conversion's
+    result from 182 to 181."""
+    from decimal import ROUND_DOWN, getcontext, localcontext
+
+    conv = ConversionEvidence(from_basis=ServingBasis.VOLUME,
+                              to_basis=ServingBasis.MASS, source=DENSITY,
+                              factor=Decimal("0.758"),
+                              policy_version="conv_v1", quantize_exponent="1")
+    before = conv.apply_to(Decimal("240"))
+    with localcontext() as ctx:
+        ctx.rounding = ROUND_DOWN
+        assert conv.apply_to(Decimal("240")) == before == Decimal("182")
+    assert getcontext().rounding != ROUND_DOWN or True
+    # The mode is persisted, so a stored record rounds the way it was written.
+    down = ConversionEvidence(
+        from_basis=ServingBasis.VOLUME, to_basis=ServingBasis.MASS,
+        source=DENSITY, factor=Decimal("0.758"), policy_version="conv_v1",
+        quantize_exponent="1", rounding_mode=RoundingMode.DOWN)
+    assert down.apply_to(Decimal("240")) == Decimal("181")
+    assert ConversionEvidence.from_payload(
+        down.to_payload()).rounding_mode is RoundingMode.DOWN
+
+
+@pytest.mark.parametrize("positions,ok", [
+    ((0, 1), True),
+    # Contiguous, but c1 at position 1 contradicts a selection of (c1, c2):
+    # position is the place in the row, not a free label.
+    ((1, 0), False),
+    ((0, 0), False),
+    ((7, 12), False),
+    ((0, 2), False),
+])
+def test_presented_positions_are_exactly_zero_to_n_minus_one(positions, ok):
+    """Otherwise "position" means only "earlier than", and the exact row the
+    user saw cannot be reconstructed."""
+    two = _set(candidates=(_cand(), _cand(candidate_id="c2")))
+    d = _decision(selected_candidate_ids=("c1", "c2"))
+    pres = (_shown(option_id="o1", candidate_id="c1",
+                   selected_position=positions[0]),
+            _shown(option_id="o2", candidate_id="c2",
+                   selected_position=positions[1]))
+    if ok:
+        assert CandidateDecisionRecord(candidate_set=two, decision=d,
+                                       presented=pres)
+    else:
+        with pytest.raises(ValueError, match="positions are|not the row"):
+            CandidateDecisionRecord(candidate_set=two, decision=d,
+                                    presented=pres)

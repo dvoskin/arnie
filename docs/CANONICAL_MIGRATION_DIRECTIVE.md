@@ -1096,7 +1096,7 @@ B-1        SLICE NOT CLOSED  see the seven-line state below — "backend
                              still runs
 B-1.75     COMPLETE          answered quantity is the only quantity authority
 B-1.9      IN PROGRESS       1 PASS(+2 CF) · 2 DONE · 2.1 DONE (P0 fixed) ·
-                             3a + 3a.1 DONE contracts · 3b NEXT persistence ·
+                             3a/3a.1/3a.2 DONE contracts · 3b NEXT persistence ·
                              4-10 open. Runs BEFORE B-1 closure.
 B-1b.1/.2  NEXT              deterministic matrix + sequence corpus
 B-1b.3     PLANNED           instrumented human simulation
@@ -1371,6 +1371,48 @@ Also in 3a.1:
   `immutable_within_version` — a `food_entries` id points at whatever the row
   says now, and correction rewrites it.
 
+**3a.2 — the shown serving and the committed quantity were still independent
+fields.** Review 2026-08-06 on `e4b6139`. `ServingExpression` checked that
+`amount` was positive, `unit_id` non-empty and `normalized` non-empty on its
+basis — and never that the amount and the unit PRODUCE the normalized value.
+Reproduced before fixing:
+
+```text
+CONSTRUCTIBLE  displayed 99 tbsp · normalized 15 ml · committed 21 g
+               attached conversion 100 ml -> 140 g (valid, unrelated)
+CONSTRUCTIBLE  unit_id "wibbles"
+CONSTRUCTIBLE  set.user_id=26 holding a salmon candidate on a chicken field,
+               carrying THIS_USER evidence about user 99
+CONSTRUCTIBLE  presented positions [7, 12] and [0, 0]
+   NON-DETERMINISTIC  a stored conversion returning 182, then 181, after any
+               library anywhere set getcontext().rounding
+```
+
+Closed by:
+
+* **`core/unit_registry.py`** — a closed Decimal table, so `amount + unit_id`
+  formally normalizes to the stored quantity, and an unregistered unit is
+  REFUSED rather than defaulted. Mass constants are **derived from
+  `core.units`**, not respelled: the "one place knows what a pound is" ratchet
+  caught this module on its first run, which is the gate working on a module
+  added to improve exactness.
+* **The attached conversion must be about THIS expression's values** — input
+  equal to the expression's own basis amount, output equal to its committed
+  mass. An internally valid conversion for an unrelated quantity licensed
+  nothing while looking fully sourced.
+* **`CandidateSet.context`** — the set is bound to an `EvidenceContext` and
+  every candidate and scoped record is checked against it. Foreign evidence is
+  **rejected, not out-voted**: applicability is an `any()`, so a population
+  record beside a foreign THIS_USER record made the candidate look applicable
+  while the foreign record stayed persisted and readable. A stored claim about
+  another user is a durable disclosure whether or not a selector reads it.
+* **`RoundingMode`**, persisted and passed explicitly to every `quantize()`.
+* **Presented positions must be exactly `0..n-1`** — otherwise "position"
+  means only "earlier than" and the exact row cannot be reconstructed.
+
+**3a.2 — status: DONE.** 8035 pass on SQLite and 8035 on Postgres (21 skips),
+97 contract gates.
+
 **3a.1 — status: DONE.** 8017 pass on SQLite and 8017 on Postgres (21 skips),
 79 contract gates. Mutation-verified: disabling the support comparison turns 5
 gates red, disabling the conversion arithmetic turns 2 red. No schema, no
@@ -1406,6 +1448,14 @@ revision shown`.
 [x] every shown option binds to one persisted candidate         3a.1
 [x] rendered labels and positions are durable                   3a.1
 [x] invalid timestamps or evidence types fail at construction   3a.1
+[x] expression amount/unit formally produces its quantity        3a.2
+[x] expression conversion starts and ends on that quantity       3a.2
+[x] unrelated conversion evidence cannot be attached             3a.2
+[x] candidate set rejects wrong-user / wrong-entity /
+    wrong-product evidence                                       3a.2
+[x] population evidence cannot mask foreign scoped evidence      3a.2
+[x] rounding is deterministic independent of Decimal context     3a.2
+[x] presented positions are exactly 0..n-1                       3a.2
 [ ] generator inputs carry a reproducibility fingerprint      3b
 [ ] same key + different fingerprint fails loudly             3b
 [ ] source evidence is snapshotted, not merely referenced     3a shape,

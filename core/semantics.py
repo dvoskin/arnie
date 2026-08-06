@@ -1739,6 +1739,30 @@ _BASIS_MEASURE = {
 }
 
 
+class RoundingMode(str, Enum):
+    """HOW A DECLARED ROUNDING ROUNDS, persisted with the record that does it.
+
+    `Decimal.quantize()` reads the ambient decimal context when no mode is
+    given, so a stored conversion could produce 182 in one process and 181 in
+    another after any library anywhere called `getcontext().rounding = ...`.
+    A persisted conversion whose result depends on process-wide state is not
+    reproducible, which is the whole point of persisting it.
+
+    Passed explicitly at every call site. Never defaulted to the context.
+    """
+    HALF_UP = "half_up"
+    HALF_EVEN = "half_even"
+    DOWN = "down"
+    UP = "up"
+
+    @property
+    def decimal_mode(self) -> str:
+        from decimal import (ROUND_DOWN, ROUND_HALF_EVEN, ROUND_HALF_UP,
+                             ROUND_UP)
+        return {"half_up": ROUND_HALF_UP, "half_even": ROUND_HALF_EVEN,
+                "down": ROUND_DOWN, "up": ROUND_UP}[self.value]
+
+
 def measure_on(quantity, basis: "ServingBasis") -> Optional[Decimal]:
     """The number this quantity states ON THIS BASIS, or None.
 
@@ -1787,11 +1811,17 @@ class ConversionEvidence:
     policy_version: str = ""
     #: An explicit Decimal exponent, e.g. "0.01". Empty means exact.
     quantize_exponent: str = ""
+    #: HOW that exponent rounds. Persisted, and passed to every quantize()
+    #: call, so the stored result cannot change because some other library
+    #: mutated the process-wide decimal context.
+    rounding_mode: RoundingMode = RoundingMode.HALF_UP
 
     def __post_init__(self):
         object.__setattr__(self, "from_basis", ServingBasis(self.from_basis))
         object.__setattr__(self, "to_basis", ServingBasis(self.to_basis))
         object.__setattr__(self, "factor", _dec_in(self.factor))
+        object.__setattr__(self, "rounding_mode",
+                           RoundingMode(self.rounding_mode))
         if self.from_basis is not self.to_basis:
             if self.source is None:
                 raise ValueError(
@@ -1833,7 +1863,8 @@ class ConversionEvidence:
         expected = seen * (self.factor if self.factor is not None
                            else Decimal(1))
         if self.quantize_exponent:
-            expected = expected.quantize(Decimal(self.quantize_exponent))
+            expected = expected.quantize(Decimal(self.quantize_exponent),
+                                         rounding=self.rounding_mode.decimal_mode)
         if expected != got:
             raise ValueError(
                 f"{seen} {self.from_basis.value} x {self.factor} yields "
@@ -1845,7 +1876,8 @@ class ConversionEvidence:
         """Convert a measure on `from_basis` to one on `to_basis`."""
         out = Decimal(str(amount)) * (self.factor if self.factor is not None
                                       else Decimal(1))
-        return (out.quantize(Decimal(self.quantize_exponent))
+        return (out.quantize(Decimal(self.quantize_exponent),
+                             rounding=self.rounding_mode.decimal_mode)
                 if self.quantize_exponent else out)
 
     def to_payload(self) -> dict:
@@ -1858,7 +1890,8 @@ class ConversionEvidence:
                 "output_quantity": (self.output_quantity.to_payload()
                                     if self.output_quantity else None),
                 "policy_version": self.policy_version,
-                "quantize_exponent": self.quantize_exponent}
+                "quantize_exponent": self.quantize_exponent,
+                "rounding_mode": self.rounding_mode.value}
 
     @classmethod
     def from_payload(cls, d: dict) -> "ConversionEvidence":
@@ -1873,7 +1906,9 @@ class ConversionEvidence:
                    output_quantity=(CanonicalQuantity.from_payload(qout)
                                     if qout else None),
                    policy_version=d.get("policy_version", ""),
-                   quantize_exponent=d.get("quantize_exponent", ""))
+                   quantize_exponent=d.get("quantize_exponent", ""),
+                   rounding_mode=RoundingMode(
+                       d.get("rounding_mode", RoundingMode.HALF_UP.value)))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1955,10 +1990,18 @@ class ServingExpression:
     #: mass is stated on — saying "1 tbsp" for something committed as 21 g is
     #: a density claim, and it needs the same authority as any other.
     conversion_evidence: Optional[ConversionEvidence] = None
+    #: A declared rounding from the unit's exact value to the stated one.
+    #: 1 tbsp is 14.787 ml; an expression that wants to say 15 ml declares
+    #: that rounding rather than being allowed a tolerance.
+    quantize_exponent: str = ""
+    rounding_mode: RoundingMode = RoundingMode.HALF_UP
+    policy_version: str = ""
 
     def __post_init__(self):
         object.__setattr__(self, "basis", ServingBasis(self.basis))
         object.__setattr__(self, "amount", _dec_in(self.amount))
+        object.__setattr__(self, "rounding_mode",
+                           RoundingMode(self.rounding_mode))
         if self.amount is None or self.amount <= 0:
             raise ValueError(
                 f"a serving expression states an amount; got {self.amount!r}")
@@ -1967,24 +2010,98 @@ class ServingExpression:
                 "a serving expression needs the unit it is said in — without "
                 "one the renderer must guess, which is the defect this "
                 "removes")
+        if self.quantize_exponent and not str(self.policy_version or "").strip():
+            raise ValueError(
+                "rounding must be attributable: quantize_exponent without a "
+                "policy_version is an undeclared adjustment")
         stated = measure_on(self.normalized, self.basis)
         if stated is None:
             raise ValueError(
                 f"this expression is said in {self.basis.value} but its "
                 f"normalized quantity states no amount on that basis, so it "
                 f"cannot be rendered without inventing one")
-        mass = getattr(self.normalized, "grams", None)
-        if (mass is not None and self.basis is not ServingBasis.MASS
-                and self.conversion_evidence is None):
+        self._check_unit_produces(stated)
+        self._check_conversion(stated)
+
+    def _check_unit_produces(self, stated: Decimal):
+        """`amount` OF `unit_id` MUST BE `stated`, via the registry.
+
+        Without this the displayed serving and the committed quantity were
+        independent fields that merely sat next to each other: `99 tbsp`
+        alongside a normalized 15 ml constructed cleanly, and the user would
+        read ninety-nine tablespoons and commit one. The registry decides what
+        a tablespoon is — never a food name, never the renderer.
+        """
+        from core import unit_registry
+
+        try:
+            definition = unit_registry.resolve(self.unit_id)
+        except unit_registry.UnknownUnit as exc:
+            raise ValueError(str(exc)) from None
+        want = {ServingBasis.MASS: unit_registry.MASS,
+                ServingBasis.VOLUME: unit_registry.VOLUME}.get(
+                    self.basis, unit_registry.COUNT)
+        if definition.dimension != want:
             raise ValueError(
-                f"an expression in {self.basis.value} resolving to {mass} g "
-                f"crosses bases on nobody's authority — the density or piece "
-                f"weight that licenses it must be cited")
+                f"{self.unit_id!r} is a {definition.dimension} unit but this "
+                f"expression is said on the {self.basis.value} basis — the "
+                f"chip would be read in one dimension and priced in another")
+        produced = unit_registry.canonical_amount(self.amount, self.unit_id)
+        if self.quantize_exponent:
+            produced = produced.quantize(
+                Decimal(self.quantize_exponent),
+                rounding=self.rounding_mode.decimal_mode)
+        if produced != stated:
+            raise ValueError(
+                f"{self.amount} {self.unit_id} is {produced} on the "
+                f"{self.basis.value} basis, but this expression states "
+                f"{stated} — the serving shown and the quantity committed "
+                f"would be different amounts")
+
+    def _check_conversion(self, stated: Decimal):
+        """The conversion must be about THIS expression's own values.
+
+        An internally valid conversion for an unrelated quantity —
+        `100 ml -> 140 g` attached to a 15 ml expression — proves nothing
+        about what this chip commits, while looking fully sourced.
+        """
+        mass = getattr(self.normalized, "grams", None)
+        conv = self.conversion_evidence
+        if mass is not None and self.basis is not ServingBasis.MASS:
+            if conv is None:
+                raise ValueError(
+                    f"an expression in {self.basis.value} resolving to "
+                    f"{mass} g crosses bases on nobody's authority — the "
+                    f"density or piece weight that licenses it must be cited")
+            if (conv.from_basis is not self.basis
+                    or conv.to_basis is not ServingBasis.MASS):
+                raise ValueError(
+                    f"this expression is said in {self.basis.value} and "
+                    f"commits mass, but its conversion runs "
+                    f"{conv.from_basis.value} -> {conv.to_basis.value}")
+            got_in = (measure_on(conv.input_quantity, conv.from_basis)
+                      if conv.input_quantity is not None else None)
+            got_out = (measure_on(conv.output_quantity, conv.to_basis)
+                       if conv.output_quantity is not None else None)
+            if got_in is None or got_out is None:
+                raise ValueError(
+                    "a conversion attached to a serving expression must state "
+                    "the amounts it ran on, or it cannot be shown to be about "
+                    "this serving")
+            if got_in != stated or got_out != Decimal(str(mass)):
+                raise ValueError(
+                    f"this expression is {stated} {self.basis.value} "
+                    f"committing {mass} g, but its conversion runs {got_in} "
+                    f"-> {got_out} — a conversion about another quantity "
+                    f"licenses nothing about this one")
 
     def to_payload(self) -> dict:
         return {"amount": _dec_out(self.amount), "unit_id": self.unit_id,
                 "basis": self.basis.value,
                 "normalized": self.normalized.to_payload(),
+                "quantize_exponent": self.quantize_exponent,
+                "rounding_mode": self.rounding_mode.value,
+                "policy_version": self.policy_version,
                 "conversion_evidence": (self.conversion_evidence.to_payload()
                                         if self.conversion_evidence else None)}
 
@@ -1994,6 +2111,10 @@ class ServingExpression:
         return cls(amount=_dec_in(d["amount"]), unit_id=d["unit_id"],
                    basis=ServingBasis(d["basis"]),
                    normalized=CanonicalQuantity.from_payload(d["normalized"]),
+                   quantize_exponent=d.get("quantize_exponent", ""),
+                   rounding_mode=RoundingMode(
+                       d.get("rounding_mode", RoundingMode.HALF_UP.value)),
+                   policy_version=d.get("policy_version", ""),
                    conversion_evidence=(ConversionEvidence.from_payload(conv)
                                         if conv else None))
 
@@ -2486,6 +2607,16 @@ class CandidateSet:
     candidate_set_id: str
     operation_id: str
     user_id: int
+    #: THE SUBJECT THIS WHOLE SET IS ABOUT. Every candidate and every scoped
+    #: evidence record inside is checked against it at construction.
+    #:
+    #: `user_id` alone was not ownership. A set for user 26 could hold a
+    #: salmon candidate on a chicken field, carrying THIS_USER evidence about
+    #: user 99 — and because applicability is an `any()` over evidence, one
+    #: population record beside the foreign one made the candidate look
+    #: applicable while the foreign record was still persisted and still
+    #: readable. Foreign evidence is now REFUSED, not out-voted.
+    context: "EvidenceContext"
     interaction_revision: int
     field_id: str
     generator_version: str
@@ -2525,6 +2656,7 @@ class CandidateSet:
         if not self.user_id:
             raise ValueError(
                 "a candidate set must name the user it was generated for")
+        self._check_ownership()
         if not str(self.generator_version or "").strip():
             # WHICH GENERATOR PRODUCED THIS UNIVERSE. Without it, sets built
             # under different rules are pooled and the difference between them
@@ -2541,6 +2673,48 @@ class CandidateSet:
                 f"candidate ids must be unique within a set; repeated: "
                 f"{dupes}")
 
+    def _check_ownership(self):
+        """EVERY CANDIDATE, AND EVERY SCOPED RECORD, IS ABOUT THIS SUBJECT.
+
+        Checked here rather than left to `applies_to`, because that method
+        answers "may this be used?" over the whole candidate and returns True
+        as soon as ONE record matches. It cannot prevent a foreign record from
+        being written down beside a matching one — and a persisted claim about
+        another user is a durable disclosure regardless of whether a selector
+        happened to read it.
+        """
+        if not isinstance(self.context, EvidenceContext):
+            raise ValueError(
+                f"a candidate set is bound to an EvidenceContext, got "
+                f"{type(self.context).__name__}")
+        if self.context.user_id != self.user_id:
+            raise ValueError(
+                f"the set is filed for user {self.user_id} but its context is "
+                f"about user {self.context.user_id}")
+        entity = self.context.canonical_entity_id or ""
+        for c in self.candidates:
+            if c.canonical_entity_id != entity:
+                raise ValueError(
+                    f"candidate {c.candidate_id!r} is about "
+                    f"{c.canonical_entity_id!r} in a set about {entity!r} — a "
+                    f"chip for another food would be offered as an answer to "
+                    f"this one")
+            for ev in c.evidence:
+                if (ev.subject_scope is EvidenceScope.THIS_USER
+                        and ev.subject_user_id != self.user_id):
+                    raise ValueError(
+                        f"candidate {c.candidate_id!r} carries THIS_USER "
+                        f"evidence about user {ev.subject_user_id} in a set "
+                        f"for user {self.user_id} — another person's logging "
+                        f"history must not be persisted here at all")
+                if (ev.subject_scope is EvidenceScope.THIS_PRODUCT_QUANTITY
+                        and ev.product_variant_id != (
+                            self.context.product_variant_id or "")):
+                    raise ValueError(
+                        f"candidate {c.candidate_id!r} carries evidence about "
+                        f"variant {ev.product_variant_id!r} in a set about "
+                        f"{self.context.product_variant_id!r}")
+
     @property
     def candidate_ids(self) -> frozenset:
         return frozenset(c.candidate_id for c in self.candidates)
@@ -2555,6 +2729,10 @@ class CandidateSet:
         return {"candidate_set_id": self.candidate_set_id,
                 "operation_id": self.operation_id,
                 "user_id": self.user_id,
+                "context": {
+                    "user_id": self.context.user_id,
+                    "canonical_entity_id": self.context.canonical_entity_id,
+                    "product_variant_id": self.context.product_variant_id},
                 "interaction_revision": self.interaction_revision,
                 "field_id": self.field_id,
                 "generator_version": self.generator_version,
@@ -2564,9 +2742,14 @@ class CandidateSet:
 
     @classmethod
     def from_payload(cls, d: dict) -> "CandidateSet":
+        c = d.get("context") or {}
         return cls(candidate_set_id=d["candidate_set_id"],
                    operation_id=d["operation_id"],
                    user_id=int(d["user_id"]),
+                   context=EvidenceContext(
+                       user_id=c.get("user_id"),
+                       canonical_entity_id=c.get("canonical_entity_id", ""),
+                       product_variant_id=c.get("product_variant_id")),
                    interaction_revision=int(d["interaction_revision"]),
                    field_id=d["field_id"],
                    generator_version=d.get("generator_version", ""),
@@ -2873,6 +3056,15 @@ class CandidateDecisionRecord:
             raise ValueError(
                 f"two shown options share an id: {sorted(option_ids)} — a tap "
                 f"would resolve to both")
+        positions = sorted(p.selected_position for p in self.presented)
+        if positions != list(range(len(self.presented))):
+            # TWO OPTIONS AT 0, OR 7 AND 12, STILL MATCHED THE SELECTED ORDER.
+            # "Position" then means only "earlier than", and the exact row the
+            # user saw cannot be reconstructed from it.
+            raise ValueError(
+                f"presented positions are {positions} — they must be exactly "
+                f"0..{len(self.presented) - 1}, or a position is an ordering "
+                f"hint rather than the place the option occupied")
         selected = list(self.decision.selected_candidate_ids)
         by_position = sorted(self.presented, key=lambda p: p.selected_position)
         if [p.candidate_id for p in by_position] != selected:
