@@ -1177,6 +1177,65 @@ Promotion means deleting the legacy quantity path. Blocked until all hold:
 [ ] rollback tested
 ```
 
+### B-1b finding 1 — the `piece` fallback produces unusable option sets
+
+**Recorded 2026-08-06. Evidence, not opinion. Deferred, not fixed.**
+
+Measured with `scripts/b1_option_dryrun.py` over the 60 most-logged real foods
+of a real account — real foods, real history, the deterministic producer, and
+**no synthetic answers**. The correlation is total:
+
+```text
+ontology specificity   foods   degenerate   share
+category                 33         0         0%
+fallback                 18         0         0%
+piece                     9         6        67%   <- no ontology row
+```
+
+A "degenerate" set is two options 2× or more apart with nothing between —
+not a choice, a fork. Every one of them is `specificity='piece'`, meaning the
+portion ontology has **no row for that food** and falls back to a generic
+piece bracket:
+
+```text
+39x  Barebells Salty Peanut Protein Bar   ['2 oz', '5 oz']    2.6x
+14x  Banana                               ['98g', '276g']     2.8x
+ 3x  Grilled chicken breast               ['5 oz', '16 oz']   3.3x
+```
+
+**It reproduces the production observation exactly.** Live, a chicken-breast
+question offered `6 oz` / `16 oz`; the dry run gives `5 oz` / `16 oz` for the
+same food. And under the standing bias-high rule a "not sure" answer then takes
+the upper of two, which committed **435 g of chicken breast, 718 cal** on
+2026-08-06. The estimate logic is correct; it was handed a fork.
+
+Two further signals inside the same data:
+
+* **Countable foods are bracketed by mass.** A protein bar offered as "2 oz or
+  5 oz" is not a question anyone answers. Whether B-1 would ask at all is a
+  separate matter — see the caveat below.
+* **The three-anchor set collapses to two** in `_collapse_by_label` when the
+  lower and median render alike, so the middle value disappears precisely
+  where the bracket is widest.
+
+**Scope, and why it is deferred.** Wording ("say it more like a person") is
+B-2.8. This is not wording — it is *candidate generation*, which B-1b exists
+to evaluate and B-1.5+ inherits. Fixing it now would be optimizing a generator
+before the window has finished saying what is wrong with it. It is recorded so
+promotion cannot happen while it is unexamined.
+
+**The instrument's honest limit.** The dry run **cannot apply `is_eligible`** —
+that needs a decision with staged items, which cannot be built from a food
+name. So the corpus is foods *logged*, not foods B-1 would *ask* about; a
+branded bar may be declined as `identity_ambiguous` and never reach a
+question. **Read the per-specificity rates, not the headline total.** The
+unambiguous in-scope case is grilled chicken breast, and it matched production.
+
+*(An earlier version of this tool reported "0 degenerate sets" — it measured
+the raw ontology anchors and skipped `_collapse_by_label`, which is where the
+degeneracy is created. A clean number from an instrument pointed at the wrong
+stage; the same failure as the trace ring, one layer up.)*
+
 ### Open findings — deferred, not dropped
 
 Each is real, none blocks the current phase, and none may be closed silently.
