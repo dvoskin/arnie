@@ -1197,13 +1197,21 @@ bd30854  failure   job=cancelled   15 min   no failed step
 a16bc03  failure   job=failure      7 min   failed at "Set up job"
 ```
 
-**Not the push cadence** — `cancel-in-progress` is `false` on `main`, so a new
-push queues rather than cancelling. **Not a job timeout** — none is set, so the
-default is 360 minutes. A setup-stage failure plus consistent external
-cancellation is the shape of an **account-level Actions minutes or billing
-limit**, which is checkable in seconds and which I cannot see.
+**CAUSE: a GitHub Actions outage, not this repository.** The job page reports
+*"The job was not acquired by Runner of type hosted even after multiple
+attempts"* alongside an internal server error, and GitHub Status shows Actions
+in **major outage** from 2026-08-06T15:22Z: *"Workflow runs are failing or
+delayed in starting, and some queued jobs may time out."* Every red run above
+falls inside that window, and one cause explains all five — jobs queue, no
+runner takes them, they are cancelled around fifteen minutes.
 
-Until it is green, **every test result in this programme is author-reported
+Ruled out on the way: not the push cadence (`cancel-in-progress` is `false` on
+`main`), not a job timeout (none set, default 360 minutes), and **not billing**
+— which was my first hypothesis from the "Set up job" failure and was wrong.
+Nothing needs enabling or configuring.
+
+The cause being external and temporary does not change the standing: until a
+check goes green, **every test result in this programme is author-reported
 execution evidence, not an attached check.** The numbers are real and the runs
 happened; nothing independent confirms them. That distinction belongs in the
 evidence-class table alongside the others, and it should be closed before
