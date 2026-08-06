@@ -201,6 +201,10 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
 
     _measure(owned, answer, option_id=option_id, user=user,
              field=live_field, message=message)
+    await _observe(db, owned, answer, user=user, source_turn_id=source_turn_id,
+                   field=live_field, option_id=option_id, message=message,
+                   selected_source=_selected_source(
+                       live_field, option_id=option_id, message=message))
 
     if answer.outcome is Outcome.CANCELLED:
         await ops.cancel(db, owned=owned, user=user, reason=answer.reason)
@@ -220,6 +224,7 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
                       result=result, reason=answer.reason)
     _measure_commit(owned, turn, user=user, field=live_field,
                     option_id=option_id, message=message)
+    await _stamp_entry(db, owned, turn, source_turn_id=source_turn_id)
     return turn
 
 
@@ -320,6 +325,96 @@ def _selected_source(field, *, option_id: str, message: str) -> str:
     if chosen is not None:
         return getattr(getattr(chosen, "source", None), "value", "") or "none"
     return "free_text"
+
+
+async def _observe(db, owned, answer, *, user, source_turn_id: str,
+                   field, option_id: str, message: str,
+                   selected_source: str) -> None:
+    """The durable half of the measurement (D4.1).
+
+    A SAVEPOINT, and never anything else. A telemetry write that can poison the
+    caller's transaction would trade a lost datapoint for a lost meal, which is
+    exactly backwards — and this runs inside the answer turn's transaction, so
+    a constraint violation here without one would abort the commit beside it.
+    """
+    from sqlalchemy import func, select
+
+    from db.models import B1AnswerObservation
+
+    try:
+        prior = (await db.execute(
+            select(func.count()).select_from(B1AnswerObservation)
+            .where(B1AnswerObservation.operation_id == owned.operation_id)
+        )).scalar() or 0
+        async with db.begin_nested():
+            db.add(B1AnswerObservation(
+                operation_id=owned.operation_id,
+                user_id=getattr(user, "id", None),
+                source_turn_id=source_turn_id or "",
+                attribute=getattr(getattr(field, "attribute", None), "value",
+                                  "quantity"),
+                outcome=answer.outcome.value,
+                modality=_modality(option_id=option_id, reason=answer.reason),
+                selected_source=selected_source,
+                offered=_offered_mix(field),
+                round_index=int(prior) + 1,
+                latency_ms=_latency_ms(owned),
+                cohort=str(getattr(owned, "cohort", "") or "")))
+    except Exception:
+        logger.debug("b1 observation write failed", exc_info=True)
+
+
+async def _stamp_entry(db, owned, turn, *, source_turn_id: str) -> None:
+    """Close the funnel: put the committed row on the answer that produced it.
+
+    Corrections are keyed on `entry_id`, so without this the ten-minute
+    correction rate can be computed per USER and never per SOURCE — and "does
+    history reduce corrections relative to ontology" is the question the whole
+    window exists to answer.
+    """
+    from sqlalchemy import update
+
+    from db.models import B1AnswerObservation
+
+    try:
+        entry_id = facts_for(turn).entry_id
+        if not entry_id:
+            return
+        async with db.begin_nested():
+            await db.execute(
+                update(B1AnswerObservation)
+                .where(B1AnswerObservation.operation_id == owned.operation_id,
+                       B1AnswerObservation.source_turn_id == (source_turn_id or ""))
+                .values(entry_id=entry_id))
+    except Exception:
+        logger.debug("b1 observation entry stamp failed", exc_info=True)
+
+
+def _offered_mix(field) -> str:
+    """`ontology:2,user_history:1` — acceptance needs a denominator."""
+    from collections import Counter
+    if not field:
+        return ""
+    counts = Counter(
+        (getattr(getattr(o, "source", None), "value", None) or "none")
+        for o in (getattr(field, "options", ()) or ()))
+    return ",".join(f"{s}:{n}" for s, n in sorted(counts.items()))
+
+
+def _latency_ms(owned):
+    from core.clock import now as _now
+    asked = getattr(owned, "asked_at", None)
+    if asked is None:
+        return None
+    try:
+        return int((_now() - asked).total_seconds() * 1000)
+    except Exception:
+        return None
+
+
+def _modality(*, option_id: str, reason: str) -> str:
+    from core import b1_metrics
+    return b1_metrics.modality_of(option_id=option_id, reason=reason)
 
 
 def _measure(owned, answer, *, option_id: str, user,

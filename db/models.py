@@ -293,6 +293,69 @@ class LedgerEvent(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class B1AnswerObservation(Base):
+    """One answer to a canonical clarification, kept where a deploy cannot eat it.
+
+    WHY A TABLE AND NOT THE TRACE RING. The ring is
+    `collections.deque(maxlen=2000)` in process memory, shared by every watched
+    event, and it empties on restart — measured 2026-08-06, minutes after a
+    deploy: zero lines. An observation window read from it would silently be a
+    window over "since the last deploy", with the dropped counter reset too, so
+    nothing in the answer would say what was lost. That is the same shape as
+    the `_EVENT_RE` defect, and the whole point of finding it BEFORE the window
+    rather than at the end of it.
+
+    ONE ROW PER ANSWER, not per operation: a repair is an answer that did not
+    land, and the funnel needs both attempts. `round_index` orders them.
+
+    THE MESSAGE IS NOT COPIED HERE. `source_turn_id` joins to
+    `conversation_logs.raw_message`, which already stores it durably — the
+    free-text study needs the words, and a second copy of a user's own sentences
+    is a liability with no benefit.
+    """
+    __tablename__ = "b1_answer_observations"
+    __table_args__ = (
+        # An answer turn can be retried by the transport. Deduped by the
+        # DATABASE for the same reason corrections are: the process doing the
+        # remembering is the thing most likely to restart mid-run.
+        UniqueConstraint("operation_id", "source_turn_id",
+                         name="uq_b1_answer_operation_turn"),
+        Index("ix_b1_answer_observed", "observed_at"),
+        Index("ix_b1_answer_source", "selected_source"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    operation_id = Column(String, nullable=False)
+    user_id = Column(Integer, nullable=False)
+    source_turn_id = Column(String, nullable=False)
+    #: Which field was being answered — so the scorecard is per attribute and
+    #: B-1.5's new attributes score on the same axis without a schema change.
+    attribute = Column(String, nullable=False, default="quantity")
+    #: applied / repair / refused / cancelled.
+    outcome = Column(String, nullable=False)
+    #: HOW they answered: chip / label / text / command.
+    modality = Column(String, nullable=False, default="")
+    #: WHERE the chosen value came from: ontology / user_history / free_text /
+    #: none / unknown_option. `free_text` is a RESULT, not a null — it is the
+    #: signal that the option list failed this user.
+    selected_source = Column(String, nullable=False, default="")
+    #: The offer mix that produced it, e.g. "ontology:2,user_history:1" — the
+    #: denominator without which acceptance is a fraction with no bottom half.
+    offered = Column(String, nullable=False, default="")
+    #: 1 for the first answer, 2 for the answer after one repair, and so on.
+    round_index = Column(Integer, nullable=False, default=1)
+    latency_ms = Column(Integer, nullable=True)
+    #: Set when this answer committed. Corrections are keyed on entry_id, so
+    #: this is what charges a later correction back to the source that caused it.
+    entry_id = Column(Integer, nullable=True)
+    cohort = Column(String, nullable=False, default="")
+    # THE DB CLOCK, like its sibling. A Python timestamp here would put
+    # the window's ordering on a different clock from the rows it
+    # describes, which is the one-clock rule this codebase already lost
+    # a session to.
+    observed_at = Column(DateTime, server_default=func.now())
+
+
 class B1CorrectionObservation(Base):
     """One B-1 committed row observed being corrected soon after it landed.
 

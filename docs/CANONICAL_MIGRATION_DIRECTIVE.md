@@ -45,6 +45,31 @@ The target is not merely "better clarification." The target is:
 Food is the reference implementation. Workouts adopt the shared operation
 spine only after food proves it.
 
+## Measure before generalize
+
+**No clarification generator, candidate source, interaction pattern or UX
+refinement expands until production telemetry demonstrates where users actually
+succeed or fail.**
+
+Adopted 2026-08-06, at the point B-1 stopped being an architecture question and
+became a product one. It is the rule the whole migration was already following
+without saying so: every defect this slice produced — the ask origin, the
+ambiguity field name, the settled window, the expiry window, the stale macros,
+the substituted question — shipped green because a fixture encoded an
+assumption instead of sampling reality. Generalising an option generator on the
+same basis would repeat that at a layer where the cost is a user's trust rather
+than a test run.
+
+Its first application is D4.1: B-1's option pipeline does not widen, and B-1b
+does not begin, until the window says which candidate source actually produces
+answers people accept and do not correct.
+
+The rule binds the instruments too. An observation window read from
+`core/trace_buffer` would be a window over "since the last deploy" — it is a
+`deque(maxlen=2000)` in process memory, shared across every watched event, and
+production measured **zero lines** minutes after a deploy with its dropped
+counter reset alongside. Telemetry that decides a roadmap lives in a table.
+
 ## Standing constraints
 
 These remain in force throughout the migration.
