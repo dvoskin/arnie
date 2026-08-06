@@ -452,8 +452,12 @@ def test_an_estimate_is_deterministic_and_therefore_idempotent():
     assert first.patch == second.patch
 
 
-def _options_of(field, *grams):
+def _options_of(field, *grams, source=None):
     """Options built directly, bypassing `select`'s three-option cap.
+
+    `source` matters since B-1.9: an estimate may only commit from a candidate
+    carrying user- or product-specific evidence, so a median-selection test
+    must build SUPPORTED candidates or it is measuring the refusal instead.
 
     The cap is a PRODUCT rule about how many chips a row may carry; the median
     rule is arithmetic over whatever a field holds. Testing the second through
@@ -465,7 +469,7 @@ def _options_of(field, *grams):
     return tuple(
         ClarificationOption(
             label=f"{g:g}g", option_id=f"opt_{i}", field_id=field.field_id,
-            source=CandidateSource.ONTOLOGY,
+            source=source or CandidateSource.ONTOLOGY,
             patch=SetQuantity(
                 event_id=field.event_id, field_id=field.field_id,
                 quantity=qc._quantity(g, provenance=Provenance.ONTOLOGY,
@@ -490,7 +494,8 @@ def test_the_assumed_value_is_the_median_by_semantic_value(grams, expected):
     a user does not notice.
     """
     field = qc.quantity_field(operation_id=OP, revision=REV, item=_item())
-    options = _options_of(field, *grams)
+    options = _options_of(field, *grams,
+                          source=CandidateSource.USER_HISTORY)
     ix = qc.build_interaction(operation_id=OP, revision=REV, item=_item(),
                               options=options)
     r = answer_from_text(ix, field_id=_field_id(ix), text="I don't know",
@@ -501,7 +506,8 @@ def test_the_assumed_value_is_the_median_by_semantic_value(grams, expected):
 def test_the_median_ignores_the_rendered_order():
     """Same options, shuffled on the row: the assumed value must not move."""
     field = qc.quantity_field(operation_id=OP, revision=REV, item=_item())
-    a, b, c = _options_of(field, 85.0, 141.7, 226.0)
+    a, b, c = _options_of(field, 85.0, 141.7, 226.0,
+                          source=CandidateSource.USER_HISTORY)
     for row in ((a, b, c), (c, a, b), (b, c, a)):
         ix = qc.build_interaction(operation_id=OP, revision=REV, item=_item(),
                                   options=row)
@@ -689,3 +695,39 @@ def test_the_rollout_gate_has_no_continue_function():
     answer there loses a meal in flight."""
     assert not [n for n in dir(qr)
                 if "continue" in n or "still" in n or "keep" in n]
+
+
+def test_an_estimate_refuses_a_population_prior(): 
+    """B-1.9 item 1: "not sure" may not commit from ontology evidence alone.
+
+    A portion ontology is a statement about people in general — the right
+    basis for OFFERING choices, and not evidence about what THIS person ate.
+    Committing from it manufactures certainty to finish the turn, which is how
+    "not sure" logged 435 g of chicken breast in production.
+
+    Entity-agnostic by construction: no food name, no threshold, no tier. The
+    same options with a user-history source commit; with an ontology source
+    they repair.
+    """
+    from core.clarification_answer import Outcome
+
+    field = qc.quantity_field(operation_id=OP, revision=REV, item=_item())
+    grams = (85.0, 141.7, 226.0)
+
+    ontology = qc.build_interaction(
+        operation_id=OP, revision=REV, item=_item(),
+        options=_options_of(field, *grams,
+                            source=CandidateSource.ONTOLOGY))
+    refused = answer_from_text(ontology, field_id=_field_id(ontology),
+                               text="I don't know", revision=REV)
+    assert refused.outcome is Outcome.REPAIR, refused
+    assert refused.patch is None, "a refused estimate must carry no patch"
+
+    history = qc.build_interaction(
+        operation_id=OP, revision=REV, item=_item(),
+        options=_options_of(field, *grams,
+                            source=CandidateSource.USER_HISTORY))
+    allowed = answer_from_text(history, field_id=_field_id(history),
+                               text="I don't know", revision=REV)
+    assert allowed.outcome is Outcome.APPLIED, allowed
+    assert str(allowed.patch.quantity.grams) == "141.7"

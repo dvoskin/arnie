@@ -202,6 +202,58 @@ def _command(said: str, field, locale: str = "en") -> Optional[AnswerResult]:
     return None
 
 
+#: The estimate policy this decision was made under. Versioned because the
+#: sufficiency rule is a POLICY, not a constant — a later ranker will change
+#: what counts as support, and observations already collected must remain
+#: attributable to the rule that produced them.
+ESTIMATE_POLICY_VERSION = "estimate_evidence_v1"
+
+#: Sources that say something about THIS user or THIS product. Everything else
+#: is a population prior.
+_SUPPORTS_AN_ESTIMATE = frozenset({"user_history", "catalog"})
+
+
+def _estimate_is_supported(field):
+    """May "not sure" commit, or must it stay unresolved?
+
+    THE MEASURED CASE. "Not sure" committed 435 g of chicken breast — 718 cal,
+    nearly a pound — because the ontology's generic bracket collapsed to
+    `6 oz / 16 oz` and the estimate took the upper of two. The user asked us
+    not to guess and we guessed extravagantly.
+
+    NO THRESHOLD IS DEFENSIBLE HERE, and that was measured before choosing.
+    Confidence does not separate the failures from the successes — it runs
+    the wrong way:
+
+        Chicken breast   piece      conf 0.75   3.3x   <- the failure
+        White rice       category   conf 0.32   3.2x   <- fine
+        Banana           piece      conf 0.83   2.8x   <- degenerate
+
+    Nor does spread: everything sits between 2.8x and 6.7x. A cut-off on
+    either number would be exactly the arbitrary threshold the standing rules
+    forbid, and would have been tuned to two anecdotes.
+
+    THE RULE IS ABOUT WHAT THE EVIDENCE IS ABOUT. A portion ontology is a
+    statement about people in general; it is the right basis for OFFERING
+    choices and it is not evidence about what this person ate. `USER_HISTORY`
+    is — they logged this exact food at this exact amount. Catalog/package
+    data is, for a product with a defined serving.
+
+    So: an estimate may only commit from a candidate carrying user-specific or
+    product-specific evidence. With none, the canonical state stays
+    unresolved and we repair. That is entity-agnostic, needs no food name, no
+    tier and no cut-off, and it gets all four production cases right —
+    chicken and honey refuse, white rice and ground turkey commit the user's
+    own logged portion.
+    """
+    supported = [o for o in getattr(field, "options", ()) or ()
+                 if o.patch is not None
+                 and getattr(o.patch, "quantity", None) is not None
+                 and str(getattr(getattr(o, "source", None), "value", "") or "")
+                 in _SUPPORTS_AN_ESTIMATE]
+    return supported
+
+
 def _estimate(field, reason: str) -> AnswerResult:
     """"I don't know — you decide."
 
@@ -220,12 +272,22 @@ def _estimate(field, reason: str) -> AnswerResult:
 
     from core.semantics import Provenance, SetQuantity
 
-    priced = [o for o in field.options
-              if o.patch is not None
-              and getattr(o.patch, "quantity", None) is not None]
+    priced = _estimate_is_supported(field)
     if not priced:
-        return AnswerResult(Outcome.REPAIR,
-                            reason=f"{reason} with nothing offered to assume")
+        # UNRESOLVED IS THE CORRECT STATE. No write, the operation stays open,
+        # and the user is asked again — rather than being handed a number
+        # nothing supports. Manufacturing certainty to finish the turn is the
+        # failure mode, not the turn staying open.
+        logger.info(
+            "event=b1_estimate_unsupported policy=%s reason=%s offered=%s — "
+            "no user- or product-specific evidence; remaining unresolved "
+            "rather than committing a population prior",
+            ESTIMATE_POLICY_VERSION, reason,
+            ",".join(str(getattr(getattr(o, "source", None), "value", "?"))
+                     for o in (getattr(field, "options", ()) or ())))
+        return AnswerResult(
+            Outcome.REPAIR,
+            reason=f"{reason}: no evidence supports an estimate here")
     priced.sort(key=lambda o: o.patch.quantity.grams)
     middle = priced[len(priced) // 2].patch
     return AnswerResult(

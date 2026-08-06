@@ -119,6 +119,47 @@ async def opened(sessions, user):
     return ask
 
 
+@pytest_asyncio.fixture
+async def opened_with_history(sessions, user):
+    """An owned operation whose option row includes the user's OWN prior.
+
+    Since B-1.9 an estimate may only commit from user- or product-specific
+    evidence, so a test about what an assumed portion DISCLOSES has to build a
+    supportable one — otherwise it measures the refusal and the disclosure
+    contract silently stops being covered.
+
+    The prior is seeded before ownership is taken, because candidates are
+    generated at ask time.
+    """
+    from datetime import date
+
+    from db.models import DailyLog, FoodEntry
+
+    async with sessions() as s:
+        log = DailyLog(user_id=user.id, date=date.today())
+        s.add(log)
+        await s.flush()
+        s.add(FoodEntry(daily_log_id=log.id,
+                        parsed_food_name="Chicken breast",
+                        quantity="182 g", calories=300.0,
+                        estimated_flag=False))
+        await s.commit()
+
+    async with sessions() as s:
+        u = await s.get(User, user.id)
+        ask = await b1.try_take_ownership(
+            s, user=u, material=_material(), turn_id="t_1",
+            client_capable=True, locale="en")
+        await s.commit()
+    assert ask is not None
+    sources = {str(getattr(getattr(o, "source", None), "value", ""))
+               for o in ask.interaction.groups[0].fields[0].options}
+    assert "user_history" in sources, (
+        f"the seeded prior produced no history candidate ({sources}); this "
+        f"fixture cannot support an estimate")
+    return ask
+
+
 async def _answer(sessions, user, **kw):
     async with sessions() as s:
         u = await s.get(User, user.id)
@@ -380,15 +421,17 @@ async def test_cancel_writes_no_food_row_and_no_meal_commit(sessions, user,
 
 @pytest.mark.asyncio
 async def test_an_estimate_uses_a_persisted_option_not_a_new_value(
-        sessions, user, opened):
+        sessions, user, opened_with_history):
     offered = {o.patch.quantity.grams
-               for o in opened.interaction.groups[0].fields[0].options}
+               for o in opened_with_history.interaction.groups[0].fields[0].options}
     out = await _answer(sessions, user, message="I don't know")
     assert out.applied
     assert out.patch.quantity.grams in offered, \
         "an estimate may not synthesise a value the user never saw"
     assert out.patch.provenance is Provenance.MODE_DEFAULT
-    assert (await _counts(sessions))["food"] == 1
+    # TWO: the seeded prior that makes this estimate supportable, plus the one
+    # this answer just committed.
+    assert (await _counts(sessions))["food"] == 2
 
 
 # ── measurement ──────────────────────────────────────────────────────────────
@@ -596,13 +639,13 @@ async def test_the_card_mirrors_the_row_that_was_committed(sessions, user,
 
 @pytest.mark.asyncio
 async def test_an_assumed_portion_is_marked_on_the_card(sessions, user,
-                                                        opened):
+                                                        opened_with_history):
     """"Logged fast" and "logged fast and quietly guessed" are different
     products, and this is the difference."""
     out = await _answer(sessions, user, message="I don't know")
     assert answer_turn.card_for(answer_turn.facts_for(out))["payload"]["estimated"] is True
 
-    chosen = await _answer(sessions, user, field_id=_field_id(opened),
+    chosen = await _answer(sessions, user, field_id=_field_id(opened_with_history),
                            option_id="opt_ont_mid", revision=0)
     card = answer_turn.card_for(answer_turn.facts_for(chosen))
     if card is not None:               # the replay path returns the same row
@@ -856,7 +899,7 @@ async def test_a_typed_figure_is_the_users_own(sessions, user, opened):
 
 @pytest.mark.asyncio
 async def test_an_assumed_portion_is_disclosed_in_the_facts_and_the_copy(
-        sessions, user, opened):
+        sessions, user, opened_with_history):
     out = await _answer(sessions, user, message="I don't know")
     assert answer_turn.facts_for(out).estimated is True
     assert "(my estimate)" in answer_turn.copy_for(answer_turn.facts_for(out)), \
@@ -978,3 +1021,28 @@ async def test_a_structured_tap_after_settlement_still_replays(
     assert again is not None and again.applied
     assert again.result.committed_items == first.result.committed_items
     assert (await _counts(sessions))["food"] == 1
+
+
+@pytest.mark.asyncio
+async def test_an_unsupported_estimate_leaves_the_operation_open(
+        sessions, user, opened):
+    """B-1.9 item 1, at the ownership boundary.
+
+    `opened` builds an ontology-only option row — a population prior. "I don't
+    know" must then leave the canonical state UNRESOLVED rather than commit a
+    number nothing supports, and the operation must remain answerable.
+
+    Its counterpart above uses `opened_with_history` and commits. Same words,
+    same field, different evidence — which is the whole rule.
+    """
+    from core.clarification_answer import Outcome
+
+    sources = {str(getattr(getattr(o, "source", None), "value", ""))
+               for o in opened.interaction.groups[0].fields[0].options}
+    assert "user_history" not in sources, sources
+
+    out = await _answer(sessions, user, message="I don't know")
+    assert out.outcome is Outcome.REPAIR, out
+    counts = await _counts(sessions)
+    assert counts["food"] == 0, f"an unsupported estimate wrote a meal: {counts}"
+    assert counts["commits"] == 0, counts

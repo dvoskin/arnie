@@ -157,11 +157,19 @@ def modality_of(*, option_id: str, reason: str) -> str:
     Derived HERE rather than at each call site so the rate cannot quietly come
     to mean different things in different branches.
     """
+    # THE LEADING TOKEN, NOT THE WHOLE STRING. This matched `reason` by exact
+    # equality, so the moment a reason carried any detail — "estimate: no
+    # evidence supports this one" — the route was silently reclassified as
+    # `text` and counted as free-text usage. That is the "Other" rate, the
+    # single number the observation window exists to read, corrupted by an
+    # improved error message. Reasons are allowed to explain themselves; what
+    # they NAME is the part before the colon.
+    head = str(reason or "").split(":", 1)[0].strip()
     if option_id:
         return "chip"
-    if reason == "label_selection":
+    if head == "label_selection":
         return "label"
-    if reason in ("estimate", "keep_as_read", "commit_ready", "cancel_meal",
-                  "skip_item", "restart"):
+    if head in ("estimate", "keep_as_read", "commit_ready", "cancel_meal",
+                "skip_item", "restart"):
         return "command"
     return "text"

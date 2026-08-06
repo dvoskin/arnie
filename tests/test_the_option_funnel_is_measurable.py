@@ -379,3 +379,26 @@ def test_the_question_version_moves_when_the_wording_does():
     assert ops.QUESTION_VERSION != "b1_quantity_q1", (
         "the wording changed and QUESTION_VERSION did not — q1 observations "
         "and q2 observations would be indistinguishable")
+
+
+def test_a_reason_that_explains_itself_still_names_its_route():
+    """`modality_of` matched the reason by EXACT equality.
+
+    So the moment a reason carried detail — "estimate: no evidence supports an
+    estimate here" — the route was reclassified as `text` and counted as
+    free-text usage. That is the "Other" rate, the single number the
+    observation window exists to read, corrupted by an improved error message.
+
+    Found by writing a better message, which is a bad way to find it.
+    """
+    from core.b1_metrics import modality_of
+
+    assert modality_of(option_id="", reason="estimate") == "command"
+    assert modality_of(option_id="",
+                       reason="estimate: no evidence supports an estimate here"
+                       ) == "command"
+    assert modality_of(option_id="", reason="cancel_meal: user said stop"
+                       ) == "command"
+    assert modality_of(option_id="", reason="label_selection") == "label"
+    assert modality_of(option_id="", reason="") == "text"
+    assert modality_of(option_id="opt_1", reason="anything") == "chip"

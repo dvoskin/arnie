@@ -132,7 +132,8 @@ async def _state(user):
 @pytest.mark.parametrize("answer,rows_expected,status_expected,modality,label", [
     ("6 oz",       1, "committed", "label",   "the exact text of an offered option"),
     ("137 grams",  1, "committed", "text",    "a quantity we never offered"),
-    ("not sure",   1, "committed", "command", "the estimate route"),
+    ("not sure",   0, "awaiting_answer", "command",
+     "estimate with NO supporting evidence — stays unresolved"),
     ("cancel",     0, "cancelled", "command", "explicit cancel"),
 ])
 @pytest.mark.asyncio
@@ -482,3 +483,74 @@ async def test_the_matrix_reports_the_engine_it_ran_on(app_db, edges, b1_live):
         f"the harness is sharing a schema ({path!r}) — these scenarios write "
         f"real rows and count them, so a neighbour's leftovers would surface "
         f"as an off-by-one somewhere unrelated rather than as a failure here")
+
+
+# ── B-1.9 item 1: the estimate class, both sides ────────────────────────────
+
+@pytest.mark.asyncio
+async def test_not_sure_commits_when_the_users_own_history_supports_it(
+        edges, b1_live, app_db):
+    """The other half, or the containment would just be a refusal to help.
+
+    "Not sure" is a real answer and must still work — when something actually
+    supports it. A prior the user logged themselves is evidence about THIS
+    person; a portion ontology is a statement about people in general. The
+    first may be committed on their behalf, the second may not.
+    """
+    from datetime import date
+
+    import db.database as D
+    from db.models import DailyLog, FoodEntry
+
+    async with D.AsyncSessionLocal() as s:
+        log = DailyLog(user_id=b1_live, date=date.today())
+        s.add(log)
+        await s.flush()
+        s.add(FoodEntry(daily_log_id=log.id, parsed_food_name="Chicken breast",
+                        quantity="182 g", calories=300.0, estimated_flag=False))
+        await s.commit()
+
+    before = len(await rows(b1_live))          # the seeded prior IS a row
+    await _ask(edges, b1_live)
+    offered = await _persisted_ask(b1_live)
+    assert "user_history" in offered["sources"], offered
+
+    await say(b1_live, "not sure")
+    st = await _state(b1_live)
+
+    assert st["food_rows"] == before + 1, (
+        f"an estimate WITH user evidence was refused: {st}")
+    assert st["status"] == "committed", st
+    assert "182" in (st["quantity"] or ""), (
+        f"the estimate did not commit the user's own logged portion: "
+        f"{st['quantity']!r}")
+
+
+@pytest.mark.asyncio
+async def test_an_unsupported_estimate_writes_nothing_and_stays_open(
+        edges, b1_live, app_db):
+    """The measured failure, as a CLASS rather than as chicken.
+
+    Live, "not sure" committed 435 g of chicken breast — 718 cal — because a
+    generic ontology bracket collapsed to `6 oz / 16 oz` and the estimate took
+    the upper of two. The user asked us not to guess.
+
+    The exit gate is exact: zero meal writes, operation still open, an explicit
+    repair. Nothing about chicken appears in this test.
+    """
+    await _ask(edges, b1_live)
+    offered = await _persisted_ask(b1_live)
+    assert "user_history" not in (offered["sources"] or []), (
+        "this case requires an ontology-only option set")
+
+    result = await say(b1_live, "not sure")
+    st = await _state(b1_live)
+
+    assert st["food_rows"] == 0, (
+        f"an unsupported estimate wrote a meal: {st}")
+    assert st["meal_commits"] == 0, st
+    assert st["status"] == "awaiting_answer", (
+        f"the operation closed instead of staying answerable: {st}")
+    text = " ".join(getattr(getattr(result, "response", None), "bubbles", None)
+                    or [])
+    assert text.strip(), "the user got no reply at all"
