@@ -1126,6 +1126,102 @@ B-1 slice closure                  NOT COMPLETE
 Quote these lines rather than a single adjective. "B-1 is done" is true of the
 first four and false of the rest, and the slice loop is won or lost in the rest.
 
+### B-1 is now a PROMOTION project, not an implementation project
+
+**Augmented 2026-08-06 from team review.** Every commit until now answered
+*"can this architecture work?"*. From here they answer *"can we trust it
+enough to delete the old one?"* — a different question, and the roadmap says
+so rather than leaving the shift implicit.
+
+```text
+lifecycle implementation      COMPLETE
+persistence                   COMPLETE
+settlement                    COMPLETE
+presentation boundary         COMPLETE
+evidence harness              COMPLETE
+Postgres engine validation    COMPLETE
+logic matrix                  COMPLETE
+product evidence              IN PROGRESS
+structured client             NOT STARTED
+promotion                     NOT STARTED
+legacy deletion               NOT STARTED
+```
+
+**"Implementation complete" is not "slice complete."** The last three lines are
+the slice.
+
+#### Track A — production evidence. Finishes first.
+
+> **A1 — THE ARCHITECTURE IS FROZEN.** No new abstractions, no new ownership
+> concepts, no shared framework work. Bug fixes only. Every generalisation is
+> cheaper after the evidence and irreversible before it.
+
+| | | |
+|---|---|---|
+| **A1** | freeze | in force from 2026-08-06 |
+| **A2** | finish instrumentation — every clarification measurable | ✅ closed below |
+| **A3** | internal observation window — observe, do **not** optimise | running |
+| **A4** | real-enrichment validation **in production**, not another synthetic test | pending traffic |
+
+**A2's eleven signals, and where each lives.** Nothing else is built until
+every clarification can be analysed end to end.
+
+```text
+shown              pending_operations                      (durable)
+accepted           b1_answer_observations.modality         chip | label
+free-text override b1_answer_observations.selected_source  free_text
+repair             b1_answer_observations.outcome
+estimate           modality=command + MODE_DEFAULT
+cancellation       outcome=cancelled
+abandonment        pending_operations.status = expired     <- was UNANALYSABLE
+latency            b1_answer_observations.latency_ms
+correction window  b1_correction_observations
+candidate source   selected_source + offered mix
+copy version       question_version
+```
+
+**Abandonment was the hole, and it was structural.** The funnel table holds
+ANSWERS, and a question the user walked away from never produced one — so
+every rate computed from it silently conditions on *"they replied"*, and
+completion % was not derivable at all. It is the loudest possible statement
+that a question was not worth asking, and an answers-only dashboard is blind
+to it by construction. `scripts/b1_option_scorecard.py` now reads the
+operation table for a `shown → committed / cancelled / abandoned` lifecycle
+and reports completion against questions **asked**, never against questions
+answered — the second number is the flattering one.
+
+#### Track B — product refinement. Only after the evidence exists.
+
+```text
+B1  clarification wording    version every change; copy is an experiment;
+                             never overwrite a baseline
+B2  candidate ranking        history weighting, ontology ranking, portion
+                             generation — telemetry decides, not taste
+B3  voice harmonization      eliminate the two-Arnie-voices seam only.
+                             NOT adaptive coaching. Renders
+                             CanonicalResponseFacts, never the commit result.
+```
+
+#### Then, in order
+
+```text
+B-1d structured client   -> after candidate quality is understood, so the UX
+                            is not hard-coded around weak suggestions
+promotion                -> internal -> 1% -> 5% -> 25% -> 100%, evidence-driven
+deletion                 -> legacy quantity clarification, legacy pending
+                            ownership, legacy answer routing, legacy
+                            presentation for this slice; then lower ratchets
+```
+
+> **DO NOT START B-2 — or preparation, added fat, multi-item, or workout
+> clarification — until B-1 is promoted AND its predecessor is deleted.**
+>
+> The temptation will be to reuse the new architecture immediately *because it
+> is working*. That is exactly how a second generation of legacy paths gets
+> created, and this migration exists because it happened once already. The
+> order is **prove → promote → delete → reuse**, and only the last step is
+> allowed to be fun.
+
 ### Closing B-1 — the production-evidence ladder
 
 **Augmented 2026-08-06 from team review.** The earlier plan made organic

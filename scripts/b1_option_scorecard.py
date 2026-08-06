@@ -58,6 +58,51 @@ def _pct(n: int, d: int) -> str:
     return "—" if not d else f"{100.0 * n / d:5.1f}%"
 
 
+def lifecycle(cur, *, days: int) -> None:
+    """SHOWN -> COMMITTED / CANCELLED / ABANDONED, from the operations table.
+
+    THE FUNNEL ALONE CANNOT SEE ABANDONMENT. `b1_answer_observations` holds
+    ANSWERS, and a question the user walked away from never produced one — so
+    every rate computed from that table silently conditions on "they replied",
+    and completion % is not derivable at all. Abandonment is the loudest
+    statement that a question was not worth asking, and it is exactly the
+    signal a dashboard built from answers is structurally blind to.
+
+    It lives on the operation row: `sweep_abandoned` sets `expired`, so the
+    evidence is durable even though nobody was having a turn when it happened.
+    """
+    cur.execute(
+        """
+        SELECT status, COUNT(*)
+        FROM pending_operations
+        WHERE domain = 'food' AND created_at IS NOT NULL
+          AND created_at > now() - make_interval(days => %s)
+          AND created_at >= %s::timestamp
+          AND canonical_payload LIKE '%%b1_quantity%%'
+        GROUP BY status
+        """, (days, EVIDENCE_VALID_FROM))
+    counts = {s: n for s, n in cur.fetchall()}
+    shown = sum(counts.values())
+    if not shown:
+        print("LIFECYCLE — no questions asked inside the valid window.\n")
+        return
+
+    committed = counts.get("committed", 0)
+    cancelled = counts.get("cancelled", 0)
+    abandoned = counts.get("expired", 0) + counts.get("abandoned", 0)
+    open_now = counts.get("awaiting_answer", 0)
+    failed = counts.get("failed", 0)
+
+    print(f"LIFECYCLE — {shown} questions asked\n")
+    for name, n in (("committed", committed), ("cancelled", cancelled),
+                    ("abandoned", abandoned), ("still open", open_now),
+                    ("failed", failed)):
+        print(f"  {name:12} {n:5}  {_pct(n, shown):>8}")
+    print(f"\n  completion rate {_pct(committed, shown)} — of questions ASKED,")
+    print( "  not of questions answered. The second number is the flattering")
+    print( "  one and is what an answers-only table would have reported.\n")
+
+
 def by_question_version(cur, *, days: int) -> None:
     """Did the rewording help? The only comparison that answers it.
 
@@ -248,6 +293,7 @@ def main() -> int:
     args = ap.parse_args()
 
     with _connect(args.db) as conn, conn.cursor() as cur:
+        lifecycle(cur, days=args.days)
         scorecard(cur, days=args.days, min_n=args.min_n)
         offered_vs_selected(cur, days=args.days)
         by_question_version(cur, days=args.days)
