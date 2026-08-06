@@ -317,3 +317,65 @@ async def test_the_question_generation_is_recoverable_from_the_observation(
         f"a repair moved the interaction revision ({revisions}) — repairs "
         f"change no persisted semantic state, and bumping it would invalidate "
         f"the options still on the user's screen")
+
+
+# ── B-1a: the wording must not advertise a route that does not work ───────────
+
+def test_every_route_the_question_advertises_actually_works():
+    """We tell the user three things they can do. All three must be real.
+
+    A route the user cannot see reads as a route nobody wants — its usage rate
+    is zero and we conclude something about THEM from our own silence. That is
+    why `Not sure? I'll estimate.` was added: `ClarificationCommand.ESTIMATE`
+    has been fully implemented the whole time and advertised NOWHERE, so "not
+    sure" usage would have measured zero for the entire window.
+
+    The inverse is worse. Advertising a phrase the parser does not accept
+    sends a user down a dead end in our own voice, so the exact words in the
+    copy are asserted against the exact matcher that has to read them back.
+    """
+    from skills.nutrition.answer_parsers import (ClarificationCommand,
+                                                 parse_command)
+
+    assert parse_command("not sure") is ClarificationCommand.ESTIMATE, (
+        "the question says \"Not sure? I'll estimate.\" and the parser does "
+        "not read `not sure` as an estimate request — the copy advertises a "
+        "dead end")
+    for phrase in ("Not sure", "not sure", "I'm not sure"):
+        assert parse_command(phrase) is ClarificationCommand.ESTIMATE, phrase
+
+
+@pytest.mark.asyncio
+async def test_the_question_offers_options_free_text_and_not_sure(
+        edges, b1_live, app_db):
+    """All three routes visible in the sentence the user actually receives.
+
+    Measurement hygiene, not voice work: `free_text` rate and `not sure` rate
+    are two of the window's headline numbers, and neither means anything if
+    the route was never on screen.
+    """
+    from tests.test_a_conversation_across_turns import B1_ELIGIBLE, say
+
+    edges.plans.append(B1_ELIGIBLE)
+    result = await say(b1_live, "I had some chicken breast")
+    resp = getattr(result, "response", None)
+    shown = " ".join(getattr(resp, "bubbles", None) or [str(resp)])
+
+    assert "How much" in shown, shown
+    assert "or tell me" in shown.lower(), (
+        f"the free-text route is not visible: {shown!r}")
+    assert "not sure" in shown.lower(), (
+        f"the estimate route is not visible: {shown!r}")
+
+
+def test_the_question_version_moves_when_the_wording_does():
+    """The stamp is what makes a wording change measurable retroactively.
+
+    Changing the copy without moving the version silently merges two
+    populations, and the comparison the stamp exists for becomes unrecoverable
+    for every observation already collected.
+    """
+    from core import b1_quantity_operation as ops
+    assert ops.QUESTION_VERSION != "b1_quantity_q1", (
+        "the wording changed and QUESTION_VERSION did not — q1 observations "
+        "and q2 observations would be indistinguishable")

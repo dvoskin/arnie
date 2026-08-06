@@ -257,7 +257,7 @@ LABEL_TEXT = "label_text"
 #: BUMP IT when `_introduction()`, `CanonicalAsk.ask_copy()`, or the option
 #: selection/labelling in `skills/nutrition/quantity_clarification` changes what
 #: the user reads. Not when the plumbing beneath them changes.
-QUESTION_VERSION = "b1_quantity_q1"
+QUESTION_VERSION = "b1_quantity_q2"
 
 #: Channels whose chips the SERVER renders. Telegram and iMessage have no
 #: client-side chip parser at all, so the canonical payload is readable by
@@ -406,18 +406,37 @@ class CanonicalAsk:
         fallback now and voice before broad rollout.
         """
         facts = self.ask_facts()
-        question = (facts.introduction or "").strip() or "How much was it?"
+        question = (facts.introduction or "").strip() or "How much was that?"
         if capability != LABEL_TEXT or not facts.option_labels:
             return question
+        # LABELS ARE PASSED THROUGH, NEVER PARSED. "2 oz, 4 oz, or 8 oz" reads
+        # worse than "2, 4, or 8 oz", and collapsing it would mean reading the
+        # labels back to find a shared unit — the one thing the option contract
+        # forbids, because a label that can be re-read can be re-interpreted.
         labels = list(facts.option_labels)
         if len(labels) == 1:
             offered = labels[0]
+        elif len(labels) == 2:
+            offered = f"{labels[0]} or {labels[1]}"
         else:
-            offered = f"{', '.join(labels[:-1])} or {labels[-1]}"
-        # The free-text route said out loud (C15). A user whose portion is not
-        # on the list must be able to see that saying their own is allowed —
-        # otherwise "Other usage" measures our phrasing, not their portions.
-        return f"{question} Roughly {offered}, or tell me the amount."
+            offered = f"{', '.join(labels[:-1])}, or {labels[-1]}"
+        # ALL THREE ROUTES, SAID OUT LOUD. A route the user cannot see is a
+        # route whose usage rate reads zero — and we would then conclude
+        # something about THEM from our own silence.
+        #
+        #   pick one      the offered labels
+        #   your own      free text (C15)
+        #   "not sure"    ESTIMATE — a real command, fully implemented, and
+        #                 until now advertised NOWHERE. It takes the middle
+        #                 offered option re-provenanced to MODE_DEFAULT, so
+        #                 the estimate marker and disclosure survive onto the
+        #                 committed row.
+        #
+        # "Not sure" is the literal phrase because it is the literal phrase
+        # `answer_parsers` matches. Advertising wording the parser does not
+        # accept would be worse than advertising nothing.
+        return (f"{question} Roughly {offered} — or tell me. "
+                f"Not sure? I'll estimate.")
 
 
 @dataclass(frozen=True)
@@ -553,11 +572,50 @@ def _interpreter_item_for(material: dict, staged) -> dict:
 
 
 def _introduction(staged) -> str:
-    """Deterministic wording. The renderer owns voice at B-2.8; until then a
-    template that cannot drift is better than a model call that can, and the
-    question's MEANING lives in the field either way."""
-    label = str(getattr(getattr(staged, "identity", None), "canonical_name", "")
-                or "").strip() or "that"
+    """The question, in Arnie's voice, deterministically.
+
+    STILL A TEMPLATE, and that is the point. A model composing this is exactly
+    the defect that had production ask "How was the chicken breast cooked?"
+    over a QUANTITY field — the wording drifted away from the thing being
+    asked. The variable here is how well it reads, never what it asks.
+
+    "HOW MUCH", NEVER "HOW MANY", is safe by predicate: B-1's eligibility
+    requires the unresolved dimension to be MASS, so it is never asking about
+    a countable thing. When B-1.5 widens that, this assumption widens with it.
+
+    CASE FOLLOWS THE BRAND, NOT A GUESS. `canonical_name` arrives capitalized
+    because it names a food ("Salmon", "White rice, steamed"), and dropping it
+    mid-sentence unchanged reads like a form field. Arnie's voice is sentence
+    case with proper nouns capitalized, so a generic food is lowercased here
+    and a branded one is not — decided by `identity.brand` being set, which is
+    a fact the interpreter supplies rather than something inferred from
+    capitalisation.
+    """
+    identity = getattr(staged, "identity", None)
+    label = ""
+    # `describe()` owns "what to call this food" and guarantees the canonical
+    # name is never dropped — the rule that stopped a question about "Royo
+    # Everything Bagel" asking about the maker instead of the product.
+    try:
+        label = str(identity.describe() or "").strip()
+    except Exception:
+        label = ""
+    if not label:
+        label = str(getattr(identity, "canonical_name", "") or "").strip()
+    if not label:
+        return "How much was that?"
+    if not (getattr(identity, "brand", None) or "").strip():
+        label = label[0].lower() + label[1:]
+        # THE QUALIFIER AFTER THE COMMA IS A LOG NAME, NOT A QUESTION.
+        # "White rice, steamed" is exactly right on a row and reads as two
+        # questions in a sentence ("How much white rice, steamed?"). Safe to
+        # drop HERE and only here, because B-1's predicate admits exactly one
+        # food event — so the head noun cannot be ambiguous between items, and
+        # the user has just said what they ate. The committed row keeps the
+        # full name; this is the question only.
+        head = label.split(",", 1)[0].strip()
+        if head:
+            label = head
     return f"How much {label}?"
 
 
