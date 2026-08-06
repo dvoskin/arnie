@@ -305,3 +305,174 @@ async def test_the_lane_still_works_with_b1_off(edges, seeded, monkeypatch):
     assert len(board) == 1, (
         f"the legacy lane stopped logging while B-1 was off: "
         f"{[r.parsed_food_name for r in board]}")
+
+
+# ── The safety negatives, as conversations ────────────────────────────────────
+#
+# Each of these was previously provable only by unit-testing a seam directly or
+# by hand-sending messages on a phone. Both leave the same hole: they assert
+# what a FUNCTION does, not what the lane does when a person says the thing.
+
+async def _set(user_id, operation_id, **cols):
+    """Reach into the stored operation the way time or a bad deploy would."""
+    import db.database as D
+    from sqlalchemy import update
+    from db.models import PendingOperation
+    async with D.AsyncSessionLocal() as s:
+        await s.execute(update(PendingOperation)
+                        .where(PendingOperation.operation_id == operation_id)
+                        .values(**cols))
+        await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_cancelling_writes_nothing_and_frees_the_next_meal(edges, b1_live):
+    """"Cancel" must close the operation without a row, and not poison what
+    comes next.
+
+    Two failures hide here, not one. The obvious one is a meal written despite
+    the cancel. The quieter one is a cancelled operation that keeps owning the
+    lane — the same defect class as the settled window, which would swallow the
+    next meal with no confirmation at all to make it visible.
+    """
+    ops = await ask_for(edges, b1_live, "I had some chicken breast", B1_ELIGIBLE)
+    assert ops
+    await say(b1_live, "cancel")
+
+    assert not await rows(b1_live), (
+        "cancel wrote a food row: "
+        f"{[(r.parsed_food_name, r.quantity) for r in await rows(b1_live)]}")
+
+    edges.plans.append({
+        "action": "ask", "points": [{"label": "Oatmeal", "q": "How much?"}],
+        "items": [vague("Oatmeal", cal=150, amount=1, unit="cup cooked")],
+        "ready": [],
+    })
+    await say(b1_live, "Had some oatmeal")
+    ops2 = await operations(b1_live)
+    assert len(ops2) == 2, (
+        "the meal after a cancel did not open its own operation — the "
+        f"cancelled one is still owning the lane. {[o.operation_id for o in ops2]}")
+
+
+@pytest.mark.asyncio
+async def test_an_expired_operation_does_not_claim_the_next_meal(edges, b1_live):
+    """A question left unanswered overnight must not answer tomorrow's meal.
+
+    Expiry is the one boundary a user crosses by doing nothing, so it is never
+    exercised by a scripted happy path and never noticed until someone's
+    breakfast is priced as the answer to last night's dinner question.
+    """
+    from datetime import timedelta
+    from core.clock import now
+
+    ops = await ask_for(edges, b1_live, "I had some chicken breast", B1_ELIGIBLE)
+    await _set(b1_live, ops[-1].operation_id,
+               expires_at=now() - timedelta(hours=6))
+
+    edges.plans.append({
+        "action": "ask", "points": [{"label": "Oatmeal", "q": "How much?"}],
+        "items": [vague("Oatmeal", cal=150, amount=1, unit="cup cooked")],
+        "ready": [],
+    })
+    await say(b1_live, "Had some oatmeal")
+    await say(b1_live, "45 g")
+
+    board = await rows(b1_live)
+    names = [r.parsed_food_name or "" for r in board]
+    assert any("atmeal" in n for n in names), (
+        f"the meal after an expired question never landed: {names}")
+    assert not any("hicken" in n for n in names), (
+        f"an expired question priced the NEXT meal as its answer: {names}")
+
+
+@pytest.mark.asyncio
+async def test_a_corrupt_stored_operation_fails_visibly_and_writes_nothing(
+        edges, b1_live):
+    """An unreadable payload is OUR failure, and must not be dressed as a
+    question to the user.
+
+    `owning()` deliberately returns a row it cannot decode with
+    `readable=False` rather than pretending nothing is pending — because
+    pretending is how a held meal disappears. The requirement here is the other
+    half of that: having noticed, the turn must not write, and must not ask the
+    user to repair a corruption they cannot see.
+    """
+    ops = await ask_for(edges, b1_live, "I had some chicken breast", B1_ELIGIBLE)
+    await _set(b1_live, ops[-1].operation_id,
+               canonical_payload="{not valid json at all")
+
+    await say(b1_live, "6 oz")
+
+    assert not await rows(b1_live), (
+        "a corrupt operation still wrote a meal: "
+        f"{[(r.parsed_food_name, r.quantity) for r in await rows(b1_live)]}")
+
+
+@pytest.mark.asyncio
+async def test_a_quantity_we_never_offered_is_accepted_as_stated(edges, b1_live):
+    """Free text is the route out of a bad option list, so it has to work for
+    a number nobody offered.
+
+    C15 keeps free text always available; this is what makes that promise real
+    rather than decorative. If only offered values commit, the option list is
+    silently mandatory and "Other" is a dead end.
+    """
+    await ask_for(edges, b1_live, "I had some chicken breast", B1_ELIGIBLE)
+    await say(b1_live, "137 grams")
+
+    board = await rows(b1_live)
+    assert len(board) == 1, [r.parsed_food_name for r in board]
+    assert "137" in (board[0].quantity or ""), (
+        f"a quantity outside the offered options did not survive to the row: "
+        f"{board[0].quantity!r}")
+
+
+@pytest.mark.asyncio
+async def test_a_typed_label_is_answerable_where_there_are_no_chips(edges, b1_live):
+    """Telegram and iMessage have no chips, so the label IS the interface.
+
+    This is the LABEL_TEXT capability, and it is deliberately weaker than
+    ID_ADDRESSED: matching prose can never be as certain as an option id, which
+    is why iOS gets real ids at B-1b instead of this. Until then, typing back
+    exactly what we offered must land.
+    """
+    ops = await ask_for(edges, b1_live, "I had some chicken breast", B1_ELIGIBLE)
+    import json
+    payload = json.loads(ops[-1].canonical_payload)
+    labels = [o["label"]
+              for g in payload["interaction"]["groups"]
+              for f in g["fields"] for o in f.get("options", [])]
+    assert labels, "the ask offered no options to type back"
+
+    await say(b1_live, labels[0])
+    board = await rows(b1_live)
+    assert len(board) == 1, (
+        f"typing back the exact offered label {labels[0]!r} did not commit: "
+        f"{[(r.parsed_food_name, r.quantity) for r in board]}")
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_ownership_lookup_never_falls_through_to_legacy(
+        edges, b1_live, monkeypatch):
+    """When we cannot tell whether we own the meal, we must not guess "no".
+
+    `owning()` is tri-state on purpose: a FAILED query raises rather than
+    returning None, because None means "nothing owns this — proceed legacy" and
+    a database blip must never be read as permission to run the old writer
+    against a meal the canonical path may already hold. Fails closed: no row is
+    better than two.
+    """
+    await ask_for(edges, b1_live, "I had some chicken breast", B1_ELIGIBLE)
+
+    import core.b1_quantity_operation as b1
+
+    async def _boom(db, user):
+        raise b1.OwnershipUnknown("simulated lookup failure")
+
+    monkeypatch.setattr(b1, "owning", _boom)
+    await say(b1_live, "6 oz")
+
+    assert not await rows(b1_live), (
+        "an unreadable ownership lookup fell through and wrote a meal anyway: "
+        f"{[(r.parsed_food_name, r.quantity) for r in await rows(b1_live)]}")

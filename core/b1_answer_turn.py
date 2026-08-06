@@ -167,12 +167,22 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
     #
     # Returning None here is not the mid-flight fallback C10 forbids: the
     # operation is TERMINAL, so there is nothing in flight to strand.
-    if not owned.awaiting:
+    # TWO STATES, ONE RULE. An operation stops being entitled to messages that
+    # were never addressed to it once it is either SETTLED or EXPIRED, and the
+    # discriminator is the same for both: a structured option id, or the exact
+    # text of an option we offered. Anything else is a new report.
+    #
+    # Both states produced the same production failure — the next meal parsed
+    # as an answer, the wrong food committed, "Logged" said out loud — so they
+    # are deliberately handled by one condition rather than two that can drift.
+    # A late answer still lands: replying after expiry is still replying.
+    if not owned.awaiting or owned.expired:
         if not option_id and _label_selection(live_field, message) is None:
             logger.info(
-                "event=b1_not_a_replay operation=%s user=%s — settled "
+                "event=b1_not_a_replay operation=%s user=%s state=%s — "
                 "operation left alone; this message is a new report",
-                owned.operation_id, getattr(user, "id", None))
+                owned.operation_id, getattr(user, "id", None),
+                "settled" if not owned.awaiting else "expired")
             return None
         answer = _read(owned, interaction, live_field, message=message,
                        field_id=field_id, option_id=option_id,

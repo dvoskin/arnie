@@ -77,6 +77,26 @@ class OwnedOperation:
     locale: str = "en"
 
     @property
+    def expired(self) -> bool:
+        """Past its `expires_at`, and therefore no longer entitled to claim a
+        message that is not addressed to it.
+
+        `expires_at` was written and never read: an awaiting operation owned
+        the lane for as long as it existed, so a question nobody answered
+        consumed the user's NEXT meal as its answer — chicken committed, the
+        oatmeal lost, "Logged" said out loud. The settled-window data loss
+        again, through a different door.
+
+        NOT a reason to refuse an answer. Someone who replies late is still
+        answering, and dropping that is its own silent loss. This only removes
+        the operation's claim on messages that were never addressed to it —
+        the same discriminator settlement already uses.
+        """
+        from core.clock import now as _now
+        expires = getattr(self.row, "expires_at", None)
+        return expires is not None and expires < _now()
+
+    @property
     def operation_id(self) -> str:
         return self.row.operation_id
 
@@ -530,6 +550,12 @@ async def owning(db, user) -> Optional[OwnedOperation]:
             updated = row.updated_at or row.created_at
             if updated is not None and updated < cutoff:
                 continue          # stale; this is a new meal, not a replay
+        # EXPIRY IS NOT HANDLED HERE, DELIBERATELY. An expired operation is
+        # still returned, and the answer turn decides — because "expired"
+        # removes the right to claim a message that was never addressed to
+        # this question, NOT the right to accept one that was. Skipping the
+        # row here would drop a late but unmistakable answer on the floor,
+        # which is its own silent loss. See `OwnedOperation.expired`.
         try:
             data = json.loads(row.canonical_payload or "{}")
         except Exception:
