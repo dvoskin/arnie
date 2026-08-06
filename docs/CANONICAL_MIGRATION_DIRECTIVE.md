@@ -1,7 +1,9 @@
 # Phase B–F directive: complete clarification migration, finish conversational food, then extend the canonical backend to workouts
 
-> **Augmented directive — plan-of-record.** Received 2026-08-05; supersedes no
-> prior directive, composes with all of them. Detail documents:
+> **Augmented directive — plan-of-record.** Received 2026-08-05, augmented
+> 2026-08-06 from team review (slice loop and deletion, presentation
+> boundary, B-1a–e closing sequence, release gates). Supersedes no prior
+> directive, composes with all of them. Detail documents:
 > [CLARIFICATION_MIGRATION.md](CLARIFICATION_MIGRATION.md) (Phase B design
 > decisions), [CHIP_GENERATION_MIGRATION.md](CHIP_GENERATION_MIGRATION.md)
 > (option pipeline + status ledger),
@@ -44,6 +46,75 @@ The target is not merely "better clarification." The target is:
 
 Food is the reference implementation. Workouts adopt the shared operation
 spine only after food proves it.
+
+## The slice loop — and what "done" means
+
+**Augmented 2026-08-06 from team review.** A slice is not finished when its
+lifecycle works. It is finished when its predecessor is gone.
+
+```text
+measure → freeze → build canonical path → gate → validate
+→ promote → DELETE PREDECESSOR → LOWER RATCHET
+```
+
+The last two steps are the ones that get skipped, and skipping them is how the
+four legacy clarification producers happened the first time: each was a
+canonical path that shipped without removing what it replaced.
+
+**Promote and delete per family, continuously.** Do not build every remaining
+slice and postpone promotion to the end — that recreates a second large
+migration branch whose assumptions go untested for months. Each field family
+promotes and deletes its own predecessor independently.
+
+**The goal is a repeatable loop, not heroics.** The first slice was expensive
+because it had to invent the operation model, ownership rules, revision
+semantics, answer routing, replay protection, commit coordination, failure
+handling, provenance, presentation facts, lifecycle tests, production probes,
+telemetry and ratchets. Later slices reuse nearly all of it. The measure of
+success is when a slice takes **days to implement rather than weeks to
+invent**.
+
+## Presentation rides behind each slice — it is never the next phase
+
+Voice, formatting and diction are a **controlled presentation layer**, not a
+milestone. They sit strictly after the persisted-result boundary:
+
+```text
+interpretation → canonical state → typed clarification → PendingOperation
+→ canonical commit → persisted result → PRESENTATION FROM COMMITTED TRUTH
+```
+
+**There are two distinct wording passes and they must not be confused.**
+
+| | when | what it is | constraints |
+|---|---|---|---|
+| **Instrumentation wording** | inside every slice | make the question unambiguous and the routes visible so the slice is MEASURABLE | fixed · minimal · versioned · same QuestionIntent, options and patches · no dynamic LLM diction |
+| **Product voice** | **B-2.8** | make it genuinely Arnie | adaptive · contextual · channel-aware · still facts-constrained |
+
+Instrumentation wording is measurement hygiene: the phrasing directly affects
+the metric being evaluated, so it must be settled *before* evidence
+collection, and version-stamped so a later change stays comparable. It is not
+permission to start the voice project.
+
+**Why product voice waits for B-2.8.** The renderer needs stable semantic
+intents to express — a question, an assumption, an uncertainty, a disclosure,
+a repair, a confirmation. Those intents are not stable until B-1.6 fixes
+dependency ordering and B-1.7 fixes accuracy policy. Diction written before
+then gets rewritten. At B-2.8 the renderer owns sentence structure, tone,
+contractions, channel length, splitting, emphasis and the deterministic
+fallback — and never owns which field is unresolved, which options are valid,
+what an option means, whether an assumption occurred, or whether the meal
+committed.
+
+**Output consolidation belongs to C-4, not to any slice.** `MealCommitResult →
+CanonicalResponseFacts → copy` is the first safe boundary and is deliberately
+narrow. One `PresentationSnapshot` feeding chat, card, day totals, timeline,
+coach feed, notifications, widgets and API payloads is C-4's authority.
+Polishing chat prose while cards and totals still have separate factual owners
+is how screens come to disagree.
+
+**The rule for the team:** every slice ships a presentation adapter; no slice
+runs a broad voice redesign.
 
 ## Measure before generalize
 
@@ -993,27 +1064,39 @@ B-3/B-4    ownership consolidation and deletion
 C/D/E/F    canonical food, shared contracts, workouts
 ```
 
-### The current phase, in order
+### Closing B-1 — the first promotion and deletion cycle
 
-| # | item | state |
+B-1's lifecycle is production-proven. The **slice** is not closed until its
+predecessor is deleted and its ratchets are lowered.
+
+| | step | state |
 |---|---|---|
-| 1 | Deploy `4535d1e` (`b1obs002`) — latency and the question stamps | **waiting on deploy** |
-| 2 | Voice pass on `ask_copy()`, bump `QUESTION_VERSION` | open — see note below |
-| 3 | D4.1 observation window | instrumented, collecting |
-| 4 | Analyse: option quality · history · free text · repairs · voice | after 3 |
-| 5 | B-1b iOS structured interactions | after 4 |
-| 6 | Rollout 1% → 5% → 25% → 100% | after 5 |
-| 7 | D7 scoped legacy deletion + lower ratchets | after 6 |
-| 8 | Resume B-1.5 → B-1.6 → B-1.7 → B-1.8 → B-2 | after 7 |
+| **B-1a** | Measurement calibration — instrumentation wording, versioned | ✅ `b1_quantity_q2` |
+| **B-1b** | Internal evidence window | **current** |
+| **B-1c** | Close the safety-observability gap (detector silence) | runs in parallel; blocks *public rollout*, not internal collection |
+| **B-1d** | Structured iOS client against the validated contract | after B-1b |
+| **B-1e** | Promote → delete the legacy quantity path → lower ratchets | after B-1d |
 
-**On item 2.** B-1's ask is rendered by a deterministic template
-(`ask_copy()` / `_introduction()`), deliberately — a model composing the
-question is exactly the defect that had production asking "How was the chicken
-breast cooked?" over a quantity field. But the placeholder wording is a
-CONFOUND for D4.1: free-text rate is the primary signal of option quality, and
-clumsy phrasing inflates it for reasons that have nothing to do with the
-options. Fixing it before the window is instrument hygiene, the same class as
-fixing the trace ring first. It stays a template, not a model call.
+*(Naming note: "B-1b" here is the evidence window per the 2026-08-06 team
+sequence. The iOS structured client, called B-1b in earlier documents, is
+B-1d in this list. Same work, one label.)*
+
+**B-1a — allowed scope, now closed.** Make the question unambiguous · make the
+free-text and "not sure" routes visible · version-stamp the wording · preserve
+the QuestionIntent, options and patches · no dynamic LLM diction. Found and
+fixed: `ClarificationCommand.ESTIMATE` was fully implemented and advertised
+nowhere, so "not sure" usage would have measured zero.
+
+**B-1b — what the window must answer.** Candidate source availability · option
+selected · free-text amount · "Other" usage · "not sure" usage · repair rate ·
+latency · abandonment · correction within ten minutes · card/totals agreement ·
+real enrichment through `analyze()`. This decides whether the candidate
+*product* is viable, not whether the code works.
+
+**B-1e — delete only what overlaps B-1:** the legacy single-item mass-quantity
+question producer, its answer reconstruction, its quantity-specific pending
+ownership, and any prose option derivation used for that slice. Then lower C8
+and C9 in the same commit.
 
 ### B-1 promotion gates
 
@@ -1040,6 +1123,53 @@ Each is real, none blocks the current phase, and none may be closed silently.
 | `scripts/b1_operation_probe.py` cannot exercise B-1 — it drives `/api/v1/chat`, which is `PLATFORM="ios"`, excluded until B-1b | by design | B-1b |
 | zero history-sourced options across all asks so far | 7 asks, all `sources=ontology` | D4.1 decides whether this is recall or ranking |
 | two voices: B-1 turns render from a template, legacy turns from the composer, so the assistant sounds different depending on which lane owns the turn | measured 08-06 | item 2 above |
+
+### Release gates — where the whole product stands
+
+**Team assessment, 2026-08-06.** B-1 proves the migration *method* and the
+hardest ownership mechanics. It does not mean every food behaviour has moved.
+
+```text
+Core backend architecture        80–85%
+Food logging migration           60–70%
+Production-ready food product    55–65%
+Entire Arnie V1                  45–55%
+Tightly controlled beta          close
+Broad consumer release           not yet
+```
+
+| gate | goal | position after |
+|---|---|---|
+| **1 — Internal canonical product** | daily internal use with no manual DB intervention: B-1 promoted, detector silence explained, pricing and card/totals verified, corrections and undo safe for the supported scope, telemetry readable, failures visible | 55–60% of V1 |
+| **2 — Closed beta** | the common food workflow end to end: B-1 → ~B-2.7, single and multi-item, branded foods and package fractions, preparation and additions, Quick/Moderate/Strict, corrections/deletion/undo, structured iOS, one presentation authority, no critical legacy duplication on eligible turns | 70–80% |
+| **3 — Release candidate** | chargeable: every intended slice promoted, overlapping legacy writers deleted, clarification ownership consolidated, voice boundary stable, output consistent, onboarding, billing, analytics, error budgets, rollback playbooks. **This is where the serious voice and diction pass belongs** — the renderer finally sits on stable intents and committed facts | 90–95% |
+| **4 — Public release** | staged rollout completed, acceptable duplicate/false-confirmation/correction/abandonment rates, stable latency, no unresolved severe data-loss path, release-blocking legacy deleted, privacy and account-deletion reviewed, support process live | shipped |
+
+The last 5–10% after Gate 3 is not features. It is reliability proof, rollout
+evidence and cleanup.
+
+**Rough ranges** (two focused engineers, architecture reusing cleanly, no
+foundational surprise — planning aid, not a commitment):
+
+```text
+close and promote B-1                          1–3 weeks
+common single-item clarification surface       3–6 more
+multi-item, products, additions                4–8 more
+corrections, undo, presentation consolidation  3–6 more
+production hardening and closed beta           3–5 more
+staged broad release                           2–4 more
+
+credible closed beta        8–14 weeks
+release candidate          14–22 weeks
+broad rollout              16–26 weeks
+```
+
+**What is NOT yet canonical, and gates production readiness.** Logging commits
+canonically; these still do not: corrections and edits · additions to an
+existing meal · deletion · undo · replacements · merge/split · delayed and
+out-of-order answers · proactive follow-up actions. A system is not
+production-ready while logging is canonical and correction takes a separate
+mutation path. Those are Phase C-1 through C-3.
 
 ### Earlier items — superseded or still live
 
