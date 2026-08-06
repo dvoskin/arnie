@@ -368,6 +368,12 @@ async def _observe(db, owned, answer, *, user, source_turn_id: str,
                 interaction_revision=getattr(
                     getattr(owned, "interaction", None), "revision", None),
                 question_version=ops.QUESTION_VERSION,
+                # Only the estimate route is governed by a versioned policy so
+                # far; a typed quantity decides itself. Read from the module
+                # rather than hardcoded so the two cannot drift.
+                policy_version=(_estimate_policy_version()
+                                if answer.reason.startswith("estimate")
+                                else ""),
                 latency_ms=_latency_ms(owned),
                 cohort=str(getattr(owned, "cohort", "") or "")))
     except Exception:
@@ -398,6 +404,11 @@ async def _stamp_entry(db, owned, turn, *, source_turn_id: str) -> None:
                 .values(entry_id=entry_id))
     except Exception:
         logger.debug("b1 observation entry stamp failed", exc_info=True)
+
+
+def _estimate_policy_version() -> str:
+    from core.clarification_answer import ESTIMATE_POLICY_VERSION
+    return ESTIMATE_POLICY_VERSION
 
 
 def _offered_mix(field) -> str:

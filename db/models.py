@@ -356,6 +356,14 @@ class B1AnswerObservation(Base):
     #: collected becomes unable to say which question it answered.
     interaction_revision = Column(Integer, nullable=True)
     question_version = Column(String, nullable=False, default="")
+    #: WHICH POLICY DECIDED THIS ANSWER. Currently the estimate-sufficiency
+    #: policy; later the candidate selector's. Persisted rather than logged
+    #: because a policy version that lives only in a log line is
+    #: unattributable the moment the ring empties — and the whole point of a
+    #: version is that observations collected under one rule stay separable
+    #: from observations collected under the next. Empty when no versioned
+    #: policy governed the route (a plain typed quantity decides itself).
+    policy_version = Column(String, nullable=False, default="")
     latency_ms = Column(Integer, nullable=True)
     #: Set when this answer committed. Corrections are keyed on entry_id, so
     #: this is what charges a later correction back to the source that caused it.

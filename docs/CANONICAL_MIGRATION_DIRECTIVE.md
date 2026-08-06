@@ -1160,6 +1160,30 @@ food-specific cap · a manually chosen "safe" portion · regex food
 classification. Exit gate: **insufficient evidence → zero meal writes →
 operation stays open → explicit repair.**
 
+**1 — status: PASS with two carry-forwards** *(disposition 2026-08-06)*.
+Landed `c859758`. **B-1 may not be promoted on this commit alone.**
+
+* **CF-1 — replace source-name sufficiency with typed evidence semantics,
+  before B-1.9 closes.** The containment currently keys on a frozenset of
+  source NAMES (`{"user_history", "catalog"}`). That is a stand-in: it works
+  because those sources happen to be entity-specific today, and it will drift
+  the moment a source is added whose name says nothing about what its evidence
+  is ABOUT. The property is semantic — *does this candidate describe this
+  entity for this user* — and belongs on `QuantityCandidateEvidence` in item 2,
+  read rather than inferred from a name.
+* **CF-2 — persist the policy version.** ✅ done. `estimate_evidence_v1` was
+  emitted to a log and nowhere else; the ring is a bounded in-memory deque
+  that empties on deploy, so an analysis weeks later could not say which
+  sufficiency rule produced a refusal. `b1_answer_observations.policy_version`
+  (migration `b1obs003`), empty when no versioned policy governed the route —
+  a stated quantity decides itself, and stamping every row would make the
+  field mean "some policy ran" rather than "this policy decided".
+
+Also fixed in passing: `modality_of` matched the reason by exact equality, so
+improving an error message reclassified a refusal from `command` to `text`
+and counted it as free-text usage — corrupting the "Other" rate with a better
+sentence.
+
 **2 — the missing contracts.** `ServingBasis` (MASS · VOLUME · COUNT · PIECE ·
 PACKAGE · FRACTION_OF_PACKAGE · FRACTION_OF_ENTITY · STANDARD_SERVING),
 `QuantityCandidateEvidence`, `EstimateEvidence`, `CandidateSet`,

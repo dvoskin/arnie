@@ -554,3 +554,44 @@ async def test_an_unsupported_estimate_writes_nothing_and_stays_open(
     text = " ".join(getattr(getattr(result, "response", None), "bubbles", None)
                     or [])
     assert text.strip(), "the user got no reply at all"
+
+
+@pytest.mark.asyncio
+async def test_the_policy_that_refused_an_estimate_is_persisted(
+        edges, b1_live, app_db):
+    """B-1.9 carry-forward 2: the version must survive the ring.
+
+    `estimate_evidence_v1` was emitted to a log and nowhere else. The ring is
+    a bounded in-memory deque that empties on deploy, so an analysis run weeks
+    later could not say which sufficiency rule produced a given refusal — and
+    the entire reason a policy carries a version is that observations
+    collected under one rule stay separable from those collected under the
+    next.
+    """
+    from core.clarification_answer import ESTIMATE_POLICY_VERSION
+
+    await _ask(edges, b1_live)
+    await say(b1_live, "not sure")
+
+    obs = await _observation(b1_live)
+    assert obs is not None and obs.outcome == "repair", obs
+    assert obs.policy_version == ESTIMATE_POLICY_VERSION, (
+        f"the refusal was recorded without naming the policy that made it: "
+        f"{obs.policy_version!r}")
+
+
+@pytest.mark.asyncio
+async def test_a_plain_typed_answer_names_no_policy(edges, b1_live, app_db):
+    """The control. A stated quantity decides itself.
+
+    Stamping every row with a version regardless would make the field mean
+    "some policy ran" rather than "this policy decided", and the comparison it
+    exists for would be unavailable exactly where it matters.
+    """
+    await _ask(edges, b1_live)
+    await say(b1_live, "137 grams")
+
+    obs = await _observation(b1_live)
+    assert obs is not None and obs.outcome == "applied", obs
+    assert obs.policy_version == "", (
+        f"a typed quantity claimed a policy governed it: {obs.policy_version!r}")
