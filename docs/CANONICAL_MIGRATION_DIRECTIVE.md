@@ -1100,7 +1100,8 @@ B-1.9      IN PROGRESS       5 of 10 stages, ~65-70% by engineering weight.
                              3a/3a.1/3a.2 contracts · 3b/3b.1/3b.2/3b.3
                              durable universe · 4 bridge deletion ·
                              5/5.1/5.2 versioned selector — ALL DONE.
-                             6 NEXT: replay the failures as CLASSES.
+                             6 DONE: failures replayed as CLASSES.
+                             7 NEXT: integration evidence.
                              Then 7 integration · 8 freeze · 9 iOS ·
                              10 promote+delete. Runs BEFORE B-1 closure.
 B-1b.1/.2  NEXT              deterministic matrix + sequence corpus
@@ -1764,6 +1765,47 @@ prohibited; their deletion belongs with the D7 legacy sweep.
 **5 — the selector.** Entity-agnostic, versioned, reproducible, observable,
 mutation-tested, and replaceable by a learned ranker later. Every inclusion
 and exclusion explainable from persisted features.
+
+**6 — status: DONE** *(2026-08-06)*.
+`tests/test_the_known_failures_replay_as_classes.py`, 32 gates. Chicken and
+honey are one row each, not the subject.
+
+```text
+CLASS A  unsupported estimate    swept over ALL SEVEN serving bases x
+                                 {population, this-user, this-product} x
+                                 {history-rich, history-empty}
+CLASS B  serving-basis mismatch  every cross-basis pair refused without a
+                                 sourced conversion; with one, the arithmetic
+                                 must land on the offered quantity; a
+                                 volume-native food stays volume-native
+```
+
+**THE SWEEP FOUND A LIVE DEFECT, which is what a class sweep is for.** The
+renderer pushed every candidate through `float(grams)`, so the first volume,
+count, piece, package or fraction candidate to reach a real ask would have
+raised `TypeError` on `float(None)` and **taken the whole turn down**. The
+platform claimed to carry those bases since 3a.2 and could not render one. A
+narrow chicken-and-honey regression pair would never have touched it.
+
+Fixed by rendering non-mass candidates from their own `ServingExpression` —
+which is what that field exists for — while mass still goes through
+`_everyday_labels`, unchanged. Label collision is now compared **only within a
+basis**, so `1 piece` and `150 g` can never merge on a coincidence of wording.
+
+**Coverage ledger, asserted rather than assumed:** the generator still emits
+mass only, because the portion ontology it reads is in grams. Everything above
+proves the PLATFORM carries the other bases; production does not yet PRODUCE
+them. A gate fails the day that changes, so someone decides deliberately
+whether the ledger still describes reality — *"not produced" is not
+"not supported", and neither is "not tested"*.
+
+8142 pass on SQLite and 8142 on Postgres (21 skips).
+
+**Carried to the step-8 freeze** *(P2 from the 5.2 review)*: the purity proxy
+returns real evidence objects, so a future policy could branch on
+`evidence[0].source_type` without tripping it. Tighten to per-evidence proxies
+permitting only `confidence`, and narrow the approved candidate and context
+fields to those actually read.
 
 **6 — replay the two failures as CLASSES, not as chicken and honey.**
 *Unsupported estimate*: weak evidence + "not sure" → no automatic commit.

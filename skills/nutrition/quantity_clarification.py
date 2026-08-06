@@ -813,14 +813,19 @@ def _collapse_by_label(chosen, ranked, food_name: str):
     Re-rendering after each drop is not wasted work: `_everyday_labels` picks
     a rendering per anchor relative to its neighbours, so removing one anchor
     can legitimately change how the survivors are said.
+
+    ONLY WITHIN A BASIS. Two candidates on different bases are different
+    choices — `1 piece` and `150 g` — so their labels are never compared, and
+    a coincidence of wording cannot delete one of them.
     """
     rank = {id(c): i for i, c in enumerate(ranked)}
     dropped = []
     while True:
-        labels = labels_for(tuple(float(_grams_of(c)) for c in chosen),
-                            food_name)
+        labels = _render_labels(chosen, food_name)
         drop = None
         for i in range(len(chosen) - 1):
+            if _basis_of(chosen[i]) is not _basis_of(chosen[i + 1]):
+                continue
             a, b = _label_mass(labels[i], food_name), \
                 _label_mass(labels[i + 1], food_name)
             if labels[i] == labels[i + 1] or (
@@ -834,10 +839,65 @@ def _collapse_by_label(chosen, ranked, food_name: str):
         dropped.append(chosen[drop])
         chosen = chosen[:drop] + chosen[drop + 1:]
         if len(chosen) <= 1:
-            return (chosen,
-                    labels_for(tuple(float(_grams_of(c)) for c in chosen),
-                               food_name),
-                    tuple(dropped))
+            return chosen, _render_labels(chosen, food_name), tuple(dropped)
+
+
+def _basis_of(cand):
+    """The candidate's serving basis, or MASS for the lightweight stand-ins
+    the offline dry run builds."""
+    from core.semantics import ServingBasis
+
+    return getattr(cand, "serving_basis", None) or ServingBasis.MASS
+
+
+def _render_labels(chosen, food_name: str) -> tuple:
+    """How each option is SAID.
+
+    MASS GOES THROUGH `_everyday_labels`, which is the accumulated judgement
+    about how people say weights — ounces for meat, cups for rice — and is
+    inherently mass-specific.
+
+    EVERY OTHER BASIS IS SAID BY ITS OWN OFFERED EXPRESSION. This is why
+    `ServingExpression` exists: `21 g + VOLUME` does not tell a renderer
+    whether to write `1 tbsp`, `15 ml` or `3 tsp`, so the candidate carries
+    what it is offered AS.
+
+    Before this, every candidate was pushed through `float(grams)` — so the
+    first volume, count, piece, package or fraction candidate to reach a real
+    ask would have raised `TypeError` on `float(None)` and taken the whole
+    turn down. Found by the commit-6 class sweep, which is what a class sweep
+    is for: the platform claimed to carry these bases and could not render one.
+    """
+    from core.semantics import ServingBasis
+
+    mass_positions = [i for i, c in enumerate(chosen)
+                      if _basis_of(c) is ServingBasis.MASS]
+    labels = [None] * len(chosen)
+    if mass_positions:
+        rendered = labels_for(
+            tuple(float(_grams_of(chosen[i])) for i in mass_positions),
+            food_name)
+        for slot, label in zip(mass_positions, rendered):
+            labels[slot] = label
+    for i, cand in enumerate(chosen):
+        if labels[i] is None:
+            labels[i] = _expression_label(cand)
+    return tuple(labels)
+
+
+def _expression_label(cand) -> str:
+    """`3 tbsp`, `2 pieces`, `½ package` — read off the candidate's own
+    offered expression rather than re-derived from a canonical number."""
+    offered = getattr(cand, "offered", None)
+    if offered is None:
+        return f"{float(_grams_of(cand) or 0):g}g"
+    amount = offered.amount
+    whole = amount == amount.to_integral_value()
+    said = f"{int(amount)}" if whole else f"{amount.normalize():f}"
+    unit = offered.unit_id
+    if whole and int(amount) != 1 and not unit.endswith("s"):
+        unit = f"{unit}s"
+    return f"{said} {unit}"
 
 
 def _grams_of(cand):
