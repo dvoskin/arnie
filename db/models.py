@@ -344,6 +344,18 @@ class B1AnswerObservation(Base):
     offered = Column(String, nullable=False, default="")
     #: 1 for the first answer, 2 for the answer after one repair, and so on.
     round_index = Column(Integer, nullable=False, default=1)
+    #: WHICH GENERATION OF THE QUESTION THIS ANSWERED. Two stamps, because they
+    #: answer different questions and one cannot stand in for the other:
+    #:
+    #:   interaction_revision — the SEMANTIC state answered against. A repair
+    #:     does not bump it by design, so it can never distinguish wording.
+    #:   question_version     — the wording and option selection the user read.
+    #:
+    #: Without the second, "v1 wording produced 30 repairs, v2 produced 9" is
+    #: unrecoverable the moment the wording changes: every observation already
+    #: collected becomes unable to say which question it answered.
+    interaction_revision = Column(Integer, nullable=True)
+    question_version = Column(String, nullable=False, default="")
     latency_ms = Column(Integer, nullable=True)
     #: Set when this answer committed. Corrections are keyed on entry_id, so
     #: this is what charges a later correction back to the source that caused it.

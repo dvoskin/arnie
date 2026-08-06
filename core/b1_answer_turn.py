@@ -358,6 +358,16 @@ async def _observe(db, owned, answer, *, user, source_turn_id: str,
                 selected_source=selected_source,
                 offered=_offered_mix(field),
                 round_index=int(prior) + 1,
+                # BOTH STAMPS. The revision is the semantic state answered
+                # against; the version is the wording and option selection the
+                # user actually read. A repair does not move the revision by
+                # design, so it alone can never tell a wording change from a
+                # semantic one — and the moment the wording changes without
+                # this, every observation already collected loses the ability
+                # to say which question it answered.
+                interaction_revision=getattr(
+                    getattr(owned, "interaction", None), "revision", None),
+                question_version=ops.QUESTION_VERSION,
                 latency_ms=_latency_ms(owned),
                 cohort=str(getattr(owned, "cohort", "") or "")))
     except Exception:

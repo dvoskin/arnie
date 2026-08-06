@@ -242,6 +242,23 @@ ASK_TTL_MINUTES = 180
 ID_ADDRESSED = "id_addressed"
 LABEL_TEXT = "label_text"
 
+#: THE GENERATION OF THE QUESTION ITSELF — wording and option selection, as the
+#: user experiences them. Follows `core/food_ledger`'s existing convention
+#: (INTERPRETER_VERSION / POLICY_VERSION / RENDERER_VERSION) rather than
+#: inventing a second one.
+#:
+#: WHY THIS IS NOT `revision`. The operation's revision tracks SEMANTIC state,
+#: and a repair deliberately does not bump it — so "v1 wording produced 30
+#: repairs, v2 produced 9" is invisible to it. That comparison is the reason
+#: D4.1 exists, and without a stamp it becomes unrecoverable the moment the
+#: wording changes, because the observations already collected cannot say which
+#: question they answered.
+#:
+#: BUMP IT when `_introduction()`, `CanonicalAsk.ask_copy()`, or the option
+#: selection/labelling in `skills/nutrition/quantity_clarification` changes what
+#: the user reads. Not when the plumbing beneath them changes.
+QUESTION_VERSION = "b1_quantity_q1"
+
 #: Channels whose chips the SERVER renders. Telegram and iMessage have no
 #: client-side chip parser at all, so the canonical payload is readable by
 #: construction — but their reply carries only the label.

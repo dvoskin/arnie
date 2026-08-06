@@ -265,3 +265,55 @@ async def test_a_repair_and_its_answer_are_two_rows_in_order(
     assert [r.round_index for r in rows] == list(range(1, len(rows) + 1)), (
         f"rounds are not ordered: {[(r.outcome, r.round_index) for r in rows]}")
     assert rows[-1].outcome == "applied", [r.outcome for r in rows]
+
+
+@pytest.mark.asyncio
+async def test_the_question_generation_is_recoverable_from_the_observation(
+        edges, b1_live, app_db):
+    """Which generation of the question produced this answer?
+
+    Two stamps, because one cannot do the job of the other and the failure is
+    silent. `interaction_revision` is the SEMANTIC state answered against, and
+    a repair deliberately does not bump it — so a run of observations spanning
+    a wording change would all carry the same revision and be indistinguishable.
+    "v1 wording produced 30 repairs, v2 produced 9" would be unanswerable, and
+    unanswerable RETROACTIVELY: the observations already collected could never
+    be attributed afterwards.
+
+    So `question_version` is stamped at write time, and this asserts both are
+    present on a repair AND on the answer that followed it — the exact pair a
+    wording comparison is computed from.
+    """
+    from sqlalchemy import select
+
+    import db.database as D
+    from core import b1_quantity_operation as ops
+    from db.models import B1AnswerObservation
+    from tests.test_a_conversation_across_turns import B1_ELIGIBLE, say
+
+    edges.plans.append(B1_ELIGIBLE)
+    await say(b1_live, "I had some chicken breast")
+    await say(b1_live, "somewhere thereabouts")     # repair
+    await say(b1_live, "6 oz")                      # then the answer
+
+    async with D.AsyncSessionLocal() as s:
+        rows = list((await s.execute(
+            select(B1AnswerObservation)
+            .order_by(B1AnswerObservation.id))).scalars().all())
+
+    assert len(rows) >= 2, [(r.outcome, r.round_index) for r in rows]
+    for r in rows:
+        assert r.question_version == ops.QUESTION_VERSION, (
+            f"round {r.round_index} ({r.outcome}) carries "
+            f"question_version={r.question_version!r} — a wording comparison "
+            f"cannot be computed from observations that do not name their "
+            f"question")
+
+    # THE POINT, STATED AS AN ASSERTION: the revision is the SAME across a
+    # repair and its answer, which is correct and is exactly why it cannot
+    # stand in for the wording stamp.
+    revisions = {r.interaction_revision for r in rows}
+    assert len(revisions) == 1, (
+        f"a repair moved the interaction revision ({revisions}) — repairs "
+        f"change no persisted semantic state, and bumping it would invalidate "
+        f"the options still on the user's screen")

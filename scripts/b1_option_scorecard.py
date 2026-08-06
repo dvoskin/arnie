@@ -40,6 +40,45 @@ def _pct(n: int, d: int) -> str:
     return "—" if not d else f"{100.0 * n / d:5.1f}%"
 
 
+def by_question_version(cur, *, days: int) -> None:
+    """Did the rewording help? The only comparison that answers it.
+
+    Repairs are the signal a question was misread, and `interaction_revision`
+    cannot separate wording from semantics — a repair deliberately leaves the
+    revision alone. So the axis is `question_version`, stamped when the answer
+    was written, which makes the comparison computable RETROACTIVELY over
+    observations collected before anyone decided to change the wording.
+    """
+    cur.execute(
+        """
+        SELECT question_version,
+               COUNT(*)                                        AS answers,
+               SUM(CASE WHEN outcome = 'repair'  THEN 1 ELSE 0 END) AS repairs,
+               SUM(CASE WHEN outcome = 'applied' THEN 1 ELSE 0 END) AS applied,
+               SUM(CASE WHEN selected_source = 'free_text' THEN 1 ELSE 0 END)
+                                                               AS free_text
+        FROM b1_answer_observations
+        WHERE observed_at > now() - make_interval(days => %s)
+        GROUP BY question_version ORDER BY question_version
+        """, (days,))
+    rows = cur.fetchall()
+    if not rows:
+        return
+    print("BY QUESTION VERSION — did the rewording help?\n")
+    print(f"  {'version':<20} {'answers':>8} {'repair':>8} {'applied':>8} "
+          f"{'free text':>10}")
+    for version, answers, repairs, applied, free_text in rows:
+        print(f"  {version or '—':<20} {answers:>8} "
+              f"{_pct(repairs, answers):>8} {_pct(applied, answers):>8} "
+              f"{_pct(free_text, answers):>10}")
+    if len(rows) == 1:
+        print("\n  Only one generation observed — nothing to compare yet. "
+              "Bump\n  QUESTION_VERSION when the wording changes and this "
+              "becomes the A/B.\n")
+    else:
+        print()
+
+
 def scorecard(cur, *, days: int, min_n: int) -> None:
     cur.execute(
         """
@@ -185,6 +224,7 @@ def main() -> int:
     with _connect(args.db) as conn, conn.cursor() as cur:
         scorecard(cur, days=args.days, min_n=args.min_n)
         offered_vs_selected(cur, days=args.days)
+        by_question_version(cur, days=args.days)
         if args.free_text:
             free_text_examples(cur, days=args.days, limit=args.limit)
     return 0
