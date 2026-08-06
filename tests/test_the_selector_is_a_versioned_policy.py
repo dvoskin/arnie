@@ -11,6 +11,7 @@ durable universe exists to provide.
 import pathlib
 import re
 from decimal import Decimal
+from fractions import Fraction
 
 import pytest
 
@@ -324,27 +325,86 @@ def test_ranking_and_thresholds_never_pass_through_a_float():
                       confidence=Decimal("0.6"))
     other = candidate("other", 141.7, prior=Decimal("0.5"),
                       confidence=Decimal("0.6"))
-    assert isinstance(policy.rank_of(close), Decimal)
-    assert isinstance(policy.NEAR_DUPLICATE_RATIO, Decimal)
+    assert isinstance(policy.rank_of(close), Fraction)
+    assert isinstance(policy.NEAR_DUPLICATE_RATIO, Fraction)
     # Distinguishable in Decimal; identical once either passes through float.
     assert policy.rank_of(close) != policy.rank_of(other)
     assert float(policy.rank_of(close)) == float(policy.rank_of(other))
 
 
-def test_the_near_duplicate_test_does_not_depend_on_the_decimal_context():
-    """`hi / lo < ratio` is exact only to the ambient context's precision, and
-    that context is process-wide state any library can change — the same trap
-    already found in conversion rounding."""
-    from decimal import ROUND_UP, localcontext
+@pytest.mark.parametrize("lo,hi,expected", [
+    # THE OPERANDS MATTER. My first version of this gate used 100 and 125:
+    # 100 x 1.25 = 125 exactly, which no precision can round, so the test
+    # could not fail however wrong the arithmetic was. These do round.
+    ("100.1", "125.1", True),     # exact product 125.125 -> hi is below it
+    ("100.1", "125.2", False),    # just above
+    ("100", "125", False),        # the boundary is not "near"
+    ("100", "124.9", True),
+    ("80.7", "100.8", True),      # exact product 100.875
+    ("80.7", "100.9", False),
+])
+def test_the_near_duplicate_test_is_immune_to_the_decimal_context(lo, hi,
+                                                                  expected):
+    """AVOIDING DIVISION WAS NOT ENOUGH.
 
-    a, b = Decimal("100"), Decimal("124.9")
-    before = policy._near(a, b)
-    with localcontext() as ctx:
-        ctx.prec = 3
-        ctx.rounding = ROUND_UP
-        assert policy._near(a, b) is before
-    assert before is True
-    assert policy._near(Decimal("100"), Decimal("125")) is False
+    `hi < lo * ratio` is still Decimal multiplication, and Decimal
+    multiplication rounds to the ambient context. Measured on 100.1 / 125.1:
+    ROUND_DOWN gives 125 and answers False, ROUND_UP gives 126 and answers
+    True — the same comparison, two answers, decided by process-wide state no
+    caller set.
+    """
+    from decimal import (ROUND_CEILING, ROUND_DOWN, ROUND_FLOOR,
+                         ROUND_HALF_EVEN, ROUND_UP, localcontext)
+
+    a, b = Decimal(lo), Decimal(hi)
+    assert policy._near(a, b) is expected
+    for precision in (3, 4, 5, 28):
+        for rounding in (ROUND_DOWN, ROUND_UP, ROUND_FLOOR, ROUND_CEILING,
+                         ROUND_HALF_EVEN):
+            with localcontext() as ctx:
+                ctx.prec, ctx.rounding = precision, rounding
+                assert policy._near(a, b) is expected, (
+                    f"prec={precision} rounding={rounding} changed the answer")
+
+
+def test_ranking_is_immune_to_the_decimal_context():
+    """`prior * best` had the identical defect: at a reduced precision two
+    distinguishable candidates round to one score and the tie-break fires,
+    decided by state no caller set."""
+    from decimal import ROUND_DOWN, ROUND_UP, localcontext
+
+    a = candidate("a", 141.7, prior=Decimal("0.55"),
+                  confidence=Decimal("0.912345678901234567"))
+    b = candidate("b", 141.7, prior=Decimal("0.55"),
+                  confidence=Decimal("0.912345678901234568"))
+    exact = (policy.rank_of(a), policy.rank_of(b))
+    assert exact[0] != exact[1], "the two must be distinguishable at all"
+    for rounding in (ROUND_DOWN, ROUND_UP):
+        with localcontext() as ctx:
+            ctx.prec, ctx.rounding = 3, rounding
+            assert (policy.rank_of(a), policy.rank_of(b)) == exact
+
+
+def test_a_whole_decision_is_immune_to_the_decimal_context():
+    """END TO END, because the arithmetic only matters if it changes what the
+    user is shown."""
+    from decimal import ROUND_DOWN, ROUND_UP, localcontext
+
+    universe = _universe(
+        candidate("c1", 100.1, prior=Decimal("0.31"),
+                  confidence=Decimal("0.61")),
+        candidate("c2", 125.1, prior=Decimal("0.30"),
+                  confidence=Decimal("0.62")),
+        candidate("c3", 400.0, prior=Decimal("0.29"),
+                  confidence=Decimal("0.63")))
+    expected = policy.select(universe, context=_ctx())
+    for precision in (3, 6, 28):
+        for rounding in (ROUND_DOWN, ROUND_UP):
+            with localcontext() as ctx:
+                ctx.prec, ctx.rounding = precision, rounding
+                chosen, excluded = policy.select(universe, context=_ctx())
+            assert (_ids(chosen), sorted(excluded)) == (
+                _ids(expected[0]), sorted(expected[1]))
 
 
 def test_equal_ranks_break_ties_by_a_stated_rule():

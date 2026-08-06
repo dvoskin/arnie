@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
+from fractions import Fraction
 from typing import Callable, Dict
 
 logger = logging.getLogger(__name__)
@@ -39,9 +40,18 @@ SELECTION_POLICY_VERSION = "b1_quantity_select_v1"
 #: v1 exists to reproduce current behaviour, and a policy that also retunes a
 #: constant could not be compared with what it replaced.
 #:
-#: DECIMAL, and compared by MULTIPLICATION rather than division — see
-#: `_near`.
-NEAR_DUPLICATE_RATIO = Decimal("1.25")
+#: EXACT RATIONAL. Neither `hi / lo < ratio` NOR `hi < lo * ratio` is safe in
+#: `Decimal`: both are arithmetic, and every Decimal operation is governed by
+#: the ambient context's precision and rounding. Measured:
+#:
+#:     lo=100.1  hi=125.1  ratio=1.25   exact product 125.125, so hi < it
+#:     prec=3 ROUND_DOWN -> 125  ->  False
+#:     prec=3 ROUND_UP   -> 126  ->  True
+#:
+#: The same comparison, two answers, decided by process-wide state no caller
+#: set. `Fraction` has no context and no rounding — the arithmetic is exact or
+#: it does not happen.
+NEAR_DUPLICATE_RATIO = Fraction(Decimal("1.25"))
 
 _POLICIES: Dict[str, Callable] = {}
 
@@ -102,7 +112,7 @@ def _assert_partition(universe, selected, exclusions, policy_version):
             f"missing {missing}, invented {invented}")
 
 
-def rank_of(candidate) -> Decimal:
+def rank_of(candidate) -> Fraction:
     """`prior x best evidence confidence`, both read off the candidate.
 
     THE PERSISTED FEATURES AND NOTHING ELSE. Recomputing either from its
@@ -114,30 +124,41 @@ def rank_of(candidate) -> Decimal:
     median 0.5 at 0.6 — so someone's own logged portion outranks the
     population's typical one without the rule ever naming a source.
 
-    DECIMAL THROUGHOUT. `float()` here was a real hole in the determinism this
-    module claims: two Decimal scores that differ in the 18th place collapse
-    to one binary float, and the original generation order silently becomes
-    the tie-breaker — an accidental rule nobody wrote, reached only by inputs
-    nobody would think to test.
+EXACT RATIONAL, NOT FLOAT AND NOT DECIMAL.
+
+    `float()` was the first hole: two Decimal scores differing in the 18th
+    place collapse to one binary float, and generation order silently becomes
+    the tie-breaker.
+
+    `Decimal` was the second, and subtler. `prior * best` is arithmetic, and
+    every Decimal operation is governed by the ambient context — so at a
+    reduced precision two distinguishable candidates round to one score and
+    the tie-break fires again, decided by process-wide state no caller set.
+    `Fraction` has no context: the product of two exact rationals is exact.
     """
-    best = max((Decimal(str(e.confidence)) for e in candidate.evidence
-                if e.confidence is not None), default=Decimal(0))
-    prior = Decimal(str(candidate.prior)) if candidate.prior is not None \
-        else Decimal(0)
+    best = max((Fraction(Decimal(str(e.confidence)))
+                for e in candidate.evidence if e.confidence is not None),
+               default=Fraction(0))
+    prior = (Fraction(Decimal(str(candidate.prior)))
+             if candidate.prior is not None else Fraction(0))
     return prior * best
 
 
-def _near(a: Decimal, b: Decimal) -> bool:
-    """Within `NEAR_DUPLICATE_RATIO`, decided WITHOUT DIVISION.
+def _near(a, b) -> bool:
+    """Within `NEAR_DUPLICATE_RATIO`, decided in EXACT RATIONAL ARITHMETIC.
 
-    `hi / lo < ratio` is exact in Decimal only up to the ambient context's
-    precision, and the ambient decimal context is process-wide state any
-    library can change — the same trap already found in conversion rounding.
-    `hi < lo * ratio` is multiplication only: exact, and independent of
-    context.
+    Avoiding division was not enough. `hi < lo * ratio` is still a Decimal
+    multiplication, and Decimal multiplication rounds to the ambient
+    context — so the same pair of masses answers differently under
+    ROUND_DOWN and ROUND_UP at a reduced precision, which is precisely the
+    nondeterminism this was meant to remove. `Fraction` has neither precision
+    nor rounding.
     """
     lo, hi = min(a, b), max(a, b)
-    return lo > 0 and hi < lo * NEAR_DUPLICATE_RATIO
+    if lo <= 0:
+        return False
+    return Fraction(Decimal(str(hi))) < Fraction(Decimal(str(lo))) * (
+        NEAR_DUPLICATE_RATIO)
 
 
 def _says_the_same_thing(a, b) -> bool:

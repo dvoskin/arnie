@@ -1099,7 +1099,7 @@ B-1.9      IN PROGRESS       5 of 10 stages, ~65-70% by engineering weight.
                              1 PASS(+2 CF) · 2/2.1 evidence semantics ·
                              3a/3a.1/3a.2 contracts · 3b/3b.1/3b.2/3b.3
                              durable universe · 4 bridge deletion ·
-                             5/5.1 versioned selector — ALL DONE.
+                             5/5.1/5.2 versioned selector — ALL DONE.
                              6 NEXT: replay the failures as CLASSES.
                              Then 7 integration · 8 freeze · 9 iOS ·
                              10 promote+delete. Runs BEFORE B-1 closure.
@@ -1723,7 +1723,34 @@ carried to it:
   quietly making decisions the persisted record cannot explain. The scan is
   kept as the cheap first line.
 
-8103 pass on SQLite and 8103 on Postgres (21 skips), 23 selector gates.
+**5.2 — the exactness claim was still false.** *(review of `f40e472`)*
+Avoiding division was not enough: `hi < lo * ratio` is still **Decimal
+multiplication**, and every Decimal operation is governed by the ambient
+context's precision and rounding. `prior * best` in `rank_of` had the
+identical defect. Measured:
+
+```text
+lo=100.1  hi=125.1  ratio=1.25    exact product 125.125, so hi < it -> True
+  prec=3 ROUND_DOWN -> 125  ->  False
+  prec=3 ROUND_UP   -> 126  ->  True
+```
+
+The same comparison, two answers, decided by process-wide state no caller set.
+Both now use **`Fraction`**, which has neither precision nor rounding: the
+arithmetic is exact or it does not happen.
+
+**The gate I wrote could not have caught it.** It used `100 x 1.25 = 125` — a
+product no precision can round — so it would have passed however wrong the
+arithmetic was. The replacement parameterises over operands that *do* round
+(100.1/125.1, 80.7/100.8) across four precisions and five rounding modes, and
+mutation-verified: restoring Decimal multiplication turns five gates red.
+
+8110 pass on SQLite and 8110 on Postgres (21 skips), 30 selector gates.
+
+**Standing lesson, third instance in this slice:** an instrument that cannot
+express the failure it is aimed at reports success indistinguishably from
+absence — see also `matched: 0`, the phantom-log detector, and SQLite's
+foreign keys.
 
 **Carried forward from the commit-4 review** *(non-blocking, for the
 observability pass)*: a candidate-universe read failure currently degrades to
