@@ -593,16 +593,35 @@ top of the ask-time `amount`, `unit`, and macros. `_analyze_food`
 out of that dict as the authoritative figures, so it receives two contradictory
 statements of the same fact and picks one.
 
-Measured live 2026-08-06, three operations, three different outcomes:
+**⚠ The production evidence first cited here was wrong, and is corrected below.**
+The defect is asserted from the CODE, not from these three operations. Read the
+correction before designing tests against them.
 
-| entry | item at ask | committed | result |
-|---|---|---|---|
-| 2849 rice | 100 **g** → 161/4/34/1 | 39.6 g → 64/1.4/13.4/0.5 | scaled correctly (×0.396) |
-| 2851 chicken | 6 **oz** → 280/52/0/7 | 87 g → 96/20/**4**/0 | fuzzy override — carbs on a chicken breast |
-| 2852 oatmeal | 1 **cup cooked** → 150/5/27/3 | 45 g → **150/5/27/3** | pass-through, identical to the digit |
+| entry | item at ask | answer actually sent | committed | verdict |
+|---|---|---|---|---|
+| 2849 rice | 100 **g** → 161/4/34/1 | *(typed grams)* | 39.6 g → 64/1.4/13.4/0.5 | scaled correctly (×0.396) |
+| 2851 chicken | 6 **oz** → 280/52/0/7 | "Half a breast grilled with a little spray oil" | 87 g → 96/20/**4**/0 | **confounded** — the answer changed the food's description (spray oil legitimately re-prices fat 7→0). 4 g carbs on a chicken breast still looks wrong, but cannot be attributed to this mechanism. |
+| 2852 oatmeal | 1 **cup cooked** → 150/5/27/3 | "Half a cup Made with milk nothing else in it" | 45 g → 150/5/27/3 | **not a defect.** ½ cup dry ≈ 45 g, and 1 cup cooked oatmeal *is made from* ½ cup dry — same quantity of food, so identical macros are correct. |
 
-Gram-based items survive; every other basis does not. That is also why no test
-caught it — the fixtures were gram-based.
+The original reading ("gram-based items survive, every other basis does not")
+came from inferring the answers from what was *suggested* rather than reading
+`conversation_logs.raw_message`. It does not survive contact with the actual
+messages.
+
+**What the defect rests on instead — a fact about the code.** `_analyze_food`
+reads the macros out of `inp`, and `analyze()` documents its own conflict
+policy: *"The LLM's calories/protein anchor the portion unless the quantity is
+an explicit mass and the winner is trustworthy."* B-1 hands it macros belonging
+to the ask-time quantity together with the answered quantity, so which of the
+two governs is decided by that policy rather than by the user's answer. The
+answered quantity must be the only quantity authority; today it is one of two
+inputs competing for the role.
+
+**Therefore the acceptance criteria are BEHAVIOURAL, not reproductions.**
+Writing "the oatmeal regression" as a test would encode a misreading. Prove
+instead that committed nutrition responds to the answered quantity across
+gram, ounce, cup, piece and free-text bases — and let whichever of those is
+already correct stay green.
 
 **The fix is a deletion, not a guard:** the item handed to pricing must have its
 quantity fields *replaced*, not shadowed, so pricing derives from `food_name` +

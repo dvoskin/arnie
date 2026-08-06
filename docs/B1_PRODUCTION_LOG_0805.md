@@ -259,20 +259,27 @@ surfaced a separate defect. It is recorded here because it was found here, and
 in `docs/CANONICAL_MIGRATION_DIRECTIVE.md` as **B-1.75** because that is where
 it will be fixed.
 
-| entry | item at ask | committed | outcome |
-|---|---|---|---|
-| 2849 rice | 100 **g** → 161/4/34/1 | 39.6 g → 64/1.4/13.4/0.5 | scaled correctly (×0.396) |
-| 2851 chicken | 6 **oz** → 280/52/0/7 | 87 g → 96/20/**4**/0 | fuzzy override — carbs on a chicken breast |
-| 2852 oatmeal | 1 **cup cooked** → 150/5/27/3 | 45 g → **150/5/27/3** | pass-through, identical to the digit |
+| entry | item at ask | answer actually sent | committed | verdict |
+|---|---|---|---|---|
+| 2849 rice | 100 **g** → 161/4/34/1 | *(typed grams)* | 39.6 g → 64/1.4/13.4/0.5 | scaled correctly |
+| 2851 chicken | 6 **oz** → 280/52/0/7 | "Half a breast grilled with a little spray oil" | 87 g → 96/20/**4**/0 | **confounded** — the answer changed the food's description |
+| 2852 oatmeal | 1 **cup cooked** → 150/5/27/3 | "Half a cup Made with milk nothing else in it" | 45 g → 150/5/27/3 | **not a defect** — ½ cup dry ≈ 45 g, and 1 cup cooked oatmeal is made from ½ cup dry |
 
-`core/b1_quantity_operation.py` builds the pricing input as
-`inp = {**item, "quantity": quantity_text}` — the answered quantity layered on
-top of the ask-time `amount`, `unit` **and macros**. `_analyze_food`
-(`handlers/tool_executor.py:2896`) reads `calories/protein/carbs/fats` straight
-out of that dict as authoritative. So the pricer receives two contradictory
-statements of the same fact and picks one; which one it picks depends on the
-branch it takes. Gram-based items survive because the two statements happen to
-agree. Every other basis does not.
+**Corrected 2026-08-06.** This section first claimed two of the three were
+defects, from inferring the answers sent rather than reading
+`conversation_logs.raw_message`. Neither claim survives the actual messages:
+oatmeal is correct, and chicken is confounded by preparation content in the
+answer. Same root cause as §7 — a world assumed rather than sampled — which is
+why the correction is left in place rather than quietly edited out.
+
+**What the defect rests on instead is the code.** `core/b1_quantity_operation.py`
+builds the pricing input as `inp = {**item, "quantity": quantity_text}`, so
+`_analyze_food` (`handlers/tool_executor.py:2896`) receives the macros belonging
+to the ask-time quantity alongside the answered quantity. `analyze()` documents
+its own conflict policy — *"The LLM's calories/protein anchor the portion unless
+the quantity is an explicit mass and the winner is trustworthy"* — so which of
+the two governs is decided by that policy rather than by the user's answer.
+The answered quantity should be the only quantity authority.
 
 **This is not a nutrition-accuracy finding**, and no improvement to the resolver
 can fix it — the contradiction exists before the resolver is called. The fix is
