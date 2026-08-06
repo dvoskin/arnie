@@ -1160,8 +1160,46 @@ async def _run_turn(
                     # disagree with the sentence above it because neither
                     # recomputes anything.
                     _b1_resp.cards.append(_b1_card)
+                # TURN HEALTH, WHICH THIS LANE HAD NEVER RUN.
+                #
+                # `detect_turn_flags` lives ~3000 lines below and this branch
+                # returns before reaching it, so every canonical answer turn
+                # left `health_flags` empty — not "the detector did not fire",
+                # but "the detector was never called". That is why
+                # `phantom_log_claim` looked silent on the 2026-08-05 data
+                # loss: called directly with those exact strings it fires
+                # correctly. Zero coverage, not a tuning problem, and every
+                # future canonical lane inherits it unless it is run here.
+                #
+                # AND THIS LANE CAN DO BETTER THAN THE LEGACY PROXY. The
+                # legacy call passes `has_tool_calls` as a stand-in for "did a
+                # write happen" — a proxy that is simply false here, since the
+                # canonical path commits without the model firing a tool. We
+                # know the answer: `entry_id` is set exactly when a row landed.
+                # So the fact is passed where the proxy would have been.
+                _b1_flags: list = []
+                try:
+                    _b1_flags = detect_turn_flags(
+                        user_text=_user_text if isinstance(_user_text, str) else "",
+                        # The bubbles ARE the reply — `Response` has no
+                        # `.text`, and reading a field that does not
+                        # exist is how this silently ran zero times
+                        # once already.
+                        response_text="|||".join(_b1_resp.bubbles or []),
+                        has_tool_calls=bool(getattr(_b1_facts, "entry_id", None)),
+                        stop_reason="b1_answer",
+                        retried=False, tool_error=bool(_b1_out.internal_failure),
+                        source_type=_source, tool_names=set(),
+                        prior_assistant_text="")
+                    if _b1_flags:
+                        logger.warning(
+                            "TURN_HEALTH %s flags=%s",
+                            f"{platform}:{user.id}", ",".join(_b1_flags))
+                except Exception:
+                    # Telemetry may never cost the reply the user already has.
+                    logger.debug("b1 turn-health failed", exc_info=True)
                 return TurnResult(
-                    response=_b1_resp,
+                    response=_b1_resp, health_flags=_b1_flags,
                     tool_calls=[], just_completed=False,
                     in_onboarding=in_onboarding, onboarding_field_saved=None,
                     today_log=today_log, user=user)
