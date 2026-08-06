@@ -123,17 +123,25 @@ refinement expands until production telemetry demonstrates where users actually
 succeed or fail.**
 
 Adopted 2026-08-06, at the point B-1 stopped being an architecture question and
-became a product one. It is the rule the whole migration was already following
-without saying so: every defect this slice produced — the ask origin, the
-ambiguity field name, the settled window, the expiry window, the stale macros,
-the substituted question — shipped green because a fixture encoded an
-assumption instead of sampling reality. Generalising an option generator on the
-same basis would repeat that at a layer where the cost is a user's trust rather
-than a test run.
+became a product one.
 
-Its first application is D4.1: B-1's option pipeline does not widen, and B-1b
-does not begin, until the window says which candidate source actually produces
-answers people accept and do not correct.
+**Multiple defects in this slice shipped green because fixtures encoded
+expected states without exercising naturally occurring production sequences**
+— the ask origin, the ambiguity field name, the settled and expiry windows.
+**Others exposed different gaps**: contradictory ownership of the quantity
+(the stale macros), a renderer substituting its own question, observability
+that could not report what it appeared to measure, and database parity between
+models and migrations that nothing compared. **Both classes require
+sequence-level production evidence before expansion**, which is what this rule
+buys. Generalising an option generator without it would repeat the failure at
+a layer where the cost is a user's trust rather than a test run.
+
+Its first application is the **B-1 internal evidence window (B-1b)**: B-1's
+option pipeline does not widen, and the structured client (B-1d) does not
+begin, until the window says which candidate source actually produces answers
+people accept and do not correct. It is deliberately labelled inside B-1 — it
+is not Phase D work, and naming it `D4.1` implied Phase D was starting before
+B-1 closed.
 
 The rule binds the instruments too. An observation window read from
 `core/trace_buffer` would be a window over "since the last deploy" — it is a
@@ -583,8 +591,8 @@ slice is done" are different claims and were conflated once already.
 | live operation probe, correlated to a self-minted operation id | WRITTEN — evidence owed on deploy |
 | **Arnie voice over the committed facts** | TODO — after lifecycle/committed-truth verification, BEFORE broad rollout |
 | **Telegram/iMessage label-text path proven in production** | TODO |
-| **iOS B-1b: ID-addressed payload + real chip-path proof** | TODO |
-| **reply-metadata binding for `LABEL_TEXT` channels** | TODO — owed with B-1b |
+| **iOS B-1d: ID-addressed payload + real chip-path proof** | TODO |
+| **reply-metadata binding for `LABEL_TEXT` channels** | TODO — owed with B-1d |
 | **rollout: allowlist → 1% → 5% → 25% → 100% of eligible turns** | TODO |
 | **deletion: legacy quantity producer, option builder, answer reconstruction, prose-chip path; lower C8/C9** | TODO |
 
@@ -606,11 +614,37 @@ row says. The failure this forbids is measured and specific: a reply reading
 totals disagreed with the prose beside it because three owners each computed
 their own. A renderer that can recompute is a second owner of the number.
 
-So the sequence for the copy in `b1_answer_turn.copy_for` is: deterministic
-templates now (they cannot drift), voice at B-2.8 rendering the SAME
-`MealCommitResult` fields, with the fallbacks retained — a voice pass that
-fails must degrade to the deterministic sentence, never to silence and never
-to an invented one.
+**The renderer is never passed `MealCommitResult`.** Nor persistence models,
+resolver evidence, or any mutable domain state. It receives the immutable
+`CanonicalResponseFacts` that `facts_for()` produced, and nothing else — an
+earlier draft of this section said voice would render "the same
+`MealCommitResult` fields", which reopens the exact ownership problem the
+seam exists to close. A renderer holding the commit result can recompute, and
+a renderer that can recompute is a second owner of the number.
+
+```text
+MealCommitResult
+  → facts_for()
+    → CanonicalResponseFacts   (immutable)
+       ├── deterministic fallback
+       └── constrained voice renderer
+```
+
+This is structural and absolute. A voice pass that fails degrades to the
+deterministic sentence — never to silence, and never to an invented one.
+
+**THREE VOICE PASSES, EXPLICITLY, because "when does voice happen" currently
+has three defensible answers and a team will pick different ones.**
+
+| pass | when | scope |
+|---|---|---|
+| **B-1 presentation harmonization** | before **public** rollout of B-1 | remove the obvious lane-to-lane discontinuity — B-1 turns render from a template while legacy turns are composed, so the assistant sounds different depending on routing the user cannot see. Fixed/versioned templates or tightly constrained rendering. **Not** the adaptive voice project. |
+| **B-2.8 product voice system** | after semantic intents and dependencies stabilize (B-1.6, B-1.7) | adaptive, contextual, channel-aware rendering. Inputs are `CanonicalResponseFacts` and `QuestionIntent` **only**. This is the first implementation of the real voice boundary. |
+| **Gate 3 voice polish** | release candidate | final diction, consistency, evaluation and release tuning. **Not** the first implementation of the boundary — that already exists by then. |
+
+Separate again from all three: **instrumentation wording inside each slice**
+(B-1a and its successors), which exists to make a slice measurable and is
+fixed, minimal and version-stamped.
 
 **The `LABEL_TEXT` correlation limit, stated rather than discovered later.**
 `"6 oz"` carries no identity. Once operation A has settled, a delayed reply
@@ -620,7 +654,7 @@ reply to B — `owning()` returns the most recent operation and binds there.
 This is a TRANSPORT limitation, not an architecture flaw: with no metadata on
 the reply there is nothing to correlate against. It is bounded, not solved, by
 `SETTLED_OWNERSHIP_MINUTES` and by iOS being excluded until taps are
-ID-addressed. **Owed with B-1b:** where a platform does expose reply metadata
+ID-addressed. **Owed with B-1d:** where a platform does expose reply metadata
 (Telegram's `reply_to_message`), bind it to `operation_id` and prefer it over
 inference. Until then `LABEL_TEXT` is a restricted capability and is named as
 one in code — its production evidence does not substitute for the chip path's.
@@ -631,7 +665,7 @@ Two scope facts to state rather than let green tests imply otherwise:
   implemented and tested, but nothing in production submits an `option_id` —
   Telegram and iMessage return the label text, which binds to the stored patch
   through the label-selection path. The structured tap's PRODUCTION proof is
-  owed at B-1b and must be recorded as owed, not as landed.
+  owed at B-1d and must be recorded as owed, not as landed.
 * **Pricing is stubbed in the lifecycle suites.** They monkeypatch
   `_analyze_food` deliberately, to measure the lifecycle rather than the
   enrichment ladder. "One commit, one row, correct provenance" is proven;
@@ -1054,15 +1088,34 @@ Phase A    COMPLETE          production-verified on a66e9ba8
 B-0        COMPLETE          ratchets enforced continuously (C8, C9)
 B-0b       COMPLETE          contract surface
 B-0c       COMPLETE          serialization, validation, immutability, persistence
-B-1        BACKEND COMPLETE  production-proven; promotion still gated (below)
+B-1        SLICE NOT CLOSED  see the seven-line state below — "backend
+                             complete" alone is the sentence that lets a
+                             slice look finished while its predecessor
+                             still runs
 B-1.75     COMPLETE          answered quantity is the only quantity authority
-D4.1       IN PROGRESS       observation window — the current phase
-B-1b       BLOCKED ON D4.1   iOS structured interactions
+B-1b       IN PROGRESS       internal evidence window — the current phase
+B-1d       BLOCKED ON EVIDENCE  structured iOS client
 B-1.5/.6/.7/.8              resume after promotion
 B-2+       expansion
 B-3/B-4    ownership consolidation and deletion
 C/D/E/F    canonical food, shared contracts, workouts
 ```
+
+### B-1 state — the authoritative seven lines
+
+```text
+B-1 lifecycle implementation       COMPLETE
+B-1 production lifecycle proof     COMPLETE
+B-1 product evidence               IN PROGRESS
+B-1 structured client              BLOCKED ON EVIDENCE
+B-1 promotion                      BLOCKED
+B-1 predecessor deletion           NOT STARTED
+B-1 slice closure                  NOT COMPLETE
+```
+
+Quote these lines rather than a single adjective. "B-1 is done" is true of the
+first two and false of the last five, and the whole point of the slice loop is
+that the last five are where migrations are actually won or lost.
 
 ### Closing B-1 — the first promotion and deletion cycle
 
@@ -1074,12 +1127,8 @@ predecessor is deleted and its ratchets are lowered.
 | **B-1a** | Measurement calibration — instrumentation wording, versioned | ✅ `b1_quantity_q2` |
 | **B-1b** | Internal evidence window | **current** |
 | **B-1c** | Close the safety-observability gap (detector silence) | runs in parallel; blocks *public rollout*, not internal collection |
-| **B-1d** | Structured iOS client against the validated contract | after B-1b |
+| **B-1d** | Structured iOS client against the validated contract | after the B-1b window |
 | **B-1e** | Promote → delete the legacy quantity path → lower ratchets | after B-1d |
-
-*(Naming note: "B-1b" here is the evidence window per the 2026-08-06 team
-sequence. The iOS structured client, called B-1b in earlier documents, is
-B-1d in this list. Same work, one label.)*
 
 **B-1a — allowed scope, now closed.** Make the question unambiguous · make the
 free-text and "not sure" routes visible · version-stamp the wording · preserve
@@ -1103,8 +1152,8 @@ and C9 in the same commit.
 Promotion means deleting the legacy quantity path. Blocked until all hold:
 
 ```text
-[ ] D4.1 says the option pipeline is good enough to keep
-[ ] B-1b shipped and a canonical-rendering client is sufficiently deployed
+[ ] the B-1b evidence window says the option pipeline is good enough to keep
+[ ] B-1d shipped and the canonical structured client is sufficiently deployed
 [ ] 100% of eligible turns canonical, production-proven
 [ ] no canonical operation ever fell back mid-flight (C10)
 [ ] rollback tested
@@ -1120,8 +1169,8 @@ Each is real, none blocks the current phase, and none may be closed silently.
 | `phantom_log_claim` fires in the harness but showed `flags=None` on both production incident turns; `skills_fired` is NULL even on turns that wrote rows, so the column cannot say why | measured 08-06 | **unrecorded until now** — needs a cause before it is trusted as a safety net |
 | the legacy lane re-logged a meal already on the board (entry 2862 duplicated 2861, `legacy_reason=interpreter_none`) | measured 08-06, row deleted | D7 — the path B-1 replaces |
 | `reask_refused` firing for user `ios:5` on the legacy lane | observed 08-05 | uninvestigated |
-| `scripts/b1_operation_probe.py` cannot exercise B-1 — it drives `/api/v1/chat`, which is `PLATFORM="ios"`, excluded until B-1b | by design | B-1b |
-| zero history-sourced options across all asks so far | 7 asks, all `sources=ontology` | D4.1 decides whether this is recall or ranking |
+| `scripts/b1_operation_probe.py` cannot exercise B-1 — it drives `/api/v1/chat`, which is `PLATFORM="ios"`, excluded until B-1d | by design | B-1d |
+| zero history-sourced options across all asks so far | 7 asks, all `sources=ontology` | B-1b decides whether this is recall or ranking |
 | two voices: B-1 turns render from a template, legacy turns from the composer, so the assistant sounds different depending on which lane owns the turn | measured 08-06 | item 2 above |
 
 ### Release gates — where the whole product stands
