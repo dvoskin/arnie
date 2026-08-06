@@ -68,6 +68,19 @@ class AnswerResult:
     outcome: Outcome
     patch: Optional["SemanticPatchT"] = None
     reason: str = ""
+    #: WHICH VERSIONED POLICY DECIDED THIS, when one did.
+    #:
+    #: A FIELD, never inferred from `reason`. Attribution was briefly derived
+    #: with `reason.startswith("estimate")`, which is the same dependency that
+    #: had already broken modality classification one layer over: an improved
+    #: error message silently reclassified a refusal as free text. `reason` is
+    #: prose for a human reading a trace; rewording it must never change what
+    #: the system recorded about its own decision.
+    #:
+    #: None when no versioned policy governed the route — a stated quantity
+    #: decides itself, and stamping every result would make the field mean
+    #: "some policy ran" rather than "this policy decided".
+    decision_policy_version: Optional[str] = None
 
     def __post_init__(self):
         from core.semantics import SemanticPatch
@@ -287,11 +300,13 @@ def _estimate(field, reason: str) -> AnswerResult:
                      for o in (getattr(field, "options", ()) or ())))
         return AnswerResult(
             Outcome.REPAIR,
-            reason=f"{reason}: no evidence supports an estimate here")
+            reason=f"{reason}: no evidence supports an estimate here",
+            decision_policy_version=ESTIMATE_POLICY_VERSION)
     priced.sort(key=lambda o: o.patch.quantity.grams)
     middle = priced[len(priced) // 2].patch
     return AnswerResult(
         Outcome.APPLIED, reason=reason,
+        decision_policy_version=ESTIMATE_POLICY_VERSION,
         patch=replace(middle,
                       quantity=replace(middle.quantity,
                                        provenance=Provenance.MODE_DEFAULT),

@@ -595,3 +595,66 @@ async def test_a_plain_typed_answer_names_no_policy(edges, b1_live, app_db):
     assert obs is not None and obs.outcome == "applied", obs
     assert obs.policy_version == "", (
         f"a typed quantity claimed a policy governed it: {obs.policy_version!r}")
+
+
+def test_rewording_a_reason_cannot_change_the_recorded_policy():
+    """P1 from review: attribution must not be parsed out of prose.
+
+    It briefly was — `reason.startswith("estimate")` — which is the same
+    dependency that had already broken modality classification one layer over,
+    where an improved error message reclassified a refusal as free-text usage.
+
+    `reason` is prose for a human reading a trace. Every one of these is a
+    plausible future rewording, and none of them may change what the system
+    recorded about its own decision.
+    """
+    from core.clarification_answer import (ESTIMATE_POLICY_VERSION,
+                                           AnswerResult, Outcome)
+
+    for reason in ("estimate",
+                   "estimate: no evidence supports an estimate here",
+                   "unsupported_estimate: no evidence",
+                   "mode_default: estimate unavailable",
+                   "we could not support an assumption for this one",
+                   ""):
+        r = AnswerResult(Outcome.REPAIR, reason=reason,
+                         decision_policy_version=ESTIMATE_POLICY_VERSION)
+        assert r.decision_policy_version == ESTIMATE_POLICY_VERSION, reason
+
+    # And the absence is equally load-bearing.
+    plain = AnswerResult(Outcome.REPAIR, reason="estimate-ish wording")
+    assert plain.decision_policy_version is None, (
+        "a result no policy governed must not acquire one from its wording")
+
+
+@pytest.mark.asyncio
+async def test_a_supported_estimate_also_names_its_policy(
+        edges, b1_live, app_db):
+    """Both of the estimate policy's outcomes are its decisions.
+
+    Stamping only the refusal would make the persisted rate answer "how often
+    did we refuse" while silently excluding the commits from the denominator —
+    so the policy's own accept rate would be uncomputable.
+    """
+    from datetime import date
+
+    import db.database as D
+    from core.clarification_answer import ESTIMATE_POLICY_VERSION
+    from db.models import DailyLog, FoodEntry
+
+    async with D.AsyncSessionLocal() as s:
+        log = DailyLog(user_id=b1_live, date=date.today())
+        s.add(log)
+        await s.flush()
+        s.add(FoodEntry(daily_log_id=log.id, parsed_food_name="Chicken breast",
+                        quantity="182 g", calories=300.0, estimated_flag=False))
+        await s.commit()
+
+    await _ask(edges, b1_live)
+    await say(b1_live, "not sure")
+
+    obs = await _observation(b1_live)
+    assert obs is not None and obs.outcome == "applied", obs
+    assert obs.policy_version == ESTIMATE_POLICY_VERSION, (
+        f"a policy-governed COMMIT was recorded without its policy: "
+        f"{obs.policy_version!r}")

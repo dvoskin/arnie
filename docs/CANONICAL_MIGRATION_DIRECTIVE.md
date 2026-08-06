@@ -1184,6 +1184,32 @@ improving an error message reclassified a refusal from `command` to `text`
 and counted it as free-text usage — corrupting the "Other" rate with a better
 sentence.
 
+**⚠ CI HAS NOT PRODUCED A GREEN CHECK ON ANY RECENT COMMIT.** Raised in review
+as "no combined status checks", investigated 2026-08-06, and it is worse than
+a reporting quirk:
+
+```text
+6b66681  queued
+c859758  failure   job=cancelled   15 min   no failed step
+9c9d4ea  failure   job=cancelled   15 min   no failed step
+cda108e  failure   job=cancelled   15 min   no failed step
+bd30854  failure   job=cancelled   15 min   no failed step
+a16bc03  failure   job=failure      7 min   failed at "Set up job"
+```
+
+**Not the push cadence** — `cancel-in-progress` is `false` on `main`, so a new
+push queues rather than cancelling. **Not a job timeout** — none is set, so the
+default is 360 minutes. A setup-stage failure plus consistent external
+cancellation is the shape of an **account-level Actions minutes or billing
+limit**, which is checkable in seconds and which I cannot see.
+
+Until it is green, **every test result in this programme is author-reported
+execution evidence, not an attached check.** The numbers are real and the runs
+happened; nothing independent confirms them. That distinction belongs in the
+evidence-class table alongside the others, and it should be closed before
+promotion — a migration whose safety rests on a suite nobody else has seen run
+is resting on the same kind of unverified instrument this slice keeps finding.
+
 **2 — the missing contracts.** `ServingBasis` (MASS · VOLUME · COUNT · PIECE ·
 PACKAGE · FRACTION_OF_PACKAGE · FRACTION_OF_ENTITY · STANDARD_SERVING),
 `QuantityCandidateEvidence`, `EstimateEvidence`, `CandidateSet`,
