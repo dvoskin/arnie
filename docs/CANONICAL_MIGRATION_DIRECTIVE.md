@@ -1137,7 +1137,7 @@ rather than the user — true, and still true — but low traffic must change th
 | | step | exit condition |
 |---|---|---|
 | **B-1a** | measurement wording | ✅ versioned `b1_quantity_q2` |
-| **B-1b.1** | deterministic system-validation matrix | **Postgres-backed and green; real enrichment still open** |
+| **B-1b.1** | deterministic system-validation matrix | ✅ **GREEN** — Postgres-backed, real enrichment exercised |
 | **B-1b.2** | production-sequence corpus | green under Postgres and real pricing |
 | **B-1b.3** | instrumented human simulation | internal panel shows the interaction is understandable |
 | **B-1b.4** | natural-traffic confirmation | continuous; confirms rather than gates |
@@ -1194,11 +1194,24 @@ impossible · health detector executed · no legacy fallback after ownership.
   evidence; with it, the dialect must genuinely be `postgresql` in an isolated
   schema. Verified directly — engine `postgresql`, `search_path`
   `harness_…`, real rows written.
-* **Real enrichment — STILL OPEN.** USDA and Open Food Facts remain pinned
-  off, so repricing is proven against an injected deterministic density
-  (2 cal/g, exact expected macros for every field). That proves the **logic**
-  and not the **integration**. Needs `USDA_API_KEY`. The density lane's only
-  production proof remains entry 2860 at 165.0 cal/100 g.
+* **Real enrichment — CLOSED.** `tests/test_b1b1_real_enrichment.py` runs the
+  canonical path against the live USDA/Open Food Facts ladder, gated on
+  `USDA_API_KEY` so its absence SKIPS loudly rather than weakening the matrix
+  quietly. Verified by counting calls: 8 real results for "Chicken breast",
+  committing **165.0 cal at 100 g** — the correct density, matching production
+  entry 2860 exactly.
+
+  **And the ladder's refusal machinery is what earns that.** USDA's top hit
+  for "chicken breast" is *"Chicken breast tenders, breaded, uncooked"* at 263
+  cal/100 g; for "white rice" it is rice FLOUR at 359; for "salmon" it is fish
+  OIL at 902. All three carry no confident match, the ladder declines to seat
+  them, and the committed number is right anyway. Raw lookup quality is poor;
+  the authority ladder is the reason that does not reach a user.
+
+  Assertions there are **relational, never absolute** — pinning a calorie
+  number would encode today's USDA index and fail on a data refresh for
+  reasons unrelated to B-1. What must hold whichever row wins is that the
+  answered quantity drives the result.
 
 > **Reporting rule, because these were conflated once.** State the backing
 > store, not the run flag. *"Suite run under Postgres; matrix scenarios
