@@ -1,6 +1,7 @@
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean,
-    DateTime, Text, ForeignKey, Date, UniqueConstraint, Index, text,
+    DateTime, Text, ForeignKey, ForeignKeyConstraint, Date, UniqueConstraint,
+    Index, JSON, text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -1554,3 +1555,216 @@ class FoodCorrection(Base):
     mode = Column(String)
     via_alias = Column(String)
     created_at = Column(DateTime, server_default=func.now())
+
+
+# ── the durable candidate universe (B-1.9 commit 3b) ─────────────────────────
+#
+# DOMAIN-NEUTRAL BY CONSTRUCTION. Nothing here knows about chicken, calories,
+# grams or a food ontology: the columns are `domain`, `subject_entity_id`,
+# `candidate_kind` and typed payloads. The same five tables must later hold
+# exercise identity, set/rep, distance, duration and dose ambiguity without a
+# schema redesign, and any column that named a food would have made that a
+# migration instead of an insert.
+#
+# APPEND-ONLY. These rows are EVIDENCE. A new revision or a new policy writes a
+# NEW set and a NEW decision; the previous one stays exactly as it was, because
+# the question "what did we offer that person, that day" has one true answer
+# and it is not the current one.
+
+
+class CandidateSetRow(Base):
+    """Every candidate GENERATED for one clarification, before any reduction.
+
+    Persisting only what the user saw makes three different failures read
+    identically — never generated, generated then excluded, shown then
+    rejected. They are different engineering problems, and one number would
+    hide which one we have.
+    """
+    __tablename__ = "candidate_sets"
+    __table_args__ = (
+        UniqueConstraint("candidate_set_id", name="uq_candidate_set_id"),
+        # THE IDEMPOTENCY KEY. A retried ask must not mint a second universe
+        # for the same question; it must find the first one.
+        UniqueConstraint("operation_id", "interaction_revision", "field_id",
+                         "generator_version",
+                         name="uq_candidate_set_identity"),
+        Index("ix_candidate_sets_user", "user_id"),
+        Index("ix_candidate_sets_operation", "operation_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    candidate_set_id = Column(String, nullable=False)
+    #: food / workout / … — the reuse seam.
+    domain = Column(String, nullable=False, default="food")
+    operation_id = Column(String, nullable=False)
+    #: OWNERSHIP AT THE DURABLE BOUNDARY. Evidence here can quote one person's
+    #: logging history, so retrieval is scoped by this and never by set id
+    #: alone.
+    user_id = Column(Integer, nullable=False)
+    interaction_revision = Column(Integer, nullable=False, default=0)
+    field_id = Column(String, nullable=False)
+    #: The bound subject: which entity, and which product variant if any.
+    subject_entity_id = Column(String, nullable=False, default="")
+    subject_variant_id = Column(String, nullable=True)
+    generator_version = Column(String, nullable=False)
+    #: A digest of the SEMANTIC inputs. Same key + same fingerprint is a
+    #: replay; same key + DIFFERENT fingerprint is a determinism violation and
+    #: must fail loudly rather than silently returning the old universe.
+    generation_input_fingerprint = Column(String, nullable=False)
+    #: Inputs that could not form a candidate. Diagnostics, NOT universe
+    #: members — they must never enter the selected/excluded partition.
+    rejections = Column(JSON, nullable=False, default=list)
+    created_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now())
+
+
+class CandidateRow(Base):
+    """One candidate. Immutable once written."""
+    __tablename__ = "candidate_records"
+    __table_args__ = (
+        UniqueConstraint("candidate_set_id", "candidate_id",
+                         name="uq_candidate_within_set"),
+        Index("ix_candidate_records_set", "candidate_set_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    candidate_set_id = Column(
+        String, ForeignKey("candidate_sets.candidate_set_id",
+                           ondelete="RESTRICT"), nullable=False)
+    candidate_id = Column(String, nullable=False)
+    #: quantity / identity / … — so a future exercise-identity candidate does
+    #: not need a new table.
+    candidate_kind = Column(String, nullable=False, default="quantity")
+    #: Generation order. NOT display order — that lives on the presented row.
+    position = Column(Integer, nullable=False, default=0)
+    #: Content identity for merge and integrity. Never an address.
+    semantic_hash = Column(String, nullable=False, default="")
+    payload = Column(JSON, nullable=False)
+
+
+class CandidateEvidenceRow(Base):
+    """One reason a candidate exists, queryable without opening a payload.
+
+    A separate row per evidence record, because a candidate may be supported
+    by several — and because "how often did user history actually contribute"
+    is a question about evidence, not about candidates.
+    """
+    __tablename__ = "candidate_evidence_records"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["candidate_set_id", "candidate_id"],
+            ["candidate_records.candidate_set_id",
+             "candidate_records.candidate_id"], ondelete="RESTRICT"),
+        UniqueConstraint("candidate_set_id", "candidate_id", "evidence_index",
+                         name="uq_evidence_within_candidate"),
+        Index("ix_candidate_evidence_source", "source_type"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    candidate_set_id = Column(String, nullable=False)
+    candidate_id = Column(String, nullable=False)
+    evidence_index = Column(Integer, nullable=False, default=0)
+    source_type = Column(String, nullable=False)
+    source_dataset_id = Column(String, nullable=False, default="")
+    source_dataset_version = Column(String, nullable=False, default="")
+    source_record_key = Column(String, nullable=False, default="")
+    source_record_version = Column(String, nullable=False, default="")
+    subject_scope = Column(String, nullable=False, default="")
+    subject_user_id = Column(Integer, nullable=True)
+    subject_variant_id = Column(String, nullable=True)
+    payload = Column(JSON, nullable=False)
+
+
+class CandidateSelectionDecisionRow(Base):
+    """WHICH candidates became options, under which policy and conditions.
+
+    Separate from the set because they answer different questions and have
+    different owners: the generator owns what could be offered, the selector
+    owns what was.
+    """
+    __tablename__ = "candidate_selection_decisions"
+    __table_args__ = (
+        UniqueConstraint("decision_id", name="uq_selection_decision_id"),
+        # One decision per set, policy and surface. A second decision under
+        # the same conditions is a duplicate write, not a new fact.
+        UniqueConstraint("candidate_set_id", "selection_policy_version",
+                         "surface", "locale", "renderer_contract_version",
+                         name="uq_selection_decision_conditions"),
+        Index("ix_selection_decisions_set", "candidate_set_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    decision_id = Column(String, nullable=False)
+    candidate_set_id = Column(
+        String, ForeignKey("candidate_sets.candidate_set_id",
+                           ondelete="RESTRICT"), nullable=False)
+    selection_policy_version = Column(String, nullable=False)
+    #: The selection context. A policy version alone does not determine the
+    #: outcome — the same universe yields a text row here and a chip row there.
+    surface = Column(String, nullable=False, default="label_text")
+    locale = Column(String, nullable=False, default="en")
+    maximum_options = Column(Integer, nullable=False, default=3)
+    renderer_contract_version = Column(String, nullable=False, default="")
+    #: ORDERED. The order decides which option is first, and therefore
+    #: prominence and selection rate; recovering it from insertion order would
+    #: make the analysis depend on how rows happened to be written.
+    selected_candidate_ids = Column(JSON, nullable=False, default=list)
+    created_at = Column(DateTime(timezone=True), nullable=False,
+                        server_default=func.now())
+
+
+class CandidateExclusionRow(Base):
+    """One candidate that did not become an option, and the closed reason why.
+
+    A row rather than a JSON blob so the reason histogram is a GROUP BY: "why
+    wasn't my usual portion there" has to be answerable at population scale,
+    not by opening records one at a time.
+    """
+    __tablename__ = "candidate_exclusions"
+    __table_args__ = (
+        UniqueConstraint("decision_id", "candidate_id",
+                         name="uq_exclusion_within_decision"),
+        Index("ix_candidate_exclusions_reason", "reason"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    decision_id = Column(
+        String, ForeignKey("candidate_selection_decisions.decision_id",
+                           ondelete="RESTRICT"), nullable=False)
+    candidate_id = Column(String, nullable=False)
+    #: semantic_duplicate / render_collision / selection_cap. Closed, so the
+    #: population can be counted.
+    reason = Column(String, nullable=False)
+
+
+class PresentedOptionRow(Base):
+    """The option AS SHOWN, bound to the candidate it was rendered from.
+
+    Closes `option_id -> candidate_id -> candidate_set_id -> the exact
+    revision shown`. Without it, "candidate c1 was selected" never proves "c1
+    became opt_x, labelled 6 oz, second in the row".
+
+    THE LABEL IS STORED, not recomputed. Re-rendering later answers a question
+    about today rather than about that turn, and it is what makes a
+    render_collision auditable after the renderer changes.
+    """
+    __tablename__ = "presented_candidate_options"
+    __table_args__ = (
+        UniqueConstraint("decision_id", "option_id",
+                         name="uq_presented_option_id"),
+        UniqueConstraint("decision_id", "selected_position",
+                         name="uq_presented_option_position"),
+        Index("ix_presented_options_candidate", "candidate_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    decision_id = Column(
+        String, ForeignKey("candidate_selection_decisions.decision_id",
+                           ondelete="RESTRICT"), nullable=False)
+    candidate_set_id = Column(String, nullable=False)
+    option_id = Column(String, nullable=False)
+    candidate_id = Column(String, nullable=False)
+    interaction_revision = Column(Integer, nullable=False, default=0)
+    selected_position = Column(Integer, nullable=False)
+    rendered_label = Column(String, nullable=False)
+    renderer_contract_version = Column(String, nullable=False, default="")

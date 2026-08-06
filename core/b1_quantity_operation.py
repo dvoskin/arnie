@@ -553,6 +553,30 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
                             cohort=cohort)
         return None
 
+    # THE UNIVERSE IS DURABLE BEFORE THE QUESTION IS ASKED, and FAIL-CLOSED.
+    #
+    # Written before `open_operation`, so a failure here means no operation,
+    # no option ids, no question — the turn simply proceeds as it does today
+    # and nothing was taken. Everything before the ownership write may decline
+    # freely; this is still before it.
+    #
+    # The alternative — ask first, persist after — produces exactly the state
+    # this record exists to prevent: a user answering a question whose options
+    # nothing can explain.
+    from core import candidate_repository as universe_repo
+
+    try:
+        await universe_repo.save(db, decision_record, domain=DOMAIN)
+    except Exception:
+        logger.warning(
+            "event=b1_universe_not_persisted operation=%s — declining rather "
+            "than asking a question we could not explain afterwards",
+            operation_id, exc_info=True)
+        from core import b1_metrics
+        b1_metrics.declined(user_id=user.id, reason="universe_not_persisted",
+                            cohort=cohort)
+        return None
+
     interaction = qc.build_interaction(
         operation_id=operation_id, revision=0, item=item, options=options,
         introduction=_introduction(item))

@@ -1096,7 +1096,7 @@ B-1        SLICE NOT CLOSED  see the seven-line state below — "backend
                              still runs
 B-1.75     COMPLETE          answered quantity is the only quantity authority
 B-1.9      IN PROGRESS       1 PASS(+2 CF) · 2 DONE · 2.1 DONE (P0 fixed) ·
-                             3a/3a.1/3a.2 DONE contracts · 3b NEXT persistence ·
+                             3a/3a.1/3a.2 contracts + 3b.1 producers + 3b persistence DONE ·
                              4-10 open. Runs BEFORE B-1 closure.
 B-1b.1/.2  NEXT              deterministic matrix + sequence corpus
 B-1b.3     PLANNED           instrumented human simulation
@@ -1418,7 +1418,60 @@ Closed by:
 gates red, disabling the conversion arithmetic turns 2 red. No schema, no
 producer, no ranking, no visible-option change.
 
-**3b — persistence.** Atomic write of the immutable set and its typed decision
+**A RULE ADOPTED BEFORE CUTTING THE SCHEMA** *(2026-08-06)*:
+
+> Any field that participates in **identity, replay, authorization,
+> arithmetic, or provenance** must be final before persistence. Organization
+> and module placement may change later without changing the wire or the
+> stored meaning.
+
+That is what made 3a/3a.1/3a.2 worth their review cycles, and it is why
+`core/semantics.py` being large is not a reason to delay 3b — splitting it is
+pure module movement, gated on *no payload change, no schema change, no
+renamed enum value, identical suite*.
+
+**3b — status: DONE** *(2026-08-06)*. Five tables, `b1uni001`, all six
+domain-neutral: `domain`, `subject_entity_id`, `candidate_kind` and typed
+payloads. Nothing names a food, so exercise identity, set/rep, distance,
+duration and dose ambiguity reuse them without a redesign.
+
+**NOT SCORED ON THE TABLES EXISTING.** Scored on whether a persisted record
+survives hostile lifecycle conditions without changing meaning —
+`tests/test_the_candidate_universe_survives_storage.py`, 15 gates:
+
+```text
+atomic write                  partial write rolls back to zero rows
+idempotent create             a retried ask finds its universe, not a second
+same key / same fingerprint   returns the stored set
+same key / diff fingerprint   DeterminismViolation, loudly
+concurrent duplicate          one universe, DB-deduped, no half-written loser
+process restart reload        full record from storage, generator never run
+append-only revisions         revision 1 adds; revision 0 is untouched
+user-scoped retrieval         an id alone does not open someone's history
+schema/model parity           alembic head vs create_all, on Postgres
+end to end                    the row persisted IS the row shown
+```
+
+Plus the analytics gate: `why_not()` returns exactly one of `shown` ·
+`excluded:<typed reason>` · `not_generated`, and **never "unknown"** — with
+the set's `rejections` separating "found nothing" from "found a row we could
+not use". Exclusion reasons and evidence sources aggregate by `GROUP BY`
+rather than by opening payloads, because "why wasn't my usual portion there"
+has to be answerable at population scale.
+
+**Fail-closed is wired at the ask.** The universe is written BEFORE
+`open_operation`, so a persistence failure means no operation, no option ids
+and no question — the turn proceeds as it does today and nothing was taken.
+The alternative, ask-then-persist, produces exactly the state this record
+exists to prevent: a user answering options nothing can explain.
+
+**One instrument fixed while writing the gates.** The end-to-end test began as
+`pytest.skip("rollout gate declined")` — which is an instrument lying by
+silence: the day the gate started declining, it would have gone green having
+exercised nothing. It asserts now. It caught two real setup defects
+immediately (`client_incapable`, then `no_quantity_question`).
+
+**Superseded plan for 3b:** Atomic write of the immutable set and its typed decision
 *before options are rendered*, fail-closed; append-only; candidate set bound to
 its operation's user at write **and** read; database constraints as well as
 domain validation, because migrations and future write paths bypass a
@@ -1456,15 +1509,14 @@ revision shown`.
 [x] population evidence cannot mask foreign scoped evidence      3a.2
 [x] rounding is deterministic independent of Decimal context     3a.2
 [x] presented positions are exactly 0..n-1                       3a.2
-[ ] generator inputs carry a reproducibility fingerprint      3b
-[ ] same key + different fingerprint fails loudly             3b
-[ ] source evidence is snapshotted, not merely referenced     3a shape,
-                                                              3b producers
-[ ] ontology source identity includes dataset version         3b producers
-[ ] the interaction directly references the candidate set shown  3b
-[ ] candidate set and decision are append-only                3b
-[ ] database constraints enforce cross-record integrity       3b
-[ ] user ownership is checked at persistence AND retrieval    3b
+[x] generator inputs carry a reproducibility fingerprint      3b
+[x] same key + different fingerprint fails loudly             3b
+[x] source evidence is snapshotted, not merely referenced     3b.1
+[x] ontology source identity includes dataset version         3b.1
+[x] the interaction directly references the candidate set shown  3b.1
+[x] candidate set and decision are append-only                3b
+[x] database constraints enforce cross-record integrity       3b
+[x] user ownership is checked at persistence AND retrieval    3b
 ```
 
 **Stop condition, unchanged:** the system can distinguish retrieval failure
