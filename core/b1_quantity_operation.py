@@ -618,7 +618,35 @@ async def settle(db, *, user, owned: OwnedOperation, patch,
     quantity_text = _quantity_text(patch)
     item = dict(owned.item or {})
     food_name = str(item.get("food") or item.get("name") or "").strip()
-    inp = {**item, "quantity": quantity_text}
+
+    # THE ANSWERED QUANTITY IS THE ONLY QUANTITY AUTHORITY (B-1.75).
+    #
+    # This used to be `{**item, "quantity": quantity_text}`, which layered the
+    # answered quantity on top of the interpreter's macros for the quantity it
+    # GUESSED. `_analyze_food` reads calories/protein/carbs/fats straight out
+    # of this dict, and `analyze()` documents its own tie-break — "the LLM's
+    # calories/protein anchor the portion unless the quantity is an explicit
+    # mass and the winner is trustworthy". So the input stated the amount
+    # twice, disagreeing with itself, and a policy meant for arbitrating
+    # sources ended up arbitrating the user's own answer. Measured: asking
+    # "50 g" and "100 g" of the same food both committed the ask-time item's
+    # 200 cal, unchanged. The question was decorative.
+    #
+    # A DELETION, NOT ARITHMETIC. Rescaling the stale macros here would be a
+    # second opinion about nutrition inside an operation that has no business
+    # holding one, and would leave the contradictory input in place for the
+    # next reader to trip over. Removing the stale figures lets the real
+    # pricing path do its one job against one quantity.
+    #
+    # `amount`/`unit` are dropped with them: today nothing in the pricing path
+    # reads either, so they are inert — but they describe the DISCARDED
+    # quantity, and leaving a stale copy of the exact fact under negotiation
+    # is how this defect happened the first time.
+    _STALE_TO_THE_ANSWER = ("amount", "unit", "quantity",
+                            "calories", "protein", "carbs", "fats",
+                            "fiber", "sugar", "sodium")
+    inp = {k: v for k, v in item.items() if k not in _STALE_TO_THE_ANSWER}
+    inp["quantity"] = quantity_text
 
     # THE SAME PRICING PRODUCTION USES. Writes nothing; decides what it costs.
     analysis = await _analyze_food(db, user, food_name, inp)
