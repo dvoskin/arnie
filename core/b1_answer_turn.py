@@ -199,7 +199,8 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
     answer = _read(owned, interaction, live_field, message=message,
                    field_id=field_id, option_id=option_id, revision=revision)
 
-    _measure(owned, answer, option_id=option_id, user=user)
+    _measure(owned, answer, option_id=option_id, user=user,
+             field=live_field, message=message)
 
     if answer.outcome is Outcome.CANCELLED:
         await ops.cancel(db, owned=owned, user=user, reason=answer.reason)
@@ -217,7 +218,8 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
     turn = AnswerTurn(Outcome.APPLIED, operation_id=owned.operation_id,
                       field_id=live_field.field_id, patch=answer.patch,
                       result=result, reason=answer.reason)
-    _measure_commit(owned, turn, user=user)
+    _measure_commit(owned, turn, user=user, field=live_field,
+                    option_id=option_id, message=message)
     return turn
 
 
@@ -261,16 +263,31 @@ def _label_selection(field, message: str):
     """
     from core.clarification_answer import AnswerResult
 
+    option = _option_for_label(field, message)
+    if option is None:
+        return None
+    return AnswerResult(Outcome.APPLIED, patch=option.patch,
+                        reason="label_selection")
+
+
+def _option_for_label(field, message: str):
+    """The offered option whose text the user typed back, or None.
+
+    Split out of `_label_selection` so the matching RULE has one owner and two
+    readers: the answer path needs the patch, and the funnel needs the option's
+    `source`. Re-implementing the match in the metric would be a second owner
+    of "did they pick one of ours?" — and the two would drift, quietly, in the
+    direction that makes the numbers look better.
+    """
     said = (message or "").strip().casefold()
     if not said:
         return None
-    for option in field.options:
+    for option in getattr(field, "options", ()) or ():
         if option.patch is None:
             continue
         if said in {(option.label or "").strip().casefold(),
                     str(option.send_value or "").strip().casefold()}:
-            return AnswerResult(Outcome.APPLIED, patch=option.patch,
-                                reason="label_selection")
+            return option
     return None
 
 
@@ -279,7 +296,34 @@ def _turn(answer, owned, field) -> AnswerTurn:
                       field_id=field.field_id, reason=answer.reason)
 
 
-def _measure(owned, answer, *, option_id: str, user) -> None:
+def _selected_source(field, *, option_id: str, message: str) -> str:
+    """WHERE the value the user chose came from — the funnel's join key.
+
+    Resolved from the FIELD rather than carried on `AnswerResult`, so the
+    validated outcome/patch contract stays untouched and a measurement need
+    never widen a type the commit path depends on.
+
+    `free_text` is a first-class answer here, not a missing value. A typed
+    quantity we did not offer is the signal that the option list failed this
+    user, and lumping it in with "unknown" would hide exactly the number D4
+    exists to read.
+    """
+    if not field:
+        return ""
+    options = list(getattr(field, "options", ()) or ())
+    if option_id:
+        for o in options:
+            if o.option_id == option_id:
+                return getattr(getattr(o, "source", None), "value", "") or "none"
+        return "unknown_option"
+    chosen = _option_for_label(field, message)
+    if chosen is not None:
+        return getattr(getattr(chosen, "source", None), "value", "") or "none"
+    return "free_text"
+
+
+def _measure(owned, answer, *, option_id: str, user,
+             field=None, message: str = "") -> None:
     """One emit per answer, wherever it lands. Measurement may never cost the
     turn, so every failure here is swallowed — a missing datapoint is a worse
     outcome than a lost meal only to a dashboard."""
@@ -292,6 +336,8 @@ def _measure(owned, answer, *, option_id: str, user) -> None:
             outcome=answer.outcome.value,
             modality=b1_metrics.modality_of(option_id=option_id,
                                             reason=answer.reason),
+            selected_source=_selected_source(
+                field, option_id=option_id, message=message or ""),
             asked_at=owned.asked_at, reason=answer.reason,
             provenance=getattr(getattr(answer.patch, "provenance", None),
                                "value", ""),
@@ -300,7 +346,16 @@ def _measure(owned, answer, *, option_id: str, user) -> None:
         logger.debug("b1 answer metric failed", exc_info=True)
 
 
-def _measure_commit(owned, turn: AnswerTurn, *, user) -> None:
+def _measure_commit(owned, turn: AnswerTurn, *, user, field=None,
+                    option_id: str = "", message: str = "") -> None:
+    """The terminal funnel record.
+
+    `selected_source` is repeated here rather than left to a join with
+    `b1_answered`, because a correction arriving ten minutes later is keyed on
+    `entry_id` — and attributing that correction to the source that produced
+    the number is the comparison D4 exists to make. One event carries
+    entry_id AND source, so the attribution needs no third hop.
+    """
     from core import b1_metrics
 
     try:
@@ -308,6 +363,9 @@ def _measure_commit(owned, turn: AnswerTurn, *, user) -> None:
         b1_metrics.committed(
             operation_id=owned.operation_id, user_id=getattr(user, "id", None),
             entry_id=facts.entry_id, calories=facts.calories,
+            selected_source=_selected_source(
+                field, option_id=option_id, message=message or ""),
+            repairs=max(0, int(getattr(owned, "revision", 0) or 0)),
             asked_at=owned.asked_at)
     except Exception:
         logger.debug("b1 commit metric failed", exc_info=True)

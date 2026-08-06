@@ -32,6 +32,7 @@ measure the answer turn.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -57,12 +58,19 @@ def shown(*, operation_id: str, user_id, cohort: str, locale: str,
     """A canonical question reached a user."""
     sources = sorted({(o.source.value if o.source else "none")
                       for o in field.options})
+    # THE DENOMINATOR. `sources` is a SET — it answers "was ontology involved?"
+    # and cannot answer "how often is an ontology option accepted when one is
+    # offered?", which is the D4 question. Acceptance is selected/offered, so
+    # the offer has to be counted per source, not merely witnessed.
+    counts = Counter((o.source.value if o.source else "none")
+                     for o in field.options)
+    offered = ",".join(f"{s}:{n}" for s, n in sorted(counts.items()))
     logger.info(
         "event=b1_shown operation=%s user=%s cohort=%s locale=%s "
-        "options=%d sources=%s free_text=%s attribute=%s reason=%s",
+        "options=%d sources=%s offered=%s free_text=%s attribute=%s reason=%s",
         operation_id, user_id, cohort, locale, len(field.options),
-        ",".join(sources) or "none", True, field.attribute.value,
-        eligible_reason)
+        ",".join(sources) or "none", offered or "none", True,
+        field.attribute.value, eligible_reason)
 
 
 def declined(*, user_id, reason: str, cohort: str = "") -> None:
@@ -77,7 +85,8 @@ def declined(*, user_id, reason: str, cohort: str = "") -> None:
 
 def answered(*, operation_id: str, user_id, outcome: str, modality: str,
              cohort: str = "", asked_at=None, reason: str = "",
-             provenance: str = "", grams=None) -> None:
+             provenance: str = "", grams=None,
+             selected_source: str = "") -> None:
     """An answer arrived. `modality` is the signal the "Other" rate reads.
 
     `chip`   an option id — a real structured tap
@@ -85,21 +94,36 @@ def answered(*, operation_id: str, user_id, outcome: str, modality: str,
     `text`   something we were not offering  <- Other
     `command` cancel / skip / estimate
     """
+    # `selected_source` IS THE FUNNEL'S JOIN KEY. modality says HOW they
+    # answered (tap / label / free text); this says WHERE the value they chose
+    # came from. Without it "ontology options are accepted 55% of the time and
+    # then corrected 9% of the time" is unanswerable, and that comparison is
+    # the whole reason D4 runs before the chips are built.
     logger.info(
         "event=b1_answered operation=%s user=%s outcome=%s modality=%s "
-        "cohort=%s latency_ms=%s provenance=%s grams=%s reason=%s",
-        operation_id, user_id, outcome, modality, cohort or "-",
-        _ms_since(asked_at), provenance or "-", grams if grams is not None
-        else "-", reason or "-")
+        "selected_source=%s cohort=%s latency_ms=%s provenance=%s grams=%s "
+        "reason=%s",
+        operation_id, user_id, outcome, modality, selected_source or "-",
+        cohort or "-", _ms_since(asked_at), provenance or "-",
+        grams if grams is not None else "-", reason or "-")
 
 
 def committed(*, operation_id: str, user_id, entry_id, calories,
-              cohort: str = "", asked_at=None, rounds: int = 1) -> None:
+              cohort: str = "", asked_at=None, rounds: int = 1,
+              selected_source: str = "", repairs: int = 0) -> None:
+    """The terminal event, carrying the whole path so the funnel needs one join.
+
+    `entry_id` is what a correction lands on later, and `selected_source` is
+    what that correction is then attributed to — so a correction 9 minutes
+    later can be charged to the ontology option that produced it without
+    re-reading the operation.
+    """
     logger.info(
-        "event=b1_committed operation=%s user=%s entry=%s cal=%s cohort=%s "
+        "event=b1_committed operation=%s user=%s entry=%s cal=%s "
+        "selected_source=%s repairs=%d cohort=%s "
         "latency_ms=%s rounds=%d",
-        operation_id, user_id, entry_id, calories, cohort or "-",
-        _ms_since(asked_at), rounds)
+        operation_id, user_id, entry_id, calories, selected_source or "-",
+        repairs, cohort or "-", _ms_since(asked_at), rounds)
 
 
 def abandoned(*, operation_id: str, user_id, cohort: str = "",
