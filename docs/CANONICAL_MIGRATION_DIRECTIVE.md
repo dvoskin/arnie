@@ -1126,6 +1126,156 @@ B-1 slice closure                  NOT COMPLETE
 Quote these lines rather than a single adjective. "B-1 is done" is true of the
 first four and false of the rest, and the slice loop is won or lost in the rest.
 
+### B-1.9 — candidate-system correction. Runs BEFORE B-1 closure.
+
+**Received 2026-08-06.** Two production failures showed the candidate layer,
+not the lifecycle, is what is wrong. B-1.5 does not start until this and B-1
+closure are done.
+
+```text
+1  contain unsafe "not sure"        <- IMMEDIATE, safety
+2  add the missing quantity semantics
+3  instrument the whole candidate universe
+4  evidence-backed quantity generator
+5  versioned candidate selector
+6  replay the two failures as SYSTEM CLASSES
+7  complete B-1b.2 integration evidence
+8  freeze the candidate contract
+9  structured iOS interaction
+10 promote and close B-1  (deletion included, or it is not closed)
+```
+
+**1 — contain unsafe "not sure".** `USE_ESTIMATE` must not commit from weak or
+unsupported evidence.
+
+```text
+not sure -> retrieve typed estimate evidence
+         -> policy evaluates SUFFICIENCY
+         -> commit only when the evidence supports it
+         -> otherwise remain unresolved and REPAIR
+```
+
+Forbidden as the fix: a smaller hardcoded estimate · a midpoint · a
+food-specific cap · a manually chosen "safe" portion · regex food
+classification. Exit gate: **insufficient evidence → zero meal writes →
+operation stays open → explicit repair.**
+
+**2 — the missing contracts.** `ServingBasis` (MASS · VOLUME · COUNT · PIECE ·
+PACKAGE · FRACTION_OF_PACKAGE · FRACTION_OF_ENTITY · STANDARD_SERVING),
+`QuantityCandidateEvidence`, `EstimateEvidence`, `CandidateSet`,
+`CandidateSelectionDecision`. Every candidate carries canonical entity id,
+canonical quantity, serving basis, source type and record, conversion
+evidence, confidence, uncertainty, policy version, provenance. **No candidate
+without typed evidence enters an interaction.**
+
+**3 — instrument the whole universe, not the selected three.** Persist all
+generated candidates, their evidence sources, serving bases, conversions,
+which were selected, which excluded, the selection reasons, policy version,
+the answer, its modality, and any later correction — so that *retrieval*
+failure, *conversion* failure, *selection* failure, *presentation-basis*
+failure and *ranking* failure stop being one undifferentiated "bad options"
+problem.
+
+**4 — the generator.** Approved sources only: exact canonical-entity user
+history · validated entity portion evidence · validated product/package
+metadata · canonical serving distributions. **Never**: food-name
+conditionals, curated per-food option lists, arbitrary tiers, LLM-generated
+numeric portions, unverified mass/volume/piece conversion, broad regex
+classification. A narrow parser may recognise formal quantities (`1 tbsp`,
+`50 g`, `½ package`); it does not decide what to offer.
+
+**5 — the selector.** Entity-agnostic, versioned, reproducible, observable,
+mutation-tested, and replaceable by a learned ranker later. Every inclusion
+and exclusion explainable from persisted features.
+
+**6 — replay the two failures as CLASSES, not as chicken and honey.**
+*Unsupported estimate*: weak evidence + "not sure" → no automatic commit.
+*Serving-basis mismatch*: volume evidence or volume-based history → volume
+candidates preserved, canonical mass conversion stays server-side. Also:
+piece-native · count-native · package-native · fraction-native · history-rich
+· history-empty · conversion available · conversion unavailable.
+
+**7–8** — run the sequence corpus through the real candidate pipeline *and*
+real enrichment together, then freeze the wire contract, the semantic
+candidate contract and the decision telemetry. **Client work begins only
+after that freeze.**
+
+**9 — the client** receives and returns identifiers and labels only, and never
+generates options, chooses units, converts quantities, infers meaning from
+labels, ranks candidates, or recreates missing semantics.
+
+**10 — promotion and closure**, deletion included. B-1 is complete only after
+the legacy question producer, answer reconstruction, overlapping pending
+ownership and prose-derived options are deleted and C8/C9 lowered.
+
+### Permanent engineering constraints
+
+Standing rules, added 2026-08-06. They bind every slice, not just this one.
+
+> **No semantic decision may depend on a food-name branch, a broad regex
+> classifier, an arbitrary threshold, a manually curated option tier, or an
+> unsupported conversion.**
+>
+> **Deterministic parsers are restricted to formal syntax**: quantities,
+> registered units, identifiers, transport metadata, narrowly defined
+> commands.
+>
+> **Every candidate, estimate, conversion, assumption and selection decision
+> carries typed evidence, provenance, confidence and policy version.**
+>
+> **When evidence is insufficient the canonical state remains unresolved.**
+> The system does not manufacture certainty to complete a turn.
+>
+> **No new domain introduces an alternate pending owner, answer interpreter,
+> mutation path or presentation authority.**
+
+### The remaining programme, in dependency order
+
+Recorded so nothing is lost and the order is not re-litigated per slice.
+
+```text
+B-1.9  candidate-system correction      <- current
+B-1    promote + DELETE predecessor + lower ratchets
+B-1.5  quantity + preparation_category  (largest exclusion class in production)
+B-1.6  conditional dependencies         generic field-activation engine,
+                                        never `if fried then ask oil`
+B-1.7  accuracy policy over ONE topology — may change ask/assume/defer/
+                                        disclose, never storage or writers
+B-1.8  answer classification and repair — option id -> narrow field parser ->
+                                        pending-aware constrained classifier
+                                        -> targeted repair
+B-2    multi-item: many events, grouped fields, partial answers, neighbour
+       protection, ONE revision, ONE meal commit
+B-2.5  SelectEntity · SelectProductVariant · SetPackageSize ·
+       SetConsumedFraction
+B-2.6  sauces and additions — only nutritionally material fields
+B-2.7  generalized option generator — ONLY after several real field families
+       exist. Not pulled forward because quantity needs better evidence.
+B-2.8  product voice — QuestionIntent + CanonicalResponseFacts only
+B-3    PendingOperation as SOLE durable pending owner; delete writes to
+       pending_questions, deferred_calls, staged blobs, loose payloads
+C-1    every remaining conversational food writer through the coordinator
+C-2    canonical corrections (quantity, identity, preparation, additions,
+       meal type, date, removal) as operation revisions
+C-3    canonical undo by stable committed event id — no "last meal" heuristic
+C-4    ONE PresentationSnapshot for chat, cards, totals, timeline, coach feed,
+       notifications, widgets, API
+C-5/6  one resolver coordinator, one ambiguity engine, policy separate
+C-7    food production-readiness gate — food is NOT half-migrated when
+       workouts begin
+D      generalize under the RULE OF TWO only: shared OperationRequest /
+       OperationResult / outbox, domain payloads stay typed
+E/F    workouts — structured first, then conversational, on the SAME spine.
+       No separate workout pending or chip architecture.
+G      weight · hydration · supplements · medication · vitals, same spine
+```
+
+**Directive 1 restated, because it is the whole method:** every capability runs
+`measure → define semantic field → add typed evidence → build canonical
+producer → persist PendingOperation → apply typed patch → commit canonically →
+produce committed facts → validate in production → promote → delete
+predecessor → lower ratchet`. **No slice skips deletion.**
+
 ### B-1 is now a PROMOTION project, not an implementation project
 
 **Augmented 2026-08-06 from team review.** Every commit until now answered
