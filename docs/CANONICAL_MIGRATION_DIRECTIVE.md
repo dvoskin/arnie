@@ -1137,7 +1137,7 @@ rather than the user — true, and still true — but low traffic must change th
 | | step | exit condition |
 |---|---|---|
 | **B-1a** | measurement wording | ✅ versioned `b1_quantity_q2` |
-| **B-1b.1** | deterministic system-validation matrix | **matrix built, axes green; NOT green** — needs Postgres backing + real enrichment (see below) |
+| **B-1b.1** | deterministic system-validation matrix | **Postgres-backed and green; real enrichment still open** |
 | **B-1b.2** | production-sequence corpus | green under Postgres and real pricing |
 | **B-1b.3** | instrumented human simulation | internal panel shows the interaction is understandable |
 | **B-1b.4** | natural-traffic confirmation | continuous; confirms rather than gates |
@@ -1183,6 +1183,32 @@ operation · expected revision · expected terminal state · 0 or 1 meal commit 
 0 or 1 food row · resolved quantity and provenance · real `analyze()` result ·
 card and totals agreement · expected telemetry · duplicate execution
 impossible · health detector executed · no legacy fallback after ownership.
+
+**Status 2026-08-06.** `tests/test_b1b1_system_matrix.py`, 17 scenarios.
+
+* **Postgres backing — CLOSED.** The harness fixture binds the real engine in
+  a private per-test schema when `TEST_POSTGRES_URL` is set, via
+  `make_engine` (the codebase refuses an unpinned Postgres engine by
+  construction). The file **asserts its own dialect**: without the variable it
+  passes on SQLite and skips with a message saying that is not B-1b.1
+  evidence; with it, the dialect must genuinely be `postgresql` in an isolated
+  schema. Verified directly — engine `postgresql`, `search_path`
+  `harness_…`, real rows written.
+* **Real enrichment — STILL OPEN.** USDA and Open Food Facts remain pinned
+  off, so repricing is proven against an injected deterministic density
+  (2 cal/g, exact expected macros for every field). That proves the **logic**
+  and not the **integration**. Needs `USDA_API_KEY`. The density lane's only
+  production proof remains entry 2860 at 165.0 cal/100 g.
+
+> **Reporting rule, because these were conflated once.** State the backing
+> store, not the run flag. *"Suite run under Postgres; matrix scenarios
+> Postgres-backed"* is a different sentence from *"7,914 pass on Postgres"* —
+> the second says only that the run had the variable set, and was true for
+> months while every one of these scenarios executed on SQLite.
+
+Found while closing it: `DROP SCHEMA … CASCADE` at teardown deadlocks against
+the same engine's pooled connections (`asyncpg.DeadlockDetectedError`). The
+pool is disposed first and the drop runs on a throwaway connection.
 
 ### B-1b.2 — the production-sequence corpus
 
@@ -1265,14 +1291,14 @@ cannot masquerade as a gap in the system.
 
 | behaviour | automated sequence | internal human | organic | status |
 |---|---|---|---|---|
-| history option offered | pending B-1b.1 | pending | none yet | blocked on B-1b.1 |
-| typed non-offered amount | ✅ matrix (sqlite) | pending | 2 observations | partial — needs PG |
+| history option offered | ✅ matrix (PG) + control | pending | none yet | **sufficient** |
+| typed non-offered amount | ✅ matrix (PG) | pending | 2 observations | **sufficient** |
 | real `analyze()` pricing | estimate lane only | pending | ✅ density lane (2860) | partial — needs USDA key |
 | duplicate delivery | ✅ harness | unnecessary | ✅ proven | **sufficient** |
 | settled op declines new meal | ✅ harness | pending | ✅ proven | **sufficient** |
 | expired op declines new meal | ✅ harness | pending | none yet | **sufficient** |
 | stale revision / foreign field | ✅ harness | pending | none yet | **sufficient** |
-| estimate / "not sure" route | ✅ matrix (sqlite) | pending | 1 observation | partial — needs PG |
+| estimate / "not sure" route | ✅ matrix (PG) | pending | 1 observation | **sufficient** |
 | abandonment preference | not simulable | pending B-1b.3 | none yet | **provisional** |
 | long-term correction rate | not simulable | limited | none yet | **unresolved** |
 
