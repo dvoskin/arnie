@@ -36,6 +36,7 @@ instead of one uncontrolled pass.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Any, ClassVar, Optional
@@ -740,6 +741,14 @@ class ClarificationOption:
     #: adapter's construction sites only; at Phase H the promised check becomes
     #: writable here as `patch is None and not adapter_built -> raise`.
     adapter_built: bool = False
+    #: THE CANDIDATE THIS OPTION WAS RENDERED FROM. Empty on adapter-built and
+    #: legacy options; set by canonical producers from commit 4 on. It is the
+    #: first link of `option_id -> candidate_id -> candidate_set_id -> the
+    #: exact revision shown`, without which a tap cannot be traced back to the
+    #: evidence that justified offering it.
+    candidate_id: str = ""
+    #: The candidate set that option belongs to.
+    candidate_set_id: str = ""
 
     def __post_init__(self):
         if self.source is not None:
@@ -763,7 +772,9 @@ class ClarificationOption:
                 "confidence": self.confidence.to_payload(),
                 "patch": None if self.patch is None else self.patch.to_payload(),
                 "source": None if self.source is None else self.source.value,
-                "adapter_built": bool(self.adapter_built)}
+                "adapter_built": bool(self.adapter_built),
+                "candidate_id": self.candidate_id,
+                "candidate_set_id": self.candidate_set_id}
 
     @classmethod
     def from_payload(cls, data: dict) -> "ClarificationOption":
@@ -776,7 +787,9 @@ class ClarificationOption:
                    patch=(patch_from_payload(data["patch"])
                           if data.get("patch") else None),
                    source=None if raw is None else CandidateSource(raw),
-                   adapter_built=bool(data.get("adapter_built", False)))
+                   adapter_built=bool(data.get("adapter_built", False)),
+                   candidate_id=data.get("candidate_id") or "",
+                   candidate_set_id=data.get("candidate_set_id") or "")
 
 
 @dataclass(frozen=True)
@@ -1708,30 +1721,79 @@ _QUANTITY_BEARING_BASES = frozenset({
     "package", "standard_serving", "fraction_of_package",
 })
 
+#: WHICH FIELD OF A CANONICAL QUANTITY CARRIES THE AMOUNT, per basis.
+#:
+#: Without this every comparison silently defaulted to `.grams`, so two volume
+#: quantities compared `None == None` and agreed. A 240 ml observation
+#: "supported" a 500 ml candidate because neither carried a mass. The same
+#: hole existed for count, piece, package and fraction.
+_BASIS_MEASURE = {
+    ServingBasis.MASS: "grams",
+    ServingBasis.VOLUME: "milliliters",
+    ServingBasis.COUNT: "count",
+    ServingBasis.PIECE: "count",
+    ServingBasis.PACKAGE: "amount",
+    ServingBasis.FRACTION_OF_PACKAGE: "amount",
+    ServingBasis.FRACTION_OF_ENTITY: "amount",
+    ServingBasis.STANDARD_SERVING: "amount",
+}
 
-@dataclass(frozen=True)
+
+def measure_on(quantity, basis: "ServingBasis") -> Optional[Decimal]:
+    """The number this quantity states ON THIS BASIS, or None.
+
+    Basis-aware by construction: asking a volume for its mass returns None
+    rather than a coincidence, and a caller that needs the mass must convert
+    through evidence that licenses it.
+    """
+    field_name = _BASIS_MEASURE[ServingBasis(basis)]
+    raw = getattr(quantity, field_name, None)
+    return None if raw is None else Decimal(str(raw))
+
+
+@dataclass(frozen=True, kw_only=True)
 class ConversionEvidence:
-    """How a quantity crossed bases, and on whose authority.
+    """How a quantity crossed bases, on whose authority, AND WITH WHAT RESULT.
 
     UNSUPPORTED CONVERSIONS CANNOT BE CONSTRUCTED. "1 cup of chicken is 140 g"
     is a real claim requiring a real source; inventing a density to make a
     number comparable is how a portion the user never gave becomes a portion
-    they are told they ate. A conversion with no basis change is expressible
-    (`from_basis == to_basis`); one with a basis change and no source is not.
+    they are told they ate.
+
+    EXECUTABLE, NOT DECORATIVE. The earlier version checked that a factor
+    existed, was positive, and joined the expected bases — and never applied
+    it. `240 ml x 0.758 g/ml -> 435 g` passed every check while being false by
+    a factor of 2.4. A conversion now carries its input and its output, and
+    the arithmetic must hold: a record that does not produce its own stated
+    result is not evidence of anything.
+
+    ROUNDING IS DECLARED, NEVER TOLERATED. There is no epsilon here. A
+    producer that must round says so with `quantize_exponent` under a named
+    `policy_version`, which makes the rounding a versioned decision that can
+    be audited and changed — rather than a tolerance that quietly absorbs
+    real errors alongside representation noise.
     """
     from_basis: ServingBasis
     to_basis: ServingBasis
     #: What licensed it — a USDA density row, a package panel, a piece weight.
-    #: Required whenever the basis actually changes.
-    source_record_id: str = ""
+    #: Required whenever the basis actually changes. VERSIONED: a density
+    #: record can be corrected while keeping its key, and a conversion citing
+    #: only the key would present two different factors as one authority.
+    source: Optional["SourceReference"] = None
     factor: Optional[Decimal] = None
+    input_quantity: Optional["CanonicalQuantity"] = None
+    output_quantity: Optional["CanonicalQuantity"] = None
+    #: Which conversion policy performed this. Required to declare rounding.
+    policy_version: str = ""
+    #: An explicit Decimal exponent, e.g. "0.01". Empty means exact.
+    quantize_exponent: str = ""
 
     def __post_init__(self):
         object.__setattr__(self, "from_basis", ServingBasis(self.from_basis))
         object.__setattr__(self, "to_basis", ServingBasis(self.to_basis))
         object.__setattr__(self, "factor", _dec_in(self.factor))
         if self.from_basis is not self.to_basis:
-            if not self.source_record_id:
+            if self.source is None:
                 raise ValueError(
                     f"a conversion from {self.from_basis.value} to "
                     f"{self.to_basis.value} needs a source that licenses it — "
@@ -1743,26 +1805,75 @@ class ConversionEvidence:
             if self.factor is None or self.factor <= 0:
                 raise ValueError(
                     f"a conversion from {self.from_basis.value} to "
-                    f"{self.to_basis.value} cites {self.source_record_id!r} "
-                    f"but carries factor={self.factor!r} — an authority with "
-                    f"no positive value converts nothing")
+                    f"{self.to_basis.value} cites "
+                    f"{getattr(self.source, 'record_key', None)!r} but "
+                    f"carries factor={self.factor!r} — an authority with no "
+                    f"positive value converts nothing")
         elif self.factor is not None and self.factor != 1:
             raise ValueError(
                 f"a same-basis conversion carries factor={self.factor} — "
                 f"nothing changed, so any factor but 1 is a silent rescale")
+        if self.quantize_exponent and not str(self.policy_version or "").strip():
+            raise ValueError(
+                "rounding must be attributable: quantize_exponent without a "
+                "policy_version is an undeclared adjustment")
+        self._check_arithmetic()
+
+    def _check_arithmetic(self):
+        """THE STEP THAT WAS MISSING. Apply the factor; demand the result."""
+        if self.input_quantity is None or self.output_quantity is None:
+            return
+        seen = measure_on(self.input_quantity, self.from_basis)
+        got = measure_on(self.output_quantity, self.to_basis)
+        if seen is None or got is None:
+            raise ValueError(
+                f"a conversion from {self.from_basis.value} to "
+                f"{self.to_basis.value} must state both amounts on their own "
+                f"bases; got input={seen!r} output={got!r}")
+        expected = seen * (self.factor if self.factor is not None
+                           else Decimal(1))
+        if self.quantize_exponent:
+            expected = expected.quantize(Decimal(self.quantize_exponent))
+        if expected != got:
+            raise ValueError(
+                f"{seen} {self.from_basis.value} x {self.factor} yields "
+                f"{expected}, but this conversion claims {got} "
+                f"{self.to_basis.value} — a conversion that does not produce "
+                f"its own stated result is not evidence of anything")
+
+    def apply_to(self, amount: Decimal) -> Decimal:
+        """Convert a measure on `from_basis` to one on `to_basis`."""
+        out = Decimal(str(amount)) * (self.factor if self.factor is not None
+                                      else Decimal(1))
+        return (out.quantize(Decimal(self.quantize_exponent))
+                if self.quantize_exponent else out)
 
     def to_payload(self) -> dict:
         return {"from_basis": self.from_basis.value,
                 "to_basis": self.to_basis.value,
-                "source_record_id": self.source_record_id,
-                "factor": _dec_out(self.factor)}
+                "source": self.source.to_payload() if self.source else None,
+                "factor": _dec_out(self.factor),
+                "input_quantity": (self.input_quantity.to_payload()
+                                   if self.input_quantity else None),
+                "output_quantity": (self.output_quantity.to_payload()
+                                    if self.output_quantity else None),
+                "policy_version": self.policy_version,
+                "quantize_exponent": self.quantize_exponent}
 
     @classmethod
     def from_payload(cls, d: dict) -> "ConversionEvidence":
+        src, qin, qout = (d.get("source"), d.get("input_quantity"),
+                          d.get("output_quantity"))
         return cls(from_basis=ServingBasis(d["from_basis"]),
                    to_basis=ServingBasis(d["to_basis"]),
-                   source_record_id=d.get("source_record_id", ""),
-                   factor=_dec_in(d.get("factor")))
+                   source=SourceReference.from_payload(src) if src else None,
+                   factor=_dec_in(d.get("factor")),
+                   input_quantity=(CanonicalQuantity.from_payload(qin)
+                                   if qin else None),
+                   output_quantity=(CanonicalQuantity.from_payload(qout)
+                                    if qout else None),
+                   policy_version=d.get("policy_version", ""),
+                   quantize_exponent=d.get("quantize_exponent", ""))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1779,9 +1890,14 @@ class SourceReference:
     dataset_id: str
     dataset_version: str
     record_key: str
-    #: A content hash, row version, or — best — an immutable event id. Empty
-    #: only where the dataset itself is immutable per version.
+    #: A content hash, row version, or — best — an immutable event id.
     record_version: str = ""
+    #: THE ONLY WAY TO OMIT A RECORD VERSION, and it is a claim being made:
+    #: this dataset never changes a record in place within a version, so the
+    #: key plus the dataset version already identifies exact content. A
+    #: mutable source (a `food_entries` row, which correction rewrites) may
+    #: not set this, because its id points at whatever the row says now.
+    immutable_within_version: bool = False
 
     def __post_init__(self):
         for name in ("dataset_id", "dataset_version", "record_key"):
@@ -1789,19 +1905,97 @@ class SourceReference:
                 raise ValueError(
                     f"a source reference needs its {name} — an unauditable "
                     f"justification is not one")
+        if not str(self.record_version or "").strip() and not (
+                self.immutable_within_version):
+            raise ValueError(
+                f"{self.dataset_id}:{self.record_key} carries no "
+                f"record_version and does not declare itself immutable within "
+                f"its dataset version — so it names a row whose value may "
+                f"already have changed, and the evidence citing it cannot be "
+                f"reproduced")
 
     def to_payload(self) -> dict:
         return {"dataset_id": self.dataset_id,
                 "dataset_version": self.dataset_version,
                 "record_key": self.record_key,
-                "record_version": self.record_version}
+                "record_version": self.record_version,
+                "immutable_within_version": self.immutable_within_version}
 
     @classmethod
     def from_payload(cls, d: dict) -> "SourceReference":
         return cls(dataset_id=d["dataset_id"],
                    dataset_version=d["dataset_version"],
                    record_key=d["record_key"],
-                   record_version=d.get("record_version", ""))
+                   record_version=d.get("record_version", ""),
+                   immutable_within_version=bool(
+                       d.get("immutable_within_version", False)))
+
+
+@dataclass(frozen=True, kw_only=True)
+class ServingExpression:
+    """HOW THE OPTION IS SAID, and what licenses saying it that way.
+
+    A basis enum alone cannot render an option. `21 g + VOLUME` does not say
+    whether the chip reads `1 tbsp`, `15 ml` or `3 tsp`; `182 g + PIECE` does
+    not say `1 breast` or `½ large breast`. Leaving that to the renderer is
+    exactly the honey failure — options offered in `30g / 80g / 200g` to a
+    user who logs tablespoons, because the basis reached rendering and the
+    EXPRESSION did not.
+
+    So the candidate owns both: what would be committed canonically, and what
+    the user is actually being offered. Evidence owns what the source
+    observed. Three different questions, three owners.
+    """
+    amount: Decimal
+    unit_id: str
+    basis: ServingBasis
+    #: What this expression resolves to. Must be the candidate's own quantity.
+    normalized: "CanonicalQuantity"
+    #: Required when the expression's basis is not the basis its canonical
+    #: mass is stated on — saying "1 tbsp" for something committed as 21 g is
+    #: a density claim, and it needs the same authority as any other.
+    conversion_evidence: Optional[ConversionEvidence] = None
+
+    def __post_init__(self):
+        object.__setattr__(self, "basis", ServingBasis(self.basis))
+        object.__setattr__(self, "amount", _dec_in(self.amount))
+        if self.amount is None or self.amount <= 0:
+            raise ValueError(
+                f"a serving expression states an amount; got {self.amount!r}")
+        if not str(self.unit_id or "").strip():
+            raise ValueError(
+                "a serving expression needs the unit it is said in — without "
+                "one the renderer must guess, which is the defect this "
+                "removes")
+        stated = measure_on(self.normalized, self.basis)
+        if stated is None:
+            raise ValueError(
+                f"this expression is said in {self.basis.value} but its "
+                f"normalized quantity states no amount on that basis, so it "
+                f"cannot be rendered without inventing one")
+        mass = getattr(self.normalized, "grams", None)
+        if (mass is not None and self.basis is not ServingBasis.MASS
+                and self.conversion_evidence is None):
+            raise ValueError(
+                f"an expression in {self.basis.value} resolving to {mass} g "
+                f"crosses bases on nobody's authority — the density or piece "
+                f"weight that licenses it must be cited")
+
+    def to_payload(self) -> dict:
+        return {"amount": _dec_out(self.amount), "unit_id": self.unit_id,
+                "basis": self.basis.value,
+                "normalized": self.normalized.to_payload(),
+                "conversion_evidence": (self.conversion_evidence.to_payload()
+                                        if self.conversion_evidence else None)}
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "ServingExpression":
+        conv = d.get("conversion_evidence")
+        return cls(amount=_dec_in(d["amount"]), unit_id=d["unit_id"],
+                   basis=ServingBasis(d["basis"]),
+                   normalized=CanonicalQuantity.from_payload(d["normalized"]),
+                   conversion_evidence=(ConversionEvidence.from_payload(conv)
+                                        if conv else None))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1857,6 +2051,39 @@ class QuantityCandidateEvidence:
                 f"evidence_version {self.evidence_version} is not "
                 f"{EVIDENCE_SCHEMA_VERSION}; a record written under another "
                 f"contract must be migrated, not guessed at")
+        if not isinstance(self.source, SourceReference):
+            raise ValueError(
+                f"source must be a SourceReference, got "
+                f"{type(self.source).__name__} — a bare key cannot say which "
+                f"version of the record was read")
+        # RANGES, NOT COMMENTS. A confidence of 7.5 and an uncertainty of -40
+        # were both constructible, and both would have travelled into ranking
+        # and into a disclosure sentence.
+        if self.confidence is not None and not (
+                Decimal(0) <= self.confidence <= Decimal(1)):
+            raise ValueError(
+                f"confidence={self.confidence} is outside [0,1]; a number "
+                f"that is not a probability must not be ranked as one")
+        if self.uncertainty_g is not None and self.uncertainty_g < 0:
+            raise ValueError(
+                f"uncertainty_g={self.uncertainty_g} is negative — an "
+                f"uncertainty narrower than certainty is not a measurement")
+        # A NAIVE TIMESTAMP IS AN AMBIGUOUS ONE. This programme has already
+        # paid for a clock read in the wrong frame; observation times feed
+        # recency ranking and cross-day windows.
+        if self.observed_at is not None:
+            if not isinstance(self.observed_at, datetime):
+                raise ValueError(
+                    f"observed_at must be a datetime, got "
+                    f"{type(self.observed_at).__name__} — anything else "
+                    f"serialises to null and the observation loses its time")
+            if self.observed_at.tzinfo is None:
+                raise ValueError(
+                    "observed_at must be timezone-aware; a naive source time "
+                    "cannot be compared across a rollover boundary")
+        if self.conversion_evidence is not None and not isinstance(
+                self.conversion_evidence, ConversionEvidence):
+            raise ValueError("conversion_evidence must be ConversionEvidence")
         # THE SUBJECT MUST BE NAMED, not implied by the scope.
         if self.subject_scope is EvidenceScope.THIS_USER and not self.subject_user_id:
             raise ValueError(
@@ -1945,6 +2172,11 @@ class QuantityCandidate:
     #: candidate means; evidence carries what was observed.
     quantity: "CanonicalQuantity"
     serving_basis: ServingBasis
+    #: WHAT THE USER IS ACTUALLY OFFERED. Required, because a basis enum plus
+    #: a mass cannot be rendered without the renderer reinventing the serving
+    #: — which is the honey defect. A candidate that cannot be said is a
+    #: candidate that must not be constructed.
+    offered: "ServingExpression"
     evidence: tuple = ()
     #: Content identity for merge/integrity checks. Never an address.
     semantic_hash: str = ""
@@ -1952,6 +2184,29 @@ class QuantityCandidate:
     def __post_init__(self):
         object.__setattr__(self, "serving_basis", ServingBasis(self.serving_basis))
         object.__setattr__(self, "evidence", tuple(self.evidence or ()))
+        bad = [type(e).__name__ for e in self.evidence
+               if not isinstance(e, QuantityCandidateEvidence)]
+        if bad:
+            raise ValueError(
+                f"candidate {self.candidate_id!r} carries {bad} in its "
+                f"evidence — an untyped element passes every check by having "
+                f"no fields to check")
+        if not isinstance(self.offered, ServingExpression):
+            raise ValueError(
+                f"offered must be a ServingExpression, got "
+                f"{type(self.offered).__name__}")
+        if self.offered.basis is not ServingBasis(self.serving_basis):
+            raise ValueError(
+                f"candidate {self.candidate_id!r} is expressed in "
+                f"{ServingBasis(self.serving_basis).value} but offered as "
+                f"{self.offered.basis.value} — the option shown would mean "
+                f"something the candidate does not")
+        if self.offered.normalized != self.quantity:
+            raise ValueError(
+                f"candidate {self.candidate_id!r} would commit "
+                f"{self.quantity} and offer {self.offered.normalized} — two "
+                f"values for one fact, and the user is shown the one that is "
+                f"not written")
         if not str(self.candidate_id or "").strip():
             raise ValueError(
                 "a candidate needs an id — an unnamed candidate cannot be "
@@ -2003,20 +2258,42 @@ class QuantityCandidate:
                         f"but the evidence observed "
                         f"{ev.observed_basis.value}; it converts something "
                         f"this record did not see")
-            else:
-                # SAME BASIS, SO THE NUMBERS MUST AGREE. Otherwise a candidate
-                # could offer 21 g citing evidence that observed 30 g, and
-                # nothing in the record says which is authoritative or where
-                # the difference came from.
-                seen = getattr(ev.observed_quantity, "grams", None)
-                offered = getattr(self.quantity, "grams", None)
-                if (seen is not None and offered is not None
-                        and Decimal(str(seen)) != Decimal(str(offered))):
-                    raise ValueError(
-                        f"candidate {self.candidate_id!r} offers {offered} g "
-                        f"on the same basis as evidence that observed "
-                        f"{seen} g — a difference with no conversion behind "
-                        f"it has no authority")
+            self._check_support(ev)
+
+    def _check_support(self, ev):
+        """THE EVIDENCE MUST ARRIVE AT THIS CANDIDATE'S OWN NUMBER.
+
+        Every prior check was structural — a source exists, a factor is
+        positive, the bases join up. None of them applied the factor, so
+
+            240 ml x 0.758 g/ml -> 435 g
+
+        satisfied all of them while being false by a factor of 2.4. And the
+        same-basis check read `.grams` only, so two volume quantities compared
+        `None == None` and a 240 ml observation "supported" a 500 ml
+        candidate. Count, piece, package and fraction had the identical hole.
+
+        Basis-aware, and exact. No tolerance: a producer that must round
+        declares it on the conversion, under a policy version.
+        """
+        seen = measure_on(ev.observed_quantity, ev.observed_basis)
+        offered = measure_on(self.quantity, self.serving_basis)
+        if seen is None or offered is None:
+            # Nothing to compare is not the same as agreeing. A candidate that
+            # states no amount on its own basis cannot be shown to be right.
+            raise ValueError(
+                f"candidate {self.candidate_id!r} states "
+                f"{offered!r} on {self.serving_basis.value} and its evidence "
+                f"states {seen!r} on {ev.observed_basis.value} — an amount "
+                f"missing on its own basis cannot be supported by anything")
+        supported = (ev.conversion_evidence.apply_to(seen)
+                     if ev.conversion_evidence is not None else seen)
+        if supported != offered:
+            raise ValueError(
+                f"candidate {self.candidate_id!r} offers {offered} "
+                f"{self.serving_basis.value} but its evidence supports "
+                f"{supported} — evidence that does not produce the quantity "
+                f"being offered proves only that some record was consulted")
 
     def applies_to(self, context: "EvidenceContext") -> bool:
         """Is this candidate about the thing currently being asked about?
@@ -2057,6 +2334,7 @@ class QuantityCandidate:
                 "canonical_entity_id": self.canonical_entity_id,
                 "quantity": self.quantity.to_payload(),
                 "serving_basis": self.serving_basis.value,
+                "offered": self.offered.to_payload(),
                 "semantic_hash": self.semantic_hash,
                 "evidence": [e.to_payload() for e in self.evidence]}
 
@@ -2066,6 +2344,7 @@ class QuantityCandidate:
                    canonical_entity_id=d["canonical_entity_id"],
                    quantity=CanonicalQuantity.from_payload(d["quantity"]),
                    serving_basis=ServingBasis(d["serving_basis"]),
+                   offered=ServingExpression.from_payload(d["offered"]),
                    semantic_hash=d.get("semantic_hash", ""),
                    evidence=tuple(QuantityCandidateEvidence.from_payload(e)
                                   for e in d.get("evidence", ())))
@@ -2101,7 +2380,9 @@ class CandidateGenerationRejection:
     found nothing" — both of which otherwise present as an absent candidate.
     """
     producer: CandidateSource
-    source_record_key: str
+    #: VERSIONED, like any other source citation. "History row 9 was
+    #: unusable" is only reproducible if we can say which version of row 9.
+    source: SourceReference
     reason: GenerationRejectionReason
     generator_version: str
     detail: str = ""
@@ -2110,12 +2391,16 @@ class CandidateGenerationRejection:
         object.__setattr__(self, "producer", CandidateSource(self.producer))
         object.__setattr__(self, "reason",
                            GenerationRejectionReason(self.reason))
+        if not isinstance(self.source, SourceReference):
+            raise ValueError(
+                f"a rejection cites a SourceReference, got "
+                f"{type(self.source).__name__}")
         if not str(self.generator_version or "").strip():
             raise ValueError("a rejection must name the generator version")
 
     def to_payload(self) -> dict:
         return {"producer": self.producer.value,
-                "source_record_key": self.source_record_key,
+                "source": self.source.to_payload(),
                 "reason": self.reason.value,
                 "generator_version": self.generator_version,
                 "detail": self.detail}
@@ -2123,7 +2408,7 @@ class CandidateGenerationRejection:
     @classmethod
     def from_payload(cls, d: dict) -> "CandidateGenerationRejection":
         return cls(producer=CandidateSource(d["producer"]),
-                   source_record_key=d.get("source_record_key", ""),
+                   source=SourceReference.from_payload(d["source"]),
                    reason=GenerationRejectionReason(d["reason"]),
                    generator_version=d["generator_version"],
                    detail=d.get("detail", ""))
@@ -2221,6 +2506,15 @@ class CandidateSet:
         object.__setattr__(self, "rejections", tuple(self.rejections or ()))
         object.__setattr__(self, "interaction_revision",
                            int(self.interaction_revision))
+        for name, want in (("candidates", QuantityCandidate),
+                           ("rejections", CandidateGenerationRejection)):
+            bad = [type(x).__name__ for x in getattr(self, name)
+                   if not isinstance(x, want)]
+            if bad:
+                raise ValueError(
+                    f"{name} must contain {want.__name__}; got {bad} — an "
+                    f"untyped element passes every check by having no fields "
+                    f"to check")
         for name in ("candidate_set_id", "operation_id", "field_id",
                      "generation_input_fingerprint"):
             if not str(getattr(self, name) or "").strip():
@@ -2441,6 +2735,65 @@ class CandidateSelectionDecision:
 
 
 @dataclass(frozen=True, kw_only=True)
+class PresentedCandidateOption:
+    """THE OPTION AS SHOWN, bound to the candidate it came from.
+
+    "Candidate c2 was selected" does not prove "c2 became option `opt_2`,
+    labelled `6 oz`, second in the row, in revision 0". Without that binding
+    the chain from a tap back to a justification has a gap in the middle, and
+    a later generator version or a legitimately new candidate set can be
+    mistaken for the options the user actually saw.
+
+    THE RENDERED LABEL IS PERSISTED, not recomputed. It is what makes
+    `RENDER_COLLISION` auditable after the fact: locale and renderer version
+    alone do not capture every renderer input — a user's unit preference can
+    change what two candidates look like, and re-rendering later would answer
+    a question about today rather than about the turn in question.
+    """
+    option_id: str
+    candidate_id: str
+    candidate_set_id: str
+    interaction_revision: int
+    selected_position: int
+    rendered_label: str
+    renderer_contract_version: str
+
+    def __post_init__(self):
+        object.__setattr__(self, "interaction_revision",
+                           int(self.interaction_revision))
+        object.__setattr__(self, "selected_position",
+                           int(self.selected_position))
+        for name in ("option_id", "candidate_id", "candidate_set_id",
+                     "rendered_label", "renderer_contract_version"):
+            if not str(getattr(self, name) or "").strip():
+                raise ValueError(
+                    f"a presented option needs its {name} — without it the "
+                    f"chain from a tap back to its evidence breaks")
+        if self.selected_position < 0:
+            raise ValueError(
+                f"selected_position={self.selected_position} is not a "
+                f"position")
+
+    def to_payload(self) -> dict:
+        return {"option_id": self.option_id,
+                "candidate_id": self.candidate_id,
+                "candidate_set_id": self.candidate_set_id,
+                "interaction_revision": self.interaction_revision,
+                "selected_position": self.selected_position,
+                "rendered_label": self.rendered_label,
+                "renderer_contract_version": self.renderer_contract_version}
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "PresentedCandidateOption":
+        return cls(option_id=d["option_id"], candidate_id=d["candidate_id"],
+                   candidate_set_id=d["candidate_set_id"],
+                   interaction_revision=int(d["interaction_revision"]),
+                   selected_position=int(d["selected_position"]),
+                   rendered_label=d["rendered_label"],
+                   renderer_contract_version=d["renderer_contract_version"])
+
+
+@dataclass(frozen=True, kw_only=True)
 class CandidateDecisionRecord:
     """One clarification's complete generated set AND the decision over it.
 
@@ -2471,8 +2824,13 @@ class CandidateDecisionRecord:
     """
     candidate_set: CandidateSet
     decision: CandidateSelectionDecision
+    #: The options as actually shown. Empty is legitimate before rendering;
+    #: non-empty must agree with the decision exactly.
+    presented: tuple = ()
 
     def __post_init__(self):
+        object.__setattr__(self, "presented", tuple(self.presented or ()))
+        self._check_presented()
         if self.candidate_set.candidate_set_id != self.decision.candidate_set_id:
             raise ValueError(
                 f"the decision reduces set "
@@ -2496,6 +2854,60 @@ class CandidateDecisionRecord:
                 f"referencing a candidate the set does not contain has no "
                 f"persisted justification behind it")
 
+    def _check_presented(self):
+        """EVERY SHOWN OPTION BINDS TO ONE SELECTED CANDIDATE, in its place.
+
+        Not "some candidate": the one it was rendered from, at the position it
+        occupied, in the revision that was shown. A binding that is merely
+        plausible cannot answer "what did this person tap".
+        """
+        if not self.presented:
+            return
+        bad = [type(x).__name__ for x in self.presented
+               if not isinstance(x, PresentedCandidateOption)]
+        if bad:
+            raise ValueError(
+                f"presented must contain PresentedCandidateOption; got {bad}")
+        option_ids = [p.option_id for p in self.presented]
+        if len(set(option_ids)) != len(option_ids):
+            raise ValueError(
+                f"two shown options share an id: {sorted(option_ids)} — a tap "
+                f"would resolve to both")
+        selected = list(self.decision.selected_candidate_ids)
+        by_position = sorted(self.presented, key=lambda p: p.selected_position)
+        if [p.candidate_id for p in by_position] != selected:
+            raise ValueError(
+                f"the options shown were "
+                f"{[p.candidate_id for p in by_position]} but the decision "
+                f"selected {selected} — the row the user read is not the row "
+                f"the record explains")
+        for p in self.presented:
+            if p.candidate_set_id != self.decision.candidate_set_id:
+                raise ValueError(
+                    f"option {p.option_id!r} cites set "
+                    f"{p.candidate_set_id!r}, not "
+                    f"{self.decision.candidate_set_id!r}")
+            if p.interaction_revision != self.candidate_set.interaction_revision:
+                raise ValueError(
+                    f"option {p.option_id!r} was shown at revision "
+                    f"{p.interaction_revision} but this set is revision "
+                    f"{self.candidate_set.interaction_revision}")
+            if (p.renderer_contract_version
+                    != self.decision.context.renderer_contract_version):
+                raise ValueError(
+                    f"option {p.option_id!r} was rendered by "
+                    f"{p.renderer_contract_version!r} but the decision was "
+                    f"made under {self.decision.context.renderer_contract_version!r}"
+                    f" — a collision judged by one renderer cannot be audited "
+                    f"against another")
+
+    def option_for(self, option_id: str):
+        """The candidate behind a tapped option, or None."""
+        for p in self.presented:
+            if p.option_id == option_id:
+                return self.candidate_set.candidate(p.candidate_id)
+        return None
+
     @property
     def operation_id(self) -> str:
         return self.candidate_set.operation_id
@@ -2516,10 +2928,13 @@ class CandidateDecisionRecord:
 
     def to_payload(self) -> dict:
         return {"candidate_set": self.candidate_set.to_payload(),
-                "decision": self.decision.to_payload()}
+                "decision": self.decision.to_payload(),
+                "presented": [p.to_payload() for p in self.presented]}
 
     @classmethod
     def from_payload(cls, d: dict) -> "CandidateDecisionRecord":
         return cls(candidate_set=CandidateSet.from_payload(d["candidate_set"]),
                    decision=CandidateSelectionDecision.from_payload(
-                       d["decision"]))
+                       d["decision"]),
+                   presented=tuple(PresentedCandidateOption.from_payload(p)
+                                   for p in d.get("presented", ())))

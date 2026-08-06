@@ -1096,7 +1096,7 @@ B-1        SLICE NOT CLOSED  see the seven-line state below — "backend
                              still runs
 B-1.75     COMPLETE          answered quantity is the only quantity authority
 B-1.9      IN PROGRESS       1 PASS(+2 CF) · 2 DONE · 2.1 DONE (P0 fixed) ·
-                             3a DONE contracts · 3b NEXT persistence ·
+                             3a + 3a.1 DONE contracts · 3b NEXT persistence ·
                              4-10 open. Runs BEFORE B-1 closure.
 B-1b.1/.2  NEXT              deterministic matrix + sequence corpus
 B-1b.3     PLANNED           instrumented human simulation
@@ -1325,8 +1325,56 @@ production separate — **retrieval** (absent from the set), **selection**
 `selected`, so it *was* shown). Without it the first two are one observation
 and the third is guesswork over displayed options.
 
-**3a — status: DONE, contracts only.** 7987 pass on SQLite, 0 failed. No
-schema, no producer change, no behaviour change.
+**3a — status: DONE, contracts only.** 7987 pass on SQLite, 0 failed.
+
+**3a.1 — the contract proved evidence EXISTED, not that it produced the
+offered quantity.** Review 2026-08-06 on `2d67bc3`. Every conversion check was
+structural — a source exists, the factor is positive, the bases join up — and
+none of them applied the factor. Reproduced before fixing:
+
+```text
+CONSTRUCTIBLE  evidence 240 ml x 0.758 g/ml -> candidate 435 g   (false by 2.4x)
+CONSTRUCTIBLE  evidence 240 ml            -> candidate 500 ml    (both .grams None)
+CONSTRUCTIBLE  confidence=7.5 · uncertainty=-40 · naive datetime
+CONSTRUCTIBLE  a conversion claiming a result its own factor does not produce
+```
+
+The same-basis check read `.grams` only, so two volume quantities compared
+`None == None` and agreed; count, piece, package and fraction had the
+identical hole. Closed by `measure_on(quantity, basis)` plus one basis-aware
+support operation — *evidence → typed conversion → supported quantity →
+compare with the candidate's own quantity* — exact, with **no tolerance**. A
+producer that must round declares `quantize_exponent` under a
+`policy_version`, so rounding is a versioned decision rather than an epsilon
+that absorbs real errors alongside representation noise.
+
+Also in 3a.1:
+
+* **`ServingExpression`** — a basis enum cannot render an option. `21 g +
+  VOLUME` does not say `1 tbsp` / `15 ml` / `3 tsp`; `182 g + PIECE` does not
+  say `1 breast` / `½ large breast`. That gap *is* the honey failure, and it
+  was still there. The candidate now owns both what would be committed
+  canonically and what the user is offered; a candidate that cannot be said
+  cannot be constructed.
+* **`ConversionEvidence.source` is a `SourceReference`**, not a free string —
+  a density record can be corrected while keeping its key. It also carries
+  input, output and policy version, so the conversion is executable.
+* **`PresentedCandidateOption`** — "candidate c1 was selected" does not prove
+  "c1 became `opt_c1`, labelled `6 oz`, first, in revision 0". The rendered
+  label is **persisted, not recomputed**: locale and renderer version do not
+  capture every renderer input, and re-rendering later answers a question
+  about today rather than about that turn. This is what makes
+  `RENDER_COLLISION` auditable.
+* **Fail-shut properties became contracts**: timezone-aware `observed_at`,
+  `0 ≤ confidence ≤ 1`, `uncertainty ≥ 0`, typed collection elements, and a
+  `SourceReference` that must carry a `record_version` **or** declare
+  `immutable_within_version` — a `food_entries` id points at whatever the row
+  says now, and correction rewrites it.
+
+**3a.1 — status: DONE.** 8017 pass on SQLite and 8017 on Postgres (21 skips),
+79 contract gates. Mutation-verified: disabling the support comparison turns 5
+gates red, disabling the conversion arithmetic turns 2 red. No schema, no
+producer, no ranking, no visible-option change.
 
 **3b — persistence.** Atomic write of the immutable set and its typed decision
 *before options are rendered*, fail-closed; append-only; candidate set bound to
@@ -1350,6 +1398,14 @@ revision shown`.
 [x] label collisions cannot erase distinct semantics silently
 [x] every exclusion maps to a real policy branch
 [x] invalid generation attempts are separate from valid exclusions
+[x] arbitrary converted quantities are unconstructable          3a.1
+[x] same-basis mismatches fail for mass, volume, count,
+    piece and package                                           3a.1
+[x] every candidate can render its own basis                    3a.1
+[x] every conversion authority is versioned and auditable       3a.1
+[x] every shown option binds to one persisted candidate         3a.1
+[x] rendered labels and positions are durable                   3a.1
+[x] invalid timestamps or evidence types fail at construction   3a.1
 [ ] generator inputs carry a reproducibility fingerprint      3b
 [ ] same key + different fingerprint fails loudly             3b
 [ ] source evidence is snapshotted, not merely referenced     3a shape,

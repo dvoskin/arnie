@@ -30,13 +30,25 @@ from core.semantics import (CandidateDecisionRecord, CandidateExclusion,
                             EvidenceContext, EvidenceScope,
                             EVIDENCE_SCHEMA_VERSION, ExclusionReason,
                             GenerationRejectionReason, QuantityCandidate,
-                            QuantityCandidateEvidence, SelectionSurface,
-                            ServingBasis, SourceReference)
+                            PresentedCandidateOption, QuantityCandidateEvidence,
+                            SelectionSurface, ServingBasis, ServingExpression,
+                            SourceReference, measure_on)
 
 CTX = EvidenceContext(user_id=26, canonical_entity_id="food:chicken_breast")
 
 SRC = SourceReference(dataset_id="food_entries", dataset_version="live",
                       record_key="2871", record_version="ledger:88121")
+
+ONT = SourceReference(dataset_id="portion_ontology", dataset_version="2026-07",
+                      record_key="chicken_breast:large",
+                      immutable_within_version=True)
+
+
+def _expr(grams="182", unit="g", basis=ServingBasis.MASS, amount=None, **kw):
+    """The offered serving, said the way the chip says it."""
+    q = kw.pop("normalized", CanonicalQuantity(grams=Decimal(grams)))
+    return ServingExpression(amount=Decimal(amount if amount is not None else grams),
+                             unit_id=unit, basis=basis, normalized=q, **kw)
 
 
 def _ev(**kw):
@@ -54,10 +66,16 @@ def _ev(**kw):
 
 def _cand(**kw):
     """One candidate offering 182 g, supported by one history record."""
+    q = kw.pop("quantity", CanonicalQuantity(grams=Decimal("182")))
+    basis = kw.pop("serving_basis", ServingBasis.MASS)
+    offered = kw.pop("offered", None)
+    if offered is None:
+        offered = ServingExpression(
+            amount=Decimal(str(measure_on(q, basis) or 1)),
+            unit_id="g", basis=basis, normalized=q)
     base = dict(candidate_id="c1",
                 canonical_entity_id="food:chicken_breast",
-                quantity=CanonicalQuantity(grams=Decimal("182")),
-                serving_basis=ServingBasis.MASS,
+                quantity=q, serving_basis=basis, offered=offered,
                 evidence=(_ev(),))
     base.update(kw)
     return QuantityCandidate(**base)
@@ -73,8 +91,10 @@ def _prod_ev(**kw):
     base = dict(source_type=CandidateSource.CATALOG,
                 source=SourceReference(dataset_id="catalog",
                                        dataset_version="2026-07",
-                                       record_key="sku:991"),
-                observed_quantity=CanonicalQuantity(grams=Decimal("182")),
+                                       record_key="sku:991",
+                                       record_version="rev3"),
+                observed_quantity=CanonicalQuantity(amount=Decimal("1"),
+                                                    unit_id="serving"),
                 observed_basis=ServingBasis.STANDARD_SERVING,
                 subject_scope=EvidenceScope.THIS_PRODUCT_QUANTITY,
                 subject_user_id=None, product_variant_id="sku:991")
@@ -83,7 +103,12 @@ def _prod_ev(**kw):
 
 
 def _prod_cand(**kw):
-    base = dict(serving_basis=ServingBasis.STANDARD_SERVING,
+    q = CanonicalQuantity(amount=Decimal("1"), unit_id="serving")
+    base = dict(serving_basis=ServingBasis.STANDARD_SERVING, quantity=q,
+                offered=ServingExpression(amount=Decimal("1"),
+                                          unit_id="serving",
+                                          basis=ServingBasis.STANDARD_SERVING,
+                                          normalized=q),
                 evidence=(_prod_ev(),))
     base.update(kw)
     return _cand(**base)
@@ -102,6 +127,14 @@ def _set(**kw):
 SEL_CTX = CandidateSelectionContext(surface=SelectionSurface.LABEL_TEXT,
                                     locale="en", maximum_options=3,
                                     renderer_contract_version="labels_v1")
+
+
+DENSITY = SourceReference(dataset_id="usda", dataset_version="2026-04",
+                          record_key="density:5062",
+                          immutable_within_version=True)
+PIECE_W = SourceReference(dataset_id="usda", dataset_version="2026-04",
+                          record_key="piece_weight:1",
+                          immutable_within_version=True)
 
 
 def _decision(**kw):
@@ -123,14 +156,17 @@ def test_one_candidate_may_be_supported_by_several_sources():
     how "why was this offered?" stops being answerable.
     """
     cand = _prod_cand(evidence=(
-        _ev(observed_basis=ServingBasis.STANDARD_SERVING),
+        _ev(observed_basis=ServingBasis.STANDARD_SERVING,
+            observed_quantity=CanonicalQuantity(amount=Decimal("1"),
+                                                unit_id="serving")),
         _prod_ev()))
     assert len(cand.evidence) == 2
     assert {e.source_type for e in cand.evidence} == {
         CandidateSource.USER_HISTORY, CandidateSource.CATALOG}
     # Still one candidate, one id, one offered quantity.
     assert cand.candidate_id == "c1"
-    assert cand.quantity.grams == Decimal("182")
+    assert cand.offered.amount == Decimal("1")
+    assert cand.offered.unit_id == "serving"
 
 
 def test_a_candidate_must_carry_at_least_one_reason():
@@ -147,7 +183,7 @@ def test_the_candidate_owns_the_offered_amount():
     defined authority between them. The record would look complete and mean
     nothing.
     """
-    with pytest.raises(ValueError, match="no authority"):
+    with pytest.raises(ValueError, match="evidence supports"):
         _cand(quantity=CanonicalQuantity(grams=Decimal("21")),
               evidence=(_ev(observed_quantity=CanonicalQuantity(
                   grams=Decimal("30"))),))
@@ -174,9 +210,9 @@ def test_crossing_bases_requires_a_sourced_conversion():
 
     conv = ConversionEvidence(from_basis=ServingBasis.VOLUME,
                               to_basis=ServingBasis.MASS,
-                              source_record_id="usda:density:5062",
-                              factor=Decimal("0.758"))
-    assert _cand(evidence=(_ev(observed_basis=ServingBasis.VOLUME,
+                              source=DENSITY, factor=Decimal("0.758"))
+    assert _cand(quantity=CanonicalQuantity(grams=Decimal("181.920")),
+                 evidence=(_ev(observed_basis=ServingBasis.VOLUME,
                                observed_quantity=CanonicalQuantity(
                                    milliliters=Decimal("240")),
                                conversion_evidence=conv),)).evidence
@@ -184,8 +220,7 @@ def test_crossing_bases_requires_a_sourced_conversion():
     # A conversion that starts somewhere the evidence never was.
     wrong_start = ConversionEvidence(from_basis=ServingBasis.PIECE,
                                      to_basis=ServingBasis.MASS,
-                                     source_record_id="usda:piece:1",
-                                     factor=Decimal("174"))
+                                     source=PIECE_W, factor=Decimal("174"))
     with pytest.raises(ValueError, match="did not see"):
         _cand(evidence=(_ev(observed_basis=ServingBasis.VOLUME,
                             observed_quantity=CanonicalQuantity(
@@ -198,8 +233,7 @@ def test_a_conversion_must_land_on_this_candidates_basis():
     itself, and must not pass construction by looking well-sourced."""
     conv = ConversionEvidence(from_basis=ServingBasis.PIECE,
                               to_basis=ServingBasis.MASS,
-                              source_record_id="usda:piece_weight:1",
-                              factor=Decimal("174"))
+                              source=PIECE_W, factor=Decimal("174"))
     with pytest.raises(ValueError, match="does not land"):
         _cand(serving_basis=ServingBasis.VOLUME,
               quantity=CanonicalQuantity(milliliters=Decimal("240")),
@@ -278,9 +312,14 @@ def test_identifying_a_product_is_not_knowing_how_much_was_eaten():
     were eaten. Without this, future product metadata could authorise a
     default merely by recognising the item.
     """
+    one = CanonicalQuantity(count=Decimal("1"))
     with pytest.raises(ValueError, match="without stating an amount"):
-        _cand(serving_basis=ServingBasis.PIECE,
-              evidence=(_prod_ev(observed_basis=ServingBasis.PIECE),))
+        _cand(serving_basis=ServingBasis.PIECE, quantity=one,
+              offered=ServingExpression(amount=Decimal("1"), unit_id="piece",
+                                        basis=ServingBasis.PIECE,
+                                        normalized=one),
+              evidence=(_prod_ev(observed_basis=ServingBasis.PIECE,
+                                 observed_quantity=one),))
     assert _prod_cand()
 
 
@@ -530,7 +569,7 @@ def test_an_unusable_input_is_a_rejection_not_an_exclusion():
     """
     rej = CandidateGenerationRejection(
         producer=CandidateSource.USER_HISTORY,
-        source_record_key="food_entry:9",
+        source=SRC,
         reason=GenerationRejectionReason.NO_QUANTITY,
         generator_version="gen_v1")
     s = _set(rejections=(rej,))
@@ -546,7 +585,7 @@ def test_an_unusable_input_is_a_rejection_not_an_exclusion():
 def test_a_rejection_reason_is_closed_too():
     with pytest.raises(ValueError):
         CandidateGenerationRejection(producer=CandidateSource.ONTOLOGY,
-                                     source_record_key="k",
+                                     source=ONT,
                                      reason="dunno",
                                      generator_version="gen_v1")
 
@@ -601,10 +640,297 @@ def test_a_cited_authority_without_a_value_converts_nothing():
     with pytest.raises(ValueError, match="converts nothing"):
         ConversionEvidence(from_basis=ServingBasis.VOLUME,
                            to_basis=ServingBasis.MASS,
-                           source_record_id="usda:density:5062", factor=None)
+                           source=DENSITY, factor=None)
 
 
 def test_a_same_basis_conversion_cannot_quietly_rescale():
     with pytest.raises(ValueError):
         ConversionEvidence(from_basis=ServingBasis.MASS,
                            to_basis=ServingBasis.MASS, factor=Decimal("2"))
+
+
+# ── 3a.1 — evidence must PRODUCE the quantity being offered ─────────────────
+
+@pytest.mark.parametrize("label,basis,observed,offered,factor,ok", [
+    # The named case: 240 ml at 0.758 g/ml is 181.92 g, and nothing else.
+    ("240ml x 0.758 -> 181.92 g", ServingBasis.MASS,
+     ("milliliters", "240"), ("grams", "181.920"), "0.758", True),
+    ("240ml x 0.758 -> 435 g", ServingBasis.MASS,
+     ("milliliters", "240"), ("grams", "435"), "0.758", False),
+    # Same basis, no mass on either side: the old check compared None to None.
+    ("240 ml -> 240 ml", ServingBasis.VOLUME,
+     ("milliliters", "240"), ("milliliters", "240"), None, True),
+    ("240 ml -> 500 ml", ServingBasis.VOLUME,
+     ("milliliters", "240"), ("milliliters", "500"), None, False),
+    ("1 piece -> 1 piece", ServingBasis.PIECE,
+     ("count", "1"), ("count", "1"), None, True),
+    ("1 piece -> 2 piece", ServingBasis.PIECE,
+     ("count", "1"), ("count", "2"), None, False),
+    ("1 package -> 1 package", ServingBasis.PACKAGE,
+     ("amount", "1"), ("amount", "1"), None, True),
+    ("1 package -> half package", ServingBasis.PACKAGE,
+     ("amount", "1"), ("amount", "0.5"), None, False),
+])
+def test_evidence_must_arrive_at_the_offered_quantity(label, basis, observed,
+                                                      offered, factor, ok):
+    """P0. THE FACTOR WAS NEVER APPLIED.
+
+    Every earlier check was structural — a source exists, the factor is
+    positive, the bases join up — so `240 ml x 0.758 g/ml -> 435 g` satisfied
+    all of them while being false by 2.4x. And the same-basis check read
+    `.grams` only, so two volume quantities compared `None == None` and
+    agreed; count, piece, package and fraction had the identical hole.
+
+    Basis-aware and exact. No tolerance.
+    """
+    obs_field, obs_val = observed
+    off_field, off_val = offered
+    obs_basis = ServingBasis.VOLUME if factor else basis
+    conv = (ConversionEvidence(from_basis=obs_basis, to_basis=basis,
+                               source=DENSITY, factor=Decimal(factor))
+            if factor else None)
+    q = CanonicalQuantity(**{off_field: Decimal(off_val)})
+    build = lambda: _cand(                                      # noqa: E731
+        quantity=q, serving_basis=basis,
+        offered=ServingExpression(amount=Decimal(off_val), unit_id="u",
+                                  basis=basis, normalized=q),
+        evidence=(_ev(observed_basis=obs_basis,
+                      observed_quantity=CanonicalQuantity(
+                          **{obs_field: Decimal(obs_val)}),
+                      conversion_evidence=conv),))
+    if ok:
+        assert build() is not None, label
+    else:
+        with pytest.raises(ValueError, match="evidence supports"):
+            build()
+
+
+def test_a_conversion_must_produce_its_own_stated_result():
+    """An input, a factor and an output that do not multiply out."""
+    with pytest.raises(ValueError, match="not evidence of anything"):
+        ConversionEvidence(
+            from_basis=ServingBasis.VOLUME, to_basis=ServingBasis.MASS,
+            source=DENSITY, factor=Decimal("0.758"),
+            input_quantity=CanonicalQuantity(milliliters=Decimal("240")),
+            output_quantity=CanonicalQuantity(grams=Decimal("435")))
+    assert ConversionEvidence(
+        from_basis=ServingBasis.VOLUME, to_basis=ServingBasis.MASS,
+        source=DENSITY, factor=Decimal("0.758"),
+        input_quantity=CanonicalQuantity(milliliters=Decimal("240")),
+        output_quantity=CanonicalQuantity(grams=Decimal("181.920")))
+
+
+def test_rounding_is_declared_never_tolerated():
+    """There is no epsilon. A producer that rounds says so, under a policy."""
+    with pytest.raises(ValueError, match="not evidence of anything"):
+        ConversionEvidence(
+            from_basis=ServingBasis.VOLUME, to_basis=ServingBasis.MASS,
+            source=DENSITY, factor=Decimal("0.758"),
+            policy_version="conv_v1",
+            input_quantity=CanonicalQuantity(milliliters=Decimal("240")),
+            output_quantity=CanonicalQuantity(grams=Decimal("181.92")),
+            quantize_exponent="1")
+    rounded = ConversionEvidence(
+        from_basis=ServingBasis.VOLUME, to_basis=ServingBasis.MASS,
+        source=DENSITY, factor=Decimal("0.758"), policy_version="conv_v1",
+        input_quantity=CanonicalQuantity(milliliters=Decimal("240")),
+        output_quantity=CanonicalQuantity(grams=Decimal("182")),
+        quantize_exponent="1")
+    assert rounded.apply_to(Decimal("240")) == Decimal("182")
+    with pytest.raises(ValueError, match="undeclared adjustment"):
+        ConversionEvidence(from_basis=ServingBasis.VOLUME,
+                           to_basis=ServingBasis.MASS, source=DENSITY,
+                           factor=Decimal("0.758"), quantize_exponent="1")
+
+
+def test_a_conversion_authority_is_versioned():
+    """A density record can be corrected while keeping its key; a free string
+    would present two different factors as one authority."""
+    with pytest.raises((ValueError, TypeError)):
+        ConversionEvidence(from_basis=ServingBasis.VOLUME,
+                           to_basis=ServingBasis.MASS,
+                           source_record_id="usda:density:5062",
+                           factor=Decimal("0.758"))
+    assert ConversionEvidence(from_basis=ServingBasis.VOLUME,
+                              to_basis=ServingBasis.MASS, source=DENSITY,
+                              factor=Decimal("0.758")).source.dataset_version
+
+
+# ── 3a.1 — the candidate can be SAID ────────────────────────────────────────
+
+def test_a_candidate_carries_enough_to_render_its_basis():
+    """THE HONEY FAILURE, as a contract.
+
+    `21 g + VOLUME` does not say whether the chip reads `1 tbsp`, `15 ml` or
+    `3 tsp`. Options were offered as `30g / 80g / 200g` to someone who logs
+    tablespoons because the basis reached rendering and the EXPRESSION did
+    not. A candidate that cannot be said must not be constructed.
+    """
+    honey = CanonicalQuantity(amount=Decimal("1"), unit_id="tbsp",
+                              milliliters=Decimal("15"), grams=Decimal("21"))
+    conv = ConversionEvidence(from_basis=ServingBasis.VOLUME,
+                              to_basis=ServingBasis.MASS, source=DENSITY,
+                              factor=Decimal("1.4"),
+                              input_quantity=CanonicalQuantity(
+                                  milliliters=Decimal("15")),
+                              output_quantity=CanonicalQuantity(
+                                  grams=Decimal("21.0")))
+    said = ServingExpression(amount=Decimal("1"), unit_id="tbsp",
+                             basis=ServingBasis.VOLUME, normalized=honey,
+                             conversion_evidence=conv)
+    cand = _cand(quantity=honey, serving_basis=ServingBasis.VOLUME,
+                 offered=said,
+                 evidence=(_ev(observed_basis=ServingBasis.VOLUME,
+                               observed_quantity=honey),))
+    assert (cand.offered.amount, cand.offered.unit_id) == (Decimal("1"), "tbsp")
+    assert cand.offered.normalized.grams == Decimal("21")
+
+
+def test_an_expression_that_crosses_bases_needs_its_authority():
+    """Saying "1 tbsp" for something committed as 21 g is a density claim."""
+    honey = CanonicalQuantity(amount=Decimal("1"), unit_id="tbsp",
+                              milliliters=Decimal("15"), grams=Decimal("21"))
+    with pytest.raises(ValueError, match="nobody's authority"):
+        ServingExpression(amount=Decimal("1"), unit_id="tbsp",
+                          basis=ServingBasis.VOLUME, normalized=honey)
+
+
+def test_an_expression_must_state_an_amount_on_its_own_basis():
+    with pytest.raises(ValueError, match="cannot be rendered"):
+        ServingExpression(amount=Decimal("1"), unit_id="tbsp",
+                          basis=ServingBasis.VOLUME,
+                          normalized=CanonicalQuantity(grams=Decimal("21")))
+    with pytest.raises(ValueError, match="needs the unit"):
+        _expr(unit="")
+
+
+def test_the_offered_option_and_the_committed_value_are_one_fact():
+    other = CanonicalQuantity(grams=Decimal("300"))
+    with pytest.raises(ValueError, match="two values for one fact"):
+        _cand(offered=ServingExpression(amount=Decimal("300"), unit_id="g",
+                                        basis=ServingBasis.MASS,
+                                        normalized=other))
+    with pytest.raises(ValueError, match="the option shown would mean"):
+        _cand(offered=_expr(basis=ServingBasis.VOLUME, unit="ml",
+                            normalized=CanonicalQuantity(
+                                milliliters=Decimal("182"))))
+
+
+# ── 3a.1 — a tap resolves to one persisted candidate ────────────────────────
+
+def _shown(**kw):
+    base = dict(option_id="opt_c1", candidate_id="c1", candidate_set_id="cs1",
+                interaction_revision=0, selected_position=0,
+                rendered_label="6 oz", renderer_contract_version="labels_v1")
+    base.update(kw)
+    return PresentedCandidateOption(**base)
+
+
+def test_a_shown_option_binds_to_the_candidate_it_came_from():
+    """`option_id -> candidate_id -> candidate_set_id -> the revision shown`.
+
+    "Candidate c1 was selected" does not prove "c1 became opt_c1, labelled
+    6 oz, first in the row, in revision 0" — and without that the chain from a
+    tap back to a justification has a gap in the middle.
+    """
+    rec = CandidateDecisionRecord(candidate_set=_set(), decision=_decision(),
+                                  presented=(_shown(),))
+    assert rec.option_for("opt_c1").candidate_id == "c1"
+    assert rec.option_for("opt_nope") is None
+    assert CandidateDecisionRecord.from_payload(rec.to_payload()) == rec
+
+
+def test_the_row_shown_must_be_the_row_the_record_explains():
+    two = _set(candidates=(_cand(), _cand(candidate_id="c2")))
+    d = _decision(selected_candidate_ids=("c1", "c2"))
+    with pytest.raises(ValueError, match="not the row the record explains"):
+        CandidateDecisionRecord(candidate_set=two, decision=d,
+                                presented=(_shown(),))
+    # Position decides order, not tuple order.
+    ok = CandidateDecisionRecord(
+        candidate_set=two, decision=d,
+        presented=(_shown(option_id="o2", candidate_id="c2",
+                          selected_position=1), _shown()))
+    assert [p.candidate_id for p in
+            sorted(ok.presented, key=lambda p: p.selected_position)] == ["c1", "c2"]
+
+
+def test_a_shown_option_cannot_come_from_another_set_or_revision():
+    for kw, match in (({"candidate_set_id": "other"}, "cites set"),
+                      ({"interaction_revision": 3}, "was shown at revision"),
+                      ({"renderer_contract_version": "labels_v2"},
+                       "cannot be audited against another")):
+        with pytest.raises(ValueError, match=match):
+            CandidateDecisionRecord(candidate_set=_set(), decision=_decision(),
+                                    presented=(_shown(**kw),))
+
+
+def test_two_shown_options_cannot_share_an_id():
+    two = _set(candidates=(_cand(), _cand(candidate_id="c2")))
+    with pytest.raises(ValueError, match="share an id"):
+        CandidateDecisionRecord(
+            candidate_set=two,
+            decision=_decision(selected_candidate_ids=("c1", "c2")),
+            presented=(_shown(), _shown(candidate_id="c2",
+                                        selected_position=1)))
+
+
+def test_the_rendered_label_is_persisted_not_recomputed():
+    """What makes RENDER_COLLISION auditable after the fact: locale and
+    renderer version do not capture every renderer input, and re-rendering
+    later answers a question about today rather than about that turn."""
+    rec = CandidateDecisionRecord(candidate_set=_set(), decision=_decision(),
+                                  presented=(_shown(rendered_label="6 oz"),))
+    assert rec.presented[0].rendered_label == "6 oz"
+
+
+# ── 3a.1 — fail-shut properties are contracts, not comments ─────────────────
+
+@pytest.mark.parametrize("kw,match", [
+    ({"confidence": Decimal("7.5")}, "outside"),
+    ({"confidence": Decimal("-0.1")}, "outside"),
+    ({"uncertainty_g": Decimal("-40")}, "negative"),
+    ({"observed_at": datetime(2026, 1, 1)}, "timezone-aware"),
+    ({"observed_at": "2026-01-01"}, "must be a datetime"),
+    ({"source": "food_entry:9"}, "must be a SourceReference"),
+    ({"conversion_evidence": "0.758"}, "must be ConversionEvidence"),
+])
+def test_evidence_fails_shut_on_uninterpretable_values(kw, match):
+    with pytest.raises(ValueError, match=match):
+        _ev(**kw)
+
+
+def test_a_mutable_source_must_carry_its_revision():
+    """A `food_entries` id points at whatever the row says NOW. Correction
+    rewrites it, and the evidence citing it stops being reproducible."""
+    with pytest.raises(ValueError, match="may already have changed"):
+        SourceReference(dataset_id="food_entries", dataset_version="live",
+                        record_key="2871")
+    assert SourceReference(dataset_id="food_entries", dataset_version="live",
+                           record_key="2871", record_version="ledger:88121")
+    # An immutable-per-version dataset may say so instead.
+    assert ONT.immutable_within_version
+
+
+def test_collections_reject_untyped_elements():
+    """An untyped element passes every check by having no fields to check."""
+    with pytest.raises(ValueError, match="in its evidence"):
+        _cand(evidence=("not evidence",))
+    with pytest.raises(ValueError, match="must contain QuantityCandidate"):
+        _set(candidates=({"candidate_id": "c1"},))
+    with pytest.raises(ValueError,
+                       match="must contain CandidateGenerationRejection"):
+        _set(rejections=("nope",))
+    with pytest.raises(ValueError,
+                       match="must contain PresentedCandidateOption"):
+        CandidateDecisionRecord(candidate_set=_set(), decision=_decision(),
+                                presented=("nope",))
+
+
+def test_measure_on_is_basis_aware():
+    """Asking a volume for its mass returns None, not a coincidence."""
+    ml = CanonicalQuantity(milliliters=Decimal("240"))
+    assert measure_on(ml, ServingBasis.VOLUME) == Decimal("240")
+    assert measure_on(ml, ServingBasis.MASS) is None
+    assert measure_on(CanonicalQuantity(count=Decimal("2")),
+                      ServingBasis.PIECE) == Decimal("2")
