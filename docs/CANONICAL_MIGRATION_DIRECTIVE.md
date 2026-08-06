@@ -1600,6 +1600,47 @@ revision shown`.
 from selection failure from user rejection **using durable records alone** —
 not by re-running the generator, and not by inferring from displayed options.
 
+**4 — status: DONE** *(2026-08-06)*. Every production quantity source emits
+`QuantityCandidate` with typed evidence, a versioned source snapshot, a
+`ServingExpression` and a stable semantic identity. The bridges are deleted:
+
+```text
+[x] every production candidate is natively typed
+[x] every evidence record has explicit scope and subject
+[x] every mutable source is revisioned or content-pinned
+[x] every conversion is typed and versioned
+[x] no producer emits ClarificationOption      selection does; producers do not
+[x] generate() is the only production generation entry
+[x] reduce_universe() is the only production reduction entry
+[x] compatibility callers inventoried and RATCHETED
+[x] _LEGACY_SOURCE_SCOPE deleted
+[x] visible labels, order and patches unchanged
+```
+
+`tests/test_every_quantity_candidate_is_natively_typed.py` keeps them closed —
+three of its gates are SOURCE SCANS, because a reappearing bridge behaves
+identically to the canonical path until the day it diverges, so nothing
+observable can catch it.
+
+**The deletion forced a real wiring gap into the open.** With source names no
+longer authorising anything, the estimate path refused every live turn: the
+stored wire form carries only ids, by design, so options reconstructed from a
+pending row have no candidate. The answer turn now resolves them from the
+persisted universe via the operation's `decision_id` — which is exactly what
+3b.3 stored it for, and the first thing to actually consume it.
+
+**Both 3b follow-ups taken here rather than deferred**, since an
+administrative default on a read path is what gets misused later:
+
+* `load_for_replay(decision_id=...)` is separated from
+  `load_oldest_for_admin()` **by signature**, so a future production caller
+  cannot take the administrative behaviour by omission.
+* `why_not()` is **decision-scoped**. "Shown" and "excluded" are properties of
+  a decision, not of a universe — the same candidate can be shown on iOS and
+  dropped on Telegram by the slot cap.
+
+8080 pass on SQLite and 8080 on Postgres (21 skips).
+
 **4 — the generator.** Approved sources only: exact canonical-entity user
 history · validated entity portion evidence · validated product/package
 metadata · canonical serving distributions. **Never**: food-name

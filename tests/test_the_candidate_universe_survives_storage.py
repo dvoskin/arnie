@@ -290,8 +290,13 @@ async def test_a_universe_is_not_readable_by_supplying_its_id(sessions, user):
     async with sessions() as s:
         assert await repo.load(s, "cs_test", user_id=USER_ID) is not None
         assert await repo.load(s, "cs_test", user_id=99) is None
-        assert await repo.load_for_operation(
+        assert await repo.load_oldest_for_admin(
             s, "op_test", user_id=99) is None
+        # A REPLAY MAY NOT OMIT ITS DECISION. Enforced by signature, so a
+        # future production caller cannot take the administrative behaviour by
+        # accident.
+        with pytest.raises(ValueError, match="must name the decision"):
+            await repo.load_for_replay(s, decision_id="", user_id=USER_ID)
 
 
 # ── append-only ─────────────────────────────────────────────────────────────
@@ -352,11 +357,17 @@ async def test_every_missing_candidate_has_exactly_one_explanation(sessions,
         await s.commit()
 
     async with sessions() as s:
-        assert await repo.why_not(s, "cs_test", user_id=USER_ID,
-                                  candidate_id="c2") == "shown"
-        assert await repo.why_not(s, "cs_test", user_id=USER_ID,
-                                  candidate_id="c3") == "excluded:selection_cap"
-        assert await repo.why_not(s, "cs_test", user_id=USER_ID,
+        # DECISION-SCOPED: "shown" and "excluded" are properties of a
+        # decision, not of a universe. The same candidate can be shown on iOS
+        # and dropped on Telegram by the slot cap.
+        decision_id = repo.decision_id_for(_record())
+        assert await repo.why_not(s, decision_id=decision_id,
+                                  user_id=USER_ID, candidate_id="c2") == "shown"
+        assert await repo.why_not(
+            s, decision_id=decision_id, user_id=USER_ID,
+            candidate_id="c3") == "excluded:selection_cap"
+        assert await repo.why_not(s, decision_id=decision_id,
+                                  user_id=USER_ID,
                                   candidate_id="c404") == "not_generated"
         # And a retrieval failure the generator SAW is distinguishable from
         # one it never encountered.
@@ -456,7 +467,7 @@ async def test_the_ask_path_persists_its_universe_before_asking(sessions,
     assert ask is not None, "ownership was declined; this gate tested nothing"
 
     async with sessions() as s:
-        stored = await repo.load_for_operation(
+        stored = await repo.load_oldest_for_admin(
             s, ask.operation_id, user_id=USER_ID)
     assert stored is not None, "a question was asked with no durable universe"
     shown = {p.option_id for p in stored.presented}

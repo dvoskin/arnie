@@ -469,15 +469,26 @@ async def load(db, candidate_set_id: str, *, user_id: int,
             for p in shown))
 
 
-async def load_for_operation(db, operation_id: str, *, user_id: int,
-                             revision: int = 0,
-                             decision_id: Optional[str] = None):
-    """The universe behind one operation revision.
+async def load_for_replay(db, *, decision_id: str, user_id: int):
+    """THE ONLY READ A REAL TURN MAY USE. `decision_id` is required.
 
-    `decision_id` SHOULD BE PASSED by anything replaying a real turn — the
-    operation stores it precisely so the answer turn can name the question it
-    is answering rather than infer it.
+    Separated from the administrative reads by SIGNATURE, not by convention.
+    "Callers should pass the decision id" is a comment, and a comment cannot
+    stop a future production path from taking the administrative behaviour by
+    omission — which would silently replay a different valid decision over the
+    same universe.
     """
+    if not str(decision_id or "").strip():
+        raise ValueError(
+            "a replay must name the decision it is replaying; a universe may "
+            "hold several and only the caller knows which one was shown")
+    return await load_by_decision_id(db, decision_id, user_id=user_id)
+
+
+async def load_oldest_for_admin(db, operation_id: str, *, user_id: int,
+                                revision: int = 0):
+    """The FIRST decision recorded for an operation revision. Listings and
+    inspection only — see `load_for_replay` for anything a turn depends on."""
     from sqlalchemy import select
 
     from db.models import CandidateSetRow
@@ -486,21 +497,25 @@ async def load_for_operation(db, operation_id: str, *, user_id: int,
         CandidateSetRow.operation_id == operation_id,
         CandidateSetRow.interaction_revision == revision,
         CandidateSetRow.user_id == user_id))).scalars().first()
-    return None if set_id is None else await load(
-        db, set_id, user_id=user_id, decision_id=decision_id)
+    return None if set_id is None else await load(db, set_id, user_id=user_id)
 
 
-async def why_not(db, candidate_set_id: str, *, user_id: int,
+async def why_not(db, *, decision_id: str, user_id: int,
                   candidate_id: str) -> str:
     """Exactly one answer, never "unknown".
 
     The question analysis actually has to answer is why the quantity someone
     expected was not on their screen, and before this record existed the three
     causes were one undifferentiated "bad options" problem.
+
+    DECISION-SCOPED. "Shown" and "excluded" are properties of a DECISION, not
+    of a universe: the same candidate can be shown on iOS and dropped on
+    Telegram by the slot cap. Answering from the set alone would report
+    whichever decision came first as though it were the only one.
     """
-    record = await load(db, candidate_set_id, user_id=user_id)
+    record = await load_by_decision_id(db, decision_id, user_id=user_id)
     if record is None:
-        return "no_such_universe"
+        return "no_such_decision"
     if candidate_id in record.decision.selected_candidate_ids:
         return "shown"
     for exclusion in record.decision.exclusions:

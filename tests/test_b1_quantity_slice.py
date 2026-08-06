@@ -478,16 +478,26 @@ def _options_of(field, *grams, source=None):
     """
     from core.semantics import ClarificationOption, SetQuantity
 
-    return tuple(
-        ClarificationOption(
+    from tests._typed_candidates import candidate as _typed
+
+    src = source or CandidateSource.ONTOLOGY
+    out = []
+    for i, g in enumerate(sorted(grams)):
+        # EVERY OPTION CARRIES ITS CANDIDATE. Since commit 4 the source NAME
+        # authorises nothing — `_LEGACY_SOURCE_SCOPE` is deleted — so an
+        # option built without one would measure the refusal rather than the
+        # rule under test, and would not resemble anything production emits.
+        cand = _typed(f"c{i}", g, source=src,
+                      prior=0.55 if src is CandidateSource.USER_HISTORY else 0.3,
+                      confidence=0.9 if src is CandidateSource.USER_HISTORY else 0.6)
+        out.append(ClarificationOption(
             label=f"{g:g}g", option_id=f"opt_{i}", field_id=field.field_id,
-            source=source or CandidateSource.ONTOLOGY,
+            source=src, candidate_id=cand.candidate_id, candidate=cand,
             patch=SetQuantity(
                 event_id=field.event_id, field_id=field.field_id,
-                quantity=qc._quantity(g, provenance=Provenance.ONTOLOGY,
-                                      basis="portion ontology"),
-                provenance=Provenance.USER_SELECTED))
-        for i, g in enumerate(sorted(grams)))
+                quantity=cand.quantity,
+                provenance=Provenance.USER_SELECTED)))
+    return tuple(out)
 
 
 @pytest.mark.parametrize("grams,expected", [
@@ -511,7 +521,7 @@ def test_the_assumed_value_is_the_median_by_semantic_value(grams, expected):
     ix = qc.build_interaction(operation_id=OP, revision=REV, item=_item(),
                               options=options)
     r = answer_from_text(ix, field_id=_field_id(ix), text="I don't know",
-                         revision=REV)
+                         revision=REV, context=_ctx())
     assert str(r.patch.quantity.grams) == expected
 
 
@@ -524,7 +534,7 @@ def test_the_median_ignores_the_rendered_order():
         ix = qc.build_interaction(operation_id=OP, revision=REV, item=_item(),
                                   options=row)
         r = answer_from_text(ix, field_id=_field_id(ix), text="I don't know",
-                             revision=REV)
+                             revision=REV, context=_ctx())
         assert str(r.patch.quantity.grams) == "141.7"
 
 
@@ -742,7 +752,8 @@ def test_an_estimate_refuses_a_population_prior():
         options=_options_of(field, *grams,
                             source=CandidateSource.ONTOLOGY))
     refused = answer_from_text(ontology, field_id=_field_id(ontology),
-                               text="I don't know", revision=REV)
+                               text="I don't know", revision=REV,
+                               context=_ctx())
     assert refused.outcome is Outcome.REPAIR, refused
     assert refused.patch is None, "a refused estimate must carry no patch"
 
@@ -751,6 +762,7 @@ def test_an_estimate_refuses_a_population_prior():
         options=_options_of(field, *grams,
                             source=CandidateSource.USER_HISTORY))
     allowed = answer_from_text(history, field_id=_field_id(history),
-                               text="I don't know", revision=REV)
+                               text="I don't know", revision=REV,
+                               context=_ctx())
     assert allowed.outcome is Outcome.APPLIED, allowed
     assert str(allowed.patch.quantity.grams) == "141.7"

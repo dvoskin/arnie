@@ -163,7 +163,8 @@ def answer_from_chip(interaction, *, field_id: str, option_id: str,
 
 def answer_from_text(interaction, *, field_id: str, text: str,
                      revision: int, food_name: str = "",
-                     locale: str = "en", context=None) -> AnswerResult:
+                     locale: str = "en", context=None,
+                     candidates=None) -> AnswerResult:
     """A typed answer, through the NARROW parser only.
 
     The broad interpreter is not reachable from here, by construction. That is
@@ -199,7 +200,7 @@ def answer_from_text(interaction, *, field_id: str, text: str,
         return AnswerResult(Outcome.REFUSED, reason=str(exc),
                             modality=AnswerModality.USER_TEXT)
 
-    commanded = _command(said, field, locale, context)
+    commanded = _command(said, field, locale, context, candidates)
     if commanded is not None:
         return commanded
 
@@ -220,7 +221,7 @@ def answer_from_text(interaction, *, field_id: str, text: str,
 
 
 def _command(said: str, field, locale: str = "en",
-             context=None) -> Optional[AnswerResult]:
+             context=None, candidates=None) -> Optional[AnswerResult]:
     """Deterministic commands, through the parser that already owns them.
 
     A local word list was the first version, matched by substring, and it was
@@ -248,7 +249,7 @@ def _command(said: str, field, locale: str = "en",
     if command in (ClarificationCommand.ESTIMATE,
                    ClarificationCommand.KEEP_AS_READ,
                    ClarificationCommand.COMMIT_READY):
-        return _estimate(field, command.value, context)
+        return _estimate(field, command.value, context, candidates)
     return None
 
 
@@ -267,18 +268,7 @@ ESTIMATE_POLICY_VERSION = "estimate_evidence_v1"
 #: the contract states what the evidence is ABOUT, and a lane added tomorrow
 #: is judged on that rather than on what it is called.
 #:
-#: The mapping below exists only while the producers are migrated (commit 4).
-#: It is the LAST place a source name decides anything, it is scoped to that
-#: migration, and `_scope_of` prefers real evidence wherever an option carries
-#: it — so a producer that starts attaching evidence stops consulting this
-#: table without anyone editing it.
-_LEGACY_SOURCE_SCOPE = {
-    "user_history": "this_user",
-    "catalog": "this_product_quantity",
-}
-
-
-def _estimate_is_supported(field, context=None):
+def _estimate_is_supported(field, context=None, candidates=None):
     """May "not sure" commit, or must it stay unresolved?
 
     THE MEASURED CASE. "Not sure" committed 435 g of chicken breast — 718 cal,
@@ -314,10 +304,10 @@ def _estimate_is_supported(field, context=None):
     return [o for o in getattr(field, "options", ()) or ()
             if o.patch is not None
             and getattr(o.patch, "quantity", None) is not None
-            and _authorizes_assumption(o, context)]
+            and _authorizes_assumption(o, context, candidates)]
 
 
-def _authorizes_assumption(option, context=None) -> bool:
+def _authorizes_assumption(option, context=None, candidates=None) -> bool:
     """Read the evidence IN CONTEXT, fall back to the migration table, never
     guess.
 
@@ -332,31 +322,38 @@ def _authorizes_assumption(option, context=None) -> bool:
     ANY ONE of them is sufficient on its own — population records sitting
     alongside neither help nor dilute.
 
-    Until every producer attaches a candidate (commit 4), an option without
-    one is mapped from its source ONCE, here. Anything unmapped is a
-    population prior. This branch dies with commit 4.
+    NO OPTION WITHOUT A CANDIDATE MAY AUTHORISE ANYTHING. A migration-era
+    table once mapped a source NAME to a scope; it worked only because the
+    lanes it named happened to be entity-specific, and it would have drifted
+    the moment a lane was added whose name says nothing about what its evidence
+    is ABOUT. Every production producer emits typed candidates now, so that
+    table is deleted rather than left as a path that could quietly become
+    load-bearing again. An option reaching here without a candidate is a
+    producer nobody migrated, and guessing on its behalf is the exact defect
+    CF-1 removed.
     """
-    from core.semantics import EvidenceScope
-
+    # IN MEMORY THE OPTION CARRIES ITS CANDIDATE; ACROSS A TURN IT DOES NOT.
+    # The stored wire form holds only ids, so the answer turn resolves them
+    # from the persisted universe and passes them here.
     candidate = getattr(option, "candidate", None)
-    if candidate is not None:
-        if context is None:
-            logger.warning(
-                "event=b1_evidence_without_context option=%s — a candidate "
-                "cannot be matched to a subject, refusing to authorise",
-                getattr(option, "option_id", "?"))
-            return False
-        return bool(candidate.authorizes_assumption(context))
-
-    source = str(getattr(getattr(option, "source", None), "value", "") or "")
-    scope = _LEGACY_SOURCE_SCOPE.get(source)
-    if scope is None:
+    if candidate is None and candidates:
+        candidate = candidates.get(getattr(option, "option_id", ""))
+    if candidate is None:
+        logger.warning(
+            "event=b1_option_without_candidate option=%s — no typed candidate "
+            "to reason from, refusing to authorise an assumption",
+            getattr(option, "option_id", "?"))
         return False
-    return EvidenceScope(scope) in (EvidenceScope.THIS_USER,
-                                    EvidenceScope.THIS_PRODUCT_QUANTITY)
+    if context is None:
+        logger.warning(
+            "event=b1_evidence_without_context option=%s — a candidate "
+            "cannot be matched to a subject, refusing to authorise",
+            getattr(option, "option_id", "?"))
+        return False
+    return bool(candidate.authorizes_assumption(context))
 
 
-def _estimate(field, reason: str, context=None) -> AnswerResult:
+def _estimate(field, reason: str, context=None, candidates=None) -> AnswerResult:
     """"I don't know — you decide."
 
     A real answer, not a failure to answer, and the alternative is worse than
@@ -374,7 +371,7 @@ def _estimate(field, reason: str, context=None) -> AnswerResult:
 
     from core.semantics import Provenance, SetQuantity
 
-    priced = _estimate_is_supported(field, context)
+    priced = _estimate_is_supported(field, context, candidates)
     if not priced:
         # UNRESOLVED IS THE CORRECT STATE. No write, the operation stays open,
         # and the user is asked again — rather than being handed a number

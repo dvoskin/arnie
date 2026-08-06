@@ -187,7 +187,8 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
         answer = _read(owned, interaction, live_field, message=message,
                        field_id=field_id, option_id=option_id,
                        revision=revision,
-                       context=_evidence_context(owned, user))
+                       context=_evidence_context(owned, user),
+                       candidates=await _candidates_shown(db, owned, user))
         if answer.outcome is not Outcome.APPLIED:
             return _turn(answer, owned, live_field)
         result = await ops.settle(db, user=user, owned=owned,
@@ -200,7 +201,8 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
     answer = _read(owned, interaction, live_field, message=message,
                    field_id=field_id, option_id=option_id,
                    revision=revision,
-                   context=_evidence_context(owned, user))
+                   context=_evidence_context(owned, user),
+                   candidates=await _candidates_shown(db, owned, user))
 
     _measure(owned, answer, option_id=option_id, user=user,
              field=live_field, message=message)
@@ -249,8 +251,40 @@ def _evidence_context(owned, user):
                             if item.get("product_variant_id") else None))
 
 
+async def _candidates_shown(db, owned, user):
+    """The typed candidates behind the options this person actually read.
+
+    THE WIRE FORM CARRIES ONLY IDS, deliberately — a client receives
+    identifiers and labels, never semantics it could reinterpret — so the
+    interaction reconstructed from the stored payload has no candidates on
+    its options. They are resolved HERE, from the persisted universe, by the
+    `decision_id` the operation recorded.
+
+    Returning nothing is safe and means "no candidate-backed option": an
+    estimate then refuses rather than assuming, which is the correct reading
+    of not knowing what justified an option.
+    """
+    if not owned.decision_id:
+        return {}
+    try:
+        from core import candidate_repository as universe_repo
+
+        record = await universe_repo.load_for_replay(
+            db, decision_id=owned.decision_id,
+            user_id=getattr(user, "id", None))
+    except Exception:
+        logger.warning("event=b1_universe_unreadable operation=%s",
+                       owned.operation_id, exc_info=True)
+        return {}
+    if record is None:
+        return {}
+    return {shown.option_id: record.candidate_set.candidate(shown.candidate_id)
+            for shown in record.presented}
+
+
 def _read(owned, interaction, live_field, *, message: str, field_id: str,
-          option_id: str, revision: Optional[int], context=None):
+          option_id: str, revision: Optional[int], context=None,
+          candidates=None):
     """The answer, from whichever modality carried it.
 
     Order is specificity, not preference: an option id is unambiguous, an
@@ -271,7 +305,7 @@ def _read(owned, interaction, live_field, *, message: str, field_id: str,
         text=message,
         revision=revision if revision is not None else interaction.revision,
         food_name=str(interaction.groups[0].label or ""),
-        context=context,
+        context=context, candidates=candidates,
         # THE OPERATION'S LOCALE, never re-detected from this message. The
         # question was asked in one language; a two-word reply is exactly
         # where detection is least reliable, and a destructive command sits
