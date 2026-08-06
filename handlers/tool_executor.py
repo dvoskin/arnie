@@ -2417,6 +2417,12 @@ class FoodCandidates:
     #: The ladder as it stood before the web rung, keyed by rung name. The
     #: resolution receipt reads it to name what was fetched and then refused.
     candidate_map: dict = field(default_factory=dict)
+    #: The INTERPRETER's own estimate, normalised to per-100g against the
+    #: quantity it described (B-1.75). Seated below every real lane and only
+    #: when none of them answered — it is a density, not a lookup, and its
+    #: provenance stays `estimated`. Without it a clarified estimate-path food
+    #: has no basis at all to price the answered quantity against.
+    estimate: Optional[dict] = None
     #: A ground truth that outranks every lane, so no lane ran: the four macros
     #: to use and how we came by them. `None` means "consult the candidates".
     override: Optional[tuple] = None
@@ -2896,6 +2902,13 @@ async def _analyze_food(db, user, food_name, inp):
     llm = (inp.get("calories"), inp.get("protein"), inp.get("carbs"), inp.get("fats"))
     cands = await fetch_candidates(db, user, food_name, inp)
 
+    # B-1.75: a caller that resolved a quantity AFTER the estimate was made can
+    # declare what that estimate described. Normalised here rather than by the
+    # caller, so the conversion sits with every other candidate's.
+    if cands.estimate is None and inp.get("estimate_basis"):
+        from skills.nutrition.normalize import estimate_density
+        cands.estimate = estimate_density(inp["estimate_basis"], food_name)
+
     # A ground truth answered it — the user read us the label, or they logged
     # this exact food themselves — so no lane ran. Enrichment is skipped
     # entirely rather than run-and-discarded, so a cousin match can never leak
@@ -2921,6 +2934,7 @@ async def _analyze_food(db, user, food_name, inp):
     result = analyze(food_name, inp.get("quantity"), *llm,
                      usda_candidate=usda, memory_match=memory,
                      web_candidate=web, off_candidate=off,
+                     estimate_candidate=cands.estimate,
                      is_packaged=bool(cands.is_packaged))
 
     # ── WHO WON, AND WHAT WAS REFUSED ────────────────────────────────────────

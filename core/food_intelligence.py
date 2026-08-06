@@ -748,6 +748,7 @@ def _per_serving_for(quantity, src, food_name: str):
 def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
             usda_candidate=None, memory_match=None,
             web_candidate=None, off_candidate=None,
+            estimate_candidate=None,
             is_packaged=False, brand=None, restaurant=None) -> FoodAnalysis:
     """
     Build a FoodAnalysis. Which source answers depends on WHAT THE FOOD IS —
@@ -825,6 +826,19 @@ def analyze(name, quantity, llm_cal, llm_protein, llm_carbs, llm_fat,
     if src is None:
         src = authority.off_ladder(None, usda_candidate, off_candidate,
                                    web_candidate)
+    # LAST, AND ONLY WHEN NOTHING ELSE ANSWERED (B-1.75). The interpreter's own
+    # estimate, normalised to per-100g against the quantity it described. It
+    # exists so that a food nobody has a row for can still be REPRICED when the
+    # user states the amount: without a density there is nothing to multiply,
+    # and a clarified estimate-path meal committed either the pre-answer
+    # calories or none at all.
+    #
+    # `macros_from_source` stays FALSE deliberately. This is a density, not a
+    # lookup — the provenance must keep saying `estimated`, the card must not
+    # claim a source, and `estimated_flag` must stay True. It earns the right
+    # to scale, not the right to be believed.
+    if src is None and estimate_candidate:
+        src = estimate_candidate
     micro_rung = rung if macros_from_source else (
         "usda_generic" if src is usda_candidate else
         "branded_exact" if src is off_candidate else

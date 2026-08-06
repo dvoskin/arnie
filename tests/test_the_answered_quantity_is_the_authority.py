@@ -66,6 +66,19 @@ def _plan(food, basis):
     }
 
 
+async def ask_for_authority(edges, user):
+    """One eligible ask, returning the operations it created."""
+    from tests.test_a_conversation_across_turns import operations
+    edges.plans.append(_plan("Chicken breast", {"amount": 6, "unit": "oz"}))
+    await say(user, "I had some chicken breast")
+    return await operations(user)
+
+
+async def day_total(user_id):
+    """Calories on the board, as the day reads them."""
+    return sum(float(r.calories or 0) for r in await rows(user_id))
+
+
 async def _answer(edges, user, food, basis, answer):
     """One full ask -> answer -> commit, returning the row it committed."""
     before = len(await rows(user))
@@ -79,7 +92,6 @@ async def _answer(edges, user, food, basis, answer):
     return board[-1]
 
 
-@pytest.mark.xfail(strict=True, reason="B-1.75 open: the ask-time macros pass through unchanged, so the answered quantity does not reach pricing. strict=True — this marker MUST be deleted when D1 lands, or the suite fails.")
 @pytest.mark.parametrize("basis", BASES)
 @pytest.mark.asyncio
 async def test_committed_calories_follow_the_answered_quantity(
@@ -130,7 +142,6 @@ async def test_the_stored_quantity_is_the_one_the_user_answered(
         f"ask-time basis {basis} survived into the committed quantity")
 
 
-@pytest.mark.xfail(strict=True, reason="B-1.75 open: the ask-time macros pass through unchanged, so the answered quantity does not reach pricing. strict=True — this marker MUST be deleted when D1 lands, or the suite fails.")
 @pytest.mark.asyncio
 async def test_a_free_text_answer_is_as_authoritative_as_a_measured_one(
         edges, b1_live):
@@ -148,3 +159,63 @@ async def test_a_free_text_answer_is_as_authoritative_as_a_measured_one(
     assert large.calories > small.calories, (
         f"a hedged free-text quantity did not drive the price: "
         f"{small.calories} vs {large.calories}")
+
+
+@pytest.mark.asyncio
+async def test_the_row_the_sentence_and_the_day_agree(edges, b1_live):
+    """One number, said three times, from one source.
+
+    The 08-03 transcript that started this whole lane contradicted itself in
+    public — a card claiming "Logged" above prose claiming "not logged yet",
+    the same cup of rice at 1 cal and then at 528. Those were never bugs in a
+    function; they were bugs in the JOIN, and they are only visible when the
+    committed row, the sentence and the day total are read from ONE turn.
+    """
+    ops = await ask_for_authority(edges, b1_live)
+    assert ops
+    result = await say(b1_live, "100 g")
+
+    board = await rows(b1_live)
+    assert len(board) == 1
+    row = board[0]
+
+    text = " ".join(getattr(result.response, "bubbles", None) or
+                    [str(getattr(result, "response", ""))])
+    assert str(int(row.calories)) in text.replace(",", ""), (
+        f"the reply does not say the number that was committed: "
+        f"row={row.calories} text={text!r}")
+
+    day = await day_total(b1_live)
+    assert abs(day - row.calories) < 1.0, (
+        f"the day total ({day}) disagrees with the only row on it "
+        f"({row.calories})")
+
+
+@pytest.mark.asyncio
+async def test_a_replay_returns_the_same_row_not_a_new_price(edges, b1_live):
+    """Answering twice must return the FIRST answer's meal, to the calorie.
+
+    Repricing made this newly falsifiable: the second pass runs through the
+    same pricing path, so anything non-deterministic in it — a candidate that
+    ranks differently, a density recomputed from a different basis — would
+    surface as the same meal quietly changing value under the user. The replay
+    guard exists to make the second pass return the STORED result rather than
+    recompute one.
+    """
+    ops = await ask_for_authority(edges, b1_live)
+    import json
+    payload = json.loads(ops[-1].canonical_payload)
+    label = [o["label"] for g in payload["interaction"]["groups"]
+             for f in g["fields"] for o in f.get("options", [])][0]
+
+    await say(b1_live, label)
+    first = (await rows(b1_live))[0]
+    before = (first.id, first.calories, first.protein, first.quantity)
+
+    await say(b1_live, label)          # the same answer, again
+    board = await rows(b1_live)
+    assert len(board) == 1, (
+        f"a replay wrote a second meal: {[(r.id, r.quantity) for r in board]}")
+    after = (board[0].id, board[0].calories, board[0].protein, board[0].quantity)
+    assert before == after, (
+        f"the replay changed the meal under the user: {before} -> {after}")

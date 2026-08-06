@@ -648,6 +648,23 @@ async def settle(db, *, user, owned: OwnedOperation, patch,
     inp = {k: v for k, v in item.items() if k not in _STALE_TO_THE_ANSWER}
     inp["quantity"] = quantity_text
 
+    # NOT DISCARDED — DECLARED. Removing the stale macros is only half of it:
+    # for a food no lane has a row for, they were the ONLY nutrition in the
+    # system, and dropping them silently committed a zero row. The estimate is
+    # still usable; it just has to say what it was an estimate OF. Paired with
+    # its own quantity it is a density, which the pricing path can apply to the
+    # answered amount. Unpaired it is the defect this milestone exists to fix.
+    #
+    # No arithmetic here on purpose: `estimate_density` converts, in the same
+    # module that normalises every other candidate.
+    basis_quantity = _ask_time_quantity(item)
+    if basis_quantity and item.get("calories"):
+        inp["estimate_basis"] = {
+            "quantity": basis_quantity,
+            "calories": item.get("calories"), "protein": item.get("protein"),
+            "carbs": item.get("carbs"), "fats": item.get("fats"),
+        }
+
     # THE SAME PRICING PRODUCTION USES. Writes nothing; decides what it costs.
     analysis = await _analyze_food(db, user, food_name, inp)
 
@@ -1003,6 +1020,23 @@ def _quantity_text(patch) -> str:
     amount = getattr(patch.quantity, "amount", None)
     unit = getattr(patch.quantity, "unit_id", "") or ""
     return f"{float(amount):g}{unit}".strip() if amount else ""
+
+
+def _ask_time_quantity(item: dict) -> str:
+    """The quantity the interpreter's macros were an estimate OF.
+
+    Rebuilt from the item's own `amount`/`unit` rather than stored separately,
+    so it cannot drift from the numbers it describes.
+    """
+    amount = item.get("amount")
+    if amount in (None, ""):
+        return ""
+    unit = str(item.get("unit") or "").strip()
+    try:
+        amount = f"{float(amount):g}"
+    except (TypeError, ValueError):
+        amount = str(amount)
+    return f"{amount} {unit}".strip() if unit else amount
 
 
 def _is_estimated(analysis) -> bool:

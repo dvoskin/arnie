@@ -1418,3 +1418,48 @@ def _fmt(n) -> str:
     except (TypeError, ValueError):
         return str(n)
     return str(int(f)) if f == int(f) else f"{f:g}"
+
+
+def estimate_density(basis: dict, food_name: str) -> dict | None:
+    """Turn the interpreter's own estimate into a per-100g density (B-1.75).
+
+    "6 oz was 280 cal" is a density statement wearing a portion's clothes. It
+    became a defect only because it was passed forward WITHOUT the quantity it
+    described, so pricing read it as the macros for whatever quantity it was
+    handed — and after a clarification that quantity is a different one.
+
+    Stating the basis is what makes the estimate usable rather than misleading.
+    The conversion happens here, where USDA and Open Food Facts are already
+    normalised to per-100g, so no caller does arithmetic of its own.
+
+    Returns None when the basis mass is not knowable — `mass_grams` declines
+    cups and pieces, `portion_mass_for_pricing` answers only where the mass is
+    known to within 30%. Silence is correct there: a density backed out of a
+    guessed mass is a guess squared, and the caller has to be able to tell.
+    """
+    from core.portions import mass_grams
+
+    qty = str((basis or {}).get("quantity") or "").strip()
+    cal = (basis or {}).get("calories")
+    if not qty or not cal:
+        return None
+    grams = mass_grams(qty) or portion_mass_for_pricing(qty, food_name)
+    if not grams or grams <= 0:
+        return None
+
+    scale = 100.0 / float(grams)
+
+    def _per100(key):
+        v = (basis or {}).get(key)
+        return round(float(v) * scale, 3) if v is not None else None
+
+    return {
+        "_match": "estimate",
+        "_estimate_basis_grams": float(grams),
+        "per100g": {
+            "calories": round(float(cal) * scale, 3),
+            "protein": _per100("protein"),
+            "carbs": _per100("carbs"),
+            "fat": _per100("fats"),
+        },
+    }
