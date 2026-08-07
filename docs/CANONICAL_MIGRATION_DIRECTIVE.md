@@ -1380,6 +1380,50 @@ term is the base identity" would reject five of six failure classes for
 `chicken` in one line — and it is a naming trick, provider-specific, and the
 first description that breaks the convention breaks the system silently.
 
+### Qualification in the pricing path — landed, with four guardrails
+
+`qualify_usda_rows` runs between `search_food` and `best_candidate`:
+eligibility before ranking, truth still owned by the pick.
+Measured red half: the unqualified winner for "papaya" is the BABYFOOD
+COMPOSITE (token coverage passes, composite penalty insufficient). Green half:
+qualified, only `Papayas, raw` is seatable.
+
+**THE FAILURE INVARIANT (Danny): `SEMANTIC_RESOLVER_DOWN !=
+RAW_EVIDENCE_AUTHORIZED`.** The user's action fails OPEN — the ladder's
+qualification-free rungs (memory, structured product matches, the estimate)
+still serve. The ambiguous evidence fails CLOSED — a resolver outage returns
+NO USDA rows, disposition `resolver_down_no_candidates`, and the babyfood row
+cannot be resurrected by a timeout. The first implementation failed open to
+the raw rows and was corrected: fail open for the action, fail closed for the
+evidence — different things.
+
+**Guardrails recorded (2026-08-07), all bounded, none a new phase:**
+
+1. **Meal-level batching** waits for B-2 and lands in `_prewarm_enrichment`,
+   where the multi-food fan-out already lives. Per-food calls are bounded
+   (`MAX_RECORDS`) and cached (single-flight + prewarm).
+2. **Any DURABLE assessment cache keys on `resolver_version`** and no cached
+   clarification-necessity survives a policy version change. Today's cache is
+   per-turn single-flight, so nothing outlives a process.
+3. **False-compatible is a first-class production metric**, separate from
+   qualification success rate. Ground truth is unavailable in production; the
+   proxy is the correction join — admitted evidence ids on the qualification
+   event, corrections keyed on `entry_id`.
+4. **Evidence establishes the SPACE; only the user (or an explicit assumption
+   policy) resolves the VALUE.** `extracted preparation=roasted` on a
+   compatible record may open the field and populate options; it may never
+   construct a `SetPreparation`. Gated in commit 2's suite.
+
+**D-class finding, recorded not fixed here:** `best_candidate` cannot bridge
+`papaya` -> `Papayas, raw` (singular/plural token coverage), so the qualified
+set yields no USDA candidate and pricing falls to the estimate — strictly
+better than the composite, worse than the raw row. A ranking-quality item for
+the nutrition thread.
+
+**Instrument lesson repeated:** the first wiring ratchet was substring-based
+and satisfiable by dead code (`if False:` around the call still matched).
+Replaced with the behavioral gate. Kill switch: `EVIDENCE_QUALIFICATION_HALT`.
+
 ### The deployed predicate is SUPERSEDED DESIGN — do not improve it
 
 `skills/nutrition/preparation_materiality.py` as deployed in `c5d3614` embodies

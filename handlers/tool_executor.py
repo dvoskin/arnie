@@ -2014,6 +2014,15 @@ def completed_enrichment(food_name: str) -> tuple:
             off if isinstance(off, dict) else None)
 
 
+def _qualification_halted() -> bool:
+    """Kill switch for semantic evidence qualification. OFF means the halt is
+    not tripped and qualification RUNS — the double negative keeps the safe
+    default (qualification on) when the env var is simply absent."""
+    import os
+    return (os.getenv("EVIDENCE_QUALIFICATION_HALT", "") or "").strip().lower() \
+        in ("1", "true", "yes", "on")
+
+
 async def _fetch_usda_off_uncached(food_name: str, is_packaged: bool):
     """The fetch itself. Separated so the single-flight wrapper above stays a
     wrapper — one place decides what a lookup IS, one decides who waits."""
@@ -2026,6 +2035,25 @@ async def _fetch_usda_off_uncached(food_name: str, is_packaged: bool):
     async def _u():
         try:
             cands = await search_food(food_name, page_size=8)
+            # QUALIFICATION BEFORE RANKING (B-1.5E): semantic eligibility
+            # filters the rows; `best_candidate` still owns the pick. This is
+            # the seam that removed the heavy-syrup papaya row (entry 2896's
+            # evidence) before ranking could seat it. Fails OPEN to the
+            # unfiltered rows on resolver unavailability — pricing degrades to
+            # yesterday's behavior, never to down — and a kill switch exists
+            # because this adds a bounded model call to the first lookup of
+            # each food (single-flight + prewarm cache the result).
+            if cands and not _qualification_halted():
+                from skills.nutrition.evidence_qualification import (
+                    qualify_usda_rows)
+                q = await qualify_usda_rows(food_name, cands)
+                # ALWAYS the qualified set. kept == 0 is a real verdict
+                # (nothing retrieved IS the food) AND the outage behavior
+                # (SEMANTIC_RESOLVER_DOWN != RAW_EVIDENCE_AUTHORIZED): either
+                # way USDA contributes nothing and the ladder falls to rungs
+                # that never needed qualification. Only the disposition
+                # differs, for the trace.
+                cands = list(q.rows)
             b, conf = best_candidate(food_name, cands)
             if b:
                 b["_match"] = conf

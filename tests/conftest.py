@@ -7,6 +7,7 @@ uses. Query functions all take an explicit `db` session, so we never touch the
 app's global engine.
 
 Plain helpers (_prefs, _log) are module-level functions — import them directly in
+
 any test file that needs them rather than duplicating identical 2-liners everywhere.
 """
 import os
@@ -63,6 +64,10 @@ os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 # explicit shell override (`SCRIBE_ENABLED=true pytest ...`) still works — that
 # is a deliberate act, unlike a file the runner never knew was there.
 os.environ.setdefault("LINKING_ENABLED", "true")
+# Semantic evidence qualification is HALTED for the suite: no resolver exists
+# here, and fail-closed semantics would discard every fixture USDA row (B-1.75's
+# controlled densities included). Qualification suites monkeypatch.delenv this.
+os.environ.setdefault("EVIDENCE_QUALIFICATION_HALT", "1")
 os.environ.setdefault("PROACTIVE_MESSAGING_ENABLED", "false")
 # Scribe off in tests — it launches a real Haiku extraction; run_turn tests stay
 # hermetic. Prod defaults it ON. Tests that exercise the scribe set it explicitly.
