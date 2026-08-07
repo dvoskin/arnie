@@ -223,3 +223,72 @@ def test_expiry_is_a_lifecycle_disposition_not_an_answer_outcome():
         "holding", "expired", "settled"}
     assert "expired" not in {o.value for o in Outcome}
     assert not hasattr(Outcome, "EXPIRED")
+
+
+# ── the card a client must be able to DECODE ───────────────────────────────
+
+#: Every field `MacroCardPayload` (arnie-ios) declares NON-OPTIONAL. Swift's
+#: synthesized `Decodable` fails the whole struct when one is missing, and the
+#: client's `try? decode` then yields `.unknown` — so a card with a missing
+#: key does not render degraded, it VANISHES.
+_MACRO_CARD_REQUIRED = {"name", "quantity", "calories", "protein_g",
+                        "carbs_g", "fats_g", "source"}
+
+
+def test_the_canonical_card_carries_every_field_the_client_requires():
+    """THE MEASURED DEFECT, 2026-08-07. A tap logged the meal and NO CARD
+    APPEARED.
+
+    `card_for` sent name / entry_id / calories / protein_g / source /
+    estimated. `MacroCardPayload` also requires `quantity`, `carbs_g` and
+    `fats_g`, so the decode failed and the card became `.unknown` — silently,
+    because an unknown card type is a forward-compatibility feature, not an
+    error.
+
+    The backend gate that existed asserted `body["cards"]` was NON-EMPTY. It
+    passed. The server was sending a card the client could not read, which no
+    server-side assertion about presence can catch.
+    """
+    from core.b1_answer_turn import CanonicalResponseFacts, card_for
+
+    card = card_for(CanonicalResponseFacts(
+        outcome="applied", internal_failure=False, operation_id="op",
+        field_id="f", name="Chicken breast", entry_id=2890, calories=348.0,
+        protein=35.0, day_calories=1200.0, estimated=False,
+        system_supplied_figure=False, quantity="174g", carbs=2.0, fats=8.0))
+
+    assert card is not None and card["type"] == "macro_card"
+    missing = _MACRO_CARD_REQUIRED - set(card["payload"])
+    assert not missing, (
+        f"the canonical card omits {sorted(missing)} — MacroCardPayload makes "
+        f"them non-optional, so the client drops the whole card")
+
+
+def test_the_canonical_card_matches_the_legacy_one_field_for_field():
+    """A CARD IS A CARD WHICHEVER LANE WROTE THE ROW.
+
+    `log_food` has always sent quantity, carbs_g and fats_g. The canonical
+    lane replacing it must send at least the same, or promoting B-1 would be a
+    visible regression for every user whose meal went through it.
+    """
+    import inspect
+
+    from core import conversation
+
+    legacy = inspect.getsource(conversation)
+    start = legacy.index('if name in ("log_food", "restore_food_entry"):')
+    block = legacy[start:start + 800]
+    for key in _MACRO_CARD_REQUIRED:
+        assert f'"{key}"' in block, (
+            f"{key} is not in the legacy card either — check this list "
+            f"against arnie-ios MacroCardPayload before trusting it")
+
+
+def test_the_facts_carry_the_macros_the_card_needs():
+    """The card cannot invent them, so the FACTS must hold them — and the
+    facts come off the committed row, not off the ask."""
+    from core.b1_answer_turn import CanonicalResponseFacts
+
+    fields = CanonicalResponseFacts.__dataclass_fields__
+    for needed in ("quantity", "carbs", "fats", "calories", "protein"):
+        assert needed in fields, f"facts cannot supply {needed}"

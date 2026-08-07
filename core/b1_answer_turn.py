@@ -639,11 +639,20 @@ class CanonicalResponseFacts:
     calories: Optional[float]
     protein: Optional[float]
     day_calories: Optional[float]
+
     #: WE chose the portion and the user did not — drives "(my estimate)".
     estimated: bool
     #: The FIGURE is ours even if they picked it — drives the row's flag.
     system_supplied_figure: bool
     assumptions: tuple = ()
+    #: THE MACROS THE CARD REQUIRES. Absent from the first canonical card, and
+    #: the client could not decode it: `MacroCardPayload` makes `quantity`,
+    #: `carbsG` and `fatsG` non-optional, so a payload missing them fails
+    #: `try? decode` and lands in `.unknown` — the meal logged, and no card
+    #: appeared. The legacy `log_food` card has always sent all three.
+    quantity: str = ""
+    carbs: Optional[float] = None
+    fats: Optional[float] = None
     #: WHY, typed, for a client to branch on. Exactly one is non-empty, and
     #: only on the outcome it belongs to — a field stamped on every result
     #: would mean "something happened" rather than "this is why".
@@ -684,6 +693,9 @@ def facts_for(turn: AnswerTurn) -> CanonicalResponseFacts:
         protein=totals.get("protein"),
         day_calories=(getattr(result, "day_totals", None) or {}).get(
             "calories"),
+        quantity=str(first.get("quantity") or ""),
+        carbs=totals.get("carbs"),
+        fats=totals.get("fats"),
         repair_reason=str(getattr(turn, "repair_reason", "") or ""),
         refusal_reason=str(getattr(turn, "refusal_reason", "") or ""),
         # THREE PROVENANCES, TWO QUESTIONS, AND THEY ARE NOT THE SAME QUESTION.
@@ -748,6 +760,8 @@ async def facts_from_committed_row(db, *, entry_id, operation_id: str = "",
         name=str(entry.parsed_food_name or ""), entry_id=entry.id,
         calories=float(entry.calories or 0),
         protein=float(entry.protein or 0), day_calories=day_calories,
+        quantity=str(entry.quantity or ""),
+        carbs=float(entry.carbs or 0), fats=float(entry.fats or 0),
         # THE ROW REMEMBERS WHETHER WE GUESSED. Re-deriving it from the answer
         # would need the answer, which is the thing we no longer have.
         estimated=bool(getattr(entry, "estimated_flag", False)),
@@ -776,9 +790,17 @@ def card_for(facts: CanonicalResponseFacts) -> Optional[dict]:
         return None
     payload = {
         "name": facts.name,
+        # EVERY FIELD THE CLIENT MAKES NON-OPTIONAL. `quantity`, `carbs_g` and
+        # `fats_g` were missing, so `MacroCardPayload` failed to decode and the
+        # card silently became `.unknown` — the meal was logged and nothing
+        # appeared. Matches what `log_food` has always sent, because a card is
+        # a card whichever lane wrote the row.
+        "quantity": facts.quantity,
         "entry_id": facts.entry_id,
         "calories": int(round(facts.calories or 0)),
         "protein_g": int(round(facts.protein or 0)),
+        "carbs_g": int(round(facts.carbs or 0)),
+        "fats_g": int(round(facts.fats or 0)),
         "source": "manual",
         # THE ASSUMPTION, ON THE ROW. "Logged fast" and "logged fast and
         # quietly guessed" are different products, and this is the difference.
