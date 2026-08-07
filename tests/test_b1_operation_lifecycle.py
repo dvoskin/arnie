@@ -176,7 +176,9 @@ async def test_a_chip_answer_commits_once_through_the_canonical_spine(
                                   option_id="opt_hist_last",
                                   revision=owned.revision)
         assert answer.outcome is Outcome.APPLIED
-        result = await b1.settle(s, user=u, owned=owned, patch=answer.patch,
+        result = await b1.settle(s, user=u, owned=owned,
+                                 resolved=b1.resolved_fields(
+                                     {answer.patch.field_id: answer.patch}),
                                  source_turn_id="t_2", cohort="allowlist")
         await s.commit()
 
@@ -218,7 +220,9 @@ async def test_a_typed_answer_records_a_different_provenance(sessions, user,
                                   food_name="chicken breast")
         assert answer.outcome is Outcome.APPLIED
         assert answer.patch.provenance is Provenance.USER_STATED
-        await b1.settle(s, user=u, owned=owned, patch=answer.patch,
+        await b1.settle(s, user=u, owned=owned,
+                                 resolved=b1.resolved_fields(
+                                     {answer.patch.field_id: answer.patch}),
                         source_turn_id="t_typed_2")
         await s.commit()
 
@@ -241,10 +245,14 @@ async def test_two_deliveries_of_one_answer_write_one_meal(sessions, user,
         answer = answer_from_chip(owned.interaction, field_id=field_id,
                                   option_id="opt_ont_low",
                                   revision=owned.revision)
-        first = await b1.settle(s, user=u, owned=owned, patch=answer.patch,
+        first = await b1.settle(s, user=u, owned=owned,
+                                 resolved=b1.resolved_fields(
+                                     {answer.patch.field_id: answer.patch}),
                                 source_turn_id="t_2")
         # The retry carries the state it read, which is the pre-answer one.
-        second = await b1.settle(s, user=u, owned=owned, patch=answer.patch,
+        second = await b1.settle(s, user=u, owned=owned,
+                                 resolved=b1.resolved_fields(
+                                     {answer.patch.field_id: answer.patch}),
                                  source_turn_id="t_2")
         await s.commit()
 
@@ -277,7 +285,9 @@ async def test_a_tap_after_the_meal_landed_replays_instead_of_logging_again(
         answer = answer_from_chip(owned.interaction, field_id=field_id,
                                   option_id="opt_ont_low",
                                   revision=owned.revision)
-        first = await b1.settle(s, user=u, owned=owned, patch=answer.patch,
+        first = await b1.settle(s, user=u, owned=owned,
+                                 resolved=b1.resolved_fields(
+                                     {answer.patch.field_id: answer.patch}),
                                 source_turn_id="t_2")
         await s.commit()
 
@@ -289,8 +299,10 @@ async def test_a_tap_after_the_meal_landed_replays_instead_of_logging_again(
             "ownership must outlive the commit, or the tap goes to the " \
             "interpreter and becomes a second meal"
         assert again.status == b1.COMMITTED
-        replayed = await b1.settle(s, user=u, owned=again,
-                                   patch=answer.patch, source_turn_id="t_3")
+        replayed = await b1.settle(
+            s, user=u, owned=again,
+            resolved=b1.resolved_fields({answer.patch.field_id: answer.patch}),
+            source_turn_id="t_3")
         await s.commit()
 
     assert replayed.committed_items == first.committed_items
@@ -352,7 +364,9 @@ async def test_a_tripped_kill_switch_cannot_strand_a_meal_in_flight(
         answer = answer_from_chip(owned.interaction, field_id=field_id,
                                   option_id="opt_hist_last",
                                   revision=owned.revision)
-        await b1.settle(s, user=u, owned=owned, patch=answer.patch,
+        await b1.settle(s, user=u, owned=owned,
+                                 resolved=b1.resolved_fields(
+                                     {answer.patch.field_id: answer.patch}),
                         source_turn_id="t_2")
         await s.commit()
 

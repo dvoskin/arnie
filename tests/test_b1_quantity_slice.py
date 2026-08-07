@@ -128,8 +128,13 @@ def test_the_canonical_shape_is_eligible():
     ({"ambiguities": ()}, "I had some chicken", qc.Ineligible.NO_QUANTITY_QUESTION),
     ({"ambiguities": (_ambiguity("variant", AmbiguityType.PRODUCT_VARIANT),)},
      "I had a Core Power", qc.Ineligible.IDENTITY_AMBIGUOUS),
+    # PREPARATION ALONE, with no quantity question, is still not this slice —
+    # but the reason changed at B-1.5 and the change is the point. It used to
+    # be PREPARATION_DEPENDENCY ("we cannot handle preparation"); we can now,
+    # as a second field, so what disqualifies this shape is what always
+    # actually disqualified it: there is no quantity to ask about.
     ({"ambiguities": (_ambiguity("preparation", AmbiguityType.PREPARATION),)},
-     "I had some chicken", qc.Ineligible.PREPARATION_DEPENDENCY),
+     "I had some chicken", qc.Ineligible.NO_QUANTITY_QUESTION),
     # A CONTAINER FRACTION, expressed where the distinction actually lives:
     # the quantity INTENT. Both cases carry field_name="consumed_fraction",
     # so the ambiguity alone cannot tell "half a bottle" (B-2.5) from "some

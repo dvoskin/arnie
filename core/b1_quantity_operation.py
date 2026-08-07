@@ -679,9 +679,15 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
                             cohort=cohort)
         return None
 
+    # ASKED BECAUSE THE INTERPRETER RAISED IT, never because of a rule about
+    # the food's name (B-1.5). "Chicken is grilled or fried" written here
+    # would be domain logic in the coordinator, and the first food it did not
+    # know would be asked the wrong question — or worse, not asked at all
+    # while its calories moved by a third.
     interaction = qc.build_interaction(
         operation_id=operation_id, revision=0, item=item, options=options,
-        introduction=_introduction(item))
+        introduction=_introduction(item),
+        ask_preparation=qc.preparation_is_open(item))
 
     await open_operation(db, user=user, interpreter_item=interpreter_item,
                          interaction=interaction, turn_id=turn_id,
@@ -925,23 +931,56 @@ def ready_to_settle(interaction, answered: dict) -> bool:
     return not open_fields(interaction, answered)
 
 
-def pricing_patch(held: dict, *, fallback=None):
-    """The patch the pricing path reads — the QUANTITY one (B-1.75).
+@dataclass(frozen=True)
+class ResolvedFields:
+    """EVERY FIELD THIS OPERATION ASKED ABOUT, ANSWERED — handed to settlement
+    whole.
 
-    A multi-field answer produces several patches and only one of them states
-    an amount. Selected by the stored discriminator rather than by position or
-    by type-sniffing, for the reason `patch_type` exists at all: which patch
-    prices the food must not depend on which order the user tapped in.
+    THIS REPLACED `pricing_patch(held)`, which extracted the one patch pricing
+    happened to need. That was right while quantity was the only actionable
+    field and wrong the moment there were two: the next field would have added
+    `preparation_patch()` beside it, and B-2 would have become a pile of
+    field-specific extraction helpers in the coordinator — the coordinator
+    knowing, one function at a time, what every domain field means.
 
-    NOT YET A MULTI-PATCH COMMIT. Preparation is recorded and does not move a
-    number, because nothing produces a preparation field yet. When one does,
-    pricing consumes it HERE — and that must land in the same commit as the
-    producer, or a user will answer "Fried" and watch it change nothing.
+    THE COORDINATOR HANDS OVER STATE; THE DOMAIN READS WHAT IT NEEDS. Adding a
+    field is then a change in the domain layer and in the producer, and no
+    change at all here. The accessors below live on this object rather than in
+    the answer turn for the same reason.
     """
-    for patch in (held or {}).values():
-        if getattr(patch, "patch_type", "") == "set_quantity":
-            return patch
-    return fallback
+    by_field: dict
+
+    def of_type(self, patch_type: str) -> tuple:
+        """Every answered patch of a kind, by the STORED DISCRIMINATOR.
+
+        Not by position and not by sniffing which attributes are present —
+        which patch means what must not depend on the order the user tapped
+        in, and `patch_type` exists precisely so it does not.
+        """
+        return tuple(p for p in (self.by_field or {}).values()
+                     if getattr(p, "patch_type", "") == patch_type)
+
+    def _one(self, patch_type: str):
+        found = self.of_type(patch_type)
+        return found[0] if found else None
+
+    @property
+    def quantity(self):
+        """The patch that decides the AMOUNT. Still special — it is the only
+        field the pricing path cannot proceed without."""
+        return self._one("set_quantity")
+
+    @property
+    def preparation(self):
+        return self._one("set_preparation")
+
+    @property
+    def preparation_id(self) -> str:
+        return str(getattr(self.preparation, "preparation_id", "") or "")
+
+
+def resolved_fields(held: dict) -> ResolvedFields:
+    return ResolvedFields(by_field=dict(held or {}))
 
 
 async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
@@ -974,7 +1013,7 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
     return held
 
 
-async def settle(db, *, user, owned: OwnedOperation, patch,
+async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
                  source_turn_id: str, cohort: str = "") -> Any:
     """Apply the answer, price the food, and commit it ONCE, canonically.
 
@@ -1010,9 +1049,37 @@ async def settle(db, *, user, owned: OwnedOperation, patch,
             f"{owned.operation_id} is committed but has no stored result — "
             f"replaying blind would write the meal twice")
 
+    from skills.nutrition import preparation_ontology as prep_onto
+
+    # THE FIELD THAT DECIDES THE AMOUNT, read off the resolved state rather
+    # than handed in already extracted. `settle` is the domain layer; knowing
+    # which of its fields prices the food is its job, not the coordinator's.
+    patch = resolved.quantity
+    if patch is None:
+        raise ValueError(
+            f"{owned.operation_id} reached settlement with no quantity answer "
+            f"— the readiness gate should have held it open")
     quantity_text = _quantity_text(patch)
     item = dict(owned.item or {})
-    food_name = str(item.get("food") or item.get("name") or "").strip()
+
+    # PREPARATION PRICES THE FOOD BY NAMING IT (B-1.5), and by naming it only.
+    #
+    # A preparation factor applied to calories here would be a second opinion
+    # about nutrition inside an operation that has no business holding one —
+    # the exact defect B-1.75 deleted on the quantity side, rebuilt on the
+    # preparation side. Composing the name instead lets the enrichment lane
+    # find preparation-specific evidence (USDA holds grilled and fried as
+    # different foods) and lets `validators` DOWNGRADE preparation-mismatched
+    # candidates. Both mechanisms already exist and are already tested; this
+    # commit gives them the fact they were missing.
+    #
+    # It follows that the answer moves the number only where real evidence
+    # distinguishes the preparations — which is the correct behaviour and is
+    # why the gate asserts a DIFFERENCE for a food that has one, rather than a
+    # fixed multiplier for every food.
+    food_name = prep_onto.name_with(
+        str(item.get("food") or item.get("name") or "").strip(),
+        resolved.preparation_id)
 
     # THE ANSWERED QUANTITY IS THE ONLY QUANTITY AUTHORITY (B-1.75).
     #

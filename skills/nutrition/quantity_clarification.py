@@ -69,7 +69,12 @@ class Ineligible(str, Enum):
     QUANTITY_ALREADY_STATED = "quantity_already_stated"
     NO_QUANTITY_QUESTION = "no_quantity_question"
     OTHER_MATERIAL_AMBIGUITY = "other_material_ambiguity"
-    PREPARATION_DEPENDENCY = "preparation_dependency"
+    # `PREPARATION_DEPENDENCY` was removed at B-1.5, not merely left unused.
+    # The operation now carries preparation as a second field, so nothing can
+    # return it — and a reason with no producer is a value analysis looks for
+    # and never finds, which is the defect `UNUSABLE_AMOUNT` was deleted for.
+    # A preparation question with no quantity question is `NO_QUANTITY_QUESTION`,
+    # which is what it always was.
     NOT_MASS = "not_mass"
     CORRECTION_TURN = "correction_turn"
     CLIENT_INCAPABLE = "client_incapable"
@@ -173,8 +178,16 @@ def is_eligible(decision, *, message: str = "",
         kind = getattr(getattr(amb, "ambiguity_type", None), "value", "")
         if getattr(getattr(amb, "ambiguity_type", None), "is_identity", False):
             return Eligibility(Ineligible.IDENTITY_AMBIGUOUS)
+        # PREPARATION IS CANONICAL NOW, NOT EXCLUSIONARY (B-1.5).
+        #
+        # This used to decline the whole turn to legacy, and that was correct
+        # while the operation could hold one field: a canonical question about
+        # the amount that silently dropped the preparation question would have
+        # priced a food nobody had described. The operation can now carry both
+        # as independent fields and settles only when both are answered, so
+        # the reason to decline is gone.
         if kind == "preparation":
-            return Eligibility(Ineligible.PREPARATION_DEPENDENCY)
+            continue
         if not _is_quantity_question(amb):
             return Eligibility(Ineligible.OTHER_MATERIAL_AMBIGUITY)
 
@@ -960,9 +973,37 @@ def event_id_for(item) -> str:
     return f"food_{getattr(item, 'staged_item_id', '') or 'unknown'}"
 
 
+def preparation_is_open(item) -> bool:
+    """Did the interpreter raise preparation as unresolved for this food?
+
+    READ OFF THE MATERIAL, NOT OFF THE NAME. The alternative — a table of
+    foods whose preparation matters — is domain logic in the wrong place and
+    is wrong the first time it meets a food it does not list. The interpreter
+    already decides this and already says so; B-1 used to DECLINE on that
+    signal and now asks about it.
+
+    A preparation the user already stated is not open. `PreparationIntent`
+    carries `stated` precisely so an inferred method and a told one are
+    distinguishable, and asking someone to repeat themselves is how a
+    clarification becomes an interrogation.
+    """
+    prep = getattr(item, "preparation", None)
+    if getattr(prep, "stated", False) and getattr(prep, "method", None):
+        return False
+    return any(
+        getattr(getattr(a, "ambiguity_type", None), "value", "") == "preparation"
+        for a in tuple(getattr(item, "material_ambiguities", lambda: ())()))
+
+
 def build_interaction(*, operation_id: str, revision: int, item,
-                      options, introduction: str = "") -> Any:
-    """One group, one field, ID-addressed.
+                      options, introduction: str = "",
+                      ask_preparation: bool = False) -> Any:
+    """One group, one OR TWO fields, ID-addressed.
+
+    ONE GROUP, BECAUSE IT IS ONE FOOD. Both fields describe the same event, so
+    they sit in the same group — which is the structure that makes a mixed
+    chip row ("5 oz / Grilled / 8 oz") unconstructable rather than merely
+    discouraged.
 
     Structural validity is not re-checked here: `UnresolvedField`,
     `ClarificationGroup` and `ClarificationInteraction` refuse a mixed row, a
@@ -973,8 +1014,11 @@ def build_interaction(*, operation_id: str, revision: int, item,
     from core.semantics import ClarificationGroup, ClarificationInteraction
 
     event_id = event_id_for(item)
-    field = quantity_field(operation_id=operation_id, revision=revision,
-                           item=item, options=options)
+    fields = [quantity_field(operation_id=operation_id, revision=revision,
+                             item=item, options=options)]
+    if ask_preparation:
+        fields.append(preparation_field(operation_id=operation_id,
+                                        revision=revision, item=item))
     label = str(getattr(getattr(item, "identity", None), "canonical_name", "")
                 or getattr(item, "original_text", "") or "").strip()
     return ClarificationInteraction(
@@ -982,7 +1026,46 @@ def build_interaction(*, operation_id: str, revision: int, item,
         operation_id=operation_id, revision=revision,
         introduction=introduction,
         groups=(ClarificationGroup(event_id=event_id, label=label,
-                                   fields=(field,)),))
+                                   fields=tuple(fields)),))
+
+
+def preparation_field(*, operation_id: str, revision: int, item) -> Any:
+    """The preparation field, from the versioned ontology (B-1.5).
+
+    THE OPTIONS COME FROM A TABLE, NOT FROM THE CANDIDATE PIPELINE. Quantity
+    options are generated per user and per food because the answer depends on
+    both — this person's usual portion, this product's serving. Preparation
+    does not work that way: the set of ways a chicken breast can be cooked is
+    ontology, identical for everyone, and running it through candidate
+    generation would invent evidence-weighted priors over a fixed list.
+
+    Every option carries its `SetPreparation` patch, so the label never
+    travels back as semantics (C11).
+    """
+    from core.semantics import (CandidateSource, ClarificationAttribute,
+                                ClarificationOption, Provenance, ResponseType,
+                                SetPreparation, UnresolvedField)
+
+    from skills.nutrition import preparation_ontology as onto
+
+    event_id = event_id_for(item)
+    identity = dict(operation_id=operation_id, revision=revision,
+                    event_id=event_id,
+                    attribute=ClarificationAttribute.PREPARATION)
+    # The id derives from SEMANTICS, so a free-text probe carries the same one
+    # the select will; building the probe as a select would trip C15 for
+    # having no options yet.
+    field_id = UnresolvedField(**identity).field_id
+    return UnresolvedField(
+        **identity, response_type=ResponseType.SINGLE_SELECT,
+        options=tuple(
+            ClarificationOption(
+                label=p.label, option_id=f"prep_{p.preparation_id}",
+                field_id=field_id, source=CandidateSource.ONTOLOGY,
+                patch=SetPreparation(event_id=event_id, field_id=field_id,
+                                     preparation_id=p.preparation_id,
+                                     provenance=Provenance.USER_SELECTED))
+            for p in onto.OFFERED))
 
 
 def quantity_field(*, operation_id: str, revision: int, item, options=(),

@@ -219,12 +219,50 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
                                                                user)))
         if answer.outcome is not Outcome.APPLIED:
             return _turn(answer, owned, live_field)
+
+        # TWO STATES ARRIVE HERE AND THEY NEED DIFFERENT THINGS. The condition
+        # above is deliberately one condition — "no longer entitled to claim a
+        # message that was not addressed to it" is the same rule for settled
+        # and expired — but what happens NEXT is not the same at all.
+        if not owned.awaiting:
+            # SETTLED: a replay. `settle` short-circuits on a committed
+            # operation and hands back the original result without pricing
+            # anything, so the stored state is what goes in — no re-derived
+            # answer may reach the write path.
+            result = await ops.settle(
+                db, user=user, owned=owned,
+                resolved=ops.resolved_fields(owned.answered),
+                source_turn_id=source_turn_id)
+            return AnswerTurn(Outcome.REPLAY, operation_id=owned.operation_id,
+                              field_id=live_field.field_id, patch=answer.patch,
+                              result=result, reason="replay")
+
+        # EXPIRED BUT STILL AWAITING: this is a FIRST answer arriving late, not
+        # a replay of anything — replying after expiry is still replying. It
+        # therefore takes the ordinary path: hold the answer, and settle only
+        # when every field is answered. Settling it directly (as this branch
+        # did while B-1 had one field) would commit a two-field meal on one
+        # late tap, which is the exact defect readiness exists to prevent —
+        # reachable only through the expiry door.
+        held = await ops.hold_answer(db, owned=owned, patch=answer.patch)
+        if not ops.ready_to_settle(interaction, held):
+            _measure_partial(owned, answer, user=user, field=live_field,
+                             held=held, option_id=option_id)
+            still_open = ops.open_fields(interaction, held)
+            return AnswerTurn(
+                Outcome.PARTIAL, operation_id=owned.operation_id,
+                field_id=answer.patch.field_id, patch=answer.patch,
+                reason="awaiting the fields still open",
+                subject_name=str(interaction.groups[0].label or ""),
+                open_attributes=tuple(
+                    getattr(f.attribute, "value", str(f.attribute))
+                    for f in still_open))
         result = await ops.settle(db, user=user, owned=owned,
-                                  patch=answer.patch,
+                                  resolved=ops.resolved_fields(held),
                                   source_turn_id=source_turn_id)
-        return AnswerTurn(Outcome.REPLAY, operation_id=owned.operation_id,
+        return AnswerTurn(Outcome.APPLIED, operation_id=owned.operation_id,
                           field_id=live_field.field_id, patch=answer.patch,
-                          result=result, reason="replay")
+                          result=result, reason=answer.reason)
 
     answer = _read(owned, interaction, live_field, message=message,
                    field_id=field_id, option_id=option_id,
@@ -275,9 +313,11 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
                 getattr(f.attribute, "value", str(f.attribute))
                 for f in still_open))
 
+    # THE WHOLE RESOLVED STATE, not a patch the coordinator picked out of it.
+    # Which field prices the food is a domain question, and answering it here
+    # is what would turn B-2 into a pile of field-specific extractors.
     result = await ops.settle(db, user=user, owned=owned,
-                              patch=ops.pricing_patch(held,
-                                                      fallback=answer.patch),
+                              resolved=ops.resolved_fields(held),
                               source_turn_id=source_turn_id)
     turn = AnswerTurn(Outcome.APPLIED, operation_id=owned.operation_id,
                       field_id=live_field.field_id, patch=answer.patch,
