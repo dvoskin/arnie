@@ -438,16 +438,29 @@ async def chat_answer(req: ClarificationAnswerRequest,
             claim=True,
         ) as turn:
             if turn.replay:
-                # THE ORIGINAL RESULT, not a re-run. A retried tap must not
-                # reach settlement again even to be told no — the claim
-                # answers "has this already happened" before the domain does.
-                stored = turn.stored
-                return {**_EMPTY_ANSWER,
-                        "outcome": "replay", "refusal_reason": "",
-                        "entry_id": stored.get("entry_id"),
-                        "operation_id": req.operation_id,
-                        "field_id": req.field_id,
-                        "idempotent_replay": True, "turn_id": turn.turn_id}
+                # THE ORIGINAL RESULT, not a re-run and not an empty shell.
+                #
+                # The claim stores a durable IDENTIFIER, not a response body,
+                # so the authoritative result is recovered from the thing that
+                # is authoritative — the committed row — and re-rendered
+                # through the same copy and card the first reply used. A
+                # replay that returned `{outcome, entry_id}` and empty bubbles
+                # would force the client to reconstruct the confirmation
+                # itself, which is exactly the client-side inference this
+                # boundary exists to prevent.
+                #
+                # The OUTCOME IS THE ORIGINAL ONE. `idempotent_replay` is how
+                # a client knows it is a redelivery; `outcome` still describes
+                # what happened to the meal. (`Outcome.REPLAY` means something
+                # different: a NEW request finding the operation settled.)
+                facts = await b1_answer_turn.facts_from_committed_row(
+                    db, entry_id=turn.stored.get("entry_id"),
+                    operation_id=req.operation_id, field_id=req.field_id)
+                if facts is None:
+                    return {**_EMPTY_ANSWER, "idempotent_replay": True,
+                            "turn_id": turn.turn_id}
+                return {**_render_answer(facts), "idempotent_replay": True,
+                        "turn_id": turn.turn_id}
 
             result = await b1_answer_turn.handle(
                 db, user=user, message="",
@@ -483,7 +496,14 @@ def _answer_payload(turn) -> dict:
         # which question the client meant.
         return dict(_EMPTY_ANSWER)
 
-    facts = b1_answer_turn.facts_for(turn)
+    return _render_answer(b1_answer_turn.facts_for(turn))
+
+
+def _render_answer(facts) -> dict:
+    """ONE RENDERER for a fresh result and a replayed one, so the two cannot
+    say different things about the same row."""
+    from core import b1_answer_turn
+
     card = b1_answer_turn.card_for(facts)
     payload = serialize_response(Response(
         bubbles=[b1_answer_turn.copy_for(facts)],

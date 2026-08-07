@@ -2087,7 +2087,41 @@ answering. A gate asserts `Outcome.EXPIRED` does not exist.
 required; the response envelope proven to leak no semantics; the committed
 request fixture still validating against the current model.
 
-**8386 pass on SQLite and 8386 on Postgres**, live-enrichment join running.
+**8.3 — a replay returned the SHAPE of the original, not its CONTENT.**
+
+The commit said *"a retry returns the ORIGINAL result"*. It returned
+`{outcome, entry_id}` with **empty bubbles and no card** — so a phone that
+lost the HTTP response after the meal committed got back an id and nothing to
+show, and would have to reconstruct the confirmation itself or re-fetch. That
+is the client-side inference the frozen boundary exists to prevent.
+
+`IdempotencyRecord` stores a durable IDENTIFIER, not a response body, so the
+fix is the second option: `facts_from_committed_row()` recovers the result
+from the thing that IS authoritative — the row — and re-renders it through
+**the same `copy_for`/`card_for`** the first reply used. `_render_answer()` is
+now the one renderer for both, so a fresh result and a replayed one cannot say
+different things about one row.
+
+**Nothing there recomputes semantics**: no quantity is parsed, no candidate
+selected, no pricing run. It reads what was written and says it again.
+
+The claim replay reports the **original outcome** (`applied`) with
+`idempotent_replay: true` — that flag is how a client knows it is a
+redelivery. `Outcome.REPLAY` still means something different: a NEW request
+finding the operation already settled.
+
+**The crash window is tested, not reasoned about.** The meal commits first and
+the claim completes in a second transaction; the shared contract documents
+that a process dying between them leaves durable work behind an incomplete
+claim, and nothing proved what a retry then does. It now kills `complete()`
+after the commit, verifies the meal IS durable, retries, and proves **no
+second meal** — safety that comes not from the claim, which never completed,
+but from settlement finding the operation already settled under the same turn
+id.
+
+Mutation-verified: restoring the empty-shell replay turns two gates red.
+
+**8389 pass on SQLite and 8389 on Postgres**, live-enrichment join running.
 
 **CI — CONFIGURED, NOT YET OBSERVED BY ME.** `.github/workflows/ci.yml` runs
 on every push to `main` and every PR, against a real Postgres service. This

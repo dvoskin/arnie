@@ -201,3 +201,99 @@ async def test_the_response_carries_no_semantics_a_client_could_reinterpret(
     for leaked in ("candidate_set", "evidence", "serving_basis", "prior",
                    "semantic_hash", "generation_input_fingerprint"):
         assert leaked not in flat, f"the response leaked {leaked!r}"
+
+
+# ── 8.3 — a replay returns the ORIGINAL result, not its shape ──────────────
+
+#: Fields that legitimately differ between a first delivery and a redelivery.
+#: Everything else is the authoritative result and must be identical.
+_VARIABLE = {"idempotent_replay", "turn_id"}
+
+
+@pytest.mark.asyncio
+async def test_a_replay_returns_the_original_response_not_an_empty_shell(
+        client, edges, seeded, b1_live, density):
+    """THE P1. The response had the same SHAPE and not the same CONTENT.
+
+    A phone can lose the HTTP response after the meal has committed. On retry
+    it received `{outcome, entry_id}` with empty bubbles and no card — so the
+    authoritative confirmation existed on the server and could not be shown,
+    and the client would have to reconstruct it or re-fetch. That is precisely
+    the client-side inference the frozen boundary exists to prevent.
+    """
+    ids = await _open_question(edges, seeded)
+    body = {**ids, "client_message_id": "lost-response"}
+
+    first = (await client.post(ANSWER, json=body)).json()
+    replay = (await client.post(ANSWER, json=body)).json()
+
+    assert replay["idempotent_replay"] is True
+    assert replay["bubbles"] == first["bubbles"] != []
+    assert replay["cards"] == first["cards"] != []
+    assert {k: v for k, v in replay.items() if k not in _VARIABLE} == {
+        k: v for k, v in first.items() if k not in _VARIABLE}, (
+        "the redelivery is not the original result")
+    assert len(await commits(seeded)) == 1
+
+
+@pytest.mark.asyncio
+async def test_the_replayed_card_still_names_the_row_that_was_written(
+        client, edges, seeded, b1_live, density):
+    """Rebuilt FROM THE ROW, so it cannot drift from what was committed."""
+    import db.database as D
+    from db.models import FoodEntry
+    from sqlalchemy import select
+
+    ids = await _open_question(edges, seeded)
+    body = {**ids, "client_message_id": "rebuild-me"}
+    await client.post(ANSWER, json=body)
+    replay = (await client.post(ANSWER, json=body)).json()
+
+    async with D.AsyncSessionLocal() as s:
+        entry = (await s.execute(
+            select(FoodEntry).order_by(FoodEntry.id.desc()))).scalars().first()
+    card = replay["cards"][0]["payload"]
+    assert card["entry_id"] == entry.id
+    assert abs(float(card["calories"]) - float(entry.calories)) < 1.0
+    assert str(int(round(float(entry.calories)))) in replay["bubbles"][0]
+
+
+@pytest.mark.asyncio
+async def test_a_crash_between_the_two_commits_does_not_write_twice(
+        client, edges, seeded, b1_live, density, monkeypatch):
+    """THE ACKNOWLEDGED WINDOW, tested rather than reasoned about.
+
+    The meal commits first and the claim completes in a SECOND transaction, so
+    a process that dies between them leaves durable work behind an incomplete
+    claim. The shared contract documents this; nothing proved what a retry
+    then does.
+
+    The retry must not write a second meal. That safety does not come from the
+    claim — which never completed — but from settlement itself: the turn id
+    the claim was taken under is the same one settlement dedupes on, so the
+    redelivery finds the operation already settled and replays it.
+    """
+    from core.mutation_contract import MutationTurn
+
+    ids = await _open_question(edges, seeded)
+    body = {**ids, "client_message_id": "crash-between"}
+
+    async def _die(self, db, **kw):
+        raise RuntimeError("process died after the meal committed")
+
+    monkeypatch.setattr(MutationTurn, "complete", _die)
+    with pytest.raises(Exception):
+        await client.post(ANSWER, json=body)
+
+    # The meal IS durable — that is what makes this window dangerous.
+    assert len(await commits(seeded)) == 1, (
+        "the domain write did not commit; this is not the window under test")
+
+    monkeypatch.undo()
+    retry = await client.post(ANSWER, json=body)
+    assert retry.status_code in (200, 409), retry.text
+    assert len(await commits(seeded)) == 1, (
+        "a retry after a crash between the two commits wrote a second meal")
+    if retry.status_code == 200:
+        assert retry.json()["entry_id"], (
+            "the retry returned no row for a meal that exists")

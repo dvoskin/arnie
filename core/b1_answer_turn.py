@@ -709,6 +709,51 @@ def facts_for(turn: AnswerTurn) -> CanonicalResponseFacts:
         assumptions=tuple(getattr(result, "assumptions", ()) or ()))
 
 
+async def facts_from_committed_row(db, *, entry_id, operation_id: str = "",
+                                   field_id: str = ""
+                                   ) -> Optional[CanonicalResponseFacts]:
+    """Rebuild the answer's facts FROM THE ROW IT WROTE.
+
+    For a redelivery of a request that already succeeded. The claim stores a
+    durable identifier rather than a response body, so the authoritative
+    result is recovered from the thing that IS authoritative — the committed
+    row — and re-rendered through the same `copy_for`/`card_for` the original
+    reply used.
+
+    NOT A RECOMPUTATION OF SEMANTICS. Nothing here decides anything: no
+    quantity is parsed, no candidate is selected, no pricing runs. It reads
+    what was written and says it again. A replay that answered with an empty
+    envelope and an id would force the client to reconstruct the confirmation
+    itself, which is the client-side inference the frozen boundary exists to
+    prevent.
+    """
+    from sqlalchemy import select
+
+    from db.models import DailyLog, FoodEntry
+
+    if not entry_id:
+        return None
+    entry = await db.get(FoodEntry, int(entry_id))
+    if entry is None:
+        return None
+    day_calories = None
+    if entry.daily_log_id:
+        rows = (await db.execute(
+            select(FoodEntry.calories).where(
+                FoodEntry.daily_log_id == entry.daily_log_id))).scalars().all()
+        day_calories = sum(float(c or 0) for c in rows)
+    return CanonicalResponseFacts(
+        outcome="applied", internal_failure=False,
+        operation_id=operation_id, field_id=field_id,
+        name=str(entry.parsed_food_name or ""), entry_id=entry.id,
+        calories=float(entry.calories or 0),
+        protein=float(entry.protein or 0), day_calories=day_calories,
+        # THE ROW REMEMBERS WHETHER WE GUESSED. Re-deriving it from the answer
+        # would need the answer, which is the thing we no longer have.
+        estimated=bool(getattr(entry, "estimated_flag", False)),
+        system_supplied_figure=bool(getattr(entry, "estimated_flag", False)))
+
+
 def card_for(facts: CanonicalResponseFacts) -> Optional[dict]:
     """The macro card, built from the SAME facts as the sentence beside it.
 
