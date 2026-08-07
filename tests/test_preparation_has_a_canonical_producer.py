@@ -50,7 +50,7 @@ def space(monkeypatch):
     resolver does with real records is layer C (the eval script); this file
     tests the DECISION over a given space."""
     def serve(mapping):
-        async def _space(food_name):
+        async def _space(food_name, context=None):
             return dict(mapping)
         monkeypatch.setattr(pa, "preparation_space", _space)
     return serve
@@ -113,7 +113,7 @@ async def test_a_stated_preparation_does_not_reopen(monkeypatch):
     interrogation — and it must not even cost a lookup."""
     called = []
 
-    async def _space(food_name):
+    async def _space(food_name, context=None):
         called.append(food_name)
         return {"grilled": 165.0, "fried": 250.0}
 
@@ -130,7 +130,7 @@ async def test_an_interpreter_raised_ambiguity_short_circuits(monkeypatch):
     nothing proving what it already said."""
     called = []
 
-    async def _space(food_name):
+    async def _space(food_name, context=None):
         called.append(food_name)
         return {}
 
@@ -146,7 +146,7 @@ async def test_an_interpreter_raised_ambiguity_short_circuits(monkeypatch):
 @pytest.mark.asyncio
 async def test_a_failed_evidence_pass_opens_nothing(monkeypatch):
     """Evidence we could not gather is not evidence of ambiguity."""
-    async def _boom(food_name):
+    async def _boom(food_name, context=None):
         raise RuntimeError("resolver down")
 
     monkeypatch.setattr(pa, "preparation_space", _boom)

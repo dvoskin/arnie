@@ -732,10 +732,14 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
     # the staged result handed to legacy is untouched. Legacy asks exactly what
     # it asked yesterday; a shared derivation would be new food behaviour in a
     # frozen path.
+    from core.evidence_context import EvidenceContext
     from core.semantic_fields import derive_unresolved
     from core.semantics import ClarificationAttribute
 
-    unresolved = await derive_unresolved(item)
+    # ONE CONTEXT FOR THE TURN'S FIELD DERIVATION. Every field asking for the
+    # same evidence awaits ONE in-flight acquisition; the context dies with
+    # the turn, so nothing it holds can be served to a later one.
+    unresolved = await derive_unresolved(item, EvidenceContext())
     interaction = qc.build_interaction(
         operation_id=operation_id, revision=0, item=item, options=options,
         introduction=_introduction(item),

@@ -28,6 +28,22 @@ from skills.nutrition import preparation_activation as pa
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
+def _seeded(records, assessments, food_name="chicken"):
+    """A context whose structured classification has ALREADY been done — what
+    the pricing path leaves behind for preparation to await."""
+    import asyncio
+
+    from core.evidence_context import EvidenceContext
+    from skills.nutrition.evidence_qualification import assessment_key
+
+    ctx = EvidenceContext()
+    done = asyncio.get_event_loop().create_future() \
+        if False else asyncio.Future()
+    done.set_result((tuple(records), tuple(assessments)))
+    ctx._inflight[assessment_key(food_name, food.VERSION)] = done
+    return ctx
+
+
 def _web(evidence_id="web:answer"):
     return EvidenceRecord(evidence_id=evidence_id, provider="web",
                           description="grilled 165, fried 250 per 100 g",
@@ -166,13 +182,13 @@ async def test_unqualified_evidence_establishes_no_space(monkeypatch):
         _assessment("web:2", "fried", 250,
                     relationship="DIFFERENT_IDENTITY"),
     ]
-    eq.remember_assessments("chicken", records, composite)
+    ctx = _seeded(records, composite)
 
     async def no_web(food_name, exclude=frozenset()):
         return {}
 
     monkeypatch.setattr(pa, "_web_space", no_web)
-    assert await pa.preparation_space("chicken") == {}
+    assert await pa.preparation_space("chicken", ctx) == {}
 
 
 @pytest.mark.asyncio
@@ -180,23 +196,71 @@ async def test_low_confidence_evidence_establishes_no_space(monkeypatch):
     records = [_web("web:1"), _web("web:2")]
     weak = [_assessment("web:1", "grilled", 165, confidence=0.55),
             _assessment("web:2", "fried", 250, confidence=0.60)]
-    eq.remember_assessments("chicken", records, weak)
+    ctx = _seeded(records, weak)
 
     async def no_web(food_name, exclude=frozenset()):
         return {}
 
     monkeypatch.setattr(pa, "_web_space", no_web)
-    assert await pa.preparation_space("chicken") == {}
+    assert await pa.preparation_space("chicken", ctx) == {}
 
 
 # ── 1. the cache is turn-scoped, and says so ────────────────────────────────
 
-def test_the_assessment_cache_is_process_local_and_bounded():
-    """Turn-scoped for now. A DURABLE cache would need the evidence
-    fingerprint in the key too — the same food string can retrieve different
-    evidence sets — and that is recorded rather than built."""
-    assert isinstance(eq._ASSESSED, dict)
-    assert eq._ASSESSED_MAX <= 256, "an unbounded cache is a memory leak"
-    source = inspect.getsource(eq)
-    assert "durable" in source.lower(), (
-        "the cache no longer documents that it is not the durable one")
+def test_a_later_turn_cannot_reuse_an_earlier_turns_evidence():
+    """THE LIFETIME, BY CONSTRUCTION rather than by a key.
+
+    Three versions of this: a module dict called turn-scoped while nothing
+    cleared it; then a turn id in the key; now the work lives on a context the
+    TURN owns, so a later turn holds no reference to it at all. The shape that
+    could leak is gone rather than guarded.
+    """
+    from core.evidence_context import EvidenceContext
+
+    turn_a, turn_b = EvidenceContext(), EvidenceContext()
+    assert not turn_a.reused("assess:chicken:v1")
+    turn_a._inflight["assess:chicken:v1"] = object()
+    assert turn_a.reused("assess:chicken:v1")
+    assert not turn_b.reused("assess:chicken:v1"), (
+        "a second turn saw the first turn's work")
+
+
+@pytest.mark.asyncio
+async def test_concurrent_consumers_share_one_acquisition():
+    """The property a completed-value cache cannot give: two fields evaluated
+    TOGETHER both miss a value cache and both pay. Memoizing the coroutine
+    means the second awaits the first's future."""
+    import asyncio
+
+    from core.evidence_context import EvidenceContext
+
+    ctx, calls = EvidenceContext(), []
+
+    async def acquire():
+        calls.append(1)
+        await asyncio.sleep(0.02)
+        return "assessments"
+
+    both = await asyncio.gather(ctx.shared("k", acquire),
+                                ctx.shared("k", acquire))
+    assert both == ["assessments", "assessments"]
+    assert len(calls) == 1, f"{len(calls)} acquisitions for one key"
+
+
+@pytest.mark.asyncio
+async def test_preparation_never_starts_its_own_retrieval():
+    """§4: acquisition belongs to the pricing path. If it never ran this turn,
+    preparation gets nothing rather than opening a second retrieval path."""
+    from core.evidence_context import EvidenceContext
+
+    ctx = EvidenceContext()
+
+    async def no_web(food_name, exclude=frozenset()):
+        return {}
+
+    original, pa._web_space = pa._web_space, no_web
+    try:
+        assert await pa.preparation_space("chicken", ctx) == {}
+    finally:
+        pa._web_space = original
+    assert ctx.meta["preparation"]["assessments_reused"] is False

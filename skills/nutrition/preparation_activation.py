@@ -33,7 +33,6 @@ from __future__ import annotations
 import logging
 
 from skills.nutrition import evidence_semantics as food
-from skills.nutrition.evidence_qualification import recall_assessments
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +76,7 @@ async def preparation_is_materially_unresolved(item, context=None) -> bool:
     if not name:
         return False
 
-    space = await preparation_space(name)
+    space = await preparation_space(name, context)
     if len(space) < 2:
         return False
 
@@ -98,19 +97,26 @@ async def preparation_is_materially_unresolved(item, context=None) -> bool:
     return material
 
 
-async def preparation_space(food_name: str) -> dict:
+async def preparation_space(food_name: str, context=None) -> dict:
     """`{preparation_id: kcal_per_100g or None}` the evidence supports.
 
-    THE SPACE, not the answer. Structured evidence first — free, because the
-    pricing path already classified it this turn — then one bounded web query
-    for the materiality claim, which is the only claim web may support.
+    THE SPACE, not the answer. Structured evidence first — shared with the
+    pricing path through the turn's `EvidenceContext`, so whichever consumer
+    arrives first starts the work and the other AWAITS THE SAME FUTURE — then
+    one bounded web query for the materiality claim, which is the only claim
+    web may support.
     """
-    space: dict = {}
+    from core.evidence_context import ensure
+    from skills.nutrition.evidence_qualification import assessment_key
 
-    # 1. Free: assessments the pricing path already paid for.
-    remembered = recall_assessments(food_name, food.VERSION)
-    if remembered:
-        records, assessments = remembered
+    shared = ensure(context)
+    space: dict = {}
+    key = assessment_key(food_name, food.VERSION)
+    reused = shared.reused(key)
+
+    structured = await _structured_assessments(shared, key, food_name)
+    if structured:
+        records, assessments = structured
         for evidence in food.preparation_evidence(
                 assessments, records,
                 minimum_confidence=food.MINIMUM_IDENTITY_CONFIDENCE):
@@ -119,9 +125,41 @@ async def preparation_space(food_name: str) -> dict:
                 space.setdefault(evidence.preparation_id,
                                  evidence.kcal_per_100g)
 
-    # 2. Bounded: the materiality claim, where structured evidence is thin.
-    space.update(await _web_space(food_name, exclude=set(space)))
+    from_structured = len(space)
+    # Bounded supplemental: the materiality claim, where structured evidence
+    # is thin. RELEVANCE-ONLY — it may establish SPACE, never price a meal.
+    web = await _web_space(food_name, exclude=set(space))
+    space.update(web)
+
+    shared.note(preparation={
+        "assessments_reused": reused,
+        "from_structured": from_structured,
+        "from_supplemental": len(web),
+        "supplemental_used": bool(web),
+    })
     return space
+
+
+async def _structured_assessments(shared, key: str, food_name: str):
+    """The turn's structured classification, AWAITED not duplicated.
+
+    If the pricing path already started it, this awaits that future. If it has
+    not run at all — the food never reached enrichment this turn — preparation
+    does NOT start its own retrieval: acquisition belongs to the pricing path,
+    and a second retrieval path is exactly what §4 forbids.
+    """
+    if not shared.reused(key):
+        return None
+    try:
+        return await shared.shared(key, _never)
+    except Exception:
+        logger.warning("event=preparation_structured_unavailable food=%s",
+                       food_name, exc_info=True)
+        return None
+
+
+async def _never():                                  # pragma: no cover
+    raise RuntimeError("acquisition belongs to the pricing path")
 
 
 async def _web_space(food_name: str, exclude=frozenset()) -> dict:

@@ -1383,6 +1383,49 @@ term is the base identity" would reject five of six failure classes for
 `chicken` in one line — and it is a naming trick, provider-specific, and the
 first description that breaks the convention breaks the system silently.
 
+### C2.1 — turn-scoped evidence execution
+
+One `EvidenceContext` per turn, threaded through the seam that already
+existed: `derive_unresolved(item, context)` -> `unresolved_when(item,
+context)`. The parameter had been defined and never used; C2.1 is what it was
+for.
+
+**IN-FLIGHT, NOT COMPLETED-VALUE.** The context memoizes the COROUTINE, so two
+fields evaluated CONCURRENTLY both await one acquisition. A finished-result
+cache cannot do this — concurrent consumers all miss it and all pay, which is
+exactly the case §2 names.
+
+**LIFETIME BY CONSTRUCTION, third attempt and the right one.** v1 was a module
+dict keyed `(food, version)` and described as turn-scoped while nothing
+cleared it — a later turn could recall assessments made against evidence a
+previous turn retrieved. v2 put the turn id in the key. v3 puts the state on a
+context the turn owns: a later turn holds no reference, so there is nothing to
+key correctly.
+
+**ACQUISITION HAS ONE OWNER.** The pricing path retrieves and classifies;
+preparation AWAITS that work and never starts its own. If enrichment never ran
+for this food, preparation gets nothing rather than opening a second retrieval
+path.
+
+**FIELDS EVALUATE CONCURRENTLY** (`asyncio.gather`), so derivation latency is
+the slowest predicate rather than the sum — and user-stated or
+interpreter-explicit values short-circuit before any lookup.
+
+**ONE FIELD-GENERIC ACTIVATION TRACE**, emitted for every field whether it
+opens or not, because a field that quietly declines is what made B-1.5
+unreachable:
+
+```text
+event=field_activation attribute=preparation disposition=unresolved
+  opened=True latency_ms=2
+  evidence={assessments_reused: True, from_structured: 2,
+            from_supplemental: 0, supplemental_used: False}
+```
+
+**NO SPECULATIVE TIMEOUT.** Latency is measured first. After the production
+trace, a product budget applies: inability to establish materiality in time
+means UNKNOWN / do not ask — never guess, never block the user.
+
 ### SPACE vs VALUE — the invariant governing every semantic field
 
     external evidence establishes the SPACE of plausible answers

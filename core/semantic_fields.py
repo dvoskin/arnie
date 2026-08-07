@@ -277,30 +277,58 @@ async def derive_unresolved(item, context=None) -> tuple:
     answered by none of them here.
 
     THE CANONICAL LANE'S OWN STAGE. Runs after the lane decision and before
-    anything is persisted, so the staged result handed to legacy is untouched —
-    legacy asks what it asked yesterday. A shared derivation that changed both
-    lanes would be a new food behaviour in a frozen path.
+    anything is persisted, so the staged result handed to legacy is untouched.
 
-    Core iterates and orders; the domain decides. A field with no
+    CONCURRENT, AND SHARING ONE EVIDENCE CONTEXT. Independent fields are
+    evaluated together rather than in sequence: their latency is the slowest
+    predicate, not the sum. The context is what makes that safe — two fields
+    wanting the same evidence await ONE in-flight acquisition instead of
+    racing to duplicate it, which is precisely the case a completed-value
+    cache cannot serve.
+
+    Core iterates, orders and traces; the domain decides. A field with no
     `unresolved_when` is not asked about and is not open — that is quantity,
     whose trigger is still the interpreter's own ambiguity.
 
-    A PREDICATE THAT RAISES DOES NOT OPEN A FIELD. Evidence we could not
-    gather is not evidence of ambiguity, and a question invented by a failed
-    lookup is worse than a question not asked.
+    A PREDICATE THAT RAISES DOES NOT OPEN A FIELD, and says so in the trace.
+    Evidence we could not gather is not evidence of ambiguity, and there are
+    no silent False exits: every field reports a disposition.
     """
+    import asyncio
+    import time
+
+    from core.evidence_context import ensure
+
     _ensure_installed()
-    out = []
-    for spec in sorted(_REGISTRY.values(), key=lambda s: s.order):
-        if spec.unresolved_when is None:
-            continue
+    shared = ensure(context)
+    askable = [s for s in sorted(_REGISTRY.values(), key=lambda s: s.order)
+               if s.unresolved_when is not None]
+    if not askable:
+        return ()
+
+    async def _ask(spec):
+        started = time.monotonic()
         try:
-            if await spec.unresolved_when(item, context):
-                out.append(spec.attribute)
+            opened = bool(await spec.unresolved_when(item, shared))
+            disposition = "unresolved" if opened else "resolved_or_immaterial"
         except Exception:
+            opened, disposition = False, "predicate_failed"
             logger.warning("unresolved_when failed for %s; not opening it",
                            spec.attribute_value, exc_info=True)
-    return tuple(out)
+        return spec, opened, disposition, int((time.monotonic() - started) * 1000)
+
+    results = await asyncio.gather(*(_ask(s) for s in askable))
+
+    for spec, opened, disposition, elapsed_ms in results:
+        # ONE FIELD-GENERIC ACTIVATION TRACE. Every field, every turn, whether
+        # it opened or not — a field that quietly declines is the thing that
+        # made B-1.5 unreachable for a week.
+        logger.info(
+            "event=field_activation attribute=%s disposition=%s opened=%s "
+            "latency_ms=%d evidence=%s",
+            spec.attribute_value, disposition, opened, elapsed_ms,
+            shared.meta.get(spec.attribute_value) or shared.meta or "-")
+    return tuple(spec.attribute for spec, opened, _d, _ms in results if opened)
 
 
 def spec_for(attribute) -> FieldSpec:

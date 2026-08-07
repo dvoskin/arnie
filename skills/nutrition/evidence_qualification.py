@@ -45,7 +45,7 @@ from dataclasses import dataclass
 from core.semantic_evidence import resolve
 from skills.nutrition.evidence_semantics import (
     DOMAIN, IDENTITY_BEARING, MINIMUM_IDENTITY_CONFIDENCE, RESOLVER_MODEL,
-    FoodIntent, from_usda)
+    VERSION, FoodIntent, from_usda)
 
 logger = logging.getLogger(__name__)
 
@@ -70,41 +70,19 @@ def admissible_for_relevance(record) -> bool:
     return getattr(record, "evidence_type", "") in _ADMISSIBLE[CLAIM_RELEVANCE]
 
 
-#: ASSESSMENTS THIS TURN ALREADY PAID FOR, keyed by (food, resolver version).
+#: THE SHARED KEY for a food's structured-evidence classification. Every
+#: consumer that wants it — the pricing path, preparation, product variant —
+#: asks the turn's `EvidenceContext` for THIS key, so the retrieval and the
+#: semantic classification happen exactly once per turn per food.
 #:
-#: §24: preparation must reuse enrichment the turn already performed rather
-#: than re-querying the same provider. `_u()` classifies USDA rows for
-#: PRICING eligibility; those same assessments carry the extracted
-#: preparations the materiality question needs, so the second consumer pays
-#: nothing.
-#:
-#: VERSION IS IN THE KEY (guardrail 2) so a resolver version bump cannot serve
-#: conclusions made under the old policy. Bounded and process-local — this is
-#: NOT the durable cache, which stays unbuilt until measured traffic justifies
-#: its invalidation and privacy decisions.
-#:
-#: ⚠ THIS KEY IS INCOMPLETE FOR A DURABLE CACHE. `(food, version)` is
-#: sufficient only because these entries cannot outlive the turn that wrote
-#: them: the same food STRING can retrieve different evidence sets on
-#: different days (providers change, rankings move), so a cross-turn cache
-#: must also key on an EVIDENCE FINGERPRINT — hash the record ids and titles —
-#: or it will serve conclusions about rows nobody retrieved this time.
-_ASSESSED: dict = {}
-_ASSESSED_MAX = 64
-
-
-def remember_assessments(food_name: str, records, assessments) -> None:
-    if len(_ASSESSED) >= _ASSESSED_MAX:
-        _ASSESSED.clear()          # crude, bounded, and never stale-by-version
-    key = (str(food_name or "").strip().lower(),
-           assessments[0].resolver_version if assessments else "")
-    _ASSESSED[key] = (tuple(records), tuple(assessments))
-
-
-def recall_assessments(food_name: str, resolver_version: str):
-    """What this turn already classified for this food, or None."""
-    return _ASSESSED.get((str(food_name or "").strip().lower(),
-                          resolver_version))
+#: The module-global reuse dict this replaced was keyed `(food, version)` and
+#: called turn-scoped while nothing cleared it. Lifetime now comes from the
+#: context's own lifetime rather than from remembering to put a turn id in a
+#: key; a durable cross-turn cache would additionally need an EVIDENCE
+#: FINGERPRINT, since one food string retrieves different evidence on
+#: different days.
+def assessment_key(food_name: str, resolver_version: str) -> str:
+    return f"assess:{str(food_name or '').strip().lower()}:{resolver_version}"
 
 
 @dataclass(frozen=True)
@@ -130,7 +108,21 @@ async def _default_complete(prompt: str) -> str:
     return next(b.text for b in reply.content if hasattr(b, "text"))
 
 
-async def qualify_usda_rows(food_name: str, rows, complete=None) -> Qualification:
+async def classify_rows(food_name: str, rows, complete=None) -> tuple:
+    """`(records, assessments)` for one food's structured evidence.
+
+    THE SHARED UNIT OF WORK. `qualify_usda_rows` filters with it and
+    preparation projects from it, so the model runs once for both.
+    """
+    records = from_usda(rows)
+    assessments = await resolve(
+        DOMAIN, FoodIntent(base_identity=food_name), records,
+        complete or _default_complete)
+    return records, assessments
+
+
+async def qualify_usda_rows(food_name: str, rows, complete=None,
+                            context=None) -> Qualification:
     """USDA rows -> the subset eligible to compete for pricing.
 
     ELIGIBILITY, NOT TRUTH: `best_candidate` still ranks whatever survives.
@@ -144,12 +136,14 @@ async def qualify_usda_rows(food_name: str, rows, complete=None) -> Qualificatio
     rows = list(rows or ())
     if not rows:
         return Qualification(rows=(), disposition="empty_input")
-    records = from_usda(rows)
+    from core.evidence_context import ensure
+
+    shared = ensure(context)
     _t0 = _time.monotonic()
     try:
-        assessments = await resolve(
-            DOMAIN, FoodIntent(base_identity=food_name), records,
-            complete or _default_complete)
+        records, assessments = await shared.shared(
+            assessment_key(food_name, VERSION),
+            lambda: classify_rows(food_name, rows, complete))
     except Exception:
         logger.warning("event=evidence_qualification_failed food=%s — "
                        "USDA contributes NO candidate this turn; the ladder's "
@@ -168,10 +162,6 @@ async def qualify_usda_rows(food_name: str, rows, complete=None) -> Qualificatio
                        int((_time.monotonic() - _t0) * 1000))
         return Qualification(rows=(), disposition="resolver_down_no_candidates",
                              raw_count=len(rows), kept_count=0)
-
-    # The second consumer's free ride: preparation reads these instead of
-    # paying for its own classification of the same rows.
-    remember_assessments(food_name, records, assessments)
 
     kept = tuple(
         row for row, a in zip(rows, assessments)
