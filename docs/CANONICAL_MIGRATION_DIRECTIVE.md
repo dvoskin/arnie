@@ -1095,17 +1095,19 @@ B-1        SLICE NOT CLOSED  see the seven-line state below — "backend
                              slice look finished while its predecessor
                              still runs
 B-1.75     COMPLETE          answered quantity is the only quantity authority
-B-1.9      IN PROGRESS       5 of 10 stages, ~65-70% by engineering weight.
-                             1 PASS(+2 CF) · 2/2.1 evidence semantics ·
+B-1.9      IN PROGRESS       7 of 10 stages, ~75-80% by engineering weight.
+                             1 containment · 2/2.1 evidence semantics ·
                              3a/3a.1/3a.2 contracts · 3b/3b.1/3b.2/3b.3
                              durable universe · 4 bridge deletion ·
-                             5/5.1/5.2 versioned selector — ALL DONE.
-                             6 DONE: failures replayed as CLASSES.
-                             7 DONE: integration evidence, on Postgres.
-                             8 NEXT: freeze the wire contract.
-                             Then 7 integration · 8 freeze · 9 iOS ·
-                             10 promote+delete. Runs BEFORE B-1 closure.
-B-1b.1/.2  NEXT              deterministic matrix + sequence corpus
+                             5/5.1/5.2 versioned selector · 6/6.1/6.2
+                             failure classes · 7/7.1 integration proof
+                             (Postgres + live USDA) — ALL DONE.
+                             8 NEXT: freeze the contract.
+                             Then 9 structured iOS · 10 promote + DELETE
+                             predecessor. Runs BEFORE B-1 closure.
+B-1b.1/.2  ABSORBED BY B-1.9 7  the matrix and the corpus now run through
+                             the durable candidate system; the join they
+                             lacked is `test_the_whole_slice_holds_together`
 B-1b.3     PLANNED           instrumented human simulation
 B-1b.4     CONTINUOUS        organic confirmation, low volume, gates nothing
 B-1c       COMPLETE          detector coverage and precision
@@ -1877,9 +1879,45 @@ not used**. The restart test disposed that same wrong engine, simulating
 nothing; it drops the real pool on Postgres and re-materialises from rows on
 SQLite, where disposing would destroy the database.
 
+**7.1 — the proof was narrower than its headline.** Six corrections:
+
+* **The chain said "tap by id" and the test answered with prose.** `say(label)`
+  is LABEL SELECTION — a different route, a different modality — so the one
+  path the iOS client will actually use was untested by the test that claimed
+  it. It goes through `option_id` now, and asserts the recorded modality is
+  `option_id` rather than something else.
+* **Real enrichment was never in the same sequence.** The candidate chain was
+  proven against a fixed density; live USDA was proven by a separate suite
+  that knows nothing about candidates. Neither showed a candidate's own grams,
+  priced by the real ladder, producing the row and the card. Now joined —
+  **verified running on Postgres with a live key**, and the gate PRINTS
+  whether it ran, because a skip reported as a pass is the same instrument
+  problem as everything else here.
+* **Card and daily totals were in the headline and not in the test.** Both
+  asserted now, against the row: `entry_id`, calories, protein, the
+  `estimated` flag, and the sentence beside the card.
+* **Stale and foreign were conflated** — one case sent a nonsense option id, a
+  field id in the wrong parameter, and the CURRENT revision. Three separate
+  gates now: a valid option at a stale revision (and the same option at the
+  right one, so the refusal is the revision talking), an option never offered,
+  and an answer to a foreign field.
+* **Duplicate transport and duplicate taps were one test using labels.** Three
+  now: the same transport id redelivered, the same option under two transport
+  ids, and the label route separately.
+* **Provenance attribution** — `USER_SELECTED` on the patch, the telemetry
+  source matched against persisted evidence rows, and a plain tap proven to
+  name NO policy version, because stamping every row would make that field
+  mean "some policy ran".
+
+The unrelated-meal gate also had its claim corrected: an unrelated message is
+**held, not logged** — it repairs rather than answering — so "the meal is not
+lost" means the board stays empty, the question survives, and the lane frees
+afterwards. Asserting the meal had been logged was asserting a design the
+system does not have.
+
 Mutation-verified: making `save()` persist nothing turns six of seven red.
 
-8313 pass on SQLite and 8313 on Postgres (25 skips).
+8319 pass on SQLite and 8319 on Postgres, live-enrichment join included.
 
 **7–8** — run the sequence corpus through the real candidate pipeline *and*
 real enrichment together, then freeze the wire contract, the semantic
