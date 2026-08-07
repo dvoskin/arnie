@@ -1,0 +1,162 @@
+{
+ "captured_at": "2026-08-07",
+ "provider": "tavily",
+ "note": "RAW AND UNCLEANED. `answer` is LLM-SYNTHESIZED, not a structured record \u2014 see GROUND_TRUTH.md on admissibility.",
+ "queries": {
+  "chicken calories per 100g": {
+   "error": null,
+   "answer": "A 100g serving of chicken breast contains about 165 calories, 31g of protein, and 3.6g of fat. This makes it a lean protein source.",
+   "results": [
+    {
+     "title": "Chicken: Calories, Nutrition and Health Benefits | NutriScan App",
+     "url": "https://nutriscan.app/calories-nutrition/chicken",
+     "score": null
+    },
+    {
+     "title": "Instagram",
+     "url": "https://www.instagram.com/reel/DTFBDsFk3nJ?hl=en",
+     "score": null
+    },
+    {
+     "title": "100 Grams Of Chicken Breast Nutrition Facts - Eat This Much",
+     "url": "https://www.eatthismuch.com/calories/chicken-breast-453?a=1.1627906976744187%3A0",
+     "score": null
+    },
+    {
+     "title": "How Many Calories in Chicken? Breast, Thigh, Wing, and More",
+     "url": "https://www.healthline.com/nutrition/calories-in-chicken",
+     "score": null
+    },
+    {
+     "title": "Chicken breast: FAQ, Nutrition Facts, & Macros",
+     "url": "https://www.strongrfastr.com/foods/chicken-breast-5062",
+     "score": null
+    }
+   ]
+  },
+  "calories per 100g grilled chicken breast vs fried chicken": {
+   "error": null,
+   "answer": "Grilled chicken breast has 165 calories per 100g, while fried chicken has around 250 calories per 100g. Grilled chicken is lower in fat and higher in protein. Fried chicken has more calories and unhealthy fats.",
+   "results": [
+    {
+     "title": "Grilled Chicken: Calories, Nutrition and Health Benefits | NutriScan App",
+     "url": "https://nutriscan.app/calories-nutrition/grilled-chicken",
+     "score": null
+    },
+    {
+     "title": "Fried Chicken vs Chicken Breast Comparison",
+     "url": "https://nutrola.app/en/blog/fried-chicken-vs-chicken-breast",
+     "score": null
+    },
+    {
+     "title": "Did you know? \ud83c\udf57\ud83d\udd25 Fried chicken contains around 260\u2013300 kcal per ...",
+     "url": "https://www.instagram.com/p/DRJaOi0E-wc?hl=en",
+     "score": null
+    },
+    {
+     "title": "Chicken Breast: Calories and Nutrition Chart",
+     "url": "https://www.medicinenet.com/how_many_calories_in_a_cooked_chicken_breast/article.htm",
+     "score": null
+    },
+    {
+     "title": "Grilled Chicken vs Fried Chicken: The Differences",
+     "url": "https://christinaallday.com/grilled-chicken-vs-fried-chicken",
+     "score": null
+    }
+   ]
+  },
+  "papaya calories per 100g raw": {
+   "error": null,
+   "answer": "Raw papaya contains approximately 42-43 calories per 100 grams. It is low in fat and high in water content. It is also rich in vitamins and fiber.",
+   "results": [
+    {
+     "title": "Papaya: calories and nutritional composition | Aprifel",
+     "url": "https://www.aprifel.com/en/nutritional-sheet/papaya",
+     "score": null
+    },
+    {
+     "title": "Papaya Nutrition Facts: Calorie Count & Weight Loss Benefits",
+     "url": "https://redcliffelabs.com/myhealth/food-and-nutrition/papaya-nutrition-facts-calorie-count-and-weight-loss-benefits",
+     "score": null
+    },
+    {
+     "title": "Papaya Raw Nutrition Facts per 100g | PDF | Wellness | Science & Mathematics",
+     "url": "https://www.scribd.com/doc/237300362/Show-Foods",
+     "score": null
+    },
+    {
+     "title": "Nutrition \u2013 Australian Papaya",
+     "url": "https://www.australianpapaya.com.au/nutrition",
+     "score": null
+    },
+    {
+     "title": "Raw Papaya: Benefits, Uses, Side Effects & More | PharmEasy",
+     "url": "https://pharmeasy.in/blog/ayurveda-uses-benefits-side-effects-of-raw-papaya",
+     "score": null
+    }
+   ]
+  },
+  "Barebells salty peanut protein bar nutrition facts": {
+   "error": null,
+   "answer": "Barebells Salty Peanut Protein Bar has 20g protein, 2g total sugars, and 7g fat per 55g serving. It is high in protein and low in added sugars.",
+   "results": [
+    {
+     "title": "Amazon.com: BAREBELLS Protein Bars Variety Pack - 16 Count, 1.9oz Bars - Protein Snacks with 20g of High Protein - Chocolate Protein Bar with 1g of Total Sugars",
+     "url": "https://www.amazon.com/Barebells-Protein-Bars-Variety-Hero/dp/B0CWMGSX5F",
+     "score": null
+    },
+    {
+     "title": "Buy Barebells Protein Bars at GNC! (12 Pack) | GNC",
+     "url": "https://www.gnc.com/protein-bars/barebells-protein-bar.html",
+     "score": null
+    },
+    {
+     "title": "Barebells \u2013 Great-tasting protein snacks and meals",
+     "url": "https://barebells.com",
+     "score": null
+    },
+    {
+     "title": "Barebells USA | Protein Bars (@barebells.usa) \u2022 Instagram photos and videos",
+     "url": "https://www.instagram.com/barebells.usa?hl=en",
+     "score": null
+    },
+    {
+     "title": "Barebells products at Target",
+     "url": "https://www.target.com/b/barebells/-/N-q643lelqwxh",
+     "score": null
+    }
+   ]
+  },
+  "Doritos Protein Chips nutrition per serving": {
+   "error": null,
+   "answer": "Doritos Protein Chips have 150 calories, 10g protein, 8g fat, 8g carbs, and 150mg sodium per 28g serving. They contain 1g fiber and 0g sugar. Launched in 2026, they offer 5x the protein of regular Doritos.",
+   "results": [
+    {
+     "title": "Doritos Protein Nacho Cheese Chips: Calories, Nutrition Facts & Health Guide | NutriScan App",
+     "url": "https://nutriscan.app/calories-nutrition/doritos-protein-nacho-cheese-tortilla-chips",
+     "score": null
+    },
+    {
+     "title": "Doritos Protein chips, with 10 grams of protein, are coming",
+     "url": "https://www.usatoday.com/story/money/food/2026/02/26/doritos-protein-chips/88845377007",
+     "score": null
+    },
+    {
+     "title": "Doritos\u00ae Launches Boldest Innovation Yet: Doritos\u00ae Protein",
+     "url": "https://www.pepsico.com/en/newsroom/press-releases/2026/doritos-launches-boldest-innovation-doritos-protein",
+     "score": null
+    },
+    {
+     "title": "Doritos Protein Nacho Cheese Tortilla Chips Same-Day Pickup | Fareway Meat & Grocery",
+     "url": "https://shop.fareway.com/store/fareway-meat-grocery/products/97873511-doritos-protein-nacho-cheese-tortilla-chips-1-each",
+     "score": null
+    },
+    {
+     "title": "Instagram",
+     "url": "https://www.instagram.com/reel/DU83tr4Es9M",
+     "score": null
+    }
+   ]
+  }
+ }
+}

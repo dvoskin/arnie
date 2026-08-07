@@ -1608,13 +1608,46 @@ async def reset_today_log(db: AsyncSession, user_id: int, user_timezone: str = "
     """
     Wipe all food and exercise entries for today and zero out the daily totals.
     Returns True if a log existed, False if there was nothing to reset.
+
+    EVERY REMOVED ROW GETS ITS `deleted` EVENT, in this transaction.
+
+    MEASURED IN PRODUCTION 2026-08-07 14:59:07: "Clear my day" removed fourteen
+    rows — four of them `canonical:create` — and wrote nothing. Undo was
+    impossible and the canonical lane's own commits vanished with no trace of
+    what they had been. The instrument was not the problem: 123 food `deleted`
+    events exist and `delete_food_entry` ran sixteen times the same week, so
+    the ledger can record this. The bulk `delete()` below simply never told it.
+
+    THE PAYLOAD IS READ WHILE THE ROWS STILL EXIST, for the reason
+    `delete_food_entry` gives: `ledger_undo._restore_plan` rebuilds an entry
+    from the payload alone, so an event without it is a delete that cannot be
+    taken back. `daily_log_id` rides IN the payload — without it a food cleared
+    from Tuesday returns on whatever day the restore happens to run.
     """
     log = await get_today_log(db, user_id, user_timezone)
     if not log:
         return False
 
+    # Read before deleting. A bulk `delete()` returns a rowcount, not the rows,
+    # and the rows are the only place their own history exists.
+    doomed = []
+    for model, domain in ((FoodEntry, "food"), (ExerciseEntry, "exercise")):
+        rows = (await db.execute(
+            select(model).where(model.daily_log_id == log.id))).scalars().all()
+        doomed += [(row.id, domain,
+                    {**_entry_event_payload(row), "daily_log_id": log.id})
+                   for row in rows]
+
     await db.execute(delete(FoodEntry).where(FoodEntry.daily_log_id == log.id))
     await db.execute(delete(ExerciseEntry).where(ExerciseEntry.daily_log_id == log.id))
+
+    # ONE TRANSACTION, so a process dying mid-clear cannot leave rows gone and
+    # their history unwritten — `commit=False` on every event, one commit below.
+    for entry_id, domain, payload in doomed:
+        await record_ledger_event(
+            db, user_id=user_id, event_type="deleted", domain=domain,
+            entry_id=entry_id, daily_log_id=log.id, payload=payload,
+            source="clear_day_log", commit=False)
 
     log.total_calories = 0
     log.total_protein = 0

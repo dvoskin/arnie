@@ -112,3 +112,76 @@ raw · smoked · baked · "cooked, dry heat" — only partially overlapping the
 registered vocabulary. This is why preparation materiality needs web evidence,
 and why §26 requires the model to normalize provider wording into the
 registered vocabulary or `UNKNOWN` rather than deriving vocabulary from tokens.
+
+---
+
+# Open Food Facts — captured 2026-08-07
+
+`off_2026_08_07.json`. Best match plus siblings, via the same `off.search()` /
+`off.search_variants()` the resolver uses.
+
+## ⭐ The finding: OFF's own confidence grade carries no information
+
+**Every result below is graded `_match: "exact"` by OFF.** The grade is
+identical on a pizza returned for "chicken" and on four correct branded
+matches. A provider's self-reported confidence is not evidence of
+comparability, and any policy keyed on it inherits the pizza.
+
+| query | best match | kcal | grade | verdict |
+|---|---|---:|---|---|
+| chicken | **SPICY CHICKEN & 'NDUJA PIZZA** (Deluxe) | 511 | exact | COMPOSITE_CONTAINING_IDENTITY |
+| papaya | Mango Papaya Passion Fruit (Onken yogurt) | 93 | exact | COMPOSITE_CONTAINING_IDENTITY |
+| salmon | Salmon ahumado (smoked) | 144 | exact | COMPATIBLE_SPECIALIZATION |
+| potato | — none — | | | correctly returns nothing |
+| Barebells salty peanut protein bar | Protein Bar Salty Peanut | 369 | exact | SAME_IDENTITY ✓ |
+| Fairlife Core Power | Core Power High Protein Milk Shake | 85 | exact | SAME_IDENTITY ✓ |
+| Doritos Protein Chips | Doritos Protein Chips | 521.7 | exact | SAME_IDENTITY ✓ |
+| Royo everything bagel | Royo Everything Bagel | 102.6 | exact | SAME_IDENTITY ✓ |
+
+The chicken row also carries `serving_text: "1 tsp (100 g)"` — a teaspoon of
+pizza. Serving metadata is as unreliable as identity here.
+
+Variants for "chicken" are `SPICY CHICKEN & 'NDUJA PIZZA`, `Indomie instant
+noodles baladi`, `Ramen-Buldak HOT Chicken Flavour` — the sibling set inherits
+the base identity error wholesale.
+
+**The branded four are the positive controls**, and they are drawn from Danny's
+real production log (entries 2878/2884/2886). Product-variant reuse (§29) has
+working evidence precisely here.
+
+# Tavily web search — captured 2026-08-07
+
+`tavily_2026_08_07.json`. **`answer` is LLM-SYNTHESIZED**, not a structured
+record: it has no `source_record_id`, cannot be re-derived, and is a summary of
+whatever pages ranked.
+
+| query | synthesized answer | sources include |
+|---|---|---|
+| chicken calories per 100g | 165 cal, 31g protein | NutriSc, **Instagram** |
+| grilled vs fried chicken | **165 vs 250** | comparison blog, **Instagram** |
+| papaya raw per 100g | **42–43** | Aprifel, a **PDF** |
+| Barebells salty peanut | 20g protein / 55g | **Amazon**, **GNC**, brand site |
+| Doritos Protein Chips | 150 cal / 28g | brand press, news |
+
+Two things are true at once, and they are the whole reason authority is per
+claim:
+
+* Tavily answers what USDA and OFF could not — the grilled/fried spread is the
+  materiality evidence B-1.5 needs, and **papaya raw at 42–43 is exactly the
+  number production got wrong** (entry 2896 committed 200).
+* Its sources are Instagram, Amazon and GNC, and the answer reads equally
+  confident regardless. **Semantic confidence and source quality are
+  orthogonal dimensions** and must be stored separately.
+
+## Cross-provider: authority is per claim, MEASURED
+
+| claim | USDA | OFF | Web |
+|---|---|---|---|
+| generic food identity | weak (adjacent products) | **catastrophic** (pizza for chicken) | usable |
+| generic nutrient composition | **strong** when identity holds | weak | usable, unciteable |
+| branded product identity | weak | **strong** (4/4) | usable |
+| preparation materiality | absent | absent | **only source** |
+| package / serving | unreliable | mixed | manufacturer pages |
+
+No single ranking is correct. `if source == USDA: trust = 1.0` is refuted by
+this table on the branded row, and the reverse is refuted on the generic row.

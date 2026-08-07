@@ -1,0 +1,576 @@
+{
+ "captured_at": "2026-08-07",
+ "provider": "open_food_facts",
+ "note": "RAW AND UNCLEANED. Preserved exactly as returned, including OFF's own _match grade \u2014 see GROUND_TRUTH.md.",
+ "best_match": {
+  "chicken": {
+   "per100g": {
+    "calories": 511.0,
+    "protein": 5.7,
+    "carbs": 64.2,
+    "fat": 25.2,
+    "fiber": 2.1,
+    "sugar": 46.5,
+    "sodium": 83
+   },
+   "_match": "exact",
+   "name": "SPICY CHICKEN & 'NDUJA PIZZA",
+   "brand": "Deluxe",
+   "code": "13356194",
+   "serving_text": "1 tsp (100 g)",
+   "package_text": "360g",
+   "per_serving": {
+    "calories": 511.0,
+    "protein": 5.7,
+    "carbs": 64.2,
+    "fat": 25.2,
+    "fiber": 2.1,
+    "sugar": 46.5,
+    "sodium": 83
+   },
+   "source": "off"
+  },
+  "papaya": {
+   "per100g": {
+    "calories": 93.0,
+    "protein": 3.8,
+    "carbs": 13.0,
+    "fat": 2.7,
+    "sugar": 12.0,
+    "sodium": 68
+   },
+   "_match": "exact",
+   "name": "Mango Papaya Passion Fruit",
+   "brand": "Onken",
+   "code": "7610900037360",
+   "serving_text": "",
+   "package_text": "450 g",
+   "per_serving": null,
+   "source": "off"
+  },
+  "salmon": {
+   "per100g": {
+    "calories": 144.0,
+    "protein": 18.9,
+    "carbs": 0.0,
+    "fat": 7.7,
+    "sodium": 1280
+   },
+   "_match": "exact",
+   "name": "Salmon ahumado",
+   "brand": "Nautica",
+   "code": "4056489530268",
+   "serving_text": "100 g",
+   "package_text": "200g",
+   "per_serving": {
+    "calories": 144.0,
+    "protein": 18.9,
+    "carbs": 0.0,
+    "fat": 7.7,
+    "sodium": 1280
+   },
+   "source": "off"
+  },
+  "potato": null,
+  "Barebells salty peanut protein bar": {
+   "per100g": {
+    "calories": 369.0,
+    "protein": 36.4,
+    "carbs": 27.3,
+    "fat": 15.5,
+    "fiber": 5.6,
+    "sugar": 2.7,
+    "sodium": 164
+   },
+   "_match": "exact",
+   "name": "Protein Bar Salty Peanut",
+   "brand": "Barebells",
+   "code": "7340001800999",
+   "serving_text": "55 gram",
+   "package_text": "55 gram",
+   "per_serving": {
+    "calories": 203.0,
+    "protein": 20.0,
+    "carbs": 15.0,
+    "fat": 8.5,
+    "fiber": 3.1,
+    "sugar": 1.5,
+    "sodium": 90
+   },
+   "source": "off"
+  },
+  "Fairlife Core Power": {
+   "per100g": {
+    "calories": 85.0,
+    "protein": 13.0,
+    "carbs": 4.0,
+    "fat": 2.3,
+    "fiber": 1.0,
+    "sugar": 2.5,
+    "sodium": 130
+   },
+   "_match": "exact",
+   "name": "Core Power High Protein Milk Shake Chocolate",
+   "brand": "fairlife",
+   "code": "0811620021951",
+   "serving_text": "200.0g",
+   "package_text": "14oz",
+   "per_serving": {
+    "calories": 170.0,
+    "protein": 26.0,
+    "carbs": 8.0,
+    "fat": 4.5,
+    "fiber": 2.0,
+    "sugar": 5.0,
+    "sodium": 260
+   },
+   "source": "off"
+  },
+  "Doritos Protein Chips": {
+   "per100g": {
+    "calories": 521.7,
+    "protein": 34.8,
+    "carbs": 26.1,
+    "fat": 28.3,
+    "fiber": 4.3,
+    "sodium": 522
+   },
+   "_match": "exact",
+   "name": "Doritos Protein Chips",
+   "brand": "Doritos",
+   "code": "0028400803946",
+   "serving_text": "1 portion (46 g)",
+   "package_text": "",
+   "per_serving": {
+    "calories": 240.0,
+    "protein": 16.0,
+    "carbs": 12.0,
+    "fat": 13.0,
+    "fiber": 2.0,
+    "sodium": 240
+   },
+   "source": "off"
+  },
+  "Royo everything bagel": {
+   "per100g": {
+    "calories": 102.6,
+    "protein": 12.8,
+    "carbs": 48.7,
+    "fat": 1.9,
+    "fiber": 41.0,
+    "sugar": 2.6,
+    "sodium": 513
+   },
+   "_match": "exact",
+   "name": "Royo Everything Bagel",
+   "brand": "Royo",
+   "code": "0736613480310",
+   "serving_text": "78 g",
+   "package_text": "",
+   "per_serving": {
+    "calories": 80.0,
+    "protein": 10.0,
+    "carbs": 38.0,
+    "fat": 1.5,
+    "fiber": 32.0,
+    "sugar": 2.0,
+    "sodium": 400
+   },
+   "source": "off"
+  }
+ },
+ "variants": {
+  "chicken": [
+   {
+    "name": "SPICY CHICKEN & 'NDUJA PIZZA",
+    "brand": "Deluxe",
+    "code": "13356194",
+    "serving_text": "1 tsp (100 g)",
+    "package_text": "360g",
+    "per100g": {
+     "calories": 511,
+     "protein": 5.7,
+     "carbs": 64.2,
+     "fat": 25.2
+    }
+   },
+   {
+    "name": "Indomie instant noodles baladi chicken flavor",
+    "brand": "",
+    "code": "0089686120073",
+    "serving_text": "70 g",
+    "package_text": "70g",
+    "per100g": {
+     "calories": 452.8,
+     "protein": 11.42,
+     "carbs": 61.42,
+     "fat": 17.14
+    }
+   },
+   {
+    "name": "Ramen-Buldak HOT Chicken Flavour Ramen Carbonara Flavour",
+    "brand": "Samyang",
+    "code": "8801073116467",
+    "serving_text": "130 g",
+    "package_text": "130unknown",
+    "per100g": {
+     "calories": 427,
+     "protein": 7,
+     "carbs": 66,
+     "fat": 15
+    }
+   },
+   {
+    "name": "Organic Chicken Stock Cubes -  8 Pack",
+    "brand": "Kall\u00f8",
+    "code": "5013665112235",
+    "serving_text": "11g",
+    "package_text": "88 g",
+    "per100g": {
+     "calories": 7,
+     "protein": 0.1,
+     "carbs": 0.7,
+     "fat": 0.5
+    }
+   }
+  ],
+  "papaya": [
+   {
+    "name": "Mango Papaya Passion Fruit",
+    "brand": "Onken",
+    "code": "7610900037360",
+    "serving_text": "",
+    "package_text": "450 g",
+    "per100g": {
+     "calories": 93,
+     "protein": 3.8,
+     "carbs": 13,
+     "fat": 2.7
+    }
+   },
+   {
+    "name": "Mango Papaya und Curry Streichcreme",
+    "brand": "REWE Bio",
+    "code": "4337256398817",
+    "serving_text": "100 g",
+    "package_text": "180g",
+    "per100g": {
+     "calories": 334,
+     "protein": 5,
+     "carbs": 9.3,
+     "fat": 30
+    }
+   },
+   {
+    "name": "Papaya Mango Curry  Veganer Brotaufstrich",
+    "brand": "Vemondo",
+    "code": "4056489846901",
+    "serving_text": "",
+    "package_text": "180g",
+    "per100g": {
+     "calories": 264,
+     "protein": 5.3,
+     "carbs": 10.3,
+     "fat": 21.6
+    }
+   },
+   {
+    "name": "Streichcreme Curry Mango Papaya",
+    "brand": "Alnatura",
+    "code": "4104420239012",
+    "serving_text": "",
+    "package_text": "180 g",
+    "per100g": {
+     "calories": 356,
+     "protein": 5.3,
+     "carbs": 7.7,
+     "fat": 33
+    }
+   },
+   {
+    "name": "Passion Fruit, Mango & Papaya",
+    "brand": "Graham's",
+    "code": "5025840005553",
+    "serving_text": "1 portion (200 g)",
+    "package_text": "200g",
+    "per100g": {
+     "calories": 90,
+     "protein": 12.4,
+     "carbs": 8.9,
+     "fat": 0.5
+    }
+   }
+  ],
+  "salmon": [
+   {
+    "name": "Salmon ahumado",
+    "brand": "Nautica",
+    "code": "4056489530268",
+    "serving_text": "100 g",
+    "package_text": "200g",
+    "per100g": {
+     "calories": 144,
+     "protein": 18.9,
+     "carbs": 0,
+     "fat": 7.7
+    }
+   },
+   {
+    "name": "Salmon",
+    "brand": "Ocean kiss",
+    "code": "3770010799153",
+    "serving_text": "",
+    "package_text": "100 g",
+    "per100g": {
+     "calories": 167,
+     "protein": 6,
+     "carbs": 14.9,
+     "fat": 7.9
+    }
+   },
+   {
+    "name": "Salmon ahumado en lonchas",
+    "brand": "Lighthouse Bay",
+    "code": "20177089",
+    "serving_text": "100 g",
+    "package_text": "100 gram",
+    "per100g": {
+     "calories": 162,
+     "protein": 20.4,
+     "carbs": 0,
+     "fat": 9
+    }
+   }
+  ],
+  "potato": [],
+  "Barebells salty peanut protein bar": [
+   {
+    "name": "Protein Bar Salty Peanut",
+    "brand": "Barebells",
+    "code": "7340001800999",
+    "serving_text": "55 gram",
+    "package_text": "55 gram",
+    "per100g": {
+     "calories": 369,
+     "protein": 36.3636363636364,
+     "carbs": 27.2727272727273,
+     "fat": 15.4545454545455
+    }
+   },
+   {
+    "name": "SALTY PEANUT PROTEIN BAR",
+    "brand": "Barebells",
+    "code": "0850000429604",
+    "serving_text": "55g",
+    "package_text": "55 g",
+    "per100g": {
+     "calories": 363.636363636364,
+     "protein": 36.3636363636364,
+     "carbs": 32.7272727272727,
+     "fat": 14.5454545454545
+    }
+   },
+   {
+    "name": "White Salty Peanut Protein Bar",
+    "brand": "Barebells",
+    "code": "7340001804126",
+    "serving_text": "55 g",
+    "package_text": "55g",
+    "per100g": {
+     "calories": 386,
+     "protein": 36,
+     "carbs": 29,
+     "fat": 17
+    }
+   },
+   {
+    "name": "Proteinbar Vegan Salty Peanut 55g Barebells",
+    "brand": "Bonaventura sales",
+    "code": "7340001803587",
+    "serving_text": "1 bar (55 g)",
+    "package_text": "",
+    "per100g": {
+     "calories": 383.636363636364,
+     "protein": 27.27272727,
+     "carbs": 36.3636363636364,
+     "fat": 17.2727272727273
+    }
+   },
+   {
+    "name": "Salty peanut",
+    "brand": "Barebells",
+    "code": "4340421600363",
+    "serving_text": "55.0g",
+    "package_text": "",
+    "per100g": {
+     "calories": 370.909090909091,
+     "protein": 36.3636363636364,
+     "carbs": 29.0909090909091,
+     "fat": 14.9090905623002
+    }
+   }
+  ],
+  "Fairlife Core Power": [
+   {
+    "name": "Core Power High Protein Milk Shake Chocolate",
+    "brand": "fairlife",
+    "code": "0811620021951",
+    "serving_text": "200.0g",
+    "package_text": "14oz",
+    "per100g": {
+     "calories": 85,
+     "protein": 13,
+     "carbs": 3.9951,
+     "fat": 2.2563
+    }
+   },
+   {
+    "name": "CORE POWER ELITE VANILLA High Protein Milkshake",
+    "brand": "fairlife",
+    "code": "0811620020657",
+    "serving_text": "1 portion (414 ml)",
+    "package_text": "414 mL",
+    "per100g": {
+     "calories": 55.5555555555556,
+     "protein": 10.1449275362319,
+     "carbs": 1.93236714975845,
+     "fat": 0.845410628019324
+    }
+   },
+   {
+    "name": "Core Power High Protien Milkshake",
+    "brand": "Fairlife",
+    "code": "0811620024020",
+    "serving_text": "1 serving (414 g)",
+    "package_text": "",
+    "per100g": {
+     "calories": 41.0628019323672,
+     "protein": 6.28019323671498,
+     "carbs": 1.93236714975845,
+     "fat": 1.08695652173913
+    }
+   },
+   {
+    "name": "Core Power Chocolate Protein Shake",
+    "brand": "fairlife",
+    "code": "0811620022217",
+    "serving_text": "1 serving (414 g)",
+    "package_text": "414ml",
+    "per100g": {
+     "calories": 41.0628019323672,
+     "protein": 6.28019323671498,
+     "carbs": 1.44927536231884,
+     "fat": 1.08695652173913
+    }
+   },
+   {
+    "name": "Core Power",
+    "brand": "Fairlife",
+    "code": "0049000553604",
+    "serving_text": "1 portion (414 ml)",
+    "package_text": "",
+    "per100g": {
+     "calories": 55.5555555555556,
+     "protein": 10.1449275362319,
+     "carbs": 2.17391304347826,
+     "fat": 0.845410628019324
+    }
+   }
+  ],
+  "Doritos Protein Chips": [
+   {
+    "name": "Protein",
+    "brand": "Doritos",
+    "code": "0028400798372",
+    "serving_text": "28g",
+    "package_text": "7 oz",
+    "per100g": {
+     "calories": 535.714285714286,
+     "protein": 35.7142857142857,
+     "carbs": 28.5714285714286,
+     "fat": 28.5714285714286
+    }
+   },
+   {
+    "name": "Doritos Protein Sweet & Tangy BBQ Flavored",
+    "brand": "Doritos",
+    "code": "0028400798396",
+    "serving_text": "28g",
+    "package_text": "7 oz",
+    "per100g": {
+     "calories": 536,
+     "protein": 35.71,
+     "carbs": 28.57,
+     "fat": 28.57
+    }
+   },
+   {
+    "name": "Doritos Protein Chips",
+    "brand": "Doritos",
+    "code": "0028400803946",
+    "serving_text": "1 portion (46 g)",
+    "package_text": "",
+    "per100g": {
+     "calories": 521.739130434783,
+     "protein": 34.7826086956522,
+     "carbs": 26.0869565217391,
+     "fat": 28.2608695652174
+    }
+   },
+   {
+    "name": "Protein Chips",
+    "brand": "Doritos",
+    "code": "0028400801553",
+    "serving_text": "1 package (36.8 g)",
+    "package_text": "",
+    "per100g": {
+     "calories": 516.304347826087,
+     "protein": 35.3260869565217,
+     "carbs": 27.1739130434783,
+     "fat": 29.8913043478261
+    }
+   }
+  ],
+  "Royo everything bagel": [
+   {
+    "name": "Royo Everything Bagel",
+    "brand": "Royo",
+    "code": "0736613480310",
+    "serving_text": "78 g",
+    "package_text": "",
+    "per100g": {
+     "calories": 102.564102564103,
+     "protein": 12.8205128205128,
+     "carbs": 48.7179487179487,
+     "fat": 1.92307692307692
+    }
+   },
+   {
+    "name": "Everything Bagel",
+    "brand": "Royo Bread Co.",
+    "code": "31765336",
+    "serving_text": "78g",
+    "package_text": "16.5 g",
+    "per100g": {
+     "calories": 102.564102564103,
+     "protein": 12.8205128205128,
+     "carbs": 48.7179487179487,
+     "fat": 1.92307692307692
+    }
+   },
+   {
+    "name": "Everything bagel By Royo",
+    "brand": "Royo",
+    "code": "0666613480310",
+    "serving_text": "1 portion (78 g)",
+    "package_text": "",
+    "per100g": {
+     "calories": 102.564102564103,
+     "protein": 12.8205128205128,
+     "carbs": 48.7179487179487,
+     "fat": 1.92307692307692
+    }
+   }
+  ]
+ }
+}
