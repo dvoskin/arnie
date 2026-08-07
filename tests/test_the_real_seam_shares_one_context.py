@@ -67,7 +67,20 @@ async def user(sessions, monkeypatch):
 
 @pytest.fixture
 def wired(monkeypatch):
-    """Both providers stubbed, every semantic classification counted."""
+    """Both providers stubbed, every semantic classification counted.
+
+    ⭐ C2.1a §2 pointed these tests at `_fetch_usda_off` — the entry point
+    production actually calls — instead of the uncached inner function. That
+    is the difference between exercising the seam and exercising a private
+    helper, and it brings `_INFLIGHT_FETCHES` with it: a MODULE-LEVEL dict of
+    futures that outlives the turn. Without clearing it the second test in
+    this file reuses the first test's fetch, every provider count reads 0, and
+    the file goes green while proving nothing — the same silence as the
+    fixtures that made preparation unreachable.
+    """
+    from handlers import tool_executor as _te
+    _te._INFLIGHT_FETCHES.clear()
+
     calls = {"classify": 0, "usda": 0, "web": 0}
 
     async def fake_search_food(query, page_size=8):
@@ -129,7 +142,7 @@ async def test_enrichment_and_ownership_share_one_context(sessions, user,
     await the SAME assessment future, and classify EXACTLY ONCE.
     """
     from core import b1_quantity_operation as b1
-    from handlers.tool_executor import _fetch_usda_off_uncached
+    from handlers.tool_executor import _fetch_usda_off
     from skills.nutrition.evidence_qualification import assessment_key
     from skills.nutrition.evidence_semantics import VERSION
 
@@ -137,7 +150,7 @@ async def test_enrichment_and_ownership_share_one_context(sessions, user,
     token = CURRENT_EVIDENCE.set(turn)
     try:
         # 1. The real speculative enrichment caller.
-        await _fetch_usda_off_uncached("chicken", False)
+        await _fetch_usda_off("chicken", False)
         key = assessment_key("chicken", VERSION)
         assert turn.reused(key), (
             "enrichment did not register its classification on the turn's "
@@ -182,12 +195,12 @@ async def test_preparation_opens_from_the_shared_structured_evidence(
     establishes roasted 165 vs fried 253 and preparation opens — no web
     lookup at all."""
     from core import b1_quantity_operation as b1
-    from handlers.tool_executor import _fetch_usda_off_uncached
+    from handlers.tool_executor import _fetch_usda_off
 
     turn = EvidenceContext()
     token = CURRENT_EVIDENCE.set(turn)
     try:
-        await _fetch_usda_off_uncached("chicken", False)
+        await _fetch_usda_off("chicken", False)
         async with sessions() as s:
             u = await s.get(User, user.id)
             ask = await b1.try_take_ownership(
@@ -212,12 +225,12 @@ async def test_preparation_issues_no_provider_request_of_its_own(sessions,
     """§4: acquisition belongs to the pricing path. Preparation must add no
     USDA retrieval, and at most one supplemental lookup."""
     from core import b1_quantity_operation as b1
-    from handlers.tool_executor import _fetch_usda_off_uncached
+    from handlers.tool_executor import _fetch_usda_off
 
     turn = EvidenceContext()
     token = CURRENT_EVIDENCE.set(turn)
     try:
-        await _fetch_usda_off_uncached("chicken", False)
+        await _fetch_usda_off("chicken", False)
         usda_after_enrichment = wired["usda"]
         async with sessions() as s:
             u = await s.get(User, user.id)
@@ -238,7 +251,7 @@ async def test_a_second_turn_shares_nothing_with_the_first(sessions, user,
                                                            wired):
     """Ambient does not mean global: a new turn is a new context, so no
     assessment can cross turns."""
-    from handlers.tool_executor import _fetch_usda_off_uncached
+    from handlers.tool_executor import _fetch_usda_off
     from skills.nutrition.evidence_qualification import assessment_key
     from skills.nutrition.evidence_semantics import VERSION
 
@@ -246,7 +259,7 @@ async def test_a_second_turn_shares_nothing_with_the_first(sessions, user,
     first = EvidenceContext()
     token = CURRENT_EVIDENCE.set(first)
     try:
-        await _fetch_usda_off_uncached("chicken", False)
+        await _fetch_usda_off("chicken", False)
     finally:
         CURRENT_EVIDENCE.reset(token)
     assert first.reused(key)
@@ -319,3 +332,163 @@ async def test_no_lookup_is_launched_after_the_deadline():
     assert not calls, (
         "the decision path started a supplemental lookup — speculation is the "
         "only thing allowed to")
+
+
+# ── C2.1a: what the turn waits for, and what it does not ────────────────────
+
+def _seeded_structured(ctx, food_name, pairs):
+    """A structured classification ALREADY DONE on this context — what the
+    pricing path leaves behind for preparation to await."""
+    from core.semantic_evidence import EvidenceRecord, SemanticAssessment
+    from skills.nutrition import evidence_semantics as food
+    from skills.nutrition.evidence_qualification import assessment_key
+
+    records, assessments = [], []
+    for i, (prep, kcal) in enumerate(pairs):
+        eid = f"usda:{i}"
+        records.append(EvidenceRecord(evidence_id=eid, provider="usda",
+                                      description=f"Chicken, {prep}"))
+        assessments.append(SemanticAssessment(
+            evidence_id=eid, relationship="COMPATIBLE_SPECIALIZATION",
+            confidence=0.92,
+            extracted={"preparation": prep, "kcal_per_100g": kcal},
+            resolver_version=food.VERSION))
+    done = asyncio.Future()
+    done.set_result((tuple(records), tuple(assessments)))
+    ctx._inflight[assessment_key(food_name, food.VERSION)] = done
+
+
+@pytest.mark.asyncio
+async def test_a_material_structured_space_never_waits_for_the_web():
+    """§4. Structured evidence alone already establishes roasted 165 vs fried
+    253, so the field is opening either way. Waiting up to the grace period to
+    confirm a decision already made is latency the user pays for nothing — and
+    it is exactly the case the free half exists to make fast."""
+    import time
+
+    import skills.nutrition.preparation_activation as pa
+
+    turn = EvidenceContext()
+    token = CURRENT_EVIDENCE.set(turn)
+    original = pa._web_space
+    try:
+        async def never_returns(food_name, exclude=frozenset()):
+            await asyncio.sleep(30)
+            return {}
+
+        pa._web_space = never_returns
+        pa.start_supplemental("chicken")            # in flight, and hopeless
+        _seeded_structured(turn, "chicken", [("roasted", 165), ("fried", 253)])
+
+        started = time.monotonic()
+        space = await pa.preparation_space("chicken")
+        elapsed = time.monotonic() - started
+    finally:
+        pa._web_space = original
+        CURRENT_EVIDENCE.reset(token)
+
+    assert pa.is_material(space), space
+    assert elapsed < 0.3, (
+        f"waited {elapsed:.2f}s on supplemental evidence that could not "
+        f"change an already-material decision")
+    assert turn.meta["preparation"]["settled_by_structured"] is True
+    assert turn.meta["preparation"]["grace_ms"] == 0
+
+
+@pytest.mark.asyncio
+async def test_settled_supplemental_evidence_is_taken_with_no_deadline():
+    """§5. The deadline is for evidence that is genuinely still unresolved. A
+    lookup that landed while the quantity universe was being built — the
+    outcome starting speculation at eligibility exists to produce — is simply
+    read."""
+    import skills.nutrition.preparation_activation as pa
+
+    turn = EvidenceContext()
+    token = CURRENT_EVIDENCE.set(turn)
+    original = pa._web_space
+    try:
+        async def quick(food_name, exclude=frozenset()):
+            return {"grilled": 165.0, "fried": 250.0}
+
+        pa._web_space = quick
+        pa.start_supplemental("chicken")
+        await asyncio.sleep(0)                      # let it settle
+        space = await pa.preparation_space("chicken")
+    finally:
+        pa._web_space = original
+        CURRENT_EVIDENCE.reset(token)
+
+    assert space == {"grilled": 165.0, "fried": 250.0}
+    note = turn.meta["preparation"]
+    assert note["from_supplemental"] == 2
+    assert note["deadline_expired"] is False
+
+
+@pytest.mark.asyncio
+async def test_one_waiters_timeout_does_not_destroy_shared_evidence():
+    """§6, THE BUG THIS DIRECTIVE NAMED.
+
+    `EvidenceContext.shared` read
+
+        await asyncio.shield(task) if task.done() else await task
+
+    which shields the case that cannot be cancelled and leaves bare the case
+    that can. `preparation_space` wraps it in `wait_for`, so ONE waiter giving
+    up cancelled the SHARED future and deleted the acquisition for every other
+    consumer of that key — evidence nobody else had asked to abandon.
+    """
+    ctx, calls = EvidenceContext(), []
+
+    async def slow():
+        calls.append(1)
+        await asyncio.sleep(0.25)
+        return "evidence"
+
+    impatient = asyncio.ensure_future(
+        asyncio.wait_for(ctx.shared("k", slow), timeout=0.02))
+    with pytest.raises(asyncio.TimeoutError):
+        await impatient
+
+    # The second consumer must still get the value — one acquisition, intact.
+    assert await ctx.shared("k", slow) == "evidence", (
+        "a waiter's timeout cancelled the shared acquisition")
+    assert len(calls) == 1, f"{len(calls)} acquisitions for one key"
+
+
+def test_generic_enrichment_no_longer_speculates():
+    """§3. Speculation ran for every food the executor touched, including
+    turns the canonical lane never owned and ANSWER turns, which have no field
+    to open and can only pay for it. AST, so a re-added call cannot hide."""
+    import ast
+    import pathlib
+
+    import handlers.tool_executor as te
+
+    tree = ast.parse(pathlib.Path(te.__file__).read_text(encoding="utf-8"))
+    offenders = [n.lineno for n in ast.walk(tree)
+                 if isinstance(n, ast.Call)
+                 and (getattr(n.func, "id", "")
+                      or getattr(n.func, "attr", "")) == "start_supplemental"]
+    assert not offenders, (
+        f"tool_executor speculates again at {offenders} — evidence for a field "
+        f"starts at lane eligibility, not on every enrichment")
+
+
+def test_the_coordinator_starts_evidence_without_naming_a_field():
+    """§3's other half. `try_take_ownership` must start speculation — and must
+    still name no field doing it, or the coordinator carries one field's
+    evidence needs and the next field adds a second branch."""
+    import ast
+    import inspect
+    import textwrap
+
+    from core import b1_quantity_operation as b1
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(b1.try_take_ownership)))
+    called = {getattr(n.func, "id", "") or getattr(n.func, "attr", "")
+              for n in ast.walk(tree) if isinstance(n, ast.Call)}
+    assert "start_speculation" in called, (
+        "eligibility no longer starts field evidence — the lookup falls back "
+        "onto the ask's critical path")
+    assert not {c for c in called if "preparation" in c.lower()}, (
+        "the coordinator named a specific field again")

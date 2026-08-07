@@ -61,6 +61,23 @@ _WEB_RESULTS = 5
 MATERIALITY_BUDGET_S = 1.5
 
 
+def is_material(space: dict) -> bool:
+    """Does this space justify interrupting someone? THE ONE DEFINITION.
+
+    Two consumers need this answer — the predicate that opens the field, and
+    §4's early exit, which stops the turn waiting on supplemental evidence
+    that cannot change a decision already made. Two copies of the rule would
+    drift, and the drift would be invisible: the early exit would fire on a
+    space the predicate then declined, and preparation would silently stop
+    opening for exactly the foods structured evidence handles best.
+    """
+    densities = [kcal for kcal in space.values() if kcal]
+    if len(space) < 2 or len(densities) < 2:
+        return False
+    low, high = min(densities), max(densities)
+    return low > 0 and (high / low) >= MATERIAL_SPREAD
+
+
 def supplemental_key(food_name: str) -> str:
     return f"web-materiality:{str(food_name or '').strip().lower()}:{food.VERSION}"
 
@@ -120,19 +137,17 @@ async def preparation_is_materially_unresolved(item, context=None) -> bool:
         return False
 
     space = await preparation_space(name, context)
-    if len(space) < 2:
-        return False
+    material = is_material(space)
 
     densities = [kcal for kcal in space.values() if kcal]
     if len(densities) < 2:
-        # Two preparations exist and we cannot price the difference, so we
-        # cannot show the question is worth asking. Silence beats a guess.
+        # Two preparations may exist and we still cannot price the difference,
+        # so we cannot show the question is worth asking. Silence beats a guess.
         logger.info("event=preparation_space food=%s preparations=%s "
                     "material=unknown_no_densities", name, sorted(space))
-        return False
+        return material
 
     low, high = min(densities), max(densities)
-    material = low > 0 and (high / low) >= MATERIAL_SPREAD
     logger.info("event=preparation_space food=%s preparations=%s low=%.0f "
                 "high=%.0f ratio=%.2f material=%s",
                 name, sorted(space), low, high,
@@ -169,19 +184,46 @@ async def preparation_space(food_name: str, context=None) -> dict:
                                  evidence.kcal_per_100g)
 
     from_structured = len(space)
+    web_key = supplemental_key(food_name)
 
-    # THE DEADLINE. Supplemental evidence is awaited only for the remaining
-    # budget: already resolved costs nothing, in flight costs at most the
-    # grace period, and an expired wait means UNKNOWN — omit preparation.
+    def _trace(**kw):
+        shared.note(preparation={
+            "assessments_reused": reused,
+            "from_structured": from_structured,
+            "supplemental_speculated": shared.reused(web_key),
+            "from_supplemental": 0, "grace_ms": 0, "deadline_expired": False,
+            **kw})
+
+    # §4 — ALREADY DECIDED, SO DO NOT WAIT. When structured evidence alone
+    # establishes a material spread, supplemental evidence cannot change the
+    # outcome: the field is opening either way. Paying up to the grace period
+    # to confirm a decision already made is latency for nothing, and it is
+    # exactly the case the free half was supposed to make fast.
+    if is_material(space):
+        _trace(settled_by_structured=True)
+        return space
+
+    # THE DEADLINE, for genuinely unresolved supplemental evidence only (§5).
     # NO NEW LOOKUP IS LAUNCHED HERE; if speculation never started one, this
     # turn simply has no supplemental evidence.
     web, waited_ms, timed_out = {}, 0, False
-    web_key = supplemental_key(food_name)
     if shared.reused(web_key):
+        pending = not shared._inflight[web_key].done()
         started = _time.monotonic()
         try:
-            web = await asyncio.wait_for(
-                shared.shared(web_key, _never), timeout=MATERIALITY_BUDGET_S)
+            if pending:
+                # A waiter's timeout can no longer cancel the shared work —
+                # `EvidenceContext.shared` shields unconditionally (§6). Before
+                # that fix this expiry destroyed the acquisition for every
+                # other consumer of the key.
+                web = await asyncio.wait_for(
+                    shared.shared(web_key, _never),
+                    timeout=MATERIALITY_BUDGET_S)
+            else:
+                # §5: SETTLED, so no deadline applies. Speculation landed while
+                # the universe was being built — which is the outcome starting
+                # it at eligibility exists to produce.
+                web = await shared.shared(web_key, _never)
         except asyncio.TimeoutError:
             timed_out = True
             logger.info("event=materiality_deadline food=%s budget_s=%.1f — "
@@ -193,14 +235,8 @@ async def preparation_space(food_name: str, context=None) -> dict:
         waited_ms = int((_time.monotonic() - started) * 1000)
     space.update(web)
 
-    shared.note(preparation={
-        "assessments_reused": reused,
-        "from_structured": from_structured,
-        "from_supplemental": len(web),
-        "supplemental_speculated": shared.reused(web_key),
-        "grace_ms": waited_ms,
-        "deadline_expired": timed_out,
-    })
+    _trace(from_supplemental=len(web), grace_ms=waited_ms,
+           deadline_expired=timed_out)
     return space
 
 

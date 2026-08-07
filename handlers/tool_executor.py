@@ -1978,17 +1978,13 @@ async def _fetch_usda_off(food_name: str, is_packaged: bool):
             pass          # a failed speculative fetch re-runs inline below
     task = _aio.ensure_future(_fetch_usda_off_uncached(food_name, is_packaged))
     _INFLIGHT_FETCHES[key] = task
-    # ALONGSIDE, NOT AFTER. Preparation materiality for a generic food comes
-    # mostly from the web (measured: USDA's top rows for bare "chicken" carry
-    # no registered preparations), so starting it when the ask is assembled
-    # puts a full round trip on the critical path — which cost a production
-    # turn 6.8s and opened nothing. It starts here, with identity, racing the
-    # structured lookup instead of following it.
-    try:
-        from skills.nutrition.preparation_activation import start_supplemental
-        start_supplemental(food_name)
-    except Exception:                                  # never cost a lookup
-        logger.debug("speculative materiality start failed", exc_info=True)
+    # SPECULATION IS NOT STARTED HERE ANY MORE (C2.1a §3). It was: every food
+    # this executor touched began a web materiality lookup, including foods on
+    # turns the canonical lane never owned and ANSWER turns, which have no
+    # field to open and can only pay for it. It now starts once B-1 eligibility
+    # is established — `core.semantic_fields.start_speculation`, called from
+    # `try_take_ownership` before the quantity universe is built, so it still
+    # overlaps work the turn was going to do anyway.
     while len(_INFLIGHT_FETCHES) > _INFLIGHT_MAX:
         _INFLIGHT_FETCHES.popitem(last=False)
     return await task

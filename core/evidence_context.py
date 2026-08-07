@@ -52,12 +52,25 @@ class EvidenceContext:
         waiter sees the same exception rather than each retrying a provider
         that just failed. The caller decides what a failure means — here it
         always means "no evidence", never "guess".
+
+        ⭐ A WAITER'S TIMEOUT MUST NOT KILL THE WORK. This read
+
+            await asyncio.shield(task) if task.done() else await task
+
+        which shields the case that cannot be cancelled (already done) and
+        leaves the case that can (still pending) bare. `preparation_space`
+        wraps this in `wait_for(..., 1.5)`, so on expiry the cancellation
+        propagated into the SHARED future and destroyed the acquisition for
+        every other consumer of that key — the timeout of one waiter deleting
+        evidence nobody else had asked to abandon. Shielding unconditionally
+        is the whole point of a shared future: a waiter may stop waiting, and
+        that is all it may do.
         """
         task = self._inflight.get(key)
         if task is None:
             task = asyncio.ensure_future(acquire())
             self._inflight[key] = task
-        return await asyncio.shield(task) if task.done() else await task
+        return await asyncio.shield(task)
 
     def reused(self, key: str) -> bool:
         """Whether this key's work was already started by someone else — the

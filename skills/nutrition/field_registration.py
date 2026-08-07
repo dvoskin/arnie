@@ -31,6 +31,21 @@ async def _preparation_unresolved(item, context=None) -> bool:
     return await preparation_is_materially_unresolved(item, context)
 
 
+def _preparation_speculate(item, context=None) -> None:
+    """Start the supplemental materiality lookup for this item's food.
+
+    C2.1a §3 moved the start here from generic enrichment. Late import for the
+    same reason as the predicate: registration must not drag the resolver or
+    the search lane in at import time.
+    """
+    from skills.nutrition.preparation_activation import start_supplemental
+
+    name = str(getattr(getattr(item, "identity", None), "canonical_name", "")
+               or "").strip()
+    if name:
+        start_supplemental(name, context)
+
+
 def register_all() -> None:
     from core.semantics import ClarificationAttribute
     from skills.nutrition import preparation_ontology as prep
@@ -65,5 +80,10 @@ def register_all() -> None:
         # volunteered a preparation ambiguity — which it does not do for
         # "I had some chicken", so B-1.5 could not fire in production at all.
         unresolved_when=_preparation_unresolved,
+        # THE ONLY FIELD THAT SPECULATES TODAY. Its evidence is mostly web —
+        # measured: USDA's top rows for bare "chicken" carry no registered
+        # preparations — so a lookup started when the predicate runs lands
+        # squarely on the ask's critical path.
+        speculate=_preparation_speculate,
         caption="Preparation", order=20))
 

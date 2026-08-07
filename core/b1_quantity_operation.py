@@ -653,6 +653,16 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
     interpreter_item["entity_id"] = entity_id
 
     operation_id = _operation_id_for(user, turn_id)
+    # EVERY FIELD'S EVIDENCE STARTS HERE, and the coordinator names none of
+    # them (C2.1a §3). Eligibility is settled, so this turn is genuinely a
+    # candidate for a canonical ask; the universe build below is real work to
+    # overlap with. Started earlier — in generic enrichment — it ran for foods
+    # on turns this lane never owned; started later, at `derive_unresolved`, it
+    # lands on the critical path, which cost a production turn 6.8 s.
+    from core.semantic_fields import start_speculation
+
+    start_speculation(item)
+
     field = qc.quantity_field(operation_id=operation_id, revision=0, item=item)
     # THE UNIVERSE IS BUILT BEFORE ANYTHING IS SHOWN, and the decision is
     # taken over it — never over a list that was already reduced. Persisting
