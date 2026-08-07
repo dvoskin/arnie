@@ -14,6 +14,11 @@
 > `tests/evidence_corpus/`. Design decisions here remain valid; the producer's
 > TRIGGER is what changed.
 > Sequencing authority: [CANONICAL_MIGRATION_DIRECTIVE.md](CANONICAL_MIGRATION_DIRECTIVE.md) (Phase B–F master directive). This document is the detail layer.
+>
+> **B-1.5E commit 1 landed (220ae9d).** Preparation's activation is still the
+> superseded USDA-token predicate; commit 2 deletes it and consumes qualified
+> semantic evidence through `unresolved_when`. Evidence opens the field; only
+> the user's tap or stated text answers it.
 
 Source: architecture review received 2026-08-05, folded into sequencing per the
 author's framing ("notes to consider … incorporate into approach and

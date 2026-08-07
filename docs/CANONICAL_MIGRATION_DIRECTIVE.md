@@ -1179,14 +1179,17 @@ B-1.5      BLOCKED ON B-1.5E readiness, producer, pricing and the generic
                              not inferred — a bare `chicken` query returns
                              zero comparable rows.
 CONTRACT   FROZEN 08-07      semantic field registry + rule of three
-B-1.5E     CORE LANDED       shared mechanism (core/semantic_evidence.py) +
-                             food domain + both projections + LIVE eval:
-                             Sonnet 80% exact, 0 false-compatible at the
-                             calibrated conf>=0.80 (Haiku disqualified — its
-                             errors sit at 0.90+). Papaya heavy-syrup now
-                             structurally refused. REMAINING: wire into
-                             enrichment fan-out + preparation activation,
-                             persistence of assessments, production trace.
+B-1.5E     C1 LANDED         core + food domain + both projections + LIVE
+                             eval (Sonnet 80% exact, 0 false-compatible at
+                             conf>=0.80; Haiku DISQUALIFIED — errors at 0.90+)
+                             + qualification wired before best_candidate
+                             (220ae9d). Composite/derived rows now
+                             structurally cannot win pricing.
+                             C2 NEXT: preparation consumes qualified evidence
+                             through unresolved_when; superseded predicate
+                             DELETED, not refined. Then the natural iOS turn.
+                             ARCHITECTURE FROZEN — core/semantic_evidence.py
+                             does not get smarter.
 B-1.6      after B-1.5
 B-1.7      after B-1.6
 B-1.8      after B-1.7
@@ -1379,6 +1382,29 @@ This kills the tempting fix. USDA writes `<base>, <qualifiers>`, so "the leading
 term is the base identity" would reject five of six failure classes for
 `chicken` in one line — and it is a naming trick, provider-specific, and the
 first description that breaks the convention breaks the system silently.
+
+### SPACE vs VALUE — the invariant governing every semantic field
+
+    external evidence establishes the SPACE of plausible answers
+    only user evidence — or an explicit assumption policy — resolves the VALUE
+
+A compatible record reading `Chicken breast, roasted` is evidence that ROASTED
+EXISTS as a material preparation for this food. It is NOT evidence that the
+user ate roasted chicken. Collapsing the two is how a clarification system
+quietly stops asking and starts assuming — and it is the precise shape that
+would let semantic evidence mutate user state, which this whole boundary
+exists to prevent.
+
+Enforced by `tests/test_evidence_opens_preparation_but_cannot_answer_it.py`:
+`PreparationEvidence` has no field a resolved value could travel through; no
+module outside the OPTION PRODUCER (a chip's meaning is its patch, C11) and
+the ANSWER PATH may construct a `SetPreparation`; and the evidence modules
+cannot even import the type. The only writers of a resolved preparation are
+the user's tap, the user's stated text, and — later, B-1.7 — a disclosed
+assumption policy.
+
+Generalize it when the next field lands: evidence opens fields and populates
+options; users and disclosed policy answer them.
 
 ### Qualification in the pricing path — landed, with four guardrails
 

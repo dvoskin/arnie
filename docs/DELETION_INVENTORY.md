@@ -16,6 +16,12 @@
 > token-matching-against-provider-descriptions is regex identity, prohibited by
 > B-1.5E, and survives only because it is fail-closed. It is replaced by the
 > semantic evidence layer, not refined.
+>
+> **Owed at commit 2 (imminent, not the promotion event):**
+> `skills/nutrition/preparation_materiality.py` — its token matching against
+> provider descriptions is the regex identity B-1.5E prohibits. It is DELETED
+> behind the `unresolved_when` hook, not refined.
+
 **Deletion belongs to each migration step, not to the end of the project.**
 Every promoted owner removes its legacy implementation in the same slice, or
 the new architecture becomes an additional layer coexisting with the old one —

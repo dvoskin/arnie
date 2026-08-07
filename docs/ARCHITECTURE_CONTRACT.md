@@ -27,6 +27,16 @@
 > C4 still reads 3 legacy writers and C8/C9 stay frozen: promotion and
 > predecessor deletion are DEFERRED until B-2 by deliberate rollout decision,
 > not by drift. See the directive's "One promotion event".
+>
+> **B-1.5E added two more enforced boundaries:** semantic evidence
+> qualification runs BEFORE `best_candidate` (eligibility, not truth —
+> `tests/test_qualification_changes_resolver_behavior.py`), under the
+> invariant `SEMANTIC_RESOLVER_DOWN != RAW_EVIDENCE_AUTHORIZED`: the user's
+> action fails open through the ladder's qualification-free rungs, ambiguous
+> evidence fails closed. And SPACE vs VALUE — external evidence may open a
+> semantic field and populate its options but may never construct a resolved
+> patch (`tests/test_evidence_opens_preparation_but_cannot_answer_it.py`).
+
 **Status:** authoritative. A change that violates a rule here is wrong even if every test passes.
 **Created:** 2026-07-30, from the master audit (`audits/MASTER_AUDIT_2026-07-30.md`).
 Each invariant lists its current production status and its enforcement point — the directive's rule
