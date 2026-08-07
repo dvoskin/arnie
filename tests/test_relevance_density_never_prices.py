@@ -171,38 +171,6 @@ async def test_interpreter_uncertainty_opens_the_field_with_registered_options()
 
 # ── 5. two densities are not two options unless QUALIFIED ───────────────────
 
-@pytest.mark.asyncio
-async def test_unqualified_evidence_establishes_no_space(monkeypatch):
-    """Two strings saying "fried" and "roasted" are not a preparation space.
-    The relationship must be identity-bearing and clear the confidence bar."""
-    records = [_web("web:1"), _web("web:2")]
-    composite = [
-        _assessment("web:1", "grilled", 165,
-                    relationship="COMPOSITE_CONTAINING_IDENTITY"),
-        _assessment("web:2", "fried", 250,
-                    relationship="DIFFERENT_IDENTITY"),
-    ]
-    ctx = _seeded(records, composite)
-
-    async def no_web(food_name, exclude=frozenset()):
-        return {}
-
-    monkeypatch.setattr(pa, "_web_space", no_web)
-    assert await pa.preparation_space("chicken", ctx) == {}
-
-
-@pytest.mark.asyncio
-async def test_low_confidence_evidence_establishes_no_space(monkeypatch):
-    records = [_web("web:1"), _web("web:2")]
-    weak = [_assessment("web:1", "grilled", 165, confidence=0.55),
-            _assessment("web:2", "fried", 250, confidence=0.60)]
-    ctx = _seeded(records, weak)
-
-    async def no_web(food_name, exclude=frozenset()):
-        return {}
-
-    monkeypatch.setattr(pa, "_web_space", no_web)
-    assert await pa.preparation_space("chicken", ctx) == {}
 
 
 # ── 1. the cache is turn-scoped, and says so ────────────────────────────────
@@ -247,60 +215,8 @@ async def test_concurrent_consumers_share_one_acquisition():
     assert len(calls) == 1, f"{len(calls)} acquisitions for one key"
 
 
-@pytest.mark.asyncio
-async def test_preparation_never_starts_its_own_retrieval():
-    """§4: acquisition belongs to the pricing path. If it never ran this turn,
-    preparation gets nothing rather than opening a second retrieval path."""
-    from core.evidence_context import EvidenceContext
-
-    ctx = EvidenceContext()
-
-    async def no_web(food_name, exclude=frozenset()):
-        return {}
-
-    original, pa._web_space = pa._web_space, no_web
-    try:
-        assert await pa.preparation_space("chicken", ctx) == {}
-    finally:
-        pa._web_space = original
-    assert ctx.meta["preparation"]["assessments_reused"] is False
-
 
 # ── fields request evidence; they do not own retrieval lifecycles ───────────
-
-@pytest.mark.asyncio
-async def test_supplemental_evidence_is_deduplicated_by_the_context():
-    """Two fields wanting the same supplemental evidence await ONE lookup.
-
-    Without this the shape regrows one field at a time: PreparationField calls
-    Tavily, VariantField calls something else, and every future field brings
-    its own client and its own duplicate spend.
-    """
-    import asyncio
-
-    from core.evidence_context import EvidenceContext
-
-    calls = []
-
-    async def fake_web(food_name, exclude=frozenset()):
-        calls.append(food_name)
-        await asyncio.sleep(0.01)
-        return {"grilled": 165.0, "fried": 250.0}
-
-    ctx = EvidenceContext()
-    original, pa._web_space = pa._web_space, fake_web
-    try:
-        # SPECULATION is what starts work now — the decision path never does
-        # (see `test_no_lookup_is_launched_after_the_deadline`). Two starts
-        # for one key must still produce one lookup, and two concurrent
-        # consumers must await that same future.
-        pa.start_supplemental("chicken", ctx)
-        pa.start_supplemental("chicken", ctx)
-        await asyncio.gather(pa.preparation_space("chicken", ctx),
-                             pa.preparation_space("chicken", ctx))
-    finally:
-        pa._web_space = original
-    assert len(calls) == 1, f"{len(calls)} supplemental lookups for one key"
 
 
 def test_no_field_module_calls_a_provider_directly():

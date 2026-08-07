@@ -81,7 +81,7 @@ def wired(monkeypatch):
     from handlers import tool_executor as _te
     _te._INFLIGHT_FETCHES.clear()
 
-    calls = {"classify": 0, "usda": 0, "web": 0}
+    calls = {"classify": 0, "usda": 0}
 
     async def fake_search_food(query, page_size=8):
         calls["usda"] += 1
@@ -98,16 +98,10 @@ def wired(monkeypatch):
              "extracted": {"preparation": "fried", "kcal_per_100g": 253}},
         ])
 
-    async def fake_web(food_name, exclude=frozenset()):
-        calls["web"] += 1
-        return {}
-
     monkeypatch.setattr("api.usda.search_food", fake_search_food)
     monkeypatch.setattr(
         "skills.nutrition.evidence_qualification._default_complete",
         fake_complete)
-    monkeypatch.setattr(
-        "skills.nutrition.preparation_activation._web_space", fake_web)
     return calls
 
 
@@ -178,72 +172,21 @@ async def test_enrichment_and_ownership_share_one_context(sessions, user,
         f"not share")
     assert wired["usda"] == 1, f"{wired['usda']} USDA retrievals"
 
-    # ⭐ IDENTITY, DIRECTLY. The count above cannot see a broken seam: a second
-    # context simply never STARTS work, so `classify` stays 1 while nothing is
-    # shared — which is exactly how today's defect hid. Field derivation writes
-    # its trace note to whatever context it was given, so the note appearing on
-    # THE TURN'S context is proof the same object reached both callers.
-    assert "preparation" in turn.meta, (
-        "field derivation wrote its trace to a DIFFERENT context — the two "
-        "production callers are not sharing, which is invisible to any count")
+    # ⭐ WHAT THIS STILL PROVES, AND WHAT IT NO LONGER DOES.
+    #
+    # It used to assert that field derivation's trace note landed on THIS
+    # context — proof that the same object reached both production callers,
+    # which a call count cannot show (a second context never STARTS work, so
+    # `classify` stays 1 while nothing is shared, and that is exactly how the
+    # defect hid). B-1.5 took preparation off the evidence path entirely: it
+    # reads a build-time artifact, writes no trace, and asks for nothing.
+    #
+    # So this is now a statement about the PRICING lane alone — enrichment and
+    # ownership resolve one context, and qualification runs once per turn.
+    # That lane still shares evidence through `EvidenceContext`, so the seam
+    # it broke on is still a seam, and the counts above are still the guard.
 
 
-@pytest.mark.asyncio
-async def test_preparation_opens_from_the_shared_structured_evidence(
-        sessions, user, wired):
-    """The payoff: with the seam connected, the FREE structured half alone
-    establishes roasted 165 vs fried 253 and preparation opens — no web
-    lookup at all."""
-    from core import b1_quantity_operation as b1
-    from handlers.tool_executor import _fetch_usda_off
-
-    turn = EvidenceContext()
-    token = CURRENT_EVIDENCE.set(turn)
-    try:
-        await _fetch_usda_off("chicken", False)
-        async with sessions() as s:
-            u = await s.get(User, user.id)
-            ask = await b1.try_take_ownership(
-                s, user=u, material=_material(), turn_id="t_open",
-                channel="ios", locale="en")
-            await s.commit()
-    finally:
-        CURRENT_EVIDENCE.reset(token)
-
-    attributes = {f.attribute.value
-                  for g in ask.interaction.groups for f in g.fields}
-    assert attributes == {"quantity", "preparation"}, attributes
-    note = turn.meta.get("preparation") or {}
-    assert note.get("assessments_reused") is True
-    assert note.get("from_structured") == 2
-    assert wired["classify"] == 1
-
-
-@pytest.mark.asyncio
-async def test_preparation_issues_no_provider_request_of_its_own(sessions,
-                                                                 user, wired):
-    """§4: acquisition belongs to the pricing path. Preparation must add no
-    USDA retrieval, and at most one supplemental lookup."""
-    from core import b1_quantity_operation as b1
-    from handlers.tool_executor import _fetch_usda_off
-
-    turn = EvidenceContext()
-    token = CURRENT_EVIDENCE.set(turn)
-    try:
-        await _fetch_usda_off("chicken", False)
-        usda_after_enrichment = wired["usda"]
-        async with sessions() as s:
-            u = await s.get(User, user.id)
-            await b1.try_take_ownership(
-                s, user=u, material=_material(), turn_id="t_noreq",
-                channel="ios", locale="en")
-            await s.commit()
-    finally:
-        CURRENT_EVIDENCE.reset(token)
-
-    assert wired["usda"] == usda_after_enrichment, (
-        "preparation issued its own USDA retrieval")
-    assert wired["web"] <= 1, f"{wired['web']} supplemental lookups"
 
 
 @pytest.mark.asyncio
@@ -275,153 +218,10 @@ async def test_a_second_turn_shares_nothing_with_the_first(sessions, user,
 
 # ── the deadline ────────────────────────────────────────────────────────────
 
-@pytest.mark.asyncio
-async def test_a_slow_supplemental_lookup_cannot_delay_the_interaction():
-    """A bounded grace period to collapse two turns into one is worth paying.
-    Making someone watch a spinner while Arnie researches a second question is
-    not — so the wait is capped and expiry means DO NOT ASK."""
-    import time
-
-    import skills.nutrition.preparation_activation as pa
-
-    turn = EvidenceContext()
-    token = CURRENT_EVIDENCE.set(turn)
-    original = pa._web_space
-    try:
-        async def slow(food_name, exclude=frozenset()):
-            await asyncio.sleep(10)
-            return {"grilled": 165.0, "fried": 250.0}
-
-        pa._web_space = slow
-        pa.start_supplemental("chicken")
-        started = time.monotonic()
-        space = await pa.preparation_space("chicken")
-        elapsed = time.monotonic() - started
-    finally:
-        pa._web_space = original
-        CURRENT_EVIDENCE.reset(token)
-
-    assert elapsed < pa.MATERIALITY_BUDGET_S + 0.5, (
-        f"waited {elapsed:.1f}s on a slow lookup")
-    assert space == {}, "expired materiality must be UNKNOWN, not a guess"
-    assert turn.meta["preparation"]["deadline_expired"] is True
-
-
-@pytest.mark.asyncio
-async def test_no_lookup_is_launched_after_the_deadline():
-    """Expiry means the turn proceeds without preparation — it does not mean
-    starting another lookup that could arrive even later."""
-    import skills.nutrition.preparation_activation as pa
-
-    turn = EvidenceContext()
-    token = CURRENT_EVIDENCE.set(turn)
-    calls = []
-    original = pa._web_space
-    try:
-        async def counted(food_name, exclude=frozenset()):
-            calls.append(food_name)
-            return {}
-
-        pa._web_space = counted
-        # Nothing speculated this turn.
-        await pa.preparation_space("chicken")
-    finally:
-        pa._web_space = original
-        CURRENT_EVIDENCE.reset(token)
-
-    assert not calls, (
-        "the decision path started a supplemental lookup — speculation is the "
-        "only thing allowed to")
 
 
 # ── C2.1a: what the turn waits for, and what it does not ────────────────────
 
-def _seeded_structured(ctx, food_name, pairs):
-    """A structured classification ALREADY DONE on this context — what the
-    pricing path leaves behind for preparation to await."""
-    from core.semantic_evidence import EvidenceRecord, SemanticAssessment
-    from skills.nutrition import evidence_semantics as food
-    from skills.nutrition.evidence_qualification import assessment_key
-
-    records, assessments = [], []
-    for i, (prep, kcal) in enumerate(pairs):
-        eid = f"usda:{i}"
-        records.append(EvidenceRecord(evidence_id=eid, provider="usda",
-                                      description=f"Chicken, {prep}"))
-        assessments.append(SemanticAssessment(
-            evidence_id=eid, relationship="COMPATIBLE_SPECIALIZATION",
-            confidence=0.92,
-            extracted={"preparation": prep, "kcal_per_100g": kcal},
-            resolver_version=food.VERSION))
-    done = asyncio.Future()
-    done.set_result((tuple(records), tuple(assessments)))
-    ctx._inflight[assessment_key(food_name, food.VERSION)] = done
-
-
-@pytest.mark.asyncio
-async def test_a_material_structured_space_never_waits_for_the_web():
-    """§4. Structured evidence alone already establishes roasted 165 vs fried
-    253, so the field is opening either way. Waiting up to the grace period to
-    confirm a decision already made is latency the user pays for nothing — and
-    it is exactly the case the free half exists to make fast."""
-    import time
-
-    import skills.nutrition.preparation_activation as pa
-
-    turn = EvidenceContext()
-    token = CURRENT_EVIDENCE.set(turn)
-    original = pa._web_space
-    try:
-        async def never_returns(food_name, exclude=frozenset()):
-            await asyncio.sleep(30)
-            return {}
-
-        pa._web_space = never_returns
-        pa.start_supplemental("chicken")            # in flight, and hopeless
-        _seeded_structured(turn, "chicken", [("roasted", 165), ("fried", 253)])
-
-        started = time.monotonic()
-        space = await pa.preparation_space("chicken")
-        elapsed = time.monotonic() - started
-    finally:
-        pa._web_space = original
-        CURRENT_EVIDENCE.reset(token)
-
-    assert pa.is_material(space), space
-    assert elapsed < 0.3, (
-        f"waited {elapsed:.2f}s on supplemental evidence that could not "
-        f"change an already-material decision")
-    assert turn.meta["preparation"]["settled_by_structured"] is True
-    assert turn.meta["preparation"]["grace_ms"] == 0
-
-
-@pytest.mark.asyncio
-async def test_settled_supplemental_evidence_is_taken_with_no_deadline():
-    """§5. The deadline is for evidence that is genuinely still unresolved. A
-    lookup that landed while the quantity universe was being built — the
-    outcome starting speculation at eligibility exists to produce — is simply
-    read."""
-    import skills.nutrition.preparation_activation as pa
-
-    turn = EvidenceContext()
-    token = CURRENT_EVIDENCE.set(turn)
-    original = pa._web_space
-    try:
-        async def quick(food_name, exclude=frozenset()):
-            return {"grilled": 165.0, "fried": 250.0}
-
-        pa._web_space = quick
-        pa.start_supplemental("chicken")
-        await asyncio.sleep(0)                      # let it settle
-        space = await pa.preparation_space("chicken")
-    finally:
-        pa._web_space = original
-        CURRENT_EVIDENCE.reset(token)
-
-    assert space == {"grilled": 165.0, "fried": 250.0}
-    note = turn.meta["preparation"]
-    assert note["from_supplemental"] == 2
-    assert note["deadline_expired"] is False
 
 
 @pytest.mark.asyncio
@@ -474,21 +274,3 @@ def test_generic_enrichment_no_longer_speculates():
         f"starts at lane eligibility, not on every enrichment")
 
 
-def test_the_coordinator_starts_evidence_without_naming_a_field():
-    """§3's other half. `try_take_ownership` must start speculation — and must
-    still name no field doing it, or the coordinator carries one field's
-    evidence needs and the next field adds a second branch."""
-    import ast
-    import inspect
-    import textwrap
-
-    from core import b1_quantity_operation as b1
-
-    tree = ast.parse(textwrap.dedent(inspect.getsource(b1.try_take_ownership)))
-    called = {getattr(n.func, "id", "") or getattr(n.func, "attr", "")
-              for n in ast.walk(tree) if isinstance(n, ast.Call)}
-    assert "start_speculation" in called, (
-        "eligibility no longer starts field evidence — the lookup falls back "
-        "onto the ask's critical path")
-    assert not {c for c in called if "preparation" in c.lower()}, (
-        "the coordinator named a specific field again")

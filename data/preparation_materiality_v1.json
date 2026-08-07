@@ -1,0 +1,53 @@
+{
+  "resolver_version": "food_evidence_semantics_v1",
+  "vocabulary_fingerprint": "sha256:ece89f94d6940c53e811f1dae4e365a8",
+  "retrieval_fingerprint": "sha256:2b0413085e056ed24b3a3e9baead71d3",
+  "generated_at": "2026-08-07T22:35:52Z",
+  "entries": {
+    "chicken": {
+      "space": {
+        "grilled": 151.0,
+        "roasted": 167.0,
+        "fried": 219.0
+      },
+      "evidence_ids": [
+        "usda:171053",
+        "usda:171068",
+        "usda:171465",
+        "usda:171534",
+        "usda:172395",
+        "usda:173635",
+        "usda:173637",
+        "usda:173639"
+      ],
+      "material": true
+    },
+    "mushrooms": {
+      "space": {
+        "grilled": 29.0,
+        "fried": 39.0
+      },
+      "evidence_ids": [
+        "usda:168435",
+        "usda:169243",
+        "usda:169253",
+        "usda:169377"
+      ],
+      "material": true
+    },
+    "potato": {
+      "space": {
+        "roasted": 127.0,
+        "fried": 260.0
+      },
+      "evidence_ids": [
+        "usda:168444",
+        "usda:168445",
+        "usda:169267",
+        "usda:169763",
+        "usda:170031"
+      ],
+      "material": true
+    }
+  }
+}

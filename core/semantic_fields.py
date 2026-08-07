@@ -160,18 +160,6 @@ class FieldSpec:
     #: `async (item, ctx) -> bool`. None means "ask only when the interpreter
     #: raised it", which is where quantity still sits.
     unresolved_when: Optional[Callable] = None
-    #: START THIS FIELD'S EVIDENCE NOW, so the wait overlaps work already
-    #: happening. `(item, ctx) -> None`, synchronous and fire-and-forget: the
-    #: context owns the future, and a field that needs nothing declares nothing.
-    #:
-    #: WHY IT IS A REGISTRY HOOK AND NOT A CALL IN THE COORDINATOR. Preparation
-    #: is the field that needs this today, and `try_take_ownership` naming it
-    #: would be the same defect `test_the_coordinator_still_names_no_field`
-    #: already guards: the coordinator would carry one field's evidence needs,
-    #: and the second field to need speculation would add a second branch.
-    #: Declared here, the coordinator starts EVERY field's evidence without
-    #: knowing what any of them are.
-    speculate: Optional[Callable] = None
     #: WHAT THE DOMAIN CAN ACTUALLY ACT ON — supplied by whoever registers,
     #: called by core, understood by neither.
     #:
@@ -342,35 +330,6 @@ async def derive_unresolved(item, context=None) -> tuple:
             shared.meta.get(spec.attribute_value) or shared.meta or "-")
     return tuple(spec.attribute for spec, opened, _d, _ms in results if opened)
 
-
-def start_speculation(item, context=None) -> None:
-    """Start every registered field's evidence, as early as the lane allows.
-
-    C2.1a §3. This used to live in generic enrichment — `_fetch_usda_off`
-    started preparation's web lookup for EVERY food the executor touched,
-    including foods on turns the canonical lane never owned and answer turns
-    with no field to open. Speculation there is spend with no possible payoff.
-
-    Here it runs once B-1 eligibility is established and BEFORE the quantity
-    universe is built, so it overlaps work the turn was going to do anyway —
-    which is the whole point of speculating rather than deferring. If the lane
-    declines, nothing was started.
-
-    NEVER RAISES AND NEVER WAITS. A field that cannot start its evidence gets
-    none; that is a slower turn, not a failed one.
-    """
-    _ensure_installed()
-    from core.evidence_context import ensure
-
-    shared = ensure(context)
-    for spec in sorted(_REGISTRY.values(), key=lambda s: s.order):
-        if spec.speculate is None:
-            continue
-        try:
-            spec.speculate(item, shared)
-        except Exception:
-            logger.debug("speculation failed for %s", spec.attribute_value,
-                         exc_info=True)
 
 
 def spec_for(attribute) -> FieldSpec:

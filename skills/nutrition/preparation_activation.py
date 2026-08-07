@@ -30,9 +30,7 @@ earns its place — and only there.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
-import time as _time
 
 from skills.nutrition import evidence_semantics as food
 
@@ -44,25 +42,16 @@ logger = logging.getLogger(__name__)
 #: the number by more than rounding is an interruption, not a clarification.
 MATERIAL_SPREAD = 1.25
 
-#: Bounded web results for the materiality claim. Small deliberately: this is
-#: evidence that a preparation EXISTS and is material, not a survey.
-_WEB_RESULTS = 5
 
-#: HOW LONG THE INTERACTION MAY WAIT for materiality that is still in flight.
-#:
-#: Measured 2026-08-07: starting the supplemental lookup inside
-#: `derive_unresolved` cost a production turn 6.8 seconds and still opened
-#: nothing. Speculation moves the work earlier; this bounds what the user pays
-#: when it is nevertheless unfinished.
-#:
-#: THE RULE ON EXPIRY IS "DO NOT ASK", never "guess" and never "wait longer".
-#: A small grace period to collapse two turns into one is worth paying; making
-#: someone watch a spinner while Arnie researches a second question is not.
-MATERIALITY_BUDGET_S = 1.5
+def space_is_material(space: dict) -> bool:
+    """Does this SPACE justify interrupting someone? THE ONE DEFINITION.
 
-
-def is_material(space: dict) -> bool:
-    """Does this space justify interrupting someone? THE ONE DEFINITION.
+    Named for its input, not for its question, because
+    `skills.nutrition.materiality.is_material` already answers a DIFFERENT
+    question — whether a given uncertainty's macro spans are worth a question,
+    given the day's targets. Two functions called `is_material` taking
+    unrelated arguments is how a caller reaches for the wrong rule and gets a
+    plausible answer; the collision is removed rather than documented.
 
     Two consumers need this answer — the predicate that opens the field, and
     §4's early exit, which stops the turn waiting on supplemental evidence
@@ -78,33 +67,8 @@ def is_material(space: dict) -> bool:
     return low > 0 and (high / low) >= MATERIAL_SPREAD
 
 
-def supplemental_key(food_name: str) -> str:
-    return f"web-materiality:{str(food_name or '').strip().lower()}:{food.VERSION}"
 
 
-def start_supplemental(food_name: str, context=None) -> None:
-    """Begin the relevance-only materiality lookup NOW, at identity time.
-
-    SPECULATION, NOT DEFERRAL. For a generic food the corpus says structured
-    evidence usually cannot establish grilled/roasted/fried at all, so the web
-    lookup is the PRIMARY source for preparation materiality — and starting it
-    when `derive_unresolved` runs is structurally too late: it lands squarely
-    on the critical path of the ask.
-
-    Fire-and-forget by design. The context owns the future; whoever needs it
-    awaits it, and if nobody does it is simply dropped with the turn.
-    """
-    import asyncio
-
-    from core.evidence_context import ensure
-
-    shared = ensure(context)
-    key = supplemental_key(food_name)
-    if shared.reused(key):
-        return
-    shared._inflight[key] = asyncio.ensure_future(
-        _web_space(food_name, exclude=frozenset()))
-    logger.info("event=materiality_speculated food=%s", food_name)
 
 
 async def preparation_is_materially_unresolved(item, context=None) -> bool:
@@ -137,7 +101,7 @@ async def preparation_is_materially_unresolved(item, context=None) -> bool:
         return False
 
     space = await preparation_space(name, context)
-    material = is_material(space)
+    material = space_is_material(space)
 
     densities = [kcal for kcal in space.values() if kcal]
     if len(densities) < 2:
@@ -156,162 +120,38 @@ async def preparation_is_materially_unresolved(item, context=None) -> bool:
 
 
 async def preparation_space(food_name: str, context=None) -> dict:
-    """`{preparation_id: kcal_per_100g or None}` the evidence supports.
+    """`{preparation_id: kcal_per_100g}` the evidence supports — READ, never
+    computed.
 
-    THE SPACE, not the answer. Structured evidence first — shared with the
-    pricing path through the turn's `EvidenceContext`, so whichever consumer
-    arrives first starts the work and the other AWAITS THE SAME FUTURE — then
-    one bounded web query for the materiality claim, which is the only claim
-    web may support.
+    ZERO provider retrieval. ZERO semantic model call. ZERO web lookup. The
+    answer was derived at build time by the same resolver and the same
+    projection, and lives in a fingerprinted artifact
+    (`skills.nutrition.preparation_artifact`). This function looks it up.
+
+    WHY, MEASURED 2026-08-07. This used to gather evidence inline: bare
+    `chicken` returned 8 USDA rows, qualification correctly kept ONE — refusing
+    chicken spread, chicken FAT at 900 kcal and a frankfurter — and the
+    semantic classification cost 8,992 ms for 8 records, 15,813 ms for 12. It
+    then opened nothing, because the one survivor carried no preparation. The
+    computed answer is a UNIVERSAL FACT: which preparations exist for chicken
+    and how they price does not vary by user, by turn, or by day. Nine to
+    sixteen seconds of an interactive request to re-derive a constant was the
+    defect, not the evidence boundary — which was working exactly as designed.
+
+    FAILS CLOSED. A food with no entry, a stale artifact, an unreadable one:
+    every case returns `{}`, and `{}` means the field does not open. Nothing
+    here can block, and nothing here can raise.
+
+    `context` is accepted and unused. It stays in the signature because
+    `unresolved_when` is called with it by `derive_unresolved` for every field,
+    and a field that needs no turn-scoped evidence should not need a different
+    shape from one that does.
     """
-    from core.evidence_context import ensure
-    from skills.nutrition.evidence_qualification import assessment_key
+    from skills.nutrition import preparation_artifact as artifact
 
-    shared = ensure(context)
-    space: dict = {}
-    key = assessment_key(food_name, food.VERSION)
-    reused = shared.reused(key)
-
-    structured = await _structured_assessments(shared, key, food_name)
-    if structured:
-        records, assessments = structured
-        for evidence in food.preparation_evidence(
-                assessments, records,
-                minimum_confidence=food.MINIMUM_IDENTITY_CONFIDENCE):
-            if evidence.kcal_per_100g is not None or \
-                    evidence.preparation_id not in space:
-                space.setdefault(evidence.preparation_id,
-                                 evidence.kcal_per_100g)
-
-    from_structured = len(space)
-    web_key = supplemental_key(food_name)
-
-    def _trace(**kw):
-        shared.note(preparation={
-            "assessments_reused": reused,
-            "from_structured": from_structured,
-            "supplemental_speculated": shared.reused(web_key),
-            "from_supplemental": 0, "grace_ms": 0, "deadline_expired": False,
-            **kw})
-
-    # §4 — ALREADY DECIDED, SO DO NOT WAIT. When structured evidence alone
-    # establishes a material spread, supplemental evidence cannot change the
-    # outcome: the field is opening either way. Paying up to the grace period
-    # to confirm a decision already made is latency for nothing, and it is
-    # exactly the case the free half was supposed to make fast.
-    if is_material(space):
-        _trace(settled_by_structured=True)
-        return space
-
-    # THE DEADLINE, for genuinely unresolved supplemental evidence only (§5).
-    # NO NEW LOOKUP IS LAUNCHED HERE; if speculation never started one, this
-    # turn simply has no supplemental evidence.
-    web, waited_ms, timed_out = {}, 0, False
-    if shared.reused(web_key):
-        pending = not shared._inflight[web_key].done()
-        started = _time.monotonic()
-        try:
-            if pending:
-                # A waiter's timeout can no longer cancel the shared work —
-                # `EvidenceContext.shared` shields unconditionally (§6). Before
-                # that fix this expiry destroyed the acquisition for every
-                # other consumer of the key.
-                web = await asyncio.wait_for(
-                    shared.shared(web_key, _never),
-                    timeout=MATERIALITY_BUDGET_S)
-            else:
-                # §5: SETTLED, so no deadline applies. Speculation landed while
-                # the universe was being built — which is the outcome starting
-                # it at eligibility exists to produce.
-                web = await shared.shared(web_key, _never)
-        except asyncio.TimeoutError:
-            timed_out = True
-            logger.info("event=materiality_deadline food=%s budget_s=%.1f — "
-                        "UNKNOWN, not asking", food_name,
-                        MATERIALITY_BUDGET_S)
-        except Exception:
-            logger.warning("event=materiality_supplemental_failed food=%s",
-                           food_name, exc_info=True)
-        waited_ms = int((_time.monotonic() - started) * 1000)
-    space.update(web)
-
-    _trace(from_supplemental=len(web), grace_ms=waited_ms,
-           deadline_expired=timed_out)
+    space = artifact.space_for(food_name)
+    logger.info("event=preparation_space_read food=%s preparations=%s",
+                food_name, sorted(space))
     return space
 
 
-async def _structured_assessments(shared, key: str, food_name: str):
-    """The turn's structured classification, AWAITED not duplicated.
-
-    If the pricing path already started it, this awaits that future. If it has
-    not run at all — the food never reached enrichment this turn — preparation
-    does NOT start its own retrieval: acquisition belongs to the pricing path,
-    and a second retrieval path is exactly what §4 forbids.
-    """
-    if not shared.reused(key):
-        return None
-    try:
-        return await shared.shared(key, _never)
-    except Exception:
-        logger.warning("event=preparation_structured_unavailable food=%s",
-                       food_name, exc_info=True)
-        return None
-
-
-async def _never():                                  # pragma: no cover
-    raise RuntimeError("acquisition belongs to the pricing path")
-
-
-async def _web_space(food_name: str, exclude=frozenset()) -> dict:
-    """Preparations the web says exist for this food, with densities.
-
-    ACQUISITION, called only through `EvidenceContext.shared` — never
-    directly by a field. Fields project and request; the context owns whether
-    the work is already running.
-
-    ASKED, NOT FILTERED. Source quality is a function of query construction
-    (measured: the same claim asked loose returns Instagram; asked at a
-    government domain returns USDA four times), so this names the authority
-    rather than grading whatever comes back.
-    """
-    from core import search
-    from core.semantic_evidence import resolve
-    from skills.nutrition.evidence_qualification import _default_complete
-
-    wanted = [p for p in _registered_preparations() if p not in exclude]
-    if not wanted:
-        return {}
-
-    query = (f"site:fdc.nal.usda.gov OR site:nal.usda.gov {food_name} "
-             f"{' '.join(wanted)} calories per 100 g")
-    try:
-        result = await search.search(query)
-    except Exception:
-        logger.warning("event=preparation_web_lookup_failed food=%s",
-                       food_name, exc_info=True)
-        return {}
-
-    records = food.from_web(result)[:_WEB_RESULTS]
-    if not records:
-        return {}
-    try:
-        assessments = await resolve(
-            food.DOMAIN, food.FoodIntent(base_identity=food_name), records,
-            _default_complete)
-    except Exception:
-        logger.warning("event=preparation_web_assessment_failed food=%s",
-                       food_name, exc_info=True)
-        return {}
-
-    out: dict = {}
-    for evidence in food.preparation_evidence(
-            assessments, records,
-            minimum_confidence=food.MINIMUM_IDENTITY_CONFIDENCE):
-        out.setdefault(evidence.preparation_id, evidence.kcal_per_100g)
-    return out
-
-
-def _registered_preparations() -> tuple:
-    from core.semantic_fields import spec_for
-
-    return tuple(spec_for("preparation").vocabulary)

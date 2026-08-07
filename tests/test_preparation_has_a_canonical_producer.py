@@ -236,11 +236,3 @@ def test_activation_cannot_reach_a_provider_client_directly():
     assert not any("usda" in m or ".off" in m for m in imported), imported
 
 
-def test_the_registered_vocabulary_still_drives_the_web_query():
-    """The query names the registry's preparations, so extending the
-    vocabulary extends the evidence sought — no second list."""
-    source = inspect.getsource(pa._web_space)
-    assert "_registered_preparations()" in source
-    assert "site:" in source, (
-        "source quality is a function of query construction — ask for "
-        "authority rather than grading whatever returns")

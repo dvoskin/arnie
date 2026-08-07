@@ -1978,13 +1978,14 @@ async def _fetch_usda_off(food_name: str, is_packaged: bool):
             pass          # a failed speculative fetch re-runs inline below
     task = _aio.ensure_future(_fetch_usda_off_uncached(food_name, is_packaged))
     _INFLIGHT_FETCHES[key] = task
-    # SPECULATION IS NOT STARTED HERE ANY MORE (C2.1a §3). It was: every food
-    # this executor touched began a web materiality lookup, including foods on
-    # turns the canonical lane never owned and ANSWER turns, which have no
-    # field to open and can only pay for it. It now starts once B-1 eligibility
-    # is established — `core.semantic_fields.start_speculation`, called from
-    # `try_take_ownership` before the quantity universe is built, so it still
-    # overlaps work the turn was going to do anyway.
+    # NO SPECULATION HERE, AND NONE ANYWHERE ON THE TURN PATH. This once began
+    # a web materiality lookup for every food the executor touched — including
+    # turns the canonical lane never owned and answer turns, which have no
+    # field to open and could only pay for it. C2.1a moved it to lane
+    # eligibility; B-1.5 removed it outright. Preparation materiality is now
+    # derived at BUILD time into a fingerprinted artifact and merely read, so
+    # there is no evidence to speculate on — see
+    # `skills.nutrition.preparation_artifact`.
     while len(_INFLIGHT_FETCHES) > _INFLIGHT_MAX:
         _INFLIGHT_FETCHES.popitem(last=False)
     return await task
