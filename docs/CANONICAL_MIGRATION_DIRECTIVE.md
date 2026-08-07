@@ -1179,8 +1179,14 @@ B-1.5      BLOCKED ON B-1.5E readiness, producer, pricing and the generic
                              not inferred — a bare `chicken` query returns
                              zero comparable rows.
 CONTRACT   FROZEN 08-07      semantic field registry + rule of three
-B-1.5E     NEXT              semantic evidence resolution. Bounded
-                             prerequisite; two consumers, then stop.
+B-1.5E     CORE LANDED       shared mechanism (core/semantic_evidence.py) +
+                             food domain + both projections + LIVE eval:
+                             Sonnet 80% exact, 0 false-compatible at the
+                             calibrated conf>=0.80 (Haiku disqualified — its
+                             errors sit at 0.90+). Papaya heavy-syrup now
+                             structurally refused. REMAINING: wire into
+                             enrichment fan-out + preparation activation,
+                             persistence of assessments, production trace.
 B-1.6      after B-1.5
 B-1.7      after B-1.6
 B-1.8      after B-1.7
