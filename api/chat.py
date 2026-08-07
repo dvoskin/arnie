@@ -515,6 +515,15 @@ def _render_answer(facts) -> dict:
         "operation_id": facts.operation_id,
         "field_id": facts.field_id,
         "entry_id": facts.entry_id,
+        # THE FIELDS STILL OPEN, on a PARTIAL answer (B-1.5). The client
+        # replaces its interaction with this and re-renders — it must not work
+        # out for itself which rows to drop, because "what does this operation
+        # still need" is readiness, and readiness is server-owned.
+        #
+        # ALWAYS PRESENT, null when nothing is open. An absent key and a null
+        # one are the same to a decoder but not to a reader diffing two
+        # captured responses, and B-1b already learned that lesson once.
+        "interaction": facts.remaining,
     })
     return payload
 

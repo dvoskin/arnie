@@ -1763,8 +1763,13 @@ async def _run_turn(
                     # `_sft["text"]` is returned verbatim as the bubble further
                     # down, so this is the last point at which they are still
                     # one thing.
-                    _sft["text"] = _b1_ask.ask_copy(
-                        capability=_b1.channel_capability(platform))
+                    # NO ARGUMENT. The ask carries the capability the lane gate
+                    # resolved; recomputing it here from `platform` was the
+                    # second derivation that let the persisted decision and the
+                    # rendered sentence disagree in production
+                    # (chat_quantity:26:telegram:9241 — recorded id_addressed,
+                    # shown as label text).
+                    _sft["text"] = _b1_ask.ask_copy()
                     _sft.pop("b1_material", None)
                     await db.commit()
                     logger.info(

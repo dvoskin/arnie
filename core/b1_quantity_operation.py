@@ -399,40 +399,21 @@ class CanonicalAsk:
     interaction: Any
     locale: str
     cohort: str
+    #: WHAT THIS CLIENT CAN DO, resolved ONCE by the lane gate and carried.
+    #:
+    #: Three things consume it — the selection surface, the persisted decision,
+    #: and the rendered sentence — and each used to derive it separately. That
+    #: is how a Telegram question came to be RECORDED as `id_addressed` while
+    #: being SHOWN as label text: `selection_context` read a bool that meant
+    #: "capable of anything", and `conversation.py` recomputed the real value
+    #: from the platform for the copy. Both were reading the same fact and
+    #: only one was right, and the persisted record was the wrong one.
+    capability: Optional[str] = None
 
     def wire_payload(self) -> dict:
         """What the client receives. IDs, not meanings (C11)."""
-        field = self.interaction.groups[0].fields[0]
-        return {
-            "operation_id": self.operation_id,
-            "revision": self.revision,
-            "interaction_id": self.interaction.interaction_id,
-            "locale": self.locale,
-            "groups": [{
-                "event_id": g.event_id,
-                "label": g.label,
-                "fields": [{
-                    "field_id": f.field_id,
-                    "attribute": f.attribute.value,
-                    "response_type": f.response_type.value,
-                    # C15's FREE-TEXT ROUTE, ON THE WIRE. Without it a
-                    # `single_select` tells the client "three chips and
-                    # nothing else", and a user whose portion is not among
-                    # them has no visible way to say so — the exact
-                    # forced-"Other" failure the rollout metric exists to
-                    # detect, shipped as a design instead of a bug. It is
-                    # also what makes that metric measurable at all: "Other
-                    # usage" is answers that arrived as text rather than as a
-                    # stored option.
-                    "allows_free_text": True,
-                    # LABELS ONLY. The patch stays on the server; a tap sends
-                    # `option_id` back and the meaning is loaded from storage,
-                    # so the label can never travel as semantics.
-                    "options": [{"option_id": o.option_id, "label": o.label}
-                                for o in f.options],
-                } for f in g.fields],
-            } for g in self.interaction.groups],
-        }
+        return wire_payload_for(self.interaction, locale=self.locale)
+
 
     def legacy_questions(self) -> list:
         """The same field, in the shape today's clients already read.
@@ -462,7 +443,7 @@ class CanonicalAsk:
             attribute=getattr(field.attribute, "value", str(field.attribute)),
             allows_free_text=True)
 
-    def ask_copy(self, *, capability: Optional[str] = LABEL_TEXT) -> str:
+    def ask_copy(self, *, capability: Optional[str] = None) -> str:
         """The DETERMINISTIC question, rendered from `ask_facts()` only.
 
         WHY THIS EXISTS. B-1 stored `introduction="How much Chicken breast?"`
@@ -484,6 +465,12 @@ class CanonicalAsk:
         removes, and B-1's presentation boundary asks for the deterministic
         fallback now and voice before broad rollout.
         """
+        # THE ASK'S OWN CAPABILITY, not a value the caller re-derived. The
+        # parameter stays for tests that render one ask both ways, but the
+        # default is no longer `LABEL_TEXT` — a silent default here is what
+        # let a caller "forget" and still get a plausible sentence, which is
+        # indistinguishable from asking correctly.
+        capability = capability if capability is not None else self.capability
         facts = self.ask_facts()
         question = (facts.introduction or "").strip() or "How much was that?"
         if capability != LABEL_TEXT or not facts.option_labels:
@@ -516,6 +503,54 @@ class CanonicalAsk:
         # accept would be worse than advertising nothing.
         return (f"{question} Roughly {offered} — or tell me. "
                 f"Not sure? I'll estimate.")
+
+
+def wire_payload_for(interaction, *, locale: str, only=None) -> dict:
+    """The client's view of an interaction, optionally NARROWED TO SOME FIELDS.
+
+    `only` is a set of field ids. It exists so a PARTIAL answer can hand back
+    the fields STILL OPEN: the client would otherwise keep rendering the row it
+    just answered, and the alternative — letting it work out which rows to drop
+    — is the client deciding what the operation still needs. Readiness is
+    server-owned, so what remains open is something the server SAYS rather than
+    something the client infers.
+    """
+    keep = None if only is None else {str(f) for f in only}
+
+    def _fields(group):
+        return [f for f in group.fields
+                if keep is None or f.field_id in keep]
+
+    return {
+            "operation_id": interaction.operation_id,
+            "revision": interaction.revision,
+            "interaction_id": interaction.interaction_id,
+            "locale": locale,
+            "groups": [{
+                "event_id": g.event_id,
+                "label": g.label,
+                "fields": [{
+                    "field_id": f.field_id,
+                    "attribute": f.attribute.value,
+                    "response_type": f.response_type.value,
+                    # C15's FREE-TEXT ROUTE, ON THE WIRE. Without it a
+                    # `single_select` tells the client "three chips and
+                    # nothing else", and a user whose portion is not among
+                    # them has no visible way to say so — the exact
+                    # forced-"Other" failure the rollout metric exists to
+                    # detect, shipped as a design instead of a bug. It is
+                    # also what makes that metric measurable at all: "Other
+                    # usage" is answers that arrived as text rather than as a
+                    # stored option.
+                    "allows_free_text": True,
+                    # LABELS ONLY. The patch stays on the server; a tap sends
+                    # `option_id` back and the meaning is loaded from storage,
+                    # so the label can never travel as semantics.
+                    "options": [{"option_id": o.option_id, "label": o.label}
+                                for o in f.options],
+                } for f in _fields(g)],
+            } for g in interaction.groups if _fields(g)],
+        }
 
 
 @dataclass(frozen=True)
@@ -695,7 +730,8 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
                          decision_id=decision_id,
                          candidate_set_id=candidate_set_id)
     return CanonicalAsk(operation_id=operation_id, revision=0,
-                        interaction=interaction, locale=locale, cohort=cohort)
+                        interaction=interaction, locale=locale,
+                        cohort=cohort, capability=lane.capability)
 
 
 class _MaterialDecision:

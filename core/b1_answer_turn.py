@@ -69,6 +69,14 @@ class AnswerTurn:
     #: repeating the whole question — and so a renderer never has to reach
     #: into the interaction to find out.
     open_attributes: tuple = ()
+    #: THE STILL-OPEN FIELDS, in the client's own wire shape (B-1.5).
+    #:
+    #: Sent back on a PARTIAL so the client re-renders exactly the rows that
+    #: remain. Without it the client keeps the interaction it already had and
+    #: goes on offering the field it just answered — and the alternative,
+    #: letting it work out which rows to drop, is the client deciding what the
+    #: operation still needs. Readiness is server-owned; so is this.
+    remaining: Optional[dict] = None
 
     @property
     def applied(self) -> bool:
@@ -256,7 +264,10 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
                 subject_name=str(interaction.groups[0].label or ""),
                 open_attributes=tuple(
                     getattr(f.attribute, "value", str(f.attribute))
-                    for f in still_open))
+                    for f in still_open),
+                remaining=ops.wire_payload_for(
+                    interaction, locale=owned.locale,
+                    only={f.field_id for f in still_open}))
         result = await ops.settle(db, user=user, owned=owned,
                                   resolved=ops.resolved_fields(held),
                                   source_turn_id=source_turn_id)
@@ -311,7 +322,10 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
             subject_name=str(interaction.groups[0].label or ""),
             open_attributes=tuple(
                 getattr(f.attribute, "value", str(f.attribute))
-                for f in still_open))
+                for f in still_open),
+            remaining=ops.wire_payload_for(
+                interaction, locale=owned.locale,
+                only={f.field_id for f in still_open}))
 
     # THE WHOLE RESOLVED STATE, not a patch the coordinator picked out of it.
     # Which field prices the food is a domain question, and answering it here
@@ -755,6 +769,8 @@ class CanonicalResponseFacts:
     refusal_reason: str = ""
     #: The fields still open on a PARTIAL turn (B-1.5), as attribute names.
     open_attributes: tuple = ()
+    #: The same fields in the client's wire shape, for the response envelope.
+    remaining: Optional[dict] = None
 
     @property
     def committed(self) -> bool:
@@ -796,6 +812,7 @@ def facts_for(turn: AnswerTurn) -> CanonicalResponseFacts:
         repair_reason=str(getattr(turn, "repair_reason", "") or ""),
         refusal_reason=str(getattr(turn, "refusal_reason", "") or ""),
         open_attributes=tuple(getattr(turn, "open_attributes", ()) or ()),
+        remaining=getattr(turn, "remaining", None),
         # THREE PROVENANCES, TWO QUESTIONS, AND THEY ARE NOT THE SAME QUESTION.
         #
         #   USER_STATED    they typed a figure       own=True   assumed=False
