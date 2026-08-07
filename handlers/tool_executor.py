@@ -3897,6 +3897,27 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         _new_food = await add_food_entry(
             db,
             target_log.id,
+            # P1 INTEGRITY — THE ROW AND ITS HISTORY, ONE TRANSACTION.
+            #
+            # This lane wrote the row (committing it), then appended its
+            # `created` event in a SECOND commit wrapped in a bare `except`
+            # that logged and continued. Both halves of that are defects: a
+            # process dying in between leaves a food row with no history, and
+            # `ledger_undo.build_plan` takes the LAST event unconditionally —
+            # so "undo that" reaches past the unrecorded row and inverts an
+            # earlier one the user was not looking at. Silent and destructive.
+            # The swallowed exception made it unobservable either way.
+            #
+            # The canonical writer has always taken this shape. Two
+            # conversational writers with different durability guarantees is
+            # the collision; this is the half that was wrong.
+            user_id=user.id,
+            ledger_source=inp.get("source") or f"legacy:{source_type}",
+            # WHAT THE ROW CANNOT HOLD. `basis` and `resolution` are the
+            # resolution the row was written FROM — the correction path's only
+            # record of it, and the reason this lane hand-built a payload.
+            ledger_extra={"basis": inp.get("basis"),
+                          "resolution": _resolution_payload(analysis)},
             raw_input=str(inp),
             parsed_food_name=food_name,
             quantity=inp.get("quantity"),
@@ -3923,39 +3944,17 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 else None
             ),
         )
-        # LEDGER EVENT (FOOD_LEDGER_V2 Phase 2): append the created event with
-        # the committed state — undo/audit history. Best-effort: history must
-        # never break the write it describes.
-        try:
-            from db.queries import record_ledger_event
-            _ev_row = await record_ledger_event(
-                db, user.id, "created", domain="food",
-                entry_id=getattr(_new_food, "id", None),
-                daily_log_id=target_log.id,
-                payload={"food_name": food_name,
-                         "quantity": inp.get("quantity"),
-                         "calories": analysis.calories,
-                         "protein": analysis.protein,
-                         "carbs": analysis.carbs,
-                         "fats": analysis.fat,
-                         "meal_type": getattr(_new_food, "meal_type", None),
-                         "basis": inp.get("basis"),
-                         # THE RESOLUTION THE ROW WAS WRITTEN FROM (cause B).
-                         # An entry keeps its committed macros and a quantity
-                         # STRING; the per-100g row behind them was thrown
-                         # away, so a later correction had nothing to correct
-                         # against and re-searched the mutated name instead.
-                         # The created event is already the entry's provenance
-                         # record and I3 guarantees exactly one per entry, so
-                         # it is where the basis belongs. Display-neutral —
-                         # nothing reads it but the correction path.
-                         "resolution": _resolution_payload(analysis)},
-                source=inp.get("source") or f"legacy:{source_type}")
-            # The event id is the card's undo token (one-tap Undo, Phase 2).
-            if isinstance(inp, dict) and getattr(_ev_row, "id", None) is not None:
-                _stash_call(inp, "event_id", _ev_row.id)
-        except Exception as _ev_e:
-            logger.warning(f"food event (created) skipped: {_ev_e}")
+        # THE EVENT IS ALREADY WRITTEN, inside the row's transaction, by the
+        # `ledger_source` above. `basis` and `resolution` ride `ledger_extra`;
+        # everything else the old hand-built payload named is derived from the
+        # committed row by the one shared builder — the same values, since the
+        # row was written from this analysis.
+        #
+        # The event id is still the card's undo token (one-tap Undo, Phase 2);
+        # it now comes back on the entry rather than from a second write.
+        if isinstance(inp, dict) and \
+                getattr(_new_food, "ledger_event_id", None) is not None:
+            _stash_call(inp, "event_id", _new_food.ledger_event_id)
         # Stash the entry id on the tool_call's input so conversation.py can
         # surface it in the macro_card payload. Native clients (iOS) use it
         # to edit/delete the entry directly via the foodEdit API instead of
@@ -4920,7 +4919,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # Inverse of a delete, from the deleted event's captured payload
         # (core/ledger_undo). Deterministic: no parsing, no enrichment — the
         # entry comes back exactly as it died, totals recomputed by
-        # add_food_entry, and the restore appends its own created event.
+        # add_food_entry, and its `created` event written in the SAME
+        # transaction as the row (P1 — it used to be appended afterwards).
         _rp = inp.get("payload") or {}
         _r_name = _rp.get("food_name") or inp.get("food_name")
         if not _r_name:
@@ -4938,6 +4938,8 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             return "Skipped — no log to restore into"
         _new_r = await add_food_entry(
             db, _r_log_id,
+            user_id=user.id,
+            ledger_source=inp.get("source") or "restore",
             raw_input=str(inp),
             parsed_food_name=_r_name,
             quantity=_rp.get("quantity"),
@@ -4947,21 +4949,16 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             estimated_flag=True, confidence_score=0.8,
             source_type=source_type,
         )
-        try:
-            from db.queries import record_ledger_event
-            _ev_row_r = await record_ledger_event(
-                db, user.id, "created", domain="food",
-                entry_id=getattr(_new_r, "id", None), daily_log_id=_r_log_id,
-                payload={"food_name": _r_name, "quantity": _rp.get("quantity"),
-                         "calories": _rp.get("calories"),
-                         "protein": _rp.get("protein"),
-                         "carbs": _rp.get("carbs"), "fats": _rp.get("fats"),
-                         "meal_type": _rp.get("meal_type")},
-                source=inp.get("source") or "restore")
-            if isinstance(inp, dict) and getattr(_ev_row_r, "id", None) is not None:
-                _stash_call(inp, "event_id", _ev_row_r.id)
-        except Exception as _ev_e:
-            logger.warning(f"ledger event (food restored) skipped: {_ev_e}")
+        # WRITTEN WITH THE ROW, not after it. Every key the hand-built payload
+        # named is derived from the committed row by the shared builder, so the
+        # swap loses nothing — and a restore whose event never landed was the
+        # worst case of all: `build_plan` takes the LAST event, so an
+        # unrecorded restore makes the next "undo that" invert something else.
+        # No `except` here any more: there is nothing left to fail separately,
+        # and the swallow is what made the old gap unobservable.
+        if isinstance(inp, dict) and \
+                getattr(_new_r, "ledger_event_id", None) is not None:
+            _stash_call(inp, "event_id", _new_r.ledger_event_id)
         # Mirror the committed row onto the input (id + macros) so card and
         # snapshot readers see the same numbers the DB holds.
         if isinstance(inp, dict):

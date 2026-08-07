@@ -725,9 +725,16 @@ async def add_food_entry(db: AsyncSession, daily_log_id: int,
                          user_id: Optional[int] = None,
                          claim_id: Optional[int] = None,
                          commit: bool = True,
+                         ledger_extra: Optional[dict] = None,
                          **kwargs) -> FoodEntry:
     """Write one food row, and — when the caller names a `ledger_source` — its
     `created` event, in ONE transaction.
+
+    `ledger_extra` merges over the row-derived payload for facts the ROW does
+    not hold. It exists so no caller has to write its own event afterwards to
+    record them: that shape is the durability defect, not a style preference.
+    Returns the entry with `entry.ledger_event_id` set when an event was
+    written, so a caller needing the event as a token no longer has to.
 
     The row used to commit here and the event to commit in a second call by the
     caller. Between those two commits the process can die (a deploy restart, an
@@ -765,6 +772,12 @@ async def add_food_entry(db: AsyncSession, daily_log_id: int,
     takes, one layer down, for the same reason.
     """
     entry = FoodEntry(daily_log_id=daily_log_id, **kwargs)
+    #: THE EVENT THIS WRITE PRODUCED, for callers that need it as a token.
+    #: Transient, never a column. The chat lane hands this id to the card as
+    #: its one-tap Undo token, and before `ledger_extra` existed that need was
+    #: the entire reason the chat lane wrote its own event AFTER the row —
+    #: which is the durability defect this parameter closes.
+    entry.ledger_event_id = None
     db.add(entry)
     await db.flush()  # entry must be visible to the recompute query
     await recompute_log_totals(db, daily_log_id)
@@ -777,11 +790,21 @@ async def add_food_entry(db: AsyncSession, daily_log_id: int,
             log = await db.get(DailyLog, daily_log_id)
             user_id = getattr(log, "user_id", None)
         if user_id is not None:
-            await record_ledger_event(
+            # ONE BUILDER, WIDENED — never a second vocabulary. `_entry_event_payload`
+            # stays the base because a `deleted` event restores from this payload,
+            # and two builders would let undo rebuild a row the recorder never
+            # described. `ledger_extra` carries what the ROW cannot: the chat
+            # lane's `basis` and `resolution` are the resolution the row was
+            # written FROM, and nothing on the entry records them.
+            payload = _entry_event_payload(entry)
+            for key, value in (ledger_extra or {}).items():
+                if value is not None:
+                    payload[key] = value
+            event = await record_ledger_event(
                 db, user_id=user_id, event_type="created", domain="food",
                 entry_id=entry.id, daily_log_id=daily_log_id,
-                payload=_entry_event_payload(entry), source=ledger_source,
-                commit=False)
+                payload=payload, source=ledger_source, commit=False)
+            entry.ledger_event_id = getattr(event, "id", None)
     if claim_id is not None:
         # Same transaction as the row and the event. A crash now cannot leave a
         # committed meal behind an unfinished claim.
