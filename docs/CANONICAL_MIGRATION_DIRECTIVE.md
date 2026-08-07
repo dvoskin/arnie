@@ -1095,24 +1095,19 @@ B-1        SLICE NOT CLOSED  see the seven-line state below — "backend
                              slice look finished while its predecessor
                              still runs
 B-1.75     COMPLETE          answered quantity is the only quantity authority
-B-1.9      IN PROGRESS       7 of 10 stages, ~75-80% by engineering weight.
-                             1 containment · 2/2.1 evidence semantics ·
-                             3a/3a.1/3a.2 contracts · 3b/3b.1/3b.2/3b.3
-                             durable universe · 4 bridge deletion ·
-                             5/5.1/5.2 versioned selector · 6/6.1/6.2
-                             failure classes · 7/7.1 integration proof
-                             (Postgres + live USDA) — ALL DONE.
-                             8 DONE (pending an attached CI run).
-                             9 NEXT: narrow structured iOS client.
-                             Then 9 structured iOS · 10 promote + DELETE
-                             predecessor. Runs BEFORE B-1 closure.
+B-1.9      COMPLETE          10 of 10. Contracts, durable universe, bridge
+                             deletion, versioned selector, failure classes,
+                             integration proof, contract freeze, and the
+                             structured iOS client — all landed and PROVEN
+                             IN PRODUCTION on iOS 2026-08-07.
 B-1b.1/.2  ABSORBED BY B-1.9 7  the matrix and the corpus now run through
                              the durable candidate system; the join they
                              lacked is `test_the_whole_slice_holds_together`
 B-1b.3     PLANNED           instrumented human simulation
 B-1b.4     CONTINUOUS        organic confirmation, low volume, gates nothing
 B-1c       COMPLETE          detector coverage and precision
-B-1d       UNBLOCKS AFTER B-1b.1 + B-1b.2 — not after organic volume
+B-1d       DONE              structured iOS interactions live; ios is
+                             ID_ADDRESSED and answering by option_id
 B-1.5/.6/.7/.8              resume after promotion
 B-2+       expansion
 B-3/B-4    ownership consolidation and deletion
@@ -2198,6 +2193,60 @@ it never wrote; a network failure keeps the question open and the key intact.
 build that honours it existed and not before. Three gates pinned the old state
 and had to be updated deliberately, which is what they were for. Exactly one
 channel is ID-addressed, and a gate says so.
+
+### B-1b — PROVEN END TO END IN PRODUCTION ON iOS *(2026-08-07)*
+
+The first structured clarifications ever answered by tapping. Read from the
+production database, not from a reply:
+
+```text
+candidate_sets        3 written, user 26, domain=food, gen b1_quantity_gen_v1
+decisions             3, ALL surface=id_addressed   <- the structured path
+answers               2 applied via modality=option_id  (entries 2887, 2890)
+                      1 applied via text/free_text on telegram (entry 2875)
+clarification_answer  257 ms   {claim 34, write 223}
+```
+
+**Every exclusion reason fired on a real turn, on day one:**
+
+```text
+cand_9ad7f3e4041   semantic_duplicate
+cand_0107453db45   selection_cap
+cand_0784b20d111   render_collision
+```
+
+That is the whole point of the durable universe, working in production: for a
+candidate the user did not see, the record says which of the three happened —
+never "unknown". Evidence sources so far: **9 ontology, 1 user_history**.
+
+**TWO FINDINGS FROM THE FIRST SESSION, neither an architecture defect.**
+
+**1 — The labels read `118g` and `276g`, not `4 oz` and `10 oz`.**
+`_everyday_labels` did not recognise the food and fell back to grams. The
+mass path is unchanged and correct; the ontology simply has no everyday
+rendering for this item. A product-quality item for the candidate-quality
+pass, not a contract problem.
+
+**2 — iOS feels slower than Telegram, and it is not this architecture.**
+Measured on the same user (26), same account:
+
+```text
+              turns   avg total    LLM    tools   framework
+  ios           367     8672 ms   7303     1190         190
+  telegram       59     6390 ms   5649      185         556
+```
+
+Framework overhead on iOS is **15–154 ms** on 9 of the last 10 turns — LOWER
+than Telegram's. The tap is 257 ms. **The latency is the model writing more**:
+iOS replies average 223 characters against Telegram's 95, because
+`IOS_STYLE` + `NATIVE_CARDS` + `IOS_FORMAT_ANCHOR` (~3,200 tokens Telegram
+never sees) teach rich markdown, paragraph structure and card driving. Input
+caching is already on with a 1h TTL, so those tokens are cheap to send; the
+cost is that Arnie then WRITES 2.3x more.
+
+Trimming that is a PRODUCT decision — shorter replies, less markdown, and the
+card layer loses its instructions — so it is recorded here rather than done
+silently. **Open: does iOS keep the rich voice or trade some of it for speed?**
 
 **9 — the client** receives and returns identifiers and labels only, and never
 generates options, chooses units, converts quantities, infers meaning from
