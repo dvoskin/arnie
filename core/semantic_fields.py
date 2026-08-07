@@ -137,9 +137,18 @@ class FieldSpec:
     #: Declared here so activation is DATA. `if fried: ask_oil()` written in a
     #: producer is the thing this field exists to make unnecessary.
     active_when: Optional[Callable] = None
-    #: THE CLOSED VOCABULARY, for `ENUMERATED` fields. Validated against what
-    #: the resolver can actually act on when `pricing is IDENTITY`.
+    #: THE CLOSED VOCABULARY, for `ENUMERATED` fields.
     vocabulary: tuple = ()
+    #: WHAT THE DOMAIN CAN ACTUALLY ACT ON — supplied by whoever registers,
+    #: called by core, understood by neither.
+    #:
+    #: This module used to import `skills.nutrition.validators._PREPARATIONS`
+    #: directly: generic core reaching into a domain's PRIVATE detail, which
+    #: would make every future domain either a nutrition import or an
+    #: exception. Core now enforces THAT an identity-pricing field declares
+    #: how its vocabulary is validated; the domain supplies WHAT that means.
+    #: A workout field registering `equipment` brings its own.
+    supported_vocabulary: Optional[Callable] = None
     #: Renderer metadata. READ BY PRESENTATION, NEVER BY SEMANTICS.
     caption: str = ""
     order: int = 100
@@ -191,7 +200,7 @@ def register(spec: FieldSpec) -> FieldSpec:
             f"ask is `if fried: ask_oil()` with extra steps")
 
     if spec.pricing is Pricing.IDENTITY:
-        _check_the_resolver_can_consume(spec)
+        _check_the_domain_can_consume(spec)
 
     if spec.pricing is Pricing.AMOUNT:
         holders = [s for s in _REGISTRY.values() if s.pricing is Pricing.AMOUNT]
@@ -205,35 +214,45 @@ def register(spec: FieldSpec) -> FieldSpec:
     return spec
 
 
-def _check_the_resolver_can_consume(spec: FieldSpec) -> None:
+def _check_the_domain_can_consume(spec: FieldSpec) -> None:
     """UNSUPPORTED SEMANTICS CANNOT BE EMITTED.
 
-    A field that claims to price by identity must speak words the resolver
-    acts on. `skills.nutrition.validators` extracts preparation tokens from
-    the requested name and each candidate's and downgrades the mismatches; a
-    token outside that table changes nothing, so the question would be asked,
-    the answer stored, and no number moved — a chip whose usage rate looks
-    like engagement and means nothing.
+    A field that claims to price by identity must speak words its domain acts
+    on. In nutrition, `validators` extracts preparation tokens from the
+    requested name and each candidate's and downgrades the mismatches; a token
+    outside that table changes nothing, so the question would be asked, the
+    answer stored, and no number moved — a chip whose usage rate looks like
+    engagement and means nothing.
 
     MEASURED, NOT HYPOTHETICAL: `breaded` and `plain` were proposed for B-1.5
     and are exactly this, and `baked` was worse — the validator holds `baked`
     and `roasted` as disjoint tokens, so offering "Baked" would have DOWNGRADED
     the correct candidate for a food whose reference row says roasted.
+
+    CORE ENFORCES THAT THE CHECK EXISTS; THE DOMAIN SUPPLIES WHAT IT CHECKS.
+    Importing the nutrition table here made generic infrastructure depend on
+    one domain's private detail.
     """
     if spec.value_space is not ValueSpace.ENUMERATED:
         return
-    from skills.nutrition.validators import _PREPARATIONS
+    if spec.supported_vocabulary is None:
+        raise ContractViolation(
+            f"{spec.attribute_value} prices by identity but declares no "
+            f"`supported_vocabulary` — a field that can move a number must "
+            f"say how its values are known to be actionable, and core cannot "
+            f"know that for a domain it does not import")
 
-    supported = set(_PREPARATIONS)
+    supported = set(spec.supported_vocabulary())
     unknown = [v for v in spec.vocabulary if v and v not in supported]
     if unknown:
         raise ContractViolation(
             f"{spec.attribute_value} prices by identity but {sorted(unknown)} "
-            f"are not semantics the resolver acts on — the field would be "
+            f"are not semantics its domain acts on — the field would be "
             f"asked, answered, and change nothing")
 
 
 def spec_for(attribute) -> FieldSpec:
+    _ensure_installed()
     key = str(getattr(attribute, "value", attribute))
     try:
         return _REGISTRY[key]
@@ -245,45 +264,47 @@ def spec_for(attribute) -> FieldSpec:
 
 
 def is_registered(attribute) -> bool:
+    _ensure_installed()
     return str(getattr(attribute, "value", attribute)) in _REGISTRY
 
 
 def registered() -> dict:
+    _ensure_installed()
     return dict(_REGISTRY)
 
 
 def _reset_for_tests() -> None:
     """Only the rule-of-three suite uses this, to register a probe family and
     put the registry back."""
+    global _installed
     _REGISTRY.clear()
-    _install()
+    _installed = False
+    _ensure_installed()
 
 
-def _install() -> None:
-    from core.semantics import ClarificationAttribute
-    from skills.nutrition import preparation_ontology as prep
+#: DOMAINS THAT REGISTER FIELDS — the composition root, and the ONLY place
+#: core names a domain.
+#:
+#: Registration lives with the domain that owns the semantics: nutrition knows
+#: what a preparation is and what its resolver can act on, and core knows
+#: neither. Phase-O workouts add a line here and change nothing else.
+#:
+#: Imported lazily on first use rather than at module import, because these
+#: modules import back into `core.semantics` for the types they register with.
+_DOMAIN_REGISTRARS = ("skills.nutrition.field_registration",)
 
-    register(FieldSpec(
-        attribute=ClarificationAttribute.QUANTITY,
-        value_space=ValueSpace.MEASURED,
-        patch_type="set_quantity",
-        pricing=Pricing.AMOUNT,
-        # GENERATED, not ontology: the offer depends on this user's history
-        # and this product's servings, and the field is not asked when there
-        # is no evidence to build one from.
-        evidence=Evidence.GENERATED,
-        caption="Amount", order=10))
-
-    register(FieldSpec(
-        attribute=ClarificationAttribute.PREPARATION,
-        value_space=ValueSpace.ENUMERATED,
-        patch_type="set_preparation",
-        # IDENTITY, never a multiplier: the answer changes which food we ask
-        # the resolver about, and the resolver prices from its own evidence.
-        pricing=Pricing.IDENTITY,
-        evidence=Evidence.ONTOLOGY,
-        vocabulary=tuple(p.preparation_id for p in prep.OFFERED if p.known),
-        caption="Preparation", order=20))
+_installed = False
 
 
-_install()
+def _ensure_installed() -> None:
+    global _installed
+    if _installed:
+        return
+    _installed = True
+    import importlib
+
+    # CALL A FUNCTION, do not rely on import SIDE EFFECTS. `import_module` on
+    # an already-imported module is a no-op, so a registry reset would never
+    # repopulate — the tests went green-to-35-red on exactly that.
+    for module in _DOMAIN_REGISTRARS:
+        importlib.import_module(module).register_all()

@@ -1,0 +1,48 @@
+"""WHERE NUTRITION'S SEMANTIC FIELDS ARE REGISTERED.
+
+The registry mechanism is `core.semantic_fields`; what a preparation IS, and
+what this domain's resolver can act on, is knowledge that belongs here. Core
+enforces that an identity-pricing field declares how its vocabulary is
+validated; this module supplies what that means for food.
+
+Imported by `core.semantic_fields._ensure_installed()` at first use — the one
+place core names a domain. Nothing else should import this module for its side
+effect.
+"""
+from __future__ import annotations
+
+from core.semantic_fields import (Activation, Evidence, FieldSpec, Pricing,
+                                  Settlement, ValueSpace, register)
+
+
+def register_all() -> None:
+    from core.semantics import ClarificationAttribute
+    from skills.nutrition import preparation_ontology as prep
+
+    register(FieldSpec(
+        attribute=ClarificationAttribute.QUANTITY,
+        value_space=ValueSpace.MEASURED,
+        patch_type="set_quantity",
+        pricing=Pricing.AMOUNT,
+        # GENERATED, not ontology: the offer depends on this user's history
+        # and this product's servings, and the field is not asked when there
+        # is no evidence to build one from.
+        evidence=Evidence.GENERATED,
+        caption="Amount", order=10))
+
+    register(FieldSpec(
+        attribute=ClarificationAttribute.PREPARATION,
+        value_space=ValueSpace.ENUMERATED,
+        patch_type="set_preparation",
+        # IDENTITY, never a multiplier: the answer changes which food we ask
+        # the resolver about, and the resolver prices from its own evidence.
+        pricing=Pricing.IDENTITY,
+        evidence=Evidence.ONTOLOGY,
+        vocabulary=tuple(p.preparation_id for p in prep.OFFERED if p.known),
+        # THE NUTRITION REGISTRATION LAYER SUPPLIES THIS, not core. Late-bound
+        # so importing this module does not drag the resolver in.
+        supported_vocabulary=lambda: __import__(
+            "skills.nutrition.validators", fromlist=["_PREPARATIONS"]
+        )._PREPARATIONS,
+        caption="Preparation", order=20))
+

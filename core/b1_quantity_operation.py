@@ -997,8 +997,49 @@ class ResolvedFields:
                      if getattr(p, "patch_type", "") == patch_type)
 
     def _one(self, patch_type: str):
+        """The single patch of a kind, or None — and LOUD when there are more.
+
+        This returned `found[0]`, which is correct for one food and silently
+        wrong for two: `chicken.quantity` and `rice.quantity` are distinct
+        fields with distinct ids, so both are held, and taking the first would
+        price the chicken and drop the rice without a word. B-2 is where that
+        arrives, and a silent wrong number is the worst possible way for it to.
+
+        Raising is right for B-1.5, which asks about one event by construction
+        — so this cannot fire today, and the day it does the caller is asking
+        a question that no longer has one answer. B-2 replaces it with
+        per-event resolution rather than by relaxing the check.
+        """
         found = self.of_type(patch_type)
+        if len(found) > 1:
+            raise ValueError(
+                f"{len(found)} {patch_type} answers across events "
+                f"{sorted({getattr(p, 'event_id', '?') for p in found})} — "
+                f"this accessor collapses them to one, which would commit a "
+                f"number for one food and drop the other. Resolve per event.")
         return found[0] if found else None
+
+    def for_event(self, event_id: str) -> "ResolvedFields":
+        """This event's answers alone.
+
+        The seam B-2 settles through: one operation holds several foods, and
+        each is priced from its OWN resolved fields. Present now because the
+        alternative is the coordinator learning to slice the state, and it is
+        the coordinator's ignorance that makes the field mechanism generic.
+        """
+        return ResolvedFields(by_field={
+            k: p for k, p in (self.by_field or {}).items()
+            if str(getattr(p, "event_id", "")) == str(event_id)})
+
+    @property
+    def event_ids(self) -> tuple:
+        seen, out = set(), []
+        for patch in (self.by_field or {}).values():
+            event = str(getattr(patch, "event_id", ""))
+            if event and event not in seen:
+                seen.add(event)
+                out.append(event)
+        return tuple(out)
 
     @property
     def quantity(self):

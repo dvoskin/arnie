@@ -75,6 +75,8 @@ def test_an_unregistered_field_cannot_be_presented():
 def test_a_field_that_prices_by_identity_must_speak_the_resolver_s_words():
     """MEASURED, NOT HYPOTHETICAL. `breaded` and `plain` were proposed for
     B-1.5 and are inert — asked, answered, and no number moves."""
+    from skills.nutrition.validators import _PREPARATIONS
+
     with pytest.raises(sf.ContractViolation) as caught:
         sf.register(sf.FieldSpec(
             attribute=ClarificationAttribute.SERVING_BASIS,
@@ -83,6 +85,9 @@ def test_a_field_that_prices_by_identity_must_speak_the_resolver_s_words():
             pricing=sf.Pricing.IDENTITY,
             evidence=sf.Evidence.ONTOLOGY,
             vocabulary=("breaded", "plain"),
+            # The domain declares what it can act on — core calls this and
+            # understands nothing about it.
+            supported_vocabulary=lambda: _PREPARATIONS,
             caption="Basis"))
     assert "breaded" in str(caught.value)
 
@@ -250,3 +255,109 @@ def test_nutrition_is_never_scaled_by_a_preparation_factor():
     assert not offenders, (
         f"{offenders} — preparation changes the canonical IDENTITY sent to "
         f"the resolver; it does not adjust the resolver's answer")
+
+
+# ── item 5: the two gates owed before B-1.6 broadens ────────────────────────
+
+def test_the_same_attribute_can_coexist_across_events():
+    """chicken.quantity and rice.quantity are different fields.
+
+    Field identity is operation:event:attribute:revision, so two foods raising
+    the SAME attribute produce two ids and the held map keeps both. Pinned
+    because B-2 depends on it entirely, and the failure mode — one silently
+    overwriting the other — is a lost meal that looks like a logged one.
+    """
+    from decimal import Decimal
+
+    from core.b1_quantity_operation import resolved_fields
+    from core.semantics import (CanonicalQuantity, Dimension, Provenance,
+                                SetQuantity)
+
+    def amount(event, grams):
+        return SetQuantity(
+            event_id=event, field_id=f"op:{event}:quantity:0",
+            quantity=CanonicalQuantity(amount=Decimal(grams), unit_id="g",
+                                       dimension=Dimension.MASS,
+                                       grams=Decimal(grams)),
+            provenance=Provenance.USER_SELECTED)
+
+    held = {p.field_id: p for p in (amount("food_chicken", "174"),
+                                    amount("food_rice", "150"))}
+    assert len(held) == 2, "one food's answer overwrote the other"
+
+    resolved = resolved_fields(held)
+    assert len(resolved.of_type("set_quantity")) == 2
+    assert resolved.event_ids == ("food_chicken", "food_rice")
+    # PER EVENT, which is how B-2 settles.
+    assert resolved.for_event("food_rice").quantity.quantity.grams \
+        == Decimal("150")
+
+
+def test_collapsing_two_events_to_one_answer_is_loud():
+    """The B-2 landmine, defused.
+
+    `.quantity` returned `found[0]` — correct for one food and silently wrong
+    for two: it would price the chicken and drop the rice without a word. It
+    cannot fire in B-1.5, which asks about one event by construction, so this
+    is here for the day it can.
+    """
+    from decimal import Decimal
+
+    from core.b1_quantity_operation import resolved_fields
+    from core.semantics import (CanonicalQuantity, Dimension, Provenance,
+                                SetQuantity)
+
+    def amount(event):
+        return SetQuantity(
+            event_id=event, field_id=f"op:{event}:quantity:0",
+            quantity=CanonicalQuantity(amount=Decimal("1"), unit_id="g",
+                                       dimension=Dimension.MASS,
+                                       grams=Decimal("1")),
+            provenance=Provenance.USER_SELECTED)
+
+    both = resolved_fields({p.field_id: p
+                            for p in (amount("food_a"), amount("food_b"))})
+    with pytest.raises(ValueError, match="collapse"):
+        _ = both.quantity
+
+
+def test_core_does_not_import_any_domain():
+    """GENERIC INFRASTRUCTURE MUST NOT KNOW A DOMAIN'S PRIVATES.
+
+    `core.semantic_fields` imported `skills.nutrition.validators._PREPARATIONS`
+    — core reaching into one domain's PRIVATE detail, which would make every
+    future domain either a nutrition import or an exception. Core now enforces
+    THAT an identity-pricing field declares how its vocabulary is validated;
+    the domain supplies WHAT that means, and registration lives with the
+    domain that owns the semantics.
+    """
+    import ast as _ast
+    import pathlib as _pathlib
+
+    source = _pathlib.Path(sf.__file__).read_text(encoding="utf-8")
+    tree = _ast.parse(source)
+    imported = set()
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.ImportFrom) and node.module:
+            imported.add(node.module)
+        elif isinstance(node, _ast.Import):
+            imported.update(a.name for a in node.names)
+    domain = {m for m in imported if m.split(".")[0] in ("skills", "handlers")}
+    assert not domain, (
+        f"core.semantic_fields imports {sorted(domain)} — registration belongs "
+        f"in the domain that owns the semantics; core names domains only in "
+        f"_DOMAIN_REGISTRARS")
+
+
+def test_an_identity_priced_field_must_declare_how_its_vocabulary_is_checked():
+    """Core cannot know what is actionable for a domain it does not import, so
+    it requires the field to say."""
+    with pytest.raises(sf.ContractViolation, match="supported_vocabulary"):
+        sf.register(sf.FieldSpec(
+            attribute=ClarificationAttribute.SERVING_BASIS,
+            value_space=sf.ValueSpace.ENUMERATED,
+            patch_type="set_serving_basis",
+            pricing=sf.Pricing.IDENTITY,
+            evidence=sf.Evidence.ONTOLOGY,
+            vocabulary=("grilled",),
+            caption="Basis"))
