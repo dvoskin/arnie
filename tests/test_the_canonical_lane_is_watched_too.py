@@ -175,16 +175,37 @@ def test_a_failed_turn_that_claims_a_log_is_still_a_phantom():
 def test_only_a_repair_counts_as_having_asked():
     """Pin the mapping against the enum, not against a string I remembered.
 
-    `Outcome` has four members and exactly one of them produces a question.
-    If a member is added later, this fails rather than silently widening the
-    suppression.
+    Exactly two of `Outcome`'s members produce a question. If a member is
+    added later, this fails rather than silently widening the suppression.
+
+    `partial` was added at B-1.5 and DOES ask: a partially answered question
+    writes no row and re-offers the fields still open. It was admitted here
+    deliberately, on one condition — that its copy cannot claim a log.
+    `copy_for`'s partial branch acknowledges and asks; the gate below holds it
+    to that, because suppression is only safe while it stays true.
+
+    The other three still end the turn and must stay out: suppressing
+    detection on CANCELLED or REFUSED would hide a false confirmation on
+    exactly the paths most likely to emit one.
     """
+    from core.b1_answer_turn import CanonicalResponseFacts, copy_for
     from core.clarification_answer import Outcome
 
-    asks = {o for o in Outcome
-            if str(o.value) == "repair"}
-    assert asks == {Outcome.REPAIR}, asks
+    asks = {o for o in Outcome if str(o.value) in ("repair", "partial")}
+    assert asks == {Outcome.REPAIR, Outcome.PARTIAL}, asks
     assert {o.value for o in Outcome} == {
-        "applied", "cancelled", "refused", "repair", "replay"}, (
+        "applied", "cancelled", "refused", "repair", "replay", "partial"}, (
         "the outcome set changed — re-check which of them actually ask a "
         "question before trusting `asked_this_turn`")
+
+    said = copy_for(CanonicalResponseFacts(
+        outcome="partial", internal_failure=False, operation_id="op",
+        field_id="f", name="Chicken breast", entry_id=None, calories=None,
+        protein=None, day_calories=None, estimated=False,
+        system_supplied_figure=False, open_attributes=("preparation",)))
+    assert "log" not in said.lower(), (
+        f"a partial turn wrote no row and this copy claims one: {said!r} — "
+        f"`asked_this_turn` suppresses phantom detection, so this branch is "
+        f"the only thing standing between a partial answer and a silent "
+        f"false confirmation")
+    assert said.strip().endswith("?"), f"a partial turn must ask: {said!r}"

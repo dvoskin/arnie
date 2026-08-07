@@ -173,3 +173,19 @@ def modality_of(*, option_id: str, reason: str) -> str:
                 "skip_item", "restart"):
         return "command"
     return "text"
+
+
+def partial(*, operation_id: str, user_id, field_id: str,
+            answered_count: int, open_count: int,
+            modality: str = "") -> None:
+    """A field was answered and the question is still open (B-1.5).
+
+    ITS OWN SIGNAL, not a variant of `answered`. The question this exists to
+    answer is "how many multi-field questions get abandoned half-answered" —
+    a number no join over commits can produce, because the abandoned ones
+    never reach a commit at all.
+    """
+    logger.info("event=b1_partial operation=%s user=%s field=%s "
+                "answered=%d open=%d modality=%s",
+                operation_id, user_id, field_id, answered_count, open_count,
+                modality or "-")

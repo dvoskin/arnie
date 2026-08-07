@@ -62,6 +62,19 @@ class Outcome(str, Enum):
     #: The answer names a field or revision this interaction does not have.
     #: Fails closed: a stale tap must not patch whatever looks closest.
     REFUSED = "refused"
+    #: UNDERSTOOD, RECORDED, AND THE QUESTION IS STILL OPEN (B-1.5).
+    #:
+    #: One item can carry several independent material fields — amount and
+    #: preparation — and a user may answer them one at a time. This is not
+    #: `APPLIED`, which every counter and every client reads as "the meal
+    #: landed", and it is not `REPAIR`, which says we failed to understand.
+    #: The answer was perfect; there is simply another field open.
+    #:
+    #: NOTHING TERMINAL HAPPENS HERE. The operation stays `awaiting_answer` at
+    #: the SAME revision, because the chips for the unanswered fields are
+    #: still on the user's screen and bumping the revision would invalidate
+    #: the very taps we are waiting for.
+    PARTIAL = "partial"
 
 
 class RepairReason(str, Enum):

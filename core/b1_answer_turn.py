@@ -64,6 +64,11 @@ class AnswerTurn:
     #: WHY a structured answer was refused, typed. A client branches on this;
     #: prose is not a branch condition.
     refusal_reason: str = ""
+    #: WHICH FIELDS ARE STILL OPEN on a PARTIAL turn, as attribute names
+    #: (B-1.5). Carried so the re-ask can say WHAT it still needs instead of
+    #: repeating the whole question — and so a renderer never has to reach
+    #: into the interaction to find out.
+    open_attributes: tuple = ()
 
     @property
     def applied(self) -> bool:
@@ -245,7 +250,34 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
         # operation forward and lock the user out of answering at all.
         return _turn(answer, owned, live_field)
 
-    result = await ops.settle(db, user=user, owned=owned, patch=answer.patch,
+    # THE QUESTION IS ANSWERED WHEN EVERY FIELD IS (B-1.5).
+    #
+    # While B-1 asked about one field, "an answer applied" and "the question is
+    # answered" were the same sentence, and settling here was correct. They
+    # come apart the moment one item carries two independent material fields:
+    # settling on the first applied answer commits the meal with the other
+    # chips still on screen, and the tap that follows finds a settled operation
+    # and is discarded as a replay. The user answered; nothing recorded it.
+    #
+    # Held DURABLY rather than in this turn's memory — the next tap may arrive
+    # from a relaunched app or another worker.
+    held = await ops.hold_answer(db, owned=owned, patch=answer.patch)
+    if not ops.ready_to_settle(interaction, held):
+        _measure_partial(owned, answer, user=user, field=live_field,
+                         held=held, option_id=option_id)
+        still_open = ops.open_fields(interaction, held)
+        return AnswerTurn(
+            Outcome.PARTIAL, operation_id=owned.operation_id,
+            field_id=answer.patch.field_id, patch=answer.patch,
+            reason="awaiting the fields still open",
+            subject_name=str(interaction.groups[0].label or ""),
+            open_attributes=tuple(
+                getattr(f.attribute, "value", str(f.attribute))
+                for f in still_open))
+
+    result = await ops.settle(db, user=user, owned=owned,
+                              patch=ops.pricing_patch(held,
+                                                      fallback=answer.patch),
                               source_turn_id=source_turn_id)
     turn = AnswerTurn(Outcome.APPLIED, operation_id=owned.operation_id,
                       field_id=live_field.field_id, patch=answer.patch,
@@ -594,6 +626,29 @@ def _measure(owned, answer, *, option_id: str, user,
         logger.debug("b1 answer metric failed", exc_info=True)
 
 
+def _measure_partial(owned, answer, *, user, field=None, held: dict,
+                     option_id: str = "") -> None:
+    """A field answered, the question still open (B-1.5).
+
+    MEASURED SEPARATELY FROM A COMMIT, because the number that matters here is
+    the one a funnel cannot infer: how many multi-field questions are ABANDONED
+    half-answered. Folding these into `answered` would make the completion rate
+    read as though every tap finished a meal.
+    """
+    from core import b1_metrics
+
+    try:
+        b1_metrics.partial(
+            operation_id=owned.operation_id, user_id=getattr(user, "id", None),
+            field_id=str(getattr(answer.patch, "field_id", "")),
+            answered_count=len(held),
+            open_count=len(ops.open_fields(owned.interaction, held)),
+            modality=str(getattr(getattr(answer, "modality", None), "value",
+                                 "") or ("option_id" if option_id else "")))
+    except Exception:
+        logger.debug("b1 partial metric failed", exc_info=True)
+
+
 def _measure_commit(owned, turn: AnswerTurn, *, user, field=None,
                     option_id: str = "", message: str = "") -> None:
     """The terminal funnel record.
@@ -658,6 +713,8 @@ class CanonicalResponseFacts:
     #: would mean "something happened" rather than "this is why".
     repair_reason: str = ""
     refusal_reason: str = ""
+    #: The fields still open on a PARTIAL turn (B-1.5), as attribute names.
+    open_attributes: tuple = ()
 
     @property
     def committed(self) -> bool:
@@ -698,6 +755,7 @@ def facts_for(turn: AnswerTurn) -> CanonicalResponseFacts:
         fats=totals.get("fats"),
         repair_reason=str(getattr(turn, "repair_reason", "") or ""),
         refusal_reason=str(getattr(turn, "refusal_reason", "") or ""),
+        open_attributes=tuple(getattr(turn, "open_attributes", ()) or ()),
         # THREE PROVENANCES, TWO QUESTIONS, AND THEY ARE NOT THE SAME QUESTION.
         #
         #   USER_STATED    they typed a figure       own=True   assumed=False
@@ -811,6 +869,22 @@ def card_for(facts: CanonicalResponseFacts) -> Optional[dict]:
     return {"type": "macro_card", "payload": payload}
 
 
+#: WHAT TO ASK FOR, per open attribute (B-1.5).
+#:
+#: A TABLE, NOT A FORMAT STRING. `f"What {attribute}?"` renders "What
+#: consumed_fraction?" — a field name is an internal identifier and reaches
+#: the user as one the moment anyone interpolates it. Anything not here falls
+#: back to a phrase that is vague but never wrong.
+_ASK_FOR = {
+    "preparation": "How was it cooked?",
+    "quantity": "How much was it?",
+    "consumed_fraction": "How much of it did you have?",
+    "product_variant": "Which one was it?",
+    "package_size": "What size was it?",
+    "serving_basis": "Is that per serving or for the whole thing?",
+}
+
+
 def copy_for(facts: CanonicalResponseFacts) -> str:
     """The DETERMINISTIC fallback sentence, rendered from `facts_for`.
 
@@ -841,6 +915,19 @@ def copy_for(facts: CanonicalResponseFacts) -> str:
     if facts.outcome == "refused":
         return ("That answer was for an older question. Tell me the amount "
                 "again and I'll log it.")
+    if facts.outcome == "partial":
+        # NOTHING WAS LOGGED, AND THE COPY MUST SAY SO WITHOUT SAYING
+        # "logged" (B-1.5). Falling through to the applied branch below would
+        # render "Logged." on a turn that wrote no row — the phantom claim
+        # this whole migration exists to delete, arriving through a new
+        # outcome rather than through a detector gap.
+        #
+        # ACKNOWLEDGE, THEN ASK. The user just answered something; a bare
+        # question reads as though their tap was ignored.
+        remaining = _ASK_FOR.get(
+            (facts.open_attributes or ("",))[0], "one more thing")
+        got = f"Got it{f' for {facts.name.lower()}' if facts.name else ''}."
+        return f"{got} {remaining}"
     if facts.outcome == "repair":
         # NAME THE FOOD. "How much was it?" after someone reported a DIFFERENT
         # meal reads as a question about the meal they just named — so they

@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from dataclasses import field as dc_field
 from enum import Enum
 from typing import Any, Optional
 
@@ -105,6 +106,19 @@ class OwnedOperation:
     #: candidates. Empty on operations opened before 3b.3.
     decision_id: str = ""
     candidate_set_id: str = ""
+    #: FIELDS ALREADY ANSWERED, and the patch each one carries (B-1.5).
+    #:
+    #: One item can raise several independent material fields, and a user may
+    #: answer them across separate turns. Held here, keyed by `field_id`, so
+    #: an answer given two turns ago is applied at commit rather than
+    #: remembered by the screen — a client that reloads, or a second device,
+    #: must see the same partially-answered operation.
+    #:
+    #: KEYED BY FIELD, NOT APPENDED. Answering the same field twice is a
+    #: correction, not a second answer: the map holds the LATEST patch per
+    #: field, so readiness counts fields and changing your mind about the
+    #: portion cannot complete a question that never asked about preparation.
+    answered: dict = dc_field(default_factory=dict)
 
     @property
     def expired(self) -> bool:
@@ -844,8 +858,99 @@ async def owning(db, user) -> Optional[OwnedOperation]:
             item=dict(data.get("item") or {}),
             locale=str(data.get("locale") or "en"),
             decision_id=str(data.get("decision_id") or ""),
-            candidate_set_id=str(data.get("candidate_set_id") or ""))
+            candidate_set_id=str(data.get("candidate_set_id") or ""),
+            answered=_decode_answered(data, row.operation_id))
     return None
+
+
+def _decode_answered(data: dict, operation_id: str) -> dict:
+    """Held answers, back as CONCRETE patches (B-1.5).
+
+    FAILS THE OPERATION, NOT THE FIELD. An unreadable held patch cannot be
+    skipped: skipping it would make an answered field look unanswered, the
+    question would be re-asked, and the meal would eventually commit without
+    the answer the user already gave. Raising here reaches the caller's
+    `except` and becomes a repair, which is the honest outcome — we cannot
+    read what they told us.
+    """
+    from core.semantics import patch_from_payload
+
+    held = data.get("answered") or {}
+    if not isinstance(held, dict):
+        raise ValueError(
+            f"{operation_id} has a non-object `answered` "
+            f"({type(held).__name__}) — held answers are keyed by field")
+    return {str(k): patch_from_payload(v) for k, v in held.items()}
+
+
+def open_fields(interaction, answered: dict) -> tuple:
+    """The fields this interaction asked about and has no answer for.
+
+    ORDERED AS ASKED, so a re-ask names them the way they were shown.
+    """
+    return tuple(f for g in interaction.groups for f in g.fields
+                 if f.field_id not in (answered or {}))
+
+
+def ready_to_settle(interaction, answered: dict) -> bool:
+    """May this operation commit?
+
+    THE QUESTION IS ANSWERED WHEN EVERY FIELD IS, not when an answer arrives.
+    Those were the same sentence while B-1 asked about one field, and B-1.5 is
+    where they come apart: settling on the first applied answer would commit
+    the meal with the other chips still on screen, and the tap that followed
+    would find a settled operation and be discarded.
+    """
+    return not open_fields(interaction, answered)
+
+
+def pricing_patch(held: dict, *, fallback=None):
+    """The patch the pricing path reads — the QUANTITY one (B-1.75).
+
+    A multi-field answer produces several patches and only one of them states
+    an amount. Selected by the stored discriminator rather than by position or
+    by type-sniffing, for the reason `patch_type` exists at all: which patch
+    prices the food must not depend on which order the user tapped in.
+
+    NOT YET A MULTI-PATCH COMMIT. Preparation is recorded and does not move a
+    number, because nothing produces a preparation field yet. When one does,
+    pricing consumes it HERE — and that must land in the same commit as the
+    producer, or a user will answer "Fried" and watch it change nothing.
+    """
+    for patch in (held or {}).values():
+        if getattr(patch, "patch_type", "") == "set_quantity":
+            return patch
+    return fallback
+
+
+async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
+    """Record an answer to ONE field and leave the operation open (B-1.5).
+
+    DURABLE, NOT REMEMBERED BY THE SCREEN. The next tap may come from a
+    relaunched app, a second device, or a different worker, and each must see
+    the same partially-answered operation. A held answer kept in memory is an
+    answer the user gave and the system lost.
+
+    THE REVISION DOES NOT MOVE. The chips for the still-open fields are on the
+    user's screen right now; bumping the revision would make every one of them
+    a stale tap and lock the user out of finishing the answer. This is the same
+    reasoning REPAIR and REFUSED already follow, for the same reason.
+
+    Returns the full held map, so the caller tests readiness against what is
+    now stored rather than against what it believes it just wrote.
+    """
+    held = dict(owned.answered or {})
+    held[str(patch.field_id)] = patch
+
+    data = json.loads(owned.row.canonical_payload or "{}")
+    data["answered"] = {k: p.to_payload() for k, p in held.items()}
+    owned.row.canonical_payload = json.dumps(data)
+    db.add(owned.row)
+    await db.flush()
+    logger.info("event=b1_answer_held operation=%s field=%s open=%d",
+                owned.operation_id, patch.field_id,
+                len(open_fields(owned.interaction, held)))
+    return held
 
 
 async def settle(db, *, user, owned: OwnedOperation, patch,

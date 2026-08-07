@@ -1205,8 +1205,17 @@ async def _run_turn(
                         # inside the except handler above and is unbound on
                         # the happy path. Reading it here raised NameError
                         # into the swallow below and the check ran zero times.
+                        #
+                        # `partial` JOINED IT AT B-1.5, and it is the only
+                        # addition that belongs. A partially answered question
+                        # writes no row and re-asks the fields still open, so
+                        # it is an ASK by both tests this flag cares about.
+                        # Its copy is `copy_for`'s partial branch, which
+                        # acknowledges and asks and cannot say "logged" — the
+                        # property that makes suppressing detection here safe.
                         asked_this_turn=(
-                            str(getattr(_b1_out.outcome, "value", "")) == "repair"),
+                            str(getattr(_b1_out.outcome, "value", ""))
+                            in ("repair", "partial")),
                         stop_reason="b1_answer",
                         retried=False, tool_error=bool(_b1_out.internal_failure),
                         source_type=_source, tool_names=set(),

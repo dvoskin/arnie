@@ -358,9 +358,14 @@ def test_an_explicit_cancel_closes_the_operation():
 
 
 def test_the_answer_outcomes_have_no_legacy_member():
-    """C10, at the type level: there is no way to SAY 'fall back' here."""
+    """C10, at the type level: there is no way to SAY 'fall back' here.
+
+    `partial` joined the set at B-1.5 — a field answered with the question
+    still open. It is not a fallback and not a failure, and it is pinned here
+    with the rest so the next addition is also a deliberate one.
+    """
     assert {o.value for o in Outcome} == {
-        "applied", "cancelled", "repair", "refused", "replay"}
+        "applied", "cancelled", "repair", "refused", "replay", "partial"}
 
 
 def test_a_typed_answer_is_checked_for_staleness_too():

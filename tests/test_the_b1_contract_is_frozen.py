@@ -139,7 +139,13 @@ def test_the_observation_columns_are_frozen():
     # `replay` promoted in 8.2: an authoritative result handed back with
     # nothing new written. Carried as APPLIED it was indistinguishable from a
     # fresh mutation, so "successful applications" silently counted repeats.
-    ("Outcome", {"applied", "cancelled", "repair", "refused", "replay"}),
+    # `partial` added in B-1.5: one item can raise several independent
+    # material fields, so a perfectly understood answer may still leave the
+    # question open. Folded into APPLIED it would tell every client and every
+    # counter the meal had landed; folded into REPAIR it would tell the user
+    # we had failed to understand them.
+    ("Outcome", {"applied", "cancelled", "repair", "refused", "replay",
+                 "partial"}),
     # `unusable_amount` was frozen with NO REACHABLE PRODUCER — a planned
     # behaviour in a vocabulary that is supposed to describe actual ones.
     # Removed rather than left as a value analysis would look for and never
