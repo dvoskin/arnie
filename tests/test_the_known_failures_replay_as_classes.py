@@ -627,3 +627,66 @@ def test_mass_labels_still_come_from_the_everyday_renderer():
     # unchanged — the registry path is for non-mass bases, not a replacement.
     _ix2, plain, _r2 = _ask(*mass)
     assert [o.label for o in plain] == ["85g", "226g"]
+
+
+# ── 6.2 — word units inflect, symbol units do not ──────────────────────────
+
+@pytest.mark.parametrize("amount,unit_id,expected", [
+    # SYMBOLS never change. `2 mls` and `3 tbsps` are not English.
+    ("2", "ml", "2 ml"), ("3", "tbsp", "3 tbsp"), ("2", "oz", "2 oz"),
+    ("2", "g", "2 g"), ("2", "kg", "2 kg"), ("2", "lb", "2 lb"),
+    ("2", "l", "2 l"), ("2", "tsp", "2 tsp"),
+    # WORDS do. Registering `cup` and `cups` as invariant aliases produced
+    # `2 cup` and `3 tablespoon` — reachable the moment a producer states a
+    # long-form unit id.
+    ("1", "cup", "1 cup"), ("2", "cup", "2 cups"), ("2", "cups", "2 cups"),
+    ("1", "tablespoon", "1 tablespoon"),
+    ("3", "tablespoon", "3 tablespoons"),
+    ("2", "pint", "2 pints"), ("2", "quart", "2 quarts"),
+    ("2", "liter", "2 liters"), ("2", "milliliter", "2 milliliters"),
+    ("1", "ounce", "1 ounce"), ("2", "ounce", "2 ounces"),
+    ("2", "pound", "2 pounds"), ("3", "gram", "3 grams"),
+    ("1", "piece", "1 piece"), ("2", "piece", "2 pieces"),
+    ("1", "serving", "1 serving"), ("2", "serving", "2 servings"),
+])
+def test_a_unit_is_written_the_way_the_registry_says(amount, unit_id,
+                                                     expected):
+    from core import unit_registry
+
+    said = unit_registry.say(Decimal(amount), unit_id)
+    assert f"{amount} {said}" == expected
+
+
+def test_both_spellings_of_a_word_unit_mean_and_read_the_same():
+    """A producer that states `cups` rather than `cup` must not change either
+    the amount or the row."""
+    from core import unit_registry
+
+    for singular, plural in (("cup", "cups"), ("tablespoon", "tablespoons"),
+                             ("ounce", "ounces"), ("pound", "pounds"),
+                             ("liter", "liters")):
+        assert (unit_registry.canonical_amount(Decimal("2"), singular)
+                == unit_registry.canonical_amount(Decimal("2"), plural))
+        assert (unit_registry.say(Decimal("2"), singular)
+                == unit_registry.say(Decimal("2"), plural))
+
+
+def test_a_long_form_volume_unit_renders_correctly_in_a_real_row():
+    """END TO END, because the defect is only visible in the label."""
+    two_cups = CanonicalQuantity(amount=Decimal("2"), unit_id="cup",
+                                 milliliters=Decimal("473.176"))
+    evidence = QuantityCandidateEvidence(
+        source_type=CandidateSource.ONTOLOGY,
+        source=_source(EvidenceScope.POPULATION),
+        observed_quantity=two_cups, observed_basis=ServingBasis.VOLUME,
+        subject_scope=EvidenceScope.POPULATION, confidence=Decimal("0.6"))
+    cand = QuantityCandidate(
+        candidate_id="c", canonical_entity_id=ENTITY, quantity=two_cups,
+        serving_basis=ServingBasis.VOLUME,
+        offered=ServingExpression(amount=Decimal("2"), unit_id="cup",
+                                  basis=ServingBasis.VOLUME,
+                                  normalized=two_cups),
+        evidence=(evidence,), prior=Decimal("0.5"))
+    _ix, options, record = _ask(cand)
+    assert [o.label for o in options] == ["2 cups"]
+    assert [p.rendered_label for p in record.presented] == ["2 cups"]

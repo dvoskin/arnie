@@ -1101,7 +1101,8 @@ B-1.9      IN PROGRESS       5 of 10 stages, ~65-70% by engineering weight.
                              durable universe · 4 bridge deletion ·
                              5/5.1/5.2 versioned selector — ALL DONE.
                              6 DONE: failures replayed as CLASSES.
-                             7 NEXT: integration evidence.
+                             7 DONE: integration evidence, on Postgres.
+                             8 NEXT: freeze the wire contract.
                              Then 7 integration · 8 freeze · 9 iOS ·
                              10 promote+delete. Runs BEFORE B-1 closure.
 B-1b.1/.2  NEXT              deterministic matrix + sequence corpus
@@ -1840,6 +1841,45 @@ fields to those actually read.
 candidates preserved, canonical mass conversion stays server-side. Also:
 piece-native · count-native · package-native · fraction-native · history-rich
 · history-empty · conversion available · conversion unavailable.
+
+**6.2 — word units inflect; symbol units do not.** The registry marked every
+volume alias invariant, so an offered expression stating `cup` or
+`tablespoon` would have rendered `2 cup` and `3 tablespoon`. Symbols
+(`ml · g · tbsp · oz · lb`) and words (`cup/cups · tablespoon/tablespoons ·
+ounce/ounces`) are registered separately now, both spellings of a word unit
+pointing at one pair so the id a producer happens to use cannot change how the
+row reads.
+
+**7 — status: DONE** *(2026-08-06)*.
+`tests/test_the_whole_slice_holds_together.py`.
+
+The three corpora that came before each prove one half of the slice, and all
+three **predate the durable universe** — not one joins a committed meal back
+to the candidate row that justified it. That join is what step 7 closes:
+
+```text
+raw message -> operation -> candidate set -> decision -> presented option
+            -> tap (by id) -> patch -> nutrition -> card + totals -> telemetry
+```
+
+Covered: real Postgres · real enrichment · raw-message routing · restart
+between turns · stale and foreign answers · duplicate transport and duplicate
+taps · unrelated meals while awaiting · exact candidate, decision, option,
+nutrition and telemetry records · and `why_not()` answering for **every**
+candidate on a real production turn, never "unknown".
+
+**TWO INSTRUMENT DEFECTS, BOTH SELF-CAUGHT.** The engine reporter read
+`db.database.engine` — the module-level engine the harness does not bind to —
+and printed `sqlite` with `TEST_POSTGRES_URL` set, so *"this ran on Postgres"*
+would have been false while the reporter agreed. It reads the bound engine
+now, asserts the binding, and **fails if the variable is set and Postgres was
+not used**. The restart test disposed that same wrong engine, simulating
+nothing; it drops the real pool on Postgres and re-materialises from rows on
+SQLite, where disposing would destroy the database.
+
+Mutation-verified: making `save()` persist nothing turns six of seven red.
+
+8313 pass on SQLite and 8313 on Postgres (25 skips).
 
 **7–8** — run the sequence corpus through the real candidate pipeline *and*
 real enrichment together, then freeze the wire contract, the semantic

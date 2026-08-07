@@ -80,41 +80,53 @@ class UnitDefinition:
 
 
 def _abbrev(dimension, **kw):
-    """Units whose written form never changes with the amount."""
+    """Units written as SYMBOLS. `ml`, `g`, `tbsp` — invariant with amount."""
     return {k: UnitDefinition(unit_id=k, dimension=dimension,
                               per_unit=Decimal(v), singular=k, plural=k)
             for k, v in kw.items()}
 
 
-def _mass(**kw):
-    return _abbrev(MASS, **kw)
+def _words(dimension, per_unit, singular, plural):
+    """Units written as WORDS, which do inflect.
 
-
-def _volume(**kw):
-    return _abbrev(VOLUME, **kw)
+    Registering `cup` and `cups` through `_abbrev` made every alias
+    invariant — so an offered expression stating `cup` would have rendered
+    `2 cup`, and `tablespoon` `3 tablespoon`. Both spellings of a word unit
+    point at the same pair, so the id a producer happens to use cannot change
+    how the row reads.
+    """
+    value = Decimal(per_unit)
+    return {alias: UnitDefinition(unit_id=alias, dimension=dimension,
+                                  per_unit=value, singular=singular,
+                                  plural=plural)
+            for alias in (singular, plural)}
 
 
 _REGISTRY: dict = {}
-_REGISTRY.update(_mass(g="1", gram="1", grams="1", gm="1",
-                       kg="1000", kilogram="1000", kilograms="1000"))
-_REGISTRY.update({u: UnitDefinition(unit_id=u, dimension=MASS,
-                                    per_unit=_G_PER_OZ,
-                                    singular="oz", plural="oz")
-                  for u in ("oz", "ounce", "ounces")})
-_REGISTRY.update({u: UnitDefinition(unit_id=u, dimension=MASS,
-                                    per_unit=_G_PER_LB,
-                                    singular="lb", plural="lb")
-                  for u in ("lb", "lbs", "pound", "pounds")})
-_REGISTRY.update(_volume(ml="1", milliliter="1", millilitre="1",
-                         milliliters="1", millilitres="1",
-                         l="1000", liter="1000", litre="1000",
-                         liters="1000", litres="1000",
-                         cup="236.588", cups="236.588",
-                         tbsp="14.787", tablespoon="14.787",
-                         tablespoons="14.787",
-                         tsp="4.929", teaspoon="4.929", teaspoons="4.929",
-                         pint="473.176", pints="473.176",
-                         quart="946.353", quarts="946.353"))
+_REGISTRY.update(_abbrev(MASS, g="1", gm="1", kg="1000"))
+_REGISTRY.update(_words(MASS, "1", "gram", "grams"))
+_REGISTRY.update(_words(MASS, "1000", "kilogram", "kilograms"))
+_REGISTRY["oz"] = UnitDefinition(unit_id="oz", dimension=MASS,
+                                 per_unit=_G_PER_OZ, singular="oz",
+                                 plural="oz")
+_REGISTRY.update(_words(MASS, str(_G_PER_OZ), "ounce", "ounces"))
+for _lb in ("lb", "lbs"):
+    _REGISTRY[_lb] = UnitDefinition(unit_id=_lb, dimension=MASS,
+                                    per_unit=_G_PER_LB, singular="lb",
+                                    plural="lb")
+_REGISTRY.update(_words(MASS, str(_G_PER_LB), "pound", "pounds"))
+_REGISTRY.update(_abbrev(VOLUME, ml="1", l="1000", tbsp="14.787",
+                         tsp="4.929"))
+for _sing, _plur, _per in (("milliliter", "milliliters", "1"),
+                           ("millilitre", "millilitres", "1"),
+                           ("liter", "liters", "1000"),
+                           ("litre", "litres", "1000"),
+                           ("cup", "cups", "236.588"),
+                           ("tablespoon", "tablespoons", "14.787"),
+                           ("teaspoon", "teaspoons", "4.929"),
+                           ("pint", "pints", "473.176"),
+                           ("quart", "quarts", "946.353")):
+    _REGISTRY.update(_words(VOLUME, _per, _sing, _plur))
 _REGISTRY["floz"] = UnitDefinition(unit_id="floz", dimension=VOLUME,
                                    per_unit=_ML_PER_FLOZ,
                                    singular="fl oz", plural="fl oz")
