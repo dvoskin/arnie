@@ -61,6 +61,9 @@ class AnswerTurn:
     subject_name: str = ""
     #: WHY we re-asked, typed. Copied from the answer, never re-derived.
     repair_reason: str = ""
+    #: WHY a structured answer was refused, typed. A client branches on this;
+    #: prose is not a branch condition.
+    refusal_reason: str = ""
 
     @property
     def applied(self) -> bool:
@@ -194,7 +197,8 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
                        field_id=field_id, option_id=option_id,
                        revision=revision,
                        context=_evidence_context(owned, user),
-                       candidates=await _candidates_shown(db, owned, user))
+                       **_shown_kwargs(await _candidates_shown(db, owned,
+                                                               user)))
         if answer.outcome is not Outcome.APPLIED:
             return _turn(answer, owned, live_field)
         result = await ops.settle(db, user=user, owned=owned,
@@ -208,7 +212,7 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
                    field_id=field_id, option_id=option_id,
                    revision=revision,
                    context=_evidence_context(owned, user),
-                   candidates=await _candidates_shown(db, owned, user))
+                   **_shown_kwargs(await _candidates_shown(db, owned, user)))
 
     _measure(owned, answer, option_id=option_id, user=user,
              field=live_field, message=message)
@@ -257,6 +261,11 @@ def _evidence_context(owned, user):
                             if item.get("product_variant_id") else None))
 
 
+def _shown_kwargs(pair):
+    candidates, disposition = pair
+    return {"candidates": candidates, "universe": disposition}
+
+
 async def _candidates_shown(db, owned, user):
     """The typed candidates behind the options this person actually read.
 
@@ -270,8 +279,11 @@ async def _candidates_shown(db, owned, user):
     estimate then refuses rather than assuming, which is the correct reading
     of not knowing what justified an option.
     """
+    from core.clarification_answer import UniverseDisposition
+
     if not owned.decision_id:
-        return {}
+        # An operation opened before the universe existed. NOT an outage.
+        return {}, UniverseDisposition.NOT_APPLICABLE
     try:
         from core import candidate_repository as universe_repo
 
@@ -281,16 +293,18 @@ async def _candidates_shown(db, owned, user):
     except Exception:
         logger.warning("event=b1_universe_unreadable operation=%s",
                        owned.operation_id, exc_info=True)
-        return {}
+        return {}, UniverseDisposition.UNAVAILABLE
     if record is None:
-        return {}
-    return {shown.option_id: record.candidate_set.candidate(shown.candidate_id)
-            for shown in record.presented}
+        return {}, UniverseDisposition.UNAVAILABLE
+    return ({shown.option_id:
+             record.candidate_set.candidate(shown.candidate_id)
+             for shown in record.presented},
+            UniverseDisposition.LOADED)
 
 
 def _read(owned, interaction, live_field, *, message: str, field_id: str,
           option_id: str, revision: Optional[int], context=None,
-          candidates=None):
+          candidates=None, universe=None):
     """The answer, from whichever modality carried it.
 
     Order is specificity, not preference: an option id is unambiguous, an
@@ -311,7 +325,7 @@ def _read(owned, interaction, live_field, *, message: str, field_id: str,
         text=message,
         revision=revision if revision is not None else interaction.revision,
         food_name=str(interaction.groups[0].label or ""),
-        context=context, candidates=candidates,
+        context=context, candidates=candidates, universe=universe,
         # THE OPERATION'S LOCALE, never re-detected from this message. The
         # question was asked in one language; a two-word reply is exactly
         # where detection is least reliable, and a destructive command sits
@@ -366,6 +380,9 @@ def _turn(answer, owned, field) -> AnswerTurn:
                       subject_name=_subject_of(owned),
                       repair_reason=str(
                           getattr(getattr(answer, "repair_reason", None),
+                                  "value", "") or ""),
+                      refusal_reason=str(
+                          getattr(getattr(answer, "refusal_reason", None),
                                   "value", "") or ""))
 
 
@@ -439,6 +456,9 @@ async def _observe(db, owned, answer, *, user, source_turn_id: str,
                 # once for modality and once for policy attribution.
                 repair_reason=str(getattr(
                     getattr(answer, "repair_reason", None), "value", "")
+                    or ""),
+                refusal_reason=str(getattr(
+                    getattr(answer, "refusal_reason", None), "value", "")
                     or ""),
                 selected_source=selected_source,
                 offered=_offered_mix(field),
@@ -611,6 +631,11 @@ class CanonicalResponseFacts:
     #: The FIGURE is ours even if they picked it — drives the row's flag.
     system_supplied_figure: bool
     assumptions: tuple = ()
+    #: WHY, typed, for a client to branch on. Exactly one is non-empty, and
+    #: only on the outcome it belongs to — a field stamped on every result
+    #: would mean "something happened" rather than "this is why".
+    repair_reason: str = ""
+    refusal_reason: str = ""
 
     @property
     def committed(self) -> bool:
@@ -646,6 +671,8 @@ def facts_for(turn: AnswerTurn) -> CanonicalResponseFacts:
         protein=totals.get("protein"),
         day_calories=(getattr(result, "day_totals", None) or {}).get(
             "calories"),
+        repair_reason=str(getattr(turn, "repair_reason", "") or ""),
+        refusal_reason=str(getattr(turn, "refusal_reason", "") or ""),
         # THREE PROVENANCES, TWO QUESTIONS, AND THEY ARE NOT THE SAME QUESTION.
         #
         #   USER_STATED    they typed a figure       own=True   assumed=False

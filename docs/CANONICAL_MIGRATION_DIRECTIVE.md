@@ -2012,7 +2012,37 @@ active food and states that anything else mentioned is not logged. A gate
 asserts the reason is absent, so this stays a decision rather than an
 oversight.
 
-**8357 pass on SQLite and 8357 on Postgres**, live-enrichment join running.
+**8.1 — the reason contract, completed.** *(review of `a01950c`)*
+
+* **The overclaim, again, and in the freeze commit itself.** That message said
+  *"typed RepairReason and RefusalReason, persisted and indexed"*. Only
+  `repair_reason` was. `RefusalReason` existed on the in-memory result and
+  stopped at the answer function — so the reason a CLIENT has to branch on
+  never reached storage or the wire. Now carried through `AnswerTurn` →
+  `CanonicalResponseFacts` → `B1AnswerObservation`, with `b1obs005`
+  **forward-only** and an index. A gate asserts it reaches the facts, named
+  after the overclaim so it cannot recur silently.
+* **`universe_unavailable` was inferred from container shape.** `not
+  candidates` conflates a legitimate empty, an operation older than the
+  universe, and a read that failed — so a future legitimate empty would be
+  filed as an outage. The loader now DECLARES a typed
+  `UniverseDisposition(loaded · unavailable · not_applicable)` and `_estimate`
+  copies it.
+* **`UNUSABLE_AMOUNT` was frozen with no producer.** A planned behaviour in a
+  vocabulary meant to describe actual ones — and a value analysis would look
+  for and never find, indistinguishable from one that simply never occurs.
+  **Removed.** A gate now scans production source and fails on any frozen
+  reason nothing can produce; mutation-verified by adding a dead member.
+* Reasons are asserted **empty on the outcomes they do not describe**, so a
+  field means "this is why" rather than "something happened".
+
+**8364 pass on SQLite and 8364 on Postgres**, live-enrichment join running.
+
+**Still open before step 8 closes** — `client_message_id`; first-class
+`REPLAY`; expiry classified as a LIFECYCLE disposition rather than an answer
+outcome *(accepted: a late but addressed answer is still valid, so
+`Outcome.EXPIRED` would be the wrong abstraction)*; resend-to-refusal
+attribution **deferred to B-1b.3** as advised; and attached CI.
 
 **7–8** — run the sequence corpus through the real candidate pipeline *and*
 real enrichment together, then freeze the wire contract, the semantic

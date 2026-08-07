@@ -129,17 +129,23 @@ def test_the_observation_columns_are_frozen():
         "id", "operation_id", "user_id", "source_turn_id", "attribute",
         "outcome", "modality", "selected_source", "offered", "round_index",
         "latency_ms", "entry_id", "observed_at", "interaction_revision",
-        "question_version", "policy_version", "repair_reason", "cohort"}
+        "question_version", "policy_version", "repair_reason",
+        "refusal_reason", "cohort"}
 
 
 @pytest.mark.parametrize("enum,members", [
     ("AnswerModality", {"option_id", "label_selection", "user_text",
                         "command", "repair", "unknown"}),
     ("Outcome", {"applied", "cancelled", "repair", "refused"}),
-    ("RepairReason", {"no_amount_in_answer", "unusable_amount",
-                      "estimate_unsupported", "universe_unavailable"}),
+    # `unusable_amount` was frozen with NO REACHABLE PRODUCER — a planned
+    # behaviour in a vocabulary that is supposed to describe actual ones.
+    # Removed rather than left as a value analysis would look for and never
+    # find.
+    ("RepairReason", {"no_amount_in_answer", "estimate_unsupported",
+                      "universe_unavailable"}),
     ("RefusalReason", {"unknown_option", "foreign_field",
                        "revision_mismatch", "option_without_patch"}),
+    ("UniverseDisposition", {"loaded", "unavailable", "not_applicable"}),
 ])
 def test_the_answer_vocabularies_are_frozen(enum, members):
     assert {m.value for m in getattr(answers, enum)} == members
@@ -296,3 +302,97 @@ def test_the_policy_reads_only_the_option_capacity_off_a_context():
 
     policy.select(_Watched(), context=_ContextTrap())
     assert seen == ["maximum_options"] * len(seen) and seen
+
+
+# ── 8.1 — every frozen reason is REACHABLE, DURABLE, and SCOPED ────────────
+
+def test_every_frozen_reason_has_a_reachable_producer():
+    """A FROZEN VOCABULARY DESCRIBES BEHAVIOUR, NOT PLANS.
+
+    `unusable_amount` was frozen with nothing that could produce it — a value
+    analysis would look for and never find, indistinguishable from a value
+    that simply never occurs. Every member must be stamped somewhere in
+    production code, proven by scanning for the reference rather than by
+    trusting this list.
+    """
+    import pathlib
+    import re
+
+    repo = pathlib.Path(__file__).resolve().parent.parent
+    source = "\n".join(
+        p.read_text() for root in ("core", "skills", "handlers", "api")
+        for p in (repo / root).rglob("*.py"))
+
+    for enum_name in ("RepairReason", "RefusalReason"):
+        enum = getattr(answers, enum_name)
+        for member in enum:
+            reference = f"{enum_name}.{member.name}"
+            assert re.search(rf"{reference}\b", source), (
+                f"{reference} is frozen but nothing produces it — either "
+                f"wire it to a real failure class with a gate, or remove it "
+                f"until that class exists")
+
+
+def test_a_reason_is_empty_on_the_outcomes_it_does_not_describe():
+    """"Some policy ran" is not a measurement. A field stamped everywhere
+    cannot be counted anywhere."""
+    from core.b1_answer_turn import AnswerTurn, facts_for
+    from core.clarification_answer import Outcome
+
+    applied = facts_for(AnswerTurn(Outcome.APPLIED, operation_id="op",
+                                   field_id="f"))
+    assert applied.repair_reason == "" and applied.refusal_reason == ""
+
+    repaired = facts_for(AnswerTurn(Outcome.REPAIR, operation_id="op",
+                                    field_id="f",
+                                    repair_reason="no_amount_in_answer"))
+    assert repaired.repair_reason == "no_amount_in_answer"
+    assert repaired.refusal_reason == ""
+
+    refused = facts_for(AnswerTurn(Outcome.REFUSED, operation_id="op",
+                                   field_id="f",
+                                   refusal_reason="revision_mismatch"))
+    assert refused.refusal_reason == "revision_mismatch"
+    assert refused.repair_reason == ""
+
+
+@pytest.mark.parametrize("column", ["repair_reason", "refusal_reason"])
+def test_a_client_relevant_reason_is_durable_and_indexed(column):
+    """DURABLE, because analysis reads rows and not logs. INDEXED, because
+    "why did we re-ask" has to be a GROUP BY at population scale."""
+    from db.models import B1AnswerObservation
+
+    table = B1AnswerObservation.__table__
+    assert column in table.columns
+    assert any(column in [c.name for c in ix.columns]
+               for ix in table.indexes), f"{column} is not indexed"
+
+
+def test_the_refusal_reason_reaches_the_response_facts():
+    """THE OVERCLAIM THIS GATE EXISTS FOR. `b1obs004`'s commit said
+    RefusalReason was "persisted and indexed". It was neither: the type
+    existed on the in-memory result and stopped at the answer function, so the
+    reason a client must branch on never reached storage or the wire."""
+    from core.b1_answer_turn import CanonicalResponseFacts
+
+    assert "refusal_reason" in CanonicalResponseFacts.__dataclass_fields__
+    assert "repair_reason" in CanonicalResponseFacts.__dataclass_fields__
+
+
+def test_storage_health_is_declared_by_the_loader_not_inferred():
+    """`not candidates` conflates three states — a legitimate empty, an
+    operation older than the universe, and a read that failed. Inferring an
+    outage from container shape would misfile the first as the third."""
+    import inspect
+
+    from core import b1_answer_turn as turn
+
+    source = inspect.getsource(turn._candidates_shown)
+    assert "UniverseDisposition.UNAVAILABLE" in source
+    assert "UniverseDisposition.NOT_APPLICABLE" in source
+    assert "UniverseDisposition.LOADED" in source
+
+    estimate = inspect.getsource(answers._estimate)
+    assert "universe is UniverseDisposition.UNAVAILABLE" in estimate, (
+        "the estimate path still infers storage health rather than reading "
+        "the disposition the loader declared")

@@ -324,6 +324,7 @@ class B1AnswerObservation(Base):
         Index("ix_b1_answer_observed", "observed_at"),
         Index("ix_b1_answer_source", "selected_source"),
         Index("ix_b1_answer_repair_reason", "repair_reason"),
+        Index("ix_b1_answer_refusal_reason", "refusal_reason"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -373,6 +374,11 @@ class B1AnswerObservation(Base):
     #: history — pooled, a storage failure would read as a population of users
     #: whose logs we lack.
     repair_reason = Column(String, nullable=False, default="")
+    #: WHY a structured answer was refused, typed. Separate from
+    #: `repair_reason` because they answer different questions: a repair is
+    #: the user being asked again, a refusal is a stale screen or our own
+    #: defect, and one field holding both could not be counted as either.
+    refusal_reason = Column(String, nullable=False, default="")
     latency_ms = Column(Integer, nullable=True)
     #: Set when this answer committed. Corrections are keyed on entry_id, so
     #: this is what charges a later correction back to the source that caused it.

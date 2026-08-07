@@ -74,8 +74,6 @@ class RepairReason(str, Enum):
     #: The message carried no amount we could apply. The common case, and the
     #: one an unrelated food report lands in.
     NO_AMOUNT_IN_ANSWER = "no_amount_in_answer"
-    #: An amount was stated but not in a form this field accepts.
-    UNUSABLE_AMOUNT = "unusable_amount"
     #: "Not sure", with nothing about this person that could support a guess.
     ESTIMATE_UNSUPPORTED = "estimate_unsupported"
     #: The durable candidate universe could not be read, so we do not know
@@ -84,6 +82,26 @@ class RepairReason(str, Enum):
     #: and reporting them together would let an outage read as a population of
     #: users whose history we lack.
     UNIVERSE_UNAVAILABLE = "universe_unavailable"
+
+
+class UniverseDisposition(str, Enum):
+    """WHETHER THE DURABLE CANDIDATE UNIVERSE COULD BE READ. Declared by the
+    loader, never inferred from the shape of what came back.
+
+    Reconstructing storage health from `not candidates` conflates three
+    different states: a legitimately empty result, an operation that predates
+    the universe, and a read that failed. A future legitimate empty would then
+    be recorded as an outage, and a different loading failure as a fact about
+    a user's history — which is exactly the pooling this reason exists to
+    undo.
+    """
+    #: The record was read; `candidates` is what it holds.
+    LOADED = "loaded"
+    #: The read failed, or the record named by the operation is missing.
+    UNAVAILABLE = "unavailable"
+    #: No universe was expected — an operation opened before 3b, or a caller
+    #: that does not resolve candidates at all.
+    NOT_APPLICABLE = "not_applicable"
 
 
 class RefusalReason(str, Enum):
@@ -227,7 +245,9 @@ def answer_from_chip(interaction, *, field_id: str, option_id: str,
 def answer_from_text(interaction, *, field_id: str, text: str,
                      revision: int, food_name: str = "",
                      locale: str = "en", context=None,
-                     candidates=None) -> AnswerResult:
+                     candidates=None,
+                     universe=UniverseDisposition.NOT_APPLICABLE
+                     ) -> AnswerResult:
     """A typed answer, through the NARROW parser only.
 
     The broad interpreter is not reachable from here, by construction. That is
@@ -264,7 +284,8 @@ def answer_from_text(interaction, *, field_id: str, text: str,
         return AnswerResult(Outcome.REFUSED, reason=str(exc),
                             modality=AnswerModality.USER_TEXT)
 
-    commanded = _command(said, field, locale, context, candidates)
+    commanded = _command(said, field, locale, context, candidates,
+                         universe)
     if commanded is not None:
         return commanded
 
@@ -286,7 +307,8 @@ def answer_from_text(interaction, *, field_id: str, text: str,
 
 
 def _command(said: str, field, locale: str = "en",
-             context=None, candidates=None) -> Optional[AnswerResult]:
+             context=None, candidates=None,
+             universe=UniverseDisposition.NOT_APPLICABLE) -> Optional[AnswerResult]:
     """Deterministic commands, through the parser that already owns them.
 
     A local word list was the first version, matched by substring, and it was
@@ -314,7 +336,8 @@ def _command(said: str, field, locale: str = "en",
     if command in (ClarificationCommand.ESTIMATE,
                    ClarificationCommand.KEEP_AS_READ,
                    ClarificationCommand.COMMIT_READY):
-        return _estimate(field, command.value, context, candidates)
+        return _estimate(field, command.value, context, candidates,
+                         universe)
     return None
 
 
@@ -418,7 +441,8 @@ def _authorizes_assumption(option, context=None, candidates=None) -> bool:
     return bool(candidate.authorizes_assumption(context))
 
 
-def _estimate(field, reason: str, context=None, candidates=None) -> AnswerResult:
+def _estimate(field, reason: str, context=None, candidates=None,
+              universe=UniverseDisposition.NOT_APPLICABLE) -> AnswerResult:
     """"I don't know — you decide."
 
     A real answer, not a failure to answer, and the alternative is worse than
@@ -449,13 +473,14 @@ def _estimate(field, reason: str, context=None, candidates=None) -> AnswerResult
             ESTIMATE_POLICY_VERSION, reason,
             ",".join(str(getattr(getattr(o, "source", None), "value", "?"))
                      for o in (getattr(field, "options", ()) or ())))
-        # WHICH KIND OF "we cannot estimate" THIS IS. A universe we could not
-        # read is an outage; evidence that does not support one is a fact
-        # about this person's history. Reporting them together would let a
-        # storage failure read as a population of users we know nothing about.
-        unreadable = candidates is not None and not candidates and any(
-            getattr(o, "candidate_id", "") for o in
-            (getattr(field, "options", ()) or ()))
+        # WHICH KIND OF "we cannot estimate" THIS IS — DECLARED BY THE
+        # LOADER. A universe we could not read is an outage; evidence that
+        # does not support one is a fact about this person's history.
+        # Reporting them together would let a storage failure read as a
+        # population of users we know nothing about, and INFERRING the
+        # difference from an empty list would misfile a legitimate empty
+        # result as an outage.
+        unreadable = universe is UniverseDisposition.UNAVAILABLE
         return AnswerResult(
             Outcome.REPAIR, modality=AnswerModality.COMMAND,
             reason=f"{reason}: no evidence supports an estimate here",
