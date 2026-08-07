@@ -714,15 +714,32 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
                             cohort=cohort)
         return None
 
-    # ASKED BECAUSE THE INTERPRETER RAISED IT, never because of a rule about
-    # the food's name (B-1.5). "Chicken is grilled or fried" written here
-    # would be domain logic in the coordinator, and the first food it did not
-    # know would be asked the wrong question — or worse, not asked at all
-    # while its calories moved by a third.
+    # THE CANONICAL LANE'S OWN DERIVATION STAGE, and the coordinator names no
+    # field in it.
+    #
+    # This asked `qc.preparation_is_open(item)` — the interpreter's own
+    # ambiguity and nothing else. Measured in production: for "I had some
+    # chicken" the model identifies the food confidently and reports no
+    # preparation uncertainty, so the field was reachable in tests and
+    # unreachable in production. B-1.5 could not fire at all.
+    #
+    # Every registered field is now asked whether it is materially unresolved
+    # and answers from EVIDENCE. A food-name rule here — "chicken is grilled or
+    # fried" — would be domain logic in the coordinator, wrong for the first
+    # food it did not list.
+    #
+    # RUNS HERE, AFTER THE LANE DECISION AND BEFORE ANYTHING IS PERSISTED, so
+    # the staged result handed to legacy is untouched. Legacy asks exactly what
+    # it asked yesterday; a shared derivation would be new food behaviour in a
+    # frozen path.
+    from core.semantic_fields import derive_unresolved
+    from core.semantics import ClarificationAttribute
+
+    unresolved = await derive_unresolved(item)
     interaction = qc.build_interaction(
         operation_id=operation_id, revision=0, item=item, options=options,
         introduction=_introduction(item),
-        ask_preparation=qc.preparation_is_open(item))
+        ask_preparation=ClarificationAttribute.PREPARATION in unresolved)
 
     await open_operation(db, user=user, interpreter_item=interpreter_item,
                          interaction=interaction, turn_id=turn_id,

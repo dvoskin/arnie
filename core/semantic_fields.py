@@ -56,7 +56,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field as dc_field
 from enum import Enum
+import logging
 from typing import Any, Callable, Optional
+
+
+logger = logging.getLogger(__name__)
 
 
 class ValueSpace(str, Enum):
@@ -139,6 +143,23 @@ class FieldSpec:
     active_when: Optional[Callable] = None
     #: THE CLOSED VOCABULARY, for `ENUMERATED` fields.
     vocabulary: tuple = ()
+    #: IS THIS FIELD MATERIALLY UNRESOLVED FOR THIS ITEM? Supplied by the
+    #: domain, awaited by core, understood by neither.
+    #:
+    #: THE PRODUCER'S TRIGGER, GENERICALLY. B-1.5 shipped able to ask about
+    #: preparation and unable to decide when to — it opened the field only if
+    #: the INTERPRETER volunteered a `preparation` ambiguity, which it does not
+    #: do for "I had some chicken". The field worked and was unreachable.
+    #:
+    #: The alternative shapes were both forbidden and both wrong: editing the
+    #: interpreter prompt (enhancements go in code), or a list of foods that
+    #: need preparation (a food-name branch by another name). A field decides
+    #: its own necessity from EVIDENCE, and every future field declares the
+    #: same way rather than growing another coordinator branch.
+    #:
+    #: `async (item, ctx) -> bool`. None means "ask only when the interpreter
+    #: raised it", which is where quantity still sits.
+    unresolved_when: Optional[Callable] = None
     #: WHAT THE DOMAIN CAN ACTUALLY ACT ON — supplied by whoever registers,
     #: called by core, understood by neither.
     #:
@@ -249,6 +270,37 @@ def _check_the_domain_can_consume(spec: FieldSpec) -> None:
             f"{spec.attribute_value} prices by identity but {sorted(unknown)} "
             f"are not semantics its domain acts on — the field would be "
             f"asked, answered, and change nothing")
+
+
+async def derive_unresolved(item, context=None) -> tuple:
+    """WHICH REGISTERED FIELDS THIS ITEM LEAVES OPEN — asked of every field,
+    answered by none of them here.
+
+    THE CANONICAL LANE'S OWN STAGE. Runs after the lane decision and before
+    anything is persisted, so the staged result handed to legacy is untouched —
+    legacy asks what it asked yesterday. A shared derivation that changed both
+    lanes would be a new food behaviour in a frozen path.
+
+    Core iterates and orders; the domain decides. A field with no
+    `unresolved_when` is not asked about and is not open — that is quantity,
+    whose trigger is still the interpreter's own ambiguity.
+
+    A PREDICATE THAT RAISES DOES NOT OPEN A FIELD. Evidence we could not
+    gather is not evidence of ambiguity, and a question invented by a failed
+    lookup is worse than a question not asked.
+    """
+    _ensure_installed()
+    out = []
+    for spec in sorted(_REGISTRY.values(), key=lambda s: s.order):
+        if spec.unresolved_when is None:
+            continue
+        try:
+            if await spec.unresolved_when(item, context):
+                out.append(spec.attribute)
+        except Exception:
+            logger.warning("unresolved_when failed for %s; not opening it",
+                           spec.attribute_value, exc_info=True)
+    return tuple(out)
 
 
 def spec_for(attribute) -> FieldSpec:

@@ -15,6 +15,15 @@ from core.semantic_fields import (Activation, Evidence, FieldSpec, Pricing,
                                   Settlement, ValueSpace, register)
 
 
+async def _preparation_unresolved(item, context=None) -> bool:
+    """Late import: the materiality probe reaches USDA, and registration must
+    not drag a network client in at import time."""
+    from skills.nutrition.preparation_materiality import (
+        preparation_is_materially_unresolved)
+
+    return await preparation_is_materially_unresolved(item, context)
+
+
 def register_all() -> None:
     from core.semantics import ClarificationAttribute
     from skills.nutrition import preparation_ontology as prep
@@ -44,5 +53,10 @@ def register_all() -> None:
         supported_vocabulary=lambda: __import__(
             "skills.nutrition.validators", fromlist=["_PREPARATIONS"]
         )._PREPARATIONS,
+        # THE FIELD DECIDES ITS OWN NECESSITY, from USDA's own rows for this
+        # food. Without this the field was reachable only when the interpreter
+        # volunteered a preparation ambiguity — which it does not do for
+        # "I had some chicken", so B-1.5 could not fire in production at all.
+        unresolved_when=_preparation_unresolved,
         caption="Preparation", order=20))
 
