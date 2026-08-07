@@ -1102,8 +1102,8 @@ B-1.9      IN PROGRESS       7 of 10 stages, ~75-80% by engineering weight.
                              5/5.1/5.2 versioned selector · 6/6.1/6.2
                              failure classes · 7/7.1 integration proof
                              (Postgres + live USDA) — ALL DONE.
-                             8 PARTIAL: contract + fixtures frozen;
-                             4 items open — see the 8 section.
+                             8 DONE (pending an attached CI run).
+                             9 NEXT: narrow structured iOS client.
                              Then 9 structured iOS · 10 promote + DELETE
                              predecessor. Runs BEFORE B-1 closure.
 B-1b.1/.2  ABSORBED BY B-1.9 7  the matrix and the corpus now run through
@@ -2038,51 +2038,64 @@ oversight.
 
 **8364 pass on SQLite and 8364 on Postgres**, live-enrichment join running.
 
-**8.2 (partial) — `REPLAY` is a first-class outcome.**
+**8.2 — status: DONE.** *(2026-08-06)*
 
-`APPLIED` with `reason="replay"` was an unstable contract: an authoritative
-result handed back with nothing new written was indistinguishable from a fresh
-mutation, so a client could not tell whether to animate a row and "successful
-applications" silently counted repeats. Split into two properties —
-`turn.applied` (the user has an authoritative result, new OR replayed, which
-is what every existing caller means) and `turn.mutated` (a new meal was
-written, which is what the count means).
+**`REPLAY` is a first-class outcome.** `APPLIED` with `reason="replay"` was an
+unstable contract: an authoritative result handed back with nothing written
+was indistinguishable from a fresh mutation, so a client could not tell
+whether to animate a row and "successful applications" silently counted
+repeats. Split into `turn.applied` (authoritative result, new OR replayed —
+what every existing caller means) and `turn.mutated` (a new meal was written —
+what the count means). Three gates caught the addition, including one written
+earlier for exactly this: *"the outcome set changed — re-check which of them
+actually ask a question."*
 
-**Three gates caught the addition**, including one written earlier for exactly
-this: *"the outcome set changed — re-check which of them actually ask a
-question before trusting `asked_this_turn`"*. Re-checked; `REPLAY` asks
-nothing.
-
-**THE STRUCTURED ENDPOINT WAS BUILT AND THEN REVERTED.**
-`POST /api/v1/chat/answer` — the `(operation_id, revision, field_id,
-option_id, client_message_id)` envelope — was written with 13 HTTP gates that
-passed against real returned bytes. It was reverted unshipped because the
-mutation-policy ratchet found it **Class A non-compliant**: the route carries
-no canonical turn id, request trace, durable claim or concurrency proof, and
-every other mutating route does. Making the scanner pass by mentioning the
-right symbols would be gaming a governance gate; wiring `MutationTurn` and
-`RequestTrace` properly is real work with its own proof, and it is the
-remaining 8.2 task rather than something to slip in.
-
-*The design is settled and the tests are written* — the envelope, `PLATFORM`
-turn-id derivation so a retried tap resolves to the SAME commit rather than a
-second dedup mechanism that could disagree with settlement, typed reasons on
-the wire, and a gate proving the response leaks no semantics a client could
-reinterpret.
-
-**Still open before step 8 closes:**
+**`POST /api/v1/chat/answer`, Class A, through `mutation_turn`.** Built,
+reverted once for non-compliance, and rebuilt properly rather than made to
+pass by mentioning the right symbols:
 
 ```text
-[ ] POST /chat/answer, Class A compliant, with a concurrency proof
-[ ] expiry frozen as a LIFECYCLE disposition, gated
-       accepted: NOT Outcome.EXPIRED — a late but addressed answer is still
-       valid, so an answer outcome is the wrong abstraction
-[ ] golden request/response fixtures for the endpoint
-[ ] attached mandatory CI
-       I cannot launch or configure Actions, or check billing, from here.
-       Until a check attaches to a SHA, every number in this document is
-       author-reported execution evidence.
+canonical turn id   make_turn_id(channel, client_key, user_id, dedup)
+request trace       RequestTrace around the whole turn
+durable claim       claim=True; a retry returns the ORIGINAL result and never
+                    reaches settlement again
+concurrency proof   two deliveries via asyncio.gather through the real ASGI
+                    app: one 200, the other 200-replay or 409-conflict,
+                    and EXACTLY ONE meal
+ledger event        settle() -> write_canonical_meal, in the row's own
+                    transaction
 ```
+
+**ONE IDENTITY, NOT TWO.** `client_message_id` becomes the turn id the claim
+is taken under **and** the `source_turn_id` settlement dedupes on. Two dedup
+mechanisms would be two answers to "has this already happened", and they would
+eventually disagree.
+
+`b1_answer_turn.handle` was added to the `ledger_event` markers under the
+reasoning already documented for `execute_tool_calls`: *a route that delegates
+owns the turn's identity rather than the write*, so reading only the handler
+reports it as leaving no history when it leaves the strongest kind.
+
+**Expiry is modelled explicitly, and is NOT an answer outcome.**
+`OwnershipDisposition(holding · expired · settled)`, with
+`claims_unaddressed_messages` naming the one thing expiry changes. An expired
+operation still accepts an answer ADDRESSED to it — someone replying late is
+still replying — so the user never receives "expired" as the result of
+answering. A gate asserts `Outcome.EXPIRED` does not exist.
+
+**Golden request/response fixtures frozen.** The five-field envelope, all
+required; the response envelope proven to leak no semantics; the committed
+request fixture still validating against the current model.
+
+**8386 pass on SQLite and 8386 on Postgres**, live-enrichment join running.
+
+**CI — CONFIGURED, NOT YET OBSERVED BY ME.** `.github/workflows/ci.yml` runs
+on every push to `main` and every PR, against a real Postgres service. This
+push triggers it. I cannot read the result: `gh` is not installed in this
+environment and I cannot authenticate to the API, so **whether a check
+attaches to this SHA is something you can see and I cannot.** Until you
+confirm a green attached run, every number in this document remains
+author-reported execution evidence.
 
 Resend-to-refusal attribution stays **deferred to B-1b.3** as advised.
 `unrelated_report_while_awaiting` stays **unimplemented**, with a gate

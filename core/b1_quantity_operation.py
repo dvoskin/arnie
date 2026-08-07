@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,29 @@ DOMAIN = "food"
 #: The pending payload's B-1 section. Versioned separately from the operation
 #: payload because it is a different contract with a different owner.
 B1_PAYLOAD_VERSION = 1
+
+class OwnershipDisposition(str, Enum):
+    """WHY AN OPERATION NO LONGER CLAIMS UNADDRESSED MESSAGES.
+
+    EXPIRY IS A LIFECYCLE STATE, NOT AN ANSWER OUTCOME, and the distinction is
+    load-bearing. An expired operation still accepts an answer that is clearly
+    addressed to it — someone replying late is still replying, and refusing
+    them would be its own silent loss. What expiry removes is the operation's
+    claim on messages that were never meant for it, which is how an unanswered
+    question consumed the next meal as its answer.
+
+    So there is no `Outcome.EXPIRED`: the user never receives "expired" as the
+    result of answering. They receive `applied`, `replay`, `repair`, `refused`
+    or `cancelled`, and this says what the OPERATION was doing when they did.
+    """
+    #: Awaiting an answer and entitled to claim the lane.
+    HOLDING = "holding"
+    #: Past `expires_at`. Still answerable when ADDRESSED; no longer claims
+    #: messages that are not.
+    EXPIRED = "expired"
+    #: Terminal — committed or cancelled. Replays an addressed answer.
+    SETTLED = "settled"
+
 
 #: Operation statuses. `awaiting_answer` is the only one `owning()` claims.
 AWAITING = "awaiting_answer"
@@ -101,6 +125,22 @@ class OwnedOperation:
         from core.clock import now as _now
         expires = getattr(self.row, "expires_at", None)
         return expires is not None and expires < _now()
+
+    @property
+    def disposition(self) -> "OwnershipDisposition":
+        """WHAT THIS OPERATION IS DOING, as a typed value rather than as three
+        booleans a caller has to combine correctly."""
+        if not self.awaiting:
+            return OwnershipDisposition.SETTLED
+        return (OwnershipDisposition.EXPIRED if self.expired
+                else OwnershipDisposition.HOLDING)
+
+    @property
+    def claims_unaddressed_messages(self) -> bool:
+        """The ONE thing expiry changes. An addressed answer is still accepted
+        in every disposition; only the claim on messages that were not meant
+        for this question is withdrawn."""
+        return self.disposition is OwnershipDisposition.HOLDING
 
     @property
     def operation_id(self) -> str:

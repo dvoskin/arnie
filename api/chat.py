@@ -105,6 +105,27 @@ class ChatRequest(BaseModel):
         return v
 
 
+class ClarificationAnswerRequest(BaseModel):
+    """THE STRUCTURED ANSWER ENVELOPE. Four identifiers and an idempotency key.
+
+    The client sends back IDS, never semantics. It received a label to render
+    and an `option_id` to return; what that option MEANS lives on the server,
+    so a client cannot form a second opinion about a quantity — which is why
+    the chip round-trip carries no patch.
+
+    `client_message_id` IS REQUIRED HERE, unlike on `/chat`. A retried tap is
+    not a rare edge on this endpoint; it is the ordinary behaviour of a phone
+    with a flaky connection. Without a stable key the only alternative is
+    guessing from content, and two identical taps are indistinguishable from a
+    user genuinely tapping twice.
+    """
+    operation_id: str = Field(min_length=1, max_length=200)
+    revision: int = Field(ge=0)
+    field_id: str = Field(min_length=1, max_length=200)
+    option_id: str = Field(min_length=1, max_length=200)
+    client_message_id: str = Field(min_length=1, max_length=128)
+
+
 class PhotoChatRequest(BaseModel):
     # Cap the base64 payload (~13.3MB base64 ≈ 10MB decoded) so an oversized or
     # malicious body is rejected by Pydantic BEFORE it's fully decoded into
@@ -371,6 +392,111 @@ async def chat(req: ChatRequest, identity: str = Depends(current_identity)):
         identity, req.message, source_type=PLATFORM,
         lat=req.lat, lng=req.lng, client_msg_id=req.client_msg_id,
     )
+
+
+@router.post("/chat/answer")
+async def chat_answer(req: ClarificationAnswerRequest,
+                      identity: str = Depends(current_identity)):
+    """Answer an open clarification BY ID. The structured boundary.
+
+    Distinct from `POST /chat` on purpose: a tap is not a sentence. Routing it
+    through the message endpoint would put it back through text parsing, which
+    is the interpretation an option id exists to avoid.
+
+    CLASS A, THROUGH `mutation_turn`. Every other mutating route in this
+    codebase carries a canonical turn id, a request trace and a durable claim;
+    a new one that skipped them would be a surface nobody could audit after
+    the fact — and the mutation-policy ratchet says so before it can ship.
+
+    THE CLAIM AND SETTLEMENT SHARE ONE IDENTITY. `client_message_id` becomes
+    the turn id that settlement already dedupes on, so a retried tap resolves
+    to the SAME commit. Two dedup mechanisms would be two answers to "has this
+    already happened", and they would eventually disagree.
+
+    Outcomes carry TYPED reasons, so a client branches on a value rather than
+    on prose:
+
+        applied    a new meal was written
+        replay     the authoritative result, handed back; nothing new written
+        repair     we are asking again — `repair_reason` says why
+        refused    the tap does not resolve — `refusal_reason` says why
+        cancelled  the user stopped; nothing logged
+    """
+    from core import b1_answer_turn
+    from core.mutation_contract import mutation_turn
+
+    async with AsyncSessionLocal() as db:
+        user = await resolve_user(db, identity)
+        async with mutation_turn(
+            db, channel=PLATFORM, command="clarification_answer",
+            user_id=user.id, client_key=req.client_message_id,
+            payload=req.model_dump(),
+            # DISTINGUISHES TWO GENUINELY DIFFERENT TAPS when a client sends
+            # no key — though here it always does, so this is the backstop
+            # rather than the mechanism.
+            dedup=f"{req.operation_id}|{req.revision}|{req.option_id}",
+            claim=True,
+        ) as turn:
+            if turn.replay:
+                # THE ORIGINAL RESULT, not a re-run. A retried tap must not
+                # reach settlement again even to be told no — the claim
+                # answers "has this already happened" before the domain does.
+                stored = turn.stored
+                return {**_EMPTY_ANSWER,
+                        "outcome": "replay", "refusal_reason": "",
+                        "entry_id": stored.get("entry_id"),
+                        "operation_id": req.operation_id,
+                        "field_id": req.field_id,
+                        "idempotent_replay": True, "turn_id": turn.turn_id}
+
+            result = await b1_answer_turn.handle(
+                db, user=user, message="",
+                option_id=req.option_id, field_id=req.field_id,
+                revision=req.revision,
+                # ONE IDENTITY. The turn id the claim was taken under is the
+                # one settlement dedupes on.
+                source_turn_id=turn.turn_id)
+            payload = _answer_payload(result)
+            await db.commit()
+            # The claim completes in its own commit here rather than riding
+            # the domain write: `settle()` owns that transaction and does not
+            # take a `claim_id`. Weaker, and declared as such in the policy.
+            await turn.complete(db, entry_id=payload.get("entry_id"))
+            return {**payload, "turn_id": turn.turn_id}
+
+
+#: The shape every answer response has, so a replay and a fresh result are the
+#: same object to a client.
+_EMPTY_ANSWER = {"v": WIRE_VERSION, "bubbles": [], "cards": [],
+                 "outcome": "refused", "repair_reason": "",
+                 "refusal_reason": "foreign_field", "operation_id": "",
+                 "field_id": "", "entry_id": None}
+
+
+def _answer_payload(turn) -> dict:
+    """The response body. IDENTIFIERS AND RENDERED TEXT, nothing a client
+    could reinterpret as semantics."""
+    from core import b1_answer_turn
+
+    if turn is None:
+        # No canonical operation owns this. Fails closed rather than guessing
+        # which question the client meant.
+        return dict(_EMPTY_ANSWER)
+
+    facts = b1_answer_turn.facts_for(turn)
+    card = b1_answer_turn.card_for(facts)
+    payload = serialize_response(Response(
+        bubbles=[b1_answer_turn.copy_for(facts)],
+        cards=[card] if card else []))
+    payload.update({
+        "outcome": facts.outcome,
+        "repair_reason": facts.repair_reason,
+        "refusal_reason": facts.refusal_reason,
+        "operation_id": facts.operation_id,
+        "field_id": facts.field_id,
+        "entry_id": facts.entry_id,
+    })
+    return payload
 
 
 @router.post("/chat/photo")

@@ -1,0 +1,203 @@
+"""B-1.9 step 8.2 — the structured answer boundary, over real HTTP.
+
+ASSERTING THE FACTS OBJECT IS NOT PROOF THE ENDPOINT CARRIES IT. Every gate
+here sends a request through the ASGI app and decodes the bytes that come
+back, because the contract iOS is built against is the response body — not an
+internal dataclass that happens to have the right fields.
+
+    POST /api/v1/chat/answer
+      { operation_id, revision, field_id, option_id, client_message_id }
+    ->
+      { outcome, repair_reason, refusal_reason, bubbles, cards, turn_id, … }
+
+A tap is not a sentence. Routing it through the message endpoint would put it
+back through text parsing, which is the interpretation an option id exists to
+avoid.
+"""
+import asyncio
+import json
+
+import pytest
+
+from api.chat import chat_answer  # noqa: F401 — named for the concurrency scan
+from tests.test_a_full_day_of_food import (  # noqa: F401
+    app_db, client, edges, seeded, rows, item,
+)
+from tests.test_a_conversation_across_turns import (  # noqa: F401
+    CAPABLE, b1_live, say, operations, commits, vague, B1_ELIGIBLE,
+)
+from tests.test_b1b1_system_matrix import _ask, density  # noqa: F401
+
+ANSWER = "/api/v1/chat/answer"
+
+
+async def _open_question(edges, user):
+    """One eligible ask, and the ids a client would have received."""
+    await _ask(edges, user, food="Chicken breast", cal=280)
+    ops = await operations(user)
+    assert ops, "no operation to answer"
+    payload = json.loads(ops[-1].canonical_payload)
+    field = payload["interaction"]["groups"][0]["fields"][0]
+    return {
+        "operation_id": payload["interaction"]["operation_id"],
+        "revision": payload["interaction"]["revision"],
+        "field_id": field["options"][0]["field_id"],
+        "option_id": field["options"][0]["option_id"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_tap_over_http_commits_and_says_what_it_did(
+        client, edges, seeded, b1_live, density):
+    ids = await _open_question(edges, seeded)
+    response = await client.post(ANSWER, json={**ids,
+                                               "client_message_id": "tap-1"})
+    assert response.status_code == 200, response.text
+
+    body = response.json()
+    assert body["outcome"] == "applied"
+    assert body["repair_reason"] == "" and body["refusal_reason"] == ""
+    assert body["entry_id"], "a committing answer named no row"
+    assert body["turn_id"], "the response names no canonical turn"
+    assert body["bubbles"] and "Logged" in body["bubbles"][0]
+    assert body["cards"], "a committing answer returned no card"
+    assert len(await commits(seeded)) == 1
+
+
+@pytest.mark.asyncio
+async def test_the_same_client_message_id_returns_the_original_result(
+        client, edges, seeded, b1_live, density):
+    """THE CLAIM RETURNS THE ORIGINAL, and does not re-run settlement.
+
+    A phone with a flaky connection resends; without a stable key the only
+    alternative is guessing from content, and two identical taps are
+    indistinguishable from a user genuinely tapping twice.
+    """
+    ids = await _open_question(edges, seeded)
+    first = await client.post(ANSWER, json={**ids,
+                                            "client_message_id": "same-tap"})
+    second = await client.post(ANSWER, json={**ids,
+                                             "client_message_id": "same-tap"})
+
+    assert first.status_code == second.status_code == 200
+    assert len(await commits(seeded)) == 1, "a retried tap wrote twice"
+    assert second.json().get("idempotent_replay") is True, second.json()
+    assert second.json()["entry_id"] == first.json()["entry_id"]
+    assert second.json()["turn_id"] == first.json()["turn_id"], (
+        "the retry took a different turn identity than the claim it replays")
+
+
+@pytest.mark.asyncio
+async def test_two_concurrent_taps_write_one_meal(
+        client, edges, seeded, b1_live, density):
+    """THE RACE THE CLAIM EXISTS FOR — two deliveries in flight at once.
+
+    Sequential retries are caught by a read-then-write; concurrent ones are
+    not, which is why this route claims rather than checking. Run through the
+    real ASGI app, so the claim, the turn identity and settlement all take
+    part.
+    """
+    ids = await _open_question(edges, seeded)
+    body = {**ids, "client_message_id": "concurrent-tap"}
+
+    first, second = await asyncio.gather(
+        client.post(ANSWER, json=body), client.post(ANSWER, json=body),
+        return_exceptions=True)
+
+    assert not isinstance(first, Exception), first
+    assert not isinstance(second, Exception), second
+
+    # ONE WRITES; THE OTHER IS TOLD SO. The loser gets 409 — the in-flight
+    # conflict the claim framework already defines and clients already
+    # understand — rather than a second commit or a silent success. A replay
+    # (200) is also correct if the winner finished first; what is NOT correct
+    # is two meals.
+    codes = sorted((first.status_code, second.status_code))
+    assert codes in ([200, 200], [200, 409]), codes
+    assert len(await commits(seeded)) == 1, (
+        "two concurrent deliveries of one tap wrote two meals")
+
+    winner = first if first.status_code == 200 else second
+    assert winner.json()["entry_id"], "the winning delivery wrote no row"
+
+
+@pytest.mark.asyncio
+async def test_a_second_distinct_tap_replays_rather_than_applying_again(
+        client, edges, seeded, b1_live, density):
+    """REPLAY IS ITS OWN OUTCOME. Two genuinely different deliveries carrying
+    the same option: the claim cannot catch this one, so the settled operation
+    must."""
+    ids = await _open_question(edges, seeded)
+    first = await client.post(ANSWER, json={**ids,
+                                            "client_message_id": "tap-a"})
+    second = await client.post(ANSWER, json={**ids,
+                                             "client_message_id": "tap-b"})
+
+    assert first.json()["outcome"] == "applied"
+    assert second.json()["outcome"] == "replay", second.json()
+    assert len(await commits(seeded)) == 1
+    assert second.json()["entry_id"] == first.json()["entry_id"]
+
+
+@pytest.mark.parametrize("mutate,expected_reason", [
+    ({"option_id": "opt_never_offered"}, "unknown_option"),
+    ({"field_id": "fld_from_another_operation"}, "foreign_field"),
+    ({"revision": 99}, "revision_mismatch"),
+])
+@pytest.mark.asyncio
+async def test_a_refusal_names_its_reason_over_the_wire(
+        client, edges, seeded, b1_live, density, mutate, expected_reason):
+    """A CLIENT BRANCHES ON A VALUE, NOT ON PROSE. "That option is gone" and
+    "that screen is stale" are different repairs for the user."""
+    ids = await _open_question(edges, seeded)
+    response = await client.post(
+        ANSWER, json={**ids, **mutate, "client_message_id": "bad-tap"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["outcome"] == "refused", body
+    assert body["refusal_reason"] == expected_reason, body
+    assert len(await commits(seeded)) == 0
+
+
+@pytest.mark.parametrize("missing", ["operation_id", "revision", "field_id",
+                                     "option_id", "client_message_id"])
+@pytest.mark.asyncio
+async def test_every_identifier_is_required(client, edges, seeded, b1_live,
+                                            density, missing):
+    """FAILS AT THE BOUNDARY, not inside the turn. A partial envelope is a
+    client bug, and answering it would mean guessing which question was
+    meant."""
+    ids = await _open_question(edges, seeded)
+    body = {**ids, "client_message_id": "x"}
+    body.pop(missing)
+    response = await client.post(ANSWER, json=body)
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.asyncio
+async def test_an_answer_with_no_open_question_fails_closed(
+        client, edges, seeded, b1_live, density):
+    response = await client.post(ANSWER, json={
+        "operation_id": "chat_quantity:26:nothing", "revision": 0,
+        "field_id": "fld_nothing", "option_id": "opt_nothing",
+        "client_message_id": "orphan"})
+    assert response.status_code == 200
+    assert response.json()["outcome"] == "refused"
+    assert len(await commits(seeded)) == 0
+
+
+@pytest.mark.asyncio
+async def test_the_response_carries_no_semantics_a_client_could_reinterpret(
+        client, edges, seeded, b1_live, density):
+    """IDENTIFIERS AND RENDERED TEXT. A client that received a candidate or a
+    patch could form its own view of what an option means, and then there are
+    two owners of one fact."""
+    ids = await _open_question(edges, seeded)
+    body = (await client.post(
+        ANSWER, json={**ids, "client_message_id": "tap"})).json()
+
+    flat = json.dumps(body)
+    for leaked in ("candidate_set", "evidence", "serving_basis", "prior",
+                   "semantic_hash", "generation_input_fingerprint"):
+        assert leaked not in flat, f"the response leaked {leaked!r}"

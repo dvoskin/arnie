@@ -288,6 +288,22 @@ POLICIES: tuple[Policy, ...] = (
        "double-log; the reply is regenerated",
        "ledger undo reaches every write the turn made", "api/chat.py",
        notes="The claim covers the food COMMIT, not the reply: `claim_processed_turn` returns a bool, so a redelivered message cannot double-log while the turn runs again. No stored result to replay."),
+    _p("POST", "/api/v1/chat/answer", "A", _SESSION, "claim_required",
+       "the canonical operation — `settle()` owns the write transaction",
+       "`write_canonical_meal` writes the created event inside the same "
+       "transaction as the row",
+       "the claim stores the response, so a retried tap returns the ORIGINAL "
+       "result without reaching settlement again",
+       "ledger undo reaches the single committed row", "api/chat.py",
+       notes="STRUCTURED, not a message: four identifiers and an idempotency "
+             "key, never text. ONE IDENTITY -- client_message_id becomes the "
+             "turn id the claim is taken under AND the source_turn_id "
+             "settlement dedupes on, so a retry cannot have two answers to "
+             "'has this already happened'. The claim completes in a SECOND "
+             "commit (turn.complete) rather than riding the domain write, "
+             "because settle() owns that transaction and takes no claim_id -- "
+             "the weaker form, with the crash window MutationTurn.complete "
+             "documents."),
     _p("POST", "/api/v1/chat/photo", "A", _SESSION, "claim_write_only",
        "the turn coordinator", "written by the tool executor per operation",
        "the food commit is claimed; the reply is regenerated", "ledger undo",

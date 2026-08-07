@@ -95,6 +95,15 @@ MARKERS = {
     "ledger_event": ("ledger_source", "record_ledger_event",
                      "record_created_from_row", "record_surface_mutation",
                      "turn.audit", "execute_tool_calls",
+                     # SAME REASONING AS `execute_tool_calls`, applied to the
+                     # canonical lane: `b1_answer_turn.handle` hands off to
+                     # `settle()` -> `write_canonical_meal`, which writes the
+                     # created event INSIDE the transaction that writes the
+                     # row. A route that delegates owns the turn's identity
+                     # rather than the write, so reading only the handler
+                     # reports it as leaving no history when it leaves the
+                     # strongest kind.
+                     "b1_answer_turn.handle",
                      "write_canonical_meal", "commit_or_load_existing")
                     + _CHAT_LANE,
     "request_trace": ("RequestTrace", "trace.stage", "mutation_turn")

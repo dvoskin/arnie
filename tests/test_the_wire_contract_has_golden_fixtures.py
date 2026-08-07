@@ -156,3 +156,70 @@ def test_the_fixtures_name_the_versions_that_produced_them():
             == qc.RENDERER_CONTRACT_VERSION)
     assert all(p["renderer_contract_version"] == qc.RENDERER_CONTRACT_VERSION
                for p in decision["presented"])
+
+
+# ── the structured answer envelope ─────────────────────────────────────────
+
+def test_the_request_envelope_is_frozen():
+    """WHAT iOS SENDS. Five fields, all required — a partial envelope is a
+    client bug, and answering it would mean guessing which question was
+    meant."""
+    from api.chat import ClarificationAnswerRequest
+
+    fields = ClarificationAnswerRequest.model_fields
+    assert set(fields) == {"operation_id", "revision", "field_id",
+                           "option_id", "client_message_id"}
+    assert all(f.is_required() for f in fields.values()), (
+        "an optional identifier here means the server guesses")
+
+
+def test_the_response_envelope_is_frozen():
+    """WHAT iOS RECEIVES. Identifiers, typed reasons and rendered text —
+    never semantics a client could reinterpret."""
+    from api.chat import _EMPTY_ANSWER
+
+    assert set(_EMPTY_ANSWER) == {
+        "v", "bubbles", "cards", "outcome", "repair_reason",
+        "refusal_reason", "operation_id", "field_id", "entry_id"}
+    for leaked in ("candidate", "evidence", "patch", "quantity",
+                   "serving_basis"):
+        assert leaked not in _EMPTY_ANSWER
+
+
+def test_the_golden_answer_request_still_validates():
+    """OLD BYTES, CURRENT MODEL. A client shipped against this fixture must
+    keep working."""
+    from api.chat import ClarificationAnswerRequest
+
+    request = ClarificationAnswerRequest(**_golden("answer_request_v1"))
+    assert request.operation_id == "chat_quantity:26:telegram:9146"
+    assert request.revision == 0
+    assert request.client_message_id
+
+
+@pytest.mark.parametrize("field", ["operation_id", "field_id", "option_id",
+                                   "client_message_id"])
+def test_an_empty_identifier_is_rejected_at_the_boundary(field):
+    from api.chat import ClarificationAnswerRequest
+
+    body = dict(_golden("answer_request_v1"))
+    body[field] = ""
+    with pytest.raises(Exception):
+        ClarificationAnswerRequest(**body)
+
+
+def test_expiry_is_a_lifecycle_disposition_not_an_answer_outcome():
+    """AN EXPIRED OPERATION IS STILL ANSWERABLE when addressed.
+
+    Someone replying late is still replying, and refusing them would be its
+    own silent loss. What expiry removes is the claim on messages that were
+    never meant for this question. So the user never receives "expired" as the
+    result of answering — there is no such outcome.
+    """
+    from core.b1_quantity_operation import OwnershipDisposition
+    from core.clarification_answer import Outcome
+
+    assert {d.value for d in OwnershipDisposition} == {
+        "holding", "expired", "settled"}
+    assert "expired" not in {o.value for o in Outcome}
+    assert not hasattr(Outcome, "EXPIRED")
