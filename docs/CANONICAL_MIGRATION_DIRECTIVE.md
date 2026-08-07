@@ -1225,8 +1225,10 @@ Everything here was paid for once. Recorded so it is not paid for again.
   does not relax the check.
 * **`clear_day_log` deletes with no ledger events** (14 rows, 4 canonical,
   zero `deleted` events — the ledger CAN record food deletes; this path
-  doesn't). OPEN, and ahead of B-1.6 in urgency: unrecoverable data loss on
-  the canonical lane.
+  doesn't). **P0, BLOCKING B-1.5E's start (task #32).** A mutation-integrity
+  defect must not be buried under evidence work: fix is one ledger event per
+  deleted row in the same transaction, plus a ratchet that no code path may
+  delete a food_entries row without a paired ledger event.
 * **Cross-lane pending-state leak** (16:08 salmon): canonical settled and
   released; legacy re-asked a question canonical answered 21s earlier, then
   read "Ignore" as a log instruction. NOT hybrid ownership — the measured
@@ -1353,6 +1355,21 @@ This kills the tempting fix. USDA writes `<base>, <qualifiers>`, so "the leading
 term is the base identity" would reject five of six failure classes for
 `chicken` in one line — and it is a naming trick, provider-specific, and the
 first description that breaks the convention breaks the system silently.
+
+### The deployed predicate is SUPERSEDED DESIGN — do not improve it
+
+`skills/nutrition/preparation_materiality.py` as deployed in `c5d3614` embodies
+the invalid assumption this section exists to remove: that raw USDA retrieval
+can directly establish the preparation family. It is fail-closed in practice —
+it opens nothing, harms nothing — and that is the only reason it may stay
+deployed while B-1.5E is built.
+
+**The next implementation must not touch that predicate.** Build B-1.5E beneath
+it, then make preparation consume qualified semantic evidence through its
+`unresolved_when` hook. The hook survives; the predicate behind it is replaced,
+not refined. Token matching against provider descriptions
+(`_preparations_in`) dies with it — that is regex identity, prohibited above,
+and it lives on borrowed time only because it currently cannot fire.
 
 ### The layer
 
