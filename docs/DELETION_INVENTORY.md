@@ -1,5 +1,21 @@
 # Deletion inventory — the cleanup scoreboard
 
+
+> **Current as of 2026-08-07.** Nothing was deleted since 08-05, and that is now a
+> SCHEDULE rather than a stall: promotion and predecessor deletion are batched
+> into a single event after B-2 (directive, "One promotion event"), so
+> production users cross the boundary once instead of five times. C4 remains 3,
+> C8/C9 remain frozen, and the legacy lane is explicitly a frozen compatibility
+> lane — P0/P1, security and migration-compatibility fixes only.
+>
+> **Owed at the promotion event, beyond the table below:** the legacy quantity
+> producer, answer reconstruction, prose-derived options, iOS
+> `QuickReplyEngine.swift` (already absent from the B-1b branch) and the parked
+> `replyChipBar` (defined, uncalled). **Newly owed:**
+> `skills/nutrition/preparation_materiality.py` — its
+> token-matching-against-provider-descriptions is regex identity, prohibited by
+> B-1.5E, and survives only because it is fail-closed. It is replaced by the
+> semantic evidence layer, not refined.
 **Deletion belongs to each migration step, not to the end of the project.**
 Every promoted owner removes its legacy implementation in the same slice, or
 the new architecture becomes an additional layer coexisting with the old one —

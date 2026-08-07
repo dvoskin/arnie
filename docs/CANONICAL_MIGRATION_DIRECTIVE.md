@@ -1195,6 +1195,24 @@ ROLLOUT decision, not an architectural dependency.** Canonical development
 continues for allowlisted users only. Nothing in B-1.5 through B-2 waits on
 promotion, and promotion waits on all of them.
 
+## Companion documents — what each owns
+
+This document is the SEQUENCING AUTHORITY. The detail lives beside it, and all
+of these were reconciled 2026-08-07:
+
+| document | owns |
+|---|---|
+| `ARCHITECTURE_CONTRACT.md` | executable invariants C1–C9, plus the Semantic Extension Contract, the one lane gate, and the no-unledgered-delete rule |
+| `CLARIFICATION_MIGRATION.md` | Phase B design decisions; B-1/B-1.9 production-proven, B-1.5 built and blocked on B-1.5E |
+| `CHIP_GENERATION_MIGRATION.md` | option pipeline + status ledger; the durable candidate universe, the surface-vs-modality correction, neutral captioned chips |
+| `DELETION_INVENTORY.md` | cleanup scoreboard; nothing deleted since 08-05 BY SCHEDULE, everything owed at the one promotion event |
+| `WORKOUT_CONTRACTS.md` | Phase E/F shapes; what is already generic and the honesty test that keeps it so |
+| `QUICK_LOG_PROMOTION_RECORD.md` | Phase A evidence — the only completed prove→promote→delete cycle, and the template |
+| `tests/evidence_corpus/` | captured RAW provider records (USDA, OFF, Tavily) + human-reviewed `GROUND_TRUTH.md` |
+
+Enforcement lives in `tests/test_the_canonical_invariants.py` and the suites
+named in the contract document.
+
 ## Findings ledger — 2026-08-07, the B-1.5 build-out
 
 Everything here was paid for once. Recorded so it is not paid for again.
@@ -1417,6 +1435,30 @@ meal. `INSUFFICIENT_EVIDENCE` is a first-class answer.
 Persist typed conclusions — never chain-of-thought — under
 `food_evidence_semantics_v1`, so changing the prompt or model cannot silently
 redefine historical assessments.
+
+### Retrieval strategy: ask for authority, do not grade for it afterwards
+
+**Source quality is a function of QUERY CONSTRUCTION, and the adapter controls
+it.** Measured 2026-08-07, same claim, three shapes:
+
+```text
+loose     "chicken calories per 100g"
+          -> nutriscan · INSTAGRAM · eatthismuch · healthline
+specific  "USDA SR Legacy chicken breast meat only roasted kcal per 100 g"
+          -> recipal · medicinenet · myfooddata · fdc.nal.usda.gov
+sourced   "site:fdc.nal.usda.gov chicken breast roasted energy kcal 100g"
+          -> fdc.nal.usda.gov x4
+```
+
+All three return **165 kcal** — the number is stable while citability varies
+enormously. So §15's preference list (government/academic, manufacturer,
+official restaurant pages) is not a post-hoc filter to apply to loose results;
+it is what the web adapter should ASK FOR. This is provider-specific retrieval
+doing its job (§10), and it belongs in the adapter, not the policy.
+
+It does not remove the need for source-quality scoring — a `site:` query can
+still return a page that is stale or wrong — but it changes the input
+distribution rather than discarding most of it after the fact.
 
 ### The core/domain boundary — protected aggressively
 

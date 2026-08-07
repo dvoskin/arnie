@@ -1,5 +1,22 @@
 # Workout logging contracts — defined now, implemented in Phase D
 
+
+> **Current as of 2026-08-07.** Phase E/F has not started, and the food work has
+> deliberately built toward it. **The honesty test for the shared layer: if
+> workouts adopt it, core must not change.**
+>
+> Already generic and reusable: `core/semantic_fields.py` (registry, with
+> `_DOMAIN_REGISTRARS` as the only place core names a domain), `ResolvedFields`
+> as the sole settlement boundary, `PendingOperation` + `ClarificationInteraction`
+> (domain-neutral by construction — `domain`, `subject_entity_id`,
+> `candidate_kind`), and the coming semantic evidence layer (§B-1.5E), which is
+> explicitly split so nutrition owns `FoodIntent` and its vocabulary while
+> workouts add `ExerciseIntent` and theirs.
+>
+> Phase-O attributes (`SET_COUNT`, `REP_COUNT`, `EXTERNAL_LOAD`, `EQUIPMENT`…)
+> already exist in `ClarificationAttribute` and are CONSTRUCTIBLE without a food
+> edit — a gate protects that seam. They are not registered, so they cannot yet
+> be presented, which is the correct state.
 **This document is a contract, not a build plan.** It exists so that no
 decision made while food proves the spine forecloses workout adoption — and so
 "workout-ready" is checkable against something written down rather than

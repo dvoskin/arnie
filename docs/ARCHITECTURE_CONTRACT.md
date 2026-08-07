@@ -1,5 +1,32 @@
 # Arnie architecture contract
 
+
+> **Current as of 2026-08-07.** Sequencing authority is
+> `docs/CANONICAL_MIGRATION_DIRECTIVE.md`; this document holds the executable
+> invariants. **Two new enforced contracts joined C1–C9 and live in their own
+> suites rather than `test_the_canonical_invariants.py`:**
+>
+> * **The Semantic Extension Contract** — a new food behaviour enters as a
+>   REGISTERED FIELD or not at all. `core/semantic_fields.py` is the registry;
+>   `tests/test_the_semantic_extension_contract.py` enforces it. A field cannot
+>   be PRESENTED unless registered (checked on `ClarificationInteraction`, not
+>   on `UnresolvedField` — construction stays free so the Phase-O workout seam
+>   holds). `ResolvedFields` is the only settlement boundary; `Pricing` has no
+>   MULTIPLIER member; exactly one field may decide the amount. Generality is
+>   claimed only by `tests/test_the_rule_of_three_fields.py`, and its known
+>   limit is pinned: one answer per field, so multi-valued fields are not yet
+>   expressible.
+> * **One gate decides lane ownership** — `core/canonical_lane.py`.
+>   `tests/test_one_gate_decides_the_lane.py` forbids any other module naming
+>   `may_take_ownership` or `client_renders_interactions`. This replaced a
+>   two-owner predicate that had already drifted in production.
+> * **No row is deleted without a ledger event** —
+>   `tests/test_no_row_is_deleted_without_a_ledger_event.py`, added after
+>   `clear_day_log` removed 14 rows (4 canonical) with zero events.
+>
+> C4 still reads 3 legacy writers and C8/C9 stay frozen: promotion and
+> predecessor deletion are DEFERRED until B-2 by deliberate rollout decision,
+> not by drift. See the directive's "One promotion event".
 **Status:** authoritative. A change that violates a rule here is wrong even if every test passes.
 **Created:** 2026-07-30, from the master audit (`audits/MASTER_AUDIT_2026-07-30.md`).
 Each invariant lists its current production status and its enforcement point — the directive's rule

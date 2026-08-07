@@ -1,5 +1,12 @@
 # Quick-log promotion — production verification record
 
+
+> **Current as of 2026-08-07.** Phase A remains the only completed
+> prove→promote→delete cycle, and it is the template the B-family will follow at
+> the single promotion event after B-2. The sequencing changed deliberately
+> (directive, "One promotion event"): B-1 through B-2 are built on canonical for
+> allowlisted users only, then ONE migration moves everyone and deletes the
+> predecessor — rather than five separate crossings.
 **Status: COMPLETE — verified against production 2026-08-05.**
 
 Promoted build `a66e9ba8c86a`, test identity `ios:canonical-parity-test-0805` (user 144), day log 479.

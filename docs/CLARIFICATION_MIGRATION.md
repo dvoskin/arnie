@@ -1,5 +1,18 @@
 # Clarification migration — Phase B approach and sequencing
 
+
+> **Current as of 2026-08-07.** B-1 and B-1.9 are production-proven on iOS
+> (structured `option_id` taps, entries 2887/2890, ~215–257 ms). B-1.5's
+> multi-field lifecycle is BUILT and DEPLOYED — `Outcome.PARTIAL`,
+> `hold_answer` / `ready_to_settle`, `ResolvedFields`, per-field settlement,
+> and an iOS client that renders every open field (`singleField` deleted).
+>
+> **B-1.5 does not close yet.** Preparation opens nowhere in production because
+> no evidence source can establish whether a retrieved row is about the food
+> the user meant — measured, not inferred. `docs/CANONICAL_MIGRATION_DIRECTIVE.md`
+> §B-1.5E is the bounded prerequisite; the corpus is in
+> `tests/evidence_corpus/`. Design decisions here remain valid; the producer's
+> TRIGGER is what changed.
 > Sequencing authority: [CANONICAL_MIGRATION_DIRECTIVE.md](CANONICAL_MIGRATION_DIRECTIVE.md) (Phase B–F master directive). This document is the detail layer.
 
 Source: architecture review received 2026-08-05, folded into sequencing per the
