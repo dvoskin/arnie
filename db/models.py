@@ -323,6 +323,7 @@ class B1AnswerObservation(Base):
                          name="uq_b1_answer_operation_turn"),
         Index("ix_b1_answer_observed", "observed_at"),
         Index("ix_b1_answer_source", "selected_source"),
+        Index("ix_b1_answer_repair_reason", "repair_reason"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -365,6 +366,13 @@ class B1AnswerObservation(Base):
     #: from observations collected under the next. Empty when no versioned
     #: policy governed the route (a plain typed quantity decides itself).
     policy_version = Column(String, nullable=False, default="")
+    #: WHY we re-asked, typed and closed. Empty on every non-repair outcome,
+    #: so the field means "this is why" rather than "something happened".
+    #: `universe_unavailable` is kept separate from `estimate_unsupported`
+    #: because one is an outage and the other is a fact about this person's
+    #: history — pooled, a storage failure would read as a population of users
+    #: whose logs we lack.
+    repair_reason = Column(String, nullable=False, default="")
     latency_ms = Column(Integer, nullable=True)
     #: Set when this answer committed. Corrections are keyed on entry_id, so
     #: this is what charges a later correction back to the source that caused it.

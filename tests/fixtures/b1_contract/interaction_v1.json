@@ -1,0 +1,156 @@
+{
+  "groups": [
+    {
+      "event_id": "food_si_1",
+      "fields": [
+        {
+          "allowed_dimensions": [
+            "mass"
+          ],
+          "allowed_units": [
+            "g",
+            "oz"
+          ],
+          "attribute": "quantity",
+          "event_id": "food_si_1",
+          "materiality": null,
+          "operation_id": "chat_quantity:26:telegram:9146",
+          "options": [
+            {
+              "adapter_built": false,
+              "candidate_id": "ont_low",
+              "candidate_set_id": "cs_golden",
+              "confidence": {
+                "basis": "",
+                "score": 0.0
+              },
+              "field_id": "chat_quantity:26:telegram:9146:food_si_1:quantity:0",
+              "label": "3 oz",
+              "option_id": "opt_ont_low",
+              "patch": {
+                "event_id": "food_si_1",
+                "field_id": "chat_quantity:26:telegram:9146:food_si_1:quantity:0",
+                "patch_type": "set_quantity",
+                "provenance": "user_selected",
+                "quantity": {
+                  "amount": "85.0",
+                  "confidence": {
+                    "basis": "ontology evidence",
+                    "score": 0.6
+                  },
+                  "count": null,
+                  "count_entity_id": "",
+                  "dimension": "mass",
+                  "grams": "85.0",
+                  "milliliters": null,
+                  "provenance": "user_selected",
+                  "range_max": null,
+                  "range_min": null,
+                  "surface_text": "",
+                  "uncertainty": null,
+                  "unit_id": "g"
+                },
+                "schema_version": 1
+              },
+              "source": "ontology",
+              "value": null
+            },
+            {
+              "adapter_built": false,
+              "candidate_id": "hist_last",
+              "candidate_set_id": "cs_golden",
+              "confidence": {
+                "basis": "",
+                "score": 0.0
+              },
+              "field_id": "chat_quantity:26:telegram:9146:food_si_1:quantity:0",
+              "label": "5 oz",
+              "option_id": "opt_hist_last",
+              "patch": {
+                "event_id": "food_si_1",
+                "field_id": "chat_quantity:26:telegram:9146:food_si_1:quantity:0",
+                "patch_type": "set_quantity",
+                "provenance": "user_selected",
+                "quantity": {
+                  "amount": "141.7",
+                  "confidence": {
+                    "basis": "user_history evidence",
+                    "score": 0.9
+                  },
+                  "count": null,
+                  "count_entity_id": "",
+                  "dimension": "mass",
+                  "grams": "141.7",
+                  "milliliters": null,
+                  "provenance": "user_selected",
+                  "range_max": null,
+                  "range_min": null,
+                  "surface_text": "",
+                  "uncertainty": null,
+                  "unit_id": "g"
+                },
+                "schema_version": 1
+              },
+              "source": "user_history",
+              "value": null
+            },
+            {
+              "adapter_built": false,
+              "candidate_id": "ont_high",
+              "candidate_set_id": "cs_golden",
+              "confidence": {
+                "basis": "",
+                "score": 0.0
+              },
+              "field_id": "chat_quantity:26:telegram:9146:food_si_1:quantity:0",
+              "label": "8 oz",
+              "option_id": "opt_ont_high",
+              "patch": {
+                "event_id": "food_si_1",
+                "field_id": "chat_quantity:26:telegram:9146:food_si_1:quantity:0",
+                "patch_type": "set_quantity",
+                "provenance": "user_selected",
+                "quantity": {
+                  "amount": "226.0",
+                  "confidence": {
+                    "basis": "ontology evidence",
+                    "score": 0.6
+                  },
+                  "count": null,
+                  "count_entity_id": "",
+                  "dimension": "mass",
+                  "grams": "226.0",
+                  "milliliters": null,
+                  "provenance": "user_selected",
+                  "range_max": null,
+                  "range_min": null,
+                  "surface_text": "",
+                  "uncertainty": null,
+                  "unit_id": "g"
+                },
+                "schema_version": 1
+              },
+              "source": "ontology",
+              "value": null
+            }
+          ],
+          "response_type": "single_select",
+          "revision": 0,
+          "uncertainty": {
+            "basis": "",
+            "high": null,
+            "impact_spread": null,
+            "low": null,
+            "unit_id": ""
+          }
+        }
+      ],
+      "label": "chicken breast"
+    }
+  ],
+  "interaction_id": "ix_chat_quantity:26:telegram:9146:0",
+  "introduction": "How much chicken breast?",
+  "operation_id": "chat_quantity:26:telegram:9146",
+  "revision": 0,
+  "schema_version": 1
+}

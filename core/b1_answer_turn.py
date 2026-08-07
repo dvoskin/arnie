@@ -59,6 +59,8 @@ class AnswerTurn:
     #: Committed turns get the name from the row they wrote; a REPAIR writes
     #: nothing, so without this the re-ask has no subject and has to say "it".
     subject_name: str = ""
+    #: WHY we re-asked, typed. Copied from the answer, never re-derived.
+    repair_reason: str = ""
 
     @property
     def applied(self) -> bool:
@@ -361,7 +363,10 @@ def _option_for_label(field, message: str):
 def _turn(answer, owned, field) -> AnswerTurn:
     return AnswerTurn(answer.outcome, operation_id=owned.operation_id,
                       field_id=field.field_id, reason=answer.reason,
-                      subject_name=_subject_of(owned))
+                      subject_name=_subject_of(owned),
+                      repair_reason=str(
+                          getattr(getattr(answer, "repair_reason", None),
+                                  "value", "") or ""))
 
 
 def _subject_of(owned) -> str:
@@ -429,6 +434,12 @@ async def _observe(db, owned, answer, *, user, source_turn_id: str,
                 # attribution. The route knows what it is; nothing here reads
                 # prose.
                 modality=_modality_of(answer),
+                # TYPED, AND COPIED FROM THE ANSWER. Never parsed out of
+                # `reason` — that dependency has broken twice in this slice,
+                # once for modality and once for policy attribution.
+                repair_reason=str(getattr(
+                    getattr(answer, "repair_reason", None), "value", "")
+                    or ""),
                 selected_source=selected_source,
                 offered=_offered_mix(field),
                 round_index=int(prior) + 1,

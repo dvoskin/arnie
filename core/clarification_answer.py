@@ -55,6 +55,54 @@ class Outcome(str, Enum):
     REFUSED = "refused"
 
 
+class RepairReason(str, Enum):
+    """WHY we are asking again. Closed, and only what the turn can justify.
+
+    THE ANSWER TURN RUNS BEFORE THE INTERPRETER and sees the raw message and
+    nothing else — that ordering is deliberate, and it is how "6 oz" stopped
+    becoming a second meal. So it CANNOT know whether a message that failed to
+    answer also reported another food: distinguishing "I had some salmon too"
+    from "it was pretty good" requires the interpreter, and reaching for it
+    here would reintroduce exactly the coupling C10 removes.
+
+    `unrelated_report_while_awaiting` is therefore NOT a member. Stamping it
+    would record knowledge the turn does not have, and a reason field that
+    guesses is worth less than one that admits its limit. The user-facing copy
+    covers the case without the claim: it names the food still open and states
+    that anything else mentioned is not logged.
+    """
+    #: The message carried no amount we could apply. The common case, and the
+    #: one an unrelated food report lands in.
+    NO_AMOUNT_IN_ANSWER = "no_amount_in_answer"
+    #: An amount was stated but not in a form this field accepts.
+    UNUSABLE_AMOUNT = "unusable_amount"
+    #: "Not sure", with nothing about this person that could support a guess.
+    ESTIMATE_UNSUPPORTED = "estimate_unsupported"
+    #: The durable candidate universe could not be read, so we do not know
+    #: what was offered. DISTINCT FROM `ESTIMATE_UNSUPPORTED` on purpose: one
+    #: is a fact about the evidence, the other is a fact about our storage,
+    #: and reporting them together would let an outage read as a population of
+    #: users whose history we lack.
+    UNIVERSE_UNAVAILABLE = "universe_unavailable"
+
+
+class RefusalReason(str, Enum):
+    """WHY a structured answer was refused. Typed, because a client has to
+    branch on it and prose is not a branch condition.
+
+    Every member is OUR failure or a stale screen, never a user who was
+    unclear — that distinction is why these are REFUSED rather than REPAIR.
+    """
+    #: The id names no option this interaction offered.
+    UNKNOWN_OPTION = "unknown_option"
+    #: The field belongs to another operation.
+    FOREIGN_FIELD = "foreign_field"
+    #: The screen has moved on since this answer was rendered.
+    REVISION_MISMATCH = "revision_mismatch"
+    #: The option exists and carries no patch — a producer defect.
+    OPTION_WITHOUT_PATCH = "option_without_patch"
+
+
 class AnswerModality(str, Enum):
     """HOW the answer reached us — stamped where it is known, never inferred.
 
@@ -110,6 +158,11 @@ class AnswerResult:
     decision_policy_version: Optional[str] = None
     #: HOW the answer arrived. Set by the route that owns it; never derived.
     modality: Optional["AnswerModality"] = None
+    #: WHY we are re-asking, typed. Only on REPAIR; None elsewhere, so the
+    #: field means "this is why" rather than "something happened".
+    repair_reason: Optional["RepairReason"] = None
+    #: WHY a structured answer was refused, typed. Only on REFUSED.
+    refusal_reason: Optional["RefusalReason"] = None
 
     def __post_init__(self):
         from core.semantics import SemanticPatch
@@ -148,14 +201,24 @@ def answer_from_chip(interaction, *, field_id: str, option_id: str,
     if revision != interaction.revision:
         return AnswerResult(
             Outcome.REFUSED, modality=AnswerModality.OPTION_ID,
+            refusal_reason=RefusalReason.REVISION_MISMATCH,
             reason=f"stale revision {revision} != {interaction.revision}")
     try:
         patch = interaction.patch_for(field_id, option_id)
     except KeyError as exc:
-        return AnswerResult(Outcome.REFUSED, reason=str(exc),
-                            modality=AnswerModality.OPTION_ID)
+        # WHICH ID WAS WRONG. A client showing "that option is gone" and one
+        # showing "that screen is stale" are different repairs for the user,
+        # so the distinction is typed rather than left in prose.
+        known = any(f.field_id == field_id
+                    for g in interaction.groups for f in g.fields)
+        return AnswerResult(
+            Outcome.REFUSED, reason=str(exc),
+            refusal_reason=(RefusalReason.UNKNOWN_OPTION if known
+                            else RefusalReason.FOREIGN_FIELD),
+            modality=AnswerModality.OPTION_ID)
     except ValueError as exc:          # an option with no patch
         return AnswerResult(Outcome.REFUSED, reason=str(exc),
+                            refusal_reason=RefusalReason.OPTION_WITHOUT_PATCH,
                             modality=AnswerModality.OPTION_ID)
     return AnswerResult(Outcome.APPLIED, patch=patch,
                         modality=AnswerModality.OPTION_ID)
@@ -192,7 +255,8 @@ def answer_from_text(interaction, *, field_id: str, text: str,
     said = (text or "").strip()
     if not said:
         return AnswerResult(Outcome.REPAIR, reason="empty answer",
-                            modality=AnswerModality.REPAIR)
+                            modality=AnswerModality.REPAIR,
+                            repair_reason=RepairReason.NO_AMOUNT_IN_ANSWER)
 
     try:
         field = interaction.field(field_id)
@@ -207,7 +271,8 @@ def answer_from_text(interaction, *, field_id: str, text: str,
     grams = _grams_from_text(said, food_name)
     if grams is None:
         return AnswerResult(Outcome.REPAIR, reason=f"no quantity in {said!r}",
-                            modality=AnswerModality.REPAIR)
+                            modality=AnswerModality.REPAIR,
+                            repair_reason=RepairReason.NO_AMOUNT_IN_ANSWER)
 
     from skills.nutrition.quantity_clarification import _quantity
 
@@ -384,9 +449,18 @@ def _estimate(field, reason: str, context=None, candidates=None) -> AnswerResult
             ESTIMATE_POLICY_VERSION, reason,
             ",".join(str(getattr(getattr(o, "source", None), "value", "?"))
                      for o in (getattr(field, "options", ()) or ())))
+        # WHICH KIND OF "we cannot estimate" THIS IS. A universe we could not
+        # read is an outage; evidence that does not support one is a fact
+        # about this person's history. Reporting them together would let a
+        # storage failure read as a population of users we know nothing about.
+        unreadable = candidates is not None and not candidates and any(
+            getattr(o, "candidate_id", "") for o in
+            (getattr(field, "options", ()) or ()))
         return AnswerResult(
             Outcome.REPAIR, modality=AnswerModality.COMMAND,
             reason=f"{reason}: no evidence supports an estimate here",
+            repair_reason=(RepairReason.UNIVERSE_UNAVAILABLE if unreadable
+                           else RepairReason.ESTIMATE_UNSUPPORTED),
             decision_policy_version=ESTIMATE_POLICY_VERSION)
     priced.sort(key=lambda o: o.patch.quantity.grams)
     middle = priced[len(priced) // 2].patch

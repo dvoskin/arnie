@@ -1,0 +1,337 @@
+{
+  "candidate_set": {
+    "candidate_set_id": "cs_golden",
+    "candidates": [
+      {
+        "candidate_id": "ont_low",
+        "canonical_entity_id": "food:chicken breast",
+        "evidence": [
+          {
+            "confidence": "0.6",
+            "conversion_evidence": null,
+            "evidence_version": 1,
+            "observed_at": null,
+            "observed_basis": "mass",
+            "observed_quantity": {
+              "amount": "85.0",
+              "confidence": {
+                "basis": "ontology evidence",
+                "score": 0.6
+              },
+              "count": null,
+              "count_entity_id": "",
+              "dimension": "mass",
+              "grams": "85.0",
+              "milliliters": null,
+              "provenance": "ontology",
+              "range_max": null,
+              "range_min": null,
+              "surface_text": "",
+              "uncertainty": null,
+              "unit_id": "g"
+            },
+            "product_variant_id": null,
+            "source": {
+              "dataset_id": "portion_ontology",
+              "dataset_version": "2026-08-06",
+              "immutable_within_version": true,
+              "record_key": "food:chicken breast:ont_low",
+              "record_version": ""
+            },
+            "source_type": "ontology",
+            "subject_scope": "population",
+            "subject_user_id": null,
+            "uncertainty_g": null
+          }
+        ],
+        "offered": {
+          "amount": "85.0",
+          "basis": "mass",
+          "conversion_evidence": null,
+          "normalized": {
+            "amount": "85.0",
+            "confidence": {
+              "basis": "ontology evidence",
+              "score": 0.6
+            },
+            "count": null,
+            "count_entity_id": "",
+            "dimension": "mass",
+            "grams": "85.0",
+            "milliliters": null,
+            "provenance": "ontology",
+            "range_max": null,
+            "range_min": null,
+            "surface_text": "",
+            "uncertainty": null,
+            "unit_id": "g"
+          },
+          "policy_version": "",
+          "quantize_exponent": "",
+          "rounding_mode": "half_up",
+          "unit_id": "g"
+        },
+        "prior": "0.2",
+        "quantity": {
+          "amount": "85.0",
+          "confidence": {
+            "basis": "ontology evidence",
+            "score": 0.6
+          },
+          "count": null,
+          "count_entity_id": "",
+          "dimension": "mass",
+          "grams": "85.0",
+          "milliliters": null,
+          "provenance": "ontology",
+          "range_max": null,
+          "range_min": null,
+          "surface_text": "",
+          "uncertainty": null,
+          "unit_id": "g"
+        },
+        "semantic_hash": "b5c77f228c31f0dc1d56675d0635c754",
+        "serving_basis": "mass"
+      },
+      {
+        "candidate_id": "hist_last",
+        "canonical_entity_id": "food:chicken breast",
+        "evidence": [
+          {
+            "confidence": "0.9",
+            "conversion_evidence": null,
+            "evidence_version": 1,
+            "observed_at": null,
+            "observed_basis": "mass",
+            "observed_quantity": {
+              "amount": "141.7",
+              "confidence": {
+                "basis": "user_history evidence",
+                "score": 0.9
+              },
+              "count": null,
+              "count_entity_id": "",
+              "dimension": "mass",
+              "grams": "141.7",
+              "milliliters": null,
+              "provenance": "user_history",
+              "range_max": null,
+              "range_min": null,
+              "surface_text": "",
+              "uncertainty": null,
+              "unit_id": "g"
+            },
+            "product_variant_id": null,
+            "source": {
+              "dataset_id": "food_entries",
+              "dataset_version": "live",
+              "immutable_within_version": false,
+              "record_key": "hist_last",
+              "record_version": "entry:hist_last"
+            },
+            "source_type": "user_history",
+            "subject_scope": "this_user",
+            "subject_user_id": 26,
+            "uncertainty_g": null
+          }
+        ],
+        "offered": {
+          "amount": "141.7",
+          "basis": "mass",
+          "conversion_evidence": null,
+          "normalized": {
+            "amount": "141.7",
+            "confidence": {
+              "basis": "user_history evidence",
+              "score": 0.9
+            },
+            "count": null,
+            "count_entity_id": "",
+            "dimension": "mass",
+            "grams": "141.7",
+            "milliliters": null,
+            "provenance": "user_history",
+            "range_max": null,
+            "range_min": null,
+            "surface_text": "",
+            "uncertainty": null,
+            "unit_id": "g"
+          },
+          "policy_version": "",
+          "quantize_exponent": "",
+          "rounding_mode": "half_up",
+          "unit_id": "g"
+        },
+        "prior": "0.55",
+        "quantity": {
+          "amount": "141.7",
+          "confidence": {
+            "basis": "user_history evidence",
+            "score": 0.9
+          },
+          "count": null,
+          "count_entity_id": "",
+          "dimension": "mass",
+          "grams": "141.7",
+          "milliliters": null,
+          "provenance": "user_history",
+          "range_max": null,
+          "range_min": null,
+          "surface_text": "",
+          "uncertainty": null,
+          "unit_id": "g"
+        },
+        "semantic_hash": "2c77c663fb1def5c6d1ff2adffe3eee6",
+        "serving_basis": "mass"
+      },
+      {
+        "candidate_id": "ont_high",
+        "canonical_entity_id": "food:chicken breast",
+        "evidence": [
+          {
+            "confidence": "0.6",
+            "conversion_evidence": null,
+            "evidence_version": 1,
+            "observed_at": null,
+            "observed_basis": "mass",
+            "observed_quantity": {
+              "amount": "226.0",
+              "confidence": {
+                "basis": "ontology evidence",
+                "score": 0.6
+              },
+              "count": null,
+              "count_entity_id": "",
+              "dimension": "mass",
+              "grams": "226.0",
+              "milliliters": null,
+              "provenance": "ontology",
+              "range_max": null,
+              "range_min": null,
+              "surface_text": "",
+              "uncertainty": null,
+              "unit_id": "g"
+            },
+            "product_variant_id": null,
+            "source": {
+              "dataset_id": "portion_ontology",
+              "dataset_version": "2026-08-06",
+              "immutable_within_version": true,
+              "record_key": "food:chicken breast:ont_high",
+              "record_version": ""
+            },
+            "source_type": "ontology",
+            "subject_scope": "population",
+            "subject_user_id": null,
+            "uncertainty_g": null
+          }
+        ],
+        "offered": {
+          "amount": "226.0",
+          "basis": "mass",
+          "conversion_evidence": null,
+          "normalized": {
+            "amount": "226.0",
+            "confidence": {
+              "basis": "ontology evidence",
+              "score": 0.6
+            },
+            "count": null,
+            "count_entity_id": "",
+            "dimension": "mass",
+            "grams": "226.0",
+            "milliliters": null,
+            "provenance": "ontology",
+            "range_max": null,
+            "range_min": null,
+            "surface_text": "",
+            "uncertainty": null,
+            "unit_id": "g"
+          },
+          "policy_version": "",
+          "quantize_exponent": "",
+          "rounding_mode": "half_up",
+          "unit_id": "g"
+        },
+        "prior": "0.3",
+        "quantity": {
+          "amount": "226.0",
+          "confidence": {
+            "basis": "ontology evidence",
+            "score": 0.6
+          },
+          "count": null,
+          "count_entity_id": "",
+          "dimension": "mass",
+          "grams": "226.0",
+          "milliliters": null,
+          "provenance": "ontology",
+          "range_max": null,
+          "range_min": null,
+          "surface_text": "",
+          "uncertainty": null,
+          "unit_id": "g"
+        },
+        "semantic_hash": "3815d915959c7b621ebc966265e655c3",
+        "serving_basis": "mass"
+      }
+    ],
+    "context": {
+      "canonical_entity_id": "food:chicken breast",
+      "product_variant_id": null,
+      "user_id": 26
+    },
+    "field_id": "chat_quantity:26:telegram:9146:food_si_1:quantity:0",
+    "generation_input_fingerprint": "fp_golden",
+    "generator_version": "b1_quantity_gen_v1",
+    "interaction_revision": 0,
+    "operation_id": "chat_quantity:26:telegram:9146",
+    "rejections": [],
+    "user_id": 26
+  },
+  "decision": {
+    "candidate_set_id": "cs_golden",
+    "context": {
+      "locale": "en",
+      "maximum_options": 3,
+      "renderer_contract_version": "b1_labels_v1",
+      "surface": "id_addressed"
+    },
+    "exclusions": [],
+    "selected_candidate_ids": [
+      "ont_low",
+      "hist_last",
+      "ont_high"
+    ],
+    "selection_policy_version": "b1_quantity_select_v1"
+  },
+  "presented": [
+    {
+      "candidate_id": "ont_low",
+      "candidate_set_id": "cs_golden",
+      "interaction_revision": 0,
+      "option_id": "opt_ont_low",
+      "rendered_label": "3 oz",
+      "renderer_contract_version": "b1_labels_v1",
+      "selected_position": 0
+    },
+    {
+      "candidate_id": "hist_last",
+      "candidate_set_id": "cs_golden",
+      "interaction_revision": 0,
+      "option_id": "opt_hist_last",
+      "rendered_label": "5 oz",
+      "renderer_contract_version": "b1_labels_v1",
+      "selected_position": 1
+    },
+    {
+      "candidate_id": "ont_high",
+      "candidate_set_id": "cs_golden",
+      "interaction_revision": 0,
+      "option_id": "opt_ont_high",
+      "rendered_label": "8 oz",
+      "renderer_contract_version": "b1_labels_v1",
+      "selected_position": 2
+    }
+  ]
+}

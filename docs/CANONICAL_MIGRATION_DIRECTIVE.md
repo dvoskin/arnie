@@ -1102,7 +1102,8 @@ B-1.9      IN PROGRESS       7 of 10 stages, ~75-80% by engineering weight.
                              5/5.1/5.2 versioned selector · 6/6.1/6.2
                              failure classes · 7/7.1 integration proof
                              (Postgres + live USDA) — ALL DONE.
-                             8 NEXT: freeze the contract.
+                             8 PARTIAL: contract + fixtures frozen;
+                             4 items open — see the 8 section.
                              Then 9 structured iOS · 10 promote + DELETE
                              predecessor. Runs BEFORE B-1 closure.
 B-1b.1/.2  ABSORBED BY B-1.9 7  the matrix and the corpus now run through
@@ -1951,6 +1952,67 @@ alternative. **Do not describe the current behaviour as "held".**
 Mutation-verified: making `save()` persist nothing turns six of seven red.
 
 8319 pass on SQLite and 8319 on Postgres, live-enrichment join included.
+
+**8 — status: PARTIAL. NOT CLOSED.** *(2026-08-06)* — stated plainly because
+the standing failure in this slice has been headlines running ahead of gates,
+and a contract freeze institutionalises whatever it gets wrong.
+
+**Landed:**
+
+```text
+[x] typed RepairReason      no_amount_in_answer · unusable_amount ·
+                            estimate_unsupported · universe_unavailable
+[x] typed RefusalReason     unknown_option · foreign_field ·
+                            revision_mismatch · option_without_patch
+[x] repair_reason persisted           b1obs004, indexed for GROUP BY
+[x] outage split from evidence        universe_unavailable is its own reason
+[x] wire envelope frozen              24 gates, every persisted enum
+[x] golden JSON fixtures              13 gates: old bytes decode, round-trip
+                                      exact, additive changes compatible,
+                                      unknown versions and enums fail shut
+[x] selector purity per EVIDENCE      only `confidence`; context only
+                                      `maximum_options`
+[x] unrelated-report copy contract    names the food, states it is not
+                                      logged, PROVES it claims nothing about
+                                      saving or queueing
+```
+
+**NOT landed, and step 8 does not close until they are:**
+
+```text
+[ ] client_message_id in the answer envelope      needs the API surface
+[ ] `replay` and `expired` as first-class outcomes  today `replay` is a
+                                                  reason on an APPLIED turn
+                                                  and expiry is a property of
+                                                  the row, not an outcome —
+                                                  changing that touches every
+                                                  consumer and is the kind of
+                                                  edit a freeze exists to
+                                                  make deliberate
+[ ] telemetry for the RESEND after a refusal      round_index counts attempts
+                                                  on one operation; a resend
+                                                  opens a NEW one, so nothing
+                                                  currently joins them
+[ ] CI attached and mandatory                     Actions outage; every number
+                                                  in this document remains
+                                                  author-reported
+```
+
+**ONE REQUESTED ITEM IS REFUSED, WITH REASONING.**
+`unrelated_report_while_awaiting` is asked for in the reason taxonomy and is
+**not implemented, deliberately**. The answer turn runs BEFORE the interpreter
+and receives only the raw message — that ordering is how `"6 oz"` stopped
+becoming a second meal. It therefore cannot distinguish *"I had some salmon
+too"* from *"it was pretty good"*; doing so needs the interpreter, and
+reaching for it there reintroduces exactly the coupling C10 removes. Stamping
+the reason anyway would record knowledge the turn does not have.
+
+The user-facing requirement is met without the claim: the re-ask names the
+active food and states that anything else mentioned is not logged. A gate
+asserts the reason is absent, so this stays a decision rather than an
+oversight.
+
+**8357 pass on SQLite and 8357 on Postgres**, live-enrichment join running.
 
 **7–8** — run the sequence corpus through the real candidate pipeline *and*
 real enrichment together, then freeze the wire contract, the semantic
