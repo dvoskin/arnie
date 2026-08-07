@@ -1915,6 +1915,39 @@ lost" means the board stays empty, the question survives, and the lane frees
 afterwards. Asserting the meal had been logged was asserting a design the
 system does not have.
 
+**7.2 — two of these were product defects, not test gaps.**
+
+* **THE UNRELATED MEAL WAS WORSE THAN LOST.** Probed live: *"I had some salmon
+  too"* while chicken was awaiting drew **"How much was it? A rough amount is
+  fine."** — no food named. A user reasonably reads that as a question about
+  the salmon, answers it, and the amount prices the **chicken**. The pronoun
+  was doing work no pronoun can do. The re-ask now names the food and states
+  that anything else mentioned is not logged yet. **The deferred report is
+  still not persisted** — that is a real open decision, recorded below, not
+  something to call "held".
+* **The live-enrichment gate could pass on stale nutrition.** `0.8 ≤ cal/g ≤
+  3.0` admits the ask-time 280 cal for any quantity between ~94 g and 350 g,
+  so it could not tell repricing from a number that never moved. Now the
+  ask-time figure is **seeded at 9999** — impossible for any real food — so a
+  stale value is falsifiable without knowing a live density. *(Proportionality
+  across two answers was the first attempt and does not work: a second ask for
+  the same food replays the settled operation rather than opening a new one.)*
+* Source attribution is scoped to the **tapped candidate's own evidence**, not
+  matched against the whole universe.
+* Transport redelivery goes through **`run_chat_turn` with a repeated
+  `msg_id`**, not two direct calls to the answer layer — the dedup that sits
+  in front is the layer a real retry hits first.
+* The "stale revision" case was a FUTURE revision. In B-1 the revision moves
+  in exactly one place — `settle()` — so a stale-but-valid revision on an OPEN
+  operation is **not reachable today**. That reachability is now asserted, so
+  B-1.5's dependent re-asks will fail this gate rather than inherit a comment;
+  and the genuinely stale post-settlement tap is proven to replay.
+
+**OPEN DECISION, BEFORE USER TESTING** — a food reported while a question is
+open is refused, not stored. The user is now told, but the report itself is
+gone and must be re-sent. Persisting and replaying deferred reports is the
+alternative. **Do not describe the current behaviour as "held".**
+
 Mutation-verified: making `save()` persist nothing turns six of seven red.
 
 8319 pass on SQLite and 8319 on Postgres, live-enrichment join included.

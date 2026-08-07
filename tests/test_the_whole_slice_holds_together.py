@@ -42,6 +42,13 @@ from tests.test_b1b1_system_matrix import _ask, density  # noqa: F401
 from tests.test_b1b1_real_enrichment import real_lookups  # noqa: F401
 
 
+#: AN ASK-TIME CALORIE FIGURE NO REAL CHICKEN BREAST COULD HAVE. Seeded so
+#: "the answered quantity priced this meal" is falsifiable against a live
+#: lookup whose density we cannot know in advance: if this number survives to
+#: the row, nothing repriced.
+ASK_TIME_CALORIES = 9999
+
+
 async def _universe_rows():
     """Everything the durable universe holds, read straight from the tables."""
     import db.database as D
@@ -241,10 +248,15 @@ async def test_the_chain_from_a_raw_message_to_a_committed_meal_is_unbroken(
     assert seen.selected_source in {"ontology", "user_history",
                                     "free_text", "none", "unknown_option"}, (
         seen.selected_source)
-    evidence_sources = {e.source_type for e in tables["evidence"]}
-    assert seen.selected_source in evidence_sources or not evidence_sources, (
-        f"telemetry names source {seen.selected_source!r}, which no persisted "
-        f"evidence record carries: {sorted(evidence_sources)}")
+    # SCOPED TO THE CANDIDATE THAT WAS TAPPED, not to the universe. Matching
+    # against every evidence row would pass while telemetry attributed the
+    # chosen option to a DIFFERENT candidate's source — which is exactly the
+    # confusion that matters once ontology and user-history candidates sit in
+    # one row together.
+    chosen_sources = {e.source_type.value for e in candidate.evidence}
+    assert seen.selected_source in chosen_sources, (
+        f"telemetry attributed the tap to {seen.selected_source!r}, but the "
+        f"candidate behind that option carries {sorted(chosen_sources)}")
     # A PLAIN TAP NAMES NO POLICY. Stamping every row would make the field
     # mean "some policy ran" rather than "this policy decided".
     assert not seen.policy_version, (
@@ -354,23 +366,22 @@ async def test_the_same_transport_delivery_twice_writes_one_meal(
         edges, seeded, b1_live, density):
     """THE SAME MESSAGE ID, REDELIVERED. A transport retry, which is ordinary
     and must be caught before the answer turn ever runs."""
-    import db.database as D
-    from core import b1_answer_turn
-    from db.queries import reload_user
-
     user = seeded
     await _ask(edges, user, food="Chicken breast", cal=280)
     shown = sorted((await _universe_rows())["presented"],
                    key=lambda p: p.selected_position)[0]
-    field_id = _field_id_of(await _payload(user))
 
-    for _delivery in range(2):
-        async with D.AsyncSessionLocal() as s:
-            await b1_answer_turn.handle(
-                s, user=await reload_user(s, user), field_id=field_id,
-                option_id=shown.option_id, revision=0, message="",
-                source_turn_id="telegram:the-same-message")
-            await s.commit()
+    # THROUGH `run_chat_turn`, WITH THE SAME TRANSPORT ID BOTH TIMES.
+    #
+    # Calling `b1_answer_turn.handle` twice directly proves ANSWER-LAYER
+    # idempotency and skips the transport dedup that sits in front of it —
+    # which is the layer a real redelivery hits first, and the one this test
+    # claimed to exercise. `say(msg_id=...)` is the production shape: the
+    # turn id comes from the transport, and repeating it is exactly what a
+    # retrying webhook does.
+    label = shown.rendered_label
+    await say(user, label, msg_id=77001)
+    await say(user, label, msg_id=77001)
 
     assert len(await commits(user)) == 1, "a redelivery wrote a second meal"
     tables = await _universe_rows()
@@ -436,21 +447,54 @@ async def test_a_valid_option_from_a_stale_revision_is_refused(
     shown = sorted(before["presented"], key=lambda p: p.selected_position)[0]
     field_id = _field_id_of(await _payload(user))
 
-    out = await _structured(user, field_id=field_id,
-                            option_id=shown.option_id, revision=99,
-                            message="")
-    assert out is None or not out.applied, out
+    # A MISMATCHED REVISION IS REFUSED. `99` is ahead rather than behind, and
+    # that distinction is worth stating plainly: IN B-1 TODAY A STALE-BUT-VALID
+    # REVISION ON AN OPEN OPERATION IS NOT REACHABLE. The revision advances in
+    # exactly one place — `settle()`, at `owned.revision + 1` — so while a
+    # question is open it never moves, and a repair deliberately does not move
+    # it either. After it moves, the operation is settled and a late tap
+    # replays rather than mutating.
+    #
+    # The reachability is asserted below, so the day a mid-flight revision
+    # bump arrives (B-1.5's dependent re-asks), this fails and someone writes
+    # the real stale-screen case instead of inheriting this comment.
+    stale = await _structured(user, field_id=field_id,
+                              option_id=shown.option_id, revision=99,
+                              message="")
+    assert stale is None or not stale.applied, stale
     assert len(await commits(user)) == 0
     assert {k: len(v) for k, v in (await _universe_rows()).items()} == {
         k: len(v) for k, v in before.items()}
 
-    # The SAME option at the RIGHT revision still works — so the refusal above
-    # is the revision talking, not a broken option.
+    # A REPAIR DOES NOT MOVE THE REVISION — the property that makes the
+    # scenario unreachable, asserted rather than assumed.
+    repaired = await _structured(user, field_id=field_id, option_id="",
+                                 revision=0,
+                                 message="it was pretty good actually")
+    assert repaired is not None and repaired.repair, repaired
+    assert int((await operations(user))[-1].revision or 0) == 0, (
+        "a repair advanced the revision — a stale-screen tap is now reachable "
+        "and needs its own gate")
+
+    # THE SAME OPTION AT THE RIGHT REVISION STILL WORKS, so the refusal above
+    # is the revision talking rather than a broken option.
     good = await _structured(user, field_id=field_id,
                              option_id=shown.option_id, revision=0,
                              message="")
-    assert good is not None and good.applied
+    assert good is not None and good.applied, good
     assert len(await commits(user)) == 1
+
+    # AND ONCE IT HAS SETTLED, the revision HAS moved — so the same tap from
+    # the pre-commit screen is now genuinely stale, and replays instead of
+    # writing a second meal.
+    settled = (await operations(user))[-1]
+    assert int(settled.revision or 0) == 1, (
+        f"settling did not advance the revision: {settled.revision}")
+    late = await _structured(user, field_id=field_id,
+                             option_id=shown.option_id, revision=0,
+                             message="")
+    assert late is not None and late.reason == "replay", late
+    assert len(await commits(user)) == 1, "a stale tap wrote a second meal"
 
 
 @pytest.mark.asyncio
@@ -571,7 +615,7 @@ async def test_the_whole_chain_holds_with_live_enrichment(
     from tests.test_b1b1_real_enrichment import _ask as _real_ask
 
     user = seeded
-    await _real_ask(edges, user, "Chicken breast")
+    await _real_ask(edges, user, "Chicken breast", cal=ASK_TIME_CALORIES)
 
     owned, record = await _replay(user)
     assert owned is not None and record is not None, (
@@ -597,15 +641,28 @@ async def test_the_whole_chain_holds_with_live_enrichment(
         entry = (await s.execute(
             select(FoodEntry).order_by(FoodEntry.id.desc()))).scalars().first()
 
-    # PRICED FROM THE ANSWER. Real density is unknown, but chicken breast sits
-    # in a wide, well-established band; a stale ask-time figure or a per-100g
-    # number that never scaled would fall outside it.
+    # A DELIBERATELY IMPOSSIBLE ASK-TIME VALUE, AND IT MUST NOT SURVIVE.
+    #
+    # `0.8 <= cal/g <= 3.0` is a band a STALE value passes: the ask-time 280
+    # cal sits inside it for any quantity between roughly 94 g and 350 g, so
+    # the gate could not distinguish repricing from a number that never
+    # moved. The real density is unknown against a live lookup — but the
+    # ask-time figure is OURS, so seeding one no real food could have makes
+    # the assertion falsifiable without knowing the density.
+    #
+    # (Proportionality across two answers was the first attempt and it does
+    # not work here: a second ask for the SAME food replays the settled
+    # operation rather than opening a new one — correctly — so both taps
+    # resolve to one row.)
+    assert abs(float(entry.calories) - ASK_TIME_CALORIES) > 100, (
+        f"the meal committed at {entry.calories} cal, the ask-time figure "
+        f"this test seeded — the answered quantity did not price it")
     per_gram = float(entry.calories) / grams
-    assert 0.8 <= per_gram <= 3.0, (
-        f"{entry.calories} cal for {grams} g is {per_gram:.2f} cal/g — not a "
-        f"plausible density for a real lookup, so the answered quantity did "
-        f"not price this meal")
+    assert 0.5 <= per_gram <= 4.0, (
+        f"{entry.calories} cal for {grams} g is {per_gram:.2f} cal/g")
     assert float(entry.protein) > 0, "a real lookup returned no protein"
+    assert str(int(grams)) in str(entry.quantity or ""), (
+        f"the row says {entry.quantity!r}, not the {grams} g that was tapped")
 
     from core import b1_answer_turn
     facts = b1_answer_turn.facts_for(turn)

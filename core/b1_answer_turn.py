@@ -55,6 +55,10 @@ class AnswerTurn:
     reason: str = ""
     #: Set when OUR state, not the user's answer, was the problem.
     internal_failure: bool = False
+    #: THE FOOD THE OPEN QUESTION IS ABOUT, carried so a re-ask can name it.
+    #: Committed turns get the name from the row they wrote; a REPAIR writes
+    #: nothing, so without this the re-ask has no subject and has to say "it".
+    subject_name: str = ""
 
     @property
     def applied(self) -> bool:
@@ -356,7 +360,14 @@ def _option_for_label(field, message: str):
 
 def _turn(answer, owned, field) -> AnswerTurn:
     return AnswerTurn(answer.outcome, operation_id=owned.operation_id,
-                      field_id=field.field_id, reason=answer.reason)
+                      field_id=field.field_id, reason=answer.reason,
+                      subject_name=_subject_of(owned))
+
+
+def _subject_of(owned) -> str:
+    """The food this operation is holding, off the stored interpreter item."""
+    item = getattr(owned, "item", None) or {}
+    return str(item.get("food") or item.get("name") or "").strip()
 
 
 def _selected_source(field, *, option_id: str, message: str) -> str:
@@ -615,7 +626,10 @@ def facts_for(turn: AnswerTurn) -> CanonicalResponseFacts:
         internal_failure=turn.internal_failure,
         operation_id=turn.operation_id,
         field_id=turn.field_id,
-        name=str(first.get("name") or "").strip(),
+        # THE COMMITTED ROW NAMES ITSELF; a repair has no row, so it falls
+        # back to the subject the operation is holding.
+        name=(str(first.get("name") or "").strip()
+              or str(getattr(turn, "subject_name", "") or "").strip()),
         entry_id=first.get("entry_id"),
         calories=totals.get("calories"),
         protein=totals.get("protein"),
@@ -710,6 +724,16 @@ def copy_for(facts: CanonicalResponseFacts) -> str:
         return ("That answer was for an older question. Tell me the amount "
                 "again and I'll log it.")
     if facts.outcome == "repair":
+        # NAME THE FOOD. "How much was it?" after someone reported a DIFFERENT
+        # meal reads as a question about the meal they just named — so they
+        # answer about that one, and the amount lands on the food still open.
+        # Measured: "I had some salmon too" while chicken was awaiting drew
+        # "How much was it?", and an answer to that would have priced chicken.
+        # The pronoun was doing work no pronoun can do.
+        if facts.name:
+            return (f"How much {facts.name.lower()}? A rough amount is fine "
+                    f"— and anything else you mentioned isn't logged yet, so "
+                    f"send that again after.")
         return "How much was it? A rough amount is fine."
 
     if not facts.committed:
