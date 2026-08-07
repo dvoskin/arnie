@@ -916,6 +916,14 @@ async def _run_turn(
     # None so a prior turn's id can never leak into this one on a reused task.
     from core.turn_identity import CURRENT_TURN_ID as _TID
     _TID.set(turn_id)
+    # ONE EVIDENCE CONTEXT FOR THE WHOLE TURN, ambient beside the turn id, so
+    # speculative enrichment (which starts while the interpreter is still
+    # streaming) and B-1 field derivation (which runs after) resolve the SAME
+    # object. Set even when a previous turn ran on this task: a stale context
+    # would serve assessments about evidence nobody fetched this time.
+    from core.evidence_context import CURRENT_EVIDENCE as _EV
+    from core.evidence_context import EvidenceContext as _EvCtx
+    _EV.set(_EvCtx())
     _turn_route = "legacy"   # refined by the lanes below; emitted in turn_trace
     # Tool names the user has already been shown a progress event for. The
     # indicator is a claim about what is happening NOW, so announcing a name

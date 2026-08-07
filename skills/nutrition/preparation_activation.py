@@ -30,7 +30,9 @@ earns its place — and only there.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import time as _time
 
 from skills.nutrition import evidence_semantics as food
 
@@ -45,6 +47,47 @@ MATERIAL_SPREAD = 1.25
 #: Bounded web results for the materiality claim. Small deliberately: this is
 #: evidence that a preparation EXISTS and is material, not a survey.
 _WEB_RESULTS = 5
+
+#: HOW LONG THE INTERACTION MAY WAIT for materiality that is still in flight.
+#:
+#: Measured 2026-08-07: starting the supplemental lookup inside
+#: `derive_unresolved` cost a production turn 6.8 seconds and still opened
+#: nothing. Speculation moves the work earlier; this bounds what the user pays
+#: when it is nevertheless unfinished.
+#:
+#: THE RULE ON EXPIRY IS "DO NOT ASK", never "guess" and never "wait longer".
+#: A small grace period to collapse two turns into one is worth paying; making
+#: someone watch a spinner while Arnie researches a second question is not.
+MATERIALITY_BUDGET_S = 1.5
+
+
+def supplemental_key(food_name: str) -> str:
+    return f"web-materiality:{str(food_name or '').strip().lower()}:{food.VERSION}"
+
+
+def start_supplemental(food_name: str, context=None) -> None:
+    """Begin the relevance-only materiality lookup NOW, at identity time.
+
+    SPECULATION, NOT DEFERRAL. For a generic food the corpus says structured
+    evidence usually cannot establish grilled/roasted/fried at all, so the web
+    lookup is the PRIMARY source for preparation materiality — and starting it
+    when `derive_unresolved` runs is structurally too late: it lands squarely
+    on the critical path of the ask.
+
+    Fire-and-forget by design. The context owns the future; whoever needs it
+    awaits it, and if nobody does it is simply dropped with the turn.
+    """
+    import asyncio
+
+    from core.evidence_context import ensure
+
+    shared = ensure(context)
+    key = supplemental_key(food_name)
+    if shared.reused(key):
+        return
+    shared._inflight[key] = asyncio.ensure_future(
+        _web_space(food_name, exclude=frozenset()))
+    logger.info("event=materiality_speculated food=%s", food_name)
 
 
 async def preparation_is_materially_unresolved(item, context=None) -> bool:
@@ -126,22 +169,37 @@ async def preparation_space(food_name: str, context=None) -> dict:
                                  evidence.kcal_per_100g)
 
     from_structured = len(space)
-    # Bounded supplemental, THROUGH THE SAME CONTEXT. A field may REQUEST
-    # evidence; it may not own a provider's retrieval lifecycle. Routing this
-    # through `shared()` means two fields wanting the same supplemental
-    # evidence await one lookup — and stops the shape where PreparationField
-    # calls Tavily, VariantField calls something else, and every future field
-    # grows its own client.
-    web = await shared.shared(
-        f"web-materiality:{food_name.strip().lower()}:{food.VERSION}",
-        lambda: _web_space(food_name, exclude=set(space)))
+
+    # THE DEADLINE. Supplemental evidence is awaited only for the remaining
+    # budget: already resolved costs nothing, in flight costs at most the
+    # grace period, and an expired wait means UNKNOWN — omit preparation.
+    # NO NEW LOOKUP IS LAUNCHED HERE; if speculation never started one, this
+    # turn simply has no supplemental evidence.
+    web, waited_ms, timed_out = {}, 0, False
+    web_key = supplemental_key(food_name)
+    if shared.reused(web_key):
+        started = _time.monotonic()
+        try:
+            web = await asyncio.wait_for(
+                shared.shared(web_key, _never), timeout=MATERIALITY_BUDGET_S)
+        except asyncio.TimeoutError:
+            timed_out = True
+            logger.info("event=materiality_deadline food=%s budget_s=%.1f — "
+                        "UNKNOWN, not asking", food_name,
+                        MATERIALITY_BUDGET_S)
+        except Exception:
+            logger.warning("event=materiality_supplemental_failed food=%s",
+                           food_name, exc_info=True)
+        waited_ms = int((_time.monotonic() - started) * 1000)
     space.update(web)
 
     shared.note(preparation={
         "assessments_reused": reused,
         "from_structured": from_structured,
         "from_supplemental": len(web),
-        "supplemental_used": bool(web),
+        "supplemental_speculated": shared.reused(web_key),
+        "grace_ms": waited_ms,
+        "deadline_expired": timed_out,
     })
     return space
 

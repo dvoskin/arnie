@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextvars import ContextVar
 from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
@@ -71,11 +72,38 @@ class EvidenceContext:
         return dict(self._meta)
 
 
-def ensure(context) -> EvidenceContext:
-    """The turn's context, or a fresh throwaway.
+#: THE TURN'S CONTEXT, AMBIENT. Set once at turn entry beside `CURRENT_TURN_ID`
+#: and reset with its token at exit.
+#:
+#: ⭐ WHY AMBIENT AND NOT THREADED. The two callers that must share are far
+#: apart: speculative enrichment starts while the interpreter is still
+#: streaming, and B-1 ownership runs after it. Threading a parameter between
+#: them means every intermediate function carries evidence plumbing it has no
+#: use for — and MEASURED IN PRODUCTION 2026-08-07, a missing thread is
+#: invisible: `derive_unresolved` created its own context, the pricing path
+#: created another, nothing shared, and the only symptom was a slow turn with
+#: a field that never opened. Ambient makes sharing the default and a missed
+#: site impossible rather than silent.
+CURRENT_EVIDENCE: ContextVar[Optional["EvidenceContext"]] = ContextVar(
+    "CURRENT_EVIDENCE", default=None)
 
-    A caller with no context still works and simply shares nothing — the
-    behaviour must not depend on plumbing being complete, or a missed call
-    site becomes a wrong answer instead of a slower one.
+
+def ensure(context=None) -> EvidenceContext:
+    """The context to use: an explicit one, else THE TURN'S ambient one.
+
+    NO SILENT THROWAWAY when the turn has one. The previous version created a
+    fresh context whenever none was passed, which turned "the plumbing is
+    incomplete" into "everything still works, just slower and worse" — the
+    exact failure that cost a production turn 6.8 seconds and opened nothing.
+
+    A throwaway is still returned when there is no ambient context at all
+    (scripts, background jobs, tests that never opened a turn): those genuinely
+    have nothing to share, and refusing to run would be worse than not sharing.
     """
-    return context if isinstance(context, EvidenceContext) else EvidenceContext()
+    if isinstance(context, EvidenceContext):
+        return context
+    ambient = CURRENT_EVIDENCE.get()
+    if ambient is not None:
+        return ambient
+    logger.debug("no ambient evidence context — nothing to share this call")
+    return EvidenceContext()

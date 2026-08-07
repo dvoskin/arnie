@@ -290,6 +290,12 @@ async def test_supplemental_evidence_is_deduplicated_by_the_context():
     ctx = EvidenceContext()
     original, pa._web_space = pa._web_space, fake_web
     try:
+        # SPECULATION is what starts work now — the decision path never does
+        # (see `test_no_lookup_is_launched_after_the_deadline`). Two starts
+        # for one key must still produce one lookup, and two concurrent
+        # consumers must await that same future.
+        pa.start_supplemental("chicken", ctx)
+        pa.start_supplemental("chicken", ctx)
         await asyncio.gather(pa.preparation_space("chicken", ctx),
                              pa.preparation_space("chicken", ctx))
     finally:
