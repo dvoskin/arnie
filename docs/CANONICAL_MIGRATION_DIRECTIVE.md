@@ -1149,7 +1149,11 @@ B-1 global promotion       DEFERRED until B-2
 B-1 predecessor deletion   DEFERRED until B-2
 B-1 legacy                 FROZEN for non-allowlisted users
 
-B-1.5      NEXT
+B-1.5      IN PROGRESS       readiness, producer and pricing DONE and
+                             locally proven; NOT production-proven. The
+                             two-field question has never run on a real
+                             allowlisted iOS turn.
+CONTRACT   FROZEN 08-07      semantic field registry + rule of three
 B-1.6      after B-1.5
 B-1.7      after B-1.6
 B-1.8      after B-1.7
@@ -1163,6 +1167,84 @@ C/D/E/F    canonical food, shared contracts, workouts
 ROLLOUT decision, not an architectural dependency.** Canonical development
 continues for allowlisted users only. Nothing in B-1.5 through B-2 waits on
 promotion, and promotion waits on all of them.
+
+## THE SEMANTIC EXTENSION CONTRACT *(Danny, 2026-08-07 — enforced, not documented)*
+
+**A new food behaviour enters as a REGISTERED FIELD or it does not enter.**
+`core/semantic_fields.py` is the registry and the only door. The question asked
+of "fried", "with sauce", "half the package", "skin on" and "brand variant" is
+the same one every time — *what semantic field is this?* — and an
+implementation beginning `if "fried" in food_name` has already answered it
+wrong.
+
+A spec declares all of: typed `attribute` · `value_space` · `patch_type` ·
+`pricing` · `evidence` · `settlement` · `activation` (+ predicate) ·
+`vocabulary` · presentation metadata. `register()` refuses anything else, at
+IMPORT time, so a malformed field breaks the process rather than the first user
+who triggers it.
+
+**The invariants, and where each is enforced:**
+
+| invariant | enforced by |
+|---|---|
+| a field cannot be **presented** unless registered | `ClarificationInteraction.__post_init__` |
+| unsupported semantics cannot be emitted | `register()` → `validators._PREPARATIONS` |
+| `ResolvedFields` is the ONLY settlement boundary | `Settlement` has one member |
+| no field may price by a multiplier | `Pricing` has no such member |
+| exactly one field decides the amount | `register()` |
+| a conditional field declares its predicate as DATA | `register()` |
+| no field-specific settlement extractor | AST ratchet |
+| the coordinator names no attribute | AST ratchet |
+
+**Two boundaries that are NOT the same, and conflating them broke a test.**
+`ClarificationAttribute` is the vocabulary of what COULD be asked — including
+the Phase-O workout attributes that exist so onboarding workouts need no food
+edit. The registry is what CAN be asked today. Construction is free;
+**presentation** is gated. That is why the check sits on the interaction rather
+than on `UnresolvedField`.
+
+### The rule of three — PASSED, and what it does not prove
+
+`tests/test_the_rule_of_three_fields.py` registers a third family
+(`serving_basis`, `Pricing.NONE`, its own patch type), drives it through
+production, presentation, answering, holding and settlement, and asserts three
+fields settle **once** with no coordinator change. It passes, and the coordinator
+names no attribute.
+
+**It is a probe, deliberately not shipped** — a field with no producer and no
+user is the defect `UNUSABLE_AMOUNT` was deleted for.
+
+**A KNOWN LIMIT, pinned by its own gate.** All three families answer with ONE
+option producing ONE patch, and `hold_answer` keys the held map by field id, so
+a second answer REPLACES the first. A genuinely multi-valued field ("no bun,
+extra cheese") cannot be expressed: the held value would have to become a set
+and `ResolvedFields._one` would have to stop assuming singularity.
+`ResponseType.MULTI_SELECT` exists and nothing produces it.
+`test_one_field_holds_exactly_one_answer_and_that_is_a_known_limit` is there so
+whoever tries finds out from a test rather than from a user whose second
+selection vanished. **"The mechanism is generic" must not be read more broadly
+than this.**
+
+### Owed to B-1.5 UI — ported behavior, NOT the legacy mechanism
+
+`feat/badges-v2` reached these on the legacy `QuickReply` bar. Those four
+commits were deliberately NOT picked (37f946d, 34f2b2c, 0a10677, 8652439) —
+label-valued answers, a `group` index for identity, label deduplication and
+legacy chip routing are the architecture B-1b replaced and D7 deletes. Four of
+the product decisions were hand-ported in `55bf93b`; **two remain owed**, and
+both need canonical equivalents expressed through `option_id`:
+
+* **selected answers render back into the transcript** — from `34f2b2c`. The
+  chosen chip should appear as the user's turn, by option id, never by echoing
+  the label back as if they had typed it.
+* **a card does not visually erase an unresolved question** — from `0a10677`. A
+  committed card arriving while another field is open must not read as "done".
+  Directly relevant now: B-1.5 settles on the LAST field, so every partial turn
+  is exactly this state.
+
+These are presentation and belong with the B-1.5 UI work, not with the
+contract. Also owed and unrelated: `ArnieShare` (from `6376a76`) needs its
+provisioning profile before a signed device build.
 
 ### Product-quality backlog — recorded, NOT blocking
 

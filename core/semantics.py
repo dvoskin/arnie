@@ -1059,6 +1059,23 @@ class ClarificationInteraction:
                     raise ValueError(
                         f"duplicate field {f.field_id!r} across groups")
                 fields.add(f.field_id)
+                # A FIELD CANNOT BE PRESENTED UNTIL IT DECLARES WHAT IT IS.
+                #
+                # HERE, not in `UnresolvedField.__post_init__`. Constructing a
+                # field is not presenting one: `ClarificationAttribute` is the
+                # vocabulary of what COULD be asked — including the Phase-O
+                # workout attributes that exist precisely so onboarding
+                # workouts need no edit to this file — while the registry is
+                # what CAN be asked today. An interaction is the thing that
+                # gets persisted, rendered and answered, so it is the boundary
+                # the Semantic Extension Contract belongs on.
+                #
+                # Imported inside: `semantic_fields` validates specs against
+                # this module's `ClarificationAttribute` and `PATCH_TYPES`, so
+                # a top-level import is a cycle.
+                from core.semantic_fields import spec_for
+
+                spec_for(f.attribute)
 
     def field(self, field_id: str) -> UnresolvedField:
         for g in self.groups:

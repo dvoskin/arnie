@@ -171,19 +171,24 @@ def test_groups_bind_options_to_one_event():
     """The structure that makes the mixed chip row unconstructable: fields sit
     inside their event's group, so 'Elite / Whole thing / 1 cup' cannot be one
     flat list."""
-    fairlife = ClarificationGroup(
-        event_id="food_fairlife", label="Fairlife",
-        fields=(_field(event_id="food_fairlife",
-                       attribute="product_variant"),
-                _field(event_id="food_fairlife",
-                       attribute="consumed_fraction")))
+    # QUANTITY + PREPARATION, because those are the two fields that are
+    # actually REGISTERED. This read `product_variant` + `consumed_fraction`,
+    # which nothing produces and which the Semantic Extension Contract now
+    # refuses to let into an interaction — a field may not be presented until
+    # it declares what it is. The structural claim is unchanged and the case
+    # is now the real B-1.5 grouped ask rather than a speculative one.
+    chicken = ClarificationGroup(
+        event_id="food_chicken", label="Chicken breast",
+        fields=(_field(event_id="food_chicken", attribute="quantity"),
+                _field(event_id="food_chicken", attribute="preparation")))
     rice = ClarificationGroup(
         event_id="food_rice", label="Rice",
         fields=(_field(event_id="food_rice"),))
     ix = ClarificationInteraction(interaction_id="ix_1", operation_id="op_1",
-                                  revision=3, introduction="Which bottle, "
-                                  "and how much?", groups=(fairlife, rice))
-    assert [g.event_id for g in ix.groups] == ["food_fairlife", "food_rice"]
+                                  revision=3, introduction="How much, "
+                                  "and how was it cooked?",
+                                  groups=(chicken, rice))
+    assert [g.event_id for g in ix.groups] == ["food_chicken", "food_rice"]
     with pytest.raises(ValueError):
         ClarificationInteraction(interaction_id="", operation_id="op",
                                  revision=0)
