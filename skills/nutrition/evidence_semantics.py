@@ -102,7 +102,16 @@ DOMAIN = SemanticDomain(
     name="food",
     version=VERSION,
     relationships=RELATIONSHIPS,
-    extraction_fields=("preparation", "form", "brand", "variant"),
+    # `kcal_per_100g` is DECLARED, not parsed. Web evidence states densities
+    # in prose ("grilled 165, fried 250") and pulling numbers out with a regex
+    # is the identity-by-string-matching this layer exists to delete. The
+    # model extracts it under the closed schema instead.
+    #
+    # IT CANNOT PRICE A MEAL. `admissible_for_pricing` refuses
+    # `synthesized_text` by TYPE, so a model-extracted density can only ever
+    # answer "is this question worth asking" — never "what did they eat".
+    extraction_fields=("preparation", "form", "brand", "variant",
+                       "kcal_per_100g"),
     render_intent=_render_intent,
     guidance=(
         "These are food evidence records from nutrition databases and web "
@@ -112,7 +121,10 @@ DOMAIN = SemanticDomain(
         "a dish containing the food is not the food). Provider-reported match "
         "grades are unreliable and must be ignored. For `preparation`, "
         "normalize wording to one of: grilled, roasted, fried — otherwise "
-        "omit it rather than inventing a nearby value."),
+        "omit it rather than inventing a nearby value. Extract "
+        "`kcal_per_100g` ONLY when the record states energy per 100 g for "
+        "that preparation of this food; omit it for a per-serving figure, a "
+        "different food, or any number you would have to convert or infer."),
 )
 
 
@@ -217,6 +229,14 @@ def preparation_evidence(assessments, records, *,
         if record is not None:
             try:
                 kcal = float(record.nutrition.get("calories"))
+            except (TypeError, ValueError):
+                kcal = None
+        if kcal is None:
+            # The extracted figure, for records that state a density in prose
+            # rather than in a nutrition field. Materiality only — the claim
+            # gate keeps it out of pricing.
+            try:
+                kcal = float(a.extracted.get("kcal_per_100g"))
             except (TypeError, ValueError):
                 kcal = None
         out.append(PreparationEvidence(

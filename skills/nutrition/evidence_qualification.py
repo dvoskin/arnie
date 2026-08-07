@@ -70,6 +70,43 @@ def admissible_for_relevance(record) -> bool:
     return getattr(record, "evidence_type", "") in _ADMISSIBLE[CLAIM_RELEVANCE]
 
 
+#: ASSESSMENTS THIS TURN ALREADY PAID FOR, keyed by (food, resolver version).
+#:
+#: §24: preparation must reuse enrichment the turn already performed rather
+#: than re-querying the same provider. `_u()` classifies USDA rows for
+#: PRICING eligibility; those same assessments carry the extracted
+#: preparations the materiality question needs, so the second consumer pays
+#: nothing.
+#:
+#: VERSION IS IN THE KEY (guardrail 2) so a resolver version bump cannot serve
+#: conclusions made under the old policy. Bounded and process-local — this is
+#: NOT the durable cache, which stays unbuilt until measured traffic justifies
+#: its invalidation and privacy decisions.
+#:
+#: ⚠ THIS KEY IS INCOMPLETE FOR A DURABLE CACHE. `(food, version)` is
+#: sufficient only because these entries cannot outlive the turn that wrote
+#: them: the same food STRING can retrieve different evidence sets on
+#: different days (providers change, rankings move), so a cross-turn cache
+#: must also key on an EVIDENCE FINGERPRINT — hash the record ids and titles —
+#: or it will serve conclusions about rows nobody retrieved this time.
+_ASSESSED: dict = {}
+_ASSESSED_MAX = 64
+
+
+def remember_assessments(food_name: str, records, assessments) -> None:
+    if len(_ASSESSED) >= _ASSESSED_MAX:
+        _ASSESSED.clear()          # crude, bounded, and never stale-by-version
+    key = (str(food_name or "").strip().lower(),
+           assessments[0].resolver_version if assessments else "")
+    _ASSESSED[key] = (tuple(records), tuple(assessments))
+
+
+def recall_assessments(food_name: str, resolver_version: str):
+    """What this turn already classified for this food, or None."""
+    return _ASSESSED.get((str(food_name or "").strip().lower(),
+                          resolver_version))
+
+
 @dataclass(frozen=True)
 class Qualification:
     """What qualification did, for telemetry and for the fallback decision."""
@@ -131,6 +168,10 @@ async def qualify_usda_rows(food_name: str, rows, complete=None) -> Qualificatio
                        int((_time.monotonic() - _t0) * 1000))
         return Qualification(rows=(), disposition="resolver_down_no_candidates",
                              raw_count=len(rows), kept_count=0)
+
+    # The second consumer's free ride: preparation reads these instead of
+    # paying for its own classification of the same rows.
+    remember_assessments(food_name, records, assessments)
 
     kept = tuple(
         row for row, a in zip(rows, assessments)

@@ -1,0 +1,175 @@
+"""IS PREPARATION MATERIALLY UNRESOLVED? Asked of QUALIFIED semantic evidence.
+
+Replaces `preparation_materiality.py`, which is deleted rather than refined:
+that predicate matched registered preparation tokens against raw provider
+descriptions, which is the regex identity B-1.5E prohibits. It survived only
+because it was fail-closed — measured in production, it opened nothing.
+
+    qualified assessments (reused, free)   what preparations does the
+      + one bounded web materiality query  evidence say EXIST for this food?
+              ↓
+    PreparationEvidence[]                  registered ids + densities
+              ↓
+    deterministic materiality              two or more, far enough apart?
+
+SPACE, NEVER VALUE. Everything here decides whether to ASK. Nothing here
+resolves what the user ate — no `SetPreparation` is constructible from this
+module, and `test_evidence_opens_preparation_but_cannot_answer_it` holds that.
+
+CLAIMS STAY TYPED ACROSS PROVIDERS. Web evidence is admissible for
+`preparation_materiality` and inadmissible for `nutrition_pricing`, so this
+module may open a field on a web answer while pricing still comes only from
+structured evidence. That separation is the thing that stops "web says fried
+matters" from becoming "web calories are authoritative".
+
+WHY WEB AT ALL: measured on the captured corpus, USDA's top rows for generic
+foods carry almost no REGISTERED preparations (its own words are raw ·
+smoked · baked · "cooked, dry heat"). Structured evidence alone establishes
+the space for very few foods, so the materiality claim is where web evidence
+earns its place — and only there.
+"""
+from __future__ import annotations
+
+import logging
+
+from skills.nutrition import evidence_semantics as food
+from skills.nutrition.evidence_qualification import recall_assessments
+
+logger = logging.getLogger(__name__)
+
+#: How far apart two preparations must price before asking is worth the
+#: interruption. 25% of the lower density — same order as the quantity
+#: slice's spread floor, and for the same reason: a question that cannot move
+#: the number by more than rounding is an interruption, not a clarification.
+MATERIAL_SPREAD = 1.25
+
+#: Bounded web results for the materiality claim. Small deliberately: this is
+#: evidence that a preparation EXISTS and is material, not a survey.
+_WEB_RESULTS = 5
+
+
+async def preparation_is_materially_unresolved(item, context=None) -> bool:
+    """The `unresolved_when` predicate for the preparation field.
+
+    Order is the directive's, and each step is a reason NOT to ask:
+
+        stated or already resolved   -> no field; do not ask twice
+        name already encodes it      -> no field; "grilled chicken" answers
+                                        itself
+        fewer than two preparations  -> no field; nothing to choose between
+        densities agree              -> no field; the answer changes nothing
+        anything raised              -> no field; evidence we could not gather
+                                        is not evidence of ambiguity
+    """
+    from skills.nutrition.ambiguity import AmbiguityType
+
+    prep = getattr(item, "preparation", None)
+    if getattr(prep, "stated", False) and getattr(prep, "method", None):
+        return False
+
+    # The interpreter raised it itself — believe it, and spend nothing.
+    for amb in tuple(getattr(item, "material_ambiguities", lambda: ())()):
+        if getattr(amb, "ambiguity_type", None) is AmbiguityType.PREPARATION:
+            return True
+
+    name = str(getattr(getattr(item, "identity", None), "canonical_name", "")
+               or "").strip()
+    if not name:
+        return False
+
+    space = await preparation_space(name)
+    if len(space) < 2:
+        return False
+
+    densities = [kcal for kcal in space.values() if kcal]
+    if len(densities) < 2:
+        # Two preparations exist and we cannot price the difference, so we
+        # cannot show the question is worth asking. Silence beats a guess.
+        logger.info("event=preparation_space food=%s preparations=%s "
+                    "material=unknown_no_densities", name, sorted(space))
+        return False
+
+    low, high = min(densities), max(densities)
+    material = low > 0 and (high / low) >= MATERIAL_SPREAD
+    logger.info("event=preparation_space food=%s preparations=%s low=%.0f "
+                "high=%.0f ratio=%.2f material=%s",
+                name, sorted(space), low, high,
+                (high / low) if low else 0.0, material)
+    return material
+
+
+async def preparation_space(food_name: str) -> dict:
+    """`{preparation_id: kcal_per_100g or None}` the evidence supports.
+
+    THE SPACE, not the answer. Structured evidence first — free, because the
+    pricing path already classified it this turn — then one bounded web query
+    for the materiality claim, which is the only claim web may support.
+    """
+    space: dict = {}
+
+    # 1. Free: assessments the pricing path already paid for.
+    remembered = recall_assessments(food_name, food.VERSION)
+    if remembered:
+        records, assessments = remembered
+        for evidence in food.preparation_evidence(
+                assessments, records,
+                minimum_confidence=food.MINIMUM_IDENTITY_CONFIDENCE):
+            if evidence.kcal_per_100g is not None or \
+                    evidence.preparation_id not in space:
+                space.setdefault(evidence.preparation_id,
+                                 evidence.kcal_per_100g)
+
+    # 2. Bounded: the materiality claim, where structured evidence is thin.
+    space.update(await _web_space(food_name, exclude=set(space)))
+    return space
+
+
+async def _web_space(food_name: str, exclude=frozenset()) -> dict:
+    """Preparations the web says exist for this food, with densities.
+
+    ASKED, NOT FILTERED. Source quality is a function of query construction
+    (measured: the same claim asked loose returns Instagram; asked at a
+    government domain returns USDA four times), so this names the authority
+    rather than grading whatever comes back.
+    """
+    from core import search
+    from core.semantic_evidence import resolve
+    from skills.nutrition.evidence_qualification import _default_complete
+
+    wanted = [p for p in _registered_preparations() if p not in exclude]
+    if not wanted:
+        return {}
+
+    query = (f"site:fdc.nal.usda.gov OR site:nal.usda.gov {food_name} "
+             f"{' '.join(wanted)} calories per 100 g")
+    try:
+        result = await search.search(query)
+    except Exception:
+        logger.warning("event=preparation_web_lookup_failed food=%s",
+                       food_name, exc_info=True)
+        return {}
+
+    records = food.from_web(result)[:_WEB_RESULTS]
+    if not records:
+        return {}
+    try:
+        assessments = await resolve(
+            food.DOMAIN, food.FoodIntent(base_identity=food_name), records,
+            _default_complete)
+    except Exception:
+        logger.warning("event=preparation_web_assessment_failed food=%s",
+                       food_name, exc_info=True)
+        return {}
+
+    out: dict = {}
+    for evidence in food.preparation_evidence(
+            assessments, records,
+            minimum_confidence=food.MINIMUM_IDENTITY_CONFIDENCE):
+        out.setdefault(evidence.preparation_id, evidence.kcal_per_100g)
+    return out
+
+
+def _registered_preparations() -> tuple:
+    from core.semantic_fields import spec_for
+
+    return tuple(spec_for("preparation").vocabulary)

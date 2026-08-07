@@ -16,9 +16,16 @@ from core.semantic_fields import (Activation, Evidence, FieldSpec, Pricing,
 
 
 async def _preparation_unresolved(item, context=None) -> bool:
-    """Late import: the materiality probe reaches USDA, and registration must
-    not drag a network client in at import time."""
-    from skills.nutrition.preparation_materiality import (
+    """Late import: the activation probe reaches the resolver and the web, and
+    registration must not drag either in at import time.
+
+    B-1.5E C2 pointed this at `preparation_activation`, and DELETED
+    `preparation_materiality` rather than refining it — the old predicate
+    matched preparation tokens against raw provider descriptions, which is the
+    regex identity the evidence boundary exists to remove. The hook survived;
+    the predicate behind it did not.
+    """
+    from skills.nutrition.preparation_activation import (
         preparation_is_materially_unresolved)
 
     return await preparation_is_materially_unresolved(item, context)
