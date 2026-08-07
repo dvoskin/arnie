@@ -174,7 +174,7 @@ async def two_field(sessions, user):
         u = await s.get(User, user.id)
         ask = await b1.try_take_ownership(
             s, user=u, material=_material(), turn_id="t_1",
-            client_capable=True, locale="en")
+            channel="ios", locale="en")
         await s.commit()
     assert ask is not None, "the fixture needs a real B-1 operation"
     interaction = await _make_two_field(sessions, ask)
@@ -326,7 +326,7 @@ async def test_a_single_field_operation_still_commits_on_one_answer(
         u = await s.get(User, user.id)
         ask = await b1.try_take_ownership(
             s, user=u, material=_material(), turn_id="t_1",
-            client_capable=True, locale="en")
+            channel="ios", locale="en")
         await s.commit()
     field = ask.interaction.groups[0].fields[0]
 

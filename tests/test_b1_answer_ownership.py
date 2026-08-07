@@ -113,7 +113,7 @@ async def opened(sessions, user):
         u = await s.get(User, user.id)
         ask = await b1.try_take_ownership(
             s, user=u, material=_material(), turn_id="t_1",
-            client_capable=True, locale="en")
+            channel="ios", locale="en")
         await s.commit()
     assert ask is not None
     return ask
@@ -149,7 +149,7 @@ async def opened_with_history(sessions, user):
         u = await s.get(User, user.id)
         ask = await b1.try_take_ownership(
             s, user=u, material=_material(), turn_id="t_1",
-            client_capable=True, locale="en")
+            channel="ios", locale="en")
         await s.commit()
     assert ask is not None
     sources = {str(getattr(getattr(o, "source", None), "value", ""))
@@ -953,7 +953,7 @@ async def test_the_locale_comes_from_the_operation_not_the_current_message(
     async with sessions() as s:
         u = await s.get(User, user.id)
         await b1.try_take_ownership(s, user=u, material=_material(),
-                                    turn_id="t_ru", client_capable=True,
+                                    turn_id="t_ru", channel="ios",
                                     locale="ru")
         await s.commit()
 

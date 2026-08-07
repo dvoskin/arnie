@@ -1714,8 +1714,18 @@ async def _run_turn(
                             # `feedback_arnie_platform_mislabel` already
                             # records. Capability is a property of the
                             # CLIENT, so it reads `platform`.
-                            client_capable=_b1.client_renders_interactions(
-                                platform),
+                            # THE CHANNEL, NOT A VERDICT ABOUT IT. The caller
+                            # used to compute capability here and pass the
+                            # answer in, which made lane ownership a decision
+                            # with two owners — this half and the cohort half
+                            # inside `try_take_ownership`. It now passes the
+                            # fact and `canonical_food_enabled` decides.
+                            #
+                            # `platform`, never `source_type`: capability is a
+                            # property of the CLIENT, and conflating the two
+                            # is what `feedback_arnie_platform_mislabel`
+                            # records.
+                            channel=platform,
                             locale=command_locale(
                                 getattr(_prefs, "preferred_language", None),
                                 _user_text or ""))

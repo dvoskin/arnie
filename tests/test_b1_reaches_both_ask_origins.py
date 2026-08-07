@@ -234,15 +234,24 @@ def test_a_modality_is_refused_loudly_not_silently():
 
 def test_the_call_site_passes_the_platform():
     """Checked at the call site, because that is where the two were confused.
-    A test of the helper alone would have passed throughout the outage."""
+    A test of the helper alone would have passed throughout the outage.
+
+    THE INVARIANT IS UNCHANGED; THE MECHANISM MOVED. The call site used to
+    compute capability itself (`client_renders_interactions(platform)`) and
+    pass a bool. Lane ownership now has one owner, so it passes the CHANNEL
+    and `canonical_food_enabled` decides. What must still be true — and what
+    cost this slice a production round when it was not — is that the value
+    handed over is `platform` and never `_source`, which is
+    `source_type or platform` and can therefore be a MODALITY.
+    """
     import inspect
 
     from core import conversation
 
     src = inspect.getsource(conversation)
-    idx = src.find("client_renders_interactions(")
-    assert idx > 0, "the capability check disappeared"
-    call = src[idx:idx + 120]
-    assert "platform" in call, f"capability must read the channel: {call!r}"
+    idx = src.find("channel=")
+    assert idx > 0, "the call site stopped passing a channel"
+    call = src[idx:idx + 60]
+    assert "platform" in call, f"the lane must read the channel: {call!r}"
     assert "_source" not in call, \
         "`_source` is `source_type or platform` — it can be a modality"

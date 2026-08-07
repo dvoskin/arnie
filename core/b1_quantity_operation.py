@@ -533,7 +533,7 @@ class CanonicalAskFacts:
 
 
 async def try_take_ownership(db, *, user, material: dict, turn_id: str,
-                             client_capable: bool,
+                             channel: str,
                              locale: str = "en") -> Optional[CanonicalAsk]:
     """Decide whether B-1 owns this turn, and if so, take ownership durably.
 
@@ -555,13 +555,31 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
     step is the last thing that can fail: a question sent with no durable row
     behind it is a question the user answers into a void.
     """
+    from core.canonical_lane import canonical_food_enabled
     from skills.nutrition import quantity_clarification as qc
-    from skills.nutrition import quantity_rollout as qr
+
+    # ONE GATE DECIDES LANE OWNERSHIP, and it is asked here, first, before any
+    # material is examined. Cohort and client capability used to be decided in
+    # two different places — the caller computed capability and passed it in,
+    # this function asked the rollout gate — so no single place could be read
+    # to find out what the system would do with a given user on a given
+    # channel. `canonical_food_enabled` is now that place.
+    lane = canonical_food_enabled(user_id=getattr(user, "id", None),
+                                  channel=channel)
+    if not lane.canonical:
+        from core import b1_metrics
+        b1_metrics.declined(user_id=getattr(user, "id", None),
+                            reason=lane.reason, cohort=lane.cohort)
+        return None
 
     decision = _MaterialDecision(material)
     verdict = qc.is_eligible(
         decision, message=material.get("message") or "",
-        client_capable=client_capable,
+        # THE LANE ALREADY PROVED THIS. `is_eligible` keeps its own clause as
+        # defence in depth and is tested directly on it, but at runtime the
+        # lane gate is the only decider — passing its verdict rather than a
+        # second computation of the same fact is what makes that true.
+        client_capable=lane.canonical,
         # Absent means "the caller did not say", and the only safe reading of
         # that is the pessimistic one. The pipeline branch fetches the shelf
         # and passes True; the interpreter branch does not and passes False.
@@ -572,12 +590,11 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
                             reason=verdict.reason.value)
         return None
 
-    cohort = qr.cohort_label(user.id)
-    if not qr.may_take_ownership(user.id):
-        from core import b1_metrics
-        b1_metrics.declined(user_id=user.id, reason="not_in_cohort",
-                            cohort=cohort)
-        return None
+    # THE COHORT GATE USED TO BE ASKED AGAIN HERE. It is not a second check;
+    # it was the OTHER half of a decision with two owners, and it now lives
+    # entirely in `canonical_food_enabled` above. Asking it twice in one
+    # function is how the two halves would drift apart again.
+    cohort = lane.cohort
 
     item = verdict.item
     interpreter_item = _interpreter_item_for(material, item)
@@ -614,14 +631,18 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
                                 canonical_entity_id=entity_id))
     options, decision_record = qc.reduce_universe(
         universe, field=field,
-        # THE SURFACE IS DERIVED FROM CAPABILITY, NOT FROM THE CHANNEL NAME.
-        # A capable client renders chips and answers by id; everything else
-        # gets the sentence, and the sentence is the whole interface. Reading
-        # a channel string here would repeat the modality-vs-channel
-        # conflation that already cost this slice a production round.
-        context=qc.selection_context(
-            capability=(ID_ADDRESSED if client_capable else LABEL_TEXT),
-            locale=locale),
+        # THE CAPABILITY THE LANE GATE RESOLVED, not a third derivation of it.
+        #
+        # This read `ID_ADDRESSED if client_capable else LABEL_TEXT`, and
+        # `client_capable` is TRUE FOR TELEGRAM — it means "this client can
+        # read the canonical payload at all", which every channel in the
+        # capability table can. So a Telegram decision was recorded and made
+        # under `surface=id_addressed`: the one channel that has no chips and
+        # where the sentence IS the interface. Two DIFFERENT questions —
+        # "capable of anything" and "capable of ids" — collapsed into one
+        # bool, which is what having three derivations of one fact produces.
+        context=qc.selection_context(capability=lane.capability,
+                                     locale=locale),
         food_name=str(item.identity.canonical_name or ""))
     if not options:
         # No evidence, so no chips. B-1 declines rather than shipping a select

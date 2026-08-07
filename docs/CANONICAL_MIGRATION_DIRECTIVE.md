@@ -1135,32 +1135,92 @@ Phase A    COMPLETE          production-verified on a66e9ba8
 B-0        COMPLETE          ratchets enforced continuously (C8, C9)
 B-0b       COMPLETE          contract surface
 B-0c       COMPLETE          serialization, validation, immutability, persistence
-B-1        SLICE NOT CLOSED  see the seven-line state below — "backend
-                             complete" alone is the sentence that lets a
-                             slice look finished while its predecessor
-                             still runs
 B-1.75     COMPLETE          answered quantity is the only quantity authority
-B-1.9      COMPLETE          10 of 10. Contracts, durable universe, bridge
-                             deletion, versioned selector, failure classes,
-                             integration proof, contract freeze, and the
-                             structured iOS client — all landed and PROVEN
-                             IN PRODUCTION on iOS 2026-08-07.
-B-1b.1/.2  ABSORBED BY B-1.9 7  the matrix and the corpus now run through
-                             the durable candidate system; the join they
-                             lacked is `test_the_whole_slice_holds_together`
-B-1b.3     PLANNED           instrumented human simulation
-B-1b.4     CONTINUOUS        organic confirmation, low volume, gates nothing
+B-1.9      COMPLETE          production proven on iOS 2026-08-07
+B-1b.1     COMPLETE          absorbed by B-1.9 step 7
+B-1b.2     COMPLETE          absorbed by B-1.9 step 7
+B-1b.3     CONTINUOUS        usability evidence, NON-BLOCKING
+B-1b.4     CONTINUOUS        low-volume organic evidence, NON-BLOCKING
 B-1c       COMPLETE          detector coverage and precision
-B-1d       DONE              structured iOS interactions live; ios is
-                             ID_ADDRESSED and answering by option_id
-B-1.5/.6/.7/.8  NEXT — built on the canonical path, allowlist only.
-                             No longer waits on promotion (Danny 2026-08-07).
-B-2        THEN              same spine, still allowlist only
-PROMOTION  ONE EVENT, LAST   all users, allowlist removed, legacy food
-                             pipeline deleted, ratchets lowered
+B-1d       COMPLETE          native ID-addressed iOS live
+
+B-1 canonical capability   COMPLETE for allowlisted users
+B-1 global promotion       DEFERRED until B-2
+B-1 predecessor deletion   DEFERRED until B-2
+B-1 legacy                 FROZEN for non-allowlisted users
+
+B-1.5      NEXT
+B-1.6      after B-1.5
+B-1.7      after B-1.6
+B-1.8      after B-1.7
+B-2        after those prerequisites
+PROMOTION  after B-2 — a DELETION event, not a flag flip
 B-3/B-4    ownership consolidation and deletion
 C/D/E/F    canonical food, shared contracts, workouts
 ```
+
+**Promotion and deletion are deliberately batched after B-2. This is a
+ROLLOUT decision, not an architectural dependency.** Canonical development
+continues for allowlisted users only. Nothing in B-1.5 through B-2 waits on
+promotion, and promotion waits on all of them.
+
+### Product-quality backlog — recorded, NOT blocking
+
+These are B-1's first-production findings. They are product quality, not
+semantic-spine defects, and none of them justifies reopening canonical
+architecture. Do not let them interrupt B-1.5 through B-2 unless severity
+changes.
+
+| finding | note |
+|---|---|
+| labels render `118g`, not `4 oz` | `_everyday_labels` does not know the food; the number is correct, the phrasing is not |
+| iOS replies are richer and slower | 223 chars vs Telegram's 95 — `IOS_STYLE` + `NATIVE_CARDS` + `IOS_FORMAT_ANCHOR`. A product decision about output length |
+| copy refinement | Arnie voice over committed facts, still the deterministic fallback |
+| chip visual polish | client-side |
+| candidate-quality generalisation | belongs to the generalised generator milestone, not here |
+
+**Latency is a separate thread from this migration.** Measured on the same
+user: the structured tap itself is 257 ms, and iOS framework overhead
+(15–154 ms) is LOWER than Telegram's. Perceived latency is dominated by model
+output length, not by the clarification architecture. Optimise it separately;
+do not treat it as evidence about the canonical path.
+
+### Legacy is a frozen compatibility lane, not a second development lane
+
+Allowed in legacy:
+
+* P0/P1 production fixes
+* security fixes
+* migration compatibility needed to keep existing users working
+
+Forbidden in legacy: new food features · new clarification semantics · new
+pending mechanisms · new candidate logic · new mutation writers. **All new
+food capability belongs to canonical.**
+
+### Lane ownership is decided ONCE, at the top of the food turn
+
+`core.canonical_lane.canonical_food_enabled(user_id=…, channel=…)` is the one
+gate, and `tests/test_one_gate_decides_the_lane.py` is the ratchet that keeps
+it the only one — no other module may name `may_take_ownership` or
+`client_renders_interactions` to decide a lane.
+
+**There is never hybrid ownership inside one user turn.** A canonical user may
+not ask through canonical and answer through legacy, create canonical pending
+state and fall back to legacy pending state, commit through a legacy writer
+because canonical clarification failed, reconstruct canonical options from
+prose, or switch implementations between turns of the same live operation.
+
+**PROMOTION BLOCKER — no per-request client build.** The gate takes
+`(user_id, channel)` and not `(user_id, channel, build)`, because NOTHING
+carries a client build to the backend: no header, no field. `_CHANNEL_CAPABILITY`
+therefore claims `ios` is `ID_ADDRESSED` for the whole platform rather than for
+the app in the user's hand. An older build that cannot decode `interaction`
+receives `ask_copy(capability=ID_ADDRESSED)` — the introduction ALONE, options
+carried only in a payload it cannot read — so the user sees "How much chicken
+breast?" and nothing to pick from. Free text still works; the options are
+invisible and their usage rate reads zero. Harmless at one user on a known
+build; NOT harmless at promotion, which is when every old build arrives at
+once. Closing it needs an iOS version header plumbed through to the gate.
 
 ### B-1 state — the authoritative lines
 
@@ -1169,15 +1229,20 @@ B-1 lifecycle implementation       COMPLETE
 B-1 production lifecycle proof     COMPLETE
 B-1a wording                       COMPLETE      versioned b1_quantity_q2
 B-1c safety observability          COMPLETE      coverage and precision proven
-B-1b.1 system validation           NEXT
-B-1b.2 sequence simulation         NEXT
-B-1b.3 human simulation            PLANNED
-B-1b.4 organic confirmation        CONTINUOUS / LOW VOLUME
-B-1d structured iOS client         UNBLOCKS AFTER B-1b.1 + B-1b.2
-B-1 promotion                      DEFERRED to the one promotion event
-B-1 predecessor deletion           DEFERRED to the one promotion event
-B-1 slice closure                  FUNCTIONALLY COMPLETE, formally open
+B-1b.1 system validation           COMPLETE      absorbed by B-1.9 step 7
+B-1b.2 sequence simulation         COMPLETE      absorbed by B-1.9 step 7
+B-1b.3 human simulation            CONTINUOUS    usability, NON-BLOCKING
+B-1b.4 organic confirmation        CONTINUOUS    low volume, NON-BLOCKING
+B-1d structured iOS client         COMPLETE      live, answering by option_id
+B-1 canonical capability           COMPLETE      for allowlisted users
+B-1 global promotion               DEFERRED      until B-2
+B-1 predecessor deletion           DEFERRED      until B-2
+B-1 legacy                         FROZEN        for non-allowlisted users
 ```
+
+These last four lines are a SCHEDULE, not a defect. B-1 is not blocked on
+anything; promotion and deletion were batched to the end of B-2 so production
+users cross the boundary once instead of five times.
 
 Quote these lines rather than a single adjective. "B-1 is done" is true of the
 first four and false of the rest, and the slice loop is won or lost in the rest.

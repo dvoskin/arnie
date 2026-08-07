@@ -458,7 +458,7 @@ async def test_the_ask_path_persists_its_universe_before_asking(sessions,
                                  "asked_item_id": "si_1",
                                  "message": "some chicken breast",
                                  "identity_evidence": True},
-            turn_id="t_universe", client_capable=True)
+            turn_id="t_universe", channel="ios")
         await s.commit()
     # NOT A SKIP. A skip here is an instrument lying by silence: the day the
     # gate starts declining, this test would go green having exercised
@@ -760,7 +760,7 @@ async def test_the_operation_records_which_question_it_asked(sessions, user):
                                  "asked_item_id": "si_1",
                                  "message": "some chicken breast",
                                  "identity_evidence": True},
-            turn_id="t_decision", client_capable=True)
+            turn_id="t_decision", channel="ios")
         await s.commit()
     assert ask is not None
 

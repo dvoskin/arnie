@@ -90,7 +90,12 @@ async def _attempt(sessions, user, *, material=None, capable=True,
         u = await s.get(User, user.id)
         ask = await b1.try_take_ownership(
             s, user=u, material=material if material is not None else _material(),
-            turn_id=turn_id, client_capable=capable, locale=locale)
+            # THE CHANNEL, and the gate derives capability. `web` is not in
+            # the capability table, which is what "incapable" means now — a
+            # bool could say "not capable" without naming a client that is
+            # actually not, and the gate is about real channels.
+            turn_id=turn_id, channel=("ios" if capable else "web"),
+            locale=locale)
         await s.commit()
     return ask
 
