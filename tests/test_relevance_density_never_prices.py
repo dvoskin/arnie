@@ -264,3 +264,61 @@ async def test_preparation_never_starts_its_own_retrieval():
     finally:
         pa._web_space = original
     assert ctx.meta["preparation"]["assessments_reused"] is False
+
+
+# ── fields request evidence; they do not own retrieval lifecycles ───────────
+
+@pytest.mark.asyncio
+async def test_supplemental_evidence_is_deduplicated_by_the_context():
+    """Two fields wanting the same supplemental evidence await ONE lookup.
+
+    Without this the shape regrows one field at a time: PreparationField calls
+    Tavily, VariantField calls something else, and every future field brings
+    its own client and its own duplicate spend.
+    """
+    import asyncio
+
+    from core.evidence_context import EvidenceContext
+
+    calls = []
+
+    async def fake_web(food_name, exclude=frozenset()):
+        calls.append(food_name)
+        await asyncio.sleep(0.01)
+        return {"grilled": 165.0, "fried": 250.0}
+
+    ctx = EvidenceContext()
+    original, pa._web_space = pa._web_space, fake_web
+    try:
+        await asyncio.gather(pa.preparation_space("chicken", ctx),
+                             pa.preparation_space("chicken", ctx))
+    finally:
+        pa._web_space = original
+    assert len(calls) == 1, f"{len(calls)} supplemental lookups for one key"
+
+
+def test_no_field_module_calls_a_provider_directly():
+    """THE INVARIANT: fields project and REQUEST evidence; they do not own
+    provider retrieval lifecycles. Acquisition functions exist, but a field
+    reaches them only through `EvidenceContext.shared`.
+    """
+    import ast
+
+    source = pathlib.Path(pa.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    # Every provider call must sit inside an acquisition function — one the
+    # context invokes — never in the decision path.
+    acquisitions = {"_web_space"}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name in acquisitions:
+            continue
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Call):
+                name = (getattr(inner.func, "attr", "")
+                        or getattr(inner.func, "id", ""))
+                assert name not in ("search", "search_food"), (
+                    f"{node.name} calls a provider directly at line "
+                    f"{inner.lineno} — request evidence through the context")

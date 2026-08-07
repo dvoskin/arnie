@@ -126,9 +126,15 @@ async def preparation_space(food_name: str, context=None) -> dict:
                                  evidence.kcal_per_100g)
 
     from_structured = len(space)
-    # Bounded supplemental: the materiality claim, where structured evidence
-    # is thin. RELEVANCE-ONLY — it may establish SPACE, never price a meal.
-    web = await _web_space(food_name, exclude=set(space))
+    # Bounded supplemental, THROUGH THE SAME CONTEXT. A field may REQUEST
+    # evidence; it may not own a provider's retrieval lifecycle. Routing this
+    # through `shared()` means two fields wanting the same supplemental
+    # evidence await one lookup — and stops the shape where PreparationField
+    # calls Tavily, VariantField calls something else, and every future field
+    # grows its own client.
+    web = await shared.shared(
+        f"web-materiality:{food_name.strip().lower()}:{food.VERSION}",
+        lambda: _web_space(food_name, exclude=set(space)))
     space.update(web)
 
     shared.note(preparation={
@@ -164,6 +170,10 @@ async def _never():                                  # pragma: no cover
 
 async def _web_space(food_name: str, exclude=frozenset()) -> dict:
     """Preparations the web says exist for this food, with densities.
+
+    ACQUISITION, called only through `EvidenceContext.shared` — never
+    directly by a field. Fields project and request; the context owns whether
+    the work is already running.
 
     ASKED, NOT FILTERED. Source quality is a function of query construction
     (measured: the same claim asked loose returns Instagram; asked at a
