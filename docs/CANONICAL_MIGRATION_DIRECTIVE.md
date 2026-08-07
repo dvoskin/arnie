@@ -593,10 +593,11 @@ slice is done" are different claims and were conflated once already.
 | live operation probe, correlated to a self-minted operation id | WRITTEN — evidence owed on deploy |
 | **Arnie voice over the committed facts** | TODO — after lifecycle/committed-truth verification, BEFORE broad rollout |
 | **Telegram/iMessage label-text path proven in production** | TODO |
-| **iOS B-1d: ID-addressed payload + real chip-path proof** | TODO |
+| **iOS B-1d: ID-addressed payload + real chip-path proof** | DONE 2026-08-07 — entries 2887/2890 answered by `option_id` |
+| **the card the client can actually decode** | DONE 2026-08-07 — `card_for` was dropping `quantity`/`carbs_g`/`fats_g`, which iOS declares non-optional; the meal logged and the card vanished silently |
 | **reply-metadata binding for `LABEL_TEXT` channels** | TODO — owed with B-1d |
-| **rollout: allowlist → 1% → 5% → 25% → 100% of eligible turns** | TODO |
-| **deletion: legacy quantity producer, option builder, answer reconstruction, prose-chip path; lower C8/C9** | TODO |
+| **rollout** | ~~allowlist → 1% → 5% → 25% → 100%~~ **SUPERSEDED 2026-08-07.** No ramp. Allowlist only through B-2, then ONE promotion event |
+| **deletion: legacy quantity producer, option builder, answer reconstruction, prose-chip path; lower C8/C9** | DEFERRED to the one promotion event — not per slice |
 
 **B-1 presentation boundary.** B-1 completes the canonical response FACTS and
 their deterministic fallbacks. Production-quality Arnie voice may be refined
@@ -1045,12 +1046,13 @@ reuses typed fields and patches; domain payloads stay specific.
 
 ```text
  1. B-1 one-item quantity
- 2. promote and delete legacy B-1 path
- 3. B-1.5 quantity + preparation
- 4. B-1.6 added-fat dependency
- 5. B-1.7 mode policy
- 6. B-1.8 answer repair/fallback
- 7. B-2 multi-item and partial answers
+ 2. B-1.5 quantity + preparation           }
+ 3. B-1.6 added-fat dependency             }  all built on the canonical
+ 4. B-1.7 mode policy                      }  path, allowlist only
+ 5. B-1.8 answer repair/fallback           }
+ 6. B-2 multi-item and partial answers     }
+ 7. THE PROMOTION EVENT — all users to canonical, allowlist removed,
+    legacy food pipeline deleted, ratchets lowered. Once, not per slice.
  8. product/fraction/package fields
  9. generalized ClarificationOptionGenerator across all migrated field
     families — NOT "semantic options arrive here". B-1 already ships a
@@ -1071,9 +1073,52 @@ reuses typed fields and patches; domain payloads stay specific.
 ```
 
 **The key sequencing rule:** expand one semantic capability only after the
-previous capability is authoritative end to end, production-measured, and its
-legacy owner has been deleted. That gets Arnie to the desired backend without
-recreating the same fragmentation under better type names.
+previous capability is authoritative end to end and production-measured. That
+gets Arnie to the desired backend without recreating the same fragmentation
+under better type names.
+
+### One promotion event, not a rollout ramp *(Danny, 2026-08-07 — SUPERSEDES per-slice promotion)*
+
+**Canonical stays allowlist-only — user 26 and internal testers — through
+B-1.5, B-1.6, B-1.7, B-1.8 and B-2.** Every one of those is built on the
+canonical path. Then a SINGLE promotion:
+
+```text
+  move all users to canonical
+  remove the allowlist
+  delete the legacy food pipeline
+  lower the migration ratchets
+```
+
+**Why: one migration event instead of repeatedly switching production users
+between implementations.** The prior order promoted and deleted after each
+slice, which meant every user crossed the boundary five separate times, each
+crossing carrying its own regression surface and its own rollback question.
+
+**What this changes about the earlier rule.** "Prove → promote → delete →
+reuse" required a slice's legacy owner to be *deleted* before the next slice
+began. That clause is now deferred to the promotion event for the whole B-1
+family. The reuse discipline is unchanged: each slice must still be
+authoritative and production-measured before the next starts.
+
+**The cost, stated plainly, because deferring deletion is the thing that rule
+existed to prevent.** The legacy path stays alive through five more slices, so
+"two owners of one behaviour" is carried longer, and C4/C8/C9 stay high until
+the end. Two facts make it affordable and both must keep holding:
+
+* legacy is **unchanged** for everyone outside the allowlist, so drift cannot
+  reach a production user before promotion;
+* the canonical path is **additive** — `try_take_ownership` returning None
+  leaves the turn exactly as it is today.
+
+If either stops being true, this sequencing has to be revisited rather than
+worked around.
+
+**The promotion event is therefore large, and must be gated hard rather than
+declared.** Its gate is the union of every slice's promotion criteria — not a
+fresh judgement made on the day. Each slice writes its promotion conditions as
+executable gates when it lands, so promotion is running them, not re-deriving
+them.
 
 ## Status board
 
@@ -1108,8 +1153,11 @@ B-1b.4     CONTINUOUS        organic confirmation, low volume, gates nothing
 B-1c       COMPLETE          detector coverage and precision
 B-1d       DONE              structured iOS interactions live; ios is
                              ID_ADDRESSED and answering by option_id
-B-1.5/.6/.7/.8              resume after promotion
-B-2+       expansion
+B-1.5/.6/.7/.8  NEXT — built on the canonical path, allowlist only.
+                             No longer waits on promotion (Danny 2026-08-07).
+B-2        THEN              same spine, still allowlist only
+PROMOTION  ONE EVENT, LAST   all users, allowlist removed, legacy food
+                             pipeline deleted, ratchets lowered
 B-3/B-4    ownership consolidation and deletion
 C/D/E/F    canonical food, shared contracts, workouts
 ```
@@ -1126,13 +1174,26 @@ B-1b.2 sequence simulation         NEXT
 B-1b.3 human simulation            PLANNED
 B-1b.4 organic confirmation        CONTINUOUS / LOW VOLUME
 B-1d structured iOS client         UNBLOCKS AFTER B-1b.1 + B-1b.2
-B-1 promotion                      BLOCKED
-B-1 predecessor deletion           NOT STARTED
-B-1 slice closure                  NOT COMPLETE
+B-1 promotion                      DEFERRED to the one promotion event
+B-1 predecessor deletion           DEFERRED to the one promotion event
+B-1 slice closure                  FUNCTIONALLY COMPLETE, formally open
 ```
 
 Quote these lines rather than a single adjective. "B-1 is done" is true of the
 first four and false of the rest, and the slice loop is won or lost in the rest.
+
+**The last three lines changed meaning on 2026-08-07 and the distinction
+matters.** They no longer read BLOCKED because something is wrong; they read
+DEFERRED because promotion and deletion were consolidated into a single event
+at the end of B-2. B-1 is not waiting on a defect. It is waiting on a schedule.
+Do not let that reading drift back into "B-1 is finished" — the legacy producer
+is still alive and still serving everyone outside the allowlist, which is
+exactly the condition the slice loop was written to make visible.
+
+**B-1 owes the promotion event its executable gate.** Write it when B-1.5
+starts, not on promotion day: the answered quantity produces the committed
+numbers across every basis, and the legacy quantity path has no remaining
+caller. That is the B-1.75 condition already recorded above.
 
 ### B-1.9 — candidate-system correction. Runs BEFORE B-1 closure.
 
