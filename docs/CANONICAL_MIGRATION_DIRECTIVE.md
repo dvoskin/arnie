@@ -212,6 +212,11 @@ Phase A
 
 The next work begins at B-1.
 
+*(Superseded by events — kept for the construction/storage distinction below.
+As of 2026-08-07: B-1 and B-1.9 are production-proven on iOS, B-1.5's
+machinery is deployed and blocked on B-1.5E, and the authoritative "where are
+we" is the Status board. This section is history, not position.)*
+
 Status wording is deliberately split. "Implemented and test-locked" is a claim
 about construction; "storage-proven" is a claim about the boundary B-1
 actually crosses, and the two were conflated once already — the contracts
@@ -510,6 +515,13 @@ options sourced from history versus fallback · share of users choosing
 has failed**, and only the last two indicators can detect it.
 
 ### B-1.5 — One item, multiple independent material fields
+
+*(2026-08-07: the lifecycle below is BUILT and deployed — PARTIAL outcome,
+`hold_answer`/`ready_to_settle`, `ResolvedFields`, per-field settlement, the
+two-field producer, evidence-driven `unresolved_when`, and the iOS multi-field
+client. Preparation opens nowhere in production because no evidence source can
+establish comparability — see B-1.5E, which now gates closure. The spec below
+remains the contract.)*
 
 After B-1 is green in production, add preparation classification. Do not use a
 generic `cook_type`; model nutrition-relevant fields (breading, fried status,
@@ -847,6 +859,14 @@ never parsed.
 
 ### B-2.6 — Material preparation, sauces, composite additions
 
+*(Inherits from B-1.5: the preparation ontology (`preparation_ontology.py`,
+ids constrained to resolver-actionable tokens — `breaded`/`plain` rejected as
+inert, `baked` folded into `roasted` for the validator, though USDA itself
+says "baked" for potatoes), identity-composition pricing, and the B-1.5E
+evidence layer. MULTI_SELECT remains unproduced and the one-answer-per-field
+limit is pinned by `test_one_field_holds_exactly_one_answer_and_that_is_a_known_limit`
+— multi-valued additions land HERE, and that gate is where the work starts.)*
+
 Typed fields as needed: breading, skin, added fat, sauce type, sauce amount,
 sweetener, milk type, toppings. Ask by materiality (`expected nutrient
 variance × uncertainty × confidence improvement ÷ user effort`): grilled vs
@@ -1045,9 +1065,10 @@ reuses typed fields and patches; domain payloads stay specific.
 ## Recommended milestone order
 
 ```text
- 1. B-1 one-item quantity
- 2. B-1.5 quantity + preparation           }
- 3. B-1.6 added-fat dependency             }  all built on the canonical
+ 1. B-1 one-item quantity                   DONE, production-proven
+ 2. B-1.5 quantity + preparation           }  machinery DONE; closure
+    2a. B-1.5E semantic evidence layer     }  blocked on 2a
+ 3. B-1.6 conditional activation           }  all built on the canonical
  4. B-1.7 mode policy                      }  path, allowlist only
  5. B-1.8 answer repair/fallback           }
  6. B-2 multi-item and partial answers     }
@@ -1127,8 +1148,9 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-06 against the task list, `docs/B1_PRODUCTION_LOG_0805.md`
-and the commit history.
+Last reconciled 2026-08-07 (evening) against production traces, the evidence
+corpus, and the commit history through `c5d3614`. The findings ledger below the
+board holds everything instrumental from the B-1.5 build-out.
 
 ```text
 Phase A    COMPLETE          production-verified on a66e9ba8
@@ -1149,11 +1171,16 @@ B-1 global promotion       DEFERRED until B-2
 B-1 predecessor deletion   DEFERRED until B-2
 B-1 legacy                 FROZEN for non-allowlisted users
 
-B-1.5      IN PROGRESS       readiness, producer and pricing DONE and
-                             locally proven; NOT production-proven. The
-                             two-field question has never run on a real
-                             allowlisted iOS turn.
+B-1.5      BLOCKED ON B-1.5E readiness, producer, pricing and the generic
+                             `unresolved_when` derivation are DONE and
+                             deployed (c5d3614). Preparation cannot open:
+                             no evidence source can say whether a retrieved
+                             row is about the food the user meant. MEASURED,
+                             not inferred — a bare `chicken` query returns
+                             zero comparable rows.
 CONTRACT   FROZEN 08-07      semantic field registry + rule of three
+B-1.5E     NEXT              semantic evidence resolution. Bounded
+                             prerequisite; two consumers, then stop.
 B-1.6      after B-1.5
 B-1.7      after B-1.6
 B-1.8      after B-1.7
@@ -1167,6 +1194,265 @@ C/D/E/F    canonical food, shared contracts, workouts
 ROLLOUT decision, not an architectural dependency.** Canonical development
 continues for allowlisted users only. Nothing in B-1.5 through B-2 waits on
 promotion, and promotion waits on all of them.
+
+## Findings ledger — 2026-08-07, the B-1.5 build-out
+
+Everything here was paid for once. Recorded so it is not paid for again.
+
+### Defects found and fixed, by class
+
+**A — architecture**
+
+* **Lane ownership had two owners and had already drifted.** `conversation.py`
+  computed client capability, `try_take_ownership` asked the rollout gate;
+  `client_capable` ("can read the payload at all" — TRUE for Telegram)
+  collapsed into `ID_ADDRESSED if client_capable else LABEL_TEXT`, so a real
+  Telegram turn persisted `surface=id_addressed` (`telegram:9241`). One gate
+  now (`canonical_food_enabled` → `LaneDecision`), capability carried on the
+  ask, ratchet keeps derivations from coming back. Deploy-safe because
+  `surface` is inside the `decision_id` hash — a corrected turn writes a NEW
+  decision rather than raising DeterminismViolation.
+* **The expiry door bypassed readiness.** An expired-but-awaiting operation
+  receiving its FIRST late answer settled immediately — a late tap on Amount
+  would have committed a two-field meal with Preparation never asked. Found by
+  an existing sweep gate failing with "reached settlement with no quantity
+  answer". Settled-vs-expired share one claiming rule but NOT one settlement
+  path.
+* **`ResolvedFields._one` returned `found[0]`** — right for one food, silently
+  wrong for two: would price the chicken and drop the rice. Cannot fire in
+  B-1.5 (one event by construction); defused before B-2 with a loud raise plus
+  `for_event()` / `event_ids` as the per-event seam. B-2 settles per event; it
+  does not relax the check.
+* **`clear_day_log` deletes with no ledger events** (14 rows, 4 canonical,
+  zero `deleted` events — the ledger CAN record food deletes; this path
+  doesn't). OPEN, and ahead of B-1.6 in urgency: unrecoverable data loss on
+  the canonical lane.
+* **Cross-lane pending-state leak** (16:08 salmon): canonical settled and
+  released; legacy re-asked a question canonical answered 21s earlier, then
+  read "Ignore" as a log instruction. NOT hybrid ownership — the measured
+  standing cost of deferring promotion until B-2. Accepted, not fixed.
+
+**C — implementation**
+
+* **The client silently dropped every canonical card.** `card_for` omitted
+  `quantity`/`carbs_g`/`fats_g`; iOS `MacroCardPayload` declares them
+  non-optional; synthesized Decodable fails the whole struct; `try? decode` →
+  `.unknown` → dropped. The backend gate asserted only "cards non-empty" — the
+  server WAS sending a card the client could not read. Now pinned field-for-
+  field against legacy's card.
+* **B-1.5 was askable and unreachable.** Preparation opened only when the
+  interpreter volunteered the ambiguity, which it does not do for a food it
+  identifies confidently. The producer's trigger is now the field's own
+  evidence-driven `unresolved_when` — but see B-1.5E: the evidence itself is
+  the remaining blocker.
+
+**D — nutrition (tracked, not B-1.5's to fix)**
+
+* Papaya 2896: 200 cal for 80g — the heavy-syrup row (206/100g) over raw (43).
+* Banana 2891: 736 cal for 236g (312/100g vs real ~89) via canonical free-text.
+* Both are the same class: retrieval treated as identity. B-1.5E's boundary is
+  the structural fix; no food-specific patches.
+
+**F — instruments that lied by silence, continued**
+
+* `turn_metrics.outcome` = ok on 1188/1188 rows ALL-TIME. A non-ok value has
+  never been written; "no errors in 7d" from this table is worth nothing.
+* Proactive turns: 50 conversation_logs rows in 7d, 0 turn_metrics — every
+  route-mix and latency table silently excludes them.
+* `meal_commits.result_payload` carries no enrichment receipt — the papaya
+  miss could not be diagnosed from durable state. Forensic reproducibility is
+  a B-1.5E deliverable (§9 persistence).
+* My own deploy watcher grepped `"ae95043|ok"` — matched `"status": "ok"` on
+  the OLD build and reported success. The instrument-verification rule applies
+  to instruments built mid-conversation too.
+
+### ⭐ The synthetic-fixture failure — the one to internalize
+
+The first B-1.5 producer shipped FOURTEEN green gates against `CHICKEN_ROWS`,
+a fixture written to look like USDA and never checked against it. Mutation
+testing caught a vacuous gate INSIDE the fixture (FLAT_ROWS used raw/boiled/
+grilled — only one registered, so the materiality branch was never reached, and
+mutating the threshold changed nothing) and still could not catch that the
+fixture was fiction: **mutation testing verifies the test against the code,
+never the code against the world.** Only a live probe found it.
+
+Standing rule: a slice that consumes provider data is not proven until
+something has touched the provider. Recorded fixtures are captured, never
+authored (`tests/evidence_corpus/`), and stay ugly.
+
+### Working patterns that held (reuse them)
+
+* **Write the gate, then the headline** — held through ~20 commits.
+* **Mutation-verify every new gate** — caught the vacuous FLAT_ROWS gate, the
+  copy_for fall-through to "Logged.", and each ratchet's ability to fire.
+* **AST ratchets over substring** — substring flagged its own explanatory
+  docstrings twice; punishing WHY-comments teaches people to delete them.
+* **Behavior, not mechanism, when porting** — badges-v2 reconciliation took
+  five commits whole, rejected 650e414 for resurrecting QuickReplyEngine, and
+  hand-ported its ReceiptStore fix by file.
+* **Function calls, not import side effects, for registration** —
+  `import_module` on an already-imported module is a no-op; `_reset_for_tests`
+  never repopulated and 35 tests went red at a distance.
+* **Construction free, presentation gated** — the contract bites on the
+  interaction (persisted, rendered, answered), not on `UnresolvedField`, or
+  the Phase-O workout seam breaks.
+* **Live-probe the operand before writing the policy** — the corpus capture
+  found in one hour what the fixture hid for a full commit cycle.
+
+## B-1.5E — SEMANTIC EVIDENCE RESOLUTION *(Danny, 2026-08-07 — prerequisite, bounded)*
+
+**B-1.5's topology is sound and its producer is blocked on evidence quality.**
+Measured in production, not inferred: the multi-field spine holds, preparation
+prices correctly through canonical naming, and the field cannot open because
+nothing can tell whether retrieved evidence is about the food the user meant.
+
+### What the measurement actually showed
+
+Real USDA, corpus of seven, captured 2026-08-07 — **preserved raw in
+`tests/evidence_corpus/usda_2026_08_07.json` with human-reviewed ground truth
+in `tests/evidence_corpus/GROUND_TRUTH.md`**. Fixtures for the semantic layer
+start from those files, never from memory of them. A bare `chicken` query returns
+**zero** comparable rows in its top eight:
+
+```text
+Chicken spread · Chicken, meatless · Fat, chicken (900 cal) · Frankfurter,
+chicken · Fast foods, chicken tenders · Bologna · Bratwurst · Chicken, canned
+```
+
+`Papaya, canned, heavy syrup` at **206 cal/100g** sits three rows above
+`Papayas, raw` at 43 — and production entry 2896 committed 200 cal for 80 g.
+The papaya miss is this defect, already shipped.
+
+Shaped queries are worse, not better: they fall through USDA's curated pass into
+Branded and return all-caps commercial rows.
+
+⭐ **AND THE LESSON THAT MATTERS MOST.** The first B-1.5 producer shipped with
+fourteen green gates against a `CHICKEN_ROWS` fixture I wrote to LOOK like USDA
+and never checked against it. Mutation testing caught a vacuous gate INSIDE that
+fixture and still could not catch that the fixture was fiction — mutation
+testing verifies the test against the code, never the code against the world.
+Only a live probe found it. **Synthetic provider fixtures must be grounded in
+captured real responses, and a slice that consumes provider data is not proven
+until something has touched the provider.**
+
+### The prohibition, and it is absolute
+
+There must be no production identity logic based on regex matching,
+comma-position parsing, token counts, substring exclusions, food-name
+allowlists, curated lists of foods needing clarification, enumerated bad
+provider results, `if food == "chicken"`, `if "fat" in candidate`,
+provider-specific textual special cases, or calorie-density multipliers standing
+in for identity.
+
+**A provider adapter may decode STRUCTURED provider fields. It may not infer
+food semantics from naming tricks.** If USDA exposes a field, use it. If USDA
+exposes only a human-readable description, that description is natural-language
+evidence and goes through semantic resolution.
+
+This kills the tempting fix. USDA writes `<base>, <qualifiers>`, so "the leading
+term is the base identity" would reject five of six failure classes for
+`chicken` in one line — and it is a naming trick, provider-specific, and the
+first description that breaks the convention breaks the system silently.
+
+### The layer
+
+```text
+typed FoodIntent  +  bounded EvidenceRecord[]
+        -> SEMANTIC RESOLVER (model, typed, versioned, schema-closed)
+        -> EvidenceAssessment[]   relationship + extracted semantics
+        -> DETERMINISTIC POLICY   authority, thresholds, abstention
+        -> qualified evidence graph
+        -> semantic-field derivation
+```
+
+`relationship` is closed and driven by measured failure classes:
+
+```text
+SAME_IDENTITY · COMPATIBLE_SPECIALIZATION · COMPOSITE_CONTAINING_IDENTITY
+DERIVED_OR_EXTRACTED_FORM · SUBSTITUTE_OR_ANALOGUE · DIFFERENT_IDENTITY
+INSUFFICIENT_EVIDENCE
+```
+
+**THE MODEL INTERPRETS MEANING; CODE DECIDES AUTHORITY.** The resolver may say
+`COMPATIBLE_SPECIALIZATION, confidence 0.94, preparation=roasted`. It may never
+say "use this row" or "log 226 calories". `confidence=0.91` does not authorize a
+mutation — a deterministic threshold owns that, and nutrition values still come
+from the existing resolver ladder.
+
+**UNDER-SPECIFICATION IS EXPLICIT.** "I had chicken" means *base identity
+chicken, everything else unspecified*. It does not mean "any description
+containing chicken", and it does not mean "assume chicken breast".
+
+**SEMANTIC CONFIDENCE AND SOURCE QUALITY ARE DIFFERENT DIMENSIONS.** A model can
+be highly confident a low-quality blog is about fried chicken while policy
+refuses it for nutrition. Store both, plus `claim_support`.
+
+**AUTHORITY IS PER CLAIM, NOT PER SOURCE.** Web search answers the materiality
+question USDA cannot — measured: grilled ~165 vs fried ~297 cal/100g — but its
+synthesized answer is admissible for *"is preparation worth asking about"* and
+inadmissible for *"what are this food's calories"*. `TAVILY_API_KEY` is
+configured in production.
+
+**PRECISION OVER RECALL, AND ABSTENTION IS A RESULT.** Rejecting a useful
+candidate costs another lookup; accepting chicken fat as chicken costs a wrong
+meal. `INSUFFICIENT_EVIDENCE` is a first-class answer.
+
+Persist typed conclusions — never chain-of-thought — under
+`food_evidence_semantics_v1`, so changing the prompt or model cannot silently
+redefine historical assessments.
+
+### The core/domain boundary — protected aggressively
+
+**There is no single giant resolver that knows every domain's ontology.** The
+shared layer provides mechanism and contract; domains provide schemas and
+meaning:
+
+```text
+shared core                          nutrition (first domain)
+  EvidenceRecord                       FoodIntent schema
+  SemanticAssessment                   food relationship vocabulary
+  resolver invocation/versioning       preparation projection
+  confidence/abstention contract       product projection
+  persistence
+  policy boundary                    workouts (Phase E/F, later)
+                                       ExerciseIntent schema
+                                       exercise relationship vocabulary
+                                       equipment / load / reps projections
+```
+
+**THE HONESTY TEST, and it is a gate, not a sentiment: if workouts adopt this
+later, core must not change.** Workouts add a domain schema, field
+registrations and evidence projections — never another semantic-resolution
+architecture. This is the same inversion already enforced for the field
+registry (`_DOMAIN_REGISTRARS`, `supported_vocabulary`), extended to evidence:
+the seam generalizes or it is nutrition-specific debt wearing a generic name.
+
+Why this detour is not really a food detour: it is the missing seam between
+probabilistic interpretation and deterministic execution —
+
+```text
+LLM / search / external systems -> uncertain evidence
+    -> typed semantic boundary -> deterministic canonical system
+```
+
+— which is what later lets Arnie become more agentic without probabilistic
+reasoning ever mutating user state directly.
+
+### Scope, and where it stops
+
+NOT a food ontology, knowledge graph, universal nutrition engine, search engine,
+fine-tune, cuisine model, restaurant intelligence, ingredient decomposition or
+recipe reconstruction. The objective is narrow: **stop retrieval results being
+treated as interchangeable because strings overlap, and make enough trustworthy
+evidence available to production-prove preparation.**
+
+Two consumers prove generality — preparation AND product_variant, sharing one
+assessment with different projections, neither owning an identity matcher.
+Product_variant may not be substituted for preparation: B-1.5 closes on a
+NATURALLY occurring real iOS turn, with no constructed ambiguity, no synthetic
+rows, and no manually inserted field.
+
+**When B-1.5 passes, stop and resume B-1.6.**
 
 ## THE SEMANTIC EXTENSION CONTRACT *(Danny, 2026-08-07 — enforced, not documented)*
 

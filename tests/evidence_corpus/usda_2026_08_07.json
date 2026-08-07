@@ -1,0 +1,321 @@
+{
+ "captured_at": "2026-08-07",
+ "provider": "usda",
+ "note": "RAW AND UNCLEANED. Preserved exactly as returned; see the module docstring in test_the_evidence_corpus_is_real.py.",
+ "queries": {
+  "chicken": [
+   {
+    "description": "Chicken spread",
+    "brand": "",
+    "fdc_id": 173858,
+    "kcal_per_100g": 158
+   },
+   {
+    "description": "Chicken, meatless",
+    "brand": "",
+    "fdc_id": 169886,
+    "kcal_per_100g": 224
+   },
+   {
+    "description": "Fat, chicken",
+    "brand": "",
+    "fdc_id": 173564,
+    "kcal_per_100g": 900
+   },
+   {
+    "description": "Frankfurter, chicken",
+    "brand": "",
+    "fdc_id": 171624,
+    "kcal_per_100g": 223
+   },
+   {
+    "description": "Fast foods, chicken tenders",
+    "brand": "",
+    "fdc_id": 173321,
+    "kcal_per_100g": 271
+   },
+   {
+    "description": "Bologna, chicken, pork",
+    "brand": "",
+    "fdc_id": 173873,
+    "kcal_per_100g": 336
+   },
+   {
+    "description": "Bratwurst, chicken, cooked",
+    "brand": "",
+    "fdc_id": 172957,
+    "kcal_per_100g": 176
+   },
+   {
+    "description": "Chicken, canned, no broth",
+    "brand": "",
+    "fdc_id": 171110,
+    "kcal_per_100g": 185
+   }
+  ],
+  "chicken breast": [
+   {
+    "description": "Chicken breast tenders, breaded, uncooked",
+    "brand": "",
+    "fdc_id": 171515,
+    "kcal_per_100g": 263
+   },
+   {
+    "description": "Chicken breast, roll, oven-roasted",
+    "brand": "",
+    "fdc_id": 174608,
+    "kcal_per_100g": 134
+   },
+   {
+    "description": "Chicken breast tenders, breaded, cooked, microwaved",
+    "brand": "",
+    "fdc_id": 171514,
+    "kcal_per_100g": 252
+   },
+   {
+    "description": "Oscar Mayer, Chicken Breast (honey glazed)",
+    "brand": "",
+    "fdc_id": 172945,
+    "kcal_per_100g": 109
+   },
+   {
+    "description": "Chicken breast, deli, rotisserie seasoned, sliced, prepackaged",
+    "brand": "",
+    "fdc_id": 173874,
+    "kcal_per_100g": 98.0
+   }
+  ],
+  "salmon": [
+   {
+    "description": "Fish oil, salmon",
+    "brand": "",
+    "fdc_id": 172343,
+    "kcal_per_100g": 902
+   },
+   {
+    "description": "Fish, salmon, chinook, raw",
+    "brand": "",
+    "fdc_id": 173688,
+    "kcal_per_100g": 179
+   },
+   {
+    "description": "Fish, salmon, chinook, smoked",
+    "brand": "",
+    "fdc_id": 173687,
+    "kcal_per_100g": 117
+   },
+   {
+    "description": "Fish, salmon, chum, raw",
+    "brand": "",
+    "fdc_id": 173689,
+    "kcal_per_100g": 120
+   },
+   {
+    "description": "Fish, salmon, pink, raw",
+    "brand": "",
+    "fdc_id": 175138,
+    "kcal_per_100g": 127
+   },
+   {
+    "description": "Fish, salmon, sockeye, raw",
+    "brand": "",
+    "fdc_id": 173691,
+    "kcal_per_100g": 131
+   },
+   {
+    "description": "Fish, salmon, Atlantic, farmed, raw",
+    "brand": "",
+    "fdc_id": 175167,
+    "kcal_per_100g": 208
+   },
+   {
+    "description": "Fish, salmon, Atlantic, wild, raw",
+    "brand": "",
+    "fdc_id": 173686,
+    "kcal_per_100g": 142
+   }
+  ],
+  "potato": [
+   {
+    "description": "Bread, potato",
+    "brand": "",
+    "fdc_id": 167943,
+    "kcal_per_100g": 266
+   },
+   {
+    "description": "Potato flour",
+    "brand": "",
+    "fdc_id": 168446,
+    "kcal_per_100g": 357
+   },
+   {
+    "description": "Potato pancakes",
+    "brand": "",
+    "fdc_id": 170092,
+    "kcal_per_100g": 268
+   },
+   {
+    "description": "Babyfood, potatoes, toddler",
+    "brand": "",
+    "fdc_id": 173508,
+    "kcal_per_100g": 52.0
+   },
+   {
+    "description": "Potato salad with egg",
+    "brand": "",
+    "fdc_id": 173343,
+    "kcal_per_100g": 157
+   },
+   {
+    "description": "Potatoes, raw, skin",
+    "brand": "",
+    "fdc_id": 170032,
+    "kcal_per_100g": 58.0
+   },
+   {
+    "description": "Snacks, potato sticks",
+    "brand": "",
+    "fdc_id": 168854,
+    "kcal_per_100g": 522
+   }
+  ],
+  "papaya": [
+   {
+    "description": "Papayas, raw",
+    "brand": "",
+    "fdc_id": 169926,
+    "kcal_per_100g": 43.0
+   },
+   {
+    "description": "Papaya nectar, canned",
+    "brand": "",
+    "fdc_id": 169107,
+    "kcal_per_100g": 57.0
+   },
+   {
+    "description": "Papaya, canned, heavy syrup, drained",
+    "brand": "",
+    "fdc_id": 169927,
+    "kcal_per_100g": 206
+   },
+   {
+    "description": "Babyfood, fruit, guava and papaya with tapioca, strained",
+    "brand": "",
+    "fdc_id": 171348,
+    "kcal_per_100g": 63.0
+   },
+   {
+    "description": "Babyfood, fruit, papaya and applesauce with tapioca, strained",
+    "brand": "",
+    "fdc_id": 171350,
+    "kcal_per_100g": 70.0
+   },
+   {
+    "description": "Fruit salad, (pineapple and papaya and banana and guava), tropical, canned, heavy syrup, solids and liquids",
+    "brand": "",
+    "fdc_id": 167764,
+    "kcal_per_100g": 86.0
+   }
+  ],
+  "protein bar": [
+   {
+    "description": "Formulated Bar, SOUTH BEACH protein bar",
+    "brand": "",
+    "fdc_id": 173158,
+    "kcal_per_100g": 412
+   },
+   {
+    "description": "Formulated bar, MARS SNACKFOOD US, SNICKERS MARATHON Protein Performance Bar, Caramel Nut Rush",
+    "brand": "",
+    "fdc_id": 174786,
+    "kcal_per_100g": 415
+   },
+   {
+    "description": "Soy protein isolate",
+    "brand": "",
+    "fdc_id": 174276,
+    "kcal_per_100g": 335
+   },
+   {
+    "description": "Formulated bar, POWER BAR, chocolate",
+    "brand": "",
+    "fdc_id": 173137,
+    "kcal_per_100g": 363
+   },
+   {
+    "description": "Bread, protein (includes gluten)",
+    "brand": "",
+    "fdc_id": 174917,
+    "kcal_per_100g": 245
+   },
+   {
+    "description": "Formulated bar, LUNA BAR, NUTZ OVER CHOCOLATE",
+    "brand": "",
+    "fdc_id": 174787,
+    "kcal_per_100g": 403
+   },
+   {
+    "description": "Beverages, Protein powder soy based",
+    "brand": "",
+    "fdc_id": 173181,
+    "kcal_per_100g": 388
+   },
+   {
+    "description": "Beverages, Protein powder whey based",
+    "brand": "",
+    "fdc_id": 173180,
+    "kcal_per_100g": 352
+   }
+  ],
+  "protein shake": [
+   {
+    "description": "Beverages, nutritional shake mix, high protein, powder",
+    "brand": "",
+    "fdc_id": 174181,
+    "kcal_per_100g": 392
+   },
+   {
+    "description": "Beverages, SLIMFAST, Meal replacement,  High Protein Shake, Ready-To-Drink, 3-2-1 plan",
+    "brand": "",
+    "fdc_id": 173170,
+    "kcal_per_100g": 61.0
+   },
+   {
+    "description": "Beverages, UNILEVER, SLIMFAST Shake Mix, high protein, whey powder, 3-2-1 Plan,",
+    "brand": "",
+    "fdc_id": 173174,
+    "kcal_per_100g": 433
+   },
+   {
+    "description": "BURGER KING, Vanilla Shake",
+    "brand": "",
+    "fdc_id": 170700,
+    "kcal_per_100g": 168
+   },
+   {
+    "description": "Milk shakes, thick chocolate",
+    "brand": "",
+    "fdc_id": 170883,
+    "kcal_per_100g": 119
+   },
+   {
+    "description": "Milk shakes, thick vanilla",
+    "brand": "",
+    "fdc_id": 170884,
+    "kcal_per_100g": 112
+   },
+   {
+    "description": "Shake, fast food, vanilla",
+    "brand": "",
+    "fdc_id": 173226,
+    "kcal_per_100g": 148
+   },
+   {
+    "description": "Beverages, shake, fast food, strawberry",
+    "brand": "",
+    "fdc_id": 175102,
+    "kcal_per_100g": 113
+   }
+  ]
+ }
+}
