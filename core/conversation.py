@@ -2041,6 +2041,11 @@ async def _run_turn(
             # an unanswered question.
             result = {"text": _sft["text"], "raw_content": [],
                       "tool_calls": _sft.get("tool_calls") or [],
+                      # THE CANONICAL INTERACTION, carried to the wire. Built
+                      # and persisted since B-1; it had no channel to a client
+                      # until now, so `POST /chat/answer` demanded ids nothing
+                      # could tell anyone.
+                      "b1_interaction": _sft.get("b1_interaction"),
                       "stop_reason": "structured_food"}
         else:
             # Under the turn budget. Setting the deadline contextvar bounds
@@ -4077,6 +4082,12 @@ user_message=_user_text or "")
         _response_streamed = False
 
     resp = Response.from_text(response_text)
+    # ONLY WHEN A CANONICAL OPERATION OWNS THE TURN. Absent otherwise, so its
+    # presence IS the signal that a structured answer is possible — and a
+    # channel that cannot answer by id simply never sees it.
+    _b1_ix = result.get("b1_interaction") if isinstance(result, dict) else None
+    if _b1_ix:
+        resp.interaction = _b1_ix
 
     # ── Answer chips for a structured ask ─────────────────────────────────────
     # The ask's REAL options (ambiguity top_options, brand shelves) become

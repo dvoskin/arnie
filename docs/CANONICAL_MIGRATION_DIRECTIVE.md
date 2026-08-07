@@ -2140,6 +2140,45 @@ real enrichment together, then freeze the wire contract, the semantic
 candidate contract and the decision telemetry. **Client work begins only
 after that freeze.**
 
+**B-1b.0 — THE INTERACTION HAD NO WIRE CHANNEL.** *(2026-08-06, found by the
+iOS integration on its first hour — which is what integrations are for.)*
+
+`POST /chat/answer` requires `operation_id`, `revision`, `field_id` and
+`option_id`. **Nothing on the wire could tell a client what any of them
+were.** Probed live rather than reasoned about:
+
+```text
+serialize_response keys:  v bubbles reaction effect buttons link cards
+                          achievement program_updated reasoning
+buttons:                  [{label: "1 chicken breast",
+                            value: "1 chicken breast"}]   <- a LABEL as a value
+pending_clarifications:   the LEGACY question shape, no ids
+interaction:              did not exist
+```
+
+The interaction was built, persisted and rendered into the SENTENCE — correct
+for Telegram, where the sentence is the whole interface — and a native client
+had only `buttons`, whose `value` is a label travelling back as semantics: the
+round-trip C11 exists to forbid. The endpoint was unanswerable by the client it
+was built for.
+
+`Response.interaction` is now on the wire, **additive and optional**: absent
+unless a canonical operation owns the turn, so its presence IS the signal that
+a structured answer is possible, and older clients are unaffected.
+
+**TWO THINGS THAT ARE NOT DEFECTS, checked before assuming they were:**
+
+* **iOS is deliberately absent from `_CHANNEL_CAPABILITY`.** B-1 declines every
+  iOS turn with `client_incapable` BY DESIGN — *"naming it here before then
+  would be a capability claim about software that does not exist."* Adding
+  `"ios": ID_ADDRESSED` is the LAST step of B-1b, after a build renders
+  fields and submits ids. Gates driven through `/api/v1/chat` therefore skip
+  on a designed exclusion and prove nothing, so they drive the capable channel
+  instead — the wire contract is channel-agnostic.
+* **`field_id` rides the FIELD on the wire and the OPTION in storage.** Both
+  deliberate: the field computes it as a property, so only options survive
+  serialization. A client reads it from the field.
+
 **9 — the client** receives and returns identifiers and labels only, and never
 generates options, chooses units, converts quantities, infers meaning from
 labels, ranks candidates, or recreates missing semantics.

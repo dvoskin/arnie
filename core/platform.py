@@ -250,6 +250,25 @@ class Response:
     # as a card instead of (or alongside) a text bubble. Telegram/iMessage
     # adapters ignore this — chat-bot transports have no card concept.
     cards: list[dict] = field(default_factory=list)
+    #: THE CANONICAL CLARIFICATION, for clients that can answer by id.
+    #:
+    #: Without this there was NO WIRE CHANNEL for it at all. The interaction
+    #: was built, persisted and rendered into the sentence — which is right
+    #: for Telegram, where the sentence IS the interface — and a native client
+    #: had only two ways to see a question: `buttons`, whose `value` is a
+    #: LABEL that travels back as semantics (the round-trip C11 forbids), and
+    #: `pending_clarifications`, which carries the legacy question shape with
+    #: no ids at all.
+    #:
+    #: So `POST /chat/answer` required `operation_id`, `revision`, `field_id`
+    #: and `option_id`, and nothing on the wire could tell a client what any
+    #: of them were. Found by the iOS integration, which is what integrations
+    #: are for.
+    #:
+    #: ADDITIVE AND OPTIONAL: absent unless a canonical operation owns the
+    #: turn, so older clients are unaffected and a channel that cannot answer
+    #: by id never receives it.
+    interaction: Optional[dict] = None
     # A newly-earned badge this turn (core/achievements.py wire block:
     # {primary: {id,title,line,icon,tier}, new: [ids], celebrate: bool}).
     # iOS drives its celebration overlay from this; other transports ignore it.
@@ -509,6 +528,10 @@ def serialize_response(response: Response) -> dict:
         # client always sees a stable shape — lenient decode lets older clients
         # ignore unknown card `type` values for forward compatibility.
         "cards": list(response.cards),
+        # The canonical clarification, for clients that answer by id. Null on
+        # every turn that does not own one, so its presence IS the signal that
+        # a structured answer is possible.
+        "interaction": getattr(response, "interaction", None),
         # Newly-earned badge this turn (or null) — older clients ignore it.
         "achievement": response.achievement,
         # Program edited this turn — older clients ignore it.
