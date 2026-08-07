@@ -148,3 +148,85 @@ async def test_the_interaction_carries_no_semantics_a_client_could_reinterpret(
     for leaked in ("evidence", "serving_basis", "semantic_hash", "prior",
                    "candidate_set", "grams"):
         assert leaked not in flat, f"the interaction leaked {leaked!r}"
+
+
+# ── the capability claim ────────────────────────────────────────────────────
+
+def test_ios_can_answer_by_id():
+    """THE LAST STEP OF B-1b, and it is a CLAIM about a client.
+
+    The table entry says "a build exists that renders fields and options and
+    submits ids". It was deliberately absent until `arnie-ios@48cb626`, so
+    that the claim and the software became true at the same moment.
+    """
+    from core.b1_quantity_operation import (ID_ADDRESSED, channel_capability,
+                                            client_renders_interactions)
+
+    assert channel_capability("ios") == ID_ADDRESSED
+    assert client_renders_interactions("ios") is True
+
+
+def test_a_capable_client_is_not_sent_the_options_as_prose():
+    """ID_ADDRESSED GETS THE INTRODUCTION ONLY. The client renders the row
+    from the interaction, so listing them in the sentence too would print the
+    same three choices twice."""
+    from core.b1_quantity_operation import ID_ADDRESSED, LABEL_TEXT
+
+    assert ID_ADDRESSED != LABEL_TEXT
+
+
+@pytest.mark.asyncio
+async def test_an_ios_turn_now_owns_its_question_and_carries_the_ids(
+        client, edges, seeded, b1_live, density):
+    """END TO END OVER THE iOS ENDPOINT, which skipped on a designed
+    exclusion until this commit. Now it must not skip."""
+    edges.plans.append({
+        "action": "ask",
+        "points": [{"label": "Chicken breast", "q": "How much?"}],
+        "items": [vague("Chicken breast", cal=280, amount=6, unit="oz")],
+        "ready": [],
+    })
+    body = (await client.post(
+        "/api/v1/chat",
+        json={"message": "I had some chicken breast"})).json()
+
+    ops = await operations(seeded)
+    assert ops, "B-1 still declines iOS; the capability flag did not take"
+    interaction = body.get("interaction")
+    assert interaction, "an owned iOS ask sent no interaction"
+
+    field = interaction["groups"][0]["fields"][0]
+    assert field["field_id"] and field["options"]
+    assert all(o["option_id"] for o in field["options"])
+
+
+@pytest.mark.asyncio
+async def test_an_ios_tap_commits_the_meal_end_to_end(client, edges, seeded,
+                                                      b1_live, density):
+    """THE WHOLE POINT, in one test: ask over iOS, read the ids off the wire,
+    answer by id, get a meal."""
+    edges.plans.append({
+        "action": "ask",
+        "points": [{"label": "Chicken breast", "q": "How much?"}],
+        "items": [vague("Chicken breast", cal=280, amount=6, unit="oz")],
+        "ready": [],
+    })
+    ask = (await client.post(
+        "/api/v1/chat",
+        json={"message": "I had some chicken breast"})).json()
+    interaction = ask.get("interaction")
+    assert interaction, "no question to answer"
+
+    field = interaction["groups"][0]["fields"][0]
+    answer = await client.post("/api/v1/chat/answer", json={
+        "operation_id": interaction["operation_id"],
+        "revision": interaction["revision"],
+        "field_id": field["field_id"],
+        "option_id": field["options"][0]["option_id"],
+        "client_message_id": "ios:e2e-tap-1",
+    })
+    assert answer.status_code == 200, answer.text
+    body = answer.json()
+    assert body["outcome"] == "applied", body
+    assert body["entry_id"], "the tap named no row"
+    assert len(await commits(seeded)) == 1

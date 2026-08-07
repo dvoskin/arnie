@@ -224,7 +224,12 @@ def test_a_modality_is_refused_loudly_not_silently():
 
     assert b1.client_renders_interactions("telegram") is True
     assert b1.client_renders_interactions("imessage") is True
-    assert b1.client_renders_interactions("ios") is False
+    # iOS IS CAPABLE SINCE `arnie-ios@48cb626`. It is asserted here because
+    # this gate's whole point is that "text" and "ios" must not be confused —
+    # and now that iOS is capable, passing the MODALITY where the CHANNEL
+    # belongs is the more expensive mistake, not the cheaper one: it declines
+    # a client that can answer.
+    assert b1.client_renders_interactions("ios") is True
 
 
 def test_the_call_site_passes_the_platform():

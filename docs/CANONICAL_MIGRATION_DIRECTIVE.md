@@ -2179,6 +2179,26 @@ a structured answer is possible, and older clients are unaffected.
   deliberate: the field computes it as a property, so only options survive
   serialization. A client reads it from the field.
 
+**9 — status: BUILT AND ON DEVICE** *(2026-08-06, `arnie-ios@48cb626`)*.
+
+```text
+ClarificationInteraction   ids and labels; no patch, candidate or evidence
+ChatResponse.interaction   always present, null on most turns; NON-NULL is
+                           the signal a structured answer is possible
+answerClarification()      POST /chat/answer, four ids + a stable key
+```
+
+**One key per tap, reused on retry** — the server makes it the turn identity
+its claim AND its settlement key on, so a resend resolves to the original
+commit. Taps are once-only while one is in flight; an unknown outcome fails
+safe to "still open" so a newer server cannot make an older build claim a meal
+it never wrote; a network failure keeps the question open and the key intact.
+
+**`"ios": ID_ADDRESSED` is now in `_CHANNEL_CAPABILITY`** — added when the
+build that honours it existed and not before. Three gates pinned the old state
+and had to be updated deliberately, which is what they were for. Exactly one
+channel is ID-addressed, and a gate says so.
+
 **9 — the client** receives and returns identifiers and labels only, and never
 generates options, chooses units, converts quantities, infers meaning from
 labels, ranks candidates, or recreates missing semantics.

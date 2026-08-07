@@ -325,9 +325,16 @@ _CHANNEL_CAPABILITY = {
     "imessage": LABEL_TEXT,
     "bluebubbles": LABEL_TEXT,
     "sms": LABEL_TEXT,
-    # ios: absent until B-1b ships a build that renders fields/options and
-    # submits ids. Naming it here before then would be a capability claim
-    # about software that does not exist.
+    # ios: ADDED 2026-08-06, when the build that honours it existed and not
+    # before. `arnie-ios@48cb626` decodes `interaction`, renders the options
+    # from it, and answers `POST /chat/answer` with the four ids and a stable
+    # `client_message_id`.
+    #
+    # THE ENTRY IS THE CAPABILITY CLAIM. Writing it earlier would have
+    # promised behaviour no software had, and B-1 would have sent iOS a
+    # canonical question the client could only read as prose — which is the
+    # sentence parser surviving inside its own replacement.
+    "ios": ID_ADDRESSED,
 }
 
 

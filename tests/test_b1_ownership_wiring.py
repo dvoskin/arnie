@@ -141,14 +141,23 @@ async def test_an_incapable_client_never_reaches_the_gate(sessions, user):
             select(func.count()).select_from(PendingOperation))).scalar() == 0
 
 
-def test_only_server_rendered_channels_are_capable_today():
-    """iOS is deliberately absent until B-1b ships a build that renders
-    fields/options — claiming otherwise here would be a capability claim about
-    software that does not exist."""
+def test_every_capable_channel_has_software_that_honours_it():
+    """A TABLE ENTRY IS A CLAIM ABOUT A CLIENT.
+
+    iOS was deliberately absent until `arnie-ios@48cb626` decoded
+    `interaction`, rendered its options and answered by id — so the claim and
+    the software became true in the same breath rather than one waiting on the
+    other.
+
+    An unknown channel is still incapable, which is the part that must never
+    soften: a client nobody has written cannot be assumed to render anything.
+    """
     assert b1.client_renders_interactions("telegram")
     assert b1.client_renders_interactions("imessage")
-    assert not b1.client_renders_interactions("ios")
+    assert b1.client_renders_interactions("ios")
     assert not b1.client_renders_interactions(None)
+    assert not b1.client_renders_interactions("android")
+    assert not b1.client_renders_interactions("watch")
 
 
 def test_label_text_is_a_restricted_capability_not_an_equivalent_one():
@@ -167,11 +176,18 @@ def test_label_text_is_a_restricted_capability_not_an_equivalent_one():
     """
     assert b1.channel_capability("telegram") == b1.LABEL_TEXT
     assert b1.channel_capability("imessage") == b1.LABEL_TEXT
-    assert b1.channel_capability("ios") is None
     assert b1.ID_ADDRESSED != b1.LABEL_TEXT
-    assert b1.ID_ADDRESSED not in set(b1._CHANNEL_CAPABILITY.values()), \
-        "no channel may claim ID-addressed answers until one actually sends " \
-        "operation_id + field_id + option_id"
+
+    # iOS IS ID-ADDRESSED NOW, and exactly one channel is — the one whose
+    # client sends operation_id + revision + field_id + option_id. A second
+    # entry appearing here without a build behind it is the claim this gate
+    # exists to refuse.
+    assert b1.channel_capability("ios") == b1.ID_ADDRESSED
+    id_addressed = {c for c, cap in b1._CHANNEL_CAPABILITY.items()
+                    if cap == b1.ID_ADDRESSED}
+    assert id_addressed == {"ios"}, (
+        f"{sorted(id_addressed)} claim ID-addressed answers; every one of "
+        f"them needs a client that actually sends the four identifiers")
 
 
 @pytest.mark.asyncio
