@@ -185,6 +185,6 @@ def test_only_a_repair_counts_as_having_asked():
             if str(o.value) == "repair"}
     assert asks == {Outcome.REPAIR}, asks
     assert {o.value for o in Outcome} == {
-        "applied", "cancelled", "repair", "refused"}, (
+        "applied", "cancelled", "refused", "repair", "replay"}, (
         "the outcome set changed — re-check which of them actually ask a "
         "question before trusting `asked_this_turn`")

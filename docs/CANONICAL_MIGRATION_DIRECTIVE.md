@@ -2038,11 +2038,55 @@ oversight.
 
 **8364 pass on SQLite and 8364 on Postgres**, live-enrichment join running.
 
-**Still open before step 8 closes** — `client_message_id`; first-class
-`REPLAY`; expiry classified as a LIFECYCLE disposition rather than an answer
-outcome *(accepted: a late but addressed answer is still valid, so
-`Outcome.EXPIRED` would be the wrong abstraction)*; resend-to-refusal
-attribution **deferred to B-1b.3** as advised; and attached CI.
+**8.2 (partial) — `REPLAY` is a first-class outcome.**
+
+`APPLIED` with `reason="replay"` was an unstable contract: an authoritative
+result handed back with nothing new written was indistinguishable from a fresh
+mutation, so a client could not tell whether to animate a row and "successful
+applications" silently counted repeats. Split into two properties —
+`turn.applied` (the user has an authoritative result, new OR replayed, which
+is what every existing caller means) and `turn.mutated` (a new meal was
+written, which is what the count means).
+
+**Three gates caught the addition**, including one written earlier for exactly
+this: *"the outcome set changed — re-check which of them actually ask a
+question before trusting `asked_this_turn`"*. Re-checked; `REPLAY` asks
+nothing.
+
+**THE STRUCTURED ENDPOINT WAS BUILT AND THEN REVERTED.**
+`POST /api/v1/chat/answer` — the `(operation_id, revision, field_id,
+option_id, client_message_id)` envelope — was written with 13 HTTP gates that
+passed against real returned bytes. It was reverted unshipped because the
+mutation-policy ratchet found it **Class A non-compliant**: the route carries
+no canonical turn id, request trace, durable claim or concurrency proof, and
+every other mutating route does. Making the scanner pass by mentioning the
+right symbols would be gaming a governance gate; wiring `MutationTurn` and
+`RequestTrace` properly is real work with its own proof, and it is the
+remaining 8.2 task rather than something to slip in.
+
+*The design is settled and the tests are written* — the envelope, `PLATFORM`
+turn-id derivation so a retried tap resolves to the SAME commit rather than a
+second dedup mechanism that could disagree with settlement, typed reasons on
+the wire, and a gate proving the response leaks no semantics a client could
+reinterpret.
+
+**Still open before step 8 closes:**
+
+```text
+[ ] POST /chat/answer, Class A compliant, with a concurrency proof
+[ ] expiry frozen as a LIFECYCLE disposition, gated
+       accepted: NOT Outcome.EXPIRED — a late but addressed answer is still
+       valid, so an answer outcome is the wrong abstraction
+[ ] golden request/response fixtures for the endpoint
+[ ] attached mandatory CI
+       I cannot launch or configure Actions, or check billing, from here.
+       Until a check attaches to a SHA, every number in this document is
+       author-reported execution evidence.
+```
+
+Resend-to-refusal attribution stays **deferred to B-1b.3** as advised.
+`unrelated_report_while_awaiting` stays **unimplemented**, with a gate
+asserting its absence.
 
 **7–8** — run the sequence corpus through the real candidate pipeline *and*
 real enrichment together, then freeze the wire contract, the semantic

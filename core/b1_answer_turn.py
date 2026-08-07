@@ -67,6 +67,19 @@ class AnswerTurn:
 
     @property
     def applied(self) -> bool:
+        """The user has an authoritative result — new OR replayed.
+
+        Deliberately true for both, because every caller that asks "did this
+        turn succeed" means this. `mutated` is the narrower question.
+        """
+        return (self.outcome in (Outcome.APPLIED, Outcome.REPLAY)
+                and not self.internal_failure)
+
+    @property
+    def mutated(self) -> bool:
+        """A NEW meal was written. The count "successful applications" means
+        this one, and conflating it with a replay inflates every rate computed
+        from it."""
         return self.outcome is Outcome.APPLIED and not self.internal_failure
 
     @property
@@ -204,7 +217,7 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
         result = await ops.settle(db, user=user, owned=owned,
                                   patch=answer.patch,
                                   source_turn_id=source_turn_id)
-        return AnswerTurn(Outcome.APPLIED, operation_id=owned.operation_id,
+        return AnswerTurn(Outcome.REPLAY, operation_id=owned.operation_id,
                           field_id=live_field.field_id, patch=answer.patch,
                           result=result, reason="replay")
 

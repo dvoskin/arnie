@@ -44,6 +44,15 @@ class Outcome(str, Enum):
     """The only ways a canonical answer turn can end. There is no `LEGACY`
     member, and adding one is the thing C10 forbids."""
     APPLIED = "applied"
+    #: AN AUTHORITATIVE RESULT WAS RETURNED, AND NOTHING NEW WAS WRITTEN.
+    #:
+    #: A settled operation answering the same tap again is not a failure and
+    #: not a new application — it is the original commit, handed back. Carried
+    #: as `APPLIED` with `reason="replay"`, it was indistinguishable from a
+    #: fresh mutation in every count that mattered: a client could not tell
+    #: whether to animate a new row, and "successful applications" silently
+    #: included repeats.
+    REPLAY = "replay"
     #: The answer was understood as an explicit stop. The operation closes
     #: without a write; the user said so.
     CANCELLED = "cancelled"

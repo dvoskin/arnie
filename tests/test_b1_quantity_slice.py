@@ -360,7 +360,7 @@ def test_an_explicit_cancel_closes_the_operation():
 def test_the_answer_outcomes_have_no_legacy_member():
     """C10, at the type level: there is no way to SAY 'fall back' here."""
     assert {o.value for o in Outcome} == {
-        "applied", "cancelled", "repair", "refused"}
+        "applied", "cancelled", "repair", "refused", "replay"}
 
 
 def test_a_typed_answer_is_checked_for_staleness_too():

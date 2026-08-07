@@ -136,7 +136,10 @@ def test_the_observation_columns_are_frozen():
 @pytest.mark.parametrize("enum,members", [
     ("AnswerModality", {"option_id", "label_selection", "user_text",
                         "command", "repair", "unknown"}),
-    ("Outcome", {"applied", "cancelled", "repair", "refused"}),
+    # `replay` promoted in 8.2: an authoritative result handed back with
+    # nothing new written. Carried as APPLIED it was indistinguishable from a
+    # fresh mutation, so "successful applications" silently counted repeats.
+    ("Outcome", {"applied", "cancelled", "repair", "refused", "replay"}),
     # `unusable_amount` was frozen with NO REACHABLE PRODUCER — a planned
     # behaviour in a vocabulary that is supposed to describe actual ones.
     # Removed rather than left as a value analysis would look for and never
