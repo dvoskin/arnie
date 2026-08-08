@@ -156,3 +156,182 @@ def refuse_or_return(priced: Optional[PricedFood], *, food_name: str
                 food_name, priced.rung.value, priced.calories,
                 priced.evidence_id or "-")
     return priced
+
+
+# ══ THE EVIDENCE THE PRICER CONSUMES ════════════════════════════════════════
+#
+# EVERY RUNG IS HANDED ITS EVIDENCE. Nothing here retrieves: no provider
+# client, no model call, no `await` on a network. That is not a style rule —
+# it is Gate B, and it is what makes a canonical settle survive with provider
+# and resolver access poisoned. Acquisition belongs to adapters upstream, the
+# same boundary `preparation_activation` already holds for materiality.
+
+
+@dataclass(frozen=True)
+class MemoryEvidence:
+    """This user has logged this food before and the match was trusted.
+    Straight from `user_food_matches` — measured at 133 ms in production, and
+    the reason a warm settle is already fast."""
+    per100g: dict
+    source_id: str = ""
+    confidence: float = 0.9
+
+
+@dataclass(frozen=True)
+class ProductEvidence:
+    """An EXACT authoritative product: barcode, GTIN, or a provider record
+    identified by one.
+
+    Admissible without semantic qualification because a barcode is not an
+    ambiguous string match — it names one product. A FUZZY OFF NAME MATCH IS
+    NOT THIS, and must never be constructed here: `_match: "exact"` once said
+    so about a pizza.
+    """
+    identifier: str
+    per100g: dict
+    serving_grams: Optional[float] = None
+    source_id: str = ""
+
+
+@dataclass(frozen=True)
+class ArtifactEvidence:
+    """Qualified structured candidates for (entity, preparation), read from the
+    committed pricing artifact.
+
+    QUALIFIED CANDIDATES, NOT A CHOSEN WINNER. The artifact stores the evidence
+    a model judged admissible; `best_candidate` — deterministic, measured at
+    0 ms — still picks. Storing the winner would move ranking authority into a
+    model, which is the opposite of the fix.
+    """
+    candidates: tuple = ()
+    fingerprint: str = ""
+
+
+@dataclass(frozen=True)
+class EstimateEvidence:
+    """The interpreter's own numbers. The last rung, and the only one that may
+    not price at zero."""
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    carbs: Optional[float] = None
+    fat: Optional[float] = None
+
+
+def _profile(per100g: dict, *, source: str, source_id: str,
+             confidence: float, estimated: bool):
+    """A per-100 g profile, with unknown fields left UNKNOWN.
+
+    `profile_from_values` drops None, so a missing sodium stays missing rather
+    than becoming a confident zero — the same distinction the zero rule makes
+    one level up.
+    """
+    from skills.nutrition.models import profile_from_values
+
+    return profile_from_values(
+        source=source, basis="per_100g", confidence=confidence,
+        estimated=estimated, source_id=source_id,
+        **{k: v for k, v in (per100g or {}).items()})
+
+
+def _from_memory(ev: MemoryEvidence):
+    return (_profile(ev.per100g, source="memory", source_id=ev.source_id,
+                     confidence=ev.confidence, estimated=False),
+            Rung.MEMORY, ev.source_id or "memory")
+
+
+def _from_product(ev: ProductEvidence):
+    return (_profile(ev.per100g, source="product", source_id=ev.identifier,
+                     confidence=0.95, estimated=False),
+            Rung.PRODUCT, ev.identifier)
+
+
+def _from_artifact(ev: ArtifactEvidence, *, query: str):
+    """Qualified candidates -> the deterministic winner.
+
+    `best_candidate` is the ranker production already uses and the one the
+    trace measured at 0 ms. Passing it ONLY qualified candidates is the whole
+    change: the legacy path ranked over raw rows, which is how one identity
+    priced 295 kcal and then 329.
+    """
+    from core.food_intelligence import best_candidate
+
+    winner, _conf = best_candidate(query, list(ev.candidates or ()))
+    if not winner:
+        return None
+    per100g = winner.get("per100g") or {}
+    if not per100g:
+        return None
+    fdc = str(winner.get("fdc_id") or "")
+    return (_profile(per100g, source="usda", source_id=fdc,
+                     confidence=0.85, estimated=False),
+            Rung.ARTIFACT, f"usda:{fdc}" if fdc else "usda")
+
+
+def _from_estimate(ev: EstimateEvidence):
+    """The bounded fallback. Its numbers are already per-portion — the
+    interpreter estimated THIS serving — so it carries a per_portion basis and
+    is not rescaled."""
+    if ev.calories is None:
+        return None
+    return (_profile({"calories": ev.calories, "protein": ev.protein,
+                      "carbs": ev.carbs, "fat": ev.fat},
+                     source="estimate", source_id="", confidence=0.4,
+                     estimated=True),
+            Rung.ESTIMATE, "")
+
+
+def price(*, entity: str, preparation: str = "", consumed=None,
+          memory: Optional[MemoryEvidence] = None,
+          product: Optional[ProductEvidence] = None,
+          artifact: Optional[ArtifactEvidence] = None,
+          estimate: Optional[EstimateEvidence] = None) -> PricedFood:
+    """What this food costs. SYNCHRONOUS, and deliberately so.
+
+    A synchronous signature is the strongest possible statement of Gate B:
+    there is no `await` here, so no provider or model call can hide in the
+    normal settle path. Evidence arrives already gathered.
+
+    RUNG ORDER IS AUTHORITY ORDER — memory, product, artifact, estimate — and
+    the first rung that can produce numbers wins. `refuse_or_return` is the
+    single exit, so no rung can smuggle out an indefensible price.
+    """
+    from skills.nutrition.scaling import Per100g, scale_profile
+
+    chosen = None
+    for ev, build in ((memory, _from_memory), (product, _from_product),
+                      (artifact, lambda e: _from_artifact(e, query=entity)),
+                      (estimate, _from_estimate)):
+        if ev is None:
+            continue
+        try:
+            chosen = build(ev)
+        except Exception:
+            logger.warning("rung failed for %s", entity, exc_info=True)
+            chosen = None
+        if chosen:
+            break
+
+    if chosen is None:
+        return refuse_or_return(None, food_name=entity)
+
+    profile, rung, evidence_id = chosen
+
+    # PORTION SCALING THROUGH THE EXISTING SYSTEM (P1.2). `scaling.py` already
+    # owns basis -> consumed conversion; a second one here would be the drift
+    # this migration exists to remove. The estimate rung is already
+    # per-portion and is never rescaled.
+    basis_name = "per_portion"
+    if rung is not Rung.ESTIMATE and consumed is not None:
+        profile = scale_profile(profile, Per100g(), consumed)
+        basis_name = "per_100g"
+
+    return refuse_or_return(
+        PricedFood(
+            calories=float(profile.amount("calories") or 0.0),
+            protein=profile.amount("protein"),
+            carbs=profile.amount("carbs"),
+            fats=profile.amount("fat"),
+            fiber=profile.amount("fiber"), sugar=profile.amount("sugar"),
+            sodium=profile.amount("sodium"),
+            rung=rung, evidence_id=evidence_id, basis=basis_name),
+        food_name=entity)
