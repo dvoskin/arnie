@@ -30,6 +30,16 @@ from __future__ import annotations
 import json
 
 import pytest
+
+from core.canonical_pricing import PricedFood as _PricedFood
+from core.canonical_pricing import Rung as _Rung
+
+
+def _mass(consumed):
+    """The answered mass as the old stub reported it, so the
+    existing assertions keep their meaning."""
+    g = getattr(consumed, 'grams', None)
+    return f'{g:g}g' if g is not None else ''
 import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -127,11 +137,14 @@ def priced(monkeypatch):
         def __init__(self, calories):
             self.calories = calories
 
-    async def _fake(db, user, food_name, inp):
-        seen.append(food_name)
-        return _Analysis(by_name.get(food_name.strip().lower(), 165.0))
+    def _fake(*, entity, consumed=None, **kw):
+        seen.append(entity)
+        return _PricedFood(
+            calories=by_name.get(entity.strip().lower(), 165.0),
+            protein=31.0, carbs=0.0, fats=3.6,
+            rung=_Rung.ARTIFACT, evidence_id="usda:test")
 
-    monkeypatch.setattr("handlers.tool_executor._analyze_food", _fake)
+    monkeypatch.setattr("core.canonical_pricing.price", _fake)
     return seen
 
 
@@ -351,11 +364,12 @@ async def test_preparation_does_not_move_a_food_whose_evidence_is_the_same(
         provenance = None
         confidence = "likely"
 
-    async def _fake(db, user, food_name, inp):
-        seen.append(food_name)
-        return _Flat()
+    def _fake(*, entity, consumed=None, **kw):
+        seen.append(entity)
+        return _PricedFood(calories=200.0, protein=20.0, carbs=5.0, fats=8.0,
+                           rung=_Rung.ARTIFACT, evidence_id="usda:flat")
 
-    monkeypatch.setattr("handlers.tool_executor._analyze_food", _fake)
+    monkeypatch.setattr("core.canonical_pricing.price", _fake)
 
     calories = {}
     for turn, option in (("g", "prep_grilled"), ("f", "prep_fried")):

@@ -349,3 +349,60 @@ def test_the_pricer_builds_no_second_scaling_system():
              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
     assert not {n for n in names if "scal" in n.lower() or "factor" in n.lower()}, (
         f"the pricer grew its own scaling: {names}")
+
+
+# ── THE NON-MUTATION GATE: a refusal writes nothing ─────────────────────────
+
+def test_pricing_refusal_is_raised_before_anything_is_written():
+    """P1.4's required gate, asserted STRUCTURALLY.
+
+    `settle` prices BEFORE `commit_or_load_existing`, so a `PricingRefused`
+    cannot reach a write — no food row, no ledger event, and the operation
+    never reports APPLIED. That ordering is the guarantee; this pins it, so a
+    later edit that moves pricing below the commit fails here rather than in
+    production.
+    """
+    import inspect
+    import textwrap
+
+    from core import b1_quantity_operation as b1
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(b1.settle)))
+    price_line = commit_line = None
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = getattr(node.func, "id", "") or getattr(node.func, "attr", "")
+        if name == "price" and price_line is None:
+            price_line = node.lineno
+        if name == "commit_or_load_existing":
+            commit_line = node.lineno
+    assert price_line and commit_line, (price_line, commit_line)
+    assert price_line < commit_line, (
+        "pricing moved BELOW the commit — a refusal could now leave a written "
+        "row behind, which is the failure entry 2932 already demonstrated")
+
+
+def test_the_refusal_is_caught_by_type_and_never_generically():
+    """A bare `except Exception` around settle would turn a refusal back into
+    a fallback number — the exact defect being deleted. The handler must name
+    `PricingRefused` and return REFUSED, not APPLIED."""
+    import inspect
+
+    from core import b1_answer_turn as at
+
+    tree = ast.parse(inspect.getsource(at))
+    found = False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ExceptHandler) or node.type is None:
+            continue
+        name = getattr(node.type, "id", "") or getattr(node.type, "attr", "")
+        if name != "PricingRefused":
+            continue
+        found = True
+        returns = [n for n in ast.walk(node) if isinstance(n, ast.Return)]
+        assert returns, "the refusal handler returns nothing"
+        rendered = ast.dump(returns[0])
+        assert "REFUSED" in rendered, "a refusal did not return REFUSED"
+        assert "APPLIED" not in rendered
+    assert found, "no PricingRefused handler — a refusal would crash the turn"

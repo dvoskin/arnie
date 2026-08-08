@@ -13,6 +13,16 @@ on one shared connection that claim cannot fail.
 import json
 
 import pytest
+
+from core.canonical_pricing import PricedFood as _PricedFood
+from core.canonical_pricing import Rung as _Rung
+
+
+def _mass(consumed):
+    """The answered mass as the old stub reported it, so the
+    existing assertions keep their meaning."""
+    g = getattr(consumed, 'grams', None)
+    return f'{g:g}g' if g is not None else ''
 import pytest_asyncio
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -94,12 +104,17 @@ def _priced(monkeypatch):
 
     seen = {}
 
-    async def _fake(db, user, food_name, inp):
-        seen["quantity"] = inp.get("quantity")
-        seen["food"] = food_name
-        return _Analysis()
+        # REPOINTED (P1.4): the canonical lane no longer rents
+        # `_analyze_food`. It calls the synchronous canonical pricer,
+        # so the stub is a pricer — keyword args, `PricedFood` out.
+        # The answered MASS is still what is observed; it now arrives
+        # as `consumed.grams` instead of a quantity string.
+    def _fake(*, entity, consumed=None, **kw):
+        seen["quantity"] = _mass(consumed)
+        seen["food"] = entity
+        return _PricedFood(calories=231.0, protein=43.0, carbs=0.0, fats=5.0, rung=_Rung.ARTIFACT, evidence_id="usda:test")
 
-    monkeypatch.setattr("handlers.tool_executor._analyze_food", _fake)
+    monkeypatch.setattr("core.canonical_pricing.price", _fake)
     return seen
 
 

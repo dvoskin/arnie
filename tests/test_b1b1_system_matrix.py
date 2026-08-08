@@ -63,14 +63,28 @@ def density(monkeypatch):
     is meant to catch — B-1.75 persisted the answered quantity correctly while
     the ask-time calories survived unchanged. With a known density, 50 g must
     be exactly 100 cal and nothing else, so a stale number cannot pass.
-    """
-    import api.usda as usda
 
-    async def _hit(query, page_size=5):
-        return [{"fdc_id": 1, "_match": "exact", "description": query,
-                 "per100g": {"calories": 200.0, "protein": 20.0,
-                             "carbs": 10.0, "fat": 5.0}}]
-    monkeypatch.setattr(usda, "search_food", _hit)
+    REPOINTED (P1.4): this stubbed `usda.search_food`, because the legacy
+    ladder reached a provider from inside settlement. The canonical pricer
+    never does — that is the whole point of a synchronous `price()` — so a
+    provider stub is now unreachable and the ESTIMATE rung won instead,
+    committing 140 cal for 50 g (the ask-time 280 scaled by 0.5) rather than
+    the intended 100.
+
+    The deterministic source is therefore supplied as EVIDENCE, at the rung
+    that actually prices: qualified artifact candidates. Same numbers, same
+    proof, expressed where the canonical lane can see it.
+    """
+    from core.canonical_pricing import ArtifactEvidence
+
+    def _evidence(entity, preparation=""):
+        return ArtifactEvidence(candidates=(
+            {"fdc_id": 1, "description": entity,
+             "per100g": {"calories": 200.0, "protein": 20.0,
+                         "carbs": 10.0, "fat": 5.0}},), fingerprint="test")
+
+    monkeypatch.setattr(
+        "skills.nutrition.pricing_artifact.evidence_for", _evidence)
     return {"cal_per_g": 2.0, "protein_per_g": 0.2,
             "carbs_per_g": 0.1, "fat_per_g": 0.05}
 

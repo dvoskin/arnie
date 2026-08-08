@@ -1641,10 +1641,16 @@ def _grams_of(quantity_text: str, item: dict):
             return float(grams)
         except (TypeError, ValueError):
             pass
+    # THE SAME NORMALIZER THE ASK PATH USES. An earlier draft invented a
+    # `skills.nutrition.quantity.parse_quantity` that does not exist, so this
+    # silently returned None and the estimate was never repriced — the defect
+    # looked fixed and was not.
     try:
-        from skills.nutrition.quantity import parse_quantity
+        from skills.nutrition.normalize import normalize_quantity
 
-        parsed = parse_quantity(quantity_text)
+        parsed = normalize_quantity(quantity_text,
+                                    str(item.get("food")
+                                        or item.get("name") or ""))
         return float(parsed.grams) if getattr(parsed, "grams", None) else None
     except Exception:
         return None
