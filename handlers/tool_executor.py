@@ -37,6 +37,17 @@ from core.units import G_PER_OZ, KG_PER_LB, LB_PER_KG, ML_PER_FLOZ
 
 logger = logging.getLogger(__name__)
 
+#: NARROW CHILD TIMING for the 3,197 ms inside `settle.pricing` that no
+#: existing stage owned (measured live 2026-08-07). Splitting only that
+#: hole: memory lookups, the enrichment lane, and everything the ladder
+#: does after candidates are in hand. No broad observability.
+#:
+#: Lazy so this module keeps its existing import surface; `request_trace`
+#: imports only stdlib, so either form is safe.
+def _stage(name):
+    from core.request_trace import timed
+    return timed(name)
+
 
 def _parse_log_date(date_str: str | None, user_timezone: str = "UTC"):
     """
@@ -2570,7 +2581,8 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
     # explicit user-stated label this turn short-circuits above, so a correction wins.
     if not generic:
         try:
-            _hist = await _logged_history_match(db, user.id, food_name, inp.get("quantity"))
+            with _stage("pricing.memory"):
+                _hist = await _logged_history_match(db, user.id, food_name, inp.get("quantity"))
         except Exception as e:
             logger.warning(f"logged-history match failed: {e}")
             _hist = None
@@ -2586,8 +2598,9 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
     # 1) Recurring memory — user's known staples (highest priority for any type)
     memory = None
     try:
-        m = (await get_user_food_match(db, user.id, name_norm)
-             if (name_norm and not generic) else None)
+        with _stage("pricing.memory"):
+            m = (await get_user_food_match(db, user.id, name_norm)
+                 if (name_norm and not generic) else None)
         # Staleness horizon: a cached match the user hasn't logged in ~90 days
         # may describe a reformulated product or a different brand behind the
         # same name. Skip it (user-confirmed rows never expire) and fall
@@ -2645,8 +2658,9 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
                 # future logs of this food are instant + complete.
                 try:
                     from api.usda import search_food
-                    cands = await search_food(food_name, page_size=8)
-                    best, _conf = best_candidate(food_name, cands)
+                    with _stage("pricing.memory"):
+                        cands = await search_food(food_name, page_size=8)
+                        best, _conf = best_candidate(food_name, cands)
                     if best:
                         for k, v in (best.get("per100g") or {}).items():
                             if k not in per100g or per100g[k] is None:
@@ -2667,9 +2681,11 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
                 "serving_text": getattr(m, "serving_text", None),
                 "per100g": per100g,
             }
-            await upsert_user_food_match(db, user.id, name_norm, food_name,
-                                         m.fdc_id, memory["per100g"], m.confidence,
-                                         serving_text=getattr(m, "serving_text", "") or "")
+            with _stage("pricing.memory"):
+                await upsert_user_food_match(
+                    db, user.id, name_norm, food_name, m.fdc_id,
+                    memory["per100g"], m.confidence,
+                    serving_text=getattr(m, "serving_text", "") or "")
     except Exception as e:
         logger.warning(f"food memory lookup failed: {e}")
 
@@ -2698,7 +2714,8 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
         if _pre is not None:
             usda, off = _pre
         else:
-            usda, off = await _fetch_usda_off(food_name, is_packaged)
+            with _stage("pricing.enrichment"):
+                usda, off = await _fetch_usda_off(food_name, is_packaged)
 
         # Web label lookup for a branded item whenever the DB hit isn't
         # label-grade (Danny 2026-07-23: "I don't see him using web search to
@@ -2950,7 +2967,8 @@ async def _analyze_food(db, user, food_name, inp):
     from core.food_intelligence import analyze
 
     llm = (inp.get("calories"), inp.get("protein"), inp.get("carbs"), inp.get("fats"))
-    cands = await fetch_candidates(db, user, food_name, inp)
+    with _stage("pricing.fetch_candidates"):
+        cands = await fetch_candidates(db, user, food_name, inp)
 
     # B-1.75: a caller that resolved a quantity AFTER the estimate was made can
     # declare what that estimate described. Normalised here rather than by the
