@@ -248,13 +248,13 @@ def _profile(per100g: dict, *, source: str, source_id: str,
 def _from_memory(ev: MemoryEvidence):
     return (_profile(ev.per100g, source="memory", source_id=ev.source_id,
                      confidence=ev.confidence, estimated=False),
-            Rung.MEMORY, ev.source_id or "memory")
+            Rung.MEMORY, ev.source_id or "memory", dict(ev.per100g or {}))
 
 
 def _from_product(ev: ProductEvidence):
     return (_profile(ev.per100g, source="product", source_id=ev.identifier,
                      confidence=0.95, estimated=False),
-            Rung.PRODUCT, ev.identifier)
+            Rung.PRODUCT, ev.identifier, dict(ev.per100g or {}))
 
 
 def _from_artifact(ev: ArtifactEvidence, *, query: str):
@@ -276,7 +276,7 @@ def _from_artifact(ev: ArtifactEvidence, *, query: str):
     fdc = str(winner.get("fdc_id") or "")
     return (_profile(per100g, source="usda", source_id=fdc,
                      confidence=0.85, estimated=False),
-            Rung.ARTIFACT, f"usda:{fdc}" if fdc else "usda")
+            Rung.ARTIFACT, f"usda:{fdc}" if fdc else "usda", dict(per100g))
 
 
 def _from_estimate(ev: EstimateEvidence):
@@ -293,7 +293,7 @@ def _from_estimate(ev: EstimateEvidence):
                         "carbs": ev.carbs, "fat": ev.fat},
                        source="estimate", source_id="", confidence=0.4,
                        estimated=True)
-    return profile, Rung.ESTIMATE, ""
+    return profile, Rung.ESTIMATE, "", {}
 
 
 def price(*, entity: str, preparation: str = "", consumed=None,
@@ -311,10 +311,36 @@ def price(*, entity: str, preparation: str = "", consumed=None,
     the first rung that can produce numbers wins. `refuse_or_return` is the
     single exit, so no rung can smuggle out an indefensible price.
     """
+    from skills.nutrition.models import MACRO_FIELDS
     from skills.nutrition.scaling import (Per100g, PerServing,
+                                          ScalingRefused,
                                           scale_profile)
 
-    chosen = None
+    # A NON-POSITIVE PORTION IS NOT A MEAL. Scaling 165 kcal/100 g by zero
+    # grams yields a legitimate-looking zero from an EVIDENCE-backed rung, so
+    # `is_defensible` would wave it through — the mackerel defect returning
+    # through a different door. The degenerate thing here is the portion, not
+    # the food, so it is refused before any rung runs.
+    if consumed is not None:
+        _mass = getattr(consumed, "grams", None)
+        if _mass is not None and float(_mass) <= 0:
+            logger.warning("event=pricing_refused food=%s reason=portion_mass "
+                           "grams=%s", entity, _mass)
+            raise PricingRefused(f"{entity!r} has a non-positive portion mass")
+
+    # ⭐ SCALING HAPPENS INSIDE THE LOOP, so an unscalable rung FALLS THROUGH.
+    #
+    # It used to run after a winner was chosen, which made "this rung's basis
+    # cannot be massed" fatal to the whole meal. Measured adversarially: a
+    # count-only answer ("1 breast") has no grams, `scale_profile` refuses a
+    # per-100 g basis, and a perfectly good estimate on the next rung never
+    # got its turn — the meal was refused instead of priced at 280 kcal. A
+    # rung that cannot be scaled has simply failed; the ladder continues.
+    #
+    # `ScalingRefused` is also not `PricingRefused`, so escaping here would
+    # bypass the narrow handler in `b1_answer_turn` and take the whole turn
+    # down — worse than the zero-calorie row this P1 exists to delete.
+    priced = None
     for ev, build in ((memory, _from_memory), (product, _from_product),
                       (artifact, lambda e: _from_artifact(e, query=entity)),
                       (estimate, _from_estimate)):
@@ -324,42 +350,63 @@ def price(*, entity: str, preparation: str = "", consumed=None,
             chosen = build(ev)
         except Exception:
             logger.warning("rung failed for %s", entity, exc_info=True)
-            chosen = None
-        if chosen:
-            break
+            continue
+        if not chosen:
+            continue
+        profile, rung, evidence_id, raw_per_basis = chosen
+        before = profile.amount("calories")
 
-    if chosen is None:
-        return refuse_or_return(None, food_name=entity)
+        basis_name = "per_portion"
+        if consumed is not None:
+            try:
+                if rung is Rung.ESTIMATE:
+                    # Per ITS OWN quantity, not per 100 g. Without a stated
+                    # basis there is nothing to scale FROM, so it stands as
+                    # given: it is already a statement about a portion, and an
+                    # unscalable answer costs precision, not the meal.
+                    grams = getattr(ev, "basis_grams", None)
+                    if grams:
+                        profile = scale_profile(
+                            profile, PerServing(serving_mass_g=float(grams),
+                                                as_served=True), consumed)
+                        basis_name = "per_serving"
+                else:
+                    profile = scale_profile(profile, Per100g(), consumed)
+                    basis_name = "per_100g"
+            except ScalingRefused as exc:
+                logger.info("event=rung_unscalable food=%s rung=%s — %s",
+                            entity, rung.value, exc)
+                continue
 
-    profile, rung, evidence_id = chosen
-
-    # PORTION SCALING THROUGH THE EXISTING SYSTEM (P1.2). `scaling.py` already
-    # owns basis -> consumed conversion; a second one here would be the drift
-    # this migration exists to remove. The estimate rung is already
-    # per-portion and is never rescaled.
-    basis_name = "per_portion"
-    if consumed is not None:
-        if rung is Rung.ESTIMATE:
-            # The estimate is per ITS OWN quantity, not per 100 g. With a
-            # stated basis it reprices against the answer; without one there
-            # is nothing to scale FROM, so it stands as given.
-            grams = getattr(estimate, "basis_grams", None) if estimate else None
-            if grams:
-                profile = scale_profile(
-                    profile, PerServing(serving_mass_g=float(grams),
-                                        as_served=True), consumed)
-                basis_name = "per_serving"
-        else:
-            profile = scale_profile(profile, Per100g(), consumed)
-            basis_name = "per_100g"
-
-    return refuse_or_return(
-        PricedFood(
+        # ⭐ THE FULL MICRONUTRIENT SET SURVIVES, scaled by the same factor.
+        #
+        # `NutrientProfile` models only six micros (MICRO_FIELDS), but a USDA
+        # row carries ~22 — calcium, iron, the vitamins — and legacy stored all
+        # of them in `micronutrients_json`. Reading micros back off the profile
+        # alone would silently drop about nineteen from every canonical row.
+        # So they are scaled from the RAW per-basis dict, by the factor the
+        # profile itself moved by, which keeps one scaling authority.
+        after = profile.amount("calories")
+        factor = (float(after) / float(before)) if (before and after) else 1.0
+        micros = {k: round(float(v) * factor, 4)
+                  for k, v in (raw_per_basis or {}).items()
+                  if k not in MACRO_FIELDS and k not in ("fiber", "sugar",
+                                                         "sodium")
+                  and isinstance(v, (int, float))}
+        priced = PricedFood(
             calories=float(profile.amount("calories") or 0.0),
             protein=profile.amount("protein"),
             carbs=profile.amount("carbs"),
             fats=profile.amount("fat"),
             fiber=profile.amount("fiber"), sugar=profile.amount("sugar"),
             sodium=profile.amount("sodium"),
-            rung=rung, evidence_id=evidence_id, basis=basis_name),
-        food_name=entity)
+            micros=micros or None, micros_estimated=(rung is Rung.ESTIMATE),
+            rung=rung, evidence_id=evidence_id, basis=basis_name)
+        # AN INDEFENSIBLE PRICE IS ALSO A FAILED RUNG. Continuing is what turns
+        # "the estimate was zero" into "try the next thing" rather than
+        # "refuse the meal".
+        if priced.is_defensible():
+            break
+        priced = None
+
+    return refuse_or_return(priced, food_name=entity)

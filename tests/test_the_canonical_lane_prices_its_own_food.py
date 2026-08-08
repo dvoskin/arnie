@@ -406,3 +406,130 @@ def test_the_refusal_is_caught_by_type_and_never_generically():
         assert "REFUSED" in rendered, "a refusal did not return REFUSED"
         assert "APPLIED" not in rendered
     assert found, "no PricingRefused handler — a refusal would crash the turn"
+
+
+# ══ THE ADVERSARIAL AUDIT, 2026-08-08 ═══════════════════════════════════════
+#
+# Four defects found by probing `price()` with hostile portions, in code that
+# had just gone green on 8,588 tests. The suite could not see any of them
+# because nothing exercised a portion that could not be massed. Each gate below
+# is one of those findings.
+
+#: A USDA row as the artifact stores it, carrying micros the profile model does
+#: not have fields for — which is exactly how they went missing.
+USDA_WITH_MICROS = (
+    {"fdc_id": 1, "description": "Chicken",
+     "per100g": {"calories": 165.0, "protein": 31.0, "carbs": 0.0, "fat": 3.6,
+                 "iron": 1.0, "calcium": 15.0, "potassium": 256.0,
+                 "vitamin_b12": 0.3}},
+)
+AN_ESTIMATE = EstimateEvidence(calories=280.0, protein=53.0, carbs=0.0,
+                               fat=6.0, basis_grams=170.0)
+
+
+def test_micronutrients_survive_pricing_and_scale_with_the_portion():
+    """FINDING 1: `micros` was never populated, so EVERY canonical row would
+    have lost its micronutrients — silently, and the Daily Log reveal reads
+    them.
+
+    `NutrientProfile` models only six micros (MICRO_FIELDS) while a USDA row
+    carries ~22, so reading them back off the profile alone still drops most.
+    They are scaled from the raw per-basis dict by the factor the profile
+    itself moved by, which keeps one scaling authority.
+    """
+    priced = price(entity="Chicken", consumed=_g(200),
+                   artifact=ArtifactEvidence(candidates=USDA_WITH_MICROS))
+    assert priced.calories == pytest.approx(330.0), priced.calories
+    assert priced.micros, "every canonical row would have lost its micros"
+    for name, per100g in (("iron", 1.0), ("calcium", 15.0),
+                          ("potassium", 256.0), ("vitamin_b12", 0.3)):
+        assert priced.micros.get(name) == pytest.approx(per100g * 2.0), (
+            f"{name} did not scale with the portion: {priced.micros}")
+    # The macros keep their own columns and must not be duplicated as micros.
+    for macro in ("calories", "protein", "carbs", "fat"):
+        assert macro not in priced.micros
+
+
+@pytest.mark.parametrize("label,quantity", [
+    ("count-only, no mass", NormalizedQuantity(amount=1, unit="breast",
+                                               grams=None, count=1)),
+    ("zero grams", NormalizedQuantity(amount=0, unit="g", grams=0)),
+    ("negative grams", NormalizedQuantity(amount=-5, unit="g", grams=-5)),
+    ("no quantity at all", None),
+])
+def test_no_hostile_portion_escapes_as_anything_but_pricing_refused(
+        label, quantity):
+    """FINDING 2, THE WORST ONE. `scale_profile` raises `ScalingRefused` for a
+    portion it cannot mass, and a count-only answer ("1 breast") is an ordinary
+    production case, not an exotic one.
+
+    `ScalingRefused` is NOT `PricingRefused`, so it escaped the narrow handler
+    in `b1_answer_turn` and took the whole turn down — worse than the
+    zero-calorie row this P1 exists to delete. Only `PricingRefused` may leave
+    this function.
+    """
+    try:
+        price(entity="Chicken", consumed=quantity,
+              artifact=ArtifactEvidence(candidates=USDA_WITH_MICROS))
+    except PricingRefused:
+        pass                       # the one escape the caller handles
+    except Exception as exc:       # pragma: no cover - the failure being gated
+        pytest.fail(f"{label}: {type(exc).__name__} escaped price() — "
+                    f"b1_answer_turn catches PricingRefused only, so this "
+                    f"crashes the turn: {exc}")
+
+
+@pytest.mark.parametrize("grams", [0, -5])
+def test_a_degenerate_portion_is_refused_even_from_an_evidence_rung(grams):
+    """FINDING 3: the mackerel defect returning through another door.
+
+    Scaling 165 kcal/100 g by zero grams yields a zero from an EVIDENCE-backed
+    rung, and `is_defensible()` waves those through — correctly, because black
+    coffee really is zero. The degenerate thing here is the PORTION, not the
+    food, so it is refused before any rung runs.
+    """
+    with pytest.raises(PricingRefused):
+        price(entity="Chicken",
+              consumed=NormalizedQuantity(amount=grams, unit="g", grams=grams),
+              artifact=ArtifactEvidence(candidates=USDA_WITH_MICROS))
+
+
+def test_an_unscalable_rung_falls_through_instead_of_refusing_the_meal():
+    """FINDING 4: fixing the crash introduced a refusal.
+
+    A count-only answer cannot scale a per-100 g artifact basis — but a
+    perfectly good estimate sits on the next rung. Refusing the meal there
+    throws away an answer we have. Scaling therefore happens INSIDE the rung
+    loop: a rung that cannot be scaled has simply failed, and the ladder
+    continues.
+    """
+    priced = price(entity="Chicken",
+                   consumed=NormalizedQuantity(amount=1, unit="breast",
+                                               grams=None, count=1),
+                   artifact=ArtifactEvidence(candidates=USDA_WITH_MICROS),
+                   estimate=AN_ESTIMATE)
+    assert priced.rung is Rung.ESTIMATE, (
+        f"the artifact rung could not scale, so the estimate should have "
+        f"priced it; got {priced.rung}")
+    assert priced.calories == pytest.approx(280.0)
+
+
+def test_an_indefensible_rung_also_falls_through():
+    """The same rule for a rung that produces a zero rather than an exception:
+    a zero ESTIMATE must not end the ladder while real evidence waits.
+
+    WRITTEN THE WRONG WAY FIRST, and the failure was informative. The original
+    version seeded a zero MEMORY rung and expected the artifact to win — but an
+    evidence-backed zero is legitimate by design (that is the black-coffee
+    rule), so memory correctly won and the test was asserting against the
+    contract. It was also unreachable: `_memory` drops a falsy `cal_100`, so a
+    zero memory row never reaches the pricer at all.
+
+    The estimate rung is the one that genuinely may not price zero, so it is
+    the one that must yield to real evidence.
+    """
+    priced = price(entity="Chicken", consumed=_g(100),
+                   artifact=ArtifactEvidence(candidates=USDA_WITH_MICROS),
+                   estimate=EstimateEvidence(calories=0.0, protein=0.0,
+                                             carbs=0.0, fat=0.0))
+    assert priced.rung is Rung.ARTIFACT and priced.calories > 0
