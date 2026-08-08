@@ -215,6 +215,20 @@ Three expiry windows (active / recoverable / stale), the logical meal *date*, an
 **C5. Trace coverage is 5 of 7 stages.**
 `Stage.INTERPRET` has no `record()` or `stage()` call site anywhere; `Stage.PROMOTE` is only ever a `note()`. So the funnel cannot answer "how many turns died in interpretation" — the largest single block in a food turn.
 
+> **INTERPRET closed 2026-08-08.** `core/food_turn.py` now wraps the interpreter's
+> `chat()` in `food_trace.stage(Stage.INTERPRET)`, so the pass lands in
+> `timings=` and a failure inside it records FAILED and re-raises. Ratchet:
+> `tests/test_the_canonical_lane_is_on_the_trace.py::TestTheInterpreterIsOnTheClock`.
+>
+> It stayed open eleven days and the bill came due in production: on build
+> `2a8856035e66` a real B-1 turn reported `timings=route:3,context:3` against
+> `total_ms=8283`, leaving 8,277 ms invisible — and because `stopped_at` falls
+> back to the last stage recorded, the same gap made a turn holding a question
+> on the user's screen report `stopped_at=context`. A missing stage is not only
+> a missing number; it moves every derived field that reads the stage list.
+>
+> **`Stage.PROMOTE` is still `note()`-only and remains open.**
+
 **C6. `component_estimate` is a label with nothing behind it.**
 `skills/nutrition/authority.py:74` seats it on the RESTAURANT ladder; the only writer is `food_intelligence.py:839`, which relabels *the model's own estimate* when a supplementary source didn't supply macros. No decomposition, no per-component USDA pricing. Composite dishes are the model's guess wearing a provenance badge. (Matches `docs/SESSION_0727_HANDOFF.md` §1 — still unstarted.)
 

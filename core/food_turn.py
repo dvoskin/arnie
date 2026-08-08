@@ -5225,11 +5225,20 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             # forty-five-second model timeout inside a twenty-second turn budget
             # meant the "turn budget" could not bound the turn's biggest wait.
             from core import deadline
+            from core import food_trace as _ft
             _interp_model = _logger_model()
-            res = await deadline.wait_for(
-                chat([{"role": "user", "content": content}], sys,
-                     tools=False, max_tokens=700, model=_interp_model,
-                     stream_handler=_SpeculativeEnrichment(on_first_food)))
+            # THE STAGE THAT WAS NEVER RECORDED. `Stage.INTERPRET` had no
+            # `record()` call site anywhere — audit finding C5, 2026-07-28 —
+            # so the single largest block in a food turn was absent from
+            # `timings=` and the funnel could not say how many turns died in
+            # interpretation. The cost fields below it were already noted; only
+            # the stage was missing, which is why the line could show an 8s
+            # interpreter TTFB beside `timings=route:3,context:3`.
+            with _ft.stage(_ft.Stage.INTERPRET):
+                res = await deadline.wait_for(
+                    chat([{"role": "user", "content": content}], sys,
+                         tools=False, max_tokens=700, model=_interp_model,
+                         stream_handler=_SpeculativeEnrichment(on_first_food)))
         except Exception as e:
             # Includes DeadlineExceeded: out of time is a fall-through to the
             # legacy path, never a lost meal.
@@ -5420,6 +5429,21 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 _chip_options = _flat[0] if len(_flat) == 1 else []
             # `_questions_from_points` already returns `out[:4]`, so the cap that
             # used to sit here is redundant — it is not dropped, it moved.
+            #
+            # THE TRACE, for the same reason `b1_material` is built here: this
+            # branch is where most asks come from, and it recorded nothing. A
+            # turn that asked a question reported `stopped_at=context asked=0`,
+            # because `stopped_at` scans for an ASKED outcome no stage had set
+            # and fell through to the last stage recorded. Same evidence as the
+            # pipeline origin, same trace as the pipeline origin.
+            try:
+                from core import food_trace as _ft
+                _ft.record_ask(questions=len(_questions),
+                               staged=len(data.get("items") or []),
+                               ready=len(_ready_now),
+                               held=len(_deferred_now))
+            except Exception:
+                pass
             return {"action": "ask", "text": text, "tool_calls": _ready_now,
                     DEFERRED_KEY: _deferred_now,
                     "questions": _questions, "options": _chip_options,

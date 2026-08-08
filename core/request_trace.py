@@ -181,13 +181,28 @@ class RequestTrace:
         if self._done:
             return
         self._done = True
+        # `setdefault`, so an explicit `note(outcome=…)` beats this argument —
+        # and `persist()` reads the resolved value back out of `fields`.
         self.fields.setdefault("outcome", outcome)
         try:
             breakdown = ",".join(f"{n}:{ms}" for n, ms in self.stage_totals().items())
-            extra = " ".join(f"{k}={v}" for k, v in self.fields.items())
+            # ONE `outcome=` PER LINE. `setdefault` above puts the key into
+            # `fields`, and `extra` is built from `fields` — so every line this
+            # ever emitted carried `outcome=` twice. Harmless only while the two
+            # agreed: a caller who had already noted a different outcome got the
+            # ARGUMENT printed first and their own value printed last, one line
+            # asserting two outcomes for one request, and any `dict(pairs)`
+            # parser silently taking whichever came last.
+            #
+            # Resolved once here, from `fields`, which is the same value
+            # `persist()` writes to the row — so the line and the row cannot
+            # disagree either.
+            resolved = self.fields.get("outcome") or outcome
+            extra = " ".join(f"{k}={v}" for k, v in self.fields.items()
+                             if k != "outcome")
             logger.info(
                 f"event=request_done turn={self.turn_id} channel={self.channel} "
-                f"command={self.command} user={self.user_id} outcome={outcome} "
+                f"command={self.command} user={self.user_id} outcome={resolved} "
                 f"total_ms={self.total_ms()} stages={breakdown or '-'} "
                 f"build={_sha()}" + (f" {extra}" if extra else ""))
         except Exception:

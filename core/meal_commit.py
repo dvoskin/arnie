@@ -398,8 +398,11 @@ async def claim_commit(db, *, operation_id: str, revision: int = 0,
         # whatever the caller staged before this is intact.
         existing = await _load(db, operation_id, revision)
         logger.info(
+            # STRICTLY k=v — the trailing sentence this used to carry is the
+            # docstring's job. `outcome=duplicate` already says the write
+            # happened; `resolution=` says what the caller gets back.
             "event=meal_commit outcome=duplicate operation=%s revision=%d "
-            "— the write already happened; returning the original result",
+            "resolution=original_result",
             operation_id, revision)
         return CommitClaim(won=False, operation_id=operation_id,
                            revision=revision,

@@ -120,11 +120,22 @@ async def commit_or_load_existing(
 
     # WON. Everything below is in the caller's transaction, so any failure
     # unwinds the ledger write with it.
-    result = await writer(db, operation=operation, resolved_meal=resolved_meal)
-    if not isinstance(result, MealCommitResult):
-        raise TypeError(
-            "the writer must return a MealCommitResult, so the winner and a "
-            f"later duplicate answer with the same type; got {type(result).__name__}")
+    #
+    # THE WRITE, ON THE TRACE. `Stage.EXECUTE` and `items_committed` were
+    # recorded only by the legacy executor, so a canonical commit left a trace
+    # reading `committed=0` — indistinguishable from a turn that wrote nothing.
+    # Only the executor may move `items_committed`, which is why it moves here
+    # and not at the point settlement decided to write.
+    from core import food_trace as _ft
+    with _ft.stage(_ft.Stage.EXECUTE) as _writing:
+        result = await writer(db, operation=operation, resolved_meal=resolved_meal)
+        if not isinstance(result, MealCommitResult):
+            raise TypeError(
+                "the writer must return a MealCommitResult, so the winner and a "
+                f"later duplicate answer with the same type; got {type(result).__name__}")
+        _writing.counts["committed"] = len(result.committed_items)
+    _ft.note(items_attempted=len(result.committed_items),
+             items_committed=len(result.committed_items))
 
     # DURABLE POST-COMMIT WORK, ENQUEUED INSIDE THIS TRANSACTION.
     #

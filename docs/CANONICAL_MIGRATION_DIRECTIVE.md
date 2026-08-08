@@ -3353,6 +3353,38 @@ Each is real, none blocks the current phase, and none may be closed silently.
 | `scripts/b1_operation_probe.py` cannot exercise B-1 — it drives `/api/v1/chat`, which is `PLATFORM="ios"`, excluded until B-1d | by design | B-1d |
 | zero history-sourced options across all asks so far | 7 asks, all `sources=ontology` | B-1b decides whether this is recall or ranking |
 | two voices: B-1 turns render from a template, legacy turns from the composer, so the assistant sounds different depending on which lane owns the turn | measured 08-06 | item 2 above |
+| user pseudonyms in the food stream are UNSALTED — `FOOD_TRACE_SALT` is set in no deployment config, and account ids are small integers, so `user=u…` reverses by enumeration. The raw id is on ~10 neighbouring lines of the same stream regardless | measured 08-08 | the process now warns once; closing it is a stream-wide logging policy, unscheduled |
+| the `stages=` breakdown legitimately sums to MORE than `total_ms` (speculative enrichment runs during the LLM stream), and nothing on the line says so — a reader attributing time by summing it is wrong by construction | measured 08-08, by design | documentation, unscheduled |
+| `pricing.usda_search` still runs on the ASK turn — the P1.4 seam cut was scoped to the B-1 answer/settle function, which an ask never enters | measured 08-08, in scope | not a defect; recorded so it is not rediscovered |
+| P0.2 `TurnCoordinator` (`core/turns/*`, gated by `TURN_COORDINATOR_MODE`) is a SECOND migration this directive does not track, and `planner=legacy-adapter-v1` on a `structured_food` turn belongs to it | observed 08-08 | needs its own sequencing authority, or a section here |
+
+**Closed 2026-08-08 — the telemetry of one production turn (build `2a8856035e66`).**
+One iOS B-1 clarification, correct end to end, whose record was not admissible
+as promotion evidence. Ten defects, all fixed, none of which changed what the
+user got:
+
+| finding | why it mattered |
+|---|---|
+| `food_trace` reported `stopped_at=context asked=0 committed=0` on a turn that asked and committed — the interpreter ask origin recorded no CLARIFY stage, `Stage.INTERPRET` had no call site anywhere (audit C5, 07-28), and neither answer route opened a span at all | the triage spine could not describe the lane being migrated TO |
+| `latency_ms=10894` for an answer given in 2,560 ms — `asked_at` read `row.created_at`, and Postgres `now()` stamps TRANSACTION start | 76% of the "user latency" behind the *provisional* abandonment row was our own backend |
+| `repairs` read `owned.revision`, which this codebase documents as deliberately not moving on a repair — a constant 1 on every commit | the metric B-1.8 would be judged by |
+| `rounds` was never passed, so it reported its default of 1 forever while `round_index` sat durably in the observation rows | multi-round asks were invisible |
+| `cohort` was never persisted on the operation, so answers and commits reported `-` and the durable observation row stored empty | the funnel broke at the conversion step — the gate is "100% of eligible turns canonical under the rollout cohort" |
+| two unrelated rollouts printed a key called `cohort` into one stream, disagreeing (`live` vs `allowlist`) on the same turn | filtering `cohort=live` for natural traffic swept in allowlist-only canonical turns — the evidence-class error forbidden above |
+| `food_policy_v1` named both the legacy ledger constant and the native P0.2 stage's | `policy=food_policy_v1` could not evidence that the native stage ran |
+| `request_done` emitted `outcome=` twice on every line, and `setdefault` let the two values differ | a `dict(pairs)` reader silently took the last |
+| `voice_ttfb_ms=0` beside a named `voice_model` on every turn — the field was never written by anything, and the composer does not stream | a model credited with copy on no evidence; `voice_ms` now carries what is measurable |
+| prose inside `k=v` lines (`b1_not_a_replay`, `meal_commit` duplicate) | the stream is the measurement surface and it has to parse |
+
+Ratchets: `tests/test_the_canonical_lane_is_on_the_trace.py`,
+`tests/test_the_b1_counters_mean_their_names.py`,
+`tests/test_the_food_log_stream_parses.py`.
+
+Six things in the same capture read as defects and are **correct** —
+`stages` outrunning `total_ms`, `pricing.usda_search` at ask time,
+`turn_phase … ms=0`, `planner=legacy-adapter-v1`, `b1_answer_held … open=0`,
+and `b1_not_a_replay` firing on later messages. Recorded above or in the
+review so they are not re-litigated.
 
 ### Release gates — where the whole product stands
 

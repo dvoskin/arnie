@@ -103,7 +103,14 @@ class FoodValidationStage:
     operations executes; an ask/confirm holds the write; anything else passes
     to the conversational lane."""
 
-    POLICY_VERSION = "food_policy_v1"
+    # NOT `food_policy_v1`. `core/food_ledger.POLICY_VERSION` is that string
+    # already, and the two ride the SAME log stream for the same turn:
+    # `core.conversation` prints the ledger's as `pv=`, and
+    # `core.turns.stages.finalize` prints this one as `policy=`. Two migrations,
+    # two policy engines, one identifier — so `policy=food_policy_v1` could not
+    # be read as evidence that the native stage ran, which is the exact question
+    # it exists to answer when P0.2 executes `structured_food` natively.
+    POLICY_VERSION = "food_policy_native_v1"
 
     async def run(self, request, context=None, route=None, plan=None) -> ValidationResult:
         intent = getattr(plan, "response_intent", "") or ""

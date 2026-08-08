@@ -92,6 +92,23 @@ class Outcome(str, Enum):
     FAILED = "failed"            # an exception, recorded not raised
 
 
+#: Said ONCE per process. A warning on every food turn would be noise nobody
+#: reads, and this is a deployment fact rather than a per-turn event.
+_SALT_WARNED = [False]
+
+
+def _salt_warning() -> None:
+    if _SALT_WARNED[0]:
+        return
+    _SALT_WARNED[0] = True
+    logger.warning(
+        "event=food_trace_config outcome=unsalted "
+        "detail=FOOD_TRACE_SALT_unset — user pseudonyms in this stream are "
+        "unsalted digests of small integer account ids and are reversible by "
+        "enumeration; treat `user=u…` as an account identifier, not as an "
+        "anonymisation")
+
+
 @dataclass
 class StageRecord:
     """One phase, with what it cost and what it decided."""
@@ -119,6 +136,12 @@ class FoodTurnTrace:
     mode: str = ""
     channel: str = ""
     meal_group_id: str = ""
+    #: THE JOIN KEY ACROSS TURNS. A canonical clarification is one operation
+    #: spanning two turns — the ask and the answer — and they carry different
+    #: `turn_id`s by construction, so a turn-scoped trace cannot follow one
+    #: without this. Every `b1_*` event already keys on the same string, which
+    #: is why this is the operation id and not a new correlation id.
+    operation_id: str = ""
     stages: Tuple[StageRecord, ...] = ()
     items_staged: int = 0
     #: The commit funnel, kept as four separate numbers on purpose.
@@ -172,7 +195,21 @@ class FoodTurnTrace:
     #: question asked of today's code.
     voice_profile: str = ""
     voice_model: str = ""
-    voice_ttfb_ms: float = 0.0
+    #: `None`, NOT 0.0, when the voice call could not report a first byte.
+    #:
+    #: Only the streaming path produces `ttfb_ms` — `core/llm.py` returns none
+    #: at all on the buffered path rather than a zero, for the stated reason
+    #: that "the whole response arrived at once" and "it arrived instantly" are
+    #: different facts a latency report must not average. The composer does not
+    #: stream, so this field printed `voice_ttfb_ms=0` beside a named model on
+    #: every single turn — the same lie, one layer up. Rendered `-` when unset,
+    #: exactly as the marks are.
+    voice_ttfb_ms: Optional[float] = None
+    #: What the voice call actually cost, which IS measurable on the buffered
+    #: path. Added because the field above can only ever be absent for today's
+    #: composer, and a voice layer with no measurable latency at all is how an
+    #: 8-second turn gets attributed entirely to the interpreter.
+    voice_ms: float = 0.0
     #: Model calls beyond the first on ONE stage. Stacked retries are the
     #: documented way a bounded turn becomes an unbounded one.
     retry_count: int = 0
@@ -273,6 +310,7 @@ class FoodTurnTrace:
         return {
             "turn_id": self.turn_id, "user": self.user_ref,
             "mode": self.mode, "channel": self.channel,
+            "operation_id": self.operation_id,
             "meal_group_id": self.meal_group_id, "cohort": self.cohort,
             "items_staged": self.items_staged,
             "items_ready": self.items_ready,
@@ -310,6 +348,7 @@ class FoodTurnTrace:
             "voice_profile": self.voice_profile,
             "voice_model": self.voice_model,
             "voice_ttfb_ms": self.voice_ttfb_ms,
+            "voice_ms": self.voice_ms,
             "retry_count": self.retry_count,
             "fallback_path": self.fallback_path,
             "marks": dict(self.marks),
@@ -328,10 +367,34 @@ class FoodTurnTrace:
 
         Salted per deployment where a salt is configured, so the same account
         does not carry one recognizable pseudonym across environments.
+
+        ⚠ IT PROTECTS NOTHING UNLESS TWO THINGS HOLD, and on 2026-08-08 neither
+        did. Stated here rather than in a document, because a control believed
+        to be working is worse than one known to be off:
+
+        1. `FOOD_TRACE_SALT` MUST BE SET. Account ids are small integers, so an
+           unsalted digest is reversible by counting to a million — the whole id
+           space rainbow-tables in seconds. The salt appears in no deployment
+           config in this repository, which means production runs the `""`
+           branch. `_salt_warning()` now says so once per process instead of
+           degrading silently.
+
+        2. THE RAW ID MUST NOT BE ON NEIGHBOURING LINES. It is. `b1_metrics`,
+           `b1_quantity_operation`, `b1_answer_turn`, `request_trace` and
+           `conversation` all print `user=26` in the clear, joinable to this
+           line by `turn=` and now `operation=`. Pseudonymising one line of a
+           stream that carries the identifier ten times over buys nothing and
+           costs triage a single greppable id.
+
+        Closing (2) is a stream-wide policy decision — it belongs at the logging
+        handler, not in one module's field — and it is not made here. What is
+        made here is the refusal to keep claiming the protection.
         """
         if self.user_id is None:
             return "-"
         salt = os.getenv("FOOD_TRACE_SALT", "")
+        if not salt:
+            _salt_warning()
         digest = hashlib.sha256(
             f"{salt}:{self.user_id}".encode("utf-8")).hexdigest()
         return f"u{digest[:12]}"
@@ -352,9 +415,22 @@ class FoodTurnTrace:
                            for s in self.stages)
         return (
             f"event=food_trace turn={self.turn_id or '-'} "
+            f"operation={self.operation_id or '-'} "
             f"user={self.user_ref} "
             f"mode={self.mode or '-'} channel={self.channel or '-'} "
-            f"cohort={self.cohort or '-'} "
+            # `resolver_cohort`, NOT `cohort`. Two unrelated rollouts were
+            # printing a key of that name into one log stream with overlapping
+            # vocabularies: this one is `skills/nutrition/canary.cohort_label`
+            # answering "is the NUTRITION RESOLVER live for this user"
+            # (`off·shadow·allowlist·canary·control·live`), while the `b1_*`
+            # events carry `skills/nutrition/quantity_rollout.cohort_label`
+            # answering "is this user on the B-1 QUANTITY rollout"
+            # (`allowlist·cohort·control·off`). Both were correct and they
+            # disagreed on the same turn — `live` here beside `allowlist`
+            # there — so a query filtering `cohort=live` for natural traffic
+            # swept in allowlist-only canonical turns. That is the evidence
+            # class the migration directive forbids mixing.
+            f"resolver_cohort={self.cohort or '-'} "
             f"stopped_at={self.stopped_at or '-'} total_ms={self.total_ms:.0f} "
             f"staged={self.items_staged} ready={self.items_ready} "
             f"attempted={self.items_attempted} "
@@ -379,7 +455,9 @@ class FoodTurnTrace:
             f"enrich_overlap_ms={self.enrichment_overlap_ms:.0f} "
             f"voice_profile={self.voice_profile or '-'} "
             f"voice_model={self.voice_model or '-'} "
-            f"voice_ttfb_ms={self.voice_ttfb_ms:.0f} "
+            f"voice_ttfb_ms="
+            f"{'-' if self.voice_ttfb_ms is None else format(self.voice_ttfb_ms, '.0f')} "
+            f"voice_ms={self.voice_ms:.0f} "
             f"retries={self.retry_count} "
             f"fallback={self.fallback_path or '-'} "
             f"first_visible_ms={self._mark_str('first_visible')} "
@@ -409,7 +487,8 @@ def tracing_enabled() -> bool:
 
 # ── the ambient API ───────────────────────────────────────────────────────────
 def begin(*, turn_id: str = "", user_id=None, mode: str = "",
-          channel: str = "", cohort: str = "") -> Optional[FoodTurnTrace]:
+          channel: str = "", cohort: str = "",
+          operation_id: str = "") -> Optional[FoodTurnTrace]:
     """Start a trace for this turn and make it ambient. Returns None when
     tracing is off, which every caller must tolerate.
 
@@ -423,7 +502,8 @@ def begin(*, turn_id: str = "", user_id=None, mode: str = "",
     try:
         trace = FoodTurnTrace(turn_id=turn_id or "", user_id=user_id,
                               mode=mode or "", channel=channel or "",
-                              cohort=cohort or "")
+                              cohort=cohort or "",
+                              operation_id=operation_id or "")
         trace._token = CURRENT_TRACE.set(trace)
         return trace
     except Exception:
@@ -484,6 +564,32 @@ def record(stage: Stage, *, duration_ms: float = 0.0,
                      detail=detail, **counts)
     except Exception:
         pass
+
+
+def record_ask(*, questions: int, staged: int = 0, ready: int = 0,
+               held: int = 0, assumptions: int = 0,
+               duration_ms: float = 0.0) -> None:
+    """Record that this turn ASKED — for an origin that did not run its work
+    inside a `stage(CLARIFY)` block.
+
+    ONE DEFINITION OF WHAT AN ASK LOOKS LIKE IN THE TRACE, because there are
+    two ask origins and they are not variants of one thing
+    (`tests/test_b1_reaches_both_ask_origins.py`). The pipeline origin reaches
+    the same state from inside its own timing block —
+    `clarifying.outcome = Outcome.ASKED` plus `note(questions_asked=…)` in
+    `core/food_pipeline.py` — because that block also times `derive_semantics`
+    and `decide`, which this origin has already done by the time it gets here.
+
+    Both must set the CLARIFY stage's outcome AND the turn counter: `stopped_at`
+    reads the outcome, the funnel reads the counter, and an origin that sets
+    only one of them produces a trace that says a turn asked nothing while
+    stopping at a question the user is looking at.
+    """
+    record(Stage.CLARIFY, duration_ms=duration_ms, outcome=Outcome.ASKED,
+           questions=questions, ready=ready, held=held,
+           assumptions=assumptions)
+    note(questions_asked=questions, items_staged=staged, items_ready=ready,
+         items_held=held, assumptions_made=assumptions)
 
 
 class stage:

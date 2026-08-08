@@ -213,9 +213,15 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
     # A late answer still lands: replying after expiry is still replying.
     if not owned.awaiting or owned.expired:
         if not option_id and _label_selection(live_field, message) is None:
+            # STRICTLY k=v. The prose that used to close this line ("— operation
+            # left alone; this message is a new report") is the explanation
+            # above, not data: every other line in this stream parses as
+            # key=value pairs, and one that trails a sentence makes the whole
+            # stream need a special case. What it said is what the comment block
+            # above already says, permanently and to the right audience.
             logger.info(
-                "event=b1_not_a_replay operation=%s user=%s state=%s — "
-                "operation left alone; this message is a new report",
+                "event=b1_not_a_replay operation=%s user=%s state=%s "
+                "disposition=left_alone",
                 owned.operation_id, getattr(user, "id", None),
                 "settled" if not owned.awaiting else "expired")
             return None
@@ -240,7 +246,8 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
             result = await ops.settle(
                 db, user=user, owned=owned,
                 resolved=ops.resolved_fields(owned.answered),
-                source_turn_id=source_turn_id)
+                source_turn_id=source_turn_id,
+                cohort=str(getattr(owned, "cohort", "") or ""))
             return AnswerTurn(Outcome.REPLAY, operation_id=owned.operation_id,
                               field_id=live_field.field_id, patch=answer.patch,
                               result=result, reason="replay")
@@ -285,7 +292,9 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
         try:
             result = await ops.settle(db, user=user, owned=owned,
                                       resolved=ops.resolved_fields(held),
-                                      source_turn_id=source_turn_id)
+                                      source_turn_id=source_turn_id,
+                                      cohort=str(getattr(owned, "cohort", "")
+                                                 or ""))
         except PricingRefused as exc:
             logger.warning(
                 "event=b1_pricing_refused operation=%s field=%s reason=%s",
@@ -355,12 +364,13 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
     # is what would turn B-2 into a pile of field-specific extractors.
     result = await ops.settle(db, user=user, owned=owned,
                               resolved=ops.resolved_fields(held),
-                              source_turn_id=source_turn_id)
+                              source_turn_id=source_turn_id,
+                              cohort=str(getattr(owned, "cohort", "") or ""))
     turn = AnswerTurn(Outcome.APPLIED, operation_id=owned.operation_id,
                       field_id=live_field.field_id, patch=answer.patch,
                       result=result, reason=answer.reason)
-    _measure_commit(owned, turn, user=user, field=live_field,
-                    option_id=option_id, message=message)
+    await _measure_commit(db, owned, turn, user=user, field=live_field,
+                          option_id=option_id, message=message)
     await _stamp_entry(db, owned, turn, source_turn_id=source_turn_id)
     return turn
 
@@ -696,6 +706,11 @@ def _measure(owned, answer, *, option_id: str, user,
             selected_source=_selected_source(
                 field, option_id=option_id, message=message or ""),
             asked_at=owned.asked_at, reason=answer.reason,
+            # READ BACK FROM THE OPERATION, which is the only thing that spans
+            # the two turns. Without it this event printed `cohort=-` while the
+            # ask it answers printed `cohort=allowlist`, and the funnel broke at
+            # the conversion step.
+            cohort=str(getattr(owned, "cohort", "") or ""),
             provenance=getattr(getattr(answer.patch, "provenance", None),
                                "value", ""),
             grams=getattr(quantity, "grams", None))
@@ -726,8 +741,8 @@ def _measure_partial(owned, answer, *, user, field=None, held: dict,
         logger.debug("b1 partial metric failed", exc_info=True)
 
 
-def _measure_commit(owned, turn: AnswerTurn, *, user, field=None,
-                    option_id: str = "", message: str = "") -> None:
+async def _measure_commit(db, owned, turn: AnswerTurn, *, user, field=None,
+                          option_id: str = "", message: str = "") -> None:
     """The terminal funnel record.
 
     `selected_source` is repeated here rather than left to a join with
@@ -735,20 +750,60 @@ def _measure_commit(owned, turn: AnswerTurn, *, user, field=None,
     `entry_id` — and attributing that correction to the source that produced
     the number is the comparison D4 exists to make. One event carries
     entry_id AND source, so the attribution needs no third hop.
+
+    `repairs` AND `rounds` ARE COUNTED, NOT INFERRED. `repairs` used to read
+    `owned.revision` — a field this module documents, forty lines up, as
+    deliberately NOT moving on a repair. The revision goes 0→1 exactly once per
+    committed operation, so the metric reported `repairs=1` on every clean
+    single-tap answer and 0 on everything uncommitted: a restatement of "did
+    this commit", wearing the name of the rate B-1.8 is judged by. `rounds` was
+    worse — never passed at all, so it reported the signature default of 1
+    forever while `round_index` sat durably in the observation rows.
+
+    Both come from `B1AnswerObservation`, which `_observe` has already written
+    for this answer by the time we get here. That table is the only thing that
+    survives the turn, which is what makes it the honest source.
     """
     from core import b1_metrics
 
     try:
         facts = facts_for(turn)
+        rounds, repairs = await _answer_counts(db, owned.operation_id)
         b1_metrics.committed(
             operation_id=owned.operation_id, user_id=getattr(user, "id", None),
             entry_id=facts.entry_id, calories=facts.calories,
             selected_source=_selected_source(
                 field, option_id=option_id, message=message or ""),
-            repairs=max(0, int(getattr(owned, "revision", 0) or 0)),
+            repairs=repairs, rounds=rounds,
+            cohort=str(getattr(owned, "cohort", "") or ""),
             asked_at=owned.asked_at)
     except Exception:
         logger.debug("b1 commit metric failed", exc_info=True)
+
+
+async def _answer_counts(db, operation_id: str) -> tuple:
+    """`(rounds, repairs)` for one operation, from the durable observations.
+
+    Returns `(1, 0)` if the count cannot be taken. A commit metric must not be
+    lost to a failed aggregate, and "one round, no repairs" is the shape of the
+    overwhelming majority of answers — an honest default rather than a guess
+    that inflates either number.
+    """
+    from sqlalchemy import func, select
+
+    from db.models import B1AnswerObservation
+
+    try:
+        rows = (await db.execute(
+            select(B1AnswerObservation.outcome, func.count())
+            .where(B1AnswerObservation.operation_id == operation_id)
+            .group_by(B1AnswerObservation.outcome))).all()
+        by_outcome = {str(outcome or ""): int(count) for outcome, count in rows}
+        rounds = sum(by_outcome.values())
+        return (max(1, rounds), by_outcome.get("repair", 0))
+    except Exception:
+        logger.debug("b1 answer counts failed", exc_info=True)
+        return (1, 0)
 
 
 @dataclass(frozen=True)
