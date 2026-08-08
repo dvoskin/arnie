@@ -2999,11 +2999,12 @@ async def _analyze_food(db, user, food_name, inp):
     usda, off, web = cands.usda, cands.off, cands.web
     memory, _cands_pre = cands.memory, cands.candidate_map
 
-    result = analyze(food_name, inp.get("quantity"), *llm,
-                     usda_candidate=usda, memory_match=memory,
-                     web_candidate=web, off_candidate=off,
-                     estimate_candidate=cands.estimate,
-                     is_packaged=bool(cands.is_packaged))
+    with _stage("pricing.ladder"):
+        result = analyze(food_name, inp.get("quantity"), *llm,
+                         usda_candidate=usda, memory_match=memory,
+                         web_candidate=web, off_candidate=off,
+                         estimate_candidate=cands.estimate,
+                         is_packaged=bool(cands.is_packaged))
 
     # ── WHO WON, AND WHAT WAS REFUSED ────────────────────────────────────────
     #
@@ -3049,7 +3050,8 @@ async def _analyze_food(db, user, food_name, inp):
             and _web_enrich_candidate(food_name)
             and _web_enrich_could_be_accepted(result.calories)):
         try:
-            meal = await _web_lookup_meal(food_name, inp.get("quantity"))
+            with _stage("pricing.web_meal"):
+                meal = await _web_lookup_meal(food_name, inp.get("quantity"))
         except Exception as e:
             logger.warning(f"web meal enrich errored for {food_name!r}: {e}")
             meal = None
