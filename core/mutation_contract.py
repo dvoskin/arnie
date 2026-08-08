@@ -49,7 +49,7 @@ from core.idempotency import (
     IdempotencyInProgress,
     claim_request,
 )
-from core.request_trace import RequestTrace
+from core.request_trace import RequestTrace, active
 from core.turn_identity import CURRENT_TURN_ID, make_turn_id
 
 
@@ -199,8 +199,25 @@ async def mutation_turn(
         # writes with this turn.
         token = CURRENT_TURN_ID.set(turn_id)
         try:
-            with trace.stage("write"):
-                yield turn
+            # ⭐ AND THE TRACE ITSELF IS BOUND, which it never was.
+            #
+            # `request_trace` has always exposed `timed()` / `time_stage()` for
+            # leaf instrumentation — "a NO-OP when none is [active]" — and
+            # NOTHING in the codebase ever called `active()`. So every leaf
+            # that thought it was reporting was reporting nothing: `llm` on
+            # every model call (core/llm.py:166, :234) and `tools`
+            # (tool_executor:3328) have been decorated and dead. That is why
+            # every row in `turn_metrics.stages_json` shows exactly two stages,
+            # `claim` and `write` — the only two set directly on the object.
+            #
+            # Measured 2026-08-07: a chip tap took 11,053 ms and the trace
+            # attributed all of it to `write`. True, and useless. Binding the
+            # ambient trace is what makes the existing instrumentation mean
+            # something, and it is a prerequisite for measuring the settle
+            # path rather than inferring it.
+            with active(trace):
+                with trace.stage("write"):
+                    yield turn
         except HTTPException as e:
             # An expected refusal (404/403) is an outcome, not a crash. Recorded
             # so the trace says what happened, and re-raised unchanged.

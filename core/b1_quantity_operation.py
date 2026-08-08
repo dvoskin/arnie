@@ -1225,7 +1225,18 @@ async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
         }
 
     # THE SAME PRICING PRODUCTION USES. Writes nothing; decides what it costs.
-    analysis = await _analyze_food(db, user, food_name, inp)
+    #
+    # ⭐ TIMED, because the existing trace could not answer the question.
+    # Measured 2026-08-07: a chip tap settled in 11,053 ms and `turn_metrics`
+    # attributed all of it to one stage called `write` — a true measurement
+    # and a useless diagnosis. `settle.pricing` separates deciding what the
+    # food costs from writing the row, and the leaves below it (`usda_off`,
+    # `qualification`, `ranking`) say which part of deciding is expensive.
+    # `timed` is a no-op outside a traced turn, so this is free everywhere else.
+    from core.request_trace import timed as _timed
+
+    with _timed("settle.pricing"):
+        analysis = await _analyze_food(db, user, food_name, inp)
 
     zone = str(getattr(safe_timezone(user.timezone), "zone", "UTC"))
     revision = owned.revision + 1
@@ -1270,9 +1281,10 @@ async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
     # claim is `(operation_id, revision)`, so a duplicate delivery of the same
     # answer computes the same pair and is answered from storage rather than
     # written again.
-    result = await commit_or_load_existing(
-        db, operation=_AnswerOperation(owned.row, revision),
-        resolved_meal=meal, writer=_writer)
+    with _timed("settle.commit"):
+        result = await commit_or_load_existing(
+            db, operation=_AnswerOperation(owned.row, revision),
+            resolved_meal=meal, writer=_writer)
 
     from core import pending_repository as repo
     outcome = await repo.save_revision(

@@ -1973,7 +1973,12 @@ async def _fetch_usda_off(food_name: str, is_packaged: bool):
     existing = _INFLIGHT_FETCHES.get(key)
     if existing is not None:
         try:
-            return await _aio.shield(existing)
+            # A HIT IS THE DIFFERENCE BETWEEN 29 ms AND 11,053 ms on a chip
+            # tap, so the trace must say which happened. Answering preparation
+            # renames the food ("Chicken, fried"), which is a guaranteed miss.
+            from core.request_trace import timed as _hit_timed
+            with _hit_timed("pricing.enrichment_hit"):
+                return await _aio.shield(existing)
         except Exception:
             pass          # a failed speculative fetch re-runs inline below
     task = _aio.ensure_future(_fetch_usda_off_uncached(food_name, is_packaged))
@@ -2042,7 +2047,9 @@ async def _fetch_usda_off_uncached(food_name: str, is_packaged: bool):
 
     async def _u():
         try:
-            cands = await search_food(food_name, page_size=8)
+            from core.request_trace import timed as _usda_timed
+            with _usda_timed("pricing.usda_search"):
+                cands = await search_food(food_name, page_size=8)
             # QUALIFICATION BEFORE RANKING (B-1.5E): semantic eligibility
             # filters the rows; `best_candidate` still owns the pick. This is
             # the seam that removed the heavy-syrup papaya row (entry 2896's
@@ -2052,9 +2059,14 @@ async def _fetch_usda_off_uncached(food_name: str, is_packaged: bool):
             # because this adds a bounded model call to the first lookup of
             # each food (single-flight + prewarm cache the result).
             if cands and not _qualification_halted():
+                from core.request_trace import timed as _timed
                 from skills.nutrition.evidence_qualification import (
                     qualify_usda_rows)
-                q = await qualify_usda_rows(food_name, cands)
+                # THE SUSPECTED 8-11 SECONDS, named so the trace can confirm
+                # or refute it rather than leaving it inferred from a single
+                # undifferentiated `write` stage.
+                with _timed("pricing.qualification"):
+                    q = await qualify_usda_rows(food_name, cands)
                 # ALWAYS the qualified set. kept == 0 is a real verdict
                 # (nothing retrieved IS the food) AND the outage behavior
                 # (SEMANTIC_RESOLVER_DOWN != RAW_EVIDENCE_AUTHORIZED): either
@@ -2062,7 +2074,9 @@ async def _fetch_usda_off_uncached(food_name: str, is_packaged: bool):
                 # that never needed qualification. Only the disposition
                 # differs, for the trace.
                 cands = list(q.rows)
-            b, conf = best_candidate(food_name, cands)
+            from core.request_trace import timed as _rank_timed
+            with _rank_timed("pricing.ranking"):
+                b, conf = best_candidate(food_name, cands)
             if b:
                 b["_match"] = conf
                 return b
