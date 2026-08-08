@@ -99,9 +99,6 @@ def test_a_real_price_passes_through_unchanged():
 
 # ── GATE 3: canonical settle does not import the legacy pricer ──────────────
 
-@pytest.mark.xfail(reason="RED until the canonical pricer replaces the rented "
-                          "_analyze_food import — this gate is the definition "
-                          "of done for that work", strict=False)
 def test_canonical_settlement_does_not_import_the_legacy_pricer():
     """THE SEAM, AS AN IMPORT GATE.
 

@@ -1124,7 +1124,6 @@ async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
                                 NutritionProvenance, ResolutionStatus)
     from core.timezones import safe_timezone
     from db.queries import _user_today
-    from handlers.tool_executor import _analyze_food
 
     # ALREADY SETTLED — replay, never re-settle.
     #
@@ -1235,8 +1234,44 @@ async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
     # `timed` is a no-op outside a traced turn, so this is free everywhere else.
     from core.request_trace import timed as _timed
 
+    # ══ THE SEAM, CUT ══════════════════════════════════════════════════════
+    #
+    # This was `await _analyze_food(db, user, food_name, inp)` — the ONE thing
+    # the canonical spine took from the legacy pipeline, and the far side of
+    # every canonical defect measured in production:
+    #
+    #     settle.commit   (canonical)        17 ms
+    #     pricing.ranking (deterministic)     0 ms
+    #     settle.pricing  (legacy)        8,171 ms of an 8,225 ms tap
+    #     entry 2932      Mackerel 80 g committed at 0.0 kcal / 0 g protein
+    #     "Chicken, fried" 120 g priced 295 kcal, then 329 kcal
+    #
+    # ASSEMBLE THEN PRICE, and the split is the safety model: `assemble`
+    # LOADS already-existing evidence (a DB read and a file read, nothing
+    # else), and `price` is SYNCHRONOUS, so no provider or model call can
+    # occur on this path at all. An artifact miss falls to a lower rung; it
+    # never invokes the generator.
+    from core.canonical_pricing import PricingRefused, price
+    from core.canonical_pricing_inputs import assemble
+
     with _timed("settle.pricing"):
-        analysis = await _analyze_food(db, user, food_name, inp)
+        # THE MASS THE ASK-TIME ESTIMATE DESCRIBED, so answering REPRICES it.
+        # Without this the estimate rung hands its own numbers through and
+        # 50 g and 100 g both commit 200 kcal — B-1.75's contract inverted.
+        _basis_grams = _grams_of(_ask_time_quantity(item), item)
+        _inputs = await assemble(
+            db, user_id=user.id,
+            entity=str(item.get("food") or item.get("name") or "").strip(),
+            preparation=resolved.preparation_id or "",
+            identity=food_name, item=item, basis_grams=_basis_grams)
+        # PricingRefused PROPAGATES. It is raised BEFORE any write below, so
+        # a refusal is non-mutating by construction rather than by a handler
+        # remembering to be careful: no food row, no ledger event, and the
+        # operation cannot reach APPLIED. Catching it here to substitute a
+        # number is the exact failure being deleted — see `refuse_or_return`.
+        analysis = price(entity=food_name, preparation=resolved.preparation_id,
+                         consumed=_consumed_quantity(patch.quantity),
+                         **_inputs)
 
     zone = str(getattr(safe_timezone(user.timezone), "zone", "UTC"))
     revision = owned.revision + 1
@@ -1264,7 +1299,7 @@ async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
                 confidence=Confidence(score=1.0, basis=provenance.value)),
             calories=float(analysis.calories or 0.0),
             protein=analysis.protein, carbs=analysis.carbs,
-            fats=analysis.fat, fiber=analysis.fiber, sugar=analysis.sugar,
+            fats=analysis.fats, fiber=analysis.fiber, sugar=analysis.sugar,
             sodium=analysis.sodium,
             quantity_text=quantity_text,
             meal_type=item.get("meal_type") or None,
@@ -1593,6 +1628,28 @@ def _quantity_text(patch) -> str:
     return f"{float(amount):g}{unit}".strip() if amount else ""
 
 
+def _grams_of(quantity_text: str, item: dict):
+    """The ask-time quantity in grams, or None when it cannot be massed.
+
+    None is a real answer: "one plate" has no stated mass, so the estimate has
+    no basis to be rescaled FROM and stands as given. Guessing a mass here
+    would be inventing the very number the question exists to obtain.
+    """
+    grams = item.get("estimated_mass_g") or item.get("grams")
+    if grams:
+        try:
+            return float(grams)
+        except (TypeError, ValueError):
+            pass
+    try:
+        from skills.nutrition.quantity import parse_quantity
+
+        parsed = parse_quantity(quantity_text)
+        return float(parsed.grams) if getattr(parsed, "grams", None) else None
+    except Exception:
+        return None
+
+
 def _ask_time_quantity(item: dict) -> str:
     """The quantity the interpreter's macros were an estimate OF.
 
@@ -1610,8 +1667,35 @@ def _ask_time_quantity(item: dict) -> str:
     return f"{amount} {unit}".strip() if unit else amount
 
 
+def _consumed_quantity(canonical):
+    """`CanonicalQuantity` -> the `NormalizedQuantity` `scaling.py` speaks.
+
+    One conversion, at the one boundary that needs it. Building a second
+    quantity model here — or teaching the pricer about `CanonicalQuantity` —
+    would be the drift this migration exists to remove; `scaling` already owns
+    basis-to-portion and is not being replaced.
+    """
+    from skills.nutrition.models import NormalizedQuantity
+
+    if canonical is None:
+        return None
+    grams = getattr(canonical, "grams", None)
+    grams = float(grams) if grams is not None else None
+    amount = getattr(canonical, "amount", None)
+    return NormalizedQuantity(
+        amount=float(amount) if amount is not None else (grams or 0.0),
+        unit=str(getattr(canonical, "unit_id", "") or "g"),
+        grams=grams,
+        count=(float(canonical.count) if getattr(canonical, "count", None)
+               is not None else None))
+
+
 def _is_estimated(analysis) -> bool:
     """Derived from the provenance VERDICT, not the display vocabulary.
+
+    A canonical `PricedFood` answers this directly — it knows which RUNG
+    produced the number, which is a stronger statement than any confidence
+    string — so it short-circuits before the legacy reading below.
 
     Promotion rewrites `confidence` from the tier table, so
     `confidence == "estimated"` is False for every promoted row — prod
@@ -1619,6 +1703,11 @@ def _is_estimated(analysis) -> bool:
     said estimated. The string check remains only for analyses with no
     provenance.
     """
+    from core.canonical_pricing import PricedFood
+
+    if isinstance(analysis, PricedFood):
+        return analysis.estimated
+
     prov = getattr(analysis, "provenance", None)
     if prov is not None:
         return bool(getattr(prov, "macros_are_estimated", False))

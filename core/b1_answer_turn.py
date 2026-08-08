@@ -268,9 +268,32 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
                 remaining=ops.wire_payload_for(
                     interaction, locale=owned.locale,
                     only={f.field_id for f in still_open}))
-        result = await ops.settle(db, user=user, owned=owned,
-                                  resolved=ops.resolved_fields(held),
-                                  source_turn_id=source_turn_id)
+        # ⭐ A FOOD WE CANNOT PRICE IS NOT COMMITTED, and this is the only
+        # place that decides so.
+        #
+        # `PricingRefused` is raised inside `settle` BEFORE any write, so a
+        # refusal is non-mutating by construction: no food row, no ledger
+        # event, and — because this returns REFUSED rather than APPLIED — no
+        # operation that claims to have logged something.
+        #
+        # Caught NARROWLY, by type. A bare `except Exception` here would be
+        # the defect being deleted: production entry 2932 committed 80 g of
+        # mackerel at 0.0 kcal / 0 g protein precisely because a pricing
+        # failure was allowed to become a number instead of an outcome.
+        from core.canonical_pricing import PricingRefused
+
+        try:
+            result = await ops.settle(db, user=user, owned=owned,
+                                      resolved=ops.resolved_fields(held),
+                                      source_turn_id=source_turn_id)
+        except PricingRefused as exc:
+            logger.warning(
+                "event=b1_pricing_refused operation=%s field=%s reason=%s",
+                owned.operation_id, live_field.field_id, exc)
+            return AnswerTurn(
+                Outcome.REFUSED, operation_id=owned.operation_id,
+                field_id=live_field.field_id, patch=answer.patch,
+                reason="unpriceable")
         return AnswerTurn(Outcome.APPLIED, operation_id=owned.operation_id,
                           field_id=live_field.field_id, patch=answer.patch,
                           result=result, reason=answer.reason)

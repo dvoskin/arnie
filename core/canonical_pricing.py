@@ -210,11 +210,23 @@ class ArtifactEvidence:
 @dataclass(frozen=True)
 class EstimateEvidence:
     """The interpreter's own numbers. The last rung, and the only one that may
-    not price at zero."""
+    not price at zero.
+
+    ⭐ IT CARRIES THE QUANTITY IT DESCRIBED. An estimate is not a per-portion
+    constant — it is a statement about a SPECIFIC amount made before the user
+    answered. Treating it as final breaks B-1.75's whole contract: measured in
+    the suite, 50 g and 100 g both committed 200.0 kcal, so the answered
+    quantity stopped being the authority the moment the artifact missed.
+
+    `basis_grams` is the mass the estimate described, so answering reprices it.
+    Without it the number is unscalable and the estimate is used as-is — which
+    is honest only when no basis was ever stated.
+    """
     calories: Optional[float] = None
     protein: Optional[float] = None
     carbs: Optional[float] = None
     fat: Optional[float] = None
+    basis_grams: Optional[float] = None
 
 
 def _profile(per100g: dict, *, source: str, source_id: str,
@@ -268,16 +280,20 @@ def _from_artifact(ev: ArtifactEvidence, *, query: str):
 
 
 def _from_estimate(ev: EstimateEvidence):
-    """The bounded fallback. Its numbers are already per-portion — the
-    interpreter estimated THIS serving — so it carries a per_portion basis and
-    is not rescaled."""
+    """The bounded fallback, REPRICED against the answer when it can be.
+
+    The estimate described `basis_grams`; the user answered something else. So
+    it is scaled like any other basis rather than being handed through — the
+    difference between "answering reprices the meal" and "answering changes
+    the label on the same number".
+    """
     if ev.calories is None:
         return None
-    return (_profile({"calories": ev.calories, "protein": ev.protein,
-                      "carbs": ev.carbs, "fat": ev.fat},
-                     source="estimate", source_id="", confidence=0.4,
-                     estimated=True),
-            Rung.ESTIMATE, "")
+    profile = _profile({"calories": ev.calories, "protein": ev.protein,
+                        "carbs": ev.carbs, "fat": ev.fat},
+                       source="estimate", source_id="", confidence=0.4,
+                       estimated=True)
+    return profile, Rung.ESTIMATE, ""
 
 
 def price(*, entity: str, preparation: str = "", consumed=None,
@@ -295,7 +311,8 @@ def price(*, entity: str, preparation: str = "", consumed=None,
     the first rung that can produce numbers wins. `refuse_or_return` is the
     single exit, so no rung can smuggle out an indefensible price.
     """
-    from skills.nutrition.scaling import Per100g, scale_profile
+    from skills.nutrition.scaling import (Per100g, PerServing,
+                                          scale_profile)
 
     chosen = None
     for ev, build in ((memory, _from_memory), (product, _from_product),
@@ -321,9 +338,20 @@ def price(*, entity: str, preparation: str = "", consumed=None,
     # this migration exists to remove. The estimate rung is already
     # per-portion and is never rescaled.
     basis_name = "per_portion"
-    if rung is not Rung.ESTIMATE and consumed is not None:
-        profile = scale_profile(profile, Per100g(), consumed)
-        basis_name = "per_100g"
+    if consumed is not None:
+        if rung is Rung.ESTIMATE:
+            # The estimate is per ITS OWN quantity, not per 100 g. With a
+            # stated basis it reprices against the answer; without one there
+            # is nothing to scale FROM, so it stands as given.
+            grams = getattr(estimate, "basis_grams", None) if estimate else None
+            if grams:
+                profile = scale_profile(
+                    profile, PerServing(serving_mass_g=float(grams),
+                                        as_served=True), consumed)
+                basis_name = "per_serving"
+        else:
+            profile = scale_profile(profile, Per100g(), consumed)
+            basis_name = "per_100g"
 
     return refuse_or_return(
         PricedFood(
