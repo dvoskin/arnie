@@ -3297,7 +3297,24 @@ async def _run_turn(
                 # before the sentence. With the early card still disabled this
                 # lands within a few ms of `complete_ms`, and that equality IS
                 # the finding rather than a measurement bug.
-                _ft_vis.mark("commit_visible")
+                #
+                # ONLY IF SOMETHING COMMITTED. A turn whose every write was
+                # BLOCKED still reaches this render — to say so — and stamping
+                # the mark there dated a moment that never happened. Because
+                # the field is a latency, that bad mark read as a FAST turn
+                # rather than a missing one, which is the direction that hides
+                # a problem instead of showing it. `api/chat.py` already guards
+                # its own mark on `entry_id`; this is the legacy lane earning
+                # the same condition rather than assuming it.
+                #
+                # Read off the trace instead of a local, so the mark cannot
+                # disagree with the count it is supposed to be about — the
+                # funnel's `visible => committed > 0` holds by construction
+                # here rather than by the two happening to be computed alike.
+                # `items_committed` is set above, in this same function.
+                _vis_trace = _ft_vis.current()
+                if _vis_trace is not None and _vis_trace.items_committed > 0:
+                    _ft_vis.mark("commit_visible")
                 # The food reply is final here — release the second-tier heads-up
                 # guard (and stop its timer sleeping) so it can never speak over
                 # the answer it was covering for.
