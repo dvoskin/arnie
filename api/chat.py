@@ -485,18 +485,32 @@ async def chat_answer(req: ClarificationAnswerRequest,
                     source_turn_id=turn.turn_id)
                 payload = _answer_payload(result)
                 await db.commit()
-                if payload.get("entry_id"):
-                    # AFTER THE COMMIT, NOT BEFORE. Marked before it, a slow
-                    # commit was excluded from the visibility latency it is
-                    # supposed to measure, and a commit that RAISED still left
-                    # the mark — recording that a committed answer became
-                    # visible when none did. `core/conversation.py` commits
-                    # first and marks after; two paths, one field, and they
-                    # have to mean the same thing.
-                    #
-                    # ONLY when a row landed: a repair, a refusal and a cancel
-                    # all produce words too, and marking those would make
-                    # `commit_visible_ms` a measure of when we replied.
+                # AFTER THE COMMIT, NOT BEFORE. Marked before it, a slow commit
+                # was excluded from the visibility latency it is supposed to
+                # measure, and a commit that RAISED still left the mark —
+                # recording that a committed answer became visible when none
+                # did. `core/conversation.py` commits first and marks after;
+                # two paths, one field, and they have to mean the same thing.
+                #
+                # `entry_id` ALONE IS NOT THE CONDITION, and using it as one
+                # was the same proxy mistake this lane keeps making. A REPLAY
+                # returns the ORIGINAL entry's id — that is the point of it —
+                # so `entry_id` is present on a turn that committed nothing,
+                # and the mark stamped a commit-visibility latency for a turn
+                # with no commit in it. Replays are fast by construction, so
+                # those readings dragged the metric DOWN: a turn that did not
+                # commit made real commits look quicker than they are.
+                #
+                # The condition is what THIS turn wrote. `items_written` is set
+                # by the coordinator and stays 0 when the writer never ran,
+                # which is exactly the duplicate/replay case that
+                # `commit_or_load_existing` answers from storage — and which
+                # this codebase already decided must not count as a second
+                # commit. The `entry_id` check stays as well, because a repair,
+                # a refusal and a cancel all produce words too.
+                _vis = _ft.current()
+                if payload.get("entry_id") and _vis is not None \
+                        and _vis.items_written > 0:
                     _ft.mark("commit_visible")
                     # The rows are durable now, so the count may say so.
                     _ft.committed_durably()

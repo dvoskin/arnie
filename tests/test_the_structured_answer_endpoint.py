@@ -297,3 +297,65 @@ async def test_a_crash_between_the_two_commits_does_not_write_twice(
     if retry.status_code == 200:
         assert retry.json()["entry_id"], (
             "the retry returned no row for a meal that exists")
+
+
+@pytest.mark.asyncio
+async def test_a_replay_does_not_date_a_commit_it_did_not_make(
+        client, edges, seeded, b1_live, density, caplog):
+    """`commit_visible_ms` belongs to the turn that COMMITTED, not to every
+    turn that mentions the entry.
+
+    A replay returns the ORIGINAL entry's id — that is what makes it a replay —
+    so `entry_id` present was never evidence that this turn wrote anything. The
+    mark was guarded on it anyway, and the funnel said so:
+    `commit_visible_ms=9` on a turn reporting `written=0 committed=0`.
+
+    The direction is what makes it worth catching. Replays are fast by
+    construction, so those readings dragged the metric DOWN — a turn that did
+    not commit made real commits look quicker than they are. A missing number
+    is visibly missing; a wrong one that flatters the system is not.
+    """
+    import logging
+
+    ids = await _open_question(edges, seeded)
+    with caplog.at_level(logging.INFO, logger="core.food_trace"):
+        applied = await client.post(ANSWER, json={**ids,
+                                                  "client_message_id": "tap-1"})
+        replayed = await client.post(ANSWER, json={**ids,
+                                                   "client_message_id": "tap-2"})
+
+    assert applied.json()["outcome"] == "applied"
+    assert replayed.json()["outcome"] == "replay", replayed.json()
+
+    lines = [r.getMessage() for r in caplog.records
+             if r.getMessage().startswith("event=food_trace ")]
+    assert len(lines) == 2, (
+        f"a replayed tap left no trace of its own — got {len(lines)} lines "
+        f"for two requests: {lines}")
+
+    def field(line, key):
+        for token in line.split():
+            if token.startswith(f"{key}="):
+                return token[len(key) + 1:]
+        raise AssertionError(f"{key}= missing from {line}")
+
+    # THE INVARIANT OVER THE ACTUAL STREAM, not over a line count: no emitted
+    # line may date a commit's visibility on a turn that wrote nothing.
+    for line in lines:
+        if field(line, "commit_visible_ms") != "-":
+            assert int(field(line, "written")) > 0, (
+                f"this turn dated the moment its committed truth became "
+                f"visible, having written nothing: {line}")
+        assert field(line, "funnel") == "ok", line
+
+    wrote, replay = lines
+    assert field(wrote, "written") == "1"
+    assert field(wrote, "committed") == "1"
+    assert field(wrote, "commit_visible_ms") != "-", (
+        "the turn that actually committed lost its visibility measurement")
+
+    assert field(replay, "written") == "0", (
+        "a replay answered from storage counted as a second write")
+    assert field(replay, "committed") == "0"
+    assert field(replay, "stopped_at") == "execute", (
+        "the replay's line does not say where the turn ended")

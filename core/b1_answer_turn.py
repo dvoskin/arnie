@@ -248,6 +248,24 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
                 resolved=ops.resolved_fields(owned.answered),
                 source_turn_id=source_turn_id,
                 cohort=str(getattr(owned, "cohort", "") or ""))
+            # A REPLAY IS A TURN AND HAS TO LEAVE A LINE. This branch never
+            # reaches the commit coordinator — that is what makes it a replay —
+            # so nothing recorded a stage, and `finish()` correctly emits
+            # nothing for a record with no stages. The result was that a
+            # replayed tap was INVISIBLE in the trace stream, which is the same
+            # blackout the answer route already had once.
+            #
+            # SKIPPED with the counts left at zero: this turn wrote nothing.
+            # The rows in `result` belong to the delivery that did, and
+            # counting them here would multiply every commit by the number of
+            # times a flaky network redelivered it.
+            try:
+                from core import food_trace as _rp_ft
+                _rp_ft.record(_rp_ft.Stage.EXECUTE,
+                              outcome=_rp_ft.Outcome.SKIPPED,
+                              detail="replay")
+            except Exception:
+                pass
             return AnswerTurn(Outcome.REPLAY, operation_id=owned.operation_id,
                               field_id=live_field.field_id, patch=answer.patch,
                               result=result, reason="replay")

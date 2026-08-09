@@ -111,6 +111,24 @@ async def commit_or_load_existing(
                 "event=commit_coordinator outcome=duplicate operation=%s "
                 "revision=%d resolution=original_result",
                 operation_id, revision)
+            # A REDELIVERY IS A TURN AND HAS TO LOOK LIKE ONE. Returning here
+            # without recording left the trace with no stages at all, and
+            # `finish()` correctly emits nothing for such a record — so a
+            # replayed tap was INVISIBLE in the stream. "The user tapped twice,
+            # what happened to the second one?" is precisely the question this
+            # spine exists to answer, and until this it had no line to answer
+            # from.
+            #
+            # SKIPPED, with the counts left at zero: this turn wrote nothing,
+            # and the rows it returns belong to the delivery that did. Counting
+            # them here would multiply every commit by the number of times a
+            # flaky network redelivered it — which is the whole reason the
+            # duplicate branch exists.
+            from core import food_trace as _dup_ft
+            _dup_ft.record(_dup_ft.Stage.EXECUTE,
+                           outcome=_dup_ft.Outcome.SKIPPED,
+                           detail="duplicate",
+                           replayed=len(claim.result.committed_items))
             return claim.result
         # A durable claim with no result is abnormal, not routine.
         logger.warning(
