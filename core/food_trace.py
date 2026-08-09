@@ -145,16 +145,30 @@ class FoodTurnTrace:
     #: is why this is the operation id and not a new correlation id.
     operation_id: str = ""
     stages: Tuple[StageRecord, ...] = ()
-    #: ═══ THE FUNNEL, AND ITS ONE RULE ═══════════════════════════════════════
+    #: ═══ THE FUNNEL: FIVE STATE BOUNDARIES, PLUS ONE EXECUTION COUNTER ══════
     #:
-    #: These five terms are a CHAIN, and no two of them may be proxies for one
-    #: another. Each is a strictly stronger claim than the one above it:
+    #: FIVE BOUNDARIES. Each is a strictly stronger claim about the SAME item
+    #: than the one above it, so each count is a subset of the one before, and
+    #: no two of them may be proxies for one another:
     #:
     #:     interpreted   the model produced an item
     #:     staged        canonical staging ACCEPTED it, with typed identity
     #:     written       a row was flushed into the transaction
     #:     committed     that transaction COMMITTED
     #:     visible       the committed truth reached the reply (a `mark`)
+    #:
+    #: ONE EXECUTION COUNTER, which is `attempted`, and it is deliberately NOT
+    #: on that ladder. It counts what the executor TRIED — a fact about
+    #: execution, not a state an item reached. Reading it as a sixth boundary is
+    #: how these get misused: `attempted=3 written=2` is a healthy partial write
+    #: and must never be flagged, while `committed=3 written=2` is impossible.
+    #: `written <= attempted` still holds, because a row cannot be flushed by a
+    #: write nobody made — that is a bound, not a membership.
+    #:
+    #: `visible` is also not a count. It is a `mark` — an event with a timestamp
+    #: — so it is checked as an implication (`visible` ⇒ `committed > 0`) rather
+    #: than compared as a magnitude. `FoodTurnTrace.impossible()` holds all four
+    #: of these checks and the log line reports the verdict as `funnel=`.
     #:
     #: Every telemetry defect this module has carried was one term standing in
     #: for another: `items_ready` (the clarifier's approval) reported as
@@ -428,6 +442,49 @@ class FoodTurnTrace:
             f"{salt}:{self.user_id}".encode("utf-8")).hexdigest()
         return f"u{digest[:12]}"
 
+    def impossible(self) -> Tuple[str, ...]:
+        """Which funnel facts this trace contradicts. Empty means self-consistent.
+
+        FIVE STATE BOUNDARIES PLUS ONE EXECUTION COUNTER — the distinction
+        matters and forcing all six into one ladder is how they get misused.
+
+        The five boundaries are progressively stronger claims about the SAME
+        item, so each is a subset of the one before:
+
+            interpreted → staged → written → committed → visible
+
+        `attempted` is not one of them. It counts what the executor TRIED,
+        which is a fact about execution rather than a state the item reached —
+        which is exactly why `attempted=3 written=2` is expected and healthy,
+        while `committed=3 written=2` is impossible. Bounding `written` by
+        `attempted` still holds, because a row cannot be flushed by a write
+        that was never made.
+
+        WHY THIS IS A METHOD ON THE TRACE AND NOT AN ASSERTION AT EACH CALL
+        SITE. Every counter here is set by a different module, and each one is
+        locally correct — the funnel goes impossible only in COMBINATION, which
+        no single call site can see. This runs where the whole record finally
+        exists, so a future call site cannot produce a shape nobody checks.
+
+        Returns names rather than raising. A tracer that raises changes the
+        control flow of the turn it is describing, and the failures it would
+        hide are the ones it exists to surface.
+        """
+        broken = []
+        if self.items_staged > self.items_interpreted:
+            broken.append("staged>interpreted")
+        if self.items_written > self.items_attempted:
+            broken.append("written>attempted")
+        if self.items_committed > self.items_written:
+            broken.append("committed>written")
+        # A visibility mark is a claim that COMMITTED TRUTH reached the reply.
+        # Stamped with nothing committed, it dates an event that did not happen
+        # — and because `commit_visible_ms` is a latency, the bad mark reads as
+        # a fast turn rather than a missing one.
+        if "commit_visible" in self.marks and self.items_committed <= 0:
+            broken.append("visible_without_commit")
+        return tuple(broken)
+
     def log_line(self) -> str:
         """The greppable summary.
 
@@ -470,6 +527,11 @@ class FoodTurnTrace:
             f"source={self.resolver_source or '-'} "
             f"promoted={'-' if self.promoted is None else str(self.promoted).lower()} "
             f"error={self.error or '-'} "
+            # THE LINE SAYING WHETHER IT CAN BE BELIEVED. A trace whose counts
+            # contradict each other is worse than a missing one: it reads as
+            # measurement. This makes the contradiction greppable rather than
+            # leaving it to be inferred by whoever compares two fields.
+            f"funnel={','.join(self.impossible()) or 'ok'} "
             f"meal={self.meal_group_id or '-'} timings={timings or '-'} "
             # THE LATENCY HALF. Everything above answers "what did the turn
             # decide"; everything below answers "what did it cost, and who
@@ -624,11 +686,21 @@ def committed_durably() -> None:
         pass
 
 
-def record_ask(*, questions: int, staged: int = 0, ready: int = 0,
-               held: int = 0, assumptions: int = 0, interpreted: int = 0,
+def record_ask(*, questions: int, interpreted: int, staged: int = 0,
+               ready: int = 0, held: int = 0, assumptions: int = 0,
                duration_ms: float = 0.0) -> None:
     """Record that this turn ASKED — for an origin that did not run its work
     inside a `stage(CLARIFY)` block.
+
+    `interpreted` IS REQUIRED, and it is the only count here that is. Everything
+    else defaults to zero because absent and zero mean the same thing for them —
+    a turn with nothing held really did hold nothing. Not so for the funnel's
+    mouth: `staged=3 interpreted=0` says typed staging accepted three items the
+    model never produced, which is not a low reading but an impossible one. A
+    default would let a new origin build that silently, so the signature refuses
+    it instead. This is the API-level half of `FoodTurnTrace.impossible()`; the
+    method catches the combinations no single call site can see, and this stops
+    the one it can.
 
     ONE DEFINITION OF WHAT AN ASK LOOKS LIKE IN THE TRACE, because there are
     two ask origins and they are not variants of one thing

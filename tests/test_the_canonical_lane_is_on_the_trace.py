@@ -107,7 +107,7 @@ class TestAnAskIsVisibleAsAnAsk:
             trace = food_trace.begin(turn_id="t1", user_id=1, channel="ios")
             food_trace.record(Stage.ROUTE, duration_ms=3.0)
             food_trace.record(Stage.CONTEXT, duration_ms=3.0)
-            food_trace.record_ask(questions=1, staged=1)
+            food_trace.record_ask(questions=1, interpreted=1, staged=1)
             food_trace.finish(trace)
 
         line = _line(caplog)
@@ -122,7 +122,8 @@ class TestAnAskIsVisibleAsAnAsk:
         so a future third origin cannot get half of it right.
         """
         trace = food_trace.begin(turn_id="t2", user_id=1)
-        food_trace.record_ask(questions=2, staged=3, ready=1, held=2)
+        food_trace.record_ask(questions=2, interpreted=3, staged=3, ready=1,
+                              held=2)
         assert trace.questions_asked == 2
         assert trace.items_staged == 3
         assert trace.items_held == 2
@@ -137,7 +138,7 @@ class TestAnAskIsVisibleAsAnAsk:
         clarification at the bottom of the funnel."""
         trace = food_trace.begin(turn_id="t3", user_id=1)
         food_trace.record(Stage.ROUTE)
-        food_trace.record_ask(questions=1)
+        food_trace.record_ask(questions=1, interpreted=1)
         food_trace.record(Stage.RENDER, duration_ms=5.0)
         assert trace.stopped_at == "clarify"
         food_trace.finish(trace)
@@ -155,7 +156,7 @@ class TestTheInterpreterIsOnTheClock:
             food_trace.record(Stage.ROUTE, duration_ms=3.0)
             with food_trace.stage(Stage.INTERPRET):
                 pass
-            food_trace.record_ask(questions=1)
+            food_trace.record_ask(questions=1, interpreted=1)
             food_trace.finish(trace)
 
         timings = _field(_line(caplog), "timings")
@@ -372,7 +373,7 @@ class TestOneOperationSpansTwoTurns:
         with caplog.at_level(logging.INFO, logger="core.food_trace"):
             trace = food_trace.begin(turn_id="ask-turn", user_id=1,
                                      operation_id="chat_quantity:26:ask-turn")
-            food_trace.record_ask(questions=1)
+            food_trace.record_ask(questions=1, interpreted=1)
             food_trace.finish(trace)
 
         assert _field(_line(caplog), "operation") == "chat_quantity:26:ask-turn"
@@ -411,7 +412,7 @@ class TestOneOperationSpansTwoTurns:
         with caplog.at_level(logging.INFO, logger="core.food_trace"):
             ask = food_trace.begin(turn_id="ios:ask", user_id=26,
                                    operation_id=operation)
-            food_trace.record_ask(questions=1, staged=1)
+            food_trace.record_ask(questions=1, interpreted=1, staged=1)
             food_trace.finish(ask)
 
             answer = food_trace.begin(turn_id="ios:answer", user_id=26,
@@ -433,6 +434,99 @@ class TestOneOperationSpansTwoTurns:
         assert _field(by_turn["ios:ask"], "asked") == "1"
         assert _field(by_turn["ios:ask"], "commit_visible_ms") == "-", \
             "the ask committed nothing and must not claim a visible commit"
+
+
+class TestTheFunnelReportsWhetherItCanBeBelieved:
+    """The counters are written by modules that never see each other's numbers,
+    so the record goes impossible only in COMBINATION — which is the one thing
+    no single call site can check.
+
+    `FoodTurnTrace.impossible()` runs where the whole record finally exists.
+    These pin each shape it must catch and, just as importantly, the healthy
+    shape it must NOT: a partial write is not a contradiction, and treating it
+    as one would train everyone to ignore the field.
+    """
+
+    def _finished(self, caplog, build):
+        """A finished trace's line. The ROUTE stage is not decoration: `finish`
+        emits nothing for a trace with no stages and no error (the guard that
+        keeps a line off every non-food turn), so counts alone would leave
+        these asserting against an empty log."""
+        with caplog.at_level(logging.INFO, logger="core.food_trace"):
+            trace = food_trace.begin(turn_id="funnel", user_id=1)
+            food_trace.record(Stage.ROUTE, duration_ms=1.0)
+            build(trace)
+            food_trace.finish(trace)
+        return _line(caplog)
+
+    @pytest.mark.allow_impossible_funnel
+    def test_staging_cannot_accept_more_than_the_model_produced(self, caplog):
+        """The funnel's mouth. `staged=3 interpreted=1` says typed staging
+        accepted two items nobody proposed — the shape a new ask origin builds
+        the moment it reports one without the other."""
+        line = self._finished(caplog, lambda t: food_trace.note(
+            items_interpreted=1, items_staged=3))
+        assert _field(line, "funnel") == "staged>interpreted"
+
+    @pytest.mark.allow_impossible_funnel
+    def test_a_row_cannot_be_flushed_by_a_write_nobody_made(self, caplog):
+        line = self._finished(caplog, lambda t: food_trace.note(
+            items_attempted=1, items_written=2))
+        assert _field(line, "funnel") == "written>attempted"
+
+    @pytest.mark.allow_impossible_funnel
+    def test_a_transaction_cannot_commit_more_than_it_wrote(self, caplog):
+        """The 08-08 defect's general form: `committed` outrunning `written` is
+        a rolled-back or partial write reported as a full success."""
+        line = self._finished(caplog, lambda t: food_trace.note(
+            items_attempted=3, items_written=2, items_committed=3))
+        assert _field(line, "funnel") == "committed>written"
+
+    @pytest.mark.allow_impossible_funnel
+    def test_nothing_committed_cannot_have_become_visible(self, caplog):
+        """`commit_visible` is a claim that COMMITTED TRUTH reached the reply.
+        Stamped with nothing committed it dates an event that did not happen —
+        and since the field is a latency, the bad mark reads as a FAST turn
+        rather than a missing one, which is why it needs catching."""
+        def build(_):
+            food_trace.record(Stage.EXECUTE)
+            food_trace.mark("commit_visible")
+        line = self._finished(caplog, build)
+        assert _field(line, "funnel") == "visible_without_commit"
+
+    def test_a_partial_write_is_healthy_and_must_not_be_flagged(self, caplog):
+        """`attempted` is an EXECUTION COUNTER, not a sixth state boundary.
+
+        A writer handed three items that lands two is the ordinary partial
+        write, and `attempted=3 written=2` is what honest telemetry looks like
+        there. Folding `attempted` into the monotone chain would flag every one
+        of them — and a check that cries wolf on healthy turns gets muted, at
+        which point it protects nothing.
+        """
+        line = self._finished(caplog, lambda t: food_trace.note(
+            items_interpreted=3, items_staged=3, items_attempted=3,
+            items_written=2, items_committed=2, items_failed=1))
+        assert _field(line, "funnel") == "ok"
+
+    def test_the_whole_healthy_chain_reports_ok(self, caplog):
+        def build(_):
+            food_trace.record_ask(questions=0, interpreted=2, staged=2)
+            food_trace.note(items_attempted=2, items_written=2)
+            food_trace.committed_durably()
+            food_trace.mark("commit_visible")
+        assert _field(self._finished(caplog, build), "funnel") == "ok"
+
+    @pytest.mark.allow_impossible_funnel
+    def test_every_violation_is_named_not_just_counted(self, caplog):
+        """Two contradictions must both appear. A boolean would say "this trace
+        is wrong" and leave the reader to find which of five ways."""
+        with caplog.at_level(logging.INFO, logger="core.food_trace"):
+            trace = food_trace.begin(turn_id="funnel_multi", user_id=1)
+            food_trace.note(items_interpreted=0, items_staged=1,
+                            items_attempted=0, items_written=1)
+            broken = trace.impossible()
+            food_trace.finish(trace)
+        assert set(broken) == {"staged>interpreted", "written>attempted"}
 
 
 class TestNoTermIsAProxyForAnother:
