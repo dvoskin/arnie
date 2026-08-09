@@ -115,19 +115,36 @@ async def test_a_table_lands_in_the_private_schema_not_public(isolated):
     """THE ASSERTION THAT MATTERS. `SHOW search_path` reflecting the schema is
     not proof — it would also be set if the option were applied and then
     overridden. Where the table physically lands is the fact.
+
+    ASK ABOUT *THIS* SCHEMA, never "which schema has a table called X". The
+    database is shared: an interrupted run or a concurrent harness can leave a
+    `probe_row` behind elsewhere, and then an unqualified catalog lookup
+    returns several rows and `.scalar()` picks one arbitrarily — reporting a
+    correctly isolated engine as broken. That is not hypothetical; the `users`
+    assertion below was written the wrong way first and did exactly that.
     """
     engine, schema = isolated
     async with engine.begin() as conn:
         await conn.execute(text("CREATE TABLE probe_row (id int)"))
-        landed = (await conn.execute(text(
-            "SELECT schemaname FROM pg_tables WHERE tablename = 'probe_row'"
-        ))).scalar()
+        here = (await conn.execute(text(
+            "SELECT count(*) FROM pg_tables "
+            "WHERE schemaname = :s AND tablename = 'probe_row'"),
+            {"s": schema})).scalar()
 
-    assert landed == schema, (
-        f"the harness wrote to {landed!r} instead of its private schema "
-        f"{schema!r} — tests would be sharing state and failing as unrelated "
-        f"off-by-ones")
-    assert landed != "public"
+    # ONE ASSERTION, AND ONLY ABOUT OUR OWN SCHEMA. It is sufficient: if the
+    # search_path option were ignored, the CREATE would land in `public` and
+    # this count would be 0.
+    #
+    # A companion `public has no probe_row` check was written here and removed.
+    # It fails on a leftover this engine did not create — an interrupted run,
+    # another harness — which makes the test a statement about the shared
+    # database's tidiness rather than about isolation. That is the same
+    # shared-state fragility the unqualified lookup had, wearing a stricter
+    # face, and a test that fails for reasons outside its subject is how a
+    # suite earns the right to be ignored.
+    assert here == 1, (
+        f"the harness did not write into its private schema {schema!r} — "
+        f"tests would be sharing state and failing as unrelated off-by-ones")
 
 
 @pg_only
