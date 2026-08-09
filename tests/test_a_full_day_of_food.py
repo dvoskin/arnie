@@ -285,10 +285,23 @@ async def app_db():
         schema = f"harness_{uuid.uuid4().hex[:12]}"
         # make_engine, never create_async_engine: the codebase refuses an
         # unpinned Postgres engine by construction (the one-clock rule).
-        eng = make_engine(pg.replace("+psycopg", "+asyncpg")
-                          if "+asyncpg" not in pg and "+psycopg" in pg else pg,
-                          connect_args={"server_settings":
-                                        {"search_path": schema}})
+        #
+        # THE URL IS USED AS CONFIGURED, NOT REWRITTEN. This asked for
+        # `+asyncpg` — a driver `17da24f` removed from `requirements.txt` in
+        # favour of psycopg3, which `requirements.txt` says was "chosen over
+        # asyncpg because it [supports] Python 3.14". The two halves of that
+        # commit disagreed, and the disagreement is invisible without a
+        # Postgres: `db.database`'s asyncpg→psycopg normalisation only runs on
+        # `DATABASE_URL` from the environment, never on a URL passed here.
+        #
+        # `options`, NOT `server_settings`. The latter is asyncpg's spelling;
+        # psycopg3 takes libpq's, and a `-c` option string is what actually
+        # pins the search path. Getting the URL right and leaving these would
+        # trade a missing driver for a silently ignored schema — the same
+        # failure with a longer fuse, since the tests would then read and write
+        # `public` while believing they were isolated.
+        eng = make_engine(pg, connect_args={
+            "options": f"-csearch_path={schema}"})
         async with eng.begin() as conn:
             await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
         async with eng.begin() as conn:
@@ -315,9 +328,7 @@ async def app_db():
         await eng.dispose()
         if schema:
             from sqlalchemy import text
-            cleanup = make_engine(pg.replace("+psycopg", "+asyncpg")
-                                  if "+asyncpg" not in pg and "+psycopg" in pg
-                                  else pg)
+            cleanup = make_engine(pg)
             try:
                 async with cleanup.begin() as conn:
                     await conn.execute(
