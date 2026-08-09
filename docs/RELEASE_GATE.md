@@ -3,41 +3,31 @@
 **Status:** authoritative. A deploy that skips this is a deploy nobody can
 reason about afterwards.
 
-> ## ⛔ THE GATE IS CLOSED, AND HAS BEEN SINCE `17da24f` (recorded 2026-08-09)
+> ## ✅ THE GATE REOPENED 2026-08-09 (`2fa8f7c`), after 3 days closed
 >
-> `release_check.py` exits 0 only on a deployable commit. **No commit on `main`
-> is currently deployable**, because the full-suite gate below has failed on
-> every one of them since 2026-08-06 — 50 commits, including `2a885603`.
+> Kept as a record rather than deleted. This document's own argument is that CI
+> passing is "a fact sitting somewhere nobody reads at deploy time" — and what
+> happened here is that failure one step further along: CI was red long enough
+> to become background noise, so 50 commits merged past it without anyone
+> treating the signal as information.
 >
-> The cause is not a regression in any feature. `17da24f` dropped asyncpg from
-> `requirements.txt` in favour of psycopg3, while `tests/test_a_full_day_of_food.py`
-> (lines 288 and 318) still rewrites the engine URL *to* `+asyncpg`. The shared
-> Postgres fixture therefore raises `ModuleNotFoundError` at setup, and every
-> Postgres-backed test errors with it. Fixing it needs more than the URL: the
-> same call passes `connect_args={"server_settings": …}`, which is asyncpg's
-> shape — psycopg3 wants `options="-csearch_path=…"`.
+> **What was wrong.** `17da24f` moved the project to psycopg3 and left the
+> Postgres harness rewriting its URL back to `+asyncpg`. 115 errors across ten
+> files, every one the same missing import at fixture setup — no real failure
+> among them. Repaired in #72.
 >
-> The `battery` gate is also red, for a different and benign reason:
-> `ANTHROPIC_API_KEY` is unset and the job refuses rather than score a false
-> failure. That refusal is correct behaviour and needs a secret, not a fix.
+> **What it cost, which a green run does not undo.** `test_b1b1_system_matrix.py`
+> is the B-1b.1 promotion gate, and its 22 tests did not execute for three days
+> while two whole workstreams landed. They pass today; that is a fact about the
+> current code, not about the commits that landed unwatched. The migration
+> directive records B-1b.1 as RUNNABLE AGAIN, not discharged.
 >
-> **Why this is worse than a red build.** This document's own argument is that
-> CI passing is "a fact sitting somewhere nobody reads at deploy time". A CI
-> that has been red long enough to become background noise is the same failure
-> one step further along — the signal still exists and has stopped meaning
-> anything. Fifty commits merged during this window, including the whole
-> canonical-pricer workstream, and the engine those changes most needed to be
-> checked against is precisely the one that has not run.
->
-> Nothing below this box is wrong. It simply cannot be exercised until the
-> fixture is repaired, and that repair is the highest-priority item in the
-> project right now.
-
-Deploys are a human action in the Render dashboard. That is fine, but it means
-CI passing is not a gate on its own — it is a fact sitting somewhere nobody
-reads at deploy time. Two incidents in one week came from exactly that: five
-audited fixes sat merged and undeployed for a day, and establishing which SHA
-was actually running cost an hour of inference from behavioural markers.
+> **Still red, and deliberately out of scope:** the `battery` job fails because
+> `ANTHROPIC_API_KEY` is unset. Refusing to score without the key is right;
+> reporting that refusal as FAILURE is not — the job is asserting something it
+> cannot know. Until the secret is configured or the workflow reports
+> neutral/skipped instead, this reintroduces exactly the permanently-red signal
+> described above.
 
 ## Before every deploy, one command
 

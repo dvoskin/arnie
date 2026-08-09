@@ -103,12 +103,22 @@ def test_the_board_does_not_claim_a_closed_state_for_open_work():
         "preparation opens — if that turn has now been observed, B-1.5's "
         "closure gate passed and THIS test should be updated in the same "
         "commit as the board")
-    # CI red on main is a live blocker on every gate phrased as "green under
-    # Postgres". It leaves the board when it is fixed, and not before.
-    assert "CI HAS BEEN RED" in board, (
-        "the CI-red banner left the board — if main is green again, remove "
-        "this assertion in the same commit and re-check the B-1b gates, which "
-        "could not be discharged while it was red")
+    # CI WENT GREEN 2026-08-09 (2fa8f7c, repaired by #72), so the red-CI
+    # assertion that stood here is retired — in the same commit that removed
+    # the banner, which is what this gate exists to force.
+    #
+    # What replaces it is NOT symmetric. "CI is green" needs no gate; it is
+    # observable from GitHub any time. What needs one is the thing a green
+    # board quietly buries: B-1b.1's 22 tests did not run for three days while
+    # two workstreams landed, and passing today says nothing about the commits
+    # that landed unwatched. That gap cannot be closed retroactively, so the
+    # board must keep saying so until someone decides to re-run the matrix
+    # against that history or to accept it.
+    assert "RUNNABLE AGAIN, NOT DISCHARGED" in board, (
+        "the board no longer distinguishes B-1b.1 being runnable from being "
+        "discharged — if the matrix has since been re-run against the commits "
+        "that landed while CI was red, or that gap was consciously accepted, "
+        "record which and update this assertion in the same commit")
     # Promotion has not happened.
     assert "PROMOTION" in board and "after B-2" in board, (
         "the promotion line left the board — promotion is a single event "

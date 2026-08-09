@@ -1148,32 +1148,43 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-09 against the commit history through `870b6ea`,
+Last reconciled 2026-08-09 against the commit history through `87db734`,
 the 2026-08-08 production trace, and the code itself. The findings ledger below
 the board holds everything instrumental from the B-1.5 build-out.
 
-**⛔ CI HAS BEEN RED ON `main` SINCE `17da24f` (2026-08-06), AND THAT IS THE
-FIRST THING TO FIX. 50 commits have landed since.** Every `main` run in that
-window failed, including `2a885603`. The cause is not a regression in any
-slice: `17da24f` dropped asyncpg from `requirements.txt` for psycopg3 ("chosen
-over asyncpg because it [supports] Python 3.14") while
-`tests/test_a_full_day_of_food.py:288,318` still rewrites the engine URL *to*
-`+asyncpg` — so the shared Postgres fixture raises `ModuleNotFoundError` at
-setup and takes every Postgres-backed test with it. Not a URL-only fix: the
-same call passes `connect_args={"server_settings": …}`, which is asyncpg-shaped
-and needs `options="-csearch_path=…"` under psycopg3.
+**✅ CI IS GREEN ON `main` AGAIN as of `2fa8f7c` (2026-08-09), after 3 days
+and 50 commits red.** Repaired by #72. Recorded rather than deleted, because
+what the outage cost is not visible from a green board.
 
-This matters beyond the inconvenience. **The whole slice loop is argued from a
-green suite**, and B-1b.1/B-1b.2 are promotion gates phrased as "green under
-Postgres and real pricing". While CI is red, no run can discharge them — and
-those 50 commits include the ENTIRE B-1.5E C1/C2 workstream and the ENTIRE P1
-pricing workstream, neither of which has been checked against the one engine
-those gates name. Anything below claiming Postgres evidence either predates
-`17da24f` or was proven locally on SQLite.
+The cause was never a regression in a slice. `17da24f` dropped asyncpg from
+`requirements.txt` for psycopg3 ("chosen over asyncpg because it [supports]
+Python 3.14") and left `tests/test_a_full_day_of_food.py` rewriting the engine
+URL back to `+asyncpg`, so the shared `app_db` fixture raised
+`ModuleNotFoundError` at setup — **115 errors across ten files**, every one the
+same import, none of them a real failure. The repair also had to translate
+asyncpg's `connect_args={"server_settings": …}` to psycopg's
+`options="-csearch_path=…"`; fixing only the URL would have gone green while
+silently writing into the shared `public` schema.
 
-*(A second job, `battery`, also fails — `ANTHROPIC_API_KEY` is unset and the job
-deliberately refuses rather than score a false result. Environmental, not a
-defect, but it means no PR currently gets a green tick from either check.)*
+**⚠ WHAT THE OUTAGE COST, AND WHY IT IS NOT DISCHARGED BY A GREEN RUN TODAY.**
+Among those ten files is `test_b1b1_system_matrix.py` — 22 tests — which IS the
+B-1b.1 promotion gate, "production-like system matrix green, real enrichment
+exercised". It did not execute anywhere between 2026-08-06 and 2026-08-09,
+while the ENTIRE B-1.5E C1/C2 workstream and the ENTIRE P1 pricing workstream
+landed on top of it.
+
+Those 22 tests pass now. That is a statement about the code as it stands, not
+about the 50 commits as they landed: the evidence the gate exists to collect
+was never collected, and cannot be reconstructed after the fact. So B-1b.1 is
+**RUNNABLE AGAIN, NOT DISCHARGED.** Whether to re-run the matrix against that
+history, or to accept it and move on, is an open judgement — recorded here
+rather than settled quietly by the fact that CI is green today.
+
+*(A second job, `battery`, is still red: `ANTHROPIC_API_KEY` is unset and the
+job deliberately refuses rather than score a false eval result. That refusal is
+correct behaviour on a missing secret — but a job that FAILS on a secret it
+cannot see is asserting something it does not know, and a permanently red check
+teaches everyone to ignore red. Open finding below.)*
 
 ```text
 Phase A    COMPLETE          production-verified on a66e9ba8
@@ -3478,6 +3489,7 @@ Each is real, none blocks the current phase, and none may be closed silently.
 | the `stages=` breakdown legitimately sums to MORE than `total_ms` (speculative enrichment runs during the LLM stream), and nothing on the line says so — a reader attributing time by summing it is wrong by construction | measured 08-08, by design | documentation, unscheduled |
 | `pricing.usda_search` still runs on the ASK turn — the P1.4 seam cut was scoped to the B-1 answer/settle function, which an ask never enters | measured 08-08, in scope | not a defect; recorded so it is not rediscovered |
 | P0.2 `TurnCoordinator` (`core/turns/*`, gated by `TURN_COORDINATOR_MODE`) is a SECOND migration this directive does not track, and `planner=legacy-adapter-v1` on a `structured_food` turn belongs to it | observed 08-08 | needs its own sequencing authority, or a section here |
+| the `battery` CI job FAILS when `ANTHROPIC_API_KEY` is absent, rather than reporting neutral/skipped — a job asserting a result it cannot know, and a permanently red check that teaches everyone to ignore red | observed 08-09, every PR that triggers it | configure the secret to make it authoritative, OR make an unavailable secret a neutral state; NOT left red |
 
 **Closed 2026-08-08 — the telemetry of one production turn (build `2a8856035e66`).**
 One iOS B-1 clarification, correct end to end, whose record was not admissible
