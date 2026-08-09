@@ -55,29 +55,57 @@ def _code_without_comments(path: str) -> str:
     return "\n".join(kept)
 
 
-def test_the_harness_does_not_ask_for_a_driver_we_removed():
-    """A ratchet on the specific mistake. Runs without Postgres — it is a
-    statement about the source, and the whole point is that it fires on a
-    machine where nobody would otherwise notice.
+def test_the_harness_does_not_rewrite_the_configured_driver():
+    """THE CONTRACT IS "USE WHAT WAS CONFIGURED", not "asyncpg must not exist".
 
-    asyncpg is deliberately absent; psycopg3 replaced it for Python 3.14
-    support. A harness that names it asks for something the project does not
-    install, and that cannot fail gracefully: it fails at fixture setup and
-    takes every dependent suite with it.
+    An earlier version of this asserted `find_spec("asyncpg") is None`. That is
+    a stronger claim than the contract and belongs to dependency policy, not to
+    this harness: if asyncpg were installed tomorrow as some unrelated
+    package's transitive dependency, that assertion would fail while the
+    harness remained perfectly correct. A ratchet that fires on a change it
+    does not actually care about is one people learn to delete.
+
+    What genuinely must hold is that the harness passes the configured URL
+    through. `17da24f` broke exactly this — it moved the project to psycopg3
+    and left the fixture rewriting the URL back to `+asyncpg`, so the harness
+    asked for a driver the project had just removed and every dependent suite
+    errored at setup.
+
+    Runs without Postgres on purpose: it is a statement about the source, and
+    the point is that it fires on a machine where nobody would otherwise
+    notice. Whether the configured driver is actually installed is a different
+    question, asked below against the real URL.
     """
-    import importlib.util
-
-    assert importlib.util.find_spec("asyncpg") is None, (
-        "asyncpg is installed — if it was deliberately restored, update "
-        "requirements.txt's comment, which says psycopg3 was chosen over it")
-
     code = _code_without_comments("tests/test_a_full_day_of_food.py")
     assert "+asyncpg" not in code, (
-        "the Postgres harness rewrites its URL to a driver that is not "
-        "installed; this is the 115-error failure from 2026-08-06")
+        "the Postgres harness rewrites its URL to a driver other than the "
+        "configured one; this is the 115-error failure from 2026-08-06")
     assert "server_settings" not in code, (
         "server_settings is asyncpg's spelling and psycopg3 IGNORES it — the "
         "schema would silently fall back to public")
+
+
+@pg_only
+def test_the_configured_driver_can_actually_be_loaded():
+    """Whatever `TEST_POSTGRES_URL` names must be importable.
+
+    Driver-agnostic by construction: it asks SQLAlchemy to resolve the DBAPI
+    for the URL as configured, so it keeps working if the project ever moves
+    to a different driver — and it fails, loudly and early, if the configured
+    one is missing. That is the failure CI actually had, expressed as its own
+    cause rather than as 115 downstream setup errors.
+    """
+    from sqlalchemy.engine import make_url
+
+    url = make_url(PG)
+    dialect = url.get_dialect()
+    try:
+        dialect.import_dbapi()
+    except ImportError as exc:                      # pragma: no cover - the bug
+        raise AssertionError(
+            f"TEST_POSTGRES_URL names driver {url.drivername!r}, whose DBAPI "
+            f"is not installed ({exc}). Every Postgres-backed suite will error "
+            f"at fixture setup.") from exc
 
 
 @pytest_asyncio.fixture
