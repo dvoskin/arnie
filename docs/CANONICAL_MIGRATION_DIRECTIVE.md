@@ -1251,8 +1251,11 @@ LATENCY    MEASURED          settle path bound (ad8b144), the 3,197 ms hole in
                              P5 (resolving state, latency copy) remains open
                              and is now the largest user-visible cost.
 TELEMETRY  REPAIRED 08-09    the canonical lane was absent from its own trace;
-                             ten defects fixed with ratchets (870b6ea). See
-                             the closed block under Open findings. The B-1
+                             ten defects fixed with ratchets (870b6ea), and an
+                             eleventh from review: the funnel's terms are now a
+                             defined chain (interpreted → staged → written →
+                             committed → visible), none a proxy for another.
+                             See the closed block under Open findings. The B-1
                              funnel can now be read per cohort through the
                              conversion step, which the promotion gate needs.
 
@@ -1352,7 +1355,14 @@ named in the contract document.
 strictly; no prose, no duplicate keys, no empty values),
 `tests/test_the_canonical_lane_is_on_the_trace.py` (the funnel-coverage ledger,
 which fails in BOTH directions so the audit's stage count cannot drift from the
-code again), and `tests/test_the_b1_counters_mean_their_names.py`.
+code again, plus `TestNoTermIsAProxyForAnother` holding the five-term chain),
+and `tests/test_the_b1_counters_mean_their_names.py`.
+
+All four are written to fail on the code as it was, not to assert that an edit
+survived. Each was verified by reverting the fix it guards in a detached
+worktree and confirming it goes red — a ratchet that cannot fail is a comment
+with a slower test suite, and sixteen of those were deleted from this branch
+for exactly that reason.
 
 ## Findings ledger — 2026-08-07, the B-1.5 build-out
 
@@ -3512,6 +3522,43 @@ user got:
 Ratchets: `tests/test_the_canonical_lane_is_on_the_trace.py`,
 `tests/test_the_b1_counters_mean_their_names.py`,
 `tests/test_the_food_log_stream_parses.py`.
+
+**An eleventh came out of REVIEW, not the capture, and it is the general form
+of the other ten.** Every defect above was one term standing in for another:
+the clarifier's approval reported as a commit, the operation's revision
+reported as a repair count, observation rows reported as rounds. Fixing them
+one at a time left the funnel's terms still undefined, so the next collapse
+had nowhere to be caught. The names are now a CHAIN of strictly strengthening
+claims, and no two of them may be proxies for one another:
+
+```text
+interpreted   the model produced an item
+staged        canonical staging ACCEPTED it, with typed identity
+written       a row was flushed into the transaction
+committed     that transaction COMMITTED
+visible       the committed truth reached the reply (a `mark`)
+```
+
+Two terms were missing, and their absence was load-bearing:
+
+| term | what its absence did |
+|---|---|
+| `items_written` | `items_attempted` meant "calls we tried" on the legacy lane and "rows successfully flushed" on the canonical one. The canonical lane writes into a caller-owned transaction where flush and commit come apart; the legacy lane's helpers commit independently, where they do not. A name true on one lane is not automatically true on the other |
+| `items_interpreted` | `stage_items` silently drops a raw row with no food name, so a staging REJECTION — the model proposing something the canonical types refuse — was indistinguishable from the model proposing nothing. An undercount at the funnel's mouth understates every rate below it |
+
+Consequences now enforced: `attempted` is stamped BEFORE the writer runs, so a
+writer that raises reports `attempted=N written=0` instead of `attempted=0`
+(a turn that tried and failed reading as a turn that never tried);
+`committed_durably()` promotes `written`, so a writer handed three items that
+lands two reports `committed=2`; and both ask origins report `interpreted`,
+because a term only some origins emit is worse than no term — a structural
+zero and a measured zero are the same token in the log.
+
+Ratchet: `TestNoTermIsAProxyForAnother`, which drives the turns where the
+terms DIVERGE. Every previous coordinator test handed the writer exactly as
+many items as it returned, which is where a correct implementation and three
+broken ones are indistinguishable. Its origin ledger fails when a THIRD ask
+origin reports `staged` without `interpreted`.
 
 Five things in the same capture read as defects and are **correct** —
 `stages` outrunning `total_ms`, `pricing.usda_search` at ask time,
