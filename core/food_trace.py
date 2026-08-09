@@ -568,6 +568,34 @@ def record(stage: Stage, *, duration_ms: float = 0.0,
         pass
 
 
+def committed_durably() -> None:
+    """The attempted writes are now DURABLE. Called after the commit lands.
+
+    Split from the write itself because on the canonical lane they are not the
+    same event. `commit_or_load_existing` writes into the caller's transaction
+    and explicitly neither commits nor rolls back, so at the moment the rows
+    exist they can still be unwound by a later failure — `record_result`, the
+    finaliser, or the caller's own `commit()`. A count taken there reports a
+    rolled-back write as a successful one.
+
+    The legacy lane has no such gap: its helpers commit independently, so
+    counting inline was already true there. This is the canonical lane earning
+    the same claim rather than inheriting it.
+
+    PROMOTES `items_attempted`, and takes no argument on purpose. The executor
+    owns how many rows were written — that rule predates this function — and a
+    caller passing its own number would be a second opinion about a fact the
+    executor already recorded.
+    """
+    trace = current()
+    if trace is None:
+        return
+    try:
+        trace.items_committed = trace.items_attempted
+    except Exception:
+        pass
+
+
 def record_ask(*, questions: int, staged: int = 0, ready: int = 0,
                held: int = 0, assumptions: int = 0,
                duration_ms: float = 0.0) -> None:

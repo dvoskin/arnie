@@ -1194,10 +1194,17 @@ async def _run_turn(
                 if getattr(_b1_facts, "entry_id", None):
                     # WHEN THE COMMITTED TRUTH GOT WORDS — the same moment the
                     # legacy commit render marks, so the two lanes' numbers mean
-                    # the same thing.
+                    # the same thing. Both this and `api/chat.py` now stamp it
+                    # strictly AFTER their `db.commit()`; the row is durable by
+                    # the time we claim a committed answer became visible.
                     try:
                         from core import food_trace as _b1_ft2
                         _b1_ft2.mark("commit_visible")
+                        # `commit_or_load_existing` only flushed into the
+                        # transaction that closed above; this is where the write
+                        # actually became durable, so this is where the count
+                        # earns the name `committed`.
+                        _b1_ft2.committed_durably()
                     except Exception:
                         pass
                 _b1_card = _b1_ans.card_for(_b1_facts)

@@ -176,7 +176,17 @@ class TestTheCommitIsVisible:
     """
 
     @pytest.mark.asyncio
-    async def test_the_coordinator_moves_the_committed_count(self, db, caplog):
+    async def test_the_coordinator_reports_attempted_not_committed(
+            self, db, caplog):
+        """THE WRITE IS NOT THE COMMIT, and the trace must not say it is.
+
+        `commit_or_load_existing` writes into the CALLER'S transaction and
+        neither commits nor rolls back. At the moment it returns, the rows are
+        flushed and can still be unwound by `record_result`, the finaliser or
+        the caller's own `commit()`. Counting them as committed there reports a
+        rolled-back write as a successful one — a trace claiming what it does
+        not know, which is the defect class this whole branch removes.
+        """
         from core.commit_coordinator import commit_or_load_existing
 
         async def writer(db_, *, operation, resolved_meal):
@@ -190,9 +200,56 @@ class TestTheCommitIsVisible:
             food_trace.finish(trace)
 
         line = _line(caplog)
-        assert _field(line, "committed") == "1"
         assert _field(line, "attempted") == "1"
+        assert _field(line, "committed") == "0", \
+            "the coordinator claimed a commit it had not made"
         assert "execute:" in _field(line, "timings")
+
+    @pytest.mark.asyncio
+    async def test_the_count_becomes_committed_at_the_durability_boundary(
+            self, db, caplog):
+        """And the promotion happens where the commit does — otherwise the
+        count would simply never be true, which is not an improvement."""
+        from core.commit_coordinator import commit_or_load_existing
+
+        async def writer(db_, *, operation, resolved_meal):
+            return _result(items=1)
+
+        with caplog.at_level(logging.INFO, logger="core.food_trace"):
+            trace = food_trace.begin(turn_id="answer", user_id=1)
+            await commit_or_load_existing(
+                db, operation=_operation("op_durable"), resolved_meal=None,
+                writer=writer)
+            await db.commit()
+            food_trace.committed_durably()
+            food_trace.finish(trace)
+
+        line = _line(caplog)
+        assert _field(line, "attempted") == "1"
+        assert _field(line, "committed") == "1"
+
+    @pytest.mark.asyncio
+    async def test_a_write_that_never_commits_is_never_counted(
+            self, db, caplog):
+        """The case the split exists for: rows written, transaction rolled
+        back. The old shape reported `committed=1` for this."""
+        from core.commit_coordinator import commit_or_load_existing
+
+        async def writer(db_, *, operation, resolved_meal):
+            return _result(items=2)
+
+        with caplog.at_level(logging.INFO, logger="core.food_trace"):
+            trace = food_trace.begin(turn_id="answer", user_id=1)
+            await commit_or_load_existing(
+                db, operation=_operation("op_rolled_back"), resolved_meal=None,
+                writer=writer)
+            await db.rollback()          # the caller's transaction fails
+            food_trace.finish(trace)
+
+        line = _line(caplog)
+        assert _field(line, "attempted") == "2", "the attempt still happened"
+        assert _field(line, "committed") == "0", \
+            "a rolled-back write was reported as a commit"
 
     @pytest.mark.asyncio
     async def test_a_multi_item_meal_counts_every_row(self, db, caplog):
@@ -211,7 +268,11 @@ class TestTheCommitIsVisible:
                 writer=writer)
             food_trace.finish(trace)
 
-        assert _field(_line(caplog), "committed") == "3"
+        line = _line(caplog)
+        assert _field(line, "attempted") == "3", \
+            "`items_attempted` is a count, not a flag"
+        assert _field(line, "committed") == "0", \
+            "nothing is committed until the caller's transaction is"
 
     @pytest.mark.asyncio
     async def test_a_failed_write_records_execute_as_failed(self, db, caplog):
@@ -351,7 +412,9 @@ class TestOneOperationSpansTwoTurns:
             await commit_or_load_existing(
                 db, operation=_operation(operation), resolved_meal=None,
                 writer=writer)
+            await db.commit()
             food_trace.mark("commit_visible")
+            food_trace.committed_durably()
             food_trace.finish(answer)
 
         lines = _traces(caplog)

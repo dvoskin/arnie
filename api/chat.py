@@ -484,14 +484,22 @@ async def chat_answer(req: ClarificationAnswerRequest,
                     # one settlement dedupes on.
                     source_turn_id=turn.turn_id)
                 payload = _answer_payload(result)
-                if payload.get("entry_id"):
-                    # WHEN THE COMMITTED TRUTH GOT WORDS, the same moment
-                    # `core/conversation.py` marks for a legacy commit — and
-                    # ONLY when a row actually landed. A repair, a refusal and
-                    # a cancel all produce words too, and marking those would
-                    # make `commit_visible_ms` a measure of when we replied.
-                    _ft.mark("commit_visible")
                 await db.commit()
+                if payload.get("entry_id"):
+                    # AFTER THE COMMIT, NOT BEFORE. Marked before it, a slow
+                    # commit was excluded from the visibility latency it is
+                    # supposed to measure, and a commit that RAISED still left
+                    # the mark — recording that a committed answer became
+                    # visible when none did. `core/conversation.py` commits
+                    # first and marks after; two paths, one field, and they
+                    # have to mean the same thing.
+                    #
+                    # ONLY when a row landed: a repair, a refusal and a cancel
+                    # all produce words too, and marking those would make
+                    # `commit_visible_ms` a measure of when we replied.
+                    _ft.mark("commit_visible")
+                    # The rows are durable now, so the count may say so.
+                    _ft.committed_durably()
             # The claim completes in its own commit here rather than riding
             # the domain write: `settle()` owns that transaction and does not
             # take a `claim_id`. Weaker, and declared as such in the policy.

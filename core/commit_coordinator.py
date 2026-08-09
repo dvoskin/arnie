@@ -133,9 +133,22 @@ async def commit_or_load_existing(
             raise TypeError(
                 "the writer must return a MealCommitResult, so the winner and a "
                 f"later duplicate answer with the same type; got {type(result).__name__}")
-        _writing.counts["committed"] = len(result.committed_items)
-    _ft.note(items_attempted=len(result.committed_items),
-             items_committed=len(result.committed_items))
+        _writing.counts["written"] = len(result.committed_items)
+    # ATTEMPTED, NOT COMMITTED — and the distinction is the whole point of this
+    # PR applied to itself. This function writes into the CALLER'S transaction
+    # and neither commits nor rolls back; it says so at the top. So at this
+    # line the rows are flushed, not durable: `record_result`, the finaliser, a
+    # later flush or the caller's own `commit()` can still fail and unwind all
+    # of it. Reporting `committed=N` here would turn a rolled-back canonical
+    # write into a successful commit in the promotion telemetry — a trace
+    # claiming something it does not know, which is the exact defect class this
+    # branch exists to remove.
+    #
+    # `items_committed` moves at the durability boundary instead, via
+    # `food_trace.committed_durably()`, called by whoever owns the commit.
+    # The legacy lane can count committed rows inline because its writes commit
+    # independently; the canonical lane cannot, and must not pretend to.
+    _ft.note(items_attempted=len(result.committed_items))
 
     # DURABLE POST-COMMIT WORK, ENQUEUED INSIDE THIS TRANSACTION.
     #

@@ -5436,12 +5436,22 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             # because `stopped_at` scans for an ASKED outcome no stage had set
             # and fell through to the last stage recorded. Same evidence as the
             # pipeline origin, same trace as the pipeline origin.
+            #
+            # `staged` COUNTS ROWS THAT WERE ACTUALLY STAGED, which is what
+            # `_b1_material` produces and what the raw interpreter list is not.
+            # Counting `data["items"]` here reported model output as though it
+            # had passed through typed staging — and `_b1_material` returns None
+            # when the pipeline is off or staging found nothing, in which case
+            # the honest count is zero. Built ONCE, above the return, so the
+            # number on the trace is the same object the predicate reads.
+            _material = _b1_material(data, message=message, mode=mode)
             try:
                 from core import food_trace as _ft
-                _ft.record_ask(questions=len(_questions),
-                               staged=len(data.get("items") or []),
-                               ready=len(_ready_now),
-                               held=len(_deferred_now))
+                _ft.record_ask(
+                    questions=len(_questions),
+                    staged=len((_material or {}).get("staged_items") or ()),
+                    ready=len(_ready_now),
+                    held=len(_deferred_now))
             except Exception:
                 pass
             return {"action": "ask", "text": text, "tool_calls": _ready_now,
@@ -5458,8 +5468,10 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     #
                     # `derive_semantics` is the SAME pass `plan_turn` runs, so
                     # both origins hand the predicate one kind of evidence.
-                    "b1_material": _b1_material(data, message=message,
-                                                mode=mode)}
+                    #
+                    # Built above rather than here, because the trace counts the
+                    # rows it staged and two calls would be two stagings.
+                    "b1_material": _material}
         # A QUESTION WE CANNOT PHRASE IS NOT A REASON TO LEAVE THE LANE.
         # `clarify_plan_from_points` returns None when `points` is empty, and
         # the empty text that follows used to return None from this function —
