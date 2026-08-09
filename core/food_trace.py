@@ -145,16 +145,41 @@ class FoodTurnTrace:
     #: is why this is the operation id and not a new correlation id.
     operation_id: str = ""
     stages: Tuple[StageRecord, ...] = ()
-    items_staged: int = 0
-    #: The commit funnel, kept as four separate numbers on purpose.
+    #: ═══ THE FUNNEL, AND ITS ONE RULE ═══════════════════════════════════════
     #:
-    #: `items_ready` is the clarifier's verdict — approved to write. It is NOT
-    #: evidence that anything was written, and reporting it as `items_committed`
-    #: meant a turn whose every write was blocked still showed a full commit
-    #: rate. Only the executor may move `items_committed`, and it reports
-    #: `items_failed` in the same breath.
+    #: These five terms are a CHAIN, and no two of them may be proxies for one
+    #: another. Each is a strictly stronger claim than the one above it:
+    #:
+    #:     interpreted   the model produced an item
+    #:     staged        canonical staging ACCEPTED it, with typed identity
+    #:     written       a row was flushed into the transaction
+    #:     committed     that transaction COMMITTED
+    #:     visible       the committed truth reached the reply (a `mark`)
+    #:
+    #: Every telemetry defect this module has carried was one term standing in
+    #: for another: `items_ready` (the clarifier's approval) reported as
+    #: `committed`, so a turn whose every write was blocked showed a full commit
+    #: rate; raw interpreter output reported as `staged`, so rows that never
+    #: reached typed staging inflated the funnel's mouth; a flush into an open
+    #: transaction reported as `committed`, so a write that later rolled back
+    #: scored as a success.
+    #:
+    #: They collapse so easily because on the LEGACY lane several of them
+    #: genuinely coincide — its helpers commit independently, so written and
+    #: committed happen together and one number is honestly both. The canonical
+    #: lane writes into a caller-owned transaction, where they come apart. A
+    #: name that was true on one lane is not automatically true on the other.
+    items_interpreted: int = 0
+    items_staged: int = 0
+    #: The clarifier's verdict — approved to write. NOT evidence of a write.
     items_ready: int = 0
+    #: Writes ATTEMPTED. On the legacy lane this counts the calls made, failures
+    #: included; the canonical lane counts the items it handed the writer. Both
+    #: mean "we tried this many", which is what makes `failed` derivable.
     items_attempted: int = 0
+    #: Rows FLUSHED into a transaction that has not necessarily committed. The
+    #: term the canonical lane needs and the legacy lane does not.
+    items_written: int = 0
     items_committed: int = 0
     items_failed: int = 0
     items_held: int = 0
@@ -314,9 +339,11 @@ class FoodTurnTrace:
             "mode": self.mode, "channel": self.channel,
             "operation_id": self.operation_id,
             "meal_group_id": self.meal_group_id, "cohort": self.cohort,
+            "items_interpreted": self.items_interpreted,
             "items_staged": self.items_staged,
             "items_ready": self.items_ready,
             "items_attempted": self.items_attempted,
+            "items_written": self.items_written,
             "items_committed": self.items_committed,
             "items_failed": self.items_failed,
             "items_held": self.items_held,
@@ -434,8 +461,9 @@ class FoodTurnTrace:
             # class the migration directive forbids mixing.
             f"resolver_cohort={self.cohort or '-'} "
             f"stopped_at={self.stopped_at or '-'} total_ms={self.total_ms:.0f} "
+            f"interpreted={self.items_interpreted} "
             f"staged={self.items_staged} ready={self.items_ready} "
-            f"attempted={self.items_attempted} "
+            f"attempted={self.items_attempted} written={self.items_written} "
             f"committed={self.items_committed} failed={self.items_failed} "
             f"held={self.items_held} asked={self.questions_asked} "
             f"assumed={self.assumptions_made} "
@@ -582,7 +610,7 @@ def committed_durably() -> None:
     counting inline was already true there. This is the canonical lane earning
     the same claim rather than inheriting it.
 
-    PROMOTES `items_attempted`, and takes no argument on purpose. The executor
+    PROMOTES `items_written`, and takes no argument on purpose. The executor
     owns how many rows were written — that rule predates this function — and a
     caller passing its own number would be a second opinion about a fact the
     executor already recorded.
@@ -591,13 +619,13 @@ def committed_durably() -> None:
     if trace is None:
         return
     try:
-        trace.items_committed = trace.items_attempted
+        trace.items_committed = trace.items_written
     except Exception:
         pass
 
 
 def record_ask(*, questions: int, staged: int = 0, ready: int = 0,
-               held: int = 0, assumptions: int = 0,
+               held: int = 0, assumptions: int = 0, interpreted: int = 0,
                duration_ms: float = 0.0) -> None:
     """Record that this turn ASKED — for an origin that did not run its work
     inside a `stage(CLARIFY)` block.
@@ -619,7 +647,8 @@ def record_ask(*, questions: int, staged: int = 0, ready: int = 0,
            questions=questions, ready=ready, held=held,
            assumptions=assumptions)
     note(questions_asked=questions, items_staged=staged, items_ready=ready,
-         items_held=held, assumptions_made=assumptions)
+         items_held=held, assumptions_made=assumptions,
+         items_interpreted=interpreted)
 
 
 class stage:

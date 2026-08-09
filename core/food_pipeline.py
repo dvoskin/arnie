@@ -720,6 +720,12 @@ def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
             # before every deriver so an ambiguity, a question and the stored
             # resolution all describe the same product set.
             items = attach_candidates(items, item_candidates)
+            # THE DROP IS THE POINT. `stage_items` skips a raw row that is not a
+            # mapping or carries no food name, so `interpreted` and `items` are
+            # different numbers and their difference is attributable to THIS
+            # stage. Recording only the survivors made a staging rejection look
+            # like the model never proposed the item.
+            staging.counts["interpreted"] = len(data.get("items") or [])
             staging.counts["items"] = len(items)
             staging.counts["candidates"] = sum(
                 len(i.candidate_products or ()) for i in items)
@@ -760,6 +766,11 @@ def plan_turn(data: Mapping, *, turn_id: str, message: str = "",
         # committed and failed counts once it knows them (core/conversation.py).
         food_trace.note(
             meal_group_id=meal_group_id, mode=mode,
+            # Reported by BOTH ask origins or by neither. The interpreter branch
+            # in `core/food_turn.py` records the same pair, because a term that
+            # only one origin emits is how D1 hid: a real number on one path and
+            # a structural zero on the other read identically in the log.
+            items_interpreted=len(data.get("items") or []),
             items_staged=len(items),
             items_ready=len(decision.ready_item_ids or ()),
             items_held=len(decision.held_item_ids or ()),

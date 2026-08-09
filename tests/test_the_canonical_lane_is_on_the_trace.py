@@ -80,6 +80,13 @@ def _operation(operation_id="op_trace", revision=0, user_id=1):
                            revision=revision, user_id=user_id)
 
 
+def _meal(items=1):
+    """The minimum a `ResolvedMeal` needs to be counted as ATTEMPTED: how many
+    items we are about to hand the writer. Stamped before the writer runs, so a
+    writer that raises still reports `attempted=N written=0`."""
+    return SimpleNamespace(items=tuple(SimpleNamespace() for _ in range(items)))
+
+
 def _result(items=1):
     from core.meal_commit import MealCommitResult
     return MealCommitResult(
@@ -196,7 +203,7 @@ class TestTheCommitIsVisible:
             trace = food_trace.begin(turn_id="answer", user_id=1,
                                      operation_id="op_trace")
             await commit_or_load_existing(
-                db, operation=_operation(), resolved_meal=None, writer=writer)
+                db, operation=_operation(), resolved_meal=_meal(1), writer=writer)
             food_trace.finish(trace)
 
         line = _line(caplog)
@@ -218,7 +225,7 @@ class TestTheCommitIsVisible:
         with caplog.at_level(logging.INFO, logger="core.food_trace"):
             trace = food_trace.begin(turn_id="answer", user_id=1)
             await commit_or_load_existing(
-                db, operation=_operation("op_durable"), resolved_meal=None,
+                db, operation=_operation("op_durable"), resolved_meal=_meal(1),
                 writer=writer)
             await db.commit()
             food_trace.committed_durably()
@@ -241,7 +248,7 @@ class TestTheCommitIsVisible:
         with caplog.at_level(logging.INFO, logger="core.food_trace"):
             trace = food_trace.begin(turn_id="answer", user_id=1)
             await commit_or_load_existing(
-                db, operation=_operation("op_rolled_back"), resolved_meal=None,
+                db, operation=_operation("op_rolled_back"), resolved_meal=_meal(2),
                 writer=writer)
             await db.rollback()          # the caller's transaction fails
             food_trace.finish(trace)
@@ -264,7 +271,7 @@ class TestTheCommitIsVisible:
         with caplog.at_level(logging.INFO, logger="core.food_trace"):
             trace = food_trace.begin(turn_id="answer", user_id=1)
             await commit_or_load_existing(
-                db, operation=_operation("op_multi"), resolved_meal=None,
+                db, operation=_operation("op_multi"), resolved_meal=_meal(3),
                 writer=writer)
             food_trace.finish(trace)
 
@@ -289,7 +296,7 @@ class TestTheCommitIsVisible:
             trace = food_trace.begin(turn_id="answer", user_id=1)
             with pytest.raises(RuntimeError):
                 await commit_or_load_existing(
-                    db, operation=_operation("op_fail"), resolved_meal=None,
+                    db, operation=_operation("op_fail"), resolved_meal=_meal(1),
                     writer=writer)
             food_trace.finish(trace)
 
@@ -315,7 +322,7 @@ class TestTheCommitIsVisible:
             trace = food_trace.begin(turn_id="answer", user_id=1)
             with pytest.raises(TypeError):
                 await commit_or_load_existing(
-                    db, operation=_operation("op_type"), resolved_meal=None,
+                    db, operation=_operation("op_type"), resolved_meal=_meal(1),
                     writer=writer)
             food_trace.finish(trace)
 
@@ -338,14 +345,14 @@ class TestTheCommitIsVisible:
             return _result(items=1)
 
         await commit_or_load_existing(
-            db, operation=_operation("op_dupe"), resolved_meal=None,
+            db, operation=_operation("op_dupe"), resolved_meal=_meal(1),
             writer=writer)
         await db.commit()
 
         with caplog.at_level(logging.INFO, logger="core.food_trace"):
             trace = food_trace.begin(turn_id="redelivery", user_id=1)
             await commit_or_load_existing(
-                db, operation=_operation("op_dupe"), resolved_meal=None,
+                db, operation=_operation("op_dupe"), resolved_meal=_meal(1),
                 writer=writer)
             food_trace.finish(trace)
 
@@ -410,7 +417,7 @@ class TestOneOperationSpansTwoTurns:
             answer = food_trace.begin(turn_id="ios:answer", user_id=26,
                                       operation_id=operation)
             await commit_or_load_existing(
-                db, operation=_operation(operation), resolved_meal=None,
+                db, operation=_operation(operation), resolved_meal=_meal(1),
                 writer=writer)
             await db.commit()
             food_trace.mark("commit_visible")
@@ -426,6 +433,182 @@ class TestOneOperationSpansTwoTurns:
         assert _field(by_turn["ios:ask"], "asked") == "1"
         assert _field(by_turn["ios:ask"], "commit_visible_ms") == "-", \
             "the ask committed nothing and must not claim a visible commit"
+
+
+class TestNoTermIsAProxyForAnother:
+    """THE FUNNEL'S ONE RULE, exercised where it can actually break.
+
+    `interpreted → staged → written → committed → visible` is a chain of
+    strictly strengthening claims. Every telemetry defect in this module was one
+    term silently standing in for the next, and each collapse was invisible in
+    the cases where the two numbers happen to be equal — which is most cases.
+
+    So these drive the turns where they DIVERGE. A test whose meal size, write
+    count and commit count all agree cannot tell a correct implementation from
+    any of the three broken ones this replaced.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_partial_write_promotes_only_what_landed(self, db, caplog):
+        """Three items handed to a writer that lands two.
+
+        `committed_durably()` promotes WRITTEN, and this is the turn that says
+        so: promoting `attempted` instead would report three committed rows for
+        two written ones — inventing a meal item at the durability boundary.
+        Every existing coordinator test hands the writer exactly as many items
+        as it returns, where the two implementations are indistinguishable.
+        """
+        from core.commit_coordinator import commit_or_load_existing
+
+        async def writer(db_, *, operation, resolved_meal):
+            return _result(items=2)          # two of the three landed
+
+        with caplog.at_level(logging.INFO, logger="core.food_trace"):
+            trace = food_trace.begin(turn_id="answer", user_id=1)
+            await commit_or_load_existing(
+                db, operation=_operation("op_partial"), resolved_meal=_meal(3),
+                writer=writer)
+            await db.commit()
+            food_trace.committed_durably()
+            food_trace.finish(trace)
+
+        line = _line(caplog)
+        assert _field(line, "attempted") == "3"
+        assert _field(line, "written") == "2"
+        assert _field(line, "committed") == "2", \
+            "the durability boundary promoted what was ATTEMPTED, not written"
+
+    @pytest.mark.asyncio
+    async def test_a_writer_that_raises_still_reports_the_attempt(
+            self, db, caplog):
+        """`attempted=1 written=0` — the shape a failure investigation must be
+        able to rule out.
+
+        Stamped after the writer returns, a raising writer reported
+        `attempted=0`: a turn that tried to write and failed looked exactly like
+        a turn that never tried. The stage outcome alone does not fix it,
+        because the count is what the funnel aggregates.
+        """
+        from core.commit_coordinator import commit_or_load_existing
+
+        async def writer(db_, *, operation, resolved_meal):
+            raise RuntimeError("ledger unavailable")
+
+        with caplog.at_level(logging.INFO, logger="core.food_trace"):
+            trace = food_trace.begin(turn_id="answer", user_id=1)
+            with pytest.raises(RuntimeError):
+                await commit_or_load_existing(
+                    db, operation=_operation("op_raise"),
+                    resolved_meal=_meal(1), writer=writer)
+            food_trace.finish(trace)
+
+        line = _line(caplog)
+        assert _field(line, "attempted") == "1", \
+            "a write that was tried and failed reported as never tried"
+        assert _field(line, "written") == "0"
+        assert _field(line, "committed") == "0"
+
+    @pytest.mark.asyncio
+    async def test_a_duplicate_delivery_attempts_nothing_and_writes_nothing(
+            self, db, caplog):
+        """A redelivery returns the ORIGINAL result without calling the writer.
+
+        Counting its `committed_items` as this turn's work would double-count
+        every retry a flaky network causes — the funnel would show more writes
+        than there were meals. The early return is what keeps both terms zero,
+        so it must stay ahead of the `attempted` stamp.
+        """
+        from core.commit_coordinator import commit_or_load_existing
+
+        async def writer(db_, *, operation, resolved_meal):
+            return _result(items=2)
+
+        await commit_or_load_existing(
+            db, operation=_operation("op_replay"), resolved_meal=_meal(2),
+            writer=writer)
+        await db.commit()
+
+        with caplog.at_level(logging.INFO, logger="core.food_trace"):
+            trace = food_trace.begin(turn_id="redelivery", user_id=1)
+            await commit_or_load_existing(
+                db, operation=_operation("op_replay"), resolved_meal=_meal(2),
+                writer=writer)
+            food_trace.note(error="redelivery")   # keep the empty-trace guard out of it
+            food_trace.finish(trace)
+
+        line = _line(caplog)
+        assert _field(line, "attempted") == "0", \
+            "a redelivery counted the original write as a second attempt"
+        assert _field(line, "written") == "0"
+
+    @pytest.mark.asyncio
+    async def test_the_staging_drop_is_visible_at_the_pipeline_origin(
+            self, caplog):
+        """`interpreted` and `staged` are different numbers, and the gap is the
+        fact worth having.
+
+        `stage_items` silently skips a raw row that is not a mapping or carries
+        no food name. Reporting only the survivors made a staging REJECTION —
+        the model proposed something the canonical types would not accept —
+        indistinguishable from the model never proposing it. That is the mouth
+        of the funnel, so an error there under-reports everything below it.
+        """
+        from core import food_pipeline
+
+        data = {"items": [{"food": "chicken", "amount": 200, "unit": "g"},
+                          {"food": "", "amount": 1},        # no name — dropped
+                          "not a mapping",                  # not a row at all
+                          {"food": "rice", "amount": 1, "unit": "cup"}]}
+
+        with caplog.at_level(logging.INFO, logger="core.food_trace"):
+            trace = food_trace.begin(turn_id="pipeline", user_id=1)
+            food_pipeline.plan_turn(data, turn_id="pipeline", message="lunch")
+            food_trace.finish(trace)
+
+        line = _line(caplog)
+        assert _field(line, "interpreted") == "4", \
+            "the interpreter's own output is missing from the funnel's mouth"
+        assert _field(line, "staged") == "2", \
+            "rows the canonical types rejected were counted as staged"
+
+    def test_every_origin_that_reports_staged_also_reports_interpreted(self):
+        """The split that caused D1(a), applied to the new term — and aimed at
+        the origin that does not exist yet.
+
+        B-1 was once wired to the minority ask producer and emitted zero events
+        in production; the same two-origin split then cost the canonical lane
+        its whole trace. A term only SOME origins emit is worse than no term at
+        all: a real number on one path and a structural zero on the other read
+        identically in the log, so the zero looks like a measurement.
+
+        This is a ledger over call sites, not a grep for my own edit. It fails
+        when a THIRD origin starts reporting `items_staged` without the number
+        it is a subset of — the shape both existing origins already got wrong
+        once, and the one nobody will think to check.
+        """
+        root = Path(__file__).resolve().parent.parent
+        offenders = []
+        for package in ("core", "api", "handlers", "skills"):
+            for path in (root / package).rglob("*.py"):
+                try:
+                    tree = ast.parse(path.read_text())
+                except SyntaxError:
+                    continue
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    keys = {k.arg for k in node.keywords if k.arg}
+                    if "items_staged" not in keys and "staged" not in keys:
+                        continue
+                    if keys & {"items_interpreted", "interpreted"}:
+                        continue
+                    offenders.append(
+                        f"{path.relative_to(root)}:{node.lineno}")
+
+        assert not offenders, (
+            f"these report how many items STAGING accepted without reporting "
+            f"how many the model proposed, so a staging rejection is "
+            f"indistinguishable from the model proposing nothing: {offenders}")
 
 
 class TestTheEmptyTraceGuardStays:

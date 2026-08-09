@@ -127,6 +127,13 @@ async def commit_or_load_existing(
     # Only the executor may move `items_committed`, which is why it moves here
     # and not at the point settlement decided to write.
     from core import food_trace as _ft
+    # ATTEMPTED IS STAMPED BEFORE THE WRITER RUNS, so a writer that RAISES is
+    # expressible: `attempted=N written=0`. Recorded after the call, a failed
+    # write reported `attempted=0` — the turn looked like it never tried, which
+    # is the one shape a failure investigation must be able to rule out. It also
+    # keeps `attempted` meaning what the legacy lane means by it ("we tried this
+    # many"), instead of quietly meaning "this many succeeded" on one lane only.
+    _ft.note(items_attempted=len(getattr(resolved_meal, "items", ()) or ()))
     with _ft.stage(_ft.Stage.EXECUTE) as _writing:
         result = await writer(db, operation=operation, resolved_meal=resolved_meal)
         if not isinstance(result, MealCommitResult):
@@ -148,7 +155,7 @@ async def commit_or_load_existing(
     # `food_trace.committed_durably()`, called by whoever owns the commit.
     # The legacy lane can count committed rows inline because its writes commit
     # independently; the canonical lane cannot, and must not pretend to.
-    _ft.note(items_attempted=len(result.committed_items))
+    _ft.note(items_written=len(result.committed_items))
 
     # DURABLE POST-COMMIT WORK, ENQUEUED INSIDE THIS TRANSACTION.
     #

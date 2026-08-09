@@ -5449,6 +5449,11 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 from core import food_trace as _ft
                 _ft.record_ask(
                     questions=len(_questions),
+                    # INTERPRETED and STAGED are different numbers, and the gap
+                    # between them is the fact worth having: the model proposed
+                    # this many, typed staging accepted that many. Collapsing
+                    # them is what this branch was doing before.
+                    interpreted=len(data.get("items") or []),
                     staged=len((_material or {}).get("staged_items") or ()),
                     ready=len(_ready_now),
                     held=len(_deferred_now))

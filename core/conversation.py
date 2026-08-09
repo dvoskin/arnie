@@ -2461,7 +2461,14 @@ async def _run_turn(
                     if getattr(c, "name", "") in ("log_food",
                                                   "restore_food_entry"))
                 _committed = tuple(c for c in _food_calls if c.committed)
+                # `written` AND `committed` TOGETHER, because on this lane they
+                # genuinely are the same event: the legacy helpers commit
+                # independently, so a row that exists is a row that is durable.
+                # Stating both keeps the funnel's shape identical across lanes —
+                # the canonical lane has to separate them, and a reader
+                # comparing the two must not find the term simply missing here.
                 _ft.note(items_attempted=len(_food_calls),
+                         items_written=len(_committed),
                          items_committed=len(_committed),
                          items_failed=len(_food_calls) - len(_committed))
                 _ft.record(
