@@ -182,28 +182,16 @@ class TestRepairsAreCountedNotInferred:
     async def test_a_clean_single_tap_reports_no_repairs(self):
         from core.b1_answer_turn import _answer_counts
 
-        assert await _answer_counts(_CountingDB([("applied", 1)]), "op1") \
-            == (1, 0)
+        assert await _answer_counts(_CountingDB(rounds=1), "op1") == (1, 0)
 
     @pytest.mark.asyncio
     async def test_repairs_are_counted_from_the_durable_observations(self):
         from core.b1_answer_turn import _answer_counts
 
         rounds, repairs = await _answer_counts(
-            _CountingDB([("repair", 2), ("applied", 1)]), "op1")
+            _CountingDB(rounds=3, repairs=2), "op1")
         assert repairs == 2, "two repairs preceded this commit"
-        assert rounds == 3, "three answer attempts reached the operation"
-
-    @pytest.mark.asyncio
-    async def test_outcomes_that_are_not_repairs_do_not_inflate_it(self):
-        """The mirror of the original defect. `revision` counted a commit as a
-        repair; a naive `rounds - 1` would count a refusal as one. Only
-        `outcome == "repair"` is a repair."""
-        from core.b1_answer_turn import _answer_counts
-
-        rounds, repairs = await _answer_counts(
-            _CountingDB([("refused", 2), ("applied", 1)]), "op1")
-        assert (rounds, repairs) == (3, 0)
+        assert rounds == 3
 
     @pytest.mark.asyncio
     async def test_a_failed_count_degrades_to_the_common_shape(self):
@@ -213,6 +201,67 @@ class TestRepairsAreCountedNotInferred:
         from core.b1_answer_turn import _answer_counts
 
         assert await _answer_counts(_ExplodingDB(), "op1") == (1, 0)
+
+
+class TestRoundsComesFromTheRoundAuthority:
+    """`rounds` is `max(round_index)`, not a row count.
+
+    The two agree today and are not the same concept. B-1.8 adds repair,
+    refusal, replay and cancel observations; the first of those that writes a
+    row without advancing a round makes a row count mean something other than
+    "how many times did we ask" — quietly, and in the metric that phase is
+    judged by. Swapping one proxy for another would have been the original
+    defect with a better proxy.
+    """
+
+    @pytest.mark.asyncio
+    async def test_extra_observations_in_one_round_do_not_inflate_rounds(self):
+        """The drift this guards against, stated as arithmetic: five durable
+        observation rows belonging to two rounds must report two."""
+        from core.b1_answer_turn import _answer_counts
+
+        rounds, _ = await _answer_counts(_CountingDB(rounds=2), "op1")
+        assert rounds == 2, \
+            "rounds followed the row inventory instead of the round authority"
+
+    @pytest.mark.asyncio
+    async def test_the_query_reads_max_round_index(self):
+        """Pins WHICH column is authoritative, by failing if the aggregate ever
+        goes back to counting rows: this db answers `one()` with the round
+        authority, and a row-counting implementation cannot produce 4 from it.
+        """
+        from core.b1_answer_turn import _answer_counts
+
+        rounds, repairs = await _answer_counts(
+            _CountingDB(rounds=4, repairs=1), "op1")
+        assert (rounds, repairs) == (4, 1)
+
+    @pytest.mark.asyncio
+    async def test_an_operation_with_no_observations_reports_one_round(self):
+        """`max()` over nothing is NULL, and a commit that reported zero rounds
+        would say the meal was never asked about."""
+        from core.b1_answer_turn import _answer_counts
+
+        assert await _answer_counts(_CountingDB(rounds=None), "op1") == (1, 0)
+
+    @pytest.mark.asyncio
+    async def test_the_aggregate_runs_on_this_engine(self, session):
+        """The aggregate is `case`-based rather than `count(...).filter(...)`
+        because FILTER needs SQLite 3.30+, and a metric that depends on the
+        engine is one that works in CI and not in production, or the reverse.
+        Executed against a real session so the SQL is actually compiled."""
+        from core.b1_answer_turn import _answer_counts
+        from db.models import B1AnswerObservation
+
+        db, user = session
+        for index, outcome in ((1, "repair"), (2, "repair"), (3, "applied")):
+            db.add(B1AnswerObservation(
+                operation_id="op_real", user_id=user.id,
+                source_turn_id=f"t{index}", attribute="quantity",
+                outcome=outcome, round_index=index))
+        await db.commit()
+
+        assert await _answer_counts(db, "op_real") == (3, 2)
 
 
 class TestWhatReachesTheCommittedLine:
@@ -243,7 +292,7 @@ class TestWhatReachesTheCommittedLine:
 
         with caplog.at_level(logging.INFO, logger="core.b1_metrics"):
             await _measure_commit(
-                _CountingDB([("repair", 1), ("applied", 1)]), owned, turn,
+                _CountingDB(rounds=2, repairs=1), owned, turn,
                 user=SimpleNamespace(id=26))
 
         line = self._committed(caplog)
@@ -268,7 +317,7 @@ class TestWhatReachesTheCommittedLine:
                 committed_items=({"entry_id": 2938, "calories": 250.0},)))
 
         with caplog.at_level(logging.INFO, logger="core.b1_metrics"):
-            await _measure_commit(_CountingDB([("applied", 1)]), owned, turn,
+            await _measure_commit(_CountingDB(rounds=1), owned, turn,
                                   user=SimpleNamespace(id=26))
 
         line = self._committed(caplog)
@@ -331,17 +380,21 @@ def _clock_now():
 
 
 class _CountingDB:
-    """Answers the one aggregate `_answer_counts` runs."""
+    """Answers the one aggregate `_answer_counts` runs.
 
-    def __init__(self, rows):
-        self._rows = rows
+    Takes `(max_round_index, repair_rows)` — the same two values the real query
+    returns — so a test states the durable facts rather than a row inventory.
+    """
+
+    def __init__(self, rounds, repairs=0):
+        self._row = (rounds, repairs)
 
     async def execute(self, *a, **k):
-        rows = self._rows
+        row = self._row
 
         class _R:
-            def all(self):
-                return list(rows)
+            def one(self):
+                return row
         return _R()
 
 

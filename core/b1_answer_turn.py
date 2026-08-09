@@ -788,19 +788,35 @@ async def _answer_counts(db, operation_id: str) -> tuple:
     lost to a failed aggregate, and "one round, no repairs" is the shape of the
     overwhelming majority of answers — an honest default rather than a guess
     that inflates either number.
+
+    `rounds` IS `max(round_index)`, NOT A ROW COUNT — and the distinction is the
+    same one that produced the defect this function replaced. Counting rows is
+    only equal to counting rounds while one observation row is exactly one
+    round, which is true today and is not a property anything enforces. B-1.8
+    adds repair, refusal, replay and cancel observations; the moment any of
+    them writes a row without advancing a round, a row count silently becomes
+    something other than "how many times did we ask". `round_index` is the
+    durable field that means a round, so it is the one read here. Swapping one
+    proxy for another would be the original mistake with a better proxy.
+
+    `repairs` stays a count, because there a row genuinely IS the event: one
+    observation whose outcome is `repair` is one repair.
     """
-    from sqlalchemy import func, select
+    from sqlalchemy import case, func, select
 
     from db.models import B1AnswerObservation
 
     try:
-        rows = (await db.execute(
-            select(B1AnswerObservation.outcome, func.count())
-            .where(B1AnswerObservation.operation_id == operation_id)
-            .group_by(B1AnswerObservation.outcome))).all()
-        by_outcome = {str(outcome or ""): int(count) for outcome, count in rows}
-        rounds = sum(by_outcome.values())
-        return (max(1, rounds), by_outcome.get("repair", 0))
+        rounds, repairs = (await db.execute(
+            select(
+                func.max(B1AnswerObservation.round_index),
+                # `case`, not `count(...).filter(...)`: the FILTER clause needs
+                # SQLite 3.30+, and this aggregate must not depend on the
+                # engine when the suite runs on one and production on another.
+                func.sum(case(
+                    (B1AnswerObservation.outcome == "repair", 1), else_=0)),
+            ).where(B1AnswerObservation.operation_id == operation_id))).one()
+        return (max(1, int(rounds or 0)), max(0, int(repairs or 0)))
     except Exception:
         logger.debug("b1 answer counts failed", exc_info=True)
         return (1, 0)

@@ -3501,11 +3501,67 @@ Ratchets: `tests/test_the_canonical_lane_is_on_the_trace.py`,
 `tests/test_the_b1_counters_mean_their_names.py`,
 `tests/test_the_food_log_stream_parses.py`.
 
-Six things in the same capture read as defects and are **correct** —
+Five things in the same capture read as defects and are **correct** —
 `stages` outrunning `total_ms`, `pricing.usda_search` at ask time,
-`turn_phase … ms=0`, `planner=legacy-adapter-v1`, `b1_answer_held … open=0`,
-and `b1_not_a_replay` firing on later messages. Recorded above or in the
-review so they are not re-litigated.
+`turn_phase … ms=0`, `planner=legacy-adapter-v1`, and `b1_not_a_replay` firing
+on later messages. Recorded above or in the review so they are not
+re-litigated. (On the last: a terminal operation staying durable and being
+consulted defensively is not stale-operation corruption, *provided* it then
+returns None and neither claims nor mutates the new turn — which those three
+lines show it doing.)
+
+**A sixth was withdrawn on review, and the distinction is worth keeping.**
+`b1_answer_held … open=0` was originally recorded here as correct-by-design.
+That claim was too strong and conflated two different truths:
+
+```text
+TELEMETRY TRUTH   open=0 accurately reported the operation's stored state.
+                  Zero fields were open according to what was persisted, and
+                  `hold_answer` running before the readiness check is the
+                  designed order. The LINE is not lying.
+PRODUCT TRUTH     whether preparation SHOULD have been open on that item is a
+                  separate B-1.5 semantic question, and this capture cannot
+                  answer it. Preparation was observed activating for
+                  "had some chicken"; if it should also have been open here,
+                  the stored state was wrong and the line faithfully reported
+                  a wrong state.
+```
+
+A trace that accurately reports bad state and a trace that reports good state
+are indistinguishable from the line alone. Filing this under "correct" would
+have closed a live B-1.5 question using telemetry evidence that cannot reach
+it — which is the same class of error as reading allowlist traffic as natural
+preference. **It is now an open B-1.5 item**, below.
+
+### ⚠ OPEN — preparation activation must not depend on quantity wording
+
+**The invariant, and it is the actual B-1.5 defect surface:**
+
+```text
+same canonical identity + preparation absent
+    => preparation activation cannot depend on how the QUANTITY was worded
+```
+
+Preparation was observed opening for `"had some chicken"`. Whether it opens for
+`"200g chicken"` — same food, same missing preparation, different quantity
+wording — is unproven. If it does not, then quantity phrasing is silently
+deciding whether a *different* field exists, and the `open=0` above was a
+faithful report of wrong state rather than a clean terminal answer.
+
+**Owed as its own change, NOT folded into the telemetry work.** The gate:
+
+| message | expected |
+|---|---|
+| `some chicken` | quantity **+** preparation |
+| `200g chicken` | preparation only |
+| `7 oz chicken` | preparation only |
+| `grilled chicken` | quantity only |
+| `200g grilled chicken` | no clarification — settle |
+
+The 2026-08-09 tracing work exists partly to make this diagnosable: `operation=`
+now joins the ask to its answer, `Stage.CLARIFY` records what opened, and
+`asked=` counts it — so the next capture can say which fields opened on which
+wording instead of leaving it to be inferred from a terminal `open=0`.
 
 ### Release gates — where the whole product stands
 
