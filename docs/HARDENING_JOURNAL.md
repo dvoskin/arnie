@@ -338,3 +338,15 @@ at all).
    controls. The existing helpers still commit independently
    (`add_food_entry` commits, then `record_ledger_event` commits), which is
    the Phase 4 gap and was out of scope for a P0 pass.
+
+   **2026-08-09 — that gap has a telemetry shadow, and it cost a defect.**
+   Because the legacy helpers commit independently, "a row was written" and
+   "a row is durable" are the same event on that lane, and one counter could
+   honestly be both. The canonical lane writes into a caller-owned
+   transaction, where they come apart — so the counter's *name* survived the
+   move to the new lane while its *guarantee* did not, and a canonical write
+   that later rolled back reported as a successful commit. The funnel now
+   separates `written` from `committed` (see the eleventh finding in
+   `CANONICAL_MIGRATION_DIRECTIVE.md`). Worth stating here because the cause
+   is this entry, not the telemetry: **while both lanes exist, every counter
+   that means "durable" has to be checked against the lane it is on.**
