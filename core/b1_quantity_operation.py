@@ -1225,8 +1225,8 @@ async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
         stored = await replay(db, owned)
         if stored is not None:
             logger.info(
-                "event=b1_replayed operation=%s user=%s — the chip was tapped "
-                "again after the meal landed", owned.operation_id, user.id)
+                "event=b1_replayed operation=%s user=%s cause=tapped_after_commit",
+                owned.operation_id, user.id)
             return stored
         raise RuntimeError(
             f"{owned.operation_id} is committed but has no stored result — "

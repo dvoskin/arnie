@@ -109,7 +109,7 @@ async def commit_or_load_existing(
         if claim.result is not None:
             logger.info(
                 "event=commit_coordinator outcome=duplicate operation=%s "
-                "revision=%d — returning the original result",
+                "revision=%d resolution=original_result",
                 operation_id, revision)
             return claim.result
         # A durable claim with no result is abnormal, not routine.

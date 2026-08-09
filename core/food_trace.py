@@ -101,12 +101,14 @@ def _salt_warning() -> None:
     if _SALT_WARNED[0]:
         return
     _SALT_WARNED[0] = True
+    # STRICTLY k=v, like every other line here — including the one warning that
+    # the lines are weaker than they look. What this would have said in prose
+    # is in `user_ref`'s docstring: the pseudonyms are unsalted digests of small
+    # integer account ids, reversible by enumeration, so `user=u…` is an
+    # account identifier and not an anonymisation.
     logger.warning(
-        "event=food_trace_config outcome=unsalted "
-        "detail=FOOD_TRACE_SALT_unset — user pseudonyms in this stream are "
-        "unsalted digests of small integer account ids and are reversible by "
-        "enumeration; treat `user=u…` as an account identifier, not as an "
-        "anonymisation")
+        "event=food_trace_config outcome=unsalted setting=FOOD_TRACE_SALT "
+        "effect=pseudonyms_reversible")
 
 
 @dataclass

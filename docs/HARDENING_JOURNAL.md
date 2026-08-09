@@ -286,10 +286,40 @@ at all).
 
 ## Remaining risks
 
-1. **`NUTRITION_RESOLVER_MODE=shadow` in production, `live` in the docs.**
+1. ~~**`NUTRITION_RESOLVER_MODE=shadow` in production, `live` in the docs.**
    Unresolved and not mine to resolve. Until answered, the deployed nutrition
    behaviour is the legacy path, and any Phase 5 work assuming resolver
-   ownership is building on nothing.
+   ownership is building on nothing.~~
+
+   **ANSWERED 2026-08-09, from a production trace nobody had connected to this
+   question.** The 2026-08-08 iOS `food_trace` line (build `2a8856035e66`)
+   carries `cohort=live`, and that value is only reachable through one path in
+   `skills/nutrition/canary.cohort_label`:
+
+   ```text
+   halted()            -> "halted"     so: NOT halted
+   resolver_mode()     -> "off"/"shadow" unless live
+                                       so: NUTRITION_RESOLVER_MODE == "live"
+   user in _allowlist  -> "allowlist"  so: no resolver allowlist entry
+   in_canary(user)     -> "canary"     so: not in the percentage cohort
+   percent>0 or list   -> "control"    so: NEITHER is set
+   otherwise           -> "live"
+   ```
+
+   So production runs the resolver **live and entirely unrestricted** — no
+   allowlist, no canary percentage, no halt. The docs were right and this entry
+   was wrong; the deployed nutrition behaviour is the new path for everyone.
+
+   **Two things follow, and the second is uncomfortable.** Phase 5 work
+   assuming resolver ownership is standing on something real after all. And
+   there is no control group: `cohort_label`'s own comment says unrestricted
+   live means everyone is treatment, so any "canary versus baseline" reading of
+   resolver behaviour from this point is comparing the new path against itself.
+
+   Note this is a *different* rollout from B-1's, which really is allowlist-only
+   — the two shared the field name `cohort` in one log stream until 2026-08-09,
+   which is why this question stayed open while the answer was being printed on
+   every food turn. They are now `resolver_cohort=` and `b1_cohort=`.
 2. **Production data was never inspected.** No `DATABASE_URL`. The historical
    `turn_id IS NULL` population in `ledger_events` is unmeasured, so the size
    of the backfill (if one is wanted) is unknown.

@@ -1,21 +1,35 @@
 # Deletion inventory — the cleanup scoreboard
 
 
-> **Current as of 2026-08-07.** Nothing was deleted since 08-05, and that is now a
-> SCHEDULE rather than a stall: promotion and predecessor deletion are batched
-> into a single event after B-2 (directive, "One promotion event"), so
-> production users cross the boundary once instead of five times. C4 remains 3,
-> C8/C9 remain frozen, and the legacy lane is explicitly a frozen compatibility
-> lane — P0/P1, security and migration-compatibility fixes only.
+> **Current as of 2026-08-09** (reconciled against `870b6ea`). The batching
+> rule is unchanged: promotion and predecessor deletion happen in a single
+> event after B-2 (directive, "One promotion event"), so production users cross
+> the boundary once instead of five times. C8/C9 remain frozen, and the legacy
+> lane is explicitly a frozen compatibility lane — P0/P1, security and
+> migration-compatibility fixes only.
+>
+> **TWO THINGS HAVE ACTUALLY GONE SINCE, and this box previously said nothing
+> had.** The scoreboard is only useful if it moves.
+>
+> 1. ✅ **`skills/nutrition/preparation_materiality.py` — DELETED** (`1e70d88`,
+>    confirmed absent from the tree). It was listed below as "newly owed" for
+>    its token-matching-against-provider-descriptions, which is regex identity
+>    and prohibited by B-1.5E. It was replaced by the semantic evidence layer,
+>    not refined — which is the disposition the directive requires for
+>    superseded design.
+> 2. ◐ **`handlers.tool_executor._analyze_food` — DECOUPLED, not deleted**
+>    (`e162e36`, audited in `2a88560`). The canonical settle path no longer
+>    imports or calls it; `core/canonical_pricing.py` prices instead. State the
+>    difference precisely, because "the seam is CUT" reads as a deletion and is
+>    not one: the function is alive and still serves the legacy lane and the
+>    ordinary `log_food` dispatcher, and the canonical **ask** path still
+>    reaches it. Full deletion is owed at the promotion event like everything
+>    else here.
 >
 > **Owed at the promotion event, beyond the table below:** the legacy quantity
-> producer, answer reconstruction, prose-derived options, iOS
-> `QuickReplyEngine.swift` (already absent from the B-1b branch) and the parked
-> `replyChipBar` (defined, uncalled). **Newly owed:**
-> `skills/nutrition/preparation_materiality.py` — its
-> token-matching-against-provider-descriptions is regex identity, prohibited by
-> B-1.5E, and survives only because it is fail-closed. It is replaced by the
-> semantic evidence layer, not refined.
+> producer, answer reconstruction, prose-derived options, `_analyze_food`
+> itself, iOS `QuickReplyEngine.swift` (already absent from the B-1b branch)
+> and the parked `replyChipBar` (defined, uncalled).
 >
 > **Owed at commit 2 (imminent, not the promotion event):**
 > `skills/nutrition/preparation_materiality.py` — its token matching against

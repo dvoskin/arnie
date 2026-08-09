@@ -1148,9 +1148,32 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-07 (evening) against production traces, the evidence
-corpus, and the commit history through `c5d3614`. The findings ledger below the
-board holds everything instrumental from the B-1.5 build-out.
+Last reconciled 2026-08-09 against the commit history through `870b6ea`,
+the 2026-08-08 production trace, and the code itself. The findings ledger below
+the board holds everything instrumental from the B-1.5 build-out.
+
+**⛔ CI HAS BEEN RED ON `main` SINCE `17da24f` (2026-08-06), AND THAT IS THE
+FIRST THING TO FIX. 50 commits have landed since.** Every `main` run in that
+window failed, including `2a885603`. The cause is not a regression in any
+slice: `17da24f` dropped asyncpg from `requirements.txt` for psycopg3 ("chosen
+over asyncpg because it [supports] Python 3.14") while
+`tests/test_a_full_day_of_food.py:288,318` still rewrites the engine URL *to*
+`+asyncpg` — so the shared Postgres fixture raises `ModuleNotFoundError` at
+setup and takes every Postgres-backed test with it. Not a URL-only fix: the
+same call passes `connect_args={"server_settings": …}`, which is asyncpg-shaped
+and needs `options="-csearch_path=…"` under psycopg3.
+
+This matters beyond the inconvenience. **The whole slice loop is argued from a
+green suite**, and B-1b.1/B-1b.2 are promotion gates phrased as "green under
+Postgres and real pricing". While CI is red, no run can discharge them — and
+those 50 commits include the ENTIRE B-1.5E C1/C2 workstream and the ENTIRE P1
+pricing workstream, neither of which has been checked against the one engine
+those gates name. Anything below claiming Postgres evidence either predates
+`17da24f` or was proven locally on SQLite.
+
+*(A second job, `battery`, also fails — `ANTHROPIC_API_KEY` is unset and the job
+deliberately refuses rather than score a false result. Environmental, not a
+defect, but it means no PR currently gets a green tick from either check.)*
 
 ```text
 Phase A    COMPLETE          production-verified on a66e9ba8
@@ -1171,25 +1194,57 @@ B-1 global promotion       DEFERRED until B-2
 B-1 predecessor deletion   DEFERRED until B-2
 B-1 legacy                 FROZEN for non-allowlisted users
 
-B-1.5      BLOCKED ON B-1.5E readiness, producer, pricing and the generic
-                             `unresolved_when` derivation are DONE and
-                             deployed (c5d3614). Preparation cannot open:
-                             no evidence source can say whether a retrieved
-                             row is about the food the user meant. MEASURED,
-                             not inferred — a bare `chicken` query returns
-                             zero comparable rows.
+B-1.5      MACHINERY DONE    readiness, producer, pricing and the generic
+                             `unresolved_when` derivation deployed; preparation
+                             now READS a fingerprinted artifact rather than
+                             computing one (404231d). Was blocked on B-1.5E;
+                             that block is LIFTED. Owes the natural iOS turn
+                             that proves preparation opening in production.
 CONTRACT   FROZEN 08-07      semantic field registry + rule of three
-B-1.5E     C1 LANDED         core + food domain + both projections + LIVE
+B-1.5E     C1 + C2 LANDED    C1: core + food domain + both projections + LIVE
                              eval (Sonnet 80% exact, 0 false-compatible at
                              conf>=0.80; Haiku DISQUALIFIED — errors at 0.90+)
-                             + qualification wired before best_candidate
-                             (220ae9d). Composite/derived rows now
-                             structurally cannot win pricing.
-                             C2 NEXT: preparation consumes qualified evidence
-                             through unresolved_when; superseded predicate
-                             DELETED, not refined. Then the natural iOS turn.
+                             + qualification before best_candidate (220ae9d).
+                             C2: preparation consumes qualified evidence and
+                             the token matcher is DELETED, not refined
+                             (1e70d88); turn-scoped execution through the
+                             existing seam (778ebd0, c2265d6, e757682); fields
+                             request evidence and do not own provider
+                             lifecycles (652f19f).
                              ARCHITECTURE FROZEN — core/semantic_evidence.py
                              does not get smarter.
+
+P0         LANDED            no row is deleted without a ledger event
+                             (d9c6412); a food row and its history commit
+                             together on every lane (279e411).
+P1 PRICING  LANDED, AUDITED  THE CANONICAL LANE PRICES ITS OWN FOOD. A whole
+                             workstream that did not exist at the last
+                             reconciliation:
+                             P1.1/P1.2 four pricing rungs + portion basis
+                             through scaling.py (b92e828); P1.3 the qualified
+                             artifact and the root cause of entry 2932
+                             (02e45db); P1.4 the legacy pricing seam CUT from
+                             the canonical lane (e162e36) — `_analyze_food` is
+                             gone from settle, verified: the only remaining
+                             mention in core/canonical_pricing.py is its own
+                             docstring. Then an adversarial self-audit found
+                             four defects in code that was already green
+                             (2a88560).
+                             SCOPE: the cut covers ANSWER/SETTLE only. The ASK
+                             path still reaches `_analyze_food` — see the open
+                             findings.
+LATENCY    MEASURED          settle path bound (ad8b144), the 3,197 ms hole in
+                             settle.pricing split (bdec559), the 2,206 ms
+                             bucket inside _analyze_food closed (2ca3c19).
+                             STILL 8.2 s TO A QUESTION on the 08-08 trace —
+                             P5 (resolving state, latency copy) remains open
+                             and is now the largest user-visible cost.
+TELEMETRY  REPAIRED 08-09    the canonical lane was absent from its own trace;
+                             ten defects fixed with ratchets (870b6ea). See
+                             the closed block under Open findings. The B-1
+                             funnel can now be read per cohort through the
+                             conversion step, which the promotion gate needs.
+
 B-1.6      after B-1.5
 B-1.7      after B-1.6
 B-1.8      after B-1.7
@@ -1199,6 +1254,54 @@ B-3/B-4    ownership consolidation and deletion
 C/D/E/F    canonical food, shared contracts, workouts
 ```
 
+**What changed since `c5d3614`, in one sentence each, because the board above
+compresses 25 commits.** B-1.5E finished (C1 and C2 both landed, the superseded
+token matcher deleted rather than improved). An entire pricing workstream
+appeared and closed: the canonical lane no longer rents `_analyze_food` for
+settlement, and the commit that cut the seam was followed by an adversarial
+audit of itself that found four more defects. Two P0 ledger guarantees landed.
+The settle path was instrumented and three latency holes closed. Then the
+2026-08-08 production trace showed the telemetry describing all of it was
+wrong, and that was repaired.
+
+**What is NOT proven, stated plainly.** B-1.5's machinery is deployed; a
+production turn where preparation actually opens has not been observed. The
+pricing rungs are unit-proven and were audited, but the CI engine that the
+B-1b gates name has been red throughout — so "green under Postgres and real
+pricing" is currently an untested claim for everything after `17da24f`.
+
+### TWO ROLLOUTS ARE LIVE, AT DIFFERENT WIDTHS *(measured 2026-08-09)*
+
+Recorded on the board because reading either one as "the rollout" produces a
+wrong answer about who is exposed to what.
+
+```text
+nutrition resolver   LIVE, UNRESTRICTED   everyone. No allowlist, no canary
+                                          percentage, not halted.
+B-1 clarification    ALLOWLIST ONLY       user 26 and internal testers.
+```
+
+The resolver's width was an OPEN QUESTION in
+`docs/HARDENING_JOURNAL.md` ("`NUTRITION_RESOLVER_MODE=shadow` in production,
+`live` in the docs — unresolved"), and the answer had been printing on every
+food turn the whole time. `cohort=live` is reachable through exactly one path
+in `skills/nutrition/canary.cohort_label`, and it requires mode `live` with no
+allowlist entry, no canary bucket and no halt. The journal entry is now closed
+against that evidence.
+
+**Why it stayed open while being continuously observable.** Both rollouts wrote
+a field called `cohort` into the same log stream with overlapping vocabularies,
+so the resolver's `live` and B-1's `allowlist` read as a contradiction about
+one thing rather than as two facts about two things. Split into
+`resolver_cohort=` and `b1_cohort=` on 2026-08-09.
+
+**The consequence for evidence classes**, which the table further down governs:
+there is **no control group for the resolver**. `cohort_label`'s own comment
+makes the point — unrestricted live means everyone is treatment, and labelling
+them `control` "made canary-versus-control reports compare the new path against
+itself". Any resolver-quality claim from here is a before/after over time, not
+a comparison; B-1's allowlist evidence is unaffected and remains what it was.
+
 **Promotion and deletion are deliberately batched after B-2. This is a
 ROLLOUT decision, not an architectural dependency.** Canonical development
 continues for allowlisted users only. Nothing in B-1.5 through B-2 waits on
@@ -1206,21 +1309,39 @@ promotion, and promotion waits on all of them.
 
 ## Companion documents — what each owns
 
-This document is the SEQUENCING AUTHORITY. The detail lives beside it, and all
-of these were reconciled 2026-08-07:
+This document is the SEQUENCING AUTHORITY. The detail lives beside it. The
+table below was reconciled 2026-08-07; the **freshness** column was checked
+2026-08-09 against `870b6ea` and is deliberately separate, because "this
+document owns X" and "this document is currently true about X" are different
+claims and conflating them is how the board came to read `B-1 NEXT` while B-1
+was production-proven.
 
-| document | owns |
-|---|---|
-| `ARCHITECTURE_CONTRACT.md` | executable invariants C1–C9, plus the Semantic Extension Contract, the one lane gate, and the no-unledgered-delete rule |
-| `CLARIFICATION_MIGRATION.md` | Phase B design decisions; B-1/B-1.9 production-proven, B-1.5 built and blocked on B-1.5E |
-| `CHIP_GENERATION_MIGRATION.md` | option pipeline + status ledger; the durable candidate universe, the surface-vs-modality correction, neutral captioned chips |
-| `DELETION_INVENTORY.md` | cleanup scoreboard; nothing deleted since 08-05 BY SCHEDULE, everything owed at the one promotion event |
-| `WORKOUT_CONTRACTS.md` | Phase E/F shapes; what is already generic and the honesty test that keeps it so |
-| `QUICK_LOG_PROMOTION_RECORD.md` | Phase A evidence — the only completed prove→promote→delete cycle, and the template |
-| `tests/evidence_corpus/` | captured RAW provider records (USDA, OFF, Tavily) + human-reviewed `GROUND_TRUTH.md` |
+| document | owns | fresh as of 08-09? |
+|---|---|---|
+| `ARCHITECTURE_CONTRACT.md` | executable invariants C1–C9, plus the Semantic Extension Contract, the one lane gate, and the no-unledgered-delete rule | assumed current — invariants are test-enforced, so drift fails rather than rots |
+| `CLARIFICATION_MIGRATION.md` | Phase B design decisions | **STALE** — says B-1.5 is "blocked on B-1.5E"; that block lifted when C2 landed (`1e70d88`) |
+| `CHIP_GENERATION_MIGRATION.md` | option pipeline + status ledger | not re-checked |
+| `DELETION_INVENTORY.md` | cleanup scoreboard | **owes a line** — the P1.4 seam cut removed `_analyze_food` from the canonical settle path, the first real deletion since 08-05 |
+| `WORKOUT_CONTRACTS.md` | Phase E/F shapes | not re-checked; no Phase E/F work has landed |
+| `QUICK_LOG_PROMOTION_RECORD.md` | Phase A evidence and the prove→promote→delete template | current — Phase A is closed |
+| `audits/NUTRITION_LANE_AUDIT_2026-07-28.md` | the standing nutrition-lane audit | updated 08-09 — finding **C5** closed for `Stage.INTERPRET`, still open for `Stage.PROMOTE` |
+| `tests/evidence_corpus/` | captured RAW provider records (USDA, OFF, Tavily) + human-reviewed `GROUND_TRUTH.md` | not re-checked |
+
+**Two of these are knowingly stale and are NOT being fixed silently.** Naming
+them here is the point: a companion document that quietly disagrees with the
+board is worse than one openly marked stale, because the reader cannot tell
+which to believe. Whoever next touches Phase B design owes
+`CLARIFICATION_MIGRATION.md` its correction.
 
 Enforcement lives in `tests/test_the_canonical_invariants.py` and the suites
 named in the contract document.
+
+**The telemetry ratchets are enforcement too, and they live outside that file**
+— `tests/test_the_food_log_stream_parses.py` (every measurement line parses
+strictly; no prose, no duplicate keys, no empty values),
+`tests/test_the_canonical_lane_is_on_the_trace.py` (the funnel-coverage ledger,
+which fails in BOTH directions so the audit's stage count cannot drift from the
+code again), and `tests/test_the_b1_counters_mean_their_names.py`.
 
 ## Findings ledger — 2026-08-07, the B-1.5 build-out
 
@@ -3390,6 +3511,19 @@ review so they are not re-litigated.
 
 **Team assessment, 2026-08-06.** B-1 proves the migration *method* and the
 hardest ownership mechanics. It does not mean every food behaviour has moved.
+
+> **These percentages predate 50 commits and are NOT re-scored here** (noted
+> 2026-08-09). Since they were set: B-1.5E C1+C2 landed, the canonical pricer
+> replaced `_analyze_food` in settlement, two P0 ledger guarantees landed, and
+> the lane's telemetry was found wrong and repaired. Those move "Food logging
+> migration" upward. Pulling the other way: CI has been red the whole time, so
+> none of it is Postgres-verified, and Gate 1 explicitly requires "telemetry
+> readable, failures visible" — which was FALSE for the canonical lane until
+> 2026-08-09 and is a condition, not a percentage.
+>
+> A number invented by whoever last edited the file is worse than a dated one,
+> because it reads as a fresh judgement. Re-score these when the team next
+> assesses; until then treat them as of 08-06.
 
 ```text
 Core backend architecture        80–85%

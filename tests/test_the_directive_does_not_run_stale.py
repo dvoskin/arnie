@@ -91,11 +91,24 @@ def test_the_board_does_not_claim_a_closed_state_for_open_work():
     text = DIRECTIVE.read_text(encoding="utf-8")
     board = text[text.index("## Status board"):]
 
-    # B-1.5 is not closed until the natural production trace passes (B-1.5E).
-    assert "BLOCKED ON B-1.5E" in board, (
-        "the board no longer says B-1.5 is blocked on B-1.5E — if that is "
-        "true, B-1.5's production closure gate passed and THIS test should be "
-        "updated in the same commit as the board")
+    # B-1.5's B-1.5E BLOCK LIFTED 2026-08-09 — C1 and C2 both landed (d71fe65,
+    # 220ae9d, 1e70d88), so the board no longer says "BLOCKED ON B-1.5E" and
+    # this gate was updated in the same commit, exactly as the docstring
+    # requires. What B-1.5 still owes changed KIND rather than going away:
+    # the machinery is deployed and no production turn has yet been observed in
+    # which preparation actually opens. That is the open state the board must
+    # keep saying, so a stale copy-paste cannot close it.
+    assert "natural iOS turn" in board, (
+        "the board no longer says B-1.5 owes a production turn where "
+        "preparation opens — if that turn has now been observed, B-1.5's "
+        "closure gate passed and THIS test should be updated in the same "
+        "commit as the board")
+    # CI red on main is a live blocker on every gate phrased as "green under
+    # Postgres". It leaves the board when it is fixed, and not before.
+    assert "CI HAS BEEN RED" in board, (
+        "the CI-red banner left the board — if main is green again, remove "
+        "this assertion in the same commit and re-check the B-1b gates, which "
+        "could not be discharged while it was red")
     # Promotion has not happened.
     assert "PROMOTION" in board and "after B-2" in board, (
         "the promotion line left the board — promotion is a single event "
