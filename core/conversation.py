@@ -1158,10 +1158,55 @@ async def _run_turn(
                 logger.info(
                     "event=b1_answer outcome=%s operation=%s user=%s",
                     _b1_out.outcome.value, _b1_out.operation_id, user.id)
+                # THE TRACE THIS BRANCH NEVER LEFT. `finish()` only emits a
+                # line when the trace recorded a stage, and this return happens
+                # before `Stage.ROUTE` is ever recorded — so every typed answer
+                # closed its span silently and the canonical commit had no
+                # food_trace line at all. `operation_id` is what joins this line
+                # to the ask turn, which carries a different `turn_id`.
+                #
+                # A commit records `Stage.EXECUTE` in the coordinator; the other
+                # outcomes record here, because "the answer turn asked again" and
+                # "the answer turn refused" are funnel states that otherwise look
+                # identical to a turn that never ran.
+                try:
+                    from core import food_trace as _b1_ft
+                    _b1_ft.note(operation_id=_b1_out.operation_id or "")
+                    _b1_outcome_v = str(getattr(_b1_out.outcome, "value", ""))
+                    if _b1_out.internal_failure:
+                        _b1_ft.record(_b1_ft.Stage.CLARIFY,
+                                      outcome=_b1_ft.Outcome.FAILED,
+                                      detail=f"b1:{_b1_outcome_v}")
+                    elif _b1_outcome_v in ("repair", "partial"):
+                        _b1_ft.record(_b1_ft.Stage.CLARIFY,
+                                      outcome=_b1_ft.Outcome.ASKED,
+                                      detail=f"b1:{_b1_outcome_v}")
+                    elif _b1_outcome_v != "applied":
+                        _b1_ft.record(_b1_ft.Stage.CLARIFY,
+                                      outcome=_b1_ft.Outcome.HELD,
+                                      detail=f"b1:{_b1_outcome_v}")
+                except Exception:
+                    pass
                 # ONE extraction, passed to both renderers. Neither may
                 # re-read the commit result, so they cannot drift apart.
                 _b1_facts = _b1_ans.facts_for(_b1_out)
                 _b1_resp = Response.from_text(_b1_ans.copy_for(_b1_facts))
+                if getattr(_b1_facts, "entry_id", None):
+                    # WHEN THE COMMITTED TRUTH GOT WORDS — the same moment the
+                    # legacy commit render marks, so the two lanes' numbers mean
+                    # the same thing. Both this and `api/chat.py` now stamp it
+                    # strictly AFTER their `db.commit()`; the row is durable by
+                    # the time we claim a committed answer became visible.
+                    try:
+                        from core import food_trace as _b1_ft2
+                        _b1_ft2.mark("commit_visible")
+                        # `commit_or_load_existing` only flushed into the
+                        # transaction that closed above; this is where the write
+                        # actually became durable, so this is where the count
+                        # earns the name `committed`.
+                        _b1_ft2.committed_durably()
+                    except Exception:
+                        pass
                 _b1_card = _b1_ans.card_for(_b1_facts)
                 if _b1_card is not None:
                     # ONE facts object, two renderings. The card cannot
@@ -1781,7 +1826,7 @@ async def _run_turn(
                     _sft.pop("b1_material", None)
                     await db.commit()
                     logger.info(
-                        "event=b1_owns_turn operation=%s cohort=%s user=%s",
+                        "event=b1_owns_turn operation=%s b1_cohort=%s user=%s",
                         _b1_ask.operation_id, _b1_ask.cohort, user.id)
 
             # Hold: record the pending (with the original report stashed) so
@@ -2416,7 +2461,14 @@ async def _run_turn(
                     if getattr(c, "name", "") in ("log_food",
                                                   "restore_food_entry"))
                 _committed = tuple(c for c in _food_calls if c.committed)
+                # `written` AND `committed` TOGETHER, because on this lane they
+                # genuinely are the same event: the legacy helpers commit
+                # independently, so a row that exists is a row that is durable.
+                # Stating both keeps the funnel's shape identical across lanes —
+                # the canonical lane has to separate them, and a reader
+                # comparing the two must not find the term simply missing here.
                 _ft.note(items_attempted=len(_food_calls),
+                         items_written=len(_committed),
                          items_committed=len(_committed),
                          items_failed=len(_food_calls) - len(_committed))
                 _ft.record(

@@ -398,8 +398,11 @@ async def claim_commit(db, *, operation_id: str, revision: int = 0,
         # whatever the caller staged before this is intact.
         existing = await _load(db, operation_id, revision)
         logger.info(
+            # STRICTLY k=v — the trailing sentence this used to carry is the
+            # docstring's job. `outcome=duplicate` already says the write
+            # happened; `resolution=` says what the caller gets back.
             "event=meal_commit outcome=duplicate operation=%s revision=%d "
-            "— the write already happened; returning the original result",
+            "resolution=original_result",
             operation_id, revision)
         return CommitClaim(won=False, operation_id=operation_id,
                            revision=revision,
@@ -444,10 +447,20 @@ async def record_result(db, *, operation_id: str, revision: int = 0,
         why = ("no claim exists" if existing is None
                else "already has a result" if existing.result_payload
                else f"claim is {existing.status!r}")
+        # TWO VALUES, TWO AUDIENCES. `why` is a sentence — it reads well in the
+        # exception a human sees, and it destroys the log line, because a value
+        # with spaces splits into bare tokens and silently truncates everything
+        # after it. So the line carries a token and the exception keeps the
+        # sentence; the trailing "— the ledger write must not stand" goes with
+        # it, since `outcome=result_not_recorded` plus the raise say that
+        # already.
+        reason = ("no_claim" if existing is None
+                  else "already_recorded" if existing.result_payload
+                  else f"claim_{existing.status or 'unknown'}")
         logger.error(
             "event=meal_commit outcome=result_not_recorded operation=%s "
-            "revision=%d why=%s — the ledger write must not stand",
-            operation_id, revision, why)
+            "revision=%d reason=%s",
+            operation_id, revision, reason)
         raise MissingCommitClaim(operation_id, int(revision), why)
     logger.info("event=meal_commit outcome=recorded operation=%s revision=%d",
                 operation_id, revision)

@@ -28,6 +28,15 @@ WHY THE ASK'S TIMESTAMP IS READ BACK RATHER THAN PASSED. Latency and
 abandonment are both properties of the GAP between two turns, and only the
 stored row spans it. Deriving them from anything the answer turn holds would
 measure the answer turn.
+
+THE KEY IS `b1_cohort`, NOT `cohort`. These lines share a log stream with
+`event=food_trace`, which carries `skills/nutrition/canary.cohort_label` — the
+NUTRITION RESOLVER's rollout, vocabulary `off·shadow·allowlist·canary·control·
+live`. What these events carry is `skills/nutrition/quantity_rollout.cohort_label`
+— the B-1 QUANTITY rollout, vocabulary `allowlist·cohort·control·off`. Different
+env vars, different allowlists, different questions, and on 2026-08-08 they
+printed `live` and `allowlist` for one turn under the same key. Both were right.
+A reader filtering one name got a population neither of them describes.
 """
 from __future__ import annotations
 
@@ -66,9 +75,9 @@ def shown(*, operation_id: str, user_id, cohort: str, locale: str,
                      for o in field.options)
     offered = ",".join(f"{s}:{n}" for s, n in sorted(counts.items()))
     logger.info(
-        "event=b1_shown operation=%s user=%s cohort=%s locale=%s "
+        "event=b1_shown operation=%s user=%s b1_cohort=%s locale=%s "
         "options=%d sources=%s offered=%s free_text=%s attribute=%s reason=%s",
-        operation_id, user_id, cohort, locale, len(field.options),
+        operation_id, user_id, cohort or "-", locale, len(field.options),
         ",".join(sources) or "none", offered or "none", True,
         field.attribute.value, eligible_reason)
 
@@ -79,7 +88,7 @@ def declined(*, user_id, reason: str, cohort: str = "") -> None:
     The MIX is the measurement: it sizes B-1.5 and B-2 directly. "How often is
     the only unresolved thing a mass?" is not answerable from anywhere else.
     """
-    logger.info("event=b1_declined user=%s reason=%s cohort=%s",
+    logger.info("event=b1_declined user=%s reason=%s b1_cohort=%s",
                 user_id, reason, cohort or "-")
 
 
@@ -101,7 +110,7 @@ def answered(*, operation_id: str, user_id, outcome: str, modality: str,
     # the whole reason D4 runs before the chips are built.
     logger.info(
         "event=b1_answered operation=%s user=%s outcome=%s modality=%s "
-        "selected_source=%s cohort=%s latency_ms=%s provenance=%s grams=%s "
+        "selected_source=%s b1_cohort=%s latency_ms=%s provenance=%s grams=%s "
         "reason=%s",
         operation_id, user_id, outcome, modality, selected_source or "-",
         cohort or "-", _ms_since(asked_at), provenance or "-",
@@ -120,7 +129,7 @@ def committed(*, operation_id: str, user_id, entry_id, calories,
     """
     logger.info(
         "event=b1_committed operation=%s user=%s entry=%s cal=%s "
-        "selected_source=%s repairs=%d cohort=%s "
+        "selected_source=%s repairs=%d b1_cohort=%s "
         "latency_ms=%s rounds=%d",
         operation_id, user_id, entry_id, calories, selected_source or "-",
         repairs, cohort or "-", _ms_since(asked_at), rounds)
@@ -135,7 +144,7 @@ def abandoned(*, operation_id: str, user_id, cohort: str = "",
     likely to be missing from a dashboard that looks complete.
     """
     logger.info(
-        "event=b1_abandoned operation=%s user=%s cohort=%s open_ms=%s",
+        "event=b1_abandoned operation=%s user=%s b1_cohort=%s open_ms=%s",
         operation_id, user_id, cohort or "-", _ms_since(asked_at))
 
 
@@ -148,7 +157,7 @@ def corrected(*, operation_id: str, user_id, entry_id, minutes: float,
     """
     logger.info(
         "event=b1_corrected operation=%s user=%s entry=%s within_min=%.1f "
-        "cohort=%s", operation_id, user_id, entry_id, minutes, cohort or "-")
+        "b1_cohort=%s", operation_id, user_id, entry_id, minutes, cohort or "-")
 
 
 def modality_of(*, option_id: str, reason: str) -> str:

@@ -91,11 +91,34 @@ def test_the_board_does_not_claim_a_closed_state_for_open_work():
     text = DIRECTIVE.read_text(encoding="utf-8")
     board = text[text.index("## Status board"):]
 
-    # B-1.5 is not closed until the natural production trace passes (B-1.5E).
-    assert "BLOCKED ON B-1.5E" in board, (
-        "the board no longer says B-1.5 is blocked on B-1.5E — if that is "
-        "true, B-1.5's production closure gate passed and THIS test should be "
-        "updated in the same commit as the board")
+    # B-1.5's B-1.5E BLOCK LIFTED 2026-08-09 — C1 and C2 both landed (d71fe65,
+    # 220ae9d, 1e70d88), so the board no longer says "BLOCKED ON B-1.5E" and
+    # this gate was updated in the same commit, exactly as the docstring
+    # requires. What B-1.5 still owes changed KIND rather than going away:
+    # the machinery is deployed and no production turn has yet been observed in
+    # which preparation actually opens. That is the open state the board must
+    # keep saying, so a stale copy-paste cannot close it.
+    assert "natural iOS turn" in board, (
+        "the board no longer says B-1.5 owes a production turn where "
+        "preparation opens — if that turn has now been observed, B-1.5's "
+        "closure gate passed and THIS test should be updated in the same "
+        "commit as the board")
+    # CI WENT GREEN 2026-08-09 (2fa8f7c, repaired by #72), so the red-CI
+    # assertion that stood here is retired — in the same commit that removed
+    # the banner, which is what this gate exists to force.
+    #
+    # What replaces it is NOT symmetric. "CI is green" needs no gate; it is
+    # observable from GitHub any time. What needs one is the thing a green
+    # board quietly buries: B-1b.1's 22 tests did not run for three days while
+    # two workstreams landed, and passing today says nothing about the commits
+    # that landed unwatched. That gap cannot be closed retroactively, so the
+    # board must keep saying so until someone decides to re-run the matrix
+    # against that history or to accept it.
+    assert "RUNNABLE AGAIN, NOT DISCHARGED" in board, (
+        "the board no longer distinguishes B-1b.1 being runnable from being "
+        "discharged — if the matrix has since been re-run against the commits "
+        "that landed while CI was red, or that gap was consciously accepted, "
+        "record which and update this assertion in the same commit")
     # Promotion has not happened.
     assert "PROMOTION" in board and "after B-2" in board, (
         "the promotion line left the board — promotion is a single event "

@@ -119,6 +119,14 @@ class OwnedOperation:
     #: field, so readiness counts fields and changing your mind about the
     #: portion cannot complete a question that never asked about preparation.
     answered: dict = dc_field(default_factory=dict)
+    #: WHEN WE SHOWED THE QUESTION, application-stamped. `None` on operations
+    #: opened before the stamp existed; `asked_at` falls back for those.
+    asked_at_stamp: Any = None
+    #: WHICH ROLLOUT OWNED THIS OPERATION, read back rather than re-derived.
+    #: Empty on operations opened before it was persisted — and `-` in a metric
+    #: is honest for those, where a freshly-derived label would be a claim about
+    #: today's rollout attached to yesterday's operation.
+    cohort: str = ""
 
     @property
     def expired(self) -> bool:
@@ -173,7 +181,23 @@ class OwnedOperation:
         """When the QUESTION was sent. Latency and abandonment are properties
         of the gap between two turns, and only the row spans it — deriving
         either from anything the answer turn holds would measure the answer
-        turn instead."""
+        turn instead.
+
+        THE STAMP, NOT THE ROW'S BIRTHDAY. `row.created_at` is
+        `server_default=func.now()`, and Postgres `now()` is
+        `transaction_timestamp()` — the time the enclosing TRANSACTION began.
+        The insert rides the turn's transaction, which opens before the
+        interpreter's model call, so `created_at` predates the question by
+        however long interpretation took. Measured 2026-08-08: 8.3 s of a
+        10.9 s "user answer latency" was ours, and abandonment thresholds
+        derived from it fire early on exactly the slowest turns.
+
+        Falls back to `created_at` for operations opened before the stamp
+        existed: an older row's approximate answer beats no answer, and the
+        error is bounded by that turn's own duration.
+        """
+        if self.asked_at_stamp is not None:
+            return self.asked_at_stamp
         return self.row.created_at
 
     @property
@@ -205,7 +229,8 @@ class _AnswerOperation:
 
 
 def _encode(interaction, interpreter_item: dict, locale: str,
-            decision_id: str = "", candidate_set_id: str = "") -> str:
+            decision_id: str = "", candidate_set_id: str = "",
+            asked_at: str = "", cohort: str = "") -> str:
     if not isinstance(interpreter_item, dict):
         # NAMED, not coerced. `build_interaction` takes the STAGED item and
         # this takes the INTERPRETER's dict; they are different objects about
@@ -234,6 +259,36 @@ def _encode(interaction, interpreter_item: dict, locale: str,
         # statement about the system and a false one about this turn.
         "decision_id": decision_id,
         "candidate_set_id": candidate_set_id,
+        # WHEN THE QUESTION WAS SENT, stamped by the application at the moment
+        # we show it — NOT `row.created_at`.
+        #
+        # `created_at` is `server_default=func.now()`, and Postgres `now()` is
+        # `transaction_timestamp()`: it returns when the TRANSACTION began, not
+        # when the row was inserted. This INSERT rides the turn's existing
+        # transaction, which opened before the interpreter's model call, so the
+        # row was stamped 8.3 s before the user could see anything. Measured
+        # 2026-08-08: `latency_ms=10894` for an answer given 2,560 ms after the
+        # chips appeared — 76% of the reported "user latency" was our backend.
+        #
+        # `ONE_CLOCK_MIGRATION` settled WHICH clock is authoritative. It did not
+        # cover the database freezing `now()` for the length of a transaction,
+        # which is a different failure and needs a different stamp.
+        "asked_at": asked_at,
+        # WHICH ROLLOUT PUT THIS USER ON THE CANONICAL PATH, pinned to the
+        # operation because the ANSWER turn cannot re-derive it.
+        #
+        # `b1_shown` carried `cohort=allowlist`; `b1_answered` and
+        # `b1_committed` carried `cohort=-`, because nothing persisted it and
+        # `OwnedOperation` had no such attribute for the answer turn to read.
+        # So the funnel could count asks per cohort and neither answers nor
+        # commits — it broke at the conversion step, which is the only step
+        # promotion asks about ("100% of eligible turns canonical under the
+        # rollout cohort").
+        #
+        # PINNED, NOT RE-READ, for the same reason `locale` is: the answer can
+        # arrive days later, and a rollout that moved in between would relabel
+        # an operation that was decided under the old one.
+        "cohort": cohort,
     })
 
 
@@ -273,7 +328,9 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
         storage_status="active", domain=DOMAIN, source_turn_id=turn_id,
         payload=_encode(interaction, interpreter_item, locale or "en",
                         decision_id=decision_id,
-                        candidate_set_id=candidate_set_id),
+                        candidate_set_id=candidate_set_id,
+                        asked_at=_now().isoformat(),
+                        cohort=cohort or ""),
         # AN UNANSWERED QUESTION MUST NOT LIVE FOREVER. Without this the row
         # stays `awaiting_answer` indefinitely and a message weeks later is
         # read as an answer to a meal the user has long forgotten.
@@ -282,6 +339,14 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
     b1_metrics.shown(operation_id=operation_id, user_id=user.id, cohort=cohort,
                      locale=locale or "en",
                      field=interaction.groups[0].fields[0])
+    # THE JOIN KEY, ON THE ASK SIDE. The answer arrives on a different turn with
+    # a different `turn_id`, so without this the two halves of one operation
+    # cannot be joined from the trace stream alone.
+    try:
+        from core import food_trace as _ft
+        _ft.note(operation_id=operation_id)
+    except Exception:
+        pass
     return operation_id
 
 
@@ -935,15 +1000,37 @@ async def owning(db, user) -> Optional[OwnedOperation]:
                 row=row, interaction=None, item={},
                 locale=str(data.get("locale") or "en"),
                 decision_id=str(data.get("decision_id") or ""),
-                candidate_set_id=str(data.get("candidate_set_id") or ""))
+                candidate_set_id=str(data.get("candidate_set_id") or ""),
+                asked_at_stamp=_decode_asked_at(data),
+                cohort=str(data.get("cohort") or ""))
         return OwnedOperation(
             row=row, interaction=interaction,
             item=dict(data.get("item") or {}),
             locale=str(data.get("locale") or "en"),
             decision_id=str(data.get("decision_id") or ""),
             candidate_set_id=str(data.get("candidate_set_id") or ""),
+            asked_at_stamp=_decode_asked_at(data),
+            cohort=str(data.get("cohort") or ""),
             answered=_decode_answered(data, row.operation_id))
     return None
+
+
+def _decode_asked_at(data: dict):
+    """The ask stamp, or None for a row written before it existed.
+
+    NEVER RAISES. This feeds a metric, and an operation must not become
+    unanswerable because the timestamp it carries is unreadable — the fallback
+    to `created_at` is exactly as good as the behaviour this replaced.
+    """
+    from datetime import datetime
+
+    raw = data.get("asked_at")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw))
+    except Exception:
+        return None
 
 
 def _decode_answered(data: dict, operation_id: str) -> dict:
@@ -1138,8 +1225,8 @@ async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
         stored = await replay(db, owned)
         if stored is not None:
             logger.info(
-                "event=b1_replayed operation=%s user=%s — the chip was tapped "
-                "again after the meal landed", owned.operation_id, user.id)
+                "event=b1_replayed operation=%s user=%s cause=tapped_after_commit",
+                owned.operation_id, user.id)
             return stored
         raise RuntimeError(
             f"{owned.operation_id} is committed but has no stored result — "
@@ -1328,9 +1415,13 @@ async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
     if not outcome.ok and not outcome.conflict:
         logger.warning("b1 could not close operation=%s", operation_id)
     logger.info(
-        "event=b1_committed operation=%s revision=%d user=%s cohort=%s "
+        "event=b1_committed operation=%s revision=%d user=%s b1_cohort=%s "
         "answer_provenance=%s grams=%s items=%d",
-        operation_id, revision, user.id, cohort, provenance.value,
+        # `or "-"`, like every other emitter. An empty value renders as a bare
+        # `cohort=` token, which a `k=v` split reads as a key with no value —
+        # a different thing from "we do not know", and this line printed it on
+        # every commit while its neighbours printed `-`.
+        operation_id, revision, user.id, cohort or "-", provenance.value,
         getattr(patch.quantity, "grams", None), len(result.committed_items))
     return result
 

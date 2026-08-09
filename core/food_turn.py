@@ -5225,11 +5225,20 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             # forty-five-second model timeout inside a twenty-second turn budget
             # meant the "turn budget" could not bound the turn's biggest wait.
             from core import deadline
+            from core import food_trace as _ft
             _interp_model = _logger_model()
-            res = await deadline.wait_for(
-                chat([{"role": "user", "content": content}], sys,
-                     tools=False, max_tokens=700, model=_interp_model,
-                     stream_handler=_SpeculativeEnrichment(on_first_food)))
+            # THE STAGE THAT WAS NEVER RECORDED. `Stage.INTERPRET` had no
+            # `record()` call site anywhere — audit finding C5, 2026-07-28 —
+            # so the single largest block in a food turn was absent from
+            # `timings=` and the funnel could not say how many turns died in
+            # interpretation. The cost fields below it were already noted; only
+            # the stage was missing, which is why the line could show an 8s
+            # interpreter TTFB beside `timings=route:3,context:3`.
+            with _ft.stage(_ft.Stage.INTERPRET):
+                res = await deadline.wait_for(
+                    chat([{"role": "user", "content": content}], sys,
+                         tools=False, max_tokens=700, model=_interp_model,
+                         stream_handler=_SpeculativeEnrichment(on_first_food)))
         except Exception as e:
             # Includes DeadlineExceeded: out of time is a fall-through to the
             # legacy path, never a lost meal.
@@ -5420,6 +5429,36 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 _chip_options = _flat[0] if len(_flat) == 1 else []
             # `_questions_from_points` already returns `out[:4]`, so the cap that
             # used to sit here is redundant — it is not dropped, it moved.
+            #
+            # THE TRACE, for the same reason `b1_material` is built here: this
+            # branch is where most asks come from, and it recorded nothing. A
+            # turn that asked a question reported `stopped_at=context asked=0`,
+            # because `stopped_at` scans for an ASKED outcome no stage had set
+            # and fell through to the last stage recorded. Same evidence as the
+            # pipeline origin, same trace as the pipeline origin.
+            #
+            # `staged` COUNTS ROWS THAT WERE ACTUALLY STAGED, which is what
+            # `_b1_material` produces and what the raw interpreter list is not.
+            # Counting `data["items"]` here reported model output as though it
+            # had passed through typed staging — and `_b1_material` returns None
+            # when the pipeline is off or staging found nothing, in which case
+            # the honest count is zero. Built ONCE, above the return, so the
+            # number on the trace is the same object the predicate reads.
+            _material = _b1_material(data, message=message, mode=mode)
+            try:
+                from core import food_trace as _ft
+                _ft.record_ask(
+                    questions=len(_questions),
+                    # INTERPRETED and STAGED are different numbers, and the gap
+                    # between them is the fact worth having: the model proposed
+                    # this many, typed staging accepted that many. Collapsing
+                    # them is what this branch was doing before.
+                    interpreted=len(data.get("items") or []),
+                    staged=len((_material or {}).get("staged_items") or ()),
+                    ready=len(_ready_now),
+                    held=len(_deferred_now))
+            except Exception:
+                pass
             return {"action": "ask", "text": text, "tool_calls": _ready_now,
                     DEFERRED_KEY: _deferred_now,
                     "questions": _questions, "options": _chip_options,
@@ -5434,8 +5473,10 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     #
                     # `derive_semantics` is the SAME pass `plan_turn` runs, so
                     # both origins hand the predicate one kind of evidence.
-                    "b1_material": _b1_material(data, message=message,
-                                                mode=mode)}
+                    #
+                    # Built above rather than here, because the trace counts the
+                    # rows it staged and two calls would be two stagings.
+                    "b1_material": _material}
         # A QUESTION WE CANNOT PHRASE IS NOT A REASON TO LEAVE THE LANE.
         # `clarify_plan_from_points` returns None when `points` is empty, and
         # the empty text that follows used to return None from this function —

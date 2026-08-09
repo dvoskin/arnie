@@ -37,6 +37,7 @@ No database writes and no nutrition resolution live here.
 from __future__ import annotations
 
 import re
+import time as _time
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Callable, FrozenSet, Mapping, Optional, Tuple
@@ -2710,6 +2711,14 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
 
     #: Why `_run` came back empty, set by whichever except arm caught it.
     _why = {"cause": "model_unavailable"}
+    #: WHAT THE VOICE CALLS COST. `voice_ttfb_ms` was declared on the trace and
+    #: never written by anything, so every line reported a named `voice_model`
+    #: beside `voice_ttfb_ms=0` — a model credited with copy, with no evidence
+    #: it ran. First byte is unmeasurable here (only `chat`'s streaming path
+    #: reports it, and the composer does not stream), so it stays absent and
+    #: the total — which IS measurable — is recorded instead. Accumulated
+    #: across retries, because two calls cost two calls.
+    _cost = {"ms": 0.0, "ttfb_ms": None}
 
     async def _run(prompt: str) -> Optional[str]:
         """The model's text, or None when the CALL ITSELF failed.
@@ -2740,11 +2749,21 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
             # and the deterministic floor speaks. A slow sentence costs the
             # sentence, never the write it describes.
             from core import deadline
-            out = await deadline.wait_for(
-                chat(_composer_messages(plan),
-                     prompt, tools=False, max_tokens=200,
-                     model=model or _composer_model()),
-                _voice_deadline_s())
+            _started = _time.monotonic()
+            try:
+                out = await deadline.wait_for(
+                    chat(_composer_messages(plan),
+                         prompt, tools=False, max_tokens=200,
+                         model=model or _composer_model()),
+                    _voice_deadline_s())
+            finally:
+                # In a `finally`, so a call that timed out still reports what
+                # it spent. A voice timeout that costs the deadline and records
+                # zero is the shape that makes a slow composer invisible.
+                _cost["ms"] += (_time.monotonic() - _started) * 1000.0
+            if isinstance(out, dict) and out.get("ttfb_ms") is not None:
+                # Present only if the composer ever moves to the streaming path.
+                _cost["ttfb_ms"] = float(out["ttfb_ms"])
             return (out or {}).get("text", "") if isinstance(out, dict) else str(out or "")
         except Exception as e:
             # SLOW AND DOWN ARE DIFFERENT PROBLEMS. Both end in the
@@ -2780,15 +2799,18 @@ async def compose_async(plan: FoodResponsePlan, *, model: Optional[str] = None,
             # already tried its own model fallback by this point; the honest
             # move now is the deterministic text.
             _note_voice(plan, voice_model=_model, retry_count=_calls - 1,
+                        voice_ms=_cost["ms"], voice_ttfb_ms=_cost["ttfb_ms"],
                         fallback_path=_why["cause"])
             return fallback(plan), _why["cause"]
         last = validate(text, plan)
         if last.ok:
-            _note_voice(plan, voice_model=_model, retry_count=_calls - 1)
+            _note_voice(plan, voice_model=_model, retry_count=_calls - 1,
+                        voice_ms=_cost["ms"], voice_ttfb_ms=_cost["ttfb_ms"])
             from core.food_ledger import strip_stray_emoji
             return re.sub(r"[ \t]{2,}", " ", strip_stray_emoji(text.strip())).strip(), Reason.OK
         prompt = f"{prompt}\n\nYOUR LAST ATTEMPT FAILED: {last.reason}. Fix it."
     _note_voice(plan, voice_model=_model, retry_count=_calls - 1,
+                voice_ms=_cost["ms"], voice_ttfb_ms=_cost["ttfb_ms"],
                 fallback_path=f"validation:{last.reason}")
     return fallback(plan), last.reason
 

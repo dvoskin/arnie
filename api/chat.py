@@ -462,15 +462,44 @@ async def chat_answer(req: ClarificationAnswerRequest,
                 return {**_render_answer(facts), "idempotent_replay": True,
                         "turn_id": turn.turn_id}
 
-            result = await b1_answer_turn.handle(
-                db, user=user, message="",
-                option_id=req.option_id, field_id=req.field_id,
-                revision=req.revision,
-                # ONE IDENTITY. The turn id the claim was taken under is the
-                # one settlement dedupes on.
-                source_turn_id=turn.turn_id)
-            payload = _answer_payload(result)
-            await db.commit()
+            # THE ANSWER HALF OF THE TRACE. This route never called `run_turn`,
+            # so it never opened a food_trace span — the ask turn emitted a line
+            # saying `committed=0` and the turn that actually committed emitted
+            # nothing at all. One operation spans two turns with two different
+            # `turn_id`s, so `operation_id` is what joins them; it is the same
+            # string every `b1_*` event already keys on.
+            #
+            # No `mode`: the mode that governed this operation is the one that
+            # applied when it was ASKED, and it rides that turn's line. Reading
+            # the user's current preference here would report a mode this
+            # operation was never decided under.
+            from core import food_trace as _ft
+            with _ft.span(turn_id=turn.turn_id, user_id=user.id,
+                          channel=PLATFORM, operation_id=req.operation_id):
+                result = await b1_answer_turn.handle(
+                    db, user=user, message="",
+                    option_id=req.option_id, field_id=req.field_id,
+                    revision=req.revision,
+                    # ONE IDENTITY. The turn id the claim was taken under is the
+                    # one settlement dedupes on.
+                    source_turn_id=turn.turn_id)
+                payload = _answer_payload(result)
+                await db.commit()
+                if payload.get("entry_id"):
+                    # AFTER THE COMMIT, NOT BEFORE. Marked before it, a slow
+                    # commit was excluded from the visibility latency it is
+                    # supposed to measure, and a commit that RAISED still left
+                    # the mark — recording that a committed answer became
+                    # visible when none did. `core/conversation.py` commits
+                    # first and marks after; two paths, one field, and they
+                    # have to mean the same thing.
+                    #
+                    # ONLY when a row landed: a repair, a refusal and a cancel
+                    # all produce words too, and marking those would make
+                    # `commit_visible_ms` a measure of when we replied.
+                    _ft.mark("commit_visible")
+                    # The rows are durable now, so the count may say so.
+                    _ft.committed_durably()
             # The claim completes in its own commit here rather than riding
             # the domain write: `settle()` owns that transaction and does not
             # take a `claim_id`. Weaker, and declared as such in the policy.

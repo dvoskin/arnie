@@ -109,7 +109,7 @@ async def commit_or_load_existing(
         if claim.result is not None:
             logger.info(
                 "event=commit_coordinator outcome=duplicate operation=%s "
-                "revision=%d — returning the original result",
+                "revision=%d resolution=original_result",
                 operation_id, revision)
             return claim.result
         # A durable claim with no result is abnormal, not routine.
@@ -120,11 +120,42 @@ async def commit_or_load_existing(
 
     # WON. Everything below is in the caller's transaction, so any failure
     # unwinds the ledger write with it.
-    result = await writer(db, operation=operation, resolved_meal=resolved_meal)
-    if not isinstance(result, MealCommitResult):
-        raise TypeError(
-            "the writer must return a MealCommitResult, so the winner and a "
-            f"later duplicate answer with the same type; got {type(result).__name__}")
+    #
+    # THE WRITE, ON THE TRACE. `Stage.EXECUTE` and `items_committed` were
+    # recorded only by the legacy executor, so a canonical commit left a trace
+    # reading `committed=0` — indistinguishable from a turn that wrote nothing.
+    # Only the executor may move `items_committed`, which is why it moves here
+    # and not at the point settlement decided to write.
+    from core import food_trace as _ft
+    # ATTEMPTED IS STAMPED BEFORE THE WRITER RUNS, so a writer that RAISES is
+    # expressible: `attempted=N written=0`. Recorded after the call, a failed
+    # write reported `attempted=0` — the turn looked like it never tried, which
+    # is the one shape a failure investigation must be able to rule out. It also
+    # keeps `attempted` meaning what the legacy lane means by it ("we tried this
+    # many"), instead of quietly meaning "this many succeeded" on one lane only.
+    _ft.note(items_attempted=len(getattr(resolved_meal, "items", ()) or ()))
+    with _ft.stage(_ft.Stage.EXECUTE) as _writing:
+        result = await writer(db, operation=operation, resolved_meal=resolved_meal)
+        if not isinstance(result, MealCommitResult):
+            raise TypeError(
+                "the writer must return a MealCommitResult, so the winner and a "
+                f"later duplicate answer with the same type; got {type(result).__name__}")
+        _writing.counts["written"] = len(result.committed_items)
+    # ATTEMPTED, NOT COMMITTED — and the distinction is the whole point of this
+    # PR applied to itself. This function writes into the CALLER'S transaction
+    # and neither commits nor rolls back; it says so at the top. So at this
+    # line the rows are flushed, not durable: `record_result`, the finaliser, a
+    # later flush or the caller's own `commit()` can still fail and unwind all
+    # of it. Reporting `committed=N` here would turn a rolled-back canonical
+    # write into a successful commit in the promotion telemetry — a trace
+    # claiming something it does not know, which is the exact defect class this
+    # branch exists to remove.
+    #
+    # `items_committed` moves at the durability boundary instead, via
+    # `food_trace.committed_durably()`, called by whoever owns the commit.
+    # The legacy lane can count committed rows inline because its writes commit
+    # independently; the canonical lane cannot, and must not pretend to.
+    _ft.note(items_written=len(result.committed_items))
 
     # DURABLE POST-COMMIT WORK, ENQUEUED INSIDE THIS TRANSACTION.
     #
