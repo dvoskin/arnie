@@ -157,6 +157,38 @@ def key(entity: str, preparation: str = "") -> str:
     return f"{ent}|{prep}"
 
 
+def priced_identity(entity: str, preparation: str = "") -> str:
+    """⭐ THE IDENTITY THE RANKER MUST BE ASKED ABOUT — same split as `key`.
+
+    THE KEY IS NOT THE ONLY CONSUMER OF THE IDENTITY BOUNDARY, and the first
+    pass of this fix only served one of them. Lookup and ranking are two
+    steps, and `key` canonicalised the first while the second still received
+    whatever the caller happened to hold:
+
+        price(entity="Beef", preparation="grilled")   key beef|grilled  HIT 5
+                                                      query "Beef"      -> None
+
+    MEASURED 2026-08-10, offline against the committed artifact. The evidence
+    was found and then discarded, because `best_candidate("Beef", ...)` cannot
+    select a grilled-beef row from a query that never says grilled — so the
+    rung produced no winner, fell through, and the meal priced as an estimate.
+    The composed-name route ("Fried chicken", preparation in the words) worked
+    the whole time; the field-answered route did not.
+
+        route                             key            query      winner
+        entity="Beef, grilled"            beef|grilled   composed    174702
+        entity="Beef" prep="grilled"      beef|grilled   bare        NONE
+
+    One identity, one split, both consumers — so a preparation cannot be
+    addressable for the lookup and invisible to the ranker. Composition is
+    `name_with`, the same function the interpreter composes with, which is why
+    the two routes converge on one string rather than merely on one key.
+    """
+    from skills.nutrition.preparation_ontology import name_with
+
+    return name_with(*split_identity(entity, preparation))
+
+
 def verified(*, now=None, max_age_days: float = MAX_ARTIFACT_AGE_DAYS):
     """The artifact, or `Stale` with a reason. The release gate calls this."""
     return load(ARTIFACT_PATH, resolver_version=resolver_version(),

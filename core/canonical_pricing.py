@@ -257,6 +257,24 @@ def _from_product(ev: ProductEvidence):
             Rung.PRODUCT, ev.identifier, dict(ev.per100g or {}))
 
 
+def _ranker_query(entity: str, preparation: str) -> str:
+    """The composed identity, or the entity if the artifact cannot say.
+
+    The ranker must be asked about the SAME identity the artifact was keyed
+    by; asking it about the bare entity threw away evidence that had already
+    been found. Falling back to `entity` keeps a pricing rung from depending
+    on an import — a rung that cannot rank is a rung that cannot price.
+    """
+    try:
+        from skills.nutrition.pricing_artifact import priced_identity
+
+        return priced_identity(entity, preparation) or entity
+    except Exception:
+        logger.warning("identity composition failed for %r", entity,
+                       exc_info=True)
+        return entity
+
+
 def _from_artifact(ev: ArtifactEvidence, *, query: str):
     """Qualified candidates -> the deterministic winner.
 
@@ -342,7 +360,8 @@ def price(*, entity: str, preparation: str = "", consumed=None,
     # down — worse than the zero-calorie row this P1 exists to delete.
     priced = None
     for ev, build in ((memory, _from_memory), (product, _from_product),
-                      (artifact, lambda e: _from_artifact(e, query=entity)),
+                      (artifact, lambda e: _from_artifact(
+                          e, query=_ranker_query(entity, preparation))),
                       (estimate, _from_estimate)):
         if ev is None:
             continue

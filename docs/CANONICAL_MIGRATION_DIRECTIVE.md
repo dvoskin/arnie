@@ -1197,9 +1197,12 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-09 against the commit history through `87db734`,
-the 2026-08-08 production trace, and the code itself. The findings ledger below
-the board holds everything instrumental from the B-1.5 build-out.
+Last reconciled 2026-08-10 against the identity-boundary fixes, the 08-10
+production trace (user 26, entries 2963–2967), and the code itself. The
+**session-close block below the board is the current answer to "where are
+we"** — measured state, what is proven on which path, and what is still owed;
+the findings ledger under it holds everything instrumental from the B-1.5
+build-out.
 
 **✅ CI IS GREEN ON `main` AGAIN as of `2fa8f7c` (2026-08-09), after 3 days
 and 50 commits red.** Repaired by #72. Recorded rather than deleted, because
@@ -1489,6 +1492,109 @@ ACCEPT         keep it, and make the estimate rung good enough that the
 The first is not a default: it prices a stated preparation from evidence about
 a different identity. Whichever is chosen, the choice is recorded here.
 
+### ⭐ THE IDENTITY BOUNDARY HAD TWO CONSUMERS, AND ONLY ONE WAS FIXED *(measured 2026-08-10)*
+
+The precision paradox above is a COVERAGE statement: `salmon|grilled` has no
+curated row, so stating the preparation loses evidence that never existed. Two
+of the three cases it was measured on were not that. **The evidence existed
+and the lookup could not reach it** — a different defect wearing the same
+symptom, which is why it hid behind a finding already recorded as understood.
+
+**Production, pre-fix (`d63b894`, 21:40).** Both rows priced from the estimate
+rung while the artifact held qualified candidates for exactly these identities:
+
+```text
+"I had some grilled beef"    120 g   305 kcal  29.6 g P  est=True
+"I had some fried chicken"   120 g   445 kcal  32.0 g P  est=True
+
+artifact:  beef|grilled   5 qualified candidates
+           chicken|fried  6 qualified candidates
+```
+
+**Consumer 1 — the KEY.** Preparation reaches pricing by two routes, and they
+built different keys:
+
+```text
+answered as a FIELD    entity="Beef"           prep="grilled"  -> beef, grilled|  MISS
+named in the MESSAGE   entity="Beef, grilled"  prep=""         -> beef, grilled|  MISS
+                       (the artifact holds it under            -> beef|grilled)
+```
+
+Closed by `split_identity` (`1d1ab68`) — the inverse of
+`preparation_ontology.name_with`, driven by the DECLARED vocabulary from
+`spec_for("preparation")`, so it contains no food name and no preparation
+literal. Extending the vocabulary extends it for free; a new food needs
+nothing.
+
+**PRE-REGISTERED PREDICTION, then production.** Computed offline against the
+committed artifact with the network poisoned, recorded BEFORE the turn was
+sent, so the trace could falsify it:
+
+```text
+                 BEFORE          PREDICTED            MEASURED (1d1ab68, 22:48)
+Fried chicken    445 / 32.0      263 / 36.7  est=F    263 kcal / 36.7 g P  est=False ✅
+Grilled beef     305 / 29.6      250 / 34.1  est=F    151 kcal / 29.0 g P  ⚠ see below
+```
+
+Chicken is the proof: entry 2966, `canonical:create`, `settle.pricing=2 ms`,
+`pricing.qualification` absent, micros present. **69% overcount deleted on one
+identity by a lookup change, with no new evidence generated.**
+
+**⚠ BEEF DID NOT TEST THE FIX, AND THE ROW IS NOT WRONG.** The operation
+payload shows the preparation was gone before pricing ever saw it:
+
+```text
+"I had some grilled beef"    -> {"food": "Beef",          "entity_id": "food:beef"}
+"I had some fried chicken"   -> {"food": "Fried chicken", "entity_id": "food:fried chicken"}
+```
+
+No preparation field, no preparation in the name. So the turn keyed `beef|`
+and priced plain beef correctly at 151 kcal. **An extraction loss, not an
+identity-boundary failure — and NONDETERMINISTIC**: the 21:40 run on the same
+sentence kept the word ("How much *grilled* beef?"). The canary case is
+therefore UNRESOLVED, not passed and not failed, and re-running it is a
+coin-flip until the loss itself is addressed. Note what this rules out: it is
+not the prompt (unchanged), and a word-list rescue in code is forbidden by
+standing constraint. The legitimate move is the same one used for the key —
+match the raw message against the DECLARED preparation vocabulary rather than
+against a list written for the occasion. **Not done, not scheduled here.**
+
+**Consumer 2 — the RANKER. Found by hunting the beef anomaly, and worse than
+the key defect.** `price()` looked the evidence up by the canonical key and
+then asked `best_candidate` about the BARE entity:
+
+```text
+same ArtifactEvidence, same 5 candidates, opposite outcome
+  entity="Beef, grilled"          query "Beef, grilled"  ->  250 kcal   artifact rung
+  entity="Beef" prep="grilled"    query "Beef"           ->  REFUSED    no rung
+```
+
+A miss falls to an estimate. This FOUND the right evidence and discarded it,
+which is indistinguishable from never having generated the artifact — and the
+mutation test showed the sharper failure: with a candidate set where something
+else matches, the bare query does not refuse, it selects **raw ground beef
+(254 kcal) for a grilled query**. Silently pricing one preparation from
+another's evidence is precisely what the preparation field exists to prevent.
+
+Closed by `priced_identity()` — composed by `name_with` from the SAME split
+that builds the key, so the two consumers cannot drift apart again. Measured
+offline, every route converges:
+
+```text
+Beef+grilled · "Beef, grilled" · "grilled beef" · "BEEF,  GRILLED"
+                                     -> 250 kcal  34.1 g P   usda:174702
+"Fried chicken" · Chicken+fried · "fried chicken"
+                                     -> 263 kcal  36.7 g P   usda:171053
+"Beef" (bare)                        -> 151 kcal  29.0 g P   usda:174730
+```
+
+**The generalisable lesson.** A canonicalisation is only as good as its least
+careful consumer. `key` and the ranker query were derived independently from
+the same inputs, so fixing one produced a system that could FIND evidence it
+could not USE — a state neither route exhibited before the fix, and one the
+green suite could not see because no test priced the same identity by two
+routes and compared. The gate that now exists asserts exactly that equality.
+
 ### ⛔ P1(b) — THE LEGACY CORRECTION PATH OVERWRITES CANONICAL ROWS *(measured 2026-08-10)*
 
 Found in the same session, and it is a live data-loss path on the canonical
@@ -1680,6 +1786,82 @@ survived. Each was verified by reverting the fix it guards in a detached
 worktree and confirming it goes red — a ratchet that cannot fail is a comment
 with a slower test suite, and sixteen of those were deleted from this branch
 for exactly that reason.
+
+## Session close — 2026-08-10, measured state and what it cost
+
+Written last, against the numbers rather than the intent. The unflattering
+items are first on purpose: a board that records only what worked is a board
+that will let the same failure be bought twice.
+
+### What I reported before it was true
+
+**The reversed-order proof was overstated.** It was reported as passing on the
+strength of a run that went through the STRUCTURED endpoint — explicit
+`field_id` on every answer, which never consults `live_field` at all. Through
+`/chat`, the modality a user actually types into, it could not have worked: the
+free-text path was pinned to `fields[0]` and read every further answer against
+quantity. Danny's independent read — "implementation confidence 90–95%,
+production behavioural proof 25–35%" — was the correct one, and the gap between
+those two numbers is exactly the gap between "the code is right" and "the code
+is right on the path traffic uses". **A proof is about a PATH, not a feature.**
+
+**A gate I wrote to guard the root cause could not fail.** The first
+`live_field` gate asserted that `open_fields` was called *somewhere* in
+`_handle_owned`. It already was, in the PARTIAL branch — so restoring the exact
+production defect left it GREEN. Caught only by mutation-testing my own test.
+Rewritten as a data-flow assertion: whatever `open_fields` returns must be what
+`live_field` is derived from. **A gate on a one-line root cause that cannot
+fail is worse than no gate, because it reports the defect as fixed.** The
+standing rule this reinforces is [[verify_the_instrument_before_its_silence]],
+applied to tests: mutate the fix, confirm the gate goes red, or do not claim
+the gate.
+
+**A fix that made the system able to find evidence it could not use.**
+`split_identity` canonicalised the artifact KEY and left the ranker query
+derived independently from the same inputs — see the identity-boundary section
+above. Green suite throughout, because no test priced one identity by two
+routes and compared them.
+
+### What is proven, and on which path
+
+```text
+P1 canonical pricer         CLOSED   settle 36–70 ms vs 8,225–11,053 legacy;
+                                     pricing.qualification absent on every settle
+P1(b) ownership firewall    CLOSED   fired 3× in production, both rows intact;
+                                     capability-based, UNKNOWN default-refused
+B-1.5 typed two-field flow  PROVEN   live, /chat, preparation reachable by text
+identity key (consumer 1)   PROVEN   fried chicken 445 -> 263 kcal, prediction
+                                     pre-registered and matched exactly
+identity ranker (consumer 2) FIXED   proven offline across all six routes;
+                                     NOT yet exercised in production
+```
+
+### What is open, and where it goes
+
+```text
+canary F — replay           OWED     oats logged once; the second tap of the
+                                     same chip was never sent. Matrix 5/6.
+grilled-beef canary         UNRESOLVED  the interpreter dropped the word before
+                                     pricing saw it; nondeterministic
+extraction loss             -> B-1.7  a stated preparation must survive to the
+                                     operation. Vocabulary-driven, never a list
+ranker floor                -> B-1.8  `oats|` holds 2 qualified candidates that
+                                     `best_candidate("oats", ...)` will not
+                                     select, so a covered food still prices as
+                                     an estimate. Coverage is not the binding
+                                     constraint here — SELECTION is
+preparation materiality     -> B-1.7  preparation opened for NO item in the
+                                     08-10 session; the question never fired
+meal atomicity              -> B-2    multi-item meals still commit per row
+B-1b.1 system matrix        RUNNABLE, NOT DISCHARGED (see the outage note above)
+```
+
+**The one-line summary of the whole day.** Every defect closed today was a
+LOOKUP defect, not a knowledge defect: the artifact already held qualified
+evidence for `chicken|fried` and `beef|grilled` before any of this work
+started, and three separate mechanisms — the key, the ranker query, and the
+interpreter's extraction — each independently prevented a turn from reaching
+it. Two are closed. The third is named above and is not yet scheduled.
 
 ## Findings ledger — 2026-08-07, the B-1.5 build-out
 

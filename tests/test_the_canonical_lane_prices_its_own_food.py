@@ -625,3 +625,77 @@ def test_a_preparation_inside_a_word_is_not_stripped():
     the FOOD — the one thing an identity boundary may never do."""
     assert _pricing_artifact.split_identity("friedcake") == ("friedcake", "")
     assert _pricing_artifact.split_identity("grilledine") == ("grilledine", "")
+
+
+# ── THE SECOND CONSUMER OF THE IDENTITY BOUNDARY: THE RANKER ───────────────
+#
+# Fixing `key` made the evidence FINDABLE from both routes. It did not make it
+# USABLE from both: `price` still asked `best_candidate` about the bare
+# entity, so a preparation supplied as a field was addressable for the lookup
+# and invisible to the ranker. Measured offline against the committed
+# artifact, 2026-08-10 — same evidence object, opposite outcome:
+#
+#     entity="Beef, grilled"        -> 5 candidates -> 250 kcal   artifact rung
+#     entity="Beef" prep="grilled"  -> 5 candidates -> REFUSED    no rung
+#
+# The refusal is the worse half. A miss falls to an estimate; this found the
+# right evidence and discarded it, which is indistinguishable from never
+# having generated the artifact at all.
+
+def _one_candidate_per_preparation():
+    """Two rows a ranker can tell apart only if the query names the prep."""
+    return (
+        {"fdc_id": 1, "description": "Beef, shoulder, cooked, grilled",
+         "per100g": {"calories": 208.0, "protein": 28.4}},
+        {"fdc_id": 2, "description": "Beef, ground, raw",
+         "per100g": {"calories": 254.0, "protein": 17.2}},
+    )
+
+
+def test_a_preparation_answered_as_a_field_prices_like_one_named_in_the_food():
+    """THE DEFECT, as a rule. Both routes express one identity, so both must
+    reach the same record — a field answer must not price worse than saying
+    it in the message."""
+    ev = ArtifactEvidence(candidates=_one_candidate_per_preparation(),
+                          fingerprint="f")
+
+    composed = price(entity="Beef, grilled", consumed=_g(100), artifact=ev)
+    fielded = price(entity="Beef", preparation="grilled",
+                    consumed=_g(100), artifact=ev)
+    spoken = price(entity="grilled beef", consumed=_g(100), artifact=ev)
+
+    assert fielded.rung is Rung.ARTIFACT, (
+        "a preparation answered as a field found its evidence and then "
+        "discarded it — the ranker was asked about a different identity")
+    for other in (composed, spoken):
+        assert fielded.calories == other.calories
+        assert fielded.protein == other.protein
+        assert fielded.evidence_id == other.evidence_id
+
+
+def test_the_ranker_is_asked_about_the_identity_the_artifact_was_keyed_by():
+    """The two consumers must not drift apart again: whatever `key` splits,
+    the ranker query composes from the SAME split."""
+    from skills.nutrition import pricing_artifact as pa
+
+    for entity, preparation in (("Beef", "grilled"), ("Beef, grilled", ""),
+                                ("grilled beef", ""), ("Beef", ""),
+                                ("BEEF,  GRILLED", "")):
+        ent, prep = pa.split_identity(entity, preparation)
+        assert pa.key(entity, preparation) == f"{ent}|{prep}"
+        composed = pa.priced_identity(entity, preparation)
+        assert ent in composed
+        if prep:
+            assert prep in composed, (
+                f"{entity!r}/{preparation!r} keys as {prep!r} but the ranker "
+                f"is asked about {composed!r}, which never says so")
+
+
+def test_an_unregistered_preparation_still_prices_rather_than_refusing():
+    """Composition may not become a new way to fail. A preparation the
+    ontology does not hold leaves the entity alone; the rung still ranks."""
+    ev = ArtifactEvidence(candidates=_one_candidate_per_preparation(),
+                          fingerprint="f")
+    priced = price(entity="Beef", preparation="sous-vide-at-dawn",
+                   consumed=_g(100), artifact=ev)
+    assert priced.rung is Rung.ARTIFACT
