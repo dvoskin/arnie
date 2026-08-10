@@ -691,11 +691,76 @@ def test_the_ranker_is_asked_about_the_identity_the_artifact_was_keyed_by():
                 f"is asked about {composed!r}, which never says so")
 
 
-def test_an_unregistered_preparation_still_prices_rather_than_refusing():
-    """Composition may not become a new way to fail. A preparation the
-    ontology does not hold leaves the entity alone; the rung still ranks."""
+def test_an_unregistered_preparation_falls_through_rather_than_guessing():
+    """Composition may not become a new way to LOSE THE MEAL — but it also may
+    not rank prepared evidence by a query that cannot name the preparation.
+
+    `name_with` returns the bare name for a preparation the ontology does not
+    hold, so the query could not express the identity the evidence was keyed
+    under. The rung fails; the ladder continues; the meal still prices.
+    """
     ev = ArtifactEvidence(candidates=_one_candidate_per_preparation(),
                           fingerprint="f")
     priced = price(entity="Beef", preparation="sous-vide-at-dawn",
-                   consumed=_g(100), artifact=ev)
-    assert priced.rung is Rung.ARTIFACT
+                   consumed=_g(100), artifact=ev,
+                   estimate=EstimateEvidence(calories=300.0, protein=25.0,
+                                             basis_grams=100.0))
+    assert priced.rung is Rung.ESTIMATE, (
+        "prepared evidence was ranked by a query that cannot name the "
+        "preparation — the fall-through is the point, not the artifact hit")
+    assert priced.calories == 300.0
+
+
+def test_a_broken_composition_never_ranks_prepared_evidence(monkeypatch):
+    """⭐ THE FAIL-OPEN THIS REPLACED, as a rule.
+
+    The first `_ranker_query` swallowed every exception and returned the bare
+    `entity`. That is not a safe default here: by the time it runs, the
+    artifact has ALREADY been loaded under `beef|grilled`, so falling back to
+    "Beef" hands a prepared candidate set to a query that cannot distinguish
+    preparations — and the mutation of this same code showed what that
+    selects, which is raw ground beef for a grilled meal.
+
+    A rung that cannot rank is a rung that cannot price. It must fail, not
+    guess, and the meal must still settle from the next rung down.
+    """
+    import core.canonical_pricing as cp
+
+    def _explode(*_a, **_k):
+        raise RuntimeError("registry unavailable")
+
+    monkeypatch.setattr("skills.nutrition.pricing_artifact.priced_identity",
+                        _explode)
+
+    ev = ArtifactEvidence(candidates=_one_candidate_per_preparation(),
+                          fingerprint="f")
+    with pytest.raises(cp.IdentityCompositionFailed):
+        cp._ranker_query("Beef", "grilled")
+
+    priced = price(entity="Beef", preparation="grilled", consumed=_g(100),
+                   artifact=ev,
+                   estimate=EstimateEvidence(calories=300.0, protein=25.0,
+                                             basis_grams=100.0))
+    assert priced.rung is not Rung.ARTIFACT, (
+        "a failed composition still ranked prepared evidence — the fail-open "
+        "this test exists to forbid")
+    assert priced.calories == 300.0, "the meal must still settle"
+
+    # And with nothing below it, the artifact rung fails rather than picking:
+    # a refusal is recoverable, a silently wrong preparation is not.
+    with pytest.raises(PricingRefused):
+        price(entity="Beef", preparation="grilled", consumed=_g(100),
+              artifact=ev)
+
+
+def test_the_fail_closed_path_cannot_select_the_wrong_preparation():
+    """The concrete harm, named. The grilled row is 208 kcal and the raw row
+    254; a bare query over this set selects RAW. Whatever the artifact rung
+    does when composition fails, it may never return 254 for a grilled meal."""
+    ev = ArtifactEvidence(candidates=_one_candidate_per_preparation(),
+                          fingerprint="f")
+    grilled = price(entity="Beef", preparation="grilled", consumed=_g(100),
+                    artifact=ev)
+    assert grilled.calories == 208.0, (
+        f"grilled priced at {grilled.calories} — the raw row is 254.0, and "
+        f"selecting it is the failure this whole seam exists to prevent")

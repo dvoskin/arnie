@@ -257,22 +257,52 @@ def _from_product(ev: ProductEvidence):
             Rung.PRODUCT, ev.identifier, dict(ev.per100g or {}))
 
 
-def _ranker_query(entity: str, preparation: str) -> str:
-    """The composed identity, or the entity if the artifact cannot say.
+class IdentityCompositionFailed(Exception):
+    """The ranker cannot be told which identity it is ranking.
 
-    The ranker must be asked about the SAME identity the artifact was keyed
-    by; asking it about the bare entity threw away evidence that had already
-    been found. Falling back to `entity` keeps a pricing rung from depending
-    on an import — a rung that cannot rank is a rung that cannot price.
+    NOT a `PricingRefused`. It fails ONE RUNG, deliberately: the ladder
+    continues and the meal still prices from the estimate rung. Refusing the
+    whole meal would trade a preparation mismatch for a lost log.
     """
-    try:
-        from skills.nutrition.pricing_artifact import priced_identity
 
-        return priced_identity(entity, preparation) or entity
-    except Exception:
-        logger.warning("identity composition failed for %r", entity,
-                       exc_info=True)
-        return entity
+
+def _ranker_query(entity: str, preparation: str) -> str:
+    """The composed identity — and a REFUSAL rather than a bare fallback.
+
+    ⭐ THIS FAILS CLOSED, and the first version did not. It fell back to
+    `entity` on any error, which reintroduced the exact defect this function
+    exists to close: evidence loaded under `beef|grilled`, then ranked by the
+    query "Beef", then a raw-ground-beef row selected out of a prepared
+    candidate set. A fallback that restores the failure mode is not a
+    fallback; it is the bug behind an `except`.
+
+    So: if the identity carries a preparation and the composed query does not
+    NAME it, this raises. The rung loop treats that as a rung that failed and
+    moves on — which is the file's own rule, that a rung which cannot rank is
+    a rung that cannot price, applied rather than merely written down.
+
+    The unregistered case takes the same exit on purpose. `name_with` returns
+    the bare name for a preparation the ontology does not hold, so the query
+    could not express the identity the evidence was keyed under; ranking it
+    anyway is the mismatch, not a lenient special case. In practice such a key
+    is absent from the artifact and the rung never had evidence to begin with.
+    """
+    from skills.nutrition.pricing_artifact import priced_identity, split_identity
+
+    try:
+        _, prep = split_identity(entity, preparation)
+        composed = priced_identity(entity, preparation)
+    except Exception as exc:  # cannot even tell whether a preparation is held
+        raise IdentityCompositionFailed(
+            f"identity composition raised for {entity!r}") from exc
+
+    if prep and prep not in (composed or "").lower():
+        raise IdentityCompositionFailed(
+            f"{entity!r}/{preparation!r} keys under preparation {prep!r} but "
+            f"composes to {composed!r}, which does not name it — ranking "
+            f"prepared evidence by this query could select a different "
+            f"preparation")
+    return composed or entity
 
 
 def _from_artifact(ev: ArtifactEvidence, *, query: str):

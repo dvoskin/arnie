@@ -1257,12 +1257,27 @@ B-1 global promotion       DEFERRED until B-2
 B-1 predecessor deletion   DEFERRED until B-2
 B-1 legacy                 FROZEN for non-allowlisted users
 
-B-1.5      MACHINERY DONE    readiness, producer, pricing and the generic
-                             `unresolved_when` derivation deployed; preparation
-                             now READS a fingerprinted artifact rather than
-                             computing one (404231d). Was blocked on B-1.5E;
-                             that block is LIFTED. Owes the natural iOS turn
-                             that proves preparation opening in production.
+B-1.5      CLOSED 08-10      machinery + PRODUCTION BEHAVIOURAL PROOF. Readiness,
+                             producer, pricing and the generic `unresolved_when`
+                             derivation deployed; preparation READS a
+                             fingerprinted artifact rather than computing one
+                             (404231d). Typed two-field answering proven live on
+                             /chat after the `live_field` root cause; both
+                             natural-language pricing canaries landed on
+                             pre-registered predictions (chicken 445->263,
+                             beef 305->250).
+                             CANARY: 5 PASSED, F NOT APPLICABLE — the client
+                             removes the interaction on tap, so "tap the same
+                             chip twice" is a gesture the product does not
+                             offer. The real replay vector is a retried
+                             delivery; replay is closed by CONSTRUCTION (UNIQUE
+                             (operation_id, operation_revision) live in
+                             production, claim on every settle) and by harness,
+                             NOT by observation. See the canary-F block.
+                             CARRIED FORWARD, not blocking: the ranker fail-
+                             closed fix is unexercised live (needs preparation
+                             as a separate FIELD); extraction survival -> B-1.7;
+                             ranker/selection floor -> B-1.8.
 CONTRACT   FROZEN 08-07      semantic field registry + rule of three
 B-1.5E     C1 + C2 LANDED    C1: core + food domain + both projections + LIVE
                              eval (Sonnet 80% exact, 0 false-compatible at
@@ -1328,7 +1343,7 @@ TELEMETRY  REPAIRED 08-09    the canonical lane was absent from its own trace;
                              funnel can now be read per cohort through the
                              conversion step, which the promotion gate needs.
 
-B-1.6      after B-1.5
+B-1.6      IN PROGRESS 08-10 — conditional field activation; B-1.5 closed
 B-1.7      after B-1.6
 B-1.8      after B-1.7
 B-2        after those prerequisites
@@ -1550,14 +1565,45 @@ payload shows the preparation was gone before pricing ever saw it:
 
 No preparation field, no preparation in the name. So the turn keyed `beef|`
 and priced plain beef correctly at 151 kcal. **An extraction loss, not an
-identity-boundary failure — and NONDETERMINISTIC**: the 21:40 run on the same
-sentence kept the word ("How much *grilled* beef?"). The canary case is
-therefore UNRESOLVED, not passed and not failed, and re-running it is a
-coin-flip until the loss itself is addressed. Note what this rules out: it is
+identity-boundary failure — and NONDETERMINISTIC.** Three runs of the SAME
+sentence produced three shapes:
+
+```text
+21:40   "I had some grilled beef"  ->  food "grilled beef"   kept
+22:48   "I had some grilled beef"  ->  food "Beef"           DROPPED
+23:26   "I had some grilled beef"  ->  food "Grilled Beef"   kept
+```
+
+**RESOLVED on the third run — entry 2968, `20e3acd`, 23:26:43:**
+
+```text
+Grilled Beef   120 g   250.0 kcal   34.1 g P   est=False   micros=Y
+               predicted 250 / 34.1                              ✅
+```
+
+`canonical:create`, `settle.pricing=4 ms`, `settle.commit=21 ms`,
+`pricing.qualification` absent. Both natural-language canaries now hit their
+pre-registered numbers.
+
+**⚠ AND IT DID NOT TEST THE RANKER FIX.** That run kept the preparation in the
+NAME, so it went through the composed route, and the two queries agree there:
+
+```text
+ranker with BARE entity "Grilled Beef"  ->  usda:174702
+ranker with COMPOSED   "beef, grilled"  ->  usda:174702    same record
+```
+
+The key fix alone would have produced 250 kcal. `20e3acd` is proven offline
+across all six routes and gated by three mutation-tested assertions; it is
+**not yet exercised in production**, because its defect only appears when
+preparation arrives as a SEPARATE FIELD and no operation has ever carried one.
+Recorded as such rather than folded into the canary pass — a green number that
+would have been green anyway is not evidence for the change that produced it.
+
+The extraction loss itself measured at roughly 1-in-3 on this sentence. It is
 not the prompt (unchanged), and a word-list rescue in code is forbidden by
-standing constraint. The legitimate move is the same one used for the key —
-match the raw message against the DECLARED preparation vocabulary rather than
-against a list written for the occasion. **Not done, not scheduled here.**
+standing constraint. The legitimate move is the one used for the key — match
+the raw message against the DECLARED preparation vocabulary. **→ B-1.7.**
 
 **Consumer 2 — the RANKER. Found by hunting the beef anomaly, and worse than
 the key defect.** `price()` looked the evidence up by the canonical key and
@@ -1587,6 +1633,35 @@ Beef+grilled · "Beef, grilled" · "grilled beef" · "BEEF,  GRILLED"
                                      -> 263 kcal  36.7 g P   usda:171053
 "Beef" (bare)                        -> 151 kcal  29.0 g P   usda:174730
 ```
+
+**⛔ AND THE FIRST VERSION OF THAT FIX FAILED OPEN** *(caught in review, Danny,
+2026-08-10)*. `_ranker_query` wrapped composition in a bare `except` and
+returned `entity`:
+
+```python
+try:
+    return priced_identity(entity, preparation) or entity
+except Exception:
+    return entity                      # <- the defect, behind an except
+```
+
+By the time it runs, the artifact has ALREADY been loaded under
+`beef|grilled`. Falling back to "Beef" therefore hands a PREPARED candidate
+set to a query that cannot distinguish preparations — the precise sequence the
+commit had just declared must never happen, reintroduced by its own error
+handler. The docstring said *"a rung that cannot rank is a rung that cannot
+price"* while the code did the opposite; the sentence was right and the
+implementation had to follow it.
+
+Now raises `IdentityCompositionFailed` — deliberately NOT a `PricingRefused`,
+so the rung loop drops that rung and the meal still settles from the estimate
+below it. Failing one rung is the correct blast radius: refusing the whole
+meal would trade a preparation mismatch for a lost log.
+
+Three gates, all mutation-tested against the restored fail-open: a broken
+composition must not rank prepared evidence, an unregistered preparation falls
+through instead of guessing, and a grilled meal may never return the raw row's
+254 kcal.
 
 **The generalisable lesson.** A canonicalisation is only as good as its least
 careful consumer. `key` and the ranker query were derived independently from
@@ -1832,17 +1907,19 @@ P1(b) ownership firewall    CLOSED   fired 3× in production, both rows intact;
 B-1.5 typed two-field flow  PROVEN   live, /chat, preparation reachable by text
 identity key (consumer 1)   PROVEN   fried chicken 445 -> 263 kcal, prediction
                                      pre-registered and matched exactly
-identity ranker (consumer 2) FIXED   proven offline across all six routes;
-                                     NOT yet exercised in production
+identity ranker (consumer 2) FIXED   proven offline across all six routes,
+                                     fail-CLOSED after review; NOT yet
+                                     exercised in production — its defect needs
+                                     preparation as a separate FIELD, and no
+                                     operation has ever carried one
 ```
 
 ### What is open, and where it goes
 
 ```text
-canary F — replay           OWED     oats logged once; the second tap of the
-                                     same chip was never sent. Matrix 5/6.
-grilled-beef canary         UNRESOLVED  the interpreter dropped the word before
-                                     pricing saw it; nondeterministic
+canary F — replay           CLOSED BY CONSTRUCTION, NOT BY OBSERVATION (below)
+grilled-beef canary         PASSED   entry 2968, 250.0 / 34.1, on prediction —
+                                     but via the KEY path, not the ranker
 extraction loss             -> B-1.7  a stated preparation must survive to the
                                      operation. Vocabulary-driven, never a list
 ranker floor                -> B-1.8  `oats|` holds 2 qualified candidates that
@@ -1855,6 +1932,47 @@ preparation materiality     -> B-1.7  preparation opened for NO item in the
 meal atomicity              -> B-2    multi-item meals still commit per row
 B-1b.1 system matrix        RUNNABLE, NOT DISCHARGED (see the outage note above)
 ```
+
+### CANARY F — THE CLIENT MAKES THE SPECIFIED TEST UNREACHABLE
+
+F was written as "tap a chip, let it commit, tap the SAME chip again". **The
+iOS client removes the interaction on tap**, so there is no second chip to
+tap. That is correct UX and it is not a gap in the client — it means the
+scenario was specified against a gesture the product does not offer.
+
+**The real replay vector was never a double-tap.** It is a RETRIED DELIVERY:
+one POST, a network timeout, a client retry. A user cannot produce that on
+demand, which is why no amount of manual canary work would have closed F.
+
+What is actually true today, measured rather than assumed:
+
+```text
+pending_store.claim()        RUNS ON EVERY PRODUCTION SETTLE — `claim=5–6 ms`
+                             on every clarification_answer in the 08-10 trace
+UNIQUE (operation_id,        PRESENT IN PRODUCTION — uq_meal_commits_operation_
+        operation_revision)  revision, verified against pg_indexes, 81 rows
+attempt_count                0 ON ALL 73 OPERATIONS, user 26, all time —
+                             no duplicate delivery has EVER occurred naturally
+```
+
+So F is closed **by construction and by harness**, and it is honest to say
+that and no more:
+
+* the database arbitrates, not the application — `COMMIT_KEY_ENFORCEMENT` in
+  `core/semantics.py` is satisfied by a real UNIQUE index, and an
+  application-level `if not already_committed` under concurrent workers was
+  explicitly rejected there
+* the claim is a conditional UPDATE where exactly one caller sees rowcount 1
+* the harness proves the behaviour (`test_pending_store.py`,
+  `test_meal_commit_boundary_0804.py`)
+
+**What remains UNOBSERVED, and is not claimed:** a duplicate delivery has
+never happened in production, so `COMMIT_DUPLICATE_BEHAVIOUR` — that a
+duplicate returns the ORIGINAL `MealCommitResult` rather than nothing — has
+been proven only in the harness. Getting nothing back is the phantom-log
+failure in a new costume, so this is worth an eventual deliberate exercise
+against a staging deployment. It does not gate B-1.5, and it may not be
+retired quietly on the strength of a green suite.
 
 **The one-line summary of the whole day.** Every defect closed today was a
 LOOKUP defect, not a knowledge defect: the artifact already held qualified
