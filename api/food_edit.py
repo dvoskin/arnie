@@ -34,6 +34,7 @@ from core.idempotency import (
 from core.request_trace import RequestTrace
 from db.database import AsyncSessionLocal
 from db.models import DailyLog, FoodEntry
+from db.queries import MutationAuthority
 from db.queries import (
     resolve_user, update_food_entry, delete_food_entry, log_conversation,
 )
@@ -120,6 +121,9 @@ async def update_food(
                 updated = await update_food_entry(
                     db, entry_id, user.id,
                     ledger_source=LEDGER_SOURCE, claim_id=claim.record_id,
+                    # A HUMAN opened the editor and changed THIS row. The user
+                    # is the authority; nothing was inferred.
+                    authority=MutationAuthority.EXPLICIT_USER_ACTION,
                     **changes)
             if updated is None:
                 trace.done(outcome="forbidden")

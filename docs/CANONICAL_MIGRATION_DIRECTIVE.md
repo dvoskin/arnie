@@ -213,9 +213,48 @@ Phase A
 The next work begins at B-1.
 
 *(Superseded by events — kept for the construction/storage distinction below.
-As of 2026-08-07: B-1 and B-1.9 are production-proven on iOS, B-1.5's
-machinery is deployed and blocked on B-1.5E, and the authoritative "where are
-we" is the Status board. This section is history, not position.)*
+As of 2026-08-10: B-1 and B-1.9 are production-proven on iOS, B-1.5E has
+landed, the P1 canonical pricer is CLOSED in production, and B-1.5 is blocked
+on a deliberate canary exercise rather than on engineering. The authoritative
+"where are we" is the Status board. This section is history, not position.)*
+
+**PHASE STATE — 2026-08-10, and the percentages are deliberate.** Danny's
+scoring, recorded so "nearly done" never stands in for a measurement:
+
+```text
+P1 pricing seam / performance          100%   CLOSED in production
+B-1.5 implementation / regression      92–95%
+B-1.5 production BEHAVIOURAL proof     25–35%   one food, one session
+Canonical ownership safety             REOPENED — blocker (P1(b))
+Artifact bare-entity coverage          maintenance, non-blocking
+Prepared-identity pricing policy       intentionally unresolved -> B-1.7
+```
+
+**SEQUENCING FROM HERE *(Danny, 2026-08-10 — supersedes the earlier
+"artifact expansion next")*.** The 08-10 production exercise found a defect
+that outranks everything queued behind it:
+
+```text
+1  P1(b)   canonical ownership firewall at the mutation boundary   <- HERE
+2          the ten-scenario B-1.5 canary, once the firewall holds
+3          collect REAL artifact misses from that exercise
+4          expand bare-entity evidence from those misses — not from guesses
+5  B-1.6   conditional field activation
+6  B-1.7   accuracy policy: prepared-identity fallback AND preparation
+           materiality, both carried here deliberately
+```
+
+**Why the firewall comes first and the canary second.** Running the canary
+over a known writer violation contaminates it — every scenario would have to
+be re-run once the firewall lands. And why artifact expansion is LAST: seed
+coverage chosen from what foods "seem likely" is a guess, while the canary
+produces a measured list of real misses.
+
+**The positive finding from the same trace, because it is easy to miss.** The
+ledger/provenance work caught a data-loss defect that would previously have
+looked like "salmon was logged". The chicken row's original state survived
+only in its `created` event. That is the 08-07 P1 ledger fix paying for
+itself, and it is the argument for provenance-before-features.
 
 Status wording is deliberately split. "Implemented and test-locked" is a claim
 about construction; "storage-proven" is a claim about the boundary B-1
@@ -1066,12 +1105,22 @@ reuses typed fields and patches; domain payloads stay specific.
 
 ```text
  1. B-1 one-item quantity                   DONE, production-proven
- 2. B-1.5 quantity + preparation           }  machinery DONE; closure
-    2a. B-1.5E semantic evidence layer     }  blocked on 2a
+    1a. P1 canonical pricer                 DONE, closed in production 08-10
+    1b. P1(b) ownership firewall            <- CURRENT. Blocks 2.
+ 2. B-1.5 quantity + preparation           }  machinery DONE (92-95%);
+    2a. B-1.5E semantic evidence layer     }  2a LANDED. Closure needs a
+    2b. the ten-scenario canary            }  DELIBERATE canary, not organic
+    2c. bare-entity evidence from 2b       }  traffic — behavioural proof
+                                           }  is 25-35%
  3. B-1.6 conditional activation           }  all built on the canonical
- 4. B-1.7 mode policy                      }  path, allowlist only
+ 4. B-1.7 mode policy                      }  path, allowlist only.
+    4a. prepared-identity fallback         }  BOTH deferred here on purpose:
+    4b. preparation materiality            }  see the precision paradox and
+                                           }  the inverted-ratio finding
  5. B-1.8 answer repair/fallback           }
  6. B-2 multi-item and partial answers     }
+    6a. meal atomicity (one mutation)      }  the canonical/chat-lane commit
+                                           }  divergence, filed 08-07
  7. THE PROMOTION EVENT — all users to canonical, allowlist removed,
     legacy food pipeline deleted, ratchets lowered. Once, not per slice.
  8. product/fraction/package fields
@@ -1254,6 +1303,19 @@ LATENCY    MEASURED          settle path bound (ad8b144), the 3,197 ms hole in
                              STILL ~4–6 s TO A QUESTION, and it is now ~100%
                              interpreter `llm` — P5 (resolving state, latency
                              copy) is the whole remaining user-visible cost.
+OWNERSHIP  FIREWALL 08-10    P1(b): a canonically-created row may be mutated
+                             only by a DECLARED capability — CANONICAL_OWNER,
+                             EXPLICIT_USER_ACTION or RECORDED_REPLAY.
+                             INFERRED_INTERPRETATION and UNKNOWN are refused,
+                             and UNKNOWN is the DEFAULT, so a new mutation
+                             surface breaks until it declares its authority.
+                             Took three versions: canonical-only (blocked the
+                             iOS editor), a writer-name denylist (right today,
+                             silently permissive tomorrow), then the
+                             capability. Guard sits at the single mutation
+                             boundary `db.queries.update_food_entry`; refusals
+                             are RECORDED as `mutation_rejected`. Fired 6x in
+                             production before it existed.
 TELEMETRY  REPAIRED 08-09    the canonical lane was absent from its own trace;
                              ten defects fixed with ratchets (870b6ea), and an
                              eleventh from review: the funnel's terms are now a
@@ -1455,10 +1517,89 @@ OWNERSHIP    a LEGACY writer mutated a row owned by the canonical lane —
 INVISIBLE    no error, a plausible reply, and a board that looks right
 ```
 
-The narrow rule this implies, stated so it is not re-derived later: **a row
-whose `created` event says `canonical:create` may not be mutated by the legacy
-interpreter.** Ownership is already recorded on every row by the 08-07 ledger
-work, so the check has evidence to stand on and needs no new state.
+**IT FIRED SIX TIMES, not once.** Over the whole ledger, food-row updates come
+from exactly four sources, and only one has ever touched a canonically created
+row:
+
+```text
+updates to food rows                    of those, on a CANONICAL row
+structured_food:food_interpreter_v2  92          6      <- every one
+legacy                               36          0
+ios_edit                             25          0
+ledger_undo:v1                        1          0
+```
+
+**THE RULE TOOK THREE VERSIONS, and each failure taught the next.**
+
+**v1 — "only the canonical lane may mutate a canonical row."** The obvious
+reading of the incident. The suite refused it in under a minute: `ios_edit` is
+a user opening the editor on their own row and has every right to.
+
+**v2 — a DENYLIST of writer-name prefixes** (`structured_food:*`, `legacy`).
+It produced the right answer for all four callers that exist today, passed
+every gate, and was still wrong. A future inferred writer — `coach_agent:v3` —
+would mutate canonical rows because nobody remembered to extend a tuple. And
+`mutation_rejected` could NOT have caught it: an undenied writer is never
+rejected, so no event would exist to say it escaped. *A permission system
+whose failure mode is silence is the failure mode this migration exists to
+remove* (Danny, 08-10).
+
+**v3 — a CAPABILITY carried by the call.** The distinction is INFERRED versus
+EXPLICIT, and the mutation declares which it is exercising:
+
+```text
+ALLOW   CANONICAL_OWNER           the owner
+ALLOW   EXPLICIT_USER_ACTION      a human pointed at this row
+ALLOW   RECORDED_REPLAY           replays an inverse that was WRITTEN DOWN
+DENY    INFERRED_INTERPRETATION   a model DECIDED prose meant this row
+DENY    UNKNOWN                   nothing was declared  <- the default
+```
+
+`ios_edit` is not trusted because its string starts with `ios_`; it is trusted
+because the mutation declares that a user pointed at a row. `ledger_undo` is
+not trusted because it is on a list; it is trusted because it declares a
+recorded inverse. **Encode the concept, not the current names of the four
+callers.**
+
+**UNKNOWN IS THE DEFAULT AND IS REFUSED**, so a new mutation surface —
+`apple_watch_edit`, `voice_edit` — BREAKS until it declares its authority.
+That is intended: making a surface state what authority it exercises costs one
+keyword, and silent permission destroyed six canonical rows in production.
+
+**One call site, two authorities**, which is the clearest argument for the
+capability: `ledger_undo` reaches the SAME tool dispatch as the interpreter by
+emitting an `update_food_entry` tool call. Nothing about the caller
+distinguishes them — only what the mutation declares.
+
+Implemented in `db.queries.update_food_entry` — the single function every
+food-row update funnels through, so the guard holds whichever interpretation
+path reaches it. A special case in the correction classifier would only have
+covered the one route observed failing. Ownership needs no new column:
+`creating_source()` reads the row's own `created` event, which invariant I3
+already guarantees is unique.
+
+**The refusal is RECORDED, not merely raised** — a `mutation_rejected` event
+carrying owner, writer, declared authority and the attempted changes. A firewall that silently
+drops writes is its own blind spot, and that record is how we will know when
+the legacy correction route can be deleted rather than guessed at.
+
+**Pre-ledger rows FAIL OPEN and are COUNTED.** Ownership cannot be established
+without creation provenance, and refusing those would break corrections across
+the whole historical corpus. Every such call emits
+`event=ownership_check result=unknown_provenance`, so the size of that corpus
+is measurable and the exception can eventually be removed on evidence rather
+than on nerve.
+
+Gates: `tests/test_a_legacy_writer_cannot_touch_a_canonical_row.py`, sixteen
+of them, mutation-tested in THREE directions — disabling the guard turns it
+red, making it over-broad turns it red, and *permitting UNKNOWN* turns red
+exactly the gate the denylist could never have had. An AST gate holds that no
+call site mutates a food row without declaring authority.
+
+⚠️ **Cost, measured:** the firewall adds one `SELECT` per food-row update, and
+the full suite moved from ~5 min to over 10. Irrelevant for a single user
+turn; recorded because it is a per-mutation read that will scale with write
+volume.
 
 ### TWO ROLLOUTS ARE LIVE, AT DIFFERENT WIDTHS *(measured 2026-08-09)*
 

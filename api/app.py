@@ -30,6 +30,7 @@ from db.database import AsyncSessionLocal
 #: distinct from "ios" so a dashboard edit and a tap-log can never collide on
 #: one turn id even if a client reuses an Idempotency-Key across both.
 DASHBOARD = "dashboard"
+from db.queries import MutationAuthority
 from db.queries import (
     get_user_by_webhook_token, upsert_health_snapshot,
     get_today_log, get_log_by_date, get_recent_logs, get_recent_weights,
@@ -2247,6 +2248,8 @@ async def api_edit_food(entry_id: int, patch: FoodPatch, token: str = Query(...)
                         "idempotent_replay": True, "turn_id": turn.turn_id}
             entry = await update_food_entry(
                 db, entry_id, user.id, ledger_source="dashboard_edit",
+                # A human edited this row on the dashboard.
+                authority=MutationAuthority.EXPLICIT_USER_ACTION,
                 claim_id=turn.claim_id, **changes)
             if not entry:
                 raise HTTPException(status_code=404, detail="Entry not found")

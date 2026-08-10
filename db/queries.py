@@ -8,6 +8,7 @@ from db.models import (
     Feedback, UserFoodMatch, PendingQuestion, WearableDevice, WearableMetric,
     DeviceToken,
 )
+from enum import Enum
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 import json
@@ -2247,9 +2248,120 @@ async def resolve_pending_questions_for_logged_items(
 
 # ── Food/Exercise edit + delete (with auto totals recalc) ─────────────────────
 
+#: Ledger sources that mean "the canonical lane wrote this row". A row created
+#: by one of these is OWNED by the canonical lane.
+CANONICAL_SOURCES = ("canonical:",)
+
+
+class MutationAuthority(str, Enum):
+    """⭐ WHAT AUTHORITY A WRITER IS EXERCISING — declared, never inferred.
+
+    THE FIRST TWO VERSIONS OF THIS WERE BOTH WRONG, and the second failure is
+    the more instructive one.
+
+    v1 said "only the canonical lane may mutate a canonical row". The suite
+    refused it in under a minute: `ios_edit` is a user opening the editor on
+    their own row and has every right to.
+
+    v2 replaced that with a DENYLIST of writer-name prefixes
+    (`structured_food:*`, `legacy`). It produced the right answer for the four
+    callers that exist today, and reintroduced — in miniature — the exact
+    shape this migration has spent months deleting. A future inferred writer
+    named `coach_agent:v3` would mutate canonical rows because nobody
+    remembered to extend a tuple. Worse, `mutation_rejected` could not save
+    us: an undenied writer is never rejected, so no event would exist to say
+    it escaped. A permission system whose failure mode is SILENCE is the
+    failure mode of this entire project.
+
+    So the capability is carried by the CALL, not derived from the caller's
+    name. `ios_edit` is not trusted because its string starts with `ios_`; it
+    is trusted because the mutation declares that a user pointed at a row.
+    `ledger_undo` is not trusted because it is on a list; it is trusted
+    because it declares that it is replaying a recorded inverse.
+
+    UNKNOWN IS THE DEFAULT, AND IT IS REFUSED on canonical rows. A new
+    mutation surface — `apple_watch_edit`, `voice_edit` — therefore BREAKS
+    until it declares what authority it exercises. That is the point: making a
+    surface state its authority is cheap, and silent permission is what
+    destroyed six canonical rows in production.
+    """
+    #: The canonical lane mutating what it owns.
+    CANONICAL_OWNER = "canonical_owner"
+    #: A human pointed at this row and changed it. The user is the authority.
+    EXPLICIT_USER_ACTION = "explicit_user_action"
+    #: Replaying an inverse that was WRITTEN DOWN. Not a guess — undo.
+    RECORDED_REPLAY = "recorded_replay"
+    #: A model DECIDED that prose referred to this row. On 2026-08-10 it
+    #: decided wrong and overwrote a canonical chicken row with salmon.
+    INFERRED_INTERPRETATION = "inferred_interpretation"
+    #: Nothing was declared. Refused on canonical rows, deliberately.
+    UNKNOWN = "unknown"
+
+
+#: WHO MAY MUTATE A CANONICALLY OWNED ROW. Everything absent is refused,
+#: including UNKNOWN — the list is what may proceed, not what may not.
+AUTHORITY_OVER_CANONICAL = frozenset({
+    MutationAuthority.CANONICAL_OWNER,
+    MutationAuthority.EXPLICIT_USER_ACTION,
+    MutationAuthority.RECORDED_REPLAY,
+})
+
+
+class CrossOwnerMutation(Exception):
+    """A writer without authority tried to mutate a canonically-owned row.
+
+    ⭐ MEASURED IN PRODUCTION 2026-08-10, and it was silent data loss:
+
+        13:56:31  created  entry=2947  canonical:create        Chicken, roasted 200
+        13:56:43  updated  entry=2947  structured_food:…v2  -> Salmon 263
+
+    The user said "I had some salmon" — a plain new-food statement with no
+    correction language — twelve seconds after logging chicken. The legacy
+    interpreter classified it as a CORRECTION and overwrote the canonical row
+    in place. The reply was "Updated to salmon." The chicken log survived only
+    in its `created` event.
+
+    Raised rather than returned, and deliberately: `update_food_entry` already
+    returns None for "no such entry" and "not your entry", and a refusal that
+    looks like those two would be handled by callers as a lookup miss. This is
+    not a miss — it is a writer being told it does not own what it is holding.
+    """
+
+    def __init__(self, entry_id: int, owner: str, authority: str,
+                 writer: str = ""):
+        self.entry_id, self.owner = entry_id, owner
+        self.authority, self.writer = authority, writer
+        super().__init__(
+            f"entry {entry_id} is owned by {owner!r}; a mutation with "
+            f"authority {authority!r} (writer {writer!r}) may not change it")
+
+
+def _is_canonical(source: Optional[str]) -> bool:
+    return bool(source) and str(source).startswith(CANONICAL_SOURCES)
+
+
+async def creating_source(db: AsyncSession, entry_id: int) -> Optional[str]:
+    """WHO CREATED THIS ROW, from its own `created` event.
+
+    Ownership needs no new column: every row's provenance was already recorded
+    by the 2026-08-07 ledger work, and invariant I3 guarantees exactly one
+    `created` event per entry. The firewall reads evidence that already exists.
+    """
+    from db.models import LedgerEvent
+
+    row = (await db.execute(
+        select(LedgerEvent.source)
+        .where(LedgerEvent.entry_id == entry_id,
+               LedgerEvent.domain == "food",
+               LedgerEvent.event_type == "created")
+        .limit(1))).first()
+    return row[0] if row else None
+
+
 async def update_food_entry(
     db: AsyncSession, entry_id: int, user_id: int,
     ledger_source: Optional[str] = None, claim_id: Optional[int] = None,
+    authority: "MutationAuthority" = MutationAuthority.UNKNOWN,
     **changes
 ) -> Optional[FoodEntry]:
     """
@@ -2271,6 +2383,49 @@ async def update_food_entry(
     log = log_result.scalar_one()
     if log.user_id != user_id:
         return None
+
+    # ⭐ THE OWNERSHIP FIREWALL, AT THE MUTATION BOUNDARY.
+    #
+    # Placed here rather than in the correction classifier on purpose: every
+    # food-row update in the system funnels through this function, so a guard
+    # here rejects a cross-owner write no matter which interpretation path
+    # reached it. A special case in the classifier would only cover the one
+    # route that was observed failing.
+    #
+    # THE ATTEMPT IS RECORDED, not just refused. A firewall that silently
+    # drops writes is its own blind spot — the rejected event is how anyone
+    # discovers that a legacy path is still trying, and how often.
+    _owner = await creating_source(db, entry_id)
+    if _owner is None:
+        # PRE-LEDGER ROWS FAIL OPEN, and are COUNTED. Ownership cannot be
+        # established without creation provenance, and refusing every such row
+        # would break corrections across the entire historical corpus. Emitted
+        # so the size of that corpus is measurable and the exception can
+        # eventually be removed on evidence rather than on nerve.
+        logger.info("event=ownership_check result=unknown_provenance entry=%s "
+                    "authority=%s", entry_id, getattr(authority, "value",
+                                                      authority))
+    elif _is_canonical(_owner) and authority not in AUTHORITY_OVER_CANONICAL:
+        try:
+            await record_ledger_event(
+                db, user_id=user_id, event_type="mutation_rejected",
+                domain="food", entry_id=entry_id,
+                daily_log_id=entry.daily_log_id,
+                payload={"owner": _owner, "writer": ledger_source or "",
+                         "authority": getattr(authority, "value", str(authority)),
+                         "attempted": {k: v for k, v in changes.items()
+                                       if v is not None}},
+                source=ledger_source or "unknown", commit=False)
+        except Exception:
+            logger.warning("could not record rejected mutation on entry %s",
+                           entry_id, exc_info=True)
+        logger.error(
+            "event=cross_owner_mutation_refused entry=%s owner=%s "
+            "authority=%s writer=%s", entry_id, _owner,
+            getattr(authority, "value", authority), ledger_source)
+        raise CrossOwnerMutation(
+            entry_id, _owner, getattr(authority, "value", str(authority)),
+            ledger_source or "unknown")
 
     # Captured before any setattr below. A portion edit rescales fiber, sugar,
     # sodium and the micro panel too, so "what it was" is more than the four

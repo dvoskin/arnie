@@ -25,6 +25,7 @@ from db.queries import (
     add_food_entry, add_exercise_entry, add_body_metric, add_water_entry,
     reload_user,
     update_food_entry as q_update_food_entry,
+    MutationAuthority as _MutationAuthority,
     delete_food_entry as q_delete_food_entry,
     update_exercise_entry as q_update_exercise_entry,
     delete_exercise_entry as q_delete_exercise_entry,
@@ -3861,6 +3862,10 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
             _tot_pro = _old_pro + (analysis.protein or 0)
             _merged = await q_update_food_entry(
                 db, _food_merge_target.id, user.id,
+                # A MODEL DECIDED this prose referred to a row already on the
+                # board. That is exactly the authority that overwrote a
+                # canonical chicken row with salmon on 2026-08-10.
+                authority=_MutationAuthority.INFERRED_INTERPRETATION,
                 quantity=_merged_qty,
                 calories=_tot_cal,
                 protein=_tot_pro,
@@ -4709,14 +4714,24 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                 }
         except Exception:
             _before_state = None
-        entry = await q_update_food_entry(db, entry_id, user.id, **changes)
+        # ⭐ ONE CALL SITE, TWO AUTHORITIES — which is why the capability
+        # travels with the mutation instead of being read off the caller.
+        # `ledger_undo` reaches this same dispatch by EMITTING an
+        # `update_food_entry` tool call, stamping `source=ledger_undo:v1` in
+        # its input; everything else arriving here is a model's inference.
+        _auth = (_MutationAuthority.RECORDED_REPLAY
+                 if str(inp.get("source") or "").startswith("ledger_undo:")
+                 else _MutationAuthority.INFERRED_INTERPRETATION)
+        entry = await q_update_food_entry(db, entry_id, user.id,
+                                          authority=_auth, **changes)
         if not entry:
             # SELF-HEAL: the model likely GUESSED the id (its own admission:
             # "instead of guessing at the ID"). Resolve the intended entry from
             # today's log and retry once, so a bad id doesn't fail a real move.
             recovered, listing = await _recover_food_entry(db, today_log, inp, user_message)
             if recovered is not None and recovered.id != entry_id:
-                entry = await q_update_food_entry(db, recovered.id, user.id, **changes)
+                entry = await q_update_food_entry(
+                    db, recovered.id, user.id, authority=_auth, **changes)
                 if entry:
                     entry_id = recovered.id
                     _before_state = None   # captured for the ORIGINAL id — stale
