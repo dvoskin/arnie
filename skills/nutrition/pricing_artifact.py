@@ -81,11 +81,80 @@ def normalize(text: str) -> str:
     return " ".join(str(text or "").strip().lower().split())
 
 
+def _registered_preparations() -> tuple:
+    """The declared vocabulary — never a word list written here."""
+    from core.semantic_fields import spec_for
+
+    # Longest first, so an id that contains another cannot be shadowed by it.
+    return tuple(sorted(spec_for("preparation").vocabulary,
+                        key=len, reverse=True))
+
+
+def split_identity(entity: str, preparation: str = "") -> tuple:
+    """⭐ ONE TYPED IDENTITY, ONE KEY — whichever way it was expressed.
+
+    THE INVERSE OF `preparation_ontology.name_with`, which composes
+    `f"{food}, {preparation_id}"`. Preparation reaches pricing by two routes
+    and they were producing different keys:
+
+        answered as a FIELD   entity="Beef"          prep="grilled"
+        named in the MESSAGE  entity="Beef, grilled" prep=""
+
+    MEASURED IN PRODUCTION 2026-08-10. The artifact holds `beef|grilled` with
+    five qualified candidates. The second route built `beef, grilled|`, missed,
+    and fell to the estimate rung — so stating the preparation made pricing
+    WORSE than omitting it:
+
+        Beef          120 g   151 kcal   29.0 g protein   evidence
+        Beef, grilled 120 g   151 kcal   24.0 g protein   estimate
+
+    That is not a coverage gap. The evidence was already there and the lookup
+    could not address it, because two representations of one identity did not
+    canonicalise to one key.
+
+    DRIVEN BY THE REGISTRY, never by a food or a phrase. There is no "beef"
+    here and no "grilled" — a preparation is recognised because it is in the
+    declared vocabulary, so extending that vocabulary extends this for free
+    and a new food needs nothing.
+    """
+    ent, prep = normalize(entity), normalize(preparation)
+    if prep:
+        # An explicit field wins, and the name may ALSO carry it — `name_with`
+        # is idempotent precisely because the interpreter sometimes composes
+        # it first. Strip it either way so both routes land on one key.
+        return _without(ent, prep), prep
+    for candidate in _registered_preparations():
+        stripped = _without(ent, candidate)
+        if stripped != ent:
+            return stripped, candidate
+    return ent, ""
+
+
+def _without(entity: str, preparation: str) -> str:
+    """`entity` with the preparation token removed, in any position.
+
+    Natural language puts it either side — "grilled salmon" and
+    "salmon, grilled" are the same identity — so this matches on WORD
+    boundaries rather than substrings: a substring test would maul "friedcake"
+    and, worse, silently change the food.
+    """
+    words = [w for w in entity.replace(",", " ").split() if w]
+    kept = [w for w in words if w != preparation]
+    if len(kept) == len(words):
+        return entity
+    return " ".join(kept)
+
+
 def key(entity: str, preparation: str = "") -> str:
     """`entity|preparation`. Preparation is part of the KEY, not a modifier
     applied afterwards: fried chicken and roasted chicken are different foods
-    to price, which is the whole reason the field exists."""
-    return f"{normalize(entity)}|{normalize(preparation)}"
+    to price, which is the whole reason the field exists.
+
+    Both arguments pass through `split_identity` first, so a preparation named
+    in the food and a preparation answered as a field produce the SAME key.
+    """
+    ent, prep = split_identity(entity, preparation)
+    return f"{ent}|{prep}"
 
 
 def verified(*, now=None, max_age_days: float = MAX_ARTIFACT_AGE_DAYS):

@@ -533,3 +533,95 @@ def test_an_indefensible_rung_also_falls_through():
                    estimate=EstimateEvidence(calories=0.0, protein=0.0,
                                              carbs=0.0, fat=0.0))
     assert priced.rung is Rung.ARTIFACT and priced.calories > 0
+
+
+# ══ ONE TYPED IDENTITY, ONE KEY ═════════════════════════════════════════════
+#
+# Measured in production 2026-08-10. Preparation reaches pricing by two routes:
+# answered as a FIELD, or named in the message and composed into the food. They
+# built different keys, so the second missed evidence the artifact already
+# held — and stating the preparation made pricing WORSE than omitting it:
+#
+#     Beef          120 g   151 kcal   29.0 g protein   evidence
+#     Beef, grilled 120 g   151 kcal   24.0 g protein   estimate
+#
+# Not a coverage gap. `beef|grilled` held five qualified candidates the whole
+# time; `beef, grilled|` simply could not address them.
+
+from skills.nutrition import pricing_artifact as _pricing_artifact  # noqa: E402
+
+
+@pytest.mark.parametrize("entity,preparation", [
+    ("Beef", "grilled"),            # answered as a field
+    ("Beef, grilled", ""),          # composed by `name_with`
+    ("grilled beef", ""),           # natural order, preparation first
+    ("BEEF,  GRILLED", ""),         # case and spacing
+    ("Beef, grilled", "grilled"),   # both, because `name_with` is idempotent
+])
+def test_every_expression_of_one_identity_makes_the_same_key(entity,
+                                                             preparation):
+    assert _pricing_artifact.key(entity, preparation) == "beef|grilled"
+
+
+def test_the_evidence_that_was_unreachable_is_reachable_from_both_routes():
+    """THE REGRESSION, against the committed artifact: whichever way the user
+    said it, the same five candidates must be found."""
+    _pricing_artifact._reset_for_tests()
+    by_field = _pricing_artifact.evidence_for("Beef", "grilled")
+    by_name = _pricing_artifact.evidence_for("Beef, grilled", "")
+    assert by_field and by_name, "the artifact rung is unreachable"
+    assert len(by_field.candidates) == len(by_name.candidates) > 0
+    assert ({c.get("fdc_id") for c in by_field.candidates}
+            == {c.get("fdc_id") for c in by_name.candidates}), (
+        "the two routes reach DIFFERENT evidence, so pricing depends on how "
+        "the user phrased it")
+
+
+@pytest.mark.parametrize("entity,expected", [
+    ("chicken, fried", ("chicken", "fried")),
+    ("fried chicken", ("chicken", "fried")),
+    ("salmon, roasted", ("salmon", "roasted")),
+    ("mushrooms", ("mushrooms", "")),          # no preparation at all
+    ("cod", ("cod", "")),
+])
+def test_the_split_generalises_across_entities_and_preparations(entity,
+                                                                expected):
+    """GENERIC, or it is a heuristic. If this only worked for beef and grilled
+    it would be the food-name branch this codebase forbids."""
+    assert _pricing_artifact.split_identity(entity) == expected
+
+
+def test_the_split_is_driven_by_the_registry_and_names_no_food():
+    """AST: no food and no preparation may be written into this module. A
+    preparation is recognised because it is DECLARED, so extending the
+    vocabulary extends the split for free."""
+    import pathlib
+
+    tree = ast.parse(pathlib.Path(_pricing_artifact.__file__).read_text(
+        encoding="utf-8"))
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                             ast.AsyncFunctionDef)):
+            doc = ast.get_docstring(node, clean=False)
+            if doc:
+                docstrings.add(doc)
+    live = [n.value.lower() for n in ast.walk(tree)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            and n.value not in docstrings]
+    for banned in ("beef", "chicken", "grilled", "fried", "roasted", "salmon"):
+        hits = [v for v in live if banned in v]
+        assert not hits, f"the split acts on the literal {banned!r}: {hits}"
+
+    calls = {getattr(n.func, "id", "") or getattr(n.func, "attr", "")
+             for n in ast.walk(tree) if isinstance(n, ast.Call)}
+    assert "spec_for" in calls, (
+        "the vocabulary is not read from the registry, so a new preparation "
+        "will not be recognised")
+
+
+def test_a_preparation_inside_a_word_is_not_stripped():
+    """Word boundaries, not substrings. A substring test would silently change
+    the FOOD — the one thing an identity boundary may never do."""
+    assert _pricing_artifact.split_identity("friedcake") == ("friedcake", "")
+    assert _pricing_artifact.split_identity("grilledine") == ("grilledine", "")
