@@ -319,6 +319,13 @@ async def test_a_replay_does_not_date_a_commit_it_did_not_make(
 
     ids = await _open_question(edges, seeded)
     with caplog.at_level(logging.INFO, logger="core.food_trace"):
+        # CLEARED, because `caplog` collects for the whole test and the ASK is
+        # a traced turn too. Whether its line is captured depends on the root
+        # log level, which differs by engine — so without this the assertion
+        # counted two lines on SQLite and three on Postgres, and the test was
+        # green locally and red in CI for a reason having nothing to do with
+        # what it is about.
+        caplog.clear()
         applied = await client.post(ANSWER, json={**ids,
                                                   "client_message_id": "tap-1"})
         replayed = await client.post(ANSWER, json={**ids,
