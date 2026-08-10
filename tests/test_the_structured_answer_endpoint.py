@@ -347,7 +347,11 @@ async def test_a_replay_does_not_date_a_commit_it_did_not_make(
         def emit(self, record):
             captured.append(record.getMessage())
 
-    trace_log = logging.getLogger("core.food_trace")
+    # THE MODULE'S OWN LOGGER OBJECT, not one looked up by name. They are the
+    # same object right up until they are not, and `getLogger` by name gives no
+    # sign when they differ — the handler simply never fires and the test reads
+    # as "nothing was traced".
+    trace_log = _ft.logger
     handler = _Grab(level=logging.INFO)
     was_level, was_disabled = trace_log.level, trace_log.disabled
     was_global = logging.root.manager.disable
@@ -381,6 +385,9 @@ async def test_a_replay_does_not_date_a_commit_it_did_not_make(
         f"for two requests.\n"
         f"  tracing_enabled={_ft.tracing_enabled()}\n"
         f"  FOOD_TRACE={os.getenv('FOOD_TRACE')!r}\n"
+        f"  logger={_ft.logger.name!r} id={id(_ft.logger)} "
+        f"same_by_name={_ft.logger is logging.getLogger('core.food_trace')}\n"
+        f"  module={_ft.__name__!r} id={id(_ft)}\n"
         f"  every record captured on core.food_trace: {captured}\n"
         f"  matching lines: {lines}")
 

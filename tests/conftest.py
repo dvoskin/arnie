@@ -232,3 +232,32 @@ def _no_test_may_emit_an_impossible_funnel(request):
             "this test finished a food_trace whose counts contradict each "
             "other — the funnel claims a state no turn can reach:\n"
             f"{report}")
+
+
+@pytest.fixture(autouse=True)
+def _no_test_inherits_an_ambient_trace():
+    """`CURRENT_TRACE` starts and ends empty for every test.
+
+    A LEAKED TRACE BLINDS EVERY TURN AFTER IT, silently. `food_trace.span`
+    defers to whatever is already ambient and an inner span deliberately does
+    NOT finish — two owners would emit a half-turn and blind the rest of it. So
+    a test that calls `begin()` and never `finish()`es leaves the contextvar
+    set, and the next test's span sees an owner, records its stages onto the
+    orphan, and emits nothing at all.
+
+    That is indistinguishable from "this code does not trace": tracing reads as
+    enabled, the logger is right, the handler is attached, and no line ever
+    arrives. It cost a full investigation to find, and it is order-dependent —
+    green under one shuffle seed and red under the next — which is exactly the
+    class of failure `_isolate_turn_scoped_caches` above exists to prevent for
+    caches.
+
+    Cleared on BOTH sides on purpose. Before, so a leak from an earlier test
+    cannot blind this one; after, so a leak from this one cannot blind the next
+    and the test that caused it is the test that fails.
+    """
+    from core.food_trace import CURRENT_TRACE
+
+    CURRENT_TRACE.set(None)
+    yield
+    CURRENT_TRACE.set(None)
