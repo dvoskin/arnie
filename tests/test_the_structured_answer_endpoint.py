@@ -16,6 +16,7 @@ avoid.
 """
 import asyncio
 import json
+import os
 
 import pytest
 
@@ -301,7 +302,7 @@ async def test_a_crash_between_the_two_commits_does_not_write_twice(
 
 @pytest.mark.asyncio
 async def test_a_replay_does_not_date_a_commit_it_did_not_make(
-        client, edges, seeded, b1_live, density):
+        client, edges, seeded, b1_live, density, monkeypatch):
     """`commit_visible_ms` belongs to the turn that COMMITTED, not to every
     turn that mentions the entry.
 
@@ -316,6 +317,16 @@ async def test_a_replay_does_not_date_a_commit_it_did_not_make(
     is visibly missing; a wrong one that flatters the system is not.
     """
     import logging
+
+    from core import food_trace as _ft
+
+    # THE KILL SWITCH, PINNED. `food_trace.begin()` returns None when
+    # `FOOD_TRACE` is off, and then there is no trace, no line, and nothing for
+    # this test to read — a state indistinguishable from the defect it is
+    # looking for. A test about trace CONTENT must not inherit whether tracing
+    # is on from whatever ran before it.
+    monkeypatch.setenv("FOOD_TRACE", "true")
+    assert _ft.tracing_enabled(), "the kill switch is off; this test cannot see"
 
     ids = await _open_question(edges, seeded)
 
@@ -359,9 +370,19 @@ async def test_a_replay_does_not_date_a_commit_it_did_not_make(
     assert replayed.json()["outcome"] == "replay", replayed.json()
 
     lines = [m for m in captured if m.startswith("event=food_trace ")]
+    # DIAGNOSABLE ON FAILURE. This assertion has already failed twice for
+    # reasons in the capture rather than the product, and once under an
+    # ordering that could not be reproduced from the run that reported it —
+    # pytest-randomly's seed is not printed under `-q`. If it fails again, the
+    # next reader gets the state that decides it instead of another
+    # investigation from scratch.
     assert len(lines) == 2, (
         f"a replayed tap left no trace of its own — got {len(lines)} lines "
-        f"for two requests: {lines}")
+        f"for two requests.\n"
+        f"  tracing_enabled={_ft.tracing_enabled()}\n"
+        f"  FOOD_TRACE={os.getenv('FOOD_TRACE')!r}\n"
+        f"  every record captured on core.food_trace: {captured}\n"
+        f"  matching lines: {lines}")
 
     def field(line, key):
         for token in line.split():
