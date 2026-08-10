@@ -301,7 +301,7 @@ async def test_a_crash_between_the_two_commits_does_not_write_twice(
 
 @pytest.mark.asyncio
 async def test_a_replay_does_not_date_a_commit_it_did_not_make(
-        client, edges, seeded, b1_live, density, caplog):
+        client, edges, seeded, b1_live, density):
     """`commit_visible_ms` belongs to the turn that COMMITTED, not to every
     turn that mentions the entry.
 
@@ -318,24 +318,47 @@ async def test_a_replay_does_not_date_a_commit_it_did_not_make(
     import logging
 
     ids = await _open_question(edges, seeded)
-    with caplog.at_level(logging.INFO, logger="core.food_trace"):
-        # CLEARED, because `caplog` collects for the whole test and the ASK is
-        # a traced turn too. Whether its line is captured depends on the root
-        # log level, which differs by engine — so without this the assertion
-        # counted two lines on SQLite and three on Postgres, and the test was
-        # green locally and red in CI for a reason having nothing to do with
-        # what it is about.
-        caplog.clear()
+
+    # CAPTURED AT THE SOURCE LOGGER, NOT THROUGH `caplog`. Twice now this
+    # assertion has failed for reasons that had nothing to do with what it
+    # tests: `caplog` collects for the WHOLE test (so the ask in
+    # `_open_question` was counted as subject), and it captures by handler on
+    # the ROOT logger — which only works while `core.food_trace` still
+    # propagates and nothing has called `logging.disable()`. Under CI's
+    # shuffled order something upstream changes that, and the test saw ZERO
+    # lines for two requests that had both plainly emitted one.
+    #
+    # A handler on the logger itself is immune to all of it, and scoping it to
+    # the two POSTs removes the setup turn without needing to clear anything.
+    captured = []
+
+    class _Grab(logging.Handler):
+        def emit(self, record):
+            captured.append(record.getMessage())
+
+    trace_log = logging.getLogger("core.food_trace")
+    handler = _Grab(level=logging.INFO)
+    was_level, was_disabled = trace_log.level, trace_log.disabled
+    was_global = logging.root.manager.disable
+    trace_log.addHandler(handler)
+    trace_log.setLevel(logging.INFO)
+    trace_log.disabled = False
+    logging.disable(logging.NOTSET)     # a global disable outranks any handler
+    try:
         applied = await client.post(ANSWER, json={**ids,
                                                   "client_message_id": "tap-1"})
         replayed = await client.post(ANSWER, json={**ids,
                                                    "client_message_id": "tap-2"})
+    finally:
+        trace_log.removeHandler(handler)
+        trace_log.setLevel(was_level)
+        trace_log.disabled = was_disabled
+        logging.disable(was_global)
 
     assert applied.json()["outcome"] == "applied"
     assert replayed.json()["outcome"] == "replay", replayed.json()
 
-    lines = [r.getMessage() for r in caplog.records
-             if r.getMessage().startswith("event=food_trace ")]
+    lines = [m for m in captured if m.startswith("event=food_trace ")]
     assert len(lines) == 2, (
         f"a replayed tap left no trace of its own — got {len(lines)} lines "
         f"for two requests: {lines}")
