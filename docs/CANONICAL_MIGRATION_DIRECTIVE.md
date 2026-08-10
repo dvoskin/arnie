@@ -1244,12 +1244,16 @@ P1 PRICING  LANDED, AUDITED  THE CANONICAL LANE PRICES ITS OWN FOOD. A whole
                              SCOPE: the cut covers ANSWER/SETTLE only. The ASK
                              path still reaches `_analyze_food` — see the open
                              findings.
+                             ⭐ CLOSED IN PRODUCTION 2026-08-10 (d087e67) —
+                             five consecutive settles, every one with
+                             `pricing.qualification` ABSENT. See below.
 LATENCY    MEASURED          settle path bound (ad8b144), the 3,197 ms hole in
                              settle.pricing split (bdec559), the 2,206 ms
                              bucket inside _analyze_food closed (2ca3c19).
-                             STILL 8.2 s TO A QUESTION on the 08-08 trace —
-                             P5 (resolving state, latency copy) remains open
-                             and is now the largest user-visible cost.
+                             SETTLE SOLVED 08-10: 36–70 ms, from 8,225–11,053.
+                             STILL ~4–6 s TO A QUESTION, and it is now ~100%
+                             interpreter `llm` — P5 (resolving state, latency
+                             copy) is the whole remaining user-visible cost.
 TELEMETRY  REPAIRED 08-09    the canonical lane was absent from its own trace;
                              ten defects fixed with ratchets (870b6ea), and an
                              eleventh from review: the funnel's terms are now a
@@ -1279,7 +1283,19 @@ The settle path was instrumented and three latency holes closed. Then the
 wrong, and that was repaired.
 
 **What is NOT proven, stated plainly.** B-1.5's machinery is deployed; a
-production turn where preparation actually opens has not been observed.
+production turn where preparation actually opens ~~has not been observed~~ was
+observed 2026-08-10 — **for exactly one food**. That is an observation, not a
+proof, and the distinction is the whole point:
+
+```text
+B-1.5 implementation / regression confidence   ~90–95%
+B-1.5 production BEHAVIOURAL proof             INCOMPLETE
+```
+
+One food, one session, one order of answers. Preparation opened for `chicken`
+and for nothing else logged that day, because only `chicken|` carries prepared
+artifact evidence — so "preparation works" is currently a claim about a single
+identity. B-1.5 does NOT close on it.
 
 **~~The pricing rungs are unit-proven and were audited, but the CI engine that
 the B-1b gates name has been red throughout — so "green under Postgres and
@@ -1313,6 +1329,136 @@ engine produced it.
 Postgres against 104 under SQLite is the expected shape (the PG-gated proofs
 run; the SQLite-only ones skip). A Postgres run reporting ~82 skips means the
 PG-gated proofs silently no-opped and the result is worthless.
+
+### P1 CANONICAL PRICER — CLOSED IN PRODUCTION *(measured 2026-08-10, `d087e67`)*
+
+The stop condition's last line was "production canonical settle succeeds".
+Five consecutive settles, one iOS session, user 26:
+
+```text
+13:56:28  clarification_answer    36 ms   qualification ABSENT   (preparation, PARTIAL)
+13:56:31  clarification_answer    70 ms   qualification ABSENT   (quantity, APPLIED)
+13:57:05  clarification_answer    58 ms   qualification ABSENT
+13:57:18  clarification_answer    62 ms   qualification ABSENT
+13:57:37  clarification_answer    55 ms   qualification ABSENT
+
+settle.pricing 1–5 ms   ·   settle.commit 17–21 ms
+```
+
+**36–70 ms against 8,225–11,053 ms on the legacy pricer** — roughly 150×, and
+two orders of magnitude inside the <2 s P95 target. `pricing.qualification`
+appears on no settle path at all: the model call is gone from the tap, which
+is the thing the seam cut was for.
+
+Every stop-condition line now holds: four rungs, portion scaling through
+`scaling.py`, canonical settle calling `price()`, the import gate green, a
+committed artifact, deterministic pricing, no network/model on hit, the
+mackerel and chicken regressions, both suites green (8665/0 — see the closure
+above), and this trace.
+
+**B-1.5's owed reversed-order proof passed in the same sequence.**
+`FIELDS=2 [quantity, preparation]`; preparation answered FIRST → `PARTIAL`,
+zero rows; quantity second → `APPLIED`, one row, created as
+`Chicken, roasted 120 g / 200 kcal`. Same terminal state as quantity-first.
+
+**What this does NOT close: B-1.5.** Preparation opened for chicken and for
+nothing else in the session, because only `chicken|` carries prepared artifact
+evidence. That is the coverage gap in the open findings, not a B-1.5 defect —
+but it means "preparation works" is a claim about ONE identity, one session,
+one answer order. P1 closes on this trace; B-1.5 does not.
+
+### B-1.5 CLOSURE — A CONTROLLED CANARY EXERCISE *(Danny, 2026-08-10)*
+
+Live traffic is tiny, so waiting for organic coverage is waiting indefinitely.
+Closure requires a DELIBERATE production exercise, not an accumulation of
+incidental turns. Ten scenarios, all on the allowlist:
+
+```text
+ 1  ambiguous food            -> preparation question opens
+ 2  answer                    -> canonical settle
+ 3  artifact HIT              -> priced from evidence, deterministic id
+ 4  artifact MISS             -> estimate rung, non-zero, defensible
+ 5  bare `salmon` vs `grilled salmon`   -> the precision paradox, measured
+ 6  bare `chicken`            -> artifact miss by design; estimate rung
+ 7  unrelated message after a clarification   -> the open question survives
+ 8  replay / idempotency      -> a second delivery writes nothing
+ 9  Postgres committed state  -> read the rows, never the reply
+10  trace chain               -> interpreted -> staged -> written ->
+                                 committed -> visible, no term proxying another
+```
+
+Scenarios 5 and 6 are the ones that would otherwise be read as bugs: both are
+artifact misses BY DESIGN, and a reader who does not know that will file them
+twice. Scenario 10 is the funnel definition from the 08-09 review — the
+exercise is also the first end-to-end test of that chain.
+
+### ⚠️ THE PRECISION PARADOX — a policy decision, not an accident *(Danny, 2026-08-10)*
+
+**A user supplying MORE precise information currently makes the pricing
+evidence WEAKER.**
+
+```text
+"salmon"           -> salmon|          13 qualified candidates -> artifact rung
+"grilled salmon"   -> salmon|grilled   no evidence             -> estimate rung
+```
+
+USDA carries no curated "salmon, grilled" row, so stating the preparation
+moves the food from artifact-priced to estimate-priced. Only chicken and beef
+have real coverage across grilled/roasted/fried.
+
+**This is architecturally CORRECT under the strict identity contract** —
+`salmon|grilled` is a different identity from `salmon|`, and pricing one from
+the other's evidence is exactly the substitution the preparation field exists
+to prevent. **It is also counterintuitive UX**, and being right about the
+contract does not make it right for the user.
+
+Recorded so it cannot become permanent behaviour by default. It is an explicit
+B-1.5/B-1.6 decision with at least three candidate resolutions, none free:
+
+```text
+FALL BACK      entity|preparation misses -> use entity| evidence, and RECORD
+               that the price came from a less specific identity
+ASK LESS       do not open preparation when no prepared evidence exists for
+               the food — the question implies a precision we cannot price
+ACCEPT         keep it, and make the estimate rung good enough that the
+               downgrade costs accuracy rather than correctness
+```
+
+The first is not a default: it prices a stated preparation from evidence about
+a different identity. Whichever is chosen, the choice is recorded here.
+
+### ⛔ P1(b) — THE LEGACY CORRECTION PATH OVERWRITES CANONICAL ROWS *(measured 2026-08-10)*
+
+Found in the same session, and it is a live data-loss path on the canonical
+lane. Recorded here rather than in Phase C because C-1..C-3 describe
+corrections as a FUTURE canonical migration; this is a legacy writer reaching
+a canonical row TODAY.
+
+```text
+13:56:31  created  entry=2947  canonical:create                 Chicken, roasted 200 kcal
+13:56:43  updated  entry=2947  structured_food:food_interpreter_v2   -> Salmon 263 kcal
+```
+
+The user said **"I had some salmon"** — a plain new-food statement, no
+correction language — twelve seconds after logging chicken. The legacy
+interpreter classified it as a CORRECTION and mutated the canonical row in
+place. The reply was *"Updated to salmon."* The chicken log is gone; it
+survives only in its `created` event, which is the 08-07 P1 ledger fix
+earning its place.
+
+Three properties make this the worst class found so far:
+
+```text
+DATA LOSS    a committed canonical row lost its identity, silently
+OWNERSHIP    a LEGACY writer mutated a row owned by the canonical lane —
+             the migration rests on canonical rows having one owner
+INVISIBLE    no error, a plausible reply, and a board that looks right
+```
+
+The narrow rule this implies, stated so it is not re-derived later: **a row
+whose `created` event says `canonical:create` may not be mutated by the legacy
+interpreter.** Ownership is already recorded on every row by the 08-07 ledger
+work, so the check has evidence to stand on and needs no new state.
 
 ### TWO ROLLOUTS ARE LIVE, AT DIFFERENT WIDTHS *(measured 2026-08-09)*
 
@@ -3532,6 +3678,8 @@ Each is real, none blocks the current phase, and none may be closed silently.
 | the `battery` CI job FAILS when `ANTHROPIC_API_KEY` is absent, rather than reporting neutral/skipped — a job asserting a result it cannot know, and a permanently red check that teaches everyone to ignore red | observed 08-09, every PR that triggers it | configure the secret to make it authoritative, OR make an unavailable secret a neutral state; NOT left red. **Confirmed 08-10**: the cloud containers cannot run the key-dependent suite at all, so this is why the 08-09 work shipped unverified — a credential gap, not a discipline gap |
 | **answering a preparation can make pricing WORSE.** `salmon\|` carries 13 qualified candidates; `salmon\|grilled` has none, because USDA holds no curated "salmon, grilled" row — so stating the preparation moves that food from artifact-priced to estimate-priced. Only chicken and beef have real coverage across grilled/roasted/fried | measured 08-10, full 64-identity build | **needs a decision, not a default.** Falling back `entity\|preparation` → `entity\|` would price a stated preparation from evidence about a different identity, which is the substitution the field exists to prevent |
 | `chicken\|` carries NO qualified pricing evidence — 0 of 15 rows survive, because bare "chicken" returns spread, fat, frankfurter and bologna | measured 08-10 | not a defect: the boundary working. Recorded because plain "I had some chicken" therefore prices from the ESTIMATE rung, and a trace reader will otherwise misread that as the artifact failing |
+| **artifact coverage is 16 seed entities; production logs foods outside it.** The 08-10 session logged halibut and steak, neither in `SEED`, so both priced from the ESTIMATE rung with no artifact consulted | measured 08-10 | see the rebuild triggers below — bare-entity coverage is a routine rebuild; PREPARED coverage is blocked on the fallback decision, not on effort |
+| **preparation uses a WEAKER materiality rule than every other uncertainty.** `space_is_material()` is a pure density RATIO (`MATERIAL_SPREAD=1.25`) with no portion, no day targets and no accuracy mode, while `skills/nutrition/materiality.is_material()` — whose own docstring says "ONE rule, wherever the question is being considered" — takes all three. The ratio is not merely coarser, it is INVERTED in real cases: mushrooms at 60 g (29 vs 39 kcal/100 g) clear 1.25× and get asked about a **6 kcal** difference, while a food at 300 g (150 vs 180) fails the gate and stays silent on **90 kcal** | measured 08-10 | **B-1.7**, with the accuracy-mode policy. Do NOT tune `MATERIAL_SPREAD` — that would be guessing at the same wrong measure. Danny 08-10 also raises a second axis the calorie rule cannot express: preparation sharpens IDENTITY (it becomes the food-memory key, so the next log prices from memory in ~130 ms), which argues for a lower bar for this field specifically |
 
 **Closed 2026-08-08 — the telemetry of one production turn (build `2a8856035e66`).**
 One iOS B-1 clarification, correct end to end, whose record was not admissible
