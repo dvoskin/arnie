@@ -544,6 +544,15 @@ class TurnResult:
     # Surfaced on the wire so native clients can dedup history reloads by a
     # STABLE identity instead of text/timestamp heuristics.
     log_id: Optional[int] = None
+    #: THE STILL-OPEN FIELDS, in the client's wire shape (B-1.5).
+    #:
+    #: The ASK path returns a dict carrying `b1_interaction`; a canonical
+    #: ANSWER returns this dataclass, which had no way to carry one — so a
+    #: PARTIAL answered by TEXT sent the client prose and nothing to tap.
+    #: MEASURED 2026-08-10: after answering quantity by typing, no preparation
+    #: chips were rendered, and the typed path could not answer it either, so
+    #: the field was unreachable by any route.
+    b1_interaction: Optional[dict] = None
     # The row this turn REPLACED, when it was a regenerate/edit (set alongside
     # the supersede mark in chat_service). History already hides the old row on
     # reload; this is what lets a live client drop the message — and its card —
@@ -1284,11 +1293,16 @@ async def _run_turn(
                     # that silently never runs looks exactly like a healthy
                     # system. Loud, and still harmless.
                     logger.warning("b1 turn-health failed", exc_info=True)
+                # THE FIELDS STILL OPEN, BACK TO THE CLIENT. `AnswerTurn`
+                # has carried `remaining` since B-1.5 precisely so a client
+                # can re-render exactly the rows that are left; nothing was
+                # reading it here, so a typed PARTIAL shipped words only.
                 return TurnResult(
                     response=_b1_resp, health_flags=_b1_flags,
                     tool_calls=[], just_completed=False,
                     in_onboarding=in_onboarding, onboarding_field_saved=None,
-                    today_log=today_log, user=user)
+                    today_log=today_log, user=user,
+                    b1_interaction=getattr(_b1_out, "remaining", None))
 
             _sft_prior_pq = None
             _sft_prior = None
@@ -4169,7 +4183,11 @@ user_message=_user_text or "")
     # ONLY WHEN A CANONICAL OPERATION OWNS THE TURN. Absent otherwise, so its
     # presence IS the signal that a structured answer is possible — and a
     # channel that cannot answer by id simply never sees it.
-    _b1_ix = result.get("b1_interaction") if isinstance(result, dict) else None
+    # EITHER SHAPE. The ask returns a dict; a canonical answer returns a
+    # `TurnResult`. Reading only the dict is why a typed PARTIAL rendered no
+    # chips — the payload existed and had no path to the wire.
+    _b1_ix = (result.get("b1_interaction") if isinstance(result, dict)
+              else getattr(result, "b1_interaction", None))
     if _b1_ix:
         resp.interaction = _b1_ix
 

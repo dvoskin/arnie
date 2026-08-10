@@ -177,7 +177,29 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
                           reason="stored interaction unreadable")
 
     interaction = owned.interaction
-    live_field = interaction.groups[0].fields[0]
+
+    # ⭐ THE FIELD AN UNADDRESSED ANSWER APPLIES TO IS THE FIRST *OPEN* ONE.
+    #
+    # This read `interaction.groups[0].fields[0]` — the first field, forever —
+    # which made B-1.5 a single-field system wearing a two-field interaction.
+    # MEASURED IN PRODUCTION 2026-08-10: quantity was answered and held, then
+    # every subsequent answer was still routed to QUANTITY. "Grilled" matched
+    # no quantity label, parsed as no mass, and repaired; the re-ask then said
+    # "How much chicken?" about a field that was already answered. The
+    # operation never reached readiness, never settled, and wrote nothing
+    # across five turns.
+    #
+    # It survived because the only paths that ever settled a two-field
+    # operation carried an EXPLICIT `field_id` — structured iOS taps — which
+    # never consults this variable at all. Free text has no such addressing,
+    # so it is exactly the modality that exposed it.
+    #
+    # FIRST-OPEN, not best-match. Trying each open field and taking whichever
+    # parses would silently answer a field the user was not addressing; asking
+    # in order and reading in the same order is the rule they can predict. An
+    # explicit `field_id` still overrides — see `_read`.
+    _open = ops.open_fields(interaction, owned.answered or {})
+    live_field = _open[0] if _open else interaction.groups[0].fields[0]
 
     # ALREADY SETTLED. A tap on a chip still on screen after the meal landed
     # is a real delivery; `settle` replays the stored result rather than
@@ -507,9 +529,16 @@ def _option_for_label(field, message: str):
 
 
 def _turn(answer, owned, field) -> AnswerTurn:
+    # THE FIELD THIS OUTCOME IS ABOUT, carried so the copy can name it.
+    # Without it a REPAIR reached the renderer with nothing to say, and the
+    # renderer's only phrasing was "How much …?" — so an unreadable
+    # PREPARATION answer asked about quantity.
     return AnswerTurn(answer.outcome, operation_id=owned.operation_id,
                       field_id=field.field_id, reason=answer.reason,
                       subject_name=_subject_of(owned),
+                      open_attributes=(
+                          getattr(field.attribute, "value",
+                                  str(field.attribute)),),
                       repair_reason=str(
                           getattr(getattr(answer, "repair_reason", None),
                                   "value", "") or ""),
@@ -1086,6 +1115,21 @@ def copy_for(facts: CanonicalResponseFacts) -> str:
         # Measured: "I had some salmon too" while chicken was awaiting drew
         # "How much was it?", and an answer to that would have priced chicken.
         # The pronoun was doing work no pronoun can do.
+        #
+        # ⭐ AND NAME THE FIELD. Both phrasings below were hardcoded to
+        # quantity, so a repair on ANY other field asked the wrong question —
+        # measured 2026-08-10, an unreadable preparation answer drew "How much
+        # chicken?" about a quantity that was already answered. The attribute
+        # comes off the field the answer was read against, and `_ASK_FOR` is
+        # the same table the PARTIAL branch uses, so the two cannot drift.
+        attribute = (facts.open_attributes or ("quantity",))[0]
+        if attribute != "quantity":
+            question = _ASK_FOR.get(attribute, "Which was it?")
+            if facts.name:
+                return (f"{question} (for the {facts.name.lower()}) — and "
+                        f"anything else you mentioned isn't logged yet, so "
+                        f"send that again after.")
+            return question
         if facts.name:
             return (f"How much {facts.name.lower()}? A rough amount is fine "
                     f"— and anything else you mentioned isn't logged yet, so "
