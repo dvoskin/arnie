@@ -1279,10 +1279,40 @@ The settle path was instrumented and three latency holes closed. Then the
 wrong, and that was repaired.
 
 **What is NOT proven, stated plainly.** B-1.5's machinery is deployed; a
-production turn where preparation actually opens has not been observed. The
-pricing rungs are unit-proven and were audited, but the CI engine that the
-B-1b gates name has been red throughout — so "green under Postgres and real
-pricing" is currently an untested claim for everything after `17da24f`.
+production turn where preparation actually opens has not been observed.
+
+**~~The pricing rungs are unit-proven and were audited, but the CI engine that
+the B-1b gates name has been red throughout — so "green under Postgres and
+real pricing" is currently an untested claim for everything after
+`17da24f`.~~** CLOSED 2026-08-10, and the closure is worth reading carefully
+because it is a substitute for CI, not a fix to it.
+
+```text
+tree      3c693b9  (origin/main d8be23f + the 27-identity pricing artifact)
+SQLite    8665 tests   0 failures   0 errors   104 skipped
+Postgres  8665 tests   0 failures   0 errors    26 skipped
+run with  TZ=UTC, live USDA/Anthropic/Tavily keys, real local Postgres
+```
+
+The claim was untested for a reason that is itself an open finding: the
+`battery` job fails when `ANTHROPIC_API_KEY` is absent, and the cloud
+containers doing the 08-09 work could not run the parts of the suite that need
+live keys at all. So the gap was never "nobody ran it" — it was "the engine
+that could run it has no credentials, and the engine that has credentials is a
+laptop".
+
+**What this closure does and does not license.** It licenses claims about the
+code: the pricing rungs, the cut seam, the ledger guarantees and the trace
+ratchets all hold under Postgres with real pricing. It does NOT make the
+`battery` job authoritative, and a local run is not a merge gate — the finding
+below stays open until an unavailable secret is either configured or made a
+neutral state. Every future "suite green" line on this board must say which
+engine produced it.
+
+**Two Postgres skip counts, and they are not a discrepancy.** 26 under
+Postgres against 104 under SQLite is the expected shape (the PG-gated proofs
+run; the SQLite-only ones skip). A Postgres run reporting ~82 skips means the
+PG-gated proofs silently no-opped and the result is worthless.
 
 ### TWO ROLLOUTS ARE LIVE, AT DIFFERENT WIDTHS *(measured 2026-08-09)*
 
@@ -3499,7 +3529,9 @@ Each is real, none blocks the current phase, and none may be closed silently.
 | the `stages=` breakdown legitimately sums to MORE than `total_ms` (speculative enrichment runs during the LLM stream), and nothing on the line says so — a reader attributing time by summing it is wrong by construction | measured 08-08, by design | documentation, unscheduled |
 | `pricing.usda_search` still runs on the ASK turn — the P1.4 seam cut was scoped to the B-1 answer/settle function, which an ask never enters | measured 08-08, in scope | not a defect; recorded so it is not rediscovered |
 | P0.2 `TurnCoordinator` (`core/turns/*`, gated by `TURN_COORDINATOR_MODE`) is a SECOND migration this directive does not track, and `planner=legacy-adapter-v1` on a `structured_food` turn belongs to it | observed 08-08 | needs its own sequencing authority, or a section here |
-| the `battery` CI job FAILS when `ANTHROPIC_API_KEY` is absent, rather than reporting neutral/skipped — a job asserting a result it cannot know, and a permanently red check that teaches everyone to ignore red | observed 08-09, every PR that triggers it | configure the secret to make it authoritative, OR make an unavailable secret a neutral state; NOT left red |
+| the `battery` CI job FAILS when `ANTHROPIC_API_KEY` is absent, rather than reporting neutral/skipped — a job asserting a result it cannot know, and a permanently red check that teaches everyone to ignore red | observed 08-09, every PR that triggers it | configure the secret to make it authoritative, OR make an unavailable secret a neutral state; NOT left red. **Confirmed 08-10**: the cloud containers cannot run the key-dependent suite at all, so this is why the 08-09 work shipped unverified — a credential gap, not a discipline gap |
+| **answering a preparation can make pricing WORSE.** `salmon\|` carries 13 qualified candidates; `salmon\|grilled` has none, because USDA holds no curated "salmon, grilled" row — so stating the preparation moves that food from artifact-priced to estimate-priced. Only chicken and beef have real coverage across grilled/roasted/fried | measured 08-10, full 64-identity build | **needs a decision, not a default.** Falling back `entity\|preparation` → `entity\|` would price a stated preparation from evidence about a different identity, which is the substitution the field exists to prevent |
+| `chicken\|` carries NO qualified pricing evidence — 0 of 15 rows survive, because bare "chicken" returns spread, fat, frankfurter and bologna | measured 08-10 | not a defect: the boundary working. Recorded because plain "I had some chicken" therefore prices from the ESTIMATE rung, and a trace reader will otherwise misread that as the artifact failing |
 
 **Closed 2026-08-08 — the telemetry of one production turn (build `2a8856035e66`).**
 One iOS B-1 clarification, correct end to end, whose record was not admissible
