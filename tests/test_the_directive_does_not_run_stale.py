@@ -91,18 +91,32 @@ def test_the_board_does_not_claim_a_closed_state_for_open_work():
     text = DIRECTIVE.read_text(encoding="utf-8")
     board = text[text.index("## Status board"):]
 
-    # B-1.5's B-1.5E BLOCK LIFTED 2026-08-09 — C1 and C2 both landed (d71fe65,
-    # 220ae9d, 1e70d88), so the board no longer says "BLOCKED ON B-1.5E" and
-    # this gate was updated in the same commit, exactly as the docstring
-    # requires. What B-1.5 still owes changed KIND rather than going away:
-    # the machinery is deployed and no production turn has yet been observed in
-    # which preparation actually opens. That is the open state the board must
-    # keep saying, so a stale copy-paste cannot close it.
-    assert "natural iOS turn" in board, (
-        "the board no longer says B-1.5 owes a production turn where "
-        "preparation opens — if that turn has now been observed, B-1.5's "
-        "closure gate passed and THIS test should be updated in the same "
-        "commit as the board")
+    # B-1.5 CLOSED 2026-08-10. The turn this gate demanded was observed: typed
+    # two-field answering proven live on /chat after the `live_field` root
+    # cause, and both natural-language pricing canaries landed on
+    # pre-registered predictions. So the assertion it held is retired HERE, in
+    # the commit that closes the board — which is the whole mechanism.
+    #
+    # ⚠ AND THIS GATE ALSO CAUGHT A REAL PROCESS FAILURE, which is why the
+    # note stays. `aecbb97` closed B-1.5 on the board and its message reported
+    # "8700 tests 0 failures" — from a run that STARTED BEFORE the board edit
+    # and finished after it. The suite never saw the tree that was committed,
+    # main went red, and the number in the commit message was true of a
+    # different tree. A suite result is evidence only for the tree it read;
+    # a run that races an edit is not a measurement of either version.
+    #
+    # What replaces it is B-1.6's open state, so a stale copy-paste cannot
+    # close THAT quietly either.
+    assert "B-1.6" in board, (
+        "the board no longer tracks B-1.6 — conditional activation is the "
+        "open slice, and a board that stops naming it is the 'B-1 NEXT while "
+        "B-1 was proven' failure running in the other direction")
+    assert "CLOSED BY CONSTRUCTION, NOT BY OBSERVATION" in board, (
+        "the board no longer distinguishes canary F being closed by "
+        "construction from being observed. A duplicate delivery has never "
+        "occurred in production, so COMMIT_DUPLICATE_BEHAVIOUR is proven only "
+        "in the harness — if a deliberate staging exercise has since proven "
+        "it live, record that and update this assertion in the same commit")
     # CI WENT GREEN 2026-08-09 (2fa8f7c, repaired by #72), so the red-CI
     # assertion that stood here is retired — in the same commit that removed
     # the banner, which is what this gate exists to force.
