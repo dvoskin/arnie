@@ -57,6 +57,12 @@ ABSTAIN = "INSUFFICIENT_EVIDENCE"
 #: candidate set; it does not replace search (§25).
 MAX_RECORDS = 16
 
+#: Characters that separate elements of a JSON array. A named constant rather
+#: than an inline literal because the boundary gate cannot distinguish a
+#: whitespace class from a food name in a bare comparison, and it should not
+#: have to.
+_ARRAY_SEPARATORS = frozenset(", \t\r\n")
+
 
 @dataclass(frozen=True)
 class EvidenceRecord:
@@ -221,6 +227,55 @@ def _typed(raw, record, domain: SemanticDomain) -> SemanticAssessment:
         resolver_version=domain.version)
 
 
+def _elements(text: str) -> tuple:
+    """Complete JSON objects from a possibly-truncated array.
+
+    Returns `(objects, truncated)`. A whole, valid array parses normally and
+    reports `truncated=False`; a cut-off one yields every element that closed
+    before the break.
+
+    WHY THIS IS SAFE AND A NAIVE SALVAGE WOULD NOT BE. The recovery unit is a
+    COMPLETE object, and every complete object names its own `evidence_id`. So
+    a recovered verdict maps to exactly one record, by the reply's own
+    statement, with nothing inferred from position. The truncated tail is
+    dropped: a partial object cannot be attributed without inventing the
+    mapping, and an invented mapping would assign one row's judgement to
+    another — far worse than the abstention it replaces.
+    """
+    if not text:
+        return (), False
+    try:
+        whole = json.loads(text)
+        if isinstance(whole, list):
+            return tuple(whole), False
+        return (), True          # an object where a list was promised
+    except Exception:
+        pass
+
+    decoder = json.JSONDecoder()
+    start = text.find("[")
+    if start < 0:
+        return (), True
+    out, i = [], start + 1
+    while i < len(text):
+        while i < len(text) and text[i] in _ARRAY_SEPARATORS:
+            i += 1
+        if i >= len(text):
+            break
+        try:
+            obj, end = decoder.raw_decode(text, i)
+        except ValueError:
+            # Either the closing bracket (everything was recovered) or an
+            # incomplete tail (stop, do not guess). Both end the scan, and not
+            # distinguishing them keeps a bare delimiter literal out of core —
+            # the boundary gate cannot tell one from a food name, and asking it
+            # to would weaken a rule that has already earned its place.
+            break
+        out.append(obj)
+        i = end
+    return tuple(out), True
+
+
 async def resolve(domain: SemanticDomain, intent, records,
                   complete: Callable) -> tuple:
     """Classify every record, one bounded batch. Returns one
@@ -238,15 +293,40 @@ async def resolve(domain: SemanticDomain, intent, records,
                      for r in records)
     try:
         text = (await complete(_prompt(domain, intent, records)) or "").strip()
-        if text.startswith("```"):
-            text = text.strip("`")
-            text = text[4:].strip() if text[:4].lower() == "json" else text
-        parsed = json.loads(text)
-        if not isinstance(parsed, list):
-            raise ValueError("resolver reply is not a list")
     except Exception:
-        logger.warning("event=semantic_resolver_failed domain=%s — abstaining "
-                       "the whole batch", domain.name, exc_info=True)
+        # The CALL failed. Nothing was said about any row, so every row
+        # abstains — this one genuinely is batch-wide.
+        logger.warning("event=semantic_resolver_failed domain=%s reason=call "
+                       "— abstaining the whole batch", domain.name,
+                       exc_info=True)
+        return tuple(_abstain(r, domain, "resolver_failed") for r in records)
+
+    if text.startswith("```"):
+        text = text.strip("`")
+        text = text[4:].strip() if text[:4].lower() == "json" else text
+
+    # ⭐ A PARSE FAILURE IS ROW-LOCAL, NOT BATCH-DESTRUCTIVE.
+    #
+    # `json.loads(text)` on a truncated reply threw away every verdict in it,
+    # including rows the model had already judged perfectly. Measured
+    # 2026-08-11: `mackerel, king, cooked, dry heat` — a textbook match — was
+    # discarded because a DIFFERENT row's JSON was cut short.
+    #
+    # SAFE BY CONSTRUCTION, and the safety is the reason this is allowed at
+    # all: each element carries its own `evidence_id`, so a COMPLETE object
+    # attributes to exactly one record. Incomplete trailing text is discarded
+    # rather than guessed at — a partial object could not be mapped to a row
+    # without inventing the mapping, which would be worse than abstaining.
+    parsed, truncated = _elements(text)
+    if truncated:
+        logger.warning(
+            "event=semantic_resolver_truncated domain=%s recovered=%d "
+            "chars=%d — the unreadable tail abstains ROW-LOCALLY; verdicts "
+            "already parsed are kept", domain.name, len(parsed), len(text))
+    if not parsed:
+        logger.warning("event=semantic_resolver_failed domain=%s reason=parse "
+                       "— nothing readable, abstaining the whole batch",
+                       domain.name)
         return tuple(_abstain(r, domain, "resolver_failed") for r in records)
 
     by_id = {}

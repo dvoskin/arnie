@@ -55,9 +55,25 @@ MATERIAL, EMPTY, FAILED = "ok", "no_evidence", "failed"
 #: and every registered preparation. NOT a claim about which foods matter —
 #: the qualifier decides what survives, and an entity that yields nothing
 #: simply gets no entry.
+#:
+#: ⭐ THE ADMISSION RULE FOR THIS LIST *(Danny, 2026-08-11)*:
+#:
+#:     A seed entry may be added ONLY when a shipped canonical policy requires
+#:     deterministic pricing support for it, or when observed production
+#:     demand demonstrates repeated need.
+#:
+#: "Seems likely someone will log this" is NOT a criterion. It turns a curated
+#: set into an intuition-driven catalog, and the directive's own rule is
+#: measure before generalize.
 SEED = ("chicken", "potato", "egg", "beef", "salmon", "rice", "shrimp",
         "tofu", "cauliflower", "mushrooms", "mackerel", "tilapia",
-        "asparagus", "broccoli", "oats", "banana")
+        "asparagus", "broccoli", "oats", "banana",
+        # B-1.7a — REQUIRED VOCABULARY BACKING, not speculation. These are
+        # exactly the five ids `added_fat_ontology.OFFERED` declares, and the
+        # field cannot be offered at all until they price: an id the pricer
+        # cannot act on is inert, and a chip that changes nothing is worse
+        # than no chip because its usage rate looks like engagement.
+        "olive oil", "butter", "vegetable oil", "coconut oil", "mayonnaise")
 
 
 class _CountUsdaFailures(logging.Handler):
@@ -169,6 +185,43 @@ async def build_one(entity: str, preparation: str) -> dict:
             "raw": len(rows)}
 
 
+def _retain_unexplained(entries: dict) -> int:
+    """Carry forward committed candidates this build cannot account for.
+
+    Returns how many were retained, so the caller can report it rather than
+    absorb it. THE REPORT IS THE POINT: silent retention would hide a real
+    upstream removal just as surely as silent dropping hides a flaky one.
+    """
+    from skills.nutrition import pricing_artifact as art
+
+    if not art.ARTIFACT_PATH.exists():
+        return 0
+    try:
+        prior = json.loads(art.ARTIFACT_PATH.read_text()).get("entries") or {}
+    except Exception:
+        print("  the committed artifact will not parse — nothing to retain",
+              file=sys.stderr)
+        return 0
+
+    retained = 0
+    for key, before in prior.items():
+        old_c = list(before.get("candidates") or ())
+        if not old_c:
+            continue
+        now = entries.get(key)
+        have = {str(c.get("fdc_id")) for c in (now or {}).get("candidates") or ()}
+        missing = [c for c in old_c if str(c.get("fdc_id")) not in have]
+        if not missing:
+            continue
+        entries.setdefault(key, {"candidates": []})
+        entries[key]["candidates"] = list(
+            entries[key].get("candidates") or ()) + missing
+        retained += len(missing)
+        print(f"  RETAINED {len(missing)} unexplained candidate(s) on {key}: "
+              f"{[c.get('fdc_id') for c in missing]}")
+    return retained
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("entities", nargs="*", default=None)
@@ -217,6 +270,50 @@ async def main() -> int:
             print(f"    {r['key']:34} {r['reason']}", file=sys.stderr)
         return 3
 
+    # ⭐ NON-DESTRUCTIVE BY DEFAULT: a rebuild is a controlled migration, not a
+    # fresh probabilistic sample. A candidate that was in the committed
+    # artifact and is absent now is RETAINED unless something can attribute
+    # its removal — the source dropped it, the policy version moved, or the
+    # identity was invalidated. Otherwise `mackerel|roasted` silently loses
+    # three valid rows because one reply was cut short, which is exactly what
+    # happened on 2026-08-11.
+    # ⭐ TWO TRUTHS, EMITTED EVERY BUILD. The raw snapshot is what GENERATION
+    # produced; the artifact is what production reads after the safety net has
+    # run. Testing only the artifact would let generation quietly degrade
+    # while retention held the output steady — "stable because generation is
+    # stable" and "stable because retention repaired instability" are not the
+    # same claim, and only the first closes a determinism blocker.
+    raw_path = art.ARTIFACT_PATH.with_name("pricing_evidence_v1.raw.json")
+    raw_doc = {"generated_entries": dict(sorted(entries.items()))}
+    if not args.dry_run:
+        raw_path.write_text(json.dumps(raw_doc, indent=2) + "\n",
+                            encoding="utf-8")
+        print(f"raw generation snapshot -> {raw_path}")
+
+    raw_keys = {k: [c.get("fdc_id") for c in v.get("candidates") or ()]
+                for k, v in entries.items()}
+    retained = _retain_unexplained(entries)
+
+    # ⭐ RAW vs FINAL, REPORTED EVERY BUILD. Two truths, stated separately, so
+    # "stable because generation is stable" can never be confused with "stable
+    # because retention repaired instability". The second is a safety net
+    # working; only the first is reproducibility.
+    changed = [k for k, ids in raw_keys.items()
+               if ids != [c.get("fdc_id") for c in
+                          (entries.get(k) or {}).get("candidates") or ()]]
+    added_by_retention = sorted(set(entries) - set(raw_keys))
+    print(f"\nRAW GENERATION      {len(raw_keys)} identities")
+    print(f"AFTER RETENTION     {len(entries)} identities")
+    if changed or added_by_retention:
+        print(f"RETENTION ALTERED   {len(changed)} existing key(s), "
+              f"restored {len(added_by_retention)} whole key(s): "
+              f"{added_by_retention or '-'}")
+        print("  -> raw generation is NOT independently reproducible against "
+              "the committed baseline; the artifact is production-safe "
+              "because the safety net acted, which is a WEAKER claim")
+    else:
+        print("RETENTION ALTERED   nothing — generation stood on its own")
+
     document = {
         "resolver_version": art.resolver_version(),
         "vocabulary_fingerprint": art.vocabulary_fingerprint(),
@@ -226,6 +323,10 @@ async def main() -> int:
         "entries": dict(sorted(entries.items())),
     }
     print(f"\n{len(entries)}/{len(results)} identities carry qualified evidence")
+    if retained:
+        print(f"{retained} candidate(s) RETAINED from the committed artifact "
+              f"with no attributable removal reason — a rebuild may not delete "
+              f"evidence it cannot explain losing")
     if args.dry_run:
         print("--dry-run: nothing written")
         return 0

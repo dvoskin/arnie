@@ -96,16 +96,78 @@ class Qualification:
     resolver_version: str = ""
 
 
+class ResolverReplyUnusable(RuntimeError):
+    """The model returned nothing this code can read.
+
+    NAMED, because it used to surface as a bare `StopIteration` from `next()`
+    — which inside a coroutine becomes `RuntimeError: coroutine raised
+    StopIteration`, an opaque message that was FILED AS BENIGN GENERATOR NOISE
+    and was in fact changing the durable evidence universe. A failure mode
+    needs a name before anyone can count how often it happens.
+    """
+
+
+def _text_of(reply) -> str:
+    """Every text block, joined — a TOTAL function over the reply.
+
+    `next(b.text for b in reply.content if hasattr(b, "text"))` was partial in
+    two ways: it raised `StopIteration` when the reply carried NO text block,
+    and it silently took only the FIRST when it carried several.
+    """
+    parts = [b.text for b in reply.content if hasattr(b, "text")]
+    if not parts:
+        kinds = [getattr(b, "type", "?") for b in reply.content]
+        raise ResolverReplyUnusable(
+            f"the resolver reply carries no text block (blocks={kinds}, "
+            f"stop_reason={getattr(reply, 'stop_reason', '?')})")
+    return "".join(parts)
+
+
 async def _default_complete(prompt: str) -> str:
     """The calibrated resolver model. Kept tiny; the eval script owns
-    measurement and this owns production invocation."""
+    measurement and this owns production invocation.
+
+    ⭐ THINKING IS EXPLICITLY DISABLED, and that is a REPRODUCIBILITY fix
+    before it is a cost one. `max_tokens` bounds thinking AND text TOGETHER,
+    and this model thinks nondeterministically — so the text budget was
+    whatever thinking happened to leave. Measured 2026-08-11 against the real
+    qualification prompt, six runs:
+
+        thinking + text   out=3000  stop=max_tokens  text truncated mid-JSON
+        thinking ONLY     out=3000  stop=max_tokens  NO TEXT BLOCK AT ALL
+        thinking + text   out=2498  stop=end_turn    valid
+
+    THREE OF SIX FAILED, and every failure abstained the whole batch. That is
+    how `mackerel|roasted` lost three valid cooked-mackerel rows between two
+    builds which differed in nothing else — not the seeds, not the prompt, not
+    the resolver version, not the USDA response.
+
+    With thinking disabled: 4/4 valid, and output fell from 2371-3000 tokens
+    to 544-620.
+    """
     from core.llm import _get_anthropic  # late; heavy import
 
     client = _get_anthropic()
     reply = await client.messages.create(
         model=RESOLVER_MODEL, max_tokens=3000,
+        thinking={"type": "disabled"},
+        # ⛔ TEMPERATURE IS NOT AVAILABLE ON THIS MODEL. Setting it returns
+        # `400 — \`temperature\` is deprecated for this model.`, measured
+        # 2026-08-11 against every one of 84 identities.
+        #
+        # THAT IS A LOAD-BEARING FACT, not a footnote. Sampling variation was
+        # the measured cause of the remaining build divergence — one row
+        # scoring DIFFERENT_IDENTITY 0.6 / 0.7 / 0.75 and
+        # COMPATIBLE_SPECIALIZATION 0.8 across runs, either side of
+        # MINIMUM_IDENTITY_CONFIDENCE. The knob that would pin it does not
+        # exist here, so BUILD-TIME DETERMINISM CANNOT BE OBTAINED BY
+        # CONFIGURING THE MODEL. It has to come from giving the model less to
+        # decide: mechanical dimensions (raw vs cooked, preparation
+        # compatibility, branded vs generic, duplicate equivalence) move into
+        # deterministic code, and the model keeps only what is genuinely
+        # semantic — as ADVISORY metadata that cannot delete durable evidence.
         messages=[{"role": "user", "content": prompt}])
-    return next(b.text for b in reply.content if hasattr(b, "text"))
+    return _text_of(reply)
 
 
 async def classify_rows(food_name: str, rows, complete=None) -> tuple:

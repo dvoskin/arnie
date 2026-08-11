@@ -2362,6 +2362,96 @@ a sauce joins the vocabulary   OFFERED gains 'ranch'                   1 red
 **Owed by B-1.7a before it can close:** artifact coverage for the five fats,
 so `priceable()` is non-empty and the field can actually be offered.
 
+## ⛔ PRICING-SPINE BUILD DETERMINISM — OPEN *(2026-08-11)*
+
+**The artifact is deterministic at READ time and not at BUILD time.** Same
+seeds, same code, same fingerprints, two runs, different qualified evidence.
+`mackerel|roasted` went 4 candidates to 1, losing three textbook rows
+(`mackerel, king / spanish / Pacific, cooked, dry heat`).
+
+**⭐ THE SYSTEM-WIDE INVARIANT THIS PRODUCED — larger than pricing:**
+
+```text
+AN ABSENT ANSWER MUST NEVER BE REPRESENTABLE AS A NEGATIVE ANSWER.
+```
+
+The failure was never "the model chose the wrong candidate". It was **"the
+model returned no usable verdict, the system recorded that as qualification
+output, and evidence disappeared silently."** Absence, timeout, malformed
+output and low confidence must all be incapable of becoming evidence
+DELETION. Treat this as a design rule for every layer, not a pricing fix.
+
+### Cause A — STRUCTURAL. Closed.
+
+`RESOLVER_MODEL = claude-sonnet-5` emits thinking blocks and `max_tokens`
+bounds thinking AND text together, so the text budget was whatever thinking
+left. Six runs on the real prompt:
+
+```text
+thinking + text   out=3000  stop=max_tokens   text truncated mid-JSON
+thinking ONLY     out=3000  stop=max_tokens   NO TEXT BLOCK AT ALL
+thinking + text   out=2498  stop=end_turn     valid
+                                              THREE OF SIX FAILED
+```
+
+Both modes abstained the ENTIRE batch. Fixed by: `thinking` disabled (4/4
+valid, output 2371-3000 -> 544-620 tokens); `_text_of()` as a TOTAL function
+raising the named `ResolverReplyUnusable`; `_elements()` row-local parse
+recovery; `_retain_unexplained()` non-destructive rebuild; a pre-retention
+`pricing_evidence_v1.raw.json` snapshot; and a raw-vs-final report on every
+build. Qualifier on frozen rows: **6/6 identical**, fresh context per run.
+
+### Cause B — SAMPLING. Open, and NOT fixable by configuration.
+
+Post-fix builds still diverged — `beef|` and `mayonnaise|` lost candidates,
+`salmon|roasted` vanished as a key. One row scored `DIFFERENT_IDENTITY` at
+0.6 / 0.7 / 0.75 and `COMPATIBLE_SPECIALIZATION` at 0.8 across runs;
+`MINIMUM_IDENTITY_CONFIDENCE` is a threshold, so rows cross it or do not.
+
+**`temperature=0` returns `400 — temperature is deprecated for this model`.**
+The knob does not exist. So determinism cannot be bought by configuring the
+model; it has to come from giving the model less to decide.
+
+### THE STATUS WORDING, and it is deliberately not "reproducible"
+
+```text
+batch-destructive failure mode     CLOSED
+silent evidence deletion           GUARDED
+raw generation reproducibility     STILL OPEN
+production artifact stability      PROTECTED BY RETENTION (a weaker claim)
+```
+
+### THE FOUR OWNERSHIP LAYERS *(Danny, 2026-08-11)*
+
+Formalised so this class of failure cannot return under a different model or
+a different artifact builder:
+
+```text
+EVIDENCE           what source rows exist        deterministic, preserved,
+                                                 versioned
+ELIGIBILITY        which rows are MECHANICALLY   deterministic CODE
+                   compatible
+SEMANTIC ADVISORY  what the model thinks about   NON-AUTHORITATIVE metadata;
+                   genuinely ambiguous cases     may never delete evidence
+RANKING            which eligible evidence wins  deterministic
+```
+
+**Next slice is an AUTHORITY MIGRATION, not another configuration tweak.**
+Move the mechanical dimensions into code first — raw vs cooked, preparation
+compatibility, branded vs generic, unit compatibility, duplicate equivalence,
+obvious identity conflicts — each typed, testable and versioned. The model
+keeps classification, confidence, reason and ambiguity, and keeps no power to
+remove a durable row.
+
+**NOT REOPENED by this finding, because it is UPSTREAM of them:** B-1, B-1.5,
+B-1.6, concurrency locking, canonical settlement, replay/idempotency, the
+ownership seam.
+
+**Sequencing:** land safety fix -> deterministic qualification extraction ->
+raw reproducibility proof -> permanent gates (against the RAW artifact) ->
+five fats -> 27-entry diff -> close B-1.7a -> B-1.7b materiality -> B-1.7c
+composition -> B-1.8 repair -> promotion.
+
 ## Session close — 2026-08-10, measured state and what it cost
 
 Written last, against the numbers rather than the intent. The unflattering
