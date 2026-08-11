@@ -396,6 +396,11 @@ class ClarificationAttribute(str, Enum):
     #: them is how an unanswered amount becomes a silent zero.
     ADDED_FAT_PRESENT = "added_fat_present"
     ADDED_FAT_AMOUNT = "added_fat_amount"
+    #: B-1.7a. WHAT fat, because "1 tbsp of added fat" is not a food. The
+    #: legacy phrase table spans 60-180 kcal for that one tablespoon
+    #: (marinade 60, mayo 90, butter 100, oil 120, ranch 145, alfredo 180), so
+    #: an amount without an identity cannot be priced — only guessed at.
+    ADDED_FAT_IDENTITY = "added_fat_identity"
     # workout (Phase O; defined so the shared layer never needs a food edit)
     EXERCISE_IDENTITY = "exercise_identity"
     SET_COUNT = "set_count"
@@ -761,9 +766,55 @@ class SetAddedFatAmount(SemanticPatch):
                        data.get("quantity")))
 
 
+@dataclass(frozen=True)
+class SetAddedFatIdentity(SemanticPatch):
+    """WHICH fat was added — as a FOOD entity id, never a label.
+
+    ⭐ THE FAT IS A FOOD, AND THAT IS THE WHOLE DESIGN. `olive_oil` is not a
+    modifier that adds 120 kcal; it is an ingredient with its own USDA rows,
+    its own density and its own micros. Pricing it therefore becomes
+    COMPOSITION — the canonical pricer prices a second component — rather than
+    a constant looked up from a phrase.
+
+    That distinction is the difference between B-1.7 and the table it
+    replaces. `_ADDED_FAT_CAL` fused presence, identity, quantity and pricing
+    into one string match; a typed field that resolved to "+120 kcal" would be
+    the same heuristic with better manners.
+
+    NO DEFAULT AND NO 'UNKNOWN' VALUE THAT PRICES. An unresolved identity is
+    an unresolved field — B-1.7b decides whether that is worth asking about —
+    and it must never quietly become "oil".
+    """
+    entity_id: str = ""
+
+    patch_type: ClassVar[str] = "set_added_fat_identity"
+
+    def __post_init__(self):
+        super().__post_init__()
+        if not str(self.entity_id or "").strip():
+            raise ValueError(
+                "an added-fat identity patch with no entity is the question, "
+                "not the answer — and a blank identity that reached pricing "
+                "would be priced as a default, which is the failure this "
+                "field exists to prevent")
+        object.__setattr__(self, "entity_id", str(self.entity_id).strip())
+
+    def _value_payload(self) -> dict:
+        return {"entity_id": self.entity_id}
+
+    @classmethod
+    def _from_values(cls, data: dict) -> "SetAddedFatIdentity":
+        return cls(event_id=data.get("event_id") or "",
+                   field_id=data.get("field_id") or "",
+                   provenance=Provenance(data.get("provenance")
+                                         or Provenance.UNKNOWN),
+                   entity_id=data.get("entity_id") or "")
+
+
 PATCH_TYPES = {cls.patch_type: cls for cls in (
     SetQuantity, SetConsumedFraction, SelectEntity, SelectProductVariant,
-    SetPreparation, SetServingBasis, SetAddedFatPresent, SetAddedFatAmount)}
+    SetPreparation, SetServingBasis, SetAddedFatPresent, SetAddedFatAmount,
+    SetAddedFatIdentity)}
 
 
 class UnknownPatchType(ValueError):

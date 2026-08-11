@@ -213,38 +213,88 @@ Phase A
 The next work begins at B-1.
 
 *(Superseded by events — kept for the construction/storage distinction below.
-As of 2026-08-10: B-1 and B-1.9 are production-proven on iOS, B-1.5E has
+As of 2026-08-11: B-1 and B-1.9 are production-proven on iOS, B-1.5E has
 landed, the P1 canonical pricer is CLOSED in production, and B-1.5 is blocked
 on a deliberate canary exercise rather than on engineering. The authoritative
 "where are we" is the Status board. This section is history, not position.)*
 
-**PHASE STATE — 2026-08-10, and the percentages are deliberate.** Danny's
-scoring, recorded so "nearly done" never stands in for a measurement:
+**PHASE STATE — 2026-08-11, reconciled after the B-1.5/B-1.6 session.**
+Percentages are Danny's scoring, recorded so "nearly done" never stands in for
+a measurement:
 
 ```text
 P1 pricing seam / performance          100%   CLOSED in production
-B-1.5 implementation / regression      92–95%
-B-1.5 production BEHAVIOURAL proof     25–35%   one food, one session
-Canonical ownership safety             REOPENED — blocker (P1(b))
-Artifact bare-entity coverage          maintenance, non-blocking
-Prepared-identity pricing policy       intentionally unresolved -> B-1.7
+P1(b) canonical ownership firewall     100%   CLOSED, fired 3x in production
+B-1.5 clarification lifecycle          100%   CLOSED — canary 5 passed, F N/A
+B-1.6 conditional field lifecycle      100%   CLOSED — a/b/c, end to end
+Canonical identity boundary            100%   key AND ranker, both consumers
+B-1.7 accuracy policy                    0%   NEXT
+Added-fat COMPONENT pricing              0%   blocked on ADDED_FAT_IDENTITY
+Interpreter extraction survival          0%   ~1-in-3 loss measured -> B-1.7
 ```
 
-**SEQUENCING FROM HERE *(Danny, 2026-08-10 — supersedes the earlier
-"artifact expansion next")*.** The 08-10 production exercise found a defect
-that outranks everything queued behind it:
+**SEQUENCING FROM HERE *(2026-08-11)*.** Everything above the line is done and
+production-verified; everything below is the open path to promotion:
 
 ```text
-1  P1(b)   canonical ownership firewall at the mutation boundary   <- HERE
-2          the ten-scenario B-1.5 canary, once the firewall holds
-3          collect REAL artifact misses from that exercise
-4          expand bare-entity evidence from those misses — not from guesses
-5  B-1.6   conditional field activation
-6  B-1.7   accuracy policy: prepared-identity fallback AND preparation
-           materiality, both carried here deliberately
+   ---------------- closed ----------------
+ . P1      canonical pricer, settle 36-70 ms vs 8,225-11,053 legacy
+ . P1(b)   ownership firewall, capability-based, UNKNOWN default-refused
+ . B-1.5   one item, multiple independent material fields
+ . B-1.6   conditional activation: a engine+lock, b producer, c seam
+   ---------------- open ------------------
+ 1 B-1.7a  ADDED_FAT_IDENTITY contract        <- HERE
+ 2 B-1.7b  materiality policy: when presence/identity/amount merit asking
+ 3 B-1.7c  component pricing: identity + amount -> component -> pricer
+ 4 B-1.8   answer classification and repair hardening
+ 5 B-2     multi-item meals and atomicity
+ 6 PROMOTION — one migration, a DELETION event, not a flag flip
 ```
 
-**Why the firewall comes first and the canary second.** Running the canary
+**B-1.7a's contract, settled 2026-08-11 and recorded so it cannot drift.**
+
+```text
+ADDED_FAT_PRESENT
+  |- IsTrue -> ADDED_FAT_IDENTITY      SIBLINGS, never a chain
+  \- IsTrue -> ADDED_FAT_AMOUNT
+```
+
+Amount must NOT depend on identity: *"about a tablespoon, not sure what oil"*
+is a truthful, useful answer, and a graph that discarded the amount because
+the identity is unknown would destroy a fact to satisfy a topology.
+
+**THE ARTIFACT GENERATES CANDIDATES, NEVER TRUTH.**
+
+```text
+ALLOWED    food identity + preparation -> plausible added-fat identities
+FORBIDDEN  food identity + preparation -> a RESOLVED added-fat identity
+```
+
+Evidence can say grilled chicken is commonly cooked in oil or butter. It
+cannot say what THIS user cooked with. The pricing artifact already stores a
+qualified candidate SET rather than a winner for exactly this reason, and
+identity inherits that discipline rather than getting a shortcut. The
+enforcing gate: **no path may produce a resolved `ADDED_FAT_IDENTITY` whose
+provenance is the artifact.** Candidates from evidence; truth only from a user
+answer or explicit interpretation.
+
+**NO DEFAULT IDENTITY.** The legacy table is its own argument — one tablespoon
+of "added fat" spans 60-180 kcal (marinade 60, teriyaki 70, mayo 90, butter
+100, oil 120, ranch 145, alfredo 180). Defaulting to "oil" prices butter 20%
+high and alfredo 33% low: the same heuristic under a typed interface, and
+worse than the honest one because it looks settled.
+
+**THE PROMPT STAYS FROZEN through 1.7a-c.** The semantic contract exists
+first; only then is interpretation asked to populate it. The reverse order
+means debugging a prompt against a model that does not exist yet.
+
+**SEMANTIC COMPLETENESS IS NOT QUESTION COUNT.** Three fields, zero questions
+when someone says "cooked in 1 tbsp olive oil"; one question for "yes, olive
+oil", leaving amount. B-1.6b already separated what is ACTIVE from what
+RENDERS — `renderable()` filters active-and-unresolved — so a renderer showing
+one of two active fields needs no activation change at all.
+
+**Why the firewall came first and the canary second** *(2026-08-10, both now closed — kept for the reasoning)*. Running the canary
 over a known writer violation contaminates it — every scenario would have to
 be re-run once the firewall lands. And why artifact expansion is LAST: seed
 coverage chosen from what foods "seem likely" is a guess, while the canary
@@ -1106,18 +1156,32 @@ reuses typed fields and patches; domain payloads stay specific.
 ```text
  1. B-1 one-item quantity                   DONE, production-proven
     1a. P1 canonical pricer                 DONE, closed in production 08-10
-    1b. P1(b) ownership firewall            <- CURRENT. Blocks 2.
- 2. B-1.5 quantity + preparation           }  machinery DONE (92-95%);
-    2a. B-1.5E semantic evidence layer     }  2a LANDED. Closure needs a
-    2b. the ten-scenario canary            }  DELIBERATE canary, not organic
-    2c. bare-entity evidence from 2b       }  traffic — behavioural proof
-                                           }  is 25-35%
- 3. B-1.6 conditional activation           }  all built on the canonical
- 4. B-1.7 mode policy                      }  path, allowlist only.
-    4a. prepared-identity fallback         }  BOTH deferred here on purpose:
-    4b. preparation materiality            }  see the precision paradox and
-                                           }  the inverted-ratio finding
- 5. B-1.8 answer repair/fallback           }
+    1b. P1(b) ownership firewall            DONE, fired 3x in production
+ 2. B-1.5 quantity + preparation            DONE, CLOSED 08-10
+    2a. B-1.5E semantic evidence layer      DONE
+    2b. the canary                          5 passed; F NOT APPLICABLE — the
+                                            client removes the interaction on
+                                            tap, so the gesture does not exist
+    2c. identity boundary, both consumers   DONE — key AND ranker query
+ 3. B-1.6 conditional activation            DONE, CLOSED 08-10
+    3a. engine + the B-1.5 lost update      declarative Rules, derived edges,
+                                            row lock at the mutation boundary
+    3b. producer + revision semantics       one bump per shape change, removal
+                                            on the wire, persistence round-trip
+    3c. ownership seam from portions.py     proven BY POISON, not by grep
+ 4. B-1.7 accuracy policy                  }  all built on the canonical
+    4a. ADDED_FAT_IDENTITY contract        }  path, allowlist only.
+        <- CURRENT                         }  4a is a CONTRACT, not pricing:
+    4b. materiality: when to ask            }  candidates from evidence, truth
+    4c. component pricing                   }  only from a user answer. And
+    4d. prepared-identity fallback          }  4d/4e were deferred here on
+    4e. preparation materiality             }  purpose — see the precision
+    4f. extraction survival (~1-in-3 loss)  }  paradox
+ 5. B-1.8 answer repair/fallback           }  includes the ranker/SELECTION
+                                           }  floor: `oats|` holds 2 qualified
+                                           }  candidates best_candidate will
+                                           }  not select, so a COVERED food
+                                           }  still prices as an estimate
  6. B-2 multi-item and partial answers     }
     6a. meal atomicity (one mutation)      }  the canonical/chat-lane commit
                                            }  divergence, filed 08-07
@@ -1197,7 +1261,7 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-10 against the identity-boundary fixes, the 08-10
+Last reconciled 2026-08-11 against the identity-boundary fixes, the 08-10
 production trace (user 26, entries 2963–2967), and the code itself. The
 **session-close block below the board is the current answer to "where are
 we"** — measured state, what is proven on which path, and what is still owed;
@@ -2225,6 +2289,78 @@ session produced a named failure, which establishes reachability and
 observability by construction, and the failure names were checked, which
 covers causality. Suite evidence is independent of all of it: the
 SHA-and-count-qualified frozen runs stand on their own.
+
+## B-1.7a — THE ADDED-FAT IDENTITY CONTRACT *(2026-08-11)*
+
+```text
+ADDED_FAT_PRESENT
+  |- IsTrue -> ADDED_FAT_IDENTITY     SIBLINGS, never a chain
+  \- IsTrue -> ADDED_FAT_AMOUNT
+```
+
+**THE FAT IS A FOOD, and that is the whole design.** `olive_oil` is not a
+modifier worth 120 kcal; it is an ingredient with its own rows, density and
+micros, so B-1.7c prices it by COMPOSITION through the canonical pricer rather
+than by constant. A typed field resolving to "+120 kcal" would be
+`_ADDED_FAT_CAL` with better manners. `SetAddedFatIdentity` therefore carries
+an `entity_id`, and `Pricing.NONE` — the chicken is still chicken; identity
+names a SECOND food rather than changing which food we asked about.
+
+**⭐ EVIDENCE OFFERS CANDIDATES, NEVER TRUTH.**
+
+```text
+ALLOWED    food + preparation -> plausible added-fat identities
+FORBIDDEN  food + preparation -> a RESOLVED added-fat identity
+```
+
+A resolved identity carrying artifact provenance would mean the system decided
+what the user cooked with — the substitution the artifact's candidate-set
+design exists to prevent, arriving by another door.
+
+**⭐⭐ AMOUNT DOES NOT DEPEND ON IDENTITY.** *"About a tablespoon, not sure
+what oil"* is truthful and useful; a chain would discard that fact to satisfy
+a topology. Which of the two open fields is ASKED is presentation and B-1.7b
+policy — B-1.6b already separated what is ACTIVE from what RENDERS.
+
+**⭐⭐⭐ AN ID THE PRICER CANNOT ACT ON IS INERT — and every id here is,
+today.** Measured 2026-08-11: the pricing artifact holds 27 entries and NONE
+is a fat. `olive oil`, `butter`, `vegetable oil`, `coconut oil` and
+`mayonnaise` all MISS. `preparation_ontology` paid for this constraint
+already: a chip that changes nothing is worse than no chip, because its usage
+rate looks like engagement.
+
+So the field registers `Evidence.GENERATED` — not offered where there is
+nothing to build an option from — and `added_fat_ontology.priceable()`
+measures the gap against the artifact rather than asserting confidence. **The
+unblocking step is extending the artifact's seed set to cover these foods,
+which is BUILD time, not turn time.** Until then the contract exists, is
+answerable by an explicit patch, and offers nothing it cannot price.
+
+**NO DEFAULT, AND NO `UNKNOWN` MEMBER.** `resolve()` returns None for an id it
+does not hold; returning a fallback would price an identity we do not have as
+one we do. Preparation has an UNKNOWN member because an unknown preparation
+legitimately leaves the food's name alone — there is no equivalent here, since
+"some fat, unspecified" would immediately need a calorie value, which is the
+default this design refuses.
+
+**DRESSINGS AND SAUCES ARE DELIBERATELY EXCLUDED.** Ranch, caesar, alfredo,
+vinaigrette, marinade and gravy are COMPOSITE FOODS with their own amounts,
+not fats. `_ADDED_FAT_CAL` fused them together and that fusion is how it
+became a phrase table; folding them in here would make one field mean two
+things. They belong to a future `added_sauce` field.
+
+Mutations, each with its SIGNAL verified before the gate was trusted — the
+standard the eighth bad instrument produced:
+
+```text
+amount chained to identity     depends_on -> ('added_fat_identity',)   2 red
+resolve() falls back           'schmaltz' -> AddedFat(olive_oil)       1 red
+ONTOLOGY not GENERATED         evidence -> 'ontology'                  1 red
+a sauce joins the vocabulary   OFFERED gains 'ranch'                   1 red
+```
+
+**Owed by B-1.7a before it can close:** artifact coverage for the five fats,
+so `priceable()` is non-empty and the field can actually be offered.
 
 ## Session close — 2026-08-10, measured state and what it cost
 

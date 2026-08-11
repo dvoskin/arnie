@@ -34,6 +34,7 @@ async def _preparation_unresolved(item, context=None) -> bool:
 
 def register_all() -> None:
     from core.semantics import ClarificationAttribute
+    from skills.nutrition import added_fat_ontology as added_fat
     from skills.nutrition import preparation_ontology as prep
 
     register(FieldSpec(
@@ -85,6 +86,32 @@ def register_all() -> None:
         evidence=Evidence.ONTOLOGY,
         vocabulary=("yes", "no"),
         caption="Added fat", order=30))
+
+    # ⭐ IDENTITY AND AMOUNT ARE SIBLINGS, NEVER A CHAIN. Both hang off
+    # PRESENT. "About a tablespoon, not sure what oil" is a truthful, useful
+    # answer, and a graph that discarded the amount because the identity is
+    # unknown would destroy a fact to satisfy a topology.
+    register(FieldSpec(
+        attribute=ClarificationAttribute.ADDED_FAT_IDENTITY,
+        value_space=ValueSpace.ENUMERATED,
+        patch_type="set_added_fat_identity",
+        # NONE — like presence. A fat identity does not multiply the meal's
+        # calories; it names a SECOND FOOD, which B-1.7c prices as its own
+        # component through the canonical pricer. `IDENTITY` here would mean
+        # "changes which food we are asking about", and it does not: the
+        # chicken is still chicken.
+        pricing=Pricing.NONE,
+        # GENERATED, NOT ONTOLOGY, and measured rather than assumed: the
+        # artifact holds 27 entries and none is a fat, so every offered id
+        # currently MISSES. An ONTOLOGY field would ship a chip bar of
+        # unpriceable choices — a question whose answer moves no number, whose
+        # usage rate then looks like engagement. Extending the artifact's seed
+        # set is the unblocking step, and it is BUILD time, not turn time.
+        evidence=Evidence.GENERATED,
+        vocabulary=tuple(f.entity_id for f in added_fat.OFFERED),
+        activation=Activation.CONDITIONAL,
+        active_when=IsTrue(ClarificationAttribute.ADDED_FAT_PRESENT.value),
+        caption="Which fat", order=32))
 
     register(FieldSpec(
         attribute=ClarificationAttribute.ADDED_FAT_AMOUNT,
