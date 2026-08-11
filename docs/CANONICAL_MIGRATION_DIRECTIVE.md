@@ -1343,7 +1343,34 @@ TELEMETRY  REPAIRED 08-09    the canonical lane was absent from its own trace;
                              funnel can now be read per cohort through the
                              conversion step, which the promotion gate needs.
 
-B-1.6      IN PROGRESS 08-10 — conditional field activation; B-1.5 closed
+B-1.6      CLOSED 08-10      THE CONDITIONAL LIFECYCLE, END TO END:
+                             activate -> render -> answer -> activate dependent
+                             -> retract -> rebuild -> stale-proof ->
+                             concurrency-safe -> settlement-gated.
+                             a  declarative Rule activation, derived edges,
+                                acyclic at install, deterministic order; the
+                                B-1.5 LOST UPDATE found and closed with a row
+                                lock (8f9c440)
+                             b  producer: one bump per shape change, removal
+                                ON THE WIRE, no transient question, persistence
+                                round-trip (2846b98)
+                             c  ownership seam from the added-fat phrase tables
+                                proven BY POISON, not by grep
+                             PRICING IS NOT PART OF THIS MILESTONE. Added-fat
+                             pricing is blocked because the SEMANTIC STATE is
+                             incomplete (no fat identity in production), not
+                             because conditional fields are — carrying that
+                             blocker here would blur the boundary this slice
+                             paid to make clean. -> B-1.7
+B-1.7      NEXT 08-10        a  ADDED_FAT_IDENTITY contract: attribute, patch,
+                                canonical vocabulary, candidate provenance,
+                                artifact CANDIDATE generation, NO default
+                             b  materiality policy: when presence/identity/
+                                amount merit a question
+                             c  component pricing: identity + amount ->
+                                canonical component -> canonical pricer
+                             then, and only then, interpreter enrichment. The
+                             prompt stays FROZEN until the contract exists.
 B-1.7      after B-1.6
 B-1.8      after B-1.7
 B-2        after those prerequisites
@@ -2071,6 +2098,133 @@ the deletion inventory for the promotion boundary. Proven by monkeypatching
 those helpers to RAISE and showing the canonical path still completes — much
 stronger than grepping for imports, because it proves the seam is cut rather
 than merely unreferenced.
+
+## B-1.6c — THE OWNERSHIP SEAM, PROVEN BY POISON *(2026-08-10)*
+
+`core/portions.py`'s added-fat phrase table is a SECOND SEMANTIC OWNER for a
+question B-1.6 now models as fields. NOT deleted — legacy keeps it, and it is
+recorded in `DELETION_INVENTORY.md` for the promotion boundary. The claim
+established today is narrower: **canonical cannot reach it.**
+
+**POISON, NOT GREP.** An import gate proves a module is not NAMED; it does not
+prove it is not REACHED, and `settle -> canonical_pricing -> a shared helper`
+is exactly how a seam looks cut and is not. All four owners are replaced with
+objects that raise — the TABLES as well as the functions, on membership,
+iteration, indexing, `get`, `items` and `len`, so a caller that inlined a
+lookup cannot sail past a patched function.
+
+```text
+canonical prices with all four raising        artifact rung, 250.0 kcal
+does NOT degrade to a weaker rung             estimate offered at 999, refused
+numbers identical poisoned vs clean           byte-for-byte
+legacy still depends on them                  a SEAM, not a deletion
+canonical imports no raw-utterance helper     broader than the four names
+```
+
+**⭐ THE NEGATIVE INVARIANT IS THE LOAD-BEARING ONE.** "Canonical completed" is
+not the claim. A path that quietly falls to the estimate rung when the phrase
+tables explode is still DEPENDENT on them — it has converted a hard failure
+into a silent accuracy loss, which is worse because it does not announce
+itself. So the gate offers a 999-kcal estimate and requires the artifact rung
+anyway.
+
+**⭐⭐ THE "LEGACY STILL DEPENDS" GATE IS DELIBERATELY INVERTED.** It FAILS if
+nothing outside `portions.py` calls the helpers, because at that point they
+are dead code and belong in the deletion inventory's done column rather than
+guarded by a seam test protecting nothing. A guard whose subject has
+disappeared is one more instrument reporting success without testing anything.
+
+**⭐⭐⭐ THE BOUNDARY IS GATED BY PATTERN, NOT BY NAME.** The rule is that
+canonical settlement derives nutrition ONLY from canonical resolved state and
+canonical evidence, never from phrase-table interpretation of the original
+utterance. The gate reads the set of raw-text helpers OFF the `portions`
+module rather than hardcoding four strings, so a fifth written tomorrow is
+covered the day it exists. Gating the four names would let the identical
+second-owner pattern return under a new one.
+
+Mutation: planting `added_fat_calories(query)` inside the artifact rung
+reddens FOUR of the five gates independently.
+
+## ⛔ B-1.6d IS BLOCKED ON A CONTRACT, NOT AN IMPLEMENTATION
+
+Measured across 12 production operations, the staged item carries:
+
+```text
+food · amount · unit · calories · protein · carbs · fats
+entity_id · basis · meal · branded
+```
+
+**No fat identity.** `entity_id` is `food:beef` — the food, not what it was
+cooked in. So `identity + amount -> canonical component -> canonical pricer`
+cannot be composed from what interpretation produces, and the field model
+needs `ADDED_FAT_IDENTITY`.
+
+**Do not default to "oil" to reach pricing.** The legacy table is its own
+argument: one tablespoon of "added fat" spans 60–180 kcal (marinade 60,
+teriyaki 70, mayo 90, butter 100, oil 120, ranch 145, alfredo 180). A default
+prices butter 20% high and alfredo 33% low — the same heuristic under a typed
+interface, and worse than the honest one because it looks settled.
+
+The shape when it unblocks: `ADDED_FAT_IDENTITY` conditional on
+`ADDED_FAT_PRESENT` alongside `ADDED_FAT_AMOUNT`, both on the same rule, so
+the graph stays acyclic and an amount is never priced without something to
+price. Whether identity is asked or inferred is B-1.7's question.
+
+## ⚠ THE EIGHTH BAD INSTRUMENT — A MUTATION THAT DID NOT MUTATE
+
+Recorded with the other seven rather than fixed quietly, because it is the
+same family: **the verifier itself has to be falsifiable.**
+
+Closing B-1.6 on the board added a gate asserting the board still names
+`ADDED_FAT_IDENTITY`. It was "mutation-tested" by replacing that string in the
+board section — with `replace(..., 1)`. The board holds THREE occurrences, so
+the assertion still found one, the suite stayed green, and **the green was
+read as "the gate holds" when it meant "the mutation never landed."**
+
+```text
+mutation -> RED     the mutation took effect AND the gate caught it   evidence
+mutation -> GREEN   the gate is vacuous OR the mutation never landed  AMBIGUOUS
+```
+
+The loophole is one-directional, which is why it survived: every other
+mutation this session went red, and a red proves reachability and
+observability by existing. A GREEN mutation result proves nothing at all
+without inspecting the signal, and that is precisely where inspection stops.
+
+**THE RULE.** A mutation test is evidence only if the mutation changes the
+exact value or control-flow condition the assertion consumes. Three checks
+around every serious ratchet:
+
+```text
+REACHABILITY   the mutated branch or value is actually exercised by the test
+OBSERVABILITY  the assertion reads a value DOWNSTREAM of the mutation
+CAUSALITY      the gate fails for the INTENDED reason, not because an
+               unrelated guard tripped first — check the failure NAME
+```
+
+Sharpest form: assert the pre/post signal itself before asserting the gate.
+For an activation ratchet, first show the mutated implementation computes a
+DIFFERENT active set, then require the behavioural gate to go red. That closes
+the loophole rather than documenting it.
+
+So the standard is **"mutate the guarantee, verify the mutation took effect,
+then require the gate to fail"** — not "edit something nearby and observe zero
+failures."
+
+Redone with all three occurrences replaced:
+
+```text
+drop ADDED_FAT_IDENTITY from the board   1 failure
+drop B-1.7 from the board                1 failure
+restored                                 0
+```
+
+**SCOPE OF THE INVALIDATION.** The mutation evidence for THAT gate was invalid
+until this rerun; nothing else is affected. Every other mutation in this
+session produced a named failure, which establishes reachability and
+observability by construction, and the failure names were checked, which
+covers causality. Suite evidence is independent of all of it: the
+SHA-and-count-qualified frozen runs stand on their own.
 
 ## Session close — 2026-08-10, measured state and what it cost
 

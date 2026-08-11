@@ -118,3 +118,41 @@ suites override `engine` with a `make_engine` WAL file database; concurrency
 truth lives in the Postgres suites. `make_engine` carries the documented
 driver-level transaction recipe (deferred BEGIN — IMMEDIATE was measured and
 self-deadlocks nested sessions).
+
+## Owed at the promotion boundary — the added-fat phrase tables (B-1.6c)
+
+**NOT deleted, and deliberately so.** `core/portions.py` holds a phrase table
+that decides added fat from RAW TEXT, which is a SECOND SEMANTIC OWNER for a
+question B-1.6 now models as registered fields:
+
+```text
+_ADDED_FAT_CAL         "in butter" 100 · "with ranch" 145 · "alfredo" 180
+_ADDED_FAT_NEGATIONS   "no dressing", "without", "plain", ...
+added_fat_calories()   the calories a named fat contributes
+mentions_fat()         whether the text ADDRESSED fat at all
+```
+
+Legacy and non-eligible turns still depend on them, so deleting now would
+change behaviour no part of B-1.6 asked to change. What is established today
+is the narrower, checkable claim: **canonical cannot reach them.**
+
+Proven by POISON, not by grep — an import gate shows a module is not NAMED,
+not that it is not REACHED. All four are replaced with objects that raise (the
+tables too, on membership/iteration/indexing/`get`/`items`/`len`, so a caller
+that inlined a lookup cannot sail past a patched function), and canonical
+pricing is required to complete on the SAME rung with the SAME numbers. See
+`tests/test_canonical_settles_with_the_phrase_tables_poisoned.py`.
+
+**The seam test fails if nothing outside `portions.py` calls them.** That is
+intentional: at that point they are dead code and belong in this document's
+done column rather than guarded by a test protecting nothing.
+
+**Ranges are why this matters.** One tablespoon of "added fat" spans 60–180
+kcal across that table (marinade 60, teriyaki 70, mayo 90, butter 100, oil 120,
+ranch 145, alfredo 180), and the table fuses presence, identity, quantity and
+pricing into a single phrase lookup. B-1.6d — pricing added fat as a real
+canonical component — is BLOCKED until interpretation carries a fat IDENTITY:
+measured across 12 production operations, the staged item holds
+`food/amount/unit/calories/protein/carbs/fats/entity_id/basis/meal/branded`
+and nothing naming a cooking fat. Defaulting to "oil" would price butter 20%
+high and alfredo 33% low — the same heuristic under a typed interface.

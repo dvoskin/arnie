@@ -107,10 +107,20 @@ def test_the_board_does_not_claim_a_closed_state_for_open_work():
     #
     # What replaces it is B-1.6's open state, so a stale copy-paste cannot
     # close THAT quietly either.
-    assert "B-1.6" in board, (
-        "the board no longer tracks B-1.6 — conditional activation is the "
-        "open slice, and a board that stops naming it is the 'B-1 NEXT while "
-        "B-1 was proven' failure running in the other direction")
+    # B-1.6 CLOSED 2026-08-10 — the conditional lifecycle is proven end to
+    # end and its gate is retired HERE, in the commit that closes it. What
+    # replaces it is B-1.7's open state AND the reason B-1.6 could close with
+    # pricing unbuilt: the blocker is missing SEMANTIC STATE, not a missing
+    # lifecycle, and a board that forgot that distinction would re-open B-1.6
+    # to chase a pricing problem.
+    assert "B-1.7" in board, (
+        "the board no longer tracks B-1.7 — added-fat identity, materiality "
+        "policy and component pricing are the open slice")
+    assert "ADDED_FAT_IDENTITY" in board, (
+        "the board no longer records that added-fat pricing is blocked on an "
+        "identity CONTRACT rather than on implementation — without that line, "
+        "the next reader defaults to 'oil' to reach pricing, which is the "
+        "legacy phrase table under a typed interface")
     assert "CLOSED BY CONSTRUCTION, NOT BY OBSERVATION" in board, (
         "the board no longer distinguishes canary F being closed by "
         "construction from being observed. A duplicate delivery has never "
