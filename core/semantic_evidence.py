@@ -91,6 +91,22 @@ class EvidenceRecord:
     #: Provider-reported quality signals, preserved verbatim and TRUSTED FOR
     #: NOTHING — OFF said "exact" about a pizza.
     provider_metadata: dict = dc_field(default_factory=dict)
+    #: ⭐ STRUCTURED FACTS THE PROVIDER STATES ABOUT THE RECORD ITSELF, as
+    #: opposed to its opinion of the match. USDA's `data_type`, the nutrition
+    #: `basis`, a serving mass — things that are true of the row regardless of
+    #: what anyone asked for.
+    #:
+    #: THIS IS WHAT DETERMINISTIC ELIGIBILITY READS. Before it existed the
+    #: adapter discarded every one of these fields and handed the model
+    #: PROSE, which is precisely why qualification became the model's job:
+    #: nothing else had anything to reason over. A dimension that can be
+    #: decided from a structured field must not be decided by a language
+    #: model, and it cannot be decided in code that never receives it.
+    #:
+    #: DISTINCT FROM `provider_metadata` on purpose. That holds the provider's
+    #: CLAIM ABOUT THE MATCH and is trusted for nothing; this holds facts
+    #: about the record and is the input to mechanical rules.
+    structured: dict = dc_field(default_factory=dict)
 
     def __post_init__(self):
         if not self.evidence_id or not self.provider:

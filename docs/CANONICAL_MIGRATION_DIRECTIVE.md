@@ -44,8 +44,62 @@ evidence**. The four-layer spine becomes:
 evidence -> deterministic eligibility -> advisory semantics -> deterministic ranking
 ```
 
-**EXIT:** absence, malformed output, timeout, or low-confidence model output
-CANNOT remove a row.
+**EXIT — STRENGTHENED *(Danny, review of `9279860`)*.** "No authority to
+delete durable evidence" is NECESSARY AND NOT SUFFICIENT. With the same
+candidate universe and no deleted rows, differing model confidence could still
+move eligibility, the winner and the price — eliminating DESTRUCTIVE
+stochasticity while keeping RANKING stochasticity, which would fail Phase 1's
+own exit. The invariant, in its sharpest form:
+
+```text
+PRODUCTION PRICING MUST BE COMPUTABLE WITHOUT AN LLM CALL ONCE SOURCE
+EVIDENCE IS RETRIEVED.
+```
+
+Model advisory metadata may neither delete durable evidence NOR alter
+production eligibility, winner or price — unless converted through an
+explicitly deterministic, versioned policy that is itself reproducible from
+frozen inputs.
+
+**MEASURED STATE AGAINST THAT BAR, 2026-08-11:**
+
+```text
+TURN TIME   ALREADY COMPLIANT AND GATED. `price()` is synchronous
+            (`test_pricing_cannot_await_anything`, AST-checked), and stored
+            candidates carry only fdc_id / description / per100g — no
+            confidence and no relationship reaches the ranker.
+BUILD TIME  NOT COMPLIANT. The model does not rank, but it GATES SET
+            MEMBERSHIP: `qualified(accept=IDENTITY_BEARING,
+            minimum_confidence=0.80)` decides who competes, so a confidence
+            of 0.75 vs 0.80 on one row changes the set and can change the
+            winner. Same consequence, one step earlier.
+```
+
+So Phase 0's real target is precise: **the artifact's candidate set must be
+derivable deterministically from retrieved evidence. The model may ANNOTATE;
+it may not GATE.** The model can still explain, flag ambiguity and feed
+diagnostics, human review and future policy research — none of which touch
+the price-producing path.
+
+**FIRST INCREMENT LANDED.** `EvidenceRecord.structured` now preserves the
+provider's own facts (`data_type`, `basis`, serving mass), which the USDA
+adapter previously DISCARDED — handing the model prose and nothing else, which
+is why qualification became its job at all. A dimension decidable from a
+structured field must not be decided by a language model, and it cannot be
+decided in code that never receives it.
+
+`skills/nutrition/eligibility.py` adds deterministic mechanical vetoes:
+branded-record-for-generic-intent, non-scalable basis, record-states-no-energy,
+duplicate. It **VETOES AND NEVER ADMITS** — a rule that could admit would be a
+second authority on identity — and a veto is NOT an abstention: there is
+deliberately no reason meaning "unknown", because a rule that cannot evaluate
+its dimension stays silent rather than manufacturing a negative.
+
+Measured: 20/20 identical on frozen rows; 0 vetoes on curated mackerel rows
+(correct — they are all mechanically fine); **8/8 vetoed on branded queries for
+generic intent**, which is the rule earning its place. The dimensions that
+would discriminate the mackerel set are raw-vs-cooked and
+preparation-compatibility, and those are the NEXT increment.
 
 ### 1  RAW REPRODUCIBILITY PROOF
 

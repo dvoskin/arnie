@@ -144,6 +144,15 @@ def from_usda(rows) -> tuple:
             brand=str(row.get("brand") or ""),
             nutrition=dict(row.get("per100g") or {}),
             provider_record_id=str(row.get("fdc_id") or ""),
+            # PRESERVED, NOT PARSED. These are facts USDA states about the
+            # row; deterministic eligibility reads them so the model does not
+            # have to be asked about things a field already answers.
+            structured={
+                "data_type": str(row.get("data_type") or ""),
+                "basis": str(row.get("basis") or ""),
+                "serving_mass_g": row.get("serving_mass_g"),
+                "serving_ml": row.get("serving_ml"),
+            },
         ))
     return tuple(out)
 
