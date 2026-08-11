@@ -1209,10 +1209,28 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
     # remove the tablespoon from settlement — leaving it in `answered` while
     # hiding its chip prices a meal with fat the user just said was not there,
     # which is a silent nutrition corruption rather than a display bug.
-    held, retracted = _reconcile_after(owned, held, data)
+    held, retracted, reconciliation = _reconcile_after(owned, held, data)
+
+    # ⭐ B-1.6b: A SHAPE CHANGE REBUILDS THE ANSWER SURFACE, UNDER THIS LOCK.
+    #
+    # Persisted BEFORE it is returned, and inside the same critical section
+    # that produced it — a wire payload that exists only in the answer turn's
+    # memory is one a reload cannot reproduce, and reload is the normal case
+    # (a relaunched app, a second device, another worker).
+    generation = None
+    if reconciliation is not None and reconciliation.changed:
+        from core import interaction_generation as gen
+
+        rebuilt = gen.next_generation(previous=owned.interaction,
+                                      reconciliation=reconciliation,
+                                      answered=held, item=data.get("item"))
+        if rebuilt is not None:
+            data["interaction"] = rebuilt.to_payload()
+            owned.interaction = rebuilt
+            generation = rebuilt.revision
 
     data["answered"] = {k: p.to_payload() for k, p in held.items()}
-    locked.write(data)
+    locked.write(data, revision=generation)     # ONE write, whole payload
     db.add(locked.row)
     await db.flush()
     logger.info("event=b1_answer_held operation=%s field=%s open=%d "
@@ -1235,6 +1253,12 @@ def _reconcile_after(owned: OwnedOperation, held: dict, data: dict) -> tuple:
     answer the user just gave; it degrades to the pre-B-1.6 behaviour of
     holding what arrived, and says so loudly. The commit boundary asserts the
     result independently, which is where a missed retraction is caught.
+
+    Returns `(held, retracted, reconciliation)`. The reconciliation goes to
+    the caller rather than being consumed here, because B-1.6b's producer must
+    CONSUME activation output instead of recomputing it — a second evaluation
+    would make `active_when` advisory and give "when is this asked" two owners
+    again.
     """
     from core import field_activation as fa
 
@@ -1252,10 +1276,10 @@ def _reconcile_after(owned: OwnedOperation, held: dict, data: dict) -> tuple:
         logger.warning("event=reconciliation_failed operation=%s — holding "
                        "the answer unreconciled; settlement re-checks",
                        owned.operation_id, exc_info=True)
-        return held, {}
+        return held, {}, None
 
     if not reconciliation.retracted:
-        return held, {}
+        return held, {}, reconciliation
 
     history = list(data.get("retractions") or [])
     for field_id, retracted_patch in reconciliation.retracted.items():
@@ -1272,7 +1296,7 @@ def _reconcile_after(owned: OwnedOperation, held: dict, data: dict) -> tuple:
                     field_id, fa.attribute_of_field_id(field_id,
                                                        retracted_patch))
     data["retractions"] = history
-    return held, reconciliation.retracted
+    return held, reconciliation.retracted, reconciliation
 
 
 def _assert_no_retracted_value_settles(owned: OwnedOperation,

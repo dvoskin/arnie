@@ -1993,6 +1993,85 @@ lifecycle once presence is canonically known; deciding when silence about fat
 is suspicious enough to ask is accuracy policy, and blurring that line
 immediately after deliberately separating it would waste the separation.
 
+## B-1.6b — THE PRODUCER HALF: REBUILDING THE ANSWER SURFACE *(2026-08-10)*
+
+B-1.6a made activation a state transition in STORAGE. A field could become
+active, become inactive, and have its answer retracted, and none of it reached
+the screen. `core/interaction_generation.py` regenerates the surface itself.
+
+**REMOVAL HAPPENS ON THE WIRE, NOT ONLY IN STORAGE** *(Danny's addition)*.
+Marking a field inactive while the client keeps rendering its chip leaves a
+tappable control for a question the system no longer has, and a tap on it is
+an answer to nothing. `yes -> amount opens -> no` returns an interaction in
+which the amount field is PHYSICALLY ABSENT.
+
+**AND PERSISTENCE ROUND-TRIPS** *(also Danny's)*. The gate is
+`reconcile -> rebuild -> persist -> RELOAD -> wire_payload`, never
+`rebuild -> wire_payload`. Producer state that lives only in the answer turn's
+memory is state a reload cannot reproduce, and reload is the NORMAL case: a
+relaunched app, a second device, another worker.
+
+**⭐ AND THE ACCEPTANCE LIST FOUND A REAL B-1.6a SEMANTICS BUG that all 19 of
+its own gates missed.** `active_attributes` treated EVERY registered
+unconditional field as active. On an operation that only asked about quantity,
+answering it therefore reported:
+
+```text
+newly_active=(preparation,)     ->  changed=True  ->  revision bump
+```
+
+A phantom shape change that would have invalidated every chip on the user's
+screen for nothing. Unconditional membership is NOT this pass's to decide — it
+is settled by the ask producer's materiality pass. `active_attributes` now
+takes a `baseline` of what the operation is actually asking about and computes
+only the CONDITIONAL layer. Settlement narrowed to match: *every resolved
+conditional field must be in the current active set*, because an unconditional
+answer is always legitimate and the commit boundary has no business
+re-litigating materiality. Found only by the "a value change must not bump"
+criterion.
+
+The acceptance contract, each behavioural line with the mutation that reddens
+it:
+
+```text
+built from the registry/spec, not ad hoc          ENUMERATED+vocabulary -> select
+                                                  MEASURED -> free-text fallback (C15)
+active-but-resolved never renders                 M2 red
+one shape change = exactly one revision bump      M3 red
+every rendered field rebuilt at the new revision   M3 red
+no mixed-generation interaction can persist       structural — __post_init__ refuses
+value change without shape change: no bump        M4 red
+present=yes + amount known: no transient question M2 red
+stale taps rejected without mutation              field_id embeds the revision
+deterministic topological reconstruction          activation_order()
+wire payload persisted before it is returned      same write, same lock
+producer consumes reconciliation, never recomputes AST gate
+removal ON THE WIRE, field physically absent      M1 red
+round trip reconcile->rebuild->persist->reload    green
+```
+
+**⚠ A FOURTH INSTRUMENT MATCHED THE WRONG THING.** B-1.6a's "policy does not
+decide activation" gate grepped file TEXT for `active_when`, so it fired on
+the two modules whose COMMENTS explain why they must not read it. A gate that
+cannot tell an access from a sentence about an access punishes the
+documentation it asked for. Rewritten over the AST. The pattern is consistent
+enough to name: **grep-shaped gates check spelling; AST-shaped gates check
+structure.**
+
+**Still not wired:** `ADDED_FAT_PRESENT` has no `unresolved_when`, so it opens
+only when the interpreter volunteers it. That is B-1.7 by the directive's own
+split, and giving it a predicate here would blur the line immediately after
+deliberately drawing it.
+
+**Next is B-1.6c** — the canonical lane stops consulting `core/portions.py`'s
+added-fat phrase table (`_ADDED_FAT_CAL`, `_ADDED_FAT_NEGATIONS`,
+`added_fat_calories`, `addressed_added_fat`), which is a second semantic owner
+for eligible turns. NOT a global deletion: legacy keeps them, and they go on
+the deletion inventory for the promotion boundary. Proven by monkeypatching
+those helpers to RAISE and showing the canonical path still completes — much
+stronger than grepping for imports, because it proves the seam is cut rather
+than merely unreferenced.
+
 ## Session close — 2026-08-10, measured state and what it cost
 
 Written last, against the numbers rather than the intent. The unflattering

@@ -350,15 +350,22 @@ def test_every_registered_conditional_is_actually_evaluated():
 def test_policy_does_not_decide_activation():
     """ONE OWNER. If a policy module computed activation independently,
     `active_when` would be advisory and there would be two owners again."""
+    import ast
     import pathlib
 
+    # AST, NOT A SUBSTRING SEARCH. The first version of this gate grepped the
+    # file text and fired on two modules whose COMMENTS explain why they must
+    # not read `active_when` — a gate that cannot tell an access from a
+    # sentence about an access punishes the documentation it asked for.
     root = pathlib.Path(__file__).resolve().parent.parent
     offenders = []
     for path in (root / "core").glob("*.py"):
         if path.name in ("field_activation.py", "semantic_fields.py"):
             continue
-        text = path.read_text(encoding="utf-8")
-        if "active_when" in text:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        reads = [n for n in ast.walk(tree)
+                 if isinstance(n, ast.Attribute) and n.attr == "active_when"]
+        if reads:
             offenders.append(path.name)
     assert not offenders, (
         f"{offenders} reads `active_when` directly. Activation truth has one "

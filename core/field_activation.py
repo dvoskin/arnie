@@ -247,7 +247,7 @@ class Reconciliation:
         return bool(self.newly_active or self.newly_inactive)
 
 
-def active_attributes(state: ActivationState) -> frozenset:
+def active_attributes(state: ActivationState, *, baseline=()) -> frozenset:
     """THE ONE AUTHORITATIVE CALCULATION of what is active right now.
 
     Pure, synchronous, and a function of `state` alone — so the same resolved
@@ -264,10 +264,19 @@ def active_attributes(state: ActivationState) -> frozenset:
     """
     from core.semantic_fields import Activation, registered
 
-    out = set()
-    for key, spec in (registered() or {}).items():
+    specs = registered() or {}
+    # ⭐ UNCONDITIONAL MEMBERSHIP IS NOT THIS PASS'S TO DECIDE. `baseline` is
+    # the set of WHEN_RAISED fields the operation is ACTUALLY asking about,
+    # settled by the ask producer's materiality pass. Treating every
+    # registered field as active would spontaneously "activate" preparation
+    # and added-fat presence on an operation that only asked about quantity —
+    # measured while writing the B-1.6b gates, where a plain value change
+    # reported `newly_active=(preparation,)` and would have bumped the
+    # revision, invalidating the chips on screen for no reason at all.
+    out = {n for n in (_name(b) for b in (baseline or ()))
+           if n in specs and specs[n].activation is not Activation.CONDITIONAL}
+    for key, spec in specs.items():
         if spec.activation is not Activation.CONDITIONAL:
-            out.add(key)
             continue
         try:
             if spec.active_when.evaluate(state):
@@ -289,7 +298,7 @@ def reconcile(*, previously_active, state: ActivationState,
     stable across revisions — the point of separating the two.
     """
     previous = {_name(a) for a in (previously_active or ())}
-    desired = set(active_attributes(state))
+    desired = set(active_attributes(state, baseline=previous))
 
     still = tuple(sorted(previous & desired))
     fresh = tuple(sorted(desired - previous))
@@ -363,12 +372,21 @@ def assert_settlement_is_consistent(*, item: Mapping, answered: Mapping,
         an ACTIVE required field is unresolved         -> committing a
                                                           question as a fact
     """
-    state = state_from(item, answered)
-    active = active_attributes(state)
+    from core.semantic_fields import Activation, registered
 
+    state = state_from(item, answered)
+    specs = registered() or {}
+    active = active_attributes(state, baseline=state.resolved.keys())
+
+    # ONLY CONDITIONALS ARE POLICED. An unconditional field's answer is always
+    # legitimate — it was asked because the ask producer judged it material,
+    # and this boundary has no business re-litigating that. What it forbids is
+    # a CONDITIONAL value surviving its dependency going false.
     for field_id, patch in (answered or {}).items():
         attribute = attribute_of_field_id(field_id, patch)
-        if attribute and attribute not in active:
+        conditional = (attribute in specs
+                       and specs[attribute].activation is Activation.CONDITIONAL)
+        if conditional and attribute not in active:
             raise InactiveValueAtSettlement(
                 f"{attribute!r} is not active for this item and still carries "
                 f"an answer ({field_id}) — settling it would price a value "
