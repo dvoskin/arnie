@@ -113,6 +113,20 @@ def test_the_board_does_not_claim_a_closed_state_for_open_work():
     # pricing unbuilt: the blocker is missing SEMANTIC STATE, not a missing
     # lifecycle, and a board that forgot that distinction would re-open B-1.6
     # to chase a pricing problem.
+    # ⭐ THE ROADMAP IS THE FIRST SECTION, and the next session starts at
+    # PHASE 0 — the pricing AUTHORITY MIGRATION, not at a B slice. A reader
+    # who lands on B-1.7a and starts building would be laying policy on an
+    # evidence substrate that is not reproducible at build time.
+    text_head = text[:text.index("## End goal")]
+    assert "THE ROADMAP — READ THIS FIRST" in text_head, (
+        "the roadmap is no longer the first section of the directive — it "
+        "must precede everything, because the next session starts at a phase "
+        "that is not where the board's detail sections would send them")
+    assert "PRICING AUTHORITY MIGRATION" in text_head, (
+        "the roadmap no longer names the authority migration as the immediate "
+        "next work. Build-time qualification still holds stochastic authority; "
+        "starting anywhere else builds on a moving substrate")
+
     assert "B-1.7" in board, (
         "the board no longer tracks B-1.7 — added-fat identity, materiality "
         "policy and component pricing are the open slice")

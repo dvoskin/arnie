@@ -15,6 +15,107 @@
 > `tests/test_the_canonical_invariants.py`; this document is the sequencing
 > authority.
 
+## ⏭ THE ROADMAP — READ THIS FIRST *(Danny, 2026-08-11)*
+
+**THE NEXT SESSION STARTS AT PHASE 0.** Not at B-1.7a, and not at any B slice.
+The open defect is confined to BUILD-TIME PRICING EVIDENCE AUTHORITY and does
+NOT reopen downstream canonical mutation correctness.
+
+```text
+B-1 · B-1.5 · B-1.6   REMAIN CLOSED
+concurrency locking, canonical settlement, replay/idempotency, ownership seam
+                      REMAIN CLOSED
+```
+
+### 0  PRICING AUTHORITY MIGRATION  <- IMMEDIATE NEXT SESSION
+
+Move these qualification dimensions into DETERMINISTIC CODE:
+
+```text
+raw vs cooked · preparation compatibility · branded vs generic
+unit compatibility · duplicate equivalence
+```
+
+The model is reduced to ADVISORY SEMANTIC METADATA ONLY — classification,
+confidence, reason, ambiguity — with **no authority to delete durable
+evidence**. The four-layer spine becomes:
+
+```text
+evidence -> deterministic eligibility -> advisory semantics -> deterministic ranking
+```
+
+**EXIT:** absence, malformed output, timeout, or low-confidence model output
+CANNOT remove a row.
+
+### 1  RAW REPRODUCIBILITY PROOF
+
+Clean builds against identical frozen inputs, compared on the PRE-RETENTION
+artifact: candidate ids, ordering, eligibility, winner, price, fingerprint.
+**Retention must not be the mechanism creating agreement.**
+**EXIT:** raw generation is itself reproducible.
+
+### 2  PERMANENT PRICING-SPINE GATES
+
+Raw reproducibility · candidate drift · destructive removal · winner drift ·
+price drift · attributable change reasons · no-text reply handling ·
+truncated-response handling · mackerel and other moved-key regressions.
+Retention stays a SAFETY NET, never determinism evidence.
+
+### 3  COMPLETE B-1.7a
+
+Regenerate with the five added-fat identities, then diff all 27 existing
+entries on candidate universe, eligibility, winner, price and fallback. The
+fats must be ADDITIVE and existing pricing STABLE unless a change is
+attributable. **EXIT: B-1.7a CLOSED.**
+
+### 4  B-1.7b — MATERIALITY POLICY
+
+Deterministic policy over nutritional impact, confidence, preparation impact,
+added-fat significance: ask vs estimate vs accept vs refuse.
+**EXIT:** Arnie asks only when uncertainty materially affects trustworthiness.
+
+### 5  B-1.7c — COMPOSITION / ADDED-FAT PRICING
+
+Added fat as a SECOND TYPED FOOD CONTRIBUTION, never a phrase heuristic. No
+return to legacy tables. **EXIT:** preparation and added-fat effects compose
+through canonical pricing.
+
+### 6  B-1.8 — ANSWER / REPAIR
+
+Correction · edit · delete · undo · stale answer · repeated correction ·
+multi-field repair · post-settlement repair.
+**EXIT:** every canonical food write can be safely repaired.
+
+### 7  B-2 — REAL MULTI-FOOD MEALS
+
+Restaurant meals · mixed dishes · bowls · sandwiches · sauces · leftovers ·
+partial portions · several foods in one turn.
+**EXIT:** normal human meals reliably resolve into canonical state.
+
+### 8  PROMOTE B AND DELETE LEGACY
+
+canary -> rollback proof -> promote -> delete legacy writers -> delete
+duplicate semantic owners -> delete obsolete flags. **This is the actual end
+of B.**
+
+### THEN C · D · E · F
+
+```text
+C  CONVERSATION      one voice across deterministic and semantic routes. The
+                     "two voices" problem is fixed HERE, after correctness is
+                     frozen, not before.
+D  PERSONALIZATION   history REDUCES questions — usual portions, preparations,
+                     brands, restaurants, meal patterns
+E  COACHING          canonical history -> interpretation: what happened, what
+                     matters, what to do next
+F  PROACTIVE AGENCY  when to intervene, when to stay silent, what is most
+                     useful
+```
+
+**THE WHOLE ORDER, ONE LINE:** authority migration -> raw reproducibility ->
+permanent gates -> five fats + 27-entry diff -> B-1.7a -> B-1.7b -> B-1.7c ->
+B-1.8 -> B-2 -> promote/delete legacy -> C -> D -> E -> F.
+
 ## End goal
 
 Arnie's backend should converge on one production architecture:
