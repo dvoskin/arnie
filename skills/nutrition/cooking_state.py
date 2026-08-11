@@ -121,3 +121,88 @@ def conflict(requested: str, candidate: str) -> bool:
     if State.UNCLASSIFIED in (left, right):
         return False
     return left is not right
+
+
+# ── PHASE 0.3 — PREPARATION COMPATIBILITY, deliberately narrow ─────────────
+#
+# Raw versus cooked was safe because the states are MUTUALLY EXCLUSIVE: a row
+# cannot be both. Preparation is not symmetric in that way, and a naive token
+# conflict would be worse than the defect it replaces:
+#
+#     requested "roasted"  vs  "cooked, dry heat"   NOT a conflict — dry heat
+#                                                   is a SUPERSET covering it
+#     requested "grilled"  vs  "roasted"            NOT vetoable — different,
+#                                                   but not exclusive
+#     requested "roasted"  vs  "stewed"             a real conflict
+#
+# Vetoing the first would destroy correct evidence DETERMINISTICALLY, which is
+# a worse failure than destroying it nondeterministically: it never varies, so
+# nothing ever surfaces it.
+#
+# ⭐ SO THE RULE IS BY HEAT MEDIUM, WHICH IS USDA'S OWN VOCABULARY. Their rows
+# literally say "cooked, dry heat" and "cooked, moist heat", alongside method
+# terms already in `validators._PREPARATIONS`. Grouping by medium means a
+# specific method never conflicts with the generic term that contains it, and
+# two methods conflict only when their mediums are genuinely exclusive.
+#
+# Preparation discrimination WITHIN a medium stays with ranking. That is the
+# conservative trade: grilled versus roasted is a real difference and not a
+# mechanical incompatibility, so code declines and the ranker decides.
+
+
+class Medium(str, Enum):
+    DRY = "dry"          # roasted, baked, broiled, grilled, toasted
+    MOIST = "moist"      # boiled, steamed, poached, braised, stewed
+    FAT = "fat"          # fried, sauteed
+    UNCLASSIFIED = "unclassified"
+
+
+_DRY_METHODS = frozenset({"roasted", "baked", "broiled", "grilled",
+                          "toasted", "barbecued"})
+_MOIST_METHODS = frozenset({"boiled", "steamed", "poached", "braised",
+                            "stewed", "simmered"})
+_FAT_METHODS = frozenset({"fried", "sauteed", "sautéed"})
+
+#: USDA's two-word medium terms. Both words must be present — "dry" alone
+#: describes a dried food, which is preservation, not a cooking medium.
+_DRY_PHRASE = ("dry", "heat")
+_MOIST_PHRASE = ("moist", "heat")
+
+#: Methods whose medium genuinely depends on the dish. `microwaved` can be
+#: either; naming it here keeps its silence a decision rather than an
+#: oversight.
+_AMBIGUOUS_METHODS = frozenset({"microwaved", "cooked", "prepared", "heated"})
+
+
+def medium(text: str) -> Medium:
+    """The heat MEDIUM a description asserts, or UNCLASSIFIED.
+
+    A description naming methods from two different mediums ("fried, then
+    baked") declines to choose, for the same reason `classify` does.
+    """
+    words = _tokens(text)
+    found = set()
+    if all(w in words for w in _DRY_PHRASE):
+        found.add(Medium.DRY)
+    if all(w in words for w in _MOIST_PHRASE):
+        found.add(Medium.MOIST)
+    if words & _DRY_METHODS:
+        found.add(Medium.DRY)
+    if words & _MOIST_METHODS:
+        found.add(Medium.MOIST)
+    if words & _FAT_METHODS:
+        found.add(Medium.FAT)
+    return found.pop() if len(found) == 1 else Medium.UNCLASSIFIED
+
+
+def medium_conflict(requested: str, candidate: str) -> bool:
+    """Do these assert INCOMPATIBLE cooking media?
+
+    True only when both classify and differ. A specific method never conflicts
+    with the generic term containing it, because both resolve to one medium —
+    which is the whole reason this is expressed as media rather than tokens.
+    """
+    left, right = medium(requested), medium(candidate)
+    if Medium.UNCLASSIFIED in (left, right):
+        return False
+    return left is not right

@@ -139,10 +139,43 @@ The substring signal is the sharpest: it classifies **"Strawberry preserve" as
 RAW**, because "raw" sits inside "strawberry" — the silent food-changing
 failure `pricing_artifact._without` was written for, arriving in a new module.
 
-**WHAT 0.2 DOES NOT DO.** The model still GATES: removing the raw rows
-mechanically does not stop `qualified(minimum_confidence=0.80)` abstaining on
-the cooked ones. Authority is REDUCED, not removed, and Phase 0's exit is
-unchanged.
+**INCREMENT 0.3 — PREPARATION COMPATIBILITY, BY HEAT MEDIUM.** Raw-vs-cooked
+was safe because the states are mutually exclusive. Preparation is not, and a
+naive token conflict would be WORSE than the defect it replaces:
+
+```text
+"roasted" vs "cooked, dry heat"   NOT a conflict — dry heat is USDA's SUPERSET
+"grilled" vs "roasted"            NOT vetoable — different, not exclusive
+"roasted" vs "stewed" / "fried"   a real conflict
+```
+
+Vetoing the first would destroy correct evidence DETERMINISTICALLY, which
+never varies and therefore never surfaces — strictly worse than destroying it
+nondeterministically.
+
+So the rule groups by HEAT MEDIUM (dry / moist / fat), **which is USDA's own
+vocabulary** — their rows say "cooked, dry heat" and "cooked, moist heat"
+beside method terms already in `validators._PREPARATIONS`. A specific method
+therefore never conflicts with the generic term containing it, and preparation
+discrimination WITHIN a medium stays with ranking. `"dry"` without `"heat"` is
+preservation, not a medium — reading it as dry-heat cooking would veto
+moist-cooked rows against a dried request.
+
+```text
+unclassified treated as conflict   conflict(salted) -> True         4 red
+substring instead of word bounds   "Strawberry preserve" -> RAW     1 red
+both-states description picks one  "raw, then cooked" -> COOKED     1 red
+token conflict instead of medium   grilled vs roasted -> conflict   2 red
+"dry" alone counts as dry heat     "Milk, dry, whole" -> DRY        1 red
+multi-medium picks the first       "fried, then baked" -> DRY       1 red
+```
+
+**WHAT 0.2 AND 0.3 DO NOT DO.** The model still GATES: removing raw rows and
+incompatible media mechanically does not stop
+`qualified(minimum_confidence=0.80)` abstaining on the rows that survive.
+Authority is REDUCED, not removed, and Phase 0's exit is unchanged. **0.4 —
+removing the model's gating power — is what actually unblocks the raw
+reproducibility proof.**
 
 ### 1  RAW REPRODUCIBILITY PROOF
 

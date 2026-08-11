@@ -50,9 +50,11 @@ INCOMPATIBLE_BASIS = "nutrition_basis_not_convertible"
 NO_ENERGY = "record_states_no_energy"
 DUPLICATE = "duplicate_of_an_earlier_record"
 COOKING_STATE_CONFLICT = "cooking_state_conflicts_with_the_request"
+COOKING_MEDIUM_CONFLICT = "cooking_medium_conflicts_with_the_request"
 
 REASONS = frozenset({BRANDED_FOR_GENERIC, INCOMPATIBLE_BASIS, NO_ENERGY,
-                     DUPLICATE, COOKING_STATE_CONFLICT})
+                     DUPLICATE, COOKING_STATE_CONFLICT,
+                     COOKING_MEDIUM_CONFLICT})
 
 #: USDA's own record classification. CURATED data types are generic reference
 #: foods; `Branded` rows are manufacturer-submitted product entries.
@@ -165,6 +167,19 @@ def vetoes(records, *, generic_intent: bool = True,
             out.append(Ineligible(evidence_id, COOKING_STATE_CONFLICT,
                                   detail=cooking_state.classify(
                                       getattr(record, "title", "")).value))
+            continue
+
+        # 0.3 — INCOMPATIBLE HEAT MEDIA. Deliberately narrower than "a
+        # different preparation": a specific method never conflicts with the
+        # generic term containing it (roasted vs "cooked, dry heat" are both
+        # DRY), and grilled vs roasted is a real difference that is not a
+        # mechanical incompatibility, so it stays with ranking. Only genuinely
+        # exclusive media veto — roasted vs stewed, roasted vs fried.
+        if requested_identity and cooking_state.medium_conflict(
+                requested_identity, getattr(record, "title", "")):
+            out.append(Ineligible(
+                evidence_id, COOKING_MEDIUM_CONFLICT,
+                detail=cooking_state.medium(getattr(record, "title", "")).value))
             continue
 
         energy = _energy(record)

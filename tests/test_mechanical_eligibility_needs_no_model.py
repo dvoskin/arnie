@@ -322,3 +322,75 @@ def test_cooking_state_classification_is_deterministic():
                                   requested_identity="mackerel, roasted")
                 for _ in range(50)}
     assert len(outcomes) == 1
+
+
+# ── PHASE 0.3 — preparation compatibility, by HEAT MEDIUM ──────────────────
+#
+# Raw vs cooked was safe because the states are mutually exclusive. Preparation
+# is not, and a naive token conflict would be WORSE than the defect it
+# replaces: vetoing "roasted" against "cooked, dry heat" destroys correct
+# evidence DETERMINISTICALLY, which never varies and so never surfaces.
+
+def test_a_specific_method_does_not_conflict_with_the_term_containing_it():
+    """⭐ THE TRAP. "Dry heat" is USDA's superset covering roasted, grilled,
+    baked and broiled. A rule that vetoed it would delete the exact rows the
+    mackerel case depends on."""
+    assert not cs.medium_conflict("mackerel, roasted",
+                                  "Fish, mackerel, king, cooked, dry heat")
+    assert not cs.medium_conflict("chicken, grilled",
+                                  "Chicken, breast, cooked, dry heat")
+
+
+def test_two_dry_methods_are_not_a_mechanical_conflict():
+    """Grilled and roasted ARE different. They are not EXCLUSIVE, so code
+    declines and ranking decides — the conservative trade."""
+    assert not cs.medium_conflict("chicken, grilled",
+                                  "Chicken, breast, cooked, roasted")
+
+
+def test_genuinely_exclusive_media_conflict():
+    assert cs.medium_conflict("chicken, roasted", "Chicken, cooked, stewed")
+    assert cs.medium_conflict("chicken, roasted", "Chicken, cooked, fried")
+    assert cs.medium_conflict("potato, roasted", "Potatoes, boiled, in skin")
+    assert cs.medium_conflict("chicken, fried", "Chicken, cooked, boiled")
+
+
+def test_an_ambiguous_method_declines_to_speak():
+    """`microwaved` can be either medium. Naming it keeps the silence a
+    decision rather than an oversight."""
+    assert cs.medium("Chicken tenders, cooked, microwaved") \
+        is cs.Medium.UNCLASSIFIED
+    assert not cs.medium_conflict("chicken, fried",
+                                  "Chicken tenders, cooked, microwaved")
+
+
+def test_two_media_in_one_description_decline_to_choose():
+    assert cs.medium("Chicken, fried, then baked") is cs.Medium.UNCLASSIFIED
+    assert not cs.medium_conflict("chicken, roasted",
+                                  "Chicken, fried, then baked")
+
+
+def test_dry_alone_is_preservation_not_a_medium():
+    """"Dry" without "heat" describes a DRIED food. Reading it as dry-heat
+    cooking would veto moist-cooked rows against a dried request."""
+    assert cs.medium("Milk, dry, whole") is cs.Medium.UNCLASSIFIED
+    assert cs.medium("Beef, cooked, dry heat") is cs.Medium.DRY
+
+
+def test_the_medium_veto_reaches_eligibility_with_its_own_reason():
+    """A distinct reason, so a drift cause stays attributable rather than
+    collapsing into 'some preparation thing'."""
+    records = from_usda([_row(1, "Chicken, breast, cooked, stewed"),
+                         _row(2, "Chicken, breast, cooked, roasted")])
+    vetoed = el.vetoes(records, requested_identity="chicken, roasted")
+    assert len(vetoed) == 1
+    assert vetoed[0].evidence_id == "usda:1"
+    assert vetoed[0].reason == el.COOKING_MEDIUM_CONFLICT
+    assert vetoed[0].detail == "moist"
+
+
+def test_the_mackerel_set_is_unchanged_by_the_medium_rule():
+    """0.3 must not disturb what 0.2 established."""
+    vetoed = {v.evidence_id for v in el.vetoes(
+        _mackerel_records(), requested_identity="mackerel, roasted")}
+    assert vetoed == {"usda:175119", "usda:175122", "usda:173673"}
