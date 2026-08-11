@@ -262,3 +262,129 @@ async def record_failure(db, *, operation_id: str, expected_revision: int,
         storage_status="cancelled" if exhausted else "active",
         attempt_count=attempts, last_error=error,
         terminal_reason="attempts_exhausted" if exhausted else None)
+
+
+# ── THE OPERATION-STATE MUTATION BOUNDARY (B-1.6) ────────────────────────────
+#
+# ⛔ A B-1.5 LIVE CORRECTNESS DEFECT, found while building B-1.6.
+#
+# `hold_answer` rewrote the WHOLE `answered` map from an `OwnedOperation` that
+# had been hydrated from an unlocked read:
+#
+#     held = dict(owned.answered or {})      # read, unlocked
+#     held[patch.field_id] = patch
+#     owned.row.canonical_payload = json.dumps(...)   # blind write
+#
+# Two answers arriving together each read the map, each add their own patch,
+# each write the whole thing. LAST WRITE WINS AND ONE ANSWER IS SILENTLY LOST
+# — the user tapped, the reply confirmed, and the value is not there. That is
+# live today under B-1.5, not B-1.6 debt.
+#
+# `save_revision` is a real compare-and-swap and does NOT solve this: holding
+# an answer deliberately does not move the revision, so both writers satisfy
+# `WHERE revision = N` and both succeed.
+#
+# ⭐ THE LOCKED ROW IS THE AUTHORITY, NOT THE OBJECT THE CALLER ARRIVED WITH.
+# Taking a lock and then merging from a pre-lock snapshot acquires the lock
+# and keeps the bug: the whole point is that `answered`, `revision` and the
+# payload are re-read INSIDE the critical section.
+#
+# A SHARED PRIMITIVE, not `with_for_update()` buried in one function. B-1.6
+# retraction and B-1.8 repair need the identical guarantee, and a boundary
+# only one caller uses is a boundary the second caller will route around.
+
+
+class LockedOperation:
+    """The operation's durable state, re-read under the row lock.
+
+    Every accessor here reads the LOCKED row. `answered` in particular is
+    decoded inside the critical section, because merging into a map that was
+    loaded before the lock is the defect this class exists to remove.
+    """
+
+    __slots__ = ("row", "payload", "lock_wait_ms")
+
+    def __init__(self, row, payload: dict, lock_wait_ms: int):
+        self.row, self.payload = row, dict(payload or {})
+        self.lock_wait_ms = lock_wait_ms
+
+    @property
+    def operation_id(self) -> str:
+        return str(self.row.operation_id)
+
+    @property
+    def revision(self) -> int:
+        return int(self.row.revision or 0)
+
+    def answered(self) -> dict:
+        """The held patches, decoded from the LOCKED payload."""
+        from core.semantics import patch_from_payload
+
+        out = {}
+        for field_id, data in (self.payload.get("answered") or {}).items():
+            try:
+                out[str(field_id)] = patch_from_payload(data)
+            except Exception:
+                logger.warning("event=held_patch_unreadable operation=%s "
+                               "field=%s", self.operation_id, field_id,
+                               exc_info=True)
+        return out
+
+    def write(self, payload: dict, *, revision: Optional[int] = None) -> None:
+        """Stage the complete new payload on the locked row.
+
+        The revision moves ONLY when the caller says the active-set shape
+        changed — one increment per shape change, however many fields moved,
+        so `revision` keeps meaning "answer-surface generation" rather than
+        becoming a general mutation counter.
+        """
+        self.payload = dict(payload or {})
+        self.row.canonical_payload = json.dumps(self.payload)
+        if revision is not None:
+            self.row.revision = int(revision)
+
+
+async def locked_operation(db, operation_id: str) -> LockedOperation:
+    """`SELECT ... FOR UPDATE` on one operation, plus its decoded payload.
+
+    NOTHING EXPENSIVE MAY RUN WHILE THIS IS HELD. No provider, no model, no
+    pricing — reconciliation is pure by construction, which is exactly why it
+    is safe inside and why the critical section stays short. The lock releases
+    with the caller's transaction; there is deliberately no timeout or retry,
+    because these rows are per-operation and per-user and contention is a
+    measured question, not an assumed one. `operation_lock_wait_ms` is emitted
+    so the measurement exists before anyone tunes anything.
+
+    SQLite ignores `FOR UPDATE` — it is a single-writer database, so the
+    serialization the lock buys is already there. The primitive is uniform;
+    only the engine's means differ.
+    """
+    import time
+
+    from sqlalchemy import select
+
+    from db.models import PendingOperation
+
+    started = time.monotonic()
+    statement = select(PendingOperation).where(
+        PendingOperation.operation_id == operation_id)
+    if db.bind is not None and db.bind.dialect.name != "sqlite":
+        statement = statement.with_for_update()
+    row = (await db.execute(statement)).scalar_one_or_none()
+    waited_ms = int((time.monotonic() - started) * 1000)
+
+    if row is None:
+        raise StaleRevision(
+            f"operation {operation_id} does not exist — a mutation boundary "
+            f"cannot be opened on a row that is not there")
+
+    logger.info("event=operation_locked operation=%s revision=%d "
+                "operation_lock_wait_ms=%d",
+                operation_id, int(row.revision or 0), waited_ms)
+    try:
+        payload = json.loads(row.canonical_payload or "{}")
+    except Exception:
+        raise UnreadablePayload(
+            f"operation {operation_id} holds a payload that will not decode; "
+            f"refusing to merge into it") from None
+    return LockedOperation(row, payload, waited_ms)

@@ -1183,18 +1183,121 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
     Returns the full held map, so the caller tests readiness against what is
     now stored rather than against what it believes it just wrote.
     """
-    held = dict(owned.answered or {})
-    held[str(patch.field_id)] = patch
+    from core import pending_repository as repo
 
-    data = json.loads(owned.row.canonical_payload or "{}")
+    # ⛔ THE MERGE HAPPENS UNDER THE LOCK, FROM THE LOCKED ROW.
+    #
+    # This used to read `owned.answered` — hydrated before the request even
+    # reached here — and write the whole map back. Two answers arriving
+    # together each read, each added their own patch, each wrote everything:
+    # last write wins and one answer is silently lost, with a reply confirming
+    # it. A B-1.5 live correctness defect, found while building B-1.6.
+    #
+    # `save_revision`'s compare-and-swap cannot fix it, because holding an
+    # answer deliberately does not move the revision — both writers satisfy
+    # `WHERE revision = N`. Serializing the read-modify-write is the fix, and
+    # taking the lock while still merging from the pre-lock snapshot would
+    # acquire the lock and keep the bug.
+    locked = await repo.locked_operation(db, owned.operation_id)
+    held = locked.answered()
+    held[str(patch.field_id)] = patch
+    data = dict(locked.payload)
+
+    # ⭐ B-1.6: RECONCILE, DO NOT APPEND. An answer can make another field
+    # irrelevant, and dropping that field from the screen is not the same as
+    # retracting it. "1 tbsp of oil" followed by "actually, no oil" must
+    # remove the tablespoon from settlement — leaving it in `answered` while
+    # hiding its chip prices a meal with fat the user just said was not there,
+    # which is a silent nutrition corruption rather than a display bug.
+    held, retracted = _reconcile_after(owned, held, data)
+
     data["answered"] = {k: p.to_payload() for k, p in held.items()}
-    owned.row.canonical_payload = json.dumps(data)
-    db.add(owned.row)
+    locked.write(data)
+    db.add(locked.row)
     await db.flush()
-    logger.info("event=b1_answer_held operation=%s field=%s open=%d",
-                owned.operation_id, patch.field_id,
-                len(open_fields(owned.interaction, held)))
+    logger.info("event=b1_answer_held operation=%s field=%s open=%d "
+                "retracted=%d operation_lock_wait_ms=%d", owned.operation_id,
+                patch.field_id, len(open_fields(owned.interaction, held)),
+                len(retracted), locked.lock_wait_ms)
     return held
+
+
+def _reconcile_after(owned: OwnedOperation, held: dict, data: dict) -> tuple:
+    """Recompute the active set and invalidate what the answer turned off.
+
+    THE HISTORY IS DURABLE AND SEPARATE FROM THE STATE. "Never active" and
+    "answered, then invalidated" both leave the attribute absent from
+    `answered`, and B-1.8's correction analysis cannot be written on a state
+    that conflated them — so a retraction is recorded rather than merely
+    performed.
+
+    NEVER RAISES INTO THE TURN. A reconciliation that fails must not lose an
+    answer the user just gave; it degrades to the pre-B-1.6 behaviour of
+    holding what arrived, and says so loudly. The commit boundary asserts the
+    result independently, which is where a missed retraction is caught.
+    """
+    from core import field_activation as fa
+
+    try:
+        item = dict(data.get("item") or {})
+        previous = {fa.attribute_of_field_id(f.field_id)
+                    for g in owned.interaction.groups for f in g.fields}
+        previous |= {fa.attribute_of_field_id(k, p) for k, p in held.items()}
+        reconciliation = fa.reconcile(
+            previously_active={a for a in previous if a},
+            state=fa.state_from(item, held),
+            answered_by_field=held,
+            attribute_of_field=fa.attribute_of_field_id)
+    except Exception:
+        logger.warning("event=reconciliation_failed operation=%s — holding "
+                       "the answer unreconciled; settlement re-checks",
+                       owned.operation_id, exc_info=True)
+        return held, {}
+
+    if not reconciliation.retracted:
+        return held, {}
+
+    history = list(data.get("retractions") or [])
+    for field_id, retracted_patch in reconciliation.retracted.items():
+        held.pop(field_id, None)
+        history.append({
+            "field_id": field_id,
+            "attribute": fa.attribute_of_field_id(field_id, retracted_patch),
+            "revision": int(getattr(owned.interaction, "revision", 0) or 0),
+            "reason": "dependency_became_false",
+            "patch": retracted_patch.to_payload(),
+        })
+        logger.info("event=field_retracted operation=%s field=%s attribute=%s "
+                    "reason=dependency_became_false", owned.operation_id,
+                    field_id, fa.attribute_of_field_id(field_id,
+                                                       retracted_patch))
+    data["retractions"] = history
+    return held, reconciliation.retracted
+
+
+def _assert_no_retracted_value_settles(owned: OwnedOperation,
+                                       resolved: ResolvedFields) -> None:
+    """RAISES rather than prices a value whose dependency the user turned off.
+
+    Failing the settle is the correct outcome here and the uncomfortable one.
+    The alternative — dropping the offending value and committing the rest —
+    would write a meal the user never described while reporting success, and
+    a refused settle is recoverable in a way a quietly wrong log is not.
+
+    The item is read from the stored payload, not from the interaction, so
+    this sees exactly what was persisted.
+    """
+    from core import field_activation as fa
+
+    try:
+        data = json.loads(owned.row.canonical_payload or "{}")
+        item = dict(data.get("item") or {})
+    except Exception:
+        logger.warning("event=settlement_check_unreadable operation=%s",
+                       owned.operation_id, exc_info=True)
+        return
+    fa.assert_settlement_is_consistent(item=item,
+                                       answered=dict(resolved.by_field or {}))
 
 
 async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
@@ -1211,6 +1314,16 @@ async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
                                 NutritionProvenance, ResolutionStatus)
     from core.timezones import safe_timezone
     from db.queries import _user_today
+
+    # ⭐ B-1.6: THE COMMIT BOUNDARY RECHECKS WHAT THE ANSWER PATH RECONCILED.
+    #
+    # Not a second policy — an INVARIANT. The answer path already retracts,
+    # and this asserts the result independently at the point of no return, so
+    # an alternate caller, a future repair path or a replayed operation cannot
+    # commit a payload B-1.6 would never have produced. Deriving activation
+    # again here would be the two-owners defect; asserting it is what stops
+    # the reconciliation from being a promise the boundary takes on trust.
+    _assert_no_retracted_value_settles(owned, resolved)
 
     # ALREADY SETTLED — replay, never re-settle.
     #

@@ -11,6 +11,7 @@ effect.
 """
 from __future__ import annotations
 
+from core.field_activation import IsTrue
 from core.semantic_fields import (Activation, Evidence, FieldSpec, Pricing,
                                   Settlement, ValueSpace, register)
 
@@ -66,4 +67,36 @@ def register_all() -> None:
         # "I had some chicken", so B-1.5 could not fire in production at all.
         unresolved_when=_preparation_unresolved,
         caption="Preparation", order=20))
+
+    # ── B-1.6: the first CONDITIONAL pair ────────────────────────────────
+    #
+    # THE DEPENDENCY IS DATA ON THE SPEC. The alternative — the one this
+    # replaces everywhere it still exists — is `if present: ask_amount()`
+    # written inside a producer, which makes the producer a second owner of
+    # when to ask and leaves no way to ask the question generically.
+    register(FieldSpec(
+        attribute=ClarificationAttribute.ADDED_FAT_PRESENT,
+        value_space=ValueSpace.ENUMERATED,
+        patch_type="set_added_fat_present",
+        # PRICES NOTHING. Presence gates a question; it does not move a
+        # number, and a field that "adds 120 kcal for oil" would be the
+        # MULTIPLIER member this enum deliberately does not have.
+        pricing=Pricing.NONE,
+        evidence=Evidence.ONTOLOGY,
+        vocabulary=("yes", "no"),
+        caption="Added fat", order=30))
+
+    register(FieldSpec(
+        attribute=ClarificationAttribute.ADDED_FAT_AMOUNT,
+        value_space=ValueSpace.MEASURED,
+        patch_type="set_added_fat_amount",
+        pricing=Pricing.NONE,
+        evidence=Evidence.ONTOLOGY,
+        activation=Activation.CONDITIONAL,
+        # A RULE, NOT A LAMBDA. The engine evaluates it and derives the
+        # dependency edge from its structure, so `depends_on` cannot disagree
+        # with what activation actually reads — and there is nowhere in a rule
+        # to reach a provider, the raw message, or the interpreter's prose.
+        active_when=IsTrue(ClarificationAttribute.ADDED_FAT_PRESENT.value),
+        caption="How much fat", order=31))
 

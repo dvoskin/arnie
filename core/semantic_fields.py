@@ -56,6 +56,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field as dc_field
 from enum import Enum
+import inspect
 import logging
 from typing import Any, Callable, Optional
 
@@ -140,7 +141,21 @@ class FieldSpec:
     #: For CONDITIONAL fields (B-1.6): a predicate over resolved fields.
     #: Declared here so activation is DATA. `if fried: ask_oil()` written in a
     #: producer is the thing this field exists to make unnecessary.
-    active_when: Optional[Callable] = None
+    #: A `core.field_activation.Rule` — DECLARATIVE, never a callable.
+    #:
+    #: ⭐ A CALLABLE WAS TRIED AND REJECTED IN REVIEW. `active_when: Callable`
+    #: beside `depends_on: tuple` is a contract at one end and an assumption
+    #: at the other: a synchronous closure can still capture a provider, read
+    #: a module global or consult a cache, and a declared `depends_on` is only
+    #: a CLAIM about what that closure reads. A predicate could declare
+    #: `(added_fat_present,)` while reading something else, leaving the cycle
+    #: check formally green and semantically false. Refusing `async def`
+    #: narrows one door in a room with several.
+    #:
+    #: A rule names its attributes in its own structure, so `depends_on` is
+    #: DERIVED below rather than declared beside it, and there is nowhere in
+    #: `Equals`/`All`/`Not` to put a provider. Truthful by construction.
+    active_when: Optional[Any] = None
     #: THE CLOSED VOCABULARY, for `ENUMERATED` fields.
     vocabulary: tuple = ()
     #: IS THIS FIELD MATERIALLY UNRESOLVED FOR THIS ITEM? Supplied by the
@@ -177,6 +192,14 @@ class FieldSpec:
     @property
     def attribute_value(self) -> str:
         return str(getattr(self.attribute, "value", self.attribute))
+
+    @property
+    def depends_on(self) -> tuple:
+        """THE DEPENDENCY EDGES, DERIVED FROM THE RULE — never a second
+        declaration that could disagree with it."""
+        if self.active_when is None:
+            return ()
+        return tuple(sorted(self.active_when.attributes()))
 
 
 _REGISTRY: dict = {}
@@ -219,6 +242,34 @@ def register(spec: FieldSpec) -> FieldSpec:
             f"{key} is conditional and declares no predicate. Activation must "
             f"be DATA on the spec; a producer that decides for itself when to "
             f"ask is `if fried: ask_oil()` with extra steps")
+
+    if spec.activation is Activation.CONDITIONAL:
+        from core.field_activation import Rule
+
+        # ⭐ A RULE, NOT A CALLABLE — purity by construction.
+        #
+        # Rejecting `async def` was the first attempt and it proves nothing: a
+        # SYNCHRONOUS closure can capture a provider, read a module global or
+        # consult a cache, and its `depends_on` would be a claim nothing
+        # checks. A declarative rule has nowhere to put a provider and derives
+        # its own edges, so the graph check reads the real graph.
+        if not isinstance(spec.active_when, Rule):
+            raise ContractViolation(
+                f"{key}.active_when is {type(spec.active_when).__name__}, not "
+                f"a Rule. A callable can capture anything and its declared "
+                f"dependencies are unverifiable — which leaves the cycle "
+                f"check formally green and semantically false")
+
+        if not spec.depends_on:
+            raise ContractViolation(
+                f"{key} is conditional and its rule reads no attribute — a "
+                f"condition over nothing is a constant, and a field that is "
+                f"always or never active is not conditional")
+
+        if key in spec.depends_on:
+            raise ContractViolation(
+                f"{key} depends on itself. Its activation would be a function "
+                f"of its own answer, so it could never open to be answered")
 
     if spec.pricing is Pricing.IDENTITY:
         _check_the_domain_can_consume(spec)
@@ -389,3 +440,15 @@ def _ensure_installed() -> None:
     # repopulate — the tests went green-to-35-red on exactly that.
     for module in _DOMAIN_REGISTRARS:
         importlib.import_module(module).register_all()
+
+    # ⭐ THE GRAPH IS CHECKED ONCE THE GRAPH EXISTS. Per-field registration
+    # cannot see a cycle — the second field of a pair is not registered yet
+    # when the first is admitted — so acyclicity is a property of the whole
+    # installed registry and is asserted here, at import, where a violation
+    # breaks the process instead of presenting later as a question that
+    # silently never gets asked.
+    from core.field_activation import (assert_acyclic,
+                                       assert_declares_its_dependencies)
+
+    assert_declares_its_dependencies()
+    assert_acyclic()

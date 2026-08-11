@@ -1862,6 +1862,137 @@ worktree and confirming it goes red — a ratchet that cannot fail is a comment
 with a slower test suite, and sixteen of those were deleted from this branch
 for exactly that reason.
 
+## ⛔ B-1.5 LOST UPDATE — a live correctness defect found while building B-1.6
+
+Classified as B-1.5, not B-1.6 debt. It is reachable on the deployed system
+today: two chips on screen and a fast pair of taps, or one tap plus a retried
+delivery.
+
+`hold_answer` rewrote the WHOLE `answered` map from an `OwnedOperation`
+hydrated by an UNLOCKED read:
+
+```python
+held = dict(owned.answered or {})               # read, unlocked
+held[patch.field_id] = patch
+owned.row.canonical_payload = json.dumps(...)   # blind write
+```
+
+Two answers arriving together each read the map, each add their own patch,
+each write everything. **Last write wins, one answer is silently lost, and the
+reply confirms it.** B-1.6 did not introduce this; it made the blast radius
+obvious, because retraction and activation would have ridden the same unsafe
+write.
+
+**`save_revision` is a genuine compare-and-swap and CANNOT fix it.** Holding an
+answer deliberately does not move the revision — the other chips are on the
+user's screen — so both writers satisfy `WHERE revision = N` and both succeed.
+The read-modify-write itself has to be serialized.
+
+**THE FIX IS A ROW LOCK, NOT A SECOND VERSION COUNTER** *(Danny's call)*. A
+payload-version column would solve it and would introduce a new persistence
+concept whose only job is protecting a very short read-modify-write that
+Postgres already serializes. No migration; main auto-deploys, and the schema
+did not need to change.
+
+`pending_repository.locked_operation` is a SHARED PRIMITIVE, not
+`with_for_update()` buried in `hold_answer`. B-1.6 retraction and B-1.8 repair
+need the identical guarantee, and a boundary only one caller uses is a
+boundary the second caller routes around.
+
+```text
+load the row FOR UPDATE
+decode answered/revision/payload FROM THE LOCKED ROW
+apply the patch  ->  reconcile  ->  retract
+one revision bump IF the active-set shape changed
+write the complete payload, flush, release with the transaction
+```
+
+**⭐ THE SUBTLE FAILURE, AND THE ONLY GATE THAT CAUGHT IT.** A correct lock
+still protects a stale read if the merge target predates it:
+
+```python
+locked = await repo.locked_operation(db, ...)   # correct lock
+held = dict(owned.answered or {})               # STALE MERGE
+```
+
+That mutation was run. **Both timing-based overlap gates PASSED under it** —
+the scheduler happened to serialize the writers — and only the structural
+assertion that `held` derives from the locked row went red. A concurrency
+test that can pass because scheduling was kind is theater; the anti-vacuity
+checks are what make these evidence:
+
+```text
+gate 1  two same-revision holds, different fields   RED without FOR UPDATE
+gate 2  shape-changing answer vs concurrent answer  RED without FOR UPDATE
+gate 3  aborted writer leaks nothing to the next    green
+gate 4  merge reads the LOCKED row                  RED on correct-lock/stale-merge
+gate 5  uncontended acquire is cheap (<250 ms)      green
+        gate 1 also asserts max(lock_wait_ms) > 0 — if neither writer waited,
+        the sections never overlapped and the run proved nothing
+```
+
+Postgres only. SQLite is single-writer and would prove the lock unnecessary
+rather than that it works.
+
+**No timeout and no retry, deliberately.** These rows are per-operation and
+per-user; contention is a measured question, not an assumed one.
+`operation_lock_wait_ms` is emitted on every acquire so the measurement exists
+before anyone tunes anything. Two structural ratchets keep the section honest:
+`with_for_update` appears nowhere in `core/` outside the repository, and
+`hold_answer` awaits nothing from the provider/model/pricing set while holding
+the lock.
+
+## B-1.6a — CONDITIONAL ACTIVATION AS A STATE TRANSITION *(2026-08-10)*
+
+```text
+previous_active -> patch -> resolved_state -> desired_active -> RECONCILE
+                      still_active / newly_active / newly_inactive / retracted
+```
+
+**Retraction kills the VALUE, not just the chip.** "1 tbsp of oil" then
+"actually, no oil" must remove the tablespoon from settlement; hiding its chip
+while the patch stays in `answered` prices fat the user just said was not
+there. Invalidation history is durable and separate from current truth, so
+B-1.8 can tell "never active" from "answered, then invalidated".
+
+**⭐ PURITY IS STRUCTURAL AFTER REVIEW, AND THE FIRST ATTEMPT WAS NOT.**
+`active_when` began as a callable with a declared `depends_on` beside it —
+a contract at one end and an assumption at the other, the shape this migration
+keeps finding. Refusing `async def` looked like a fix and proves nothing: a
+SYNCHRONOUS closure can capture a provider, read a module global, consult a
+cache, and its `depends_on` is an unverifiable claim, which leaves the cycle
+check formally green and semantically false.
+
+`active_when` is now a declarative `Rule` — `Present`, `IsTrue`, `Equals`,
+`All`, `Any_`, `Not`. The engine evaluates; the rule only describes.
+`depends_on` is DERIVED by walking the rule, so there is no second declaration
+that can disagree with it, and there is nowhere in a rule to put a provider.
+
+Registration refuses a callable outright, a self-dependency, an empty rule and
+an unknown dependency; the graph is asserted acyclic at INSTALL, where a cycle
+breaks the process instead of presenting as a question that silently never
+opens. `activation_order()` is deterministic topological — field order reaches
+the iOS payload, and order that depends on registry insertion is a rendering
+difference with no semantic cause.
+
+**The commit boundary asserts, never derives.** A second policy there would be
+the two-owners defect wearing a safety vest.
+
+**The consumer ratchet found a live trap.** `register()` had refused an
+undeclared CONDITIONAL field since the contract was written, and NOTHING read
+the other end — a conditional field would have been admitted, passed its
+check, and then never activated. Both ends are ratcheted now: every registered
+conditional must be observed being evaluated by the reconciler.
+
+**Not built:** the producer half. Nothing renders the new fields as chips, so
+`added_fat_present` / `added_fat_amount` are reachable by patch and not by a
+user. B-1.6b resumes from here.
+
+**`ADDED_FAT_PRESENT` materiality stays in B-1.7.** B-1.6 demonstrates the
+lifecycle once presence is canonically known; deciding when silence about fat
+is suspicious enough to ask is accuracy policy, and blurring that line
+immediately after deliberately separating it would waste the separation.
+
 ## Session close — 2026-08-10, measured state and what it cost
 
 Written last, against the numbers rather than the intent. The unflattering

@@ -390,6 +390,12 @@ class ClarificationAttribute(str, Enum):
     PACKAGE_SIZE = "package_size"
     PREPARATION = "preparation"
     SERVING_BASIS = "serving_basis"
+    #: B-1.6. Two fields, because presence and amount are two questions and
+    #: the second only exists when the first is yes. NOT one tri-state field:
+    #: "no" and "yes, unknown how much" settle differently, and collapsing
+    #: them is how an unanswered amount becomes a silent zero.
+    ADDED_FAT_PRESENT = "added_fat_present"
+    ADDED_FAT_AMOUNT = "added_fat_amount"
     # workout (Phase O; defined so the shared layer never needs a food edit)
     EXERCISE_IDENTITY = "exercise_identity"
     SET_COUNT = "set_count"
@@ -676,9 +682,88 @@ class SetServingBasis(SemanticPatch):
 #: THE CLOSED REGISTRY. An explicit dict rather than a subclass walk: a patch
 #: type is stored data, so which strings are loadable must be a decision
 #: someone made, not a consequence of what happens to be imported.
+@dataclass(frozen=True)
+class SetAddedFatPresent(SemanticPatch):
+    """Was fat added in cooking or serving — yes or no, and NEVER "unknown".
+
+    A BOOLEAN THAT CANNOT BE NULL. `present=None` would mean "we asked and
+    learned nothing", which is indistinguishable at settlement from "we never
+    asked", and the two must settle differently: the first is an answer that
+    licenses assuming zero, the second is an open question. Refusing null here
+    is what keeps that distinction in the type rather than in a convention.
+
+    IT PRICES NOTHING BY ITSELF (`Pricing.NONE`). Presence gates a question;
+    the AMOUNT is what a nutrition model can act on, and how it acts is
+    B-1.6d's problem, not this patch's.
+    """
+    present: Optional[bool] = None
+
+    patch_type: ClassVar[str] = "set_added_fat_present"
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.present is None:
+            raise ValueError(
+                "added-fat presence is yes or no. `None` would read as "
+                "'asked and learned nothing', which settles identically to "
+                "'never asked' — and those license different assumptions")
+        object.__setattr__(self, "present", bool(self.present))
+
+    def _value_payload(self) -> dict:
+        return {"present": bool(self.present)}
+
+    @classmethod
+    def _from_values(cls, data: dict) -> "SetAddedFatPresent":
+        return cls(event_id=data.get("event_id") or "",
+                   field_id=data.get("field_id") or "",
+                   provenance=Provenance(data.get("provenance")
+                                         or Provenance.UNKNOWN),
+                   present=data.get("present"))
+
+
+@dataclass(frozen=True)
+class SetAddedFatAmount(SemanticPatch):
+    """How much fat was added — a CanonicalQuantity, like every other amount.
+
+    REUSES THE QUANTITY TYPE RATHER THAN INVENTING A SECOND ONE. "A
+    tablespoon" is a measured amount with a unit, and dimensional validity is
+    enforced where the patch is BUILT. A bespoke `tbsp: float` here would be a
+    second, weaker quantity model living beside the real one.
+
+    FAT IDENTITY IS DELIBERATELY ABSENT AND DELIBERATELY NOT PRECLUDED.
+    "Yes, oil" and "yes, butter" are materially different foods, and the
+    eventual shape prices a real component through the canonical pricer rather
+    than adding a constant. This patch carries the amount only; an
+    `ADDED_FAT_IDENTITY` field slots in beside it without changing anything
+    here, which is why presence+amount must not be treated as sufficient
+    forever.
+    """
+    quantity: Optional[CanonicalQuantity] = None
+
+    patch_type: ClassVar[str] = "set_added_fat_amount"
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.quantity is None:
+            raise ValueError("an added-fat amount patch with no quantity is "
+                             "the question, not the answer")
+
+    def _value_payload(self) -> dict:
+        return {"quantity": self.quantity.to_payload()}
+
+    @classmethod
+    def _from_values(cls, data: dict) -> "SetAddedFatAmount":
+        return cls(event_id=data.get("event_id") or "",
+                   field_id=data.get("field_id") or "",
+                   provenance=Provenance(data.get("provenance")
+                                         or Provenance.UNKNOWN),
+                   quantity=CanonicalQuantity.from_payload(
+                       data.get("quantity")))
+
+
 PATCH_TYPES = {cls.patch_type: cls for cls in (
     SetQuantity, SetConsumedFraction, SelectEntity, SelectProductVariant,
-    SetPreparation, SetServingBasis)}
+    SetPreparation, SetServingBasis, SetAddedFatPresent, SetAddedFatAmount)}
 
 
 class UnknownPatchType(ValueError):
