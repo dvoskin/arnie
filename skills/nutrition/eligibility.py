@@ -36,6 +36,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from skills.nutrition import cooking_state
+
 #: Bumped when a rule is added, removed, or changes meaning. The artifact
 #: records it, so a candidate that disappears between builds is attributable
 #: to a POLICY CHANGE rather than filed as unexplained drift.
@@ -47,9 +49,10 @@ BRANDED_FOR_GENERIC = "branded_record_for_generic_intent"
 INCOMPATIBLE_BASIS = "nutrition_basis_not_convertible"
 NO_ENERGY = "record_states_no_energy"
 DUPLICATE = "duplicate_of_an_earlier_record"
+COOKING_STATE_CONFLICT = "cooking_state_conflicts_with_the_request"
 
 REASONS = frozenset({BRANDED_FOR_GENERIC, INCOMPATIBLE_BASIS, NO_ENERGY,
-                     DUPLICATE})
+                     DUPLICATE, COOKING_STATE_CONFLICT})
 
 #: USDA's own record classification. CURATED data types are generic reference
 #: foods; `Branded` rows are manufacturer-submitted product entries.
@@ -116,8 +119,15 @@ def _duplicate_key(record):
             nutrition.get("calories"), nutrition.get("protein"))
 
 
-def vetoes(records, *, generic_intent: bool = True) -> tuple:
+def vetoes(records, *, generic_intent: bool = True,
+           requested_identity: str = "") -> tuple:
     """Every mechanical veto over these records, in record order.
+
+    `requested_identity` is the composed identity being priced — "mackerel,
+    roasted". Supplied rather than derived, because composing it is the
+    identity boundary's job and this module must not become a second place
+    that knows how. When it is empty the cooking-state rule simply does not
+    apply, which is silence, not approval.
 
     `generic_intent` says whether the user named a PRODUCT. Asking for
     "chicken" and being handed a manufacturer's breaded-nugget entry is a
@@ -146,6 +156,17 @@ def vetoes(records, *, generic_intent: bool = True) -> tuple:
                                   detail=basis))
             continue
 
+        # ⭐ THE DIMENSION THAT ACTUALLY CAUSED THE INSTABILITY. A request for
+        # a ROASTED food cannot be served by a row that states it is RAW, and
+        # establishing that needs no language model. Both sides must classify
+        # and conflict; anything else is silence.
+        if requested_identity and cooking_state.conflict(
+                requested_identity, getattr(record, "title", "")):
+            out.append(Ineligible(evidence_id, COOKING_STATE_CONFLICT,
+                                  detail=cooking_state.classify(
+                                      getattr(record, "title", "")).value))
+            continue
+
         energy = _energy(record)
         if energy is None:
             # A record with no energy cannot price ANYTHING. This is a veto
@@ -155,6 +176,8 @@ def vetoes(records, *, generic_intent: bool = True) -> tuple:
     return tuple(out)
 
 
-def ineligible_ids(records, *, generic_intent: bool = True) -> frozenset:
-    return frozenset(v.evidence_id for v in
-                     vetoes(records, generic_intent=generic_intent))
+def ineligible_ids(records, *, generic_intent: bool = True,
+                   requested_identity: str = "") -> frozenset:
+    return frozenset(v.evidence_id for v in vetoes(
+        records, generic_intent=generic_intent,
+        requested_identity=requested_identity))

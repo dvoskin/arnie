@@ -200,3 +200,125 @@ def test_the_policy_is_versioned_so_a_removal_is_attributable():
     """A candidate that disappears between builds must be attributable to a
     POLICY CHANGE rather than filed as unexplained drift."""
     assert el.ELIGIBILITY_POLICY_VERSION
+
+
+# ── ⭐ PHASE 0.2 — raw vs cooked, the dimension that caused the instability ──
+#
+# For `mackerel|roasted` USDA returns eight rows and the discriminating fact is
+# plain in every one of them. The three rows the stable qualifier kept are the
+# three cooked ones, and the three the drift destroyed were cooked rows too. A
+# request for a ROASTED food cannot be served by a row stating RAW, and
+# establishing that needs no language model.
+
+from skills.nutrition import cooking_state as cs  # noqa: E402
+
+MACKEREL = (
+    (168149, "Fish, mackerel, salted"),
+    (175119, "Fish, mackerel, Atlantic, raw"),
+    (175122, "Fish, mackerel, king, raw"),
+    (173673, "Fish, mackerel, spanish, raw"),
+    (175120, "Fish, mackerel, Atlantic, cooked, dry heat"),
+    (175121, "Fish, mackerel, jack, canned, drained solids"),
+    (174236, "Fish, mackerel, king, cooked, dry heat"),
+    (173674, "Fish, mackerel, spanish, cooked, dry heat"),
+)
+
+
+def _mackerel_records():
+    return from_usda([_row(i, d) for i, d in MACKEREL])
+
+
+def test_a_raw_row_cannot_serve_a_roasted_request():
+    """THE PRODUCTION CASE, as a rule."""
+    vetoed = {v.evidence_id for v in el.vetoes(
+        _mackerel_records(), requested_identity="mackerel, roasted")}
+    assert vetoed == {"usda:175119", "usda:175122", "usda:173673"}, (
+        f"expected exactly the three raw rows, got {sorted(vetoed)}")
+
+
+def test_the_cooked_rows_the_drift_destroyed_survive_mechanically():
+    """174236 and 173674 vanished between two builds that differed in nothing.
+    No mechanical rule may remove them."""
+    vetoed = {v.evidence_id for v in el.vetoes(
+        _mackerel_records(), requested_identity="mackerel, roasted")}
+    for survivor in ("usda:175120", "usda:174236", "usda:173674"):
+        assert survivor not in vetoed
+
+
+def test_preservation_terms_produce_silence_not_a_veto():
+    """Canned fish is usually cooked, and "usually" is not a mechanical fact.
+    Salted and canned decline to speak rather than guessing."""
+    assert cs.classify("Fish, mackerel, salted") is cs.State.UNCLASSIFIED
+    assert cs.classify("Fish, mackerel, jack, canned, drained solids") \
+        is cs.State.UNCLASSIFIED
+    vetoed = {v.evidence_id for v in el.vetoes(
+        _mackerel_records(), requested_identity="mackerel, roasted")}
+    assert "usda:168149" not in vetoed and "usda:175121" not in vetoed
+
+
+def test_a_description_asserting_both_states_declines_to_choose():
+    """"raw, then cooked" is real USDA phrasing; picking one would be identity
+    work."""
+    assert cs.classify("Beef, raw, then cooked") is cs.State.UNCLASSIFIED
+    assert not cs.conflict("beef, roasted", "Beef, raw, then cooked")
+
+
+def test_no_request_means_the_rule_does_not_apply():
+    """Silence, not approval. An empty identity disables the dimension."""
+    assert el.vetoes(_mackerel_records(), requested_identity="") == ()
+
+
+def test_the_state_vocabulary_matches_on_word_boundaries():
+    """A substring test would read "raw" inside "strawberry" and "fried"
+    inside "friedcake", silently changing which foods are eligible."""
+    assert cs.classify("Strawberries, raw") is cs.State.RAW
+    assert cs.classify("Strawberry preserve") is cs.State.UNCLASSIFIED
+    assert cs.classify("Friedcake") is cs.State.UNCLASSIFIED
+    assert cs.classify("Chicken, fried") is cs.State.COOKED
+
+
+def test_conflict_is_symmetric_and_needs_both_sides_classified():
+    assert cs.conflict("chicken, roasted", "Chicken, raw")
+    assert cs.conflict("chicken, raw", "Chicken, roasted")
+    assert not cs.conflict("chicken", "Chicken, raw")       # request silent
+    assert not cs.conflict("chicken, roasted", "Chicken")   # candidate silent
+    assert not cs.conflict("chicken, roasted", "Chicken, grilled")  # agree
+
+
+def test_the_state_grouping_uses_only_declared_vocabulary():
+    """No new words enter the system here. Every cooked/raw token must already
+    be one the resolver acts on, so this module adds a GROUPING over an
+    existing set rather than a vocabulary of its own."""
+    from skills.nutrition import validators
+
+    declared = {str(p).lower() for p in validators._PREPARATIONS}
+    overlap = (cs._RAW_TOKENS | cs._COOKED_TOKENS) & declared
+    assert overlap, "the grouping shares no tokens with the declared set"
+    assert {"raw", "cooked", "roasted", "grilled", "fried"} <= (
+        cs._RAW_TOKENS | cs._COOKED_TOKENS)
+
+
+def test_no_food_name_appears_in_the_state_module():
+    """A grouping over a closed vocabulary is not a food table."""
+    import pathlib
+
+    source = (pathlib.Path(__file__).resolve().parent.parent / "skills"
+              / "nutrition" / "cooking_state.py").read_text("utf-8")
+    body = "\n".join(line for line in source.splitlines()
+                     if not line.strip().startswith("#"))
+    _, _, after = body.partition('"""')
+    _, _, code = after.partition('"""')       # drop the module docstring
+    for food in ("mackerel", "chicken", "beef", "salmon", "papaya"):
+        assert food not in code.lower(), f"{food!r} is named in the code"
+
+
+def test_the_cooking_state_policy_is_versioned():
+    assert cs.COOKING_STATE_POLICY_VERSION
+
+
+def test_cooking_state_classification_is_deterministic():
+    records = _mackerel_records()
+    outcomes = {el.ineligible_ids(records,
+                                  requested_identity="mackerel, roasted")
+                for _ in range(50)}
+    assert len(outcomes) == 1

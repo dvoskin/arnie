@@ -95,11 +95,54 @@ second authority on identity — and a veto is NOT an abstention: there is
 deliberately no reason meaning "unknown", because a rule that cannot evaluate
 its dimension stays silent rather than manufacturing a negative.
 
-Measured: 20/20 identical on frozen rows; 0 vetoes on curated mackerel rows
-(correct — they are all mechanically fine); **8/8 vetoed on branded queries for
-generic intent**, which is the rule earning its place. The dimensions that
-would discriminate the mackerel set are raw-vs-cooked and
-preparation-compatibility, and those are the NEXT increment.
+Measured: 50/50 identical on frozen rows; 0 vetoes on curated mackerel rows;
+**8/8 vetoed on branded queries for generic intent**.
+
+**INCREMENT 0.2 — RAW VERSUS COOKED, the dimension that actually caused the
+instability.** `skills/nutrition/cooking_state.py`. For `mackerel|roasted`
+USDA returns eight rows and the discriminating fact is plain in every one:
+
+```text
+VETOED    Fish, mackerel, Atlantic / king / spanish, raw        RAW
+eligible  Fish, mackerel, Atlantic / king / spanish, cooked, dry heat
+eligible  Fish, mackerel, salted · jack, canned, drained solids UNCLASSIFIED
+```
+
+A request for a ROASTED food cannot be served by a row stating RAW, and
+establishing that needs no language model. **The three rows left eligible are
+exactly the three the stable qualifier kept — and two of them, 174236 and
+173674, are rows the drift destroyed.** They can no longer be removed by any
+mechanical rule. 50/50 identical.
+
+**THE VOCABULARY IS DECLARED, NOT INVENTED.** Tokens come from
+`validators._PREPARATIONS`, the set the resolver already acts on, so this adds
+no new words — only a STATE GROUPING over an existing closed set, versioned as
+`food_cooking_state_v1`. A gate asserts no food name appears in the module's
+code.
+
+**CONSERVATIVE BY CONSTRUCTION.** `UNCLASSIFIED` is a first-class state, not a
+failure. Preservation terms (salted, canned, smoked, dried, frozen) decline to
+speak — canned fish is usually cooked and "usually" is not mechanical. A
+description asserting BOTH states declines to choose, because "raw, then
+cooked" is real USDA phrasing and picking one is identity work. A veto needs
+BOTH sides classified AND in conflict; everything else is silence.
+
+Mutations, signal verified before each verdict:
+
+```text
+unclassified treated as conflict   conflict(salted)->True      4 red
+substring instead of word bounds   "Strawberry preserve"->RAW  1 red
+both-states description picks one  "raw, then cooked"->COOKED  1 red
+```
+
+The substring signal is the sharpest: it classifies **"Strawberry preserve" as
+RAW**, because "raw" sits inside "strawberry" — the silent food-changing
+failure `pricing_artifact._without` was written for, arriving in a new module.
+
+**WHAT 0.2 DOES NOT DO.** The model still GATES: removing the raw rows
+mechanically does not stop `qualified(minimum_confidence=0.80)` abstaining on
+the cooked ones. Authority is REDUCED, not removed, and Phase 0's exit is
+unchanged.
 
 ### 1  RAW REPRODUCIBILITY PROOF
 
