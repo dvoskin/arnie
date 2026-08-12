@@ -89,7 +89,20 @@ class _CountUsdaFailures(logging.Handler):
             self.failures += 1
 
 
-async def build_one(entity: str, preparation: str) -> dict:
+def _row_fingerprint(row: dict) -> str:
+    """What the annotation was made ABOUT. If the source row changes, the
+    judgement is about something else and `source_changed` is an attributable
+    invalidation cause rather than silent drift."""
+    import hashlib
+
+    material = json.dumps({k: row.get(k) for k in
+                           ("fdc_id", "description", "data_type", "per100g")},
+                          sort_keys=True, default=str)
+    return "sha256:" + hashlib.sha256(material.encode()).hexdigest()[:16]
+
+
+async def build_one(entity: str, preparation: str, store=None,
+                    identity_key: str = "") -> dict:
     """The qualified candidate set for one (entity, preparation)."""
     import api.usda as usda
     from skills.nutrition import pricing_artifact as art
@@ -141,9 +154,32 @@ async def build_one(entity: str, preparation: str) -> dict:
     # Long USDA descriptions ("Fish, mackerel, Atlantic, raw") make the reply
     # longer per record, so a fixed record cap cannot bound it — smaller
     # batches can, and offline they are free.
+    # ⭐ PHASE 0.4 — REUSE BEFORE RESOLVING. A pair this artifact has already
+    # judged is not re-judged: not because the model would probably agree,
+    # but because an ordinary rebuild is not authority to change a semantic
+    # fact. Only rows with no resolved annotation reach the resolver at all.
+    from skills.nutrition import semantic_annotations as sa
+    from skills.nutrition.evidence_semantics import RESOLVER_MODEL
+
+    store = store if store is not None else sa.Store()
+    identity_key = identity_key or f"{entity}|{preparation}"
+    unseen = [r for r in rows
+              if store.needs_resolution(identity_key,
+                                        f"usda:{r.get('fdc_id')}",
+                                        _row_fingerprint(r))]
+    restated = [r for r in unseen
+                if store.stale_source(identity_key, f"usda:{r.get('fdc_id')}",
+                                      _row_fingerprint(r))]
+    if restated:
+        print(f"    {identity_key:<28} {len(restated)} row(s) CHANGED "
+              f"UPSTREAM — re-annotating with cause=source_changed")
+    if not unseen:
+        print(f"    {identity_key:<28} {len(rows)} rows, ALL ANNOTATED — "
+              f"resolver not called")
+
     kept, seen_ids = [], set()
-    for start in range(0, len(rows), _QUALIFY_BATCH):
-        chunk = rows[start:start + _QUALIFY_BATCH]
+    for start in range(0, len(unseen), _QUALIFY_BATCH):
+        chunk = unseen[start:start + _QUALIFY_BATCH]
         # BOUNDED RETRY, because truncation is a property of THIS reply, not
         # of the food: the same chunk usually parses on a second attempt. The
         # rule is unchanged — a batch that still fails after retries fails the
@@ -154,35 +190,81 @@ async def build_one(entity: str, preparation: str) -> dict:
         for attempt in range(_QUALIFY_ATTEMPTS):
             try:
                 q = await qualify_usda_rows(identity, chunk)
-            except Exception as exc:                        # pragma: no cover
-                return {"identity": identity, "status": FAILED,
-                        "reason": f"qualification raised: {exc}"}
-            if not (getattr(q, "disposition", "") ==
+            except Exception:
+                q = None
+            if q is not None and not (
+                    getattr(q, "disposition", "") ==
                     "resolver_down_no_candidates" and not q.rows):
                 break
-        if getattr(q, "disposition", "") == "resolver_down_no_candidates" \
-                and not q.rows:
-            # SEMANTIC_RESOLVER_DOWN != RAW_EVIDENCE_AUTHORIZED, and it also
-            # does not mean "this identity has no evidence". FAILED, not
-            # EMPTY — a truncated reply must never be written as a negative.
-            return {"identity": identity, "status": FAILED,
-                    "reason": "semantic resolver unavailable after "
-                              f"{_QUALIFY_ATTEMPTS} attempts "
-                              f"(batch {start // _QUALIFY_BATCH + 1})"}
-        for r in (q.rows or ()):
-            fid = str(r.get("fdc_id"))
+
+        # ⭐ A RESOLVER OUTAGE NO LONGER FAILS THE IDENTITY. It leaves these
+        # rows UNRESOLVED — preserved, recorded, revisitable — while every
+        # pair already annotated prices exactly as before. That is gate
+        # 0.4.2: model availability cannot change known output. Previously
+        # this returned FAILED and the whole identity was refused, which is
+        # why one bad reply could cost `mackerel|roasted` three valid rows.
+        usable = q is not None and not (
+            getattr(q, "disposition", "") == "resolver_down_no_candidates"
+            and not q.rows)
+        judged = {str(r.get("fdc_id")) for r in ((q.rows if q else None) or ())}
+
+        for row in chunk:
+            evidence_id = f"usda:{row.get('fdc_id')}"
+            if not usable:
+                store.record(sa.Annotation(
+                    identity_key=identity_key, evidence_id=evidence_id,
+                    relationship=sa.UNRESOLVED, confidence=0.0,
+                    resolver_model=RESOLVER_MODEL,
+                    source_fingerprint=_row_fingerprint(row)))
+                continue
+            # The resolver KEPT it -> it judged the pair identity-bearing at
+            # or above its own floor. Anything it saw and did not keep is a
+            # judged negative. Both are recorded; only the first can price.
+            hit = str(row.get("fdc_id")) in judged
+            fingerprint = _row_fingerprint(row)
+            cause = (sa.SOURCE_CHANGED
+                     if store.stale_source(identity_key, evidence_id,
+                                           fingerprint) else "")
+            store.record(sa.Annotation(
+                identity_key=identity_key, evidence_id=evidence_id,
+                relationship=(sa.SAME_IDENTITY if hit
+                              else sa.DIFFERENT_IDENTITY),
+                confidence=(0.95 if hit else 0.95),
+                resolver_model=RESOLVER_MODEL,
+                resolver_version=getattr(q, "resolver_version", "") or "",
+                source_fingerprint=fingerprint), cause=cause)
+            store.resolved_this_build.append((identity_key, evidence_id))
+
+    # ⭐ THE CANDIDATE SET IS NOW A POLICY RESULT OVER STORED ANNOTATIONS,
+    # not whatever the resolver happened to return this run. Reused and newly
+    # written annotations are read the same way, by the same code.
+    unresolved = []
+    for row in rows:
+        evidence_id = f"usda:{row.get('fdc_id')}"
+        annotation = store.get(identity_key, evidence_id)
+        if sa.eligible(annotation):
+            fid = str(row.get("fdc_id"))
             if fid not in seen_ids:
                 seen_ids.add(fid)
-                kept.append(r)
+                kept.append(row)
+        elif sa.disposition(annotation).startswith("unresolved"):
+            unresolved.append(evidence_id)
 
     kept = [{"fdc_id": r.get("fdc_id"), "description": r.get("description"),
              "per100g": r.get("per100g") or {}}
             for r in kept if (r.get("per100g") or {}).get("calories")]
     if not kept:
+        # UNRESOLVED IS NOT "NO EVIDENCE". If nothing priced because nothing
+        # is annotated yet, that is a gap to revisit, not a verdict — and it
+        # must not be written as an authoritative negative.
+        if unresolved:
+            return {"identity": identity, "status": FAILED,
+                    "reason": f"{len(unresolved)} of {len(rows)} rows "
+                              f"unresolved; none annotated as priceable"}
         return {"identity": identity, "status": EMPTY,
-                "reason": f"0 of {len(rows)} rows qualified"}
+                "reason": f"0 of {len(rows)} rows priceable by policy"}
     return {"identity": identity, "status": MATERIAL, "candidates": kept,
-            "raw": len(rows)}
+            "raw": len(rows), "unresolved": tuple(unresolved)}
 
 
 def _retain_unexplained(entries: dict) -> int:
@@ -245,10 +327,26 @@ async def main() -> int:
     preparations = ("",) + tuple(spec_for("preparation").vocabulary)
     entities = [art.normalize(e) for e in (args.entities or SEED)]
 
+    # ⭐ ANNOTATIONS ARE LOADED FROM THE COMMITTED ARTIFACT AND REUSED. This
+    # is what makes a rebuild a controlled migration rather than a fresh
+    # sample: every pair judged before is read, not re-asked.
+    from skills.nutrition import semantic_annotations as sa
+
+    prior = {}
+    if art.ARTIFACT_PATH.exists():
+        try:
+            prior = json.loads(art.ARTIFACT_PATH.read_text()).get(
+                "annotations") or {}
+        except Exception:
+            prior = {}
+    store = sa.Store.from_payload(prior)
+    print(f"loaded {len(store.by_key)} existing semantic annotation(s)")
+
     results, entries = [], {}
     for entity in entities:
         for preparation in preparations:
-            r = await build_one(entity, preparation)
+            r = await build_one(entity, preparation, store=store,
+                                identity_key=art.key(entity, preparation))
             r["key"] = art.key(entity, preparation)
             results.append(r)
             if r["status"] == MATERIAL:
@@ -321,8 +419,15 @@ async def main() -> int:
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0)
                                 .isoformat().replace("+00:00", "Z"),
         "entries": dict(sorted(entries.items())),
+        # The durable semantic facts, versioned and reviewable. Their presence
+        # here is what lets the NEXT build reuse rather than re-roll.
+        "semantic_policy_version": sa.SEMANTIC_POLICY_VERSION,
+        "annotations": store.to_payload(),
     }
     print(f"\n{len(entries)}/{len(results)} identities carry qualified evidence")
+    print(f"semantic annotations: {len(store.by_key)} stored, "
+          f"{len(store.resolved_this_build)} resolved THIS BUILD "
+          f"({'REUSE ONLY' if not store.resolved_this_build else 'new evidence seen'})")
     if retained:
         print(f"{retained} candidate(s) RETAINED from the committed artifact "
               f"with no attributable removal reason — a rebuild may not delete "

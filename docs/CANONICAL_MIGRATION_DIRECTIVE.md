@@ -170,6 +170,88 @@ token conflict instead of medium   grilled vs roasted -> conflict   2 red
 multi-medium picks the first       "fried, then baked" -> DRY       1 red
 ```
 
+### 0.4 — THE MODEL ANNOTATES ONCE; CODE DECIDES WHAT IT MEANS
+
+Two options were MEASURED before this design was chosen, and both are closed.
+
+**Removing the model is not viable.** With mechanical eligibility alone,
+deterministic fuzzy ranking selects `Babyfood, guava and papaya with tapioca`
+for "papaya", `Chicken spread` for "chicken" and `Fish oil, salmon` at
+902 kcal for "salmon" — zero vetoes on all three. The semantic boundary is
+load bearing.
+
+**Re-sampling the model is not viable either.** `temperature` returns
+`400 deprecated for this model`, and 0.75-vs-0.80 on one row moves the priced
+universe with no source change.
+
+So the model becomes a ONE-TIME ANNOTATOR whose output is durable, versioned,
+reviewable DATA — `skills/nutrition/semantic_annotations.py`.
+
+```text
+annotation.relationship == SAME_IDENTITY  ->  deterministic policy  ->  eligible
+NOT:   model -> eligible=true
+```
+
+That distinction is the slice. Persisting the model's own eligibility
+conclusion would SERIALIZE the gate rather than remove it — the same authority
+with a longer cache. The vocabulary therefore contains no operational member,
+and `Annotation` carries no `eligible` field.
+
+**PROVEN AT BUILD LEVEL, NOT ONLY IN UNIT TESTS:**
+
+```text
+build 1                     44 annotations persisted, 44 resolved
+build 2, API KEY POISONED   "ALL ANNOTATED — resolver not called"
+                            0 resolved this build (REUSE ONLY)
+                            mackerel|roasted -> [175120, 174236, 173674, 171994]
+                            IDENTICAL, including all three rows the original
+                            drift destroyed, with the model unreachable
+```
+
+**THE BEHAVIOURAL FIX.** A resolver outage no longer FAILS the identity. It
+marks unseen rows `UNRESOLVED` and prices everything already annotated. That
+is exactly why `mackerel|roasted` lost three rows before: one bad reply
+refused the whole identity.
+
+**`UNRESOLVED` IS NOT `DIFFERENT_IDENTITY`.** Four dispositions stay distinct —
+`unresolved_never_annotated`, `ambiguous`, `different_identity`,
+`below_confidence`. Two are revisitable and two are settled, and only a
+distinct reason says which. A corrupt stored row loads as ABSENT. The model
+cannot assert `UNRESOLVED` at all, or it could launder a failure into a
+stored fact.
+
+**A NEWER MODEL IS NOT AN INVALIDATION EVENT.** `rebuild`, `retry`,
+`new_model_available`, `confidence_changed` and `unexplained` cannot be
+spelled as causes. `needs_resolution` is AST-gated against reading confidence,
+model or version.
+
+**`source_fingerprint` IS ENFORCED, NOT MERELY RECORDED.** A changed USDA row
+makes the stored verdict answer a question nobody asked, so it re-annotates
+with `cause=source_changed`. A MISSING fingerprint does NOT force
+re-annotation — silence about the source is not evidence the source changed,
+the same invariant one layer down.
+
+Eight mutations, each with its signal verified before the verdict:
+
+```text
+missing annotation -> DIFFERENT_IDENTITY   3 red
+rebuild as a valid cause                   2 red
+replacement with no cause                  7 red
+reuse re-rolls on marginal confidence      1 red
+model may assert UNRESOLVED                1 red
+fingerprint ignored                        1 red
+missing fingerprint forces re-annotation   1 red
+DIFFERENT_IDENTITY becomes priceable       3 red
+```
+
+**PHASE 0 EXIT IS NOW MET AT BUILD TIME**: production pricing is computable
+without an LLM call once source evidence is retrieved — demonstrated with the
+resolver not merely unnecessary but BROKEN.
+
+**NEXT IS PHASE 1**, and it is not yet done: 10-50 clean PRE-RETENTION builds,
+100% identical, no statistical tolerance, with retention forbidden from being
+what creates agreement.
+
 **WHAT 0.2 AND 0.3 DO NOT DO.** The model still GATES: removing raw rows and
 incompatible media mechanically does not stop
 `qualified(minimum_confidence=0.80)` abstaining on the rows that survive.
