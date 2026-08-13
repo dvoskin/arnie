@@ -76,6 +76,12 @@ def test_a_row_can_be_admitted_evidence_and_a_held_winner():
     """⭐ THE STATE THE STANDING RULE EXISTS FOR."""
     held = dict((identity, cause) for identity, _e, cause in wr.held())
     assert "mushrooms|" in held and "rice|" in held and "salmon|" in held
+    # ⭐ RE-FILED: these three were held under AS_EATEN_REWORK, a blocker that
+    # could never resolve them — the preference was never going to touch
+    # shiitake-vs-white. A hold whose cause cannot unblock it is a hold nobody
+    # can act on.
+    for identity in ("mushrooms|", "rice|", "salmon|"):
+        assert held[identity] == wr.SPECIALTY_BEATS_GENERIC_CAUSE
 
     reviewed = wr.by_identity()
     for identity, _evidence, _cause, note in wr.RANKING_DEFECTS:
@@ -125,16 +131,13 @@ def test_the_review_covers_the_regime_phase_zero_freezes_against():
     record agreement rather than a decision — so a moved winner must FAIL."""
     with _canonical_regime() as fi:
         winners = _canonical_winners(fi)
-    failures = wr.accounting(winners)
-
-    # `potato|` is the ONE expected failure and it is a true statement about
-    # the artifact: its winner is the part-of-food row this round rejected,
-    # and it clears when the artifact is rebuilt without that row.
-    expected = [f for f in failures if f.startswith("potato|")]
-    assert len(expected) == 1, failures
-    assert failures == tuple(expected), (
-        f"unexpected winner-review failures: "
-        f"{[f for f in failures if not f.startswith('potato|')]}")
+    # ⭐ NOW ZERO. `potato|` was the one outstanding failure — its winner was
+    # the part-of-food row this round rejected — and the artifact rebuild
+    # cleared it. The population is complete and reconciled: every identity
+    # the ranker produces carries a winner state, and no rejected row holds
+    # one. THIS IS THE FREEZE CONDITION.
+    assert wr.accounting(winners) == (), wr.accounting(winners)
+    assert len(winners) == 27 == len(wr.by_identity())
 
 
 def test_a_moved_winner_is_caught_rather_than_absorbed():
@@ -198,14 +201,21 @@ def test_the_undecided_cooked_axis_is_derived_not_hand_listed():
         if "raw" in states and "cooked" in states:
             consequential.add(key)
 
+    # ⭐ FIVE, NOT SIX — AND `potato|` LEFT FOR A REASON WORTH RECORDING.
+    # Removing "Potatoes, raw, SKIN" took the only RAW row off that ladder, so
+    # the identity no longer has a raw-vs-cooked choice for a missing policy
+    # to make. An admission fix closed a ranking ambiguity as a side effect;
+    # `potato|` is still HELD, but now for representativeness rather than for
+    # an undecided axis.
     assert consequential == {"asparagus|", "broccoli|", "cauliflower|",
-                             "mackerel|", "potato|", "tilapia|"}, consequential
+                             "mackerel|", "tilapia|"}, consequential
 
-    # every one of them is HELD, except potato| whose winner is REJECTED
-    # evidence and which is therefore absent from the review entirely
     held = {identity for identity, _e, cause in wr.held()
             if cause == wr.COOKING_YIELD_COVERAGE}
-    assert held == consequential - {"potato|"}, held
+    assert held == consequential, held
+    assert wr.by_identity()["potato|"][1] == wr.HELD
+    assert (wr.by_identity()["potato|"][2]
+            == wr.SPECIALTY_BEATS_GENERIC_CAUSE)
 
 
 def test_an_undecided_axis_with_one_state_available_is_not_held():
@@ -249,4 +259,4 @@ def test_the_signed_winners_are_the_only_ones_that_may_freeze():
     held = {identity for identity, _e, _c in wr.held()}
     assert not (set(signed) & held), "an identity is both signed and held"
     assert len(signed) + len(held) == len(wr.by_identity())
-    assert len(signed) == 12 and len(held) == 14
+    assert len(signed) == 13 and len(held) == 14

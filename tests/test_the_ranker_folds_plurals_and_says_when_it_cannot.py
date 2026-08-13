@@ -116,8 +116,13 @@ def test_the_fold_does_not_disturb_the_penalty_vocabularies():
 
 @pytest.mark.parametrize("v2_on", [False, True])
 @pytest.mark.parametrize("query, expected", [
-    ("banana", "Bananas, raw"),
-    ("potato", "Potatoes, raw, skin"),
+    ("banana", "Bananas"),
+    # ⚠ THE ROW, NOT THE PREFIX, WAS THE ACCIDENT. This used to name
+    # "Potatoes, raw, skin" — the part-of-food record Phase 0.9 rejected and
+    # the artifact rebuild removed. What the fold guarantees is that the
+    # SINGULAR request reaches USDA's PLURAL heading; which row then wins is
+    # the ranker's business and the winner review's.
+    ("potato", "Potatoes"),
 ])
 def test_the_singular_request_now_reaches_the_plural_record(query, expected,
                                                             v2_on):
@@ -132,7 +137,7 @@ def test_the_singular_request_now_reaches_the_plural_record(query, expected,
     with _v2(v2_on):
         winner, _ = best_candidate(query, list(entry.get("candidates") or ()))
     assert winner is not None, f"{query!r} still reaches nothing"
-    assert winner.get("description") == expected
+    assert str(winner.get("description", "")).startswith(expected)
 
 
 @pytest.mark.parametrize("v2_on", [False, True])

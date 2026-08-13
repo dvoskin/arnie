@@ -45,9 +45,15 @@ AS_EATEN_REWORK = "as_eaten_preference_awaiting_cut_and_coating_controls"
 #: IS beef. The gap is that RETRIEVAL never surfaced an ordinary beef row.
 #: That is neither a ranking defect nor an identity question, and collapsing
 #: it into either would misfile it, so it gets its own cause.
-RETRIEVAL_COVERAGE = "the only retrieved candidate is a poor representative"
+RETRIEVAL_COVERAGE = "no better representative was retrieved for this identity"
+#: ⭐ PROMOTED TO A BLOCKING CAUSE 2026-08-13. Filing these under
+#: AS_EATEN_REWORK was a MISFILE: the as-eaten preference was never going to
+#: touch shiitake-vs-white or glutinous-vs-plain, so the hold named a blocker
+#: that could not unblock it. A hold whose stated cause cannot resolve it is
+#: indistinguishable from a hold nobody understands.
+SPECIALTY_BEATS_GENERIC_CAUSE = "a specialty variant outranks the generic form"
 BLOCKING_CAUSES = frozenset({COOKING_YIELD_COVERAGE, AS_EATEN_REWORK,
-                             RETRIEVAL_COVERAGE})
+                             RETRIEVAL_COVERAGE, SPECIALTY_BEATS_GENERIC_CAUSE})
 
 #: Ranking defects, filed rather than fixed by admission. Each names a row
 #: that is legitimately the requested food and is still the wrong
@@ -115,6 +121,15 @@ def _rows():
          "cooked dry heat; already ADMITTED semantically, single candidate"),
         ("tofu|", "usda:174291", "hard tofu prepared with nigari is the generic block"),
         ("tofu|fried", "usda:172451", "fried tofu; matches the request directly"),
+        # ⭐ RE-ADJUDICATED FROM HELD TO SIGNED against ea771c9. It was held as
+        # a "lab sample" awaiting the as-eaten rework — and that label was
+        # WRONG: "ribs prepared, fast roasted" is an ordinary row, not a
+        # lean-only reference, so the preference was never going to move it.
+        # Measured against the reworked regime it is now STABLE IN BOTH modes,
+        # and it is the row a reviewer read and signed ADMIT by hand.
+        ("beef|roasted", "usda:173089",
+         "NZ 'ribs prepared, cooked, fast roasted' 197; semantically signed by "
+         "hand, and stable under both the canonical-safe and reworked regimes"),
     ]:
         sign(identity, evidence, note)
 
@@ -155,41 +170,49 @@ def _rows():
              f"cooking_yield states nothing for this food, and the table "
              f"already carries 'fish' — the query simply never contains it")
 
-    # ⭐⭐ THE LAB SAMPLES. The as-eaten preference was switched off because a
-    # ±0.4 tie-break was deciding CUT and COATING, dimensions it never
-    # evaluates. That was the right call and it has an honest cost: "meat
-    # only" and "lean only, trimmed to 0\" fat" are USDA REFERENCE SAMPLES,
-    # not meals. Signing these would freeze a transitional ranking outcome
-    # already expected to move when the preference is reworked.
+    # ⭐⭐ RE-ADJUDICATED AGAINST ea771c9, AND SEVEN OF THE EIGHT ORIGINAL
+    # as_eaten HOLDS NAMED A BLOCKER THAT CANNOT UNBLOCK THEM.
+    #
+    # Measured, per identity: does the reworked preference move this winner,
+    # and does the ladder even CONTAIN an as-eaten row comparable to it?
+    #
+    #   chicken|roasted   MOVES     -> the rework resolves it; still held only
+    #                                  because the preference is OFF in the
+    #                                  regime Phase 0 freezes against
+    #   beef|grilled      no move   -> NO comparable as-eaten row EXISTS. The
+    #   chicken|fried     no move      preference can never help; the ladder
+    #                                  simply has no as-eaten form of that cut
+    #   beef|fried        no move   -> winner is NOT a trimmed reference. My
+    #   beef|roasted      no move      "lab sample" label was WRONG for these
+    #                                  two: NZ knuckle and NZ ribs-prepared are
+    #                                  ordinary rows, not lean-only samples
+    #
+    # A hold whose stated cause cannot resolve it is a hold nobody can act on.
+    # Re-filed under what would actually change the answer.
+    hold("chicken|roasted", "usda:172395", AS_EATEN_REWORK,
+         "'meat only' 167; the reworked preference DOES move this to meat and "
+         "skin 223 — it is held only because the preference is off in the "
+         "regime Phase 0 freezes against, so it clears with that canary")
+
     for identity, evidence, note in [
         ("beef|grilled", "usda:174702",
-         "ribeye filet 'separable lean only, trimmed to 0\" fat' 208"),
-        ("beef|fried", "usda:173085",
-         "New Zealand knuckle 178 — the leanest cut on a ladder that is "
-         "entirely New Zealand imported"),
+         "ribeye filet 'separable lean only, trimmed to 0\" fat' 208 — and NO "
+         "comparable as-eaten ribeye was retrieved, so no preference can fix "
+         "it; the ladder's lean-and-fat rows are a different CUT"),
         ("chicken|fried", "usda:171053",
-         "'meat only' 219 for a food normally eaten with skin"),
-        ("chicken|roasted", "usda:172395",
-         "'meat only' 167; the ladder holds meat and skin at 223"),
-        # ⚠ A FIFTH ROW, EXTENDING THE RULE RATHER THAN THE LIST. This one is
-        # already ADMITTED semantically (usda:173089, signed by hand), so it
-        # was not among the four lab samples — but it IS one of the five
-        # winners the as-eaten split reverted, so the reworked preference is
-        # expected to move it too. Holding it for the same cause; flagged
-        # because it is an extension of the call, not the call itself.
-        ("beef|roasted", "usda:173089",
-         "NZ 'ribs prepared, fast roasted' 197 — semantically signed, but "
-         "one of the five winners the as-eaten split reverted"),
+         "'meat only' 219 — the only as-eaten sibling is BATTERED, which is a "
+         "different coating and correctly not comparable"),
+        ("beef|fried", "usda:173085",
+         "New Zealand knuckle 178 on a ladder that is ENTIRELY New Zealand "
+         "imported; no domestic beef row was retrieved at all"),
     ]:
-        hold(identity, evidence, AS_EATEN_REWORK, note)
+        hold(identity, evidence, RETRIEVAL_COVERAGE, note)
 
-    # ⭐⭐⭐ ADMITTED AND STILL NOT THE REPRESENTATIVE. These are the rows the
-    # standing rule exists for: each IS the requested food, so admission
-    # cannot touch them, and each is the wrong pick. Filed as ranking defects
-    # in RANKING_DEFECTS and held here — not rejected.
-    for identity, evidence, _cause, note in RANKING_DEFECTS:
-        hold(identity, evidence, AS_EATEN_REWORK,
-             f"specialty variant beats the generic: {note}")
+    # ⭐⭐⭐ ADMITTED AND STILL NOT THE REPRESENTATIVE. Each IS the requested
+    # food, so admission cannot touch them — the class the standing rule
+    # exists for. Now carrying the cause that describes them.
+    for identity, evidence, _c, note in RANKING_DEFECTS:
+        hold(identity, evidence, SPECIALTY_BEATS_GENERIC_CAUSE, note)
 
     # ⭐⭐⭐⭐ NO RANKING POLICY CAN FIX THIS ONE. `beef|` has exactly one
     # candidate, so there is nothing to rank; the row IS beef, so there is
@@ -198,7 +221,18 @@ def _rows():
          "'manufacturing beef, cooked, boiled' 126 is the ONLY candidate; the "
          "signed sibling usda:173086 is UNRESOLVED for exactly this reason")
 
-    # ⛔ `potato|` IS DELIBERATELY ABSENT. Its current winner is "Potatoes,
+    # ⭐ `potato|` AFTER THE REBUILD. The part-of-food row is gone, and the
+    # ladder rose to "skin with salt" 132 rather than boiled flesh 87 — a
+    # legitimate whole potato already signed ADMIT in the frozen 77, so
+    # admission cannot touch it either. Exactly the class the standing rule
+    # exists for: REJECT the evidence, then HOLD the successor.
+    hold("potato|", "usda:170115", SPECIALTY_BEATS_GENERIC_CAUSE,
+         "microwaved skin-on 132 kcal wins after the part-of-food row was "
+         "removed; boiled flesh at 87 is on the same ladder and is closer to "
+         "what a bare 'potato' means. 58 -> 132 is an admission fix, not a "
+         "good winner")
+
+    # ⛔ NOTE FOR THE RECORD. Its current winner is "Potatoes,
     # raw, SKIN" — a part-of-food record, REJECTED as evidence. A rejected row
     # cannot hold a winner state in any form, so `accounting` will report the
     # contradiction until the artifact is rebuilt without it. That failure is
