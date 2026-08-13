@@ -211,6 +211,26 @@ PRICEABLE = frozenset({SAME_IDENTITY, COMPATIBLE_SPECIALIZATION})
 MINIMUM_CONFIDENCE = 0.80
 
 
+#: Review states. `BASELINE_REVIEWED` is written by the Phase 1.5 freeze and
+#: means A PERSON READ THIS ROW AND SIGNED IT.
+#:
+#: ⚠ IT IS NOT `invalidation_reason`, AND THE TWO MUST NOT BE CONFLATED. The
+#: freeze REPLACES model verdicts with reviewed ones, and `baseline_migration`
+#: is the CAUSE authorising that replacement — an argument to `Store.record`.
+#: Writing it into the annotation's own `invalidation_reason` would mark the
+#: reviewed row as invalidated, and `eligible()` refuses any annotation
+#: carrying one — which would make all 29 ADMITS ineligible and empty the
+#: artifact the review exists to populate. A signature is not an invalidation.
+UNREVIEWED = "unreviewed"
+BASELINE_REVIEWED = "baseline_reviewed"
+
+
+def reviewed(annotation: Optional[Annotation]) -> bool:
+    """Has a person signed this pair?"""
+    return bool(annotation is not None
+                and annotation.review_status == BASELINE_REVIEWED)
+
+
 def eligible(annotation: Optional[Annotation]) -> bool:
     """May this evidence compete to price this identity?
 
@@ -236,17 +256,20 @@ def disposition(annotation: Optional[Annotation]) -> str:
     The distinction this function exists to preserve:
 
         UNRESOLVED         we have no judgement          -> revisit
+        UNRESOLVED+signed  a person declined to rule     -> settled by a human
         DIFFERENT_IDENTITY the model judged it not this  -> settled
         AMBIGUOUS          the model could not tell      -> revisit
         below_confidence   judged, but weakly            -> settled by policy
 
     Collapsing the first into the second is exactly the defect this whole
-    phase exists to remove.
+    phase exists to remove — and the second line is the same distinction one
+    layer down: a reviewer's refusal to rule spells the same relationship as
+    "nobody looked", so without a separate disposition the review is invisible.
     """
     if annotation is None:
         return "unresolved_never_annotated"
     if not annotation.resolved:
-        return "unresolved"
+        return "unresolved_reviewed" if reviewed(annotation) else "unresolved"
     if annotation.invalidation_reason:
         return f"invalidated:{annotation.invalidation_reason}"
     if annotation.relationship == DIFFERENT_IDENTITY:
@@ -285,9 +308,21 @@ class Store:
         longer exists — reusing it would be answering a question nobody asked.
         That is `source_changed`, an attributable cause, and it is the only
         property of the annotation this method may consult beyond existence.
+
+        ⭐⭐ AND A HUMAN NON-DECISION IS A DECISION. Phase 1.5 signed three
+        pairs `UNRESOLVED` deliberately: a reviewer read the record, judged the
+        available evidence insufficient, and declined to rule. That is not the
+        same object as the `UNRESOLVED` the system writes when nobody has
+        looked, even though both spell the same relationship — so asking the
+        model would replace a considered refusal with a sampled opinion and
+        erase the review on every rebuild. A REVIEWED row is settled; it stays
+        ineligible (`UNRESOLVED` is not in `PRICEABLE`) until a human moves it,
+        and only a changed source can reopen it.
         """
         existing = self.get(identity_key, evidence_id)
-        if existing is None or not existing.resolved:
+        if existing is None:
+            return True
+        if not existing.resolved and not reviewed(existing):
             return True
         if (source_fingerprint and existing.source_fingerprint
                 and source_fingerprint != existing.source_fingerprint):

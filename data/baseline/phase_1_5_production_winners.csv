@@ -1,0 +1,28 @@
+identity_key,evidence_id,already_signed,winner,kcal_per_100g,runner_up,runner_up_kcal,kcal_delta_if_rejected,n_candidates
+asparagus|,usda:168389,NO,"Asparagus, raw",20.0,"Asparagus, frozen, unprepared",24.0,4.0,8
+banana|,usda:173944,NO,"Bananas, raw",89.0,"Bananas, overripe, raw",85.0,-4.0,2
+beef|,usda:174730,NO,"Beef, New Zealand, imported, manufacturing beef, cooked, boiled",126,,,,1
+beef|fried,usda:173085,NO,"Beef, New Zealand, imported, knuckle, cooked, fast fried",178,"Beef, New Zealand, imported, striploin, separable lean and fat, cooked, fast fried",301,123.0,5
+beef|grilled,usda:174702,NO,"Beef, ribeye filet, boneless, separable lean only, trimmed to 0"" fat, choice, cooked, grilled",208,"Beef, ribeye filet, boneless, separable lean only, trimmed to 0"" fat, select, cooked, grilled",186,-22.0,5
+beef|roasted,usda:169497,NO,"Beef, chuck eye roast, boneless, America's Beef Roast, separable lean only, trimmed to 0"" fat, select, cooked, roasted",172,"Beef, chuck eye roast, boneless, America's Beef Roast, separable lean only, trimmed to 0"" fat, choice, cooked, roasted",190,18.0,7
+broccoli|,usda:747447,NO,"Broccoli, raw",31.0,"Broccoli, raw",34.0,3.0,10
+cauliflower|,usda:169986,NO,"Cauliflower, raw",25.0,"Cauliflower, frozen, unprepared",24.0,-1.0,6
+chicken|fried,usda:171053,NO,"Chicken, broilers or fryers, meat only, cooked, fried",219,"Chicken, broilers or fryers, back, meat only, cooked, fried",288,69.0,6
+chicken|grilled,usda:171534,NO,"Chicken, broiler or fryers, breast, skinless, boneless, meat only, cooked, grilled",151,"Chicken, broiler or fryers, breast, skinless, boneless, meat only, with added solution, cooked, grilled",148,-3.0,2
+chicken|roasted,usda:173635,NO,"Chicken, roasting, meat and skin, cooked, roasted",223,"Chicken, roasting, meat only, cooked, roasted",167,-56.0,4
+egg|,usda:748967,NO,"Eggs, Grade A, Large, egg whole",148,"Egg, whole, cooked, fried",196,48.0,5
+egg|fried,usda:173423,NO,"Egg, whole, cooked, fried",196,,,,1
+mackerel|,usda:175119,NO,"Fish, mackerel, Atlantic, raw",205,"Fish, mackerel, king, raw",105,-100.0,7
+mackerel|roasted,usda:175120,yes,"Fish, mackerel, Atlantic, cooked, dry heat",262,"Fish, mackerel, king, cooked, dry heat",134,-128.0,4
+mushrooms|,usda:170097,NO,"Mushrooms, shiitake, cooked, with salt",56.0,"Mushrooms, shiitake, cooked, without salt",56.0,0.0,4
+mushrooms|grilled,usda:169243,NO,"Mushrooms, portabella, grilled",29.0,"Mushrooms, portabella, exposed to ultraviolet light, grilled",29.0,0.0,2
+oats|,usda:173905,NO,"Cereals, oats, regular and quick, unenriched, cooked with water (includes boiling and microwaving), without salt",71.0,"Cereals, oats, regular and quick and instant, unenriched, cooked with water (includes boiling and microwaving), with salt",71.0,0.0,2
+potato|,usda:170032,NO,"Potatoes, raw, skin",58.0,"Potatoes, boiled, cooked in skin, flesh, with salt",87.0,29.0,4
+potato|fried,usda:170698,NO,"Fast foods, potato, french fried in vegetable oil",312,,,,1
+rice|,usda:169711,NO,"Rice, white, glutinous, unenriched, cooked",97.0,"Rice, brown, parboiled, cooked, UNCLE BENS",147,50.0,5
+salmon|,usda:173688,NO,"Fish, salmon, chinook, raw",179,"Fish, salmon, chum, raw",120,-59.0,13
+shrimp|,usda:175180,NO,"Crustaceans, shrimp, cooked",99.0,"Crustaceans, shrimp, raw",85.0,-14.0,3
+tilapia|,usda:175176,NO,"Fish, tilapia, raw",96.0,"Fish, tilapia, cooked, dry heat",128,32.0,2
+tilapia|roasted,usda:175177,yes,"Fish, tilapia, cooked, dry heat",128,,,,1
+tofu|,usda:172451,NO,"Tofu, fried",270,"Tofu, hard, prepared with nigari",145,-125.0,4
+tofu|fried,usda:172451,NO,"Tofu, fried",270,"Tofu, fried, prepared with calcium sulfate",270,0.0,2
