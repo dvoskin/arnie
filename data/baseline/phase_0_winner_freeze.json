@@ -1,0 +1,275 @@
+{
+ "regime": "rank_v2",
+ "rows": [
+  {
+   "identity_key": "asparagus|",
+   "winner_evidence_id": "usda:168389",
+   "winner_status": "held",
+   "reason": "cooking_yield_has_no_entry_for_this_food",
+   "note": "a raw row wins on an UNDECIDED cooked axis (1 raw / 4 cooked); cooking_yield states nothing for this food, and the table already carries 'fish' \u2014 the query simply never contains it",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "7a1b0bf56c24c26e",
+   "candidate_count": 8
+  },
+  {
+   "identity_key": "banana|",
+   "winner_evidence_id": "usda:173944",
+   "winner_status": "signed",
+   "reason": "raw; the only alternative on the ladder is overripe",
+   "note": "raw; the only alternative on the ladder is overripe",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "02360b6a7db378f3",
+   "candidate_count": 2
+  },
+  {
+   "identity_key": "beef|",
+   "winner_evidence_id": "usda:174730",
+   "winner_status": "held",
+   "reason": "no better representative was retrieved for this identity",
+   "note": "'manufacturing beef, cooked, boiled' 126 is the ONLY candidate; the signed sibling usda:173086 is UNRESOLVED for exactly this reason",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "47760ba9e02378bb",
+   "candidate_count": 1
+  },
+  {
+   "identity_key": "beef|fried",
+   "winner_evidence_id": "usda:173085",
+   "winner_status": "held",
+   "reason": "no better representative was retrieved for this identity",
+   "note": "New Zealand knuckle 178 on a ladder that is ENTIRELY New Zealand imported; no domestic beef row was retrieved at all",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "fa88a6d6d4d32112",
+   "candidate_count": 5
+  },
+  {
+   "identity_key": "beef|grilled",
+   "winner_evidence_id": "usda:174702",
+   "winner_status": "held",
+   "reason": "no better representative was retrieved for this identity",
+   "note": "ribeye filet 'separable lean only, trimmed to 0\" fat' 208 \u2014 and NO comparable as-eaten ribeye was retrieved, so no preference can fix it; the ladder's lean-and-fat rows are a different CUT",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "c0468bbecfe69fa7",
+   "candidate_count": 5
+  },
+  {
+   "identity_key": "beef|roasted",
+   "winner_evidence_id": "usda:173089",
+   "winner_status": "signed",
+   "reason": "NZ 'ribs prepared, cooked, fast roasted' 197; semantically signed by hand, and stable under both the canonical-safe and reworked regimes",
+   "note": "NZ 'ribs prepared, cooked, fast roasted' 197; semantically signed by hand, and stable under both the canonical-safe and reworked regimes",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "ca6520abbe639a53",
+   "candidate_count": 7
+  },
+  {
+   "identity_key": "broccoli|",
+   "winner_evidence_id": "usda:747447",
+   "winner_status": "held",
+   "reason": "cooking_yield_has_no_entry_for_this_food",
+   "note": "a raw row wins on an UNDECIDED cooked axis (4 raw / 6 cooked); cooking_yield states nothing for this food, and the table already carries 'fish' \u2014 the query simply never contains it",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "4e4dee0b0f970d43",
+   "candidate_count": 10
+  },
+  {
+   "identity_key": "cauliflower|",
+   "winner_evidence_id": "usda:169986",
+   "winner_status": "held",
+   "reason": "cooking_yield_has_no_entry_for_this_food",
+   "note": "a raw row wins on an UNDECIDED cooked axis (1 raw / 4 cooked); cooking_yield states nothing for this food, and the table already carries 'fish' \u2014 the query simply never contains it",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "df2120ece88d77af",
+   "candidate_count": 6
+  },
+  {
+   "identity_key": "chicken|fried",
+   "winner_evidence_id": "usda:171053",
+   "winner_status": "held",
+   "reason": "no better representative was retrieved for this identity",
+   "note": "'meat only' 219 \u2014 the only as-eaten sibling is BATTERED, which is a different coating and correctly not comparable",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "3ebaa20ea2dccfde",
+   "candidate_count": 6
+  },
+  {
+   "identity_key": "chicken|grilled",
+   "winner_evidence_id": "usda:171534",
+   "winner_status": "signed",
+   "reason": "skinless boneless breast is the canonical read of grilled chicken",
+   "note": "skinless boneless breast is the canonical read of grilled chicken",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "e28a885f58da25fe",
+   "candidate_count": 2
+  },
+  {
+   "identity_key": "chicken|roasted",
+   "winner_evidence_id": "usda:172395",
+   "winner_status": "held",
+   "reason": "as_eaten_preference_awaiting_cut_and_coating_controls",
+   "note": "'meat only' 167; the reworked preference DOES move this to meat and skin 223 \u2014 it is held only because the preference is off in the regime Phase 0 freezes against, so it clears with that canary",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "fd785f2144f89503",
+   "candidate_count": 4
+  },
+  {
+   "identity_key": "egg|",
+   "winner_evidence_id": "usda:172186",
+   "winner_status": "signed",
+   "reason": "poached; the ladder's cooked forms span 143-155",
+   "note": "poached; the ladder's cooked forms span 143-155",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "5ed332bd5df69e48",
+   "candidate_count": 5
+  },
+  {
+   "identity_key": "egg|fried",
+   "winner_evidence_id": "usda:173423",
+   "winner_status": "signed",
+   "reason": "the only candidate, and exactly the request",
+   "note": "the only candidate, and exactly the request",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "b7f1c84475983c22",
+   "candidate_count": 1
+  },
+  {
+   "identity_key": "mackerel|",
+   "winner_evidence_id": "usda:175119",
+   "winner_status": "held",
+   "reason": "cooking_yield_has_no_entry_for_this_food",
+   "note": "a raw row wins on an UNDECIDED cooked axis (3 raw / 4 cooked; cooked dry heat is 262); cooking_yield states nothing for this food, and the table already carries 'fish' \u2014 the query simply never contains it",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "209353e1c7c73741",
+   "candidate_count": 7
+  },
+  {
+   "identity_key": "mackerel|roasted",
+   "winner_evidence_id": "usda:175120",
+   "winner_status": "signed",
+   "reason": "Atlantic cooked dry heat; already ADMITTED semantically, and dry heat is the preparation requested",
+   "note": "Atlantic cooked dry heat; already ADMITTED semantically, and dry heat is the preparation requested",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "8e941c80825add7e",
+   "candidate_count": 4
+  },
+  {
+   "identity_key": "mushrooms|",
+   "winner_evidence_id": "usda:170097",
+   "winner_status": "held",
+   "reason": "a specialty variant outranks the generic form",
+   "note": "shiitake cooked 56 kcal wins; white mushrooms cooked 28 are on the same ladder and are what an unqualified 'mushrooms' means",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "7555ea528a29bdf3",
+   "candidate_count": 4
+  },
+  {
+   "identity_key": "mushrooms|grilled",
+   "winner_evidence_id": "usda:169243",
+   "winner_status": "signed",
+   "reason": "portabella grilled; matches directly",
+   "note": "portabella grilled; matches directly",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "d212c2e112a507db",
+   "candidate_count": 2
+  },
+  {
+   "identity_key": "oats|",
+   "winner_evidence_id": "usda:173905",
+   "winner_status": "signed",
+   "reason": "oats cooked with water is what oats are eaten as",
+   "note": "oats cooked with water is what oats are eaten as",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "9792bd138bb755fb",
+   "candidate_count": 2
+  },
+  {
+   "identity_key": "potato|",
+   "winner_evidence_id": "usda:170115",
+   "winner_status": "held",
+   "reason": "a specialty variant outranks the generic form",
+   "note": "microwaved skin-on 132 kcal wins after the part-of-food row was removed; boiled flesh at 87 is on the same ladder and is closer to what a bare 'potato' means. 58 -> 132 is an admission fix, not a good winner",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "1b868beb2a9e71ff",
+   "candidate_count": 3
+  },
+  {
+   "identity_key": "potato|fried",
+   "winner_evidence_id": "usda:170698",
+   "winner_status": "signed",
+   "reason": "the only candidate; french fried in oil",
+   "note": "the only candidate; french fried in oil",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "b0eeee2d252aca51",
+   "candidate_count": 1
+  },
+  {
+   "identity_key": "rice|",
+   "winner_evidence_id": "usda:169711",
+   "winner_status": "held",
+   "reason": "a specialty variant outranks the generic form",
+   "note": "white GLUTINOUS 97 kcal wins; three medium/short-grain rows at 130 are on the same ladder and are what plain cooked white rice is",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "c37bad9e6ead1225",
+   "candidate_count": 5
+  },
+  {
+   "identity_key": "salmon|",
+   "winner_evidence_id": "usda:171999",
+   "winner_status": "held",
+   "reason": "a specialty variant outranks the generic form",
+   "note": "chinook \u2014 the fattiest salmon \u2014 231 kcal wins; Atlantic farmed cooked 206 is on the same ladder and is the salmon most people eat",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "8b5ea892017578ec",
+   "candidate_count": 13
+  },
+  {
+   "identity_key": "shrimp|",
+   "winner_evidence_id": "usda:175180",
+   "winner_status": "signed",
+   "reason": "shrimp cooked",
+   "note": "shrimp cooked",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "f2b30ca986a5ac30",
+   "candidate_count": 3
+  },
+  {
+   "identity_key": "tilapia|",
+   "winner_evidence_id": "usda:175176",
+   "winner_status": "held",
+   "reason": "cooking_yield_has_no_entry_for_this_food",
+   "note": "a raw row wins on an UNDECIDED cooked axis (1 raw / 1 cooked; cooked dry heat is 128); cooking_yield states nothing for this food, and the table already carries 'fish' \u2014 the query simply never contains it",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "226716859a528ff2",
+   "candidate_count": 2
+  },
+  {
+   "identity_key": "tilapia|roasted",
+   "winner_evidence_id": "usda:175177",
+   "winner_status": "signed",
+   "reason": "cooked dry heat; already ADMITTED semantically, single candidate",
+   "note": "cooked dry heat; already ADMITTED semantically, single candidate",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "db365c8f3c4658e1",
+   "candidate_count": 1
+  },
+  {
+   "identity_key": "tofu|",
+   "winner_evidence_id": "usda:174291",
+   "winner_status": "signed",
+   "reason": "hard tofu prepared with nigari is the generic block",
+   "note": "hard tofu prepared with nigari is the generic block",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "f446c0435102a900",
+   "candidate_count": 4
+  },
+  {
+   "identity_key": "tofu|fried",
+   "winner_evidence_id": "usda:172451",
+   "winner_status": "signed",
+   "reason": "fried tofu; matches the request directly",
+   "note": "fried tofu; matches the request directly",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "461237484d91d387",
+   "candidate_count": 2
+  }
+ ]
+}
