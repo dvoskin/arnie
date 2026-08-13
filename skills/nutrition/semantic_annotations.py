@@ -88,9 +88,47 @@ NORMALIZER_CHANGED = "normalizer_changed"
 RESOLVER_MIGRATION = "resolver_migration"
 MANUAL_INVALIDATION = "manual_invalidation"
 
+#: ⭐ NARROWLY SCOPED, AND DELIBERATELY NOT AN ORDINARY CAUSE. Phase 1.5
+#: adjudicates the FIRST baseline: rows already priced in production and rows
+#: surfaced by repeated cold starts are reviewed, and the review is written
+#: down as durable semantic data. That is a one-time migration, so this cause
+#: is legal ONLY while `baseline_migration_open()` is true and is unavailable
+#: to every ordinary rebuild afterwards.
+#:
+#: Without the scoping it would become the universal escape hatch — a cause
+#: that means "because I said so", available forever, which is exactly the
+#: unaccountable replacement the closed vocabulary exists to prevent.
+BASELINE_MIGRATION = "baseline_migration"
+
 INVALIDATION_CAUSES = frozenset({SOURCE_REMOVED, SOURCE_CHANGED,
                                  POLICY_CHANGED, NORMALIZER_CHANGED,
                                  RESOLVER_MIGRATION, MANUAL_INVALIDATION})
+
+#: Causes admissible ONLY during the baseline migration.
+_MIGRATION_ONLY_CAUSES = frozenset({BASELINE_MIGRATION})
+
+_baseline_migration_open = False
+
+
+def baseline_migration_open() -> bool:
+    return _baseline_migration_open
+
+
+def open_baseline_migration() -> None:
+    """Explicit, and explicitly temporary. The reviewer opens it; ordinary
+    builds never do."""
+    global _baseline_migration_open
+    _baseline_migration_open = True
+
+
+def close_baseline_migration() -> None:
+    global _baseline_migration_open
+    _baseline_migration_open = False
+
+
+def _admissible_causes() -> frozenset:
+    return (INVALIDATION_CAUSES | _MIGRATION_ONLY_CAUSES
+            if _baseline_migration_open else INVALIDATION_CAUSES)
 
 
 class AnnotationReplacementRefused(Exception):
@@ -279,10 +317,13 @@ class Store:
                     f"{k} already holds {existing.relationship} and no "
                     f"invalidation cause was given — an ordinary rebuild is "
                     f"not authority to change a semantic fact")
-            if cause not in INVALIDATION_CAUSES:
+            if cause not in _admissible_causes():
+                extra = ("" if baseline_migration_open() else
+                         f" ({BASELINE_MIGRATION!r} is admissible only while "
+                         f"the baseline migration is open)")
                 raise AnnotationReplacementRefused(
                     f"{cause!r} is not an invalidation cause. Allowed: "
-                    f"{sorted(INVALIDATION_CAUSES)}")
+                    f"{sorted(_admissible_causes())}{extra}")
         self.by_key[k] = annotation
         return annotation
 

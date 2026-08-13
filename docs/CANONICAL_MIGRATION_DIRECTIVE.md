@@ -259,6 +259,57 @@ Authority is REDUCED, not removed, and Phase 0's exit is unchanged. **0.4 —
 removing the model's gating power — is what actually unblocks the raw
 reproducibility proof.**
 
+### 0.5  BASE-FOOD IDENTITY MISMATCH AS A MECHANICAL VETO  *(NEW — Danny, 2026-08-13)*
+
+**FOUND BY THE PHASE 1.5 WORKSHEET, and it reframes what the semantic
+boundary is for.** The Tier 2 rows — "would win after one candidate removal"
+— read:
+
+```text
+chicken|grilled  <-  Mushrooms, portabella, grilled     29 kcal
+egg|fried        <-  Plantains, green, fried           309 kcal
+egg|fried        <-  Tofu, fried                       270 kcal
+potato|fried     <-  Egg, whole, cooked, fried         196 kcal
+beef|roasted     <-  Salami, cooked, beef              261 kcal
+```
+
+**`best_candidate` MATCHES ON THE PREPARATION TOKEN, NOT THE FOOD.** "grilled"
+matches "grilled", so portabella mushrooms would price grilled CHICKEN if one
+candidate disappeared. "fried" matches "fried", so plantains would price a
+fried EGG.
+
+So the semantic boundary is not merely cleaning up noisy USDA matches. It is
+the only thing standing between a preparation word and a completely different
+food — and the reviewed baseline is correspondingly more load-bearing than
+"papaya / chicken / salmon" suggested.
+
+**THE FRONTIER CANNOT CERTIFY SAFETY, ONLY CONSEQUENCE.** It calls
+`best_candidate`, which is correct for "what would production do?" and
+insufficient for "what risk exists?" — it can expose only errors the ranker is
+capable of producing under its own scoring. It inherits the ranker's blind
+spots by construction.
+
+**THE FIX IS A RANKER-INDEPENDENT MECHANICAL VETO**, not a replacement
+frontier: an obvious cross-food identity mismatch should be rejected BEFORE
+ranking, so "fried" never gets the chance to outweigh "egg" versus "plantain".
+The semantic baseline remains the ADMISSION authority; the mechanical layer
+gains the power to refuse a mismatch it can establish confidently.
+
+**THE DESIGN RISK, NAMED IN ADVANCE.** The conservative form — "the requested
+base entity appears nowhere in the candidate description" — is much weaker
+than identity parsing and is NOT comma-position parsing: it asks whether the
+requested food is mentioned AT ALL, not which food the description is. But it
+would false-veto on synonymy ("beef" requested, description says "steak"), and
+a false mechanical veto is DETERMINISTIC evidence destruction — the failure
+class 0.3 was written to avoid. So this needs the same discipline 0.2/0.3 got:
+silence whenever the check cannot be made confidently, and a measured
+synonym-collision survey before it is allowed to veto anything.
+
+**SEQUENCED AFTER Phase 0 closes**, not folded into the 77-row adjudication.
+The Tier 2 rows are telling us the ranker relies on semantic admission to
+protect it from a class of failure that could be made mechanically impossible
+— that is a hardening increment, not a review decision.
+
 ### 1  RAW REPRODUCIBILITY PROOF
 
 Clean builds against identical frozen inputs, compared on the PRE-RETENTION
