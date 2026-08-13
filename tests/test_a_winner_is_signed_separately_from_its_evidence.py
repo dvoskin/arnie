@@ -1,0 +1,179 @@
+"""TWO SIGNATURES, AND WHAT BREAKS IF THEY COLLAPSE INTO ONE.
+
+    ADMISSION      "is this legitimate evidence for this food identity?"
+    WINNER REVIEW  "is this the representative row we want pricing to choose?"
+
+⛔ THE FAILURE THESE GATES EXIST TO PREVENT is using `REJECT` to fix a ranking
+problem. "Mushrooms, shiitake, cooked" wins over white mushrooms and is the
+wrong representative — and rejecting it would write down that shiitake is not
+a mushroom. A durable semantic falsehood, kept forever, to work around a
+ranker the next fix will change anyway.
+
+So `ADMIT + HELD` is a real state: valid evidence whose selection as the
+canonical winner rests on a policy known to be provisional. It is the same
+distinction `UNRESOLVED` draws one layer up — "we have not decided" is not
+"we decided no".
+"""
+from __future__ import annotations
+
+import json
+import os
+from contextlib import contextmanager
+
+import pytest
+
+from scripts import baseline_signatures as bs
+from scripts import winner_review as wr
+from skills.nutrition import pricing_artifact as art
+
+
+@contextmanager
+def _canonical_regime():
+    """The regime Phase 0 freezes against: V2 structural, preference OFF."""
+    keys = ("NUTRITION_ACCURACY_V2", "NUTRITION_AS_EATEN_PREFERENCE")
+    previous = {k: os.environ.get(k) for k in keys}
+    os.environ["NUTRITION_ACCURACY_V2"] = "1"
+    os.environ["NUTRITION_AS_EATEN_PREFERENCE"] = ""
+    try:
+        import importlib
+        import core.food_intelligence as fi
+        importlib.reload(fi)
+        assert fi._nutrition_accuracy_v2() is True
+        assert fi._as_eaten_preference() is False
+        yield fi
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        import importlib
+        import core.food_intelligence as fi
+        importlib.reload(fi)
+
+
+def _canonical_winners(fi):
+    from core.canonical_pricing import _ranker_query
+    if not art.ARTIFACT_PATH.exists():
+        pytest.skip("no committed artifact")
+    doc = json.loads(art.ARTIFACT_PATH.read_text())
+    out = {}
+    for key, entry in (doc.get("entries") or {}).items():
+        candidates = list(entry.get("candidates") or ())
+        if not candidates:
+            continue
+        entity, _, preparation = key.partition("|")
+        winner, _conf = fi.best_candidate(_ranker_query(entity, preparation),
+                                          candidates)
+        if winner is not None:
+            out[key] = f"usda:{winner.get('fdc_id')}"
+    return out
+
+
+# ── the two states are genuinely independent ──────────────────────────────
+
+def test_a_row_can_be_admitted_evidence_and_a_held_winner():
+    """⭐ THE STATE THE STANDING RULE EXISTS FOR."""
+    held = dict((identity, cause) for identity, _e, cause in wr.held())
+    assert "mushrooms|" in held and "rice|" in held and "salmon|" in held
+
+    reviewed = wr.by_identity()
+    for identity, _evidence, _cause, note in wr.RANKING_DEFECTS:
+        _e, status, _c, _n = reviewed[identity]
+        assert status == wr.HELD
+    # ...and none of them is rejected evidence
+    signatures = bs.by_pair()
+    for identity, evidence, _cause, _note in wr.RANKING_DEFECTS:
+        assert signatures.get((identity, evidence), ("",))[0] != bs.REJECT
+
+
+def test_no_rejected_row_may_hold_any_winner_state():
+    """⛔ The two signatures may not contradict. A row identity review has
+    ruled is NOT this food cannot be the row pricing chooses, in any state."""
+    signatures = dict(bs.by_pair())
+    for identity, evidence, disposition, *_ in wr.ADMISSION_DECISIONS:
+        signatures[(identity, evidence)] = (disposition, "")
+    reviewed = wr.by_identity()
+    for (identity, evidence), (disposition, *_rest) in signatures.items():
+        if disposition == bs.REJECT and identity in reviewed:
+            assert reviewed[identity][0] != evidence, (
+                f"{identity}: {evidence} is REJECTED evidence and is carrying "
+                f"a winner state")
+
+
+def test_every_hold_names_a_policy_gap_from_a_closed_vocabulary():
+    """A hold must say WHAT unblocks it, or it expires by being forgotten
+    rather than by being fixed."""
+    assert wr.held(), "nothing is held — re-measure before trusting this"
+    for identity, _evidence, cause in wr.held():
+        assert cause in wr.BLOCKING_CAUSES, f"{identity}: {cause!r}"
+
+
+def test_a_signed_winner_carries_no_blocking_cause():
+    reviewed = wr.by_identity()
+    for identity, (_e, status, cause, note) in reviewed.items():
+        if status == wr.SIGNED:
+            assert cause == "", f"{identity} is SIGNED but names a blocker"
+        assert note.strip(), f"{identity}: {status} with an empty reason"
+
+
+# ── the review must track the regime it was made under ────────────────────
+
+def test_the_review_covers_the_regime_phase_zero_freezes_against():
+    """⭐ THE REVIEW IS CHECKED AGAINST THE RANKER, NEVER DERIVED FROM IT. A
+    sheet that silently tracked whatever the ranker currently does would
+    record agreement rather than a decision — so a moved winner must FAIL."""
+    with _canonical_regime() as fi:
+        winners = _canonical_winners(fi)
+    failures = wr.accounting(winners)
+
+    # `potato|` is the ONE expected failure and it is a true statement about
+    # the artifact: its winner is the part-of-food row this round rejected,
+    # and it clears when the artifact is rebuilt without that row.
+    expected = [f for f in failures if f.startswith("potato|")]
+    assert len(expected) == 1, failures
+    assert failures == tuple(expected), (
+        f"unexpected winner-review failures: "
+        f"{[f for f in failures if not f.startswith('potato|')]}")
+
+
+def test_a_moved_winner_is_caught_rather_than_absorbed():
+    """ANTI-VACUITY: the accounting must go red when the ranker moves."""
+    with _canonical_regime() as fi:
+        winners = _canonical_winners(fi)
+    winners["tofu|"] = "usda:999999"
+    failures = wr.accounting(winners)
+    assert any("tofu|" in f and "moved under the review" in f
+               for f in failures), failures
+
+
+def test_an_unreviewed_identity_is_caught():
+    with _canonical_regime() as fi:
+        winners = _canonical_winners(fi)
+    winners["kiwi|"] = "usda:1"
+    assert any("kiwi|" in f and "no winner-review state" in f
+               for f in wr.accounting(winners))
+
+
+# ── the frozen baseline is not amended ────────────────────────────────────
+
+def test_this_round_does_not_amend_the_frozen_seventy_seven():
+    """⭐ The Phase 1.5 population was signed, gated and closed behind
+    `baseline_migration`. Editing it now would make the record stop saying
+    what was signed — the same class of error as amending a pushed
+    migration. Phase 0.9's decisions are ADDITIVE and attributable."""
+    assert bs.EXPECTED_POPULATION == 77
+    assert len(bs.SIGNATURES) == 77
+    frozen = set(bs.by_pair())
+    for identity, evidence, *_ in wr.ADMISSION_DECISIONS:
+        assert (identity, evidence) not in frozen, (
+            f"{identity}/{evidence} is inside the frozen population; a "
+            f"decision about it belongs to that round, not this one")
+
+
+def test_the_signed_winners_are_the_only_ones_that_may_freeze():
+    signed = dict(wr.frozen_winners())
+    held = {identity for identity, _e, _c in wr.held()}
+    assert not (set(signed) & held), "an identity is both signed and held"
+    assert len(signed) + len(held) == len(wr.by_identity())
+    assert len(signed) == 15 and len(held) == 11

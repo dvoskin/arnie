@@ -243,6 +243,31 @@ def _nutrition_accuracy_v2() -> bool:
         return os.getenv("NUTRITION_ACCURACY_V2", "").lower() in ("1", "true", "yes")
 
 
+def _as_eaten_preference() -> bool:
+    """The as-eaten PREFERENCE, split out of V2 and off by default.
+
+    ⭐ SPLIT BECAUSE V2 IS TWO BEHAVIOURS OF DIFFERENT MATURITY. V2's
+    structural half — folded morphology, the identity gate, cross-food
+    refusal, cooked-by-default — only ever declines a wrong row or reaches a
+    right one, and is what the frozen baseline should rest on. This term is a
+    ±0.4 tie-break, and a tie-break can only decide a NEAR-TIE, so the row it
+    seats differs from the runner-up in dimensions it never evaluated: it
+    picked striploin-with-fat over knuckle (+123 kcal, mostly CUT) and a
+    BATTERED chicken row over meat-only (+7.7 g carbs of added food).
+
+    A rule named for trim must not decide cut. Until cut and coating are
+    separately modelled this rides its own flag and its own canary, so that
+    27 winners are never signed under a selector known to mix them.
+    """
+    try:
+        from skills.nutrition.v2_gate import as_eaten_active
+        return as_eaten_active()
+    except Exception:                                        # pragma: no cover
+        import os
+        return os.getenv("NUTRITION_AS_EATEN_PREFERENCE",
+                         "").lower() in ("1", "true", "yes")
+
+
 # Preparation / cooking-method words. They describe HOW a food was made, not
 # WHAT it is, so the identity gate ignores them: "grilled chicken thigh" is the
 # same food as USDA's "chicken thigh, cooked, roasted" — the prep is handled by
@@ -378,7 +403,12 @@ def best_candidate(query: str, candidates: list[dict]) -> tuple[Optional[dict], 
     # and fat" is the right basis and "meat only" / "lean only" / "skinless" is a
     # reference sample, not the meal — the same "as logged" principle as cooked-
     # default. Suppressed when the query itself asks for the trimmed form.
-    _as_eaten = v2 and not (qa & {"skinless", "lean", "trimmed"})
+    # ⭐ NOW ITS OWN POLICY, NOT A PROPERTY OF V2. Still requires v2 (the rest
+    # of the V2 scoring is its context), but no longer arrives with it — so
+    # the structurally safe half can be promoted while this waits for a
+    # canary that controls for cut and coating.
+    _as_eaten = (v2 and _as_eaten_preference()
+                 and not (qa & {"skinless", "lean", "trimmed"}))
     # Folded ONCE per call, for coverage only. `qa` and `qa_id` stay raw below,
     # because every penalty and preference tests literal membership.
     qa_f, qa_id_f = _folded(qa), _folded(qa_id)

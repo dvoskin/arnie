@@ -1,0 +1,28 @@
+identity,evidence_id,signed,policy,match,kcal,protein,carbs,fat,winner,n_candidates,runner_up_kcal,runner_up
+asparagus|,usda:168389,UNREVIEWED,rank_v2,exact,20.0,2.2,3.88,0.12,"Asparagus, raw",8,22.0,"Asparagus, cooked, boiled, drained"
+banana|,usda:173944,UNREVIEWED,rank_v2,exact,89.0,1.09,22.8,0.33,"Bananas, raw",2,85.0,"Bananas, overripe, raw"
+beef|,usda:174730,UNREVIEWED,rank_v2,likely,126,24.2,0.0,3.26,"Beef, New Zealand, imported, manufacturing beef, cooked, boiled",1,,
+beef|fried,usda:173085,UNREVIEWED,rank_v2,likely,178,27.5,0.0,7.58,"Beef, New Zealand, imported, knuckle, cooked, fast fried",5,217,"Beef, New Zealand, imported, striploin, separable lean only, cooked, fast fried"
+beef|grilled,usda:174702,UNREVIEWED,rank_v2,likely,208,28.4,0.51,10.3,"Beef, ribeye filet, boneless, separable lean only, trimmed to 0"" fat, choice, cooked, grilled",5,186,"Beef, ribeye filet, boneless, separable lean only, trimmed to 0"" fat, select, cooked, grilled"
+beef|roasted,usda:173089,ADMIT,rank_v2,likely,197,27.2,0.09,9.74,"Beef, New Zealand, imported, ribs prepared, cooked, fast roasted",7,172,"Beef, chuck eye roast, boneless, America's Beef Roast, separable lean only, trimmed to 0"" fat, select, cooked, roasted"
+broccoli|,usda:747447,UNREVIEWED,rank_v2,exact,31.0,2.57,6.27,0.34,"Broccoli, raw",10,34.0,"Broccoli, raw"
+cauliflower|,usda:169986,UNREVIEWED,rank_v2,exact,25.0,1.92,4.97,0.28,"Cauliflower, raw",6,23.0,"Cauliflower, cooked, boiled, drained, with salt"
+chicken|fried,usda:171053,UNREVIEWED,rank_v2,likely,219,30.6,1.69,9.12,"Chicken, broilers or fryers, meat only, cooked, fried",6,288,"Chicken, broilers or fryers, back, meat only, cooked, fried"
+chicken|grilled,usda:171534,UNREVIEWED,rank_v2,likely,151,30.5,0.0,3.17,"Chicken, broiler or fryers, breast, skinless, boneless, meat only, cooked, grilled",2,148,"Chicken, broiler or fryers, breast, skinless, boneless, meat only, with added solution, cooked, grilled"
+chicken|roasted,usda:172395,UNREVIEWED,rank_v2,likely,167,25.0,0.0,6.63,"Chicken, roasting, meat only, cooked, roasted",4,223,"Chicken, roasting, meat and skin, cooked, roasted"
+egg|,usda:172186,UNREVIEWED,rank_v2,likely,143,12.5,0.71,9.47,"Egg, whole, cooked, poached",5,149,"Egg, whole, cooked, scrambled"
+egg|fried,usda:173423,UNREVIEWED,rank_v2,likely,196,13.6,0.83,14.8,"Egg, whole, cooked, fried",1,,
+mackerel|,usda:175119,UNREVIEWED,rank_v2,likely,205,18.6,0.0,13.9,"Fish, mackerel, Atlantic, raw",7,105,"Fish, mackerel, king, raw"
+mackerel|roasted,usda:175120,ADMIT,rank_v2,estimated,262,23.8,0.0,17.8,"Fish, mackerel, Atlantic, cooked, dry heat",4,134,"Fish, mackerel, king, cooked, dry heat"
+mushrooms|,usda:170097,UNREVIEWED,rank_v2,likely,56.0,1.56,14.4,0.22,"Mushrooms, shiitake, cooked, with salt",4,56.0,"Mushrooms, shiitake, cooked, without salt"
+mushrooms|grilled,usda:169243,UNREVIEWED,rank_v2,likely,29.0,3.28,4.44,0.58,"Mushrooms, portabella, grilled",2,29.0,"Mushrooms, portabella, exposed to ultraviolet light, grilled"
+oats|,usda:173905,UNREVIEWED,rank_v2,likely,71.0,2.54,12.0,1.52,"Cereals, oats, regular and quick, unenriched, cooked with water (includes boiling and microwaving), without salt",2,71.0,"Cereals, oats, regular and quick and instant, unenriched, cooked with water (includes boiling and microwaving), with salt"
+potato|,usda:170032,UNREVIEWED,rank_v2,likely,58.0,2.57,12.4,0.1,"Potatoes, raw, skin",4,132,"Potatoes, microwaved, cooked, in skin, skin with salt"
+potato|fried,usda:170698,UNREVIEWED,rank_v2,likely,312,3.43,41.4,14.7,"Fast foods, potato, french fried in vegetable oil",1,,
+rice|,usda:169711,UNREVIEWED,rank_v2,likely,97.0,2.02,21.1,0.19,"Rice, white, glutinous, unenriched, cooked",5,147,"Rice, brown, parboiled, cooked, UNCLE BENS"
+salmon|,usda:171999,UNREVIEWED,rank_v2,likely,231,25.7,0.0,13.4,"Fish, salmon, chinook, cooked, dry heat",13,154,"Fish, salmon, chum, cooked, dry heat"
+shrimp|,usda:175180,UNREVIEWED,rank_v2,likely,99.0,24.0,0.2,0.28,"Crustaceans, shrimp, cooked",3,85.0,"Crustaceans, shrimp, raw"
+tilapia|,usda:175176,UNREVIEWED,rank_v2,likely,96.0,20.1,0.0,1.7,"Fish, tilapia, raw",2,128,"Fish, tilapia, cooked, dry heat"
+tilapia|roasted,usda:175177,ADMIT,rank_v2,estimated,128,26.2,0.0,2.65,"Fish, tilapia, cooked, dry heat",1,,
+tofu|,usda:174291,UNREVIEWED,rank_v2,likely,145,12.7,4.39,9.99,"Tofu, hard, prepared with nigari",4,85.0,HOUSE FOODS Premium Firm Tofu
+tofu|fried,usda:172451,UNREVIEWED,rank_v2,exact,270,18.8,8.86,20.2,"Tofu, fried",2,270,"Tofu, fried, prepared with calcium sulfate"

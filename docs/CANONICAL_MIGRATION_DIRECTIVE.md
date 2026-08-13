@@ -15,17 +15,52 @@
 > `tests/test_the_canonical_invariants.py`; this document is the sequencing
 > authority.
 
-## ⏭ THE ROADMAP — READ THIS FIRST *(Danny, 2026-08-11)*
+## ⏭ THE ROADMAP — READ THIS FIRST *(Danny, 2026-08-11; revised 2026-08-13)*
 
-**THE NEXT SESSION STARTS AT PHASE 0.** Not at B-1.7a, and not at any B slice.
-The open defect is confined to BUILD-TIME PRICING EVIDENCE AUTHORITY and does
-NOT reopen downstream canonical mutation correctness.
+**THE NEXT SESSION STARTS AT PHASE 0.9 — REVIEWING THE 24 CANONICAL WINNERS.**
+Not at B-1.7a, and not at any B slice. The open defect is confined to
+BUILD-TIME PRICING EVIDENCE AUTHORITY and does NOT reopen downstream canonical
+mutation correctness.
 
 ```text
 B-1 · B-1.5 · B-1.6   REMAIN CLOSED
 concurrency locking, canonical settlement, replay/idempotency, ownership seam
                       REMAIN CLOSED
 ```
+
+**PHASE 0 PROGRESS, 2026-08-13.** Roughly 95–97%. What was a
+"just run the poisoned rebuild" problem on 08-12 is not: the baseline freeze
+exposed a separate RANKER REACHABILITY defect that had to be fixed first, and
+then that fix exposed that the remaining ambiguity was a temporary TWO-POLICY
+problem. Both are now closed.
+
+```text
+0.1  adapter keeps what code can decide          ✅ d3066ac
+0.2  raw cannot serve a cooked request           ✅ 4b17097
+0.3  preparation compatibility by heat medium    ✅ be33974
+0.4  the model annotates once; code decides      ✅ bc58abf
+0.5  base-food mismatch as a mechanical veto     ◻ AFTER Phase 0 closes
+0.6  baseline admission and freeze               ✅ 0c255cd   77 signed
+0.7  ranker reachability                         ✅ 724935b   27/27 under V2
+0.8  split V2 from its preference                ✅ uncommitted
+0.9  review the 24 canonical winners             ⬅ IN FLIGHT, 0 signed
+1    populate store unpoisoned, then poison      ◻ ORDER CORRECTED
+2    permanent drift gates                       ◻
+     -> PHASE 0 CLOSED
+```
+
+**⚠ WHAT PHASE 0 DOES AND DOES NOT BUY.** Meeting the exit criterion makes
+prices **REPRODUCIBLE, NOT CORRECT.** Before 0.7, five committed identities
+priced from nothing and 21 of 27 production winners had never been reviewed.
+The baseline machinery worked exactly as intended: *it exposed that the
+population being reviewed and the population actually pricing users were not
+the same thing.*
+
+**⚠ AND V2 PROMOTION IS ITS OWN RELEASE DECISION.** "Adopt V2-structural as
+the canonical regime Phase 0 proves against" is SEPARATE from "expose it to
+100% of production traffic". The refusal behaviour is safe and supported; the
+`as_eaten` tie-break needs its own canary with explicit cut/coating controls.
+See 0.8 and step 11 below.
 
 ### 0  PRICING AUTHORITY MIGRATION  <- IMMEDIATE NEXT SESSION
 
@@ -310,6 +345,283 @@ The Tier 2 rows are telling us the ranker relies on semantic admission to
 protect it from a class of failure that could be made mechanically impossible
 — that is a hardening increment, not a review decision.
 
+**⭐ AND 2026-08-13 SHARPENED WHY IT MUST STAY OUT OF THE EVIDENCE BOUNDARY.**
+`papaya` used to seat "Babyfood, fruit, guava and papaya with tapioca,
+strained" — the entry-2896 defect, and the RED half of the qualification
+red/green pair. Morphological folding closed it: the composite never won
+because it was attractive, it won because **"papaya" could not reach "Papayas,
+raw" AT ALL.** One apparent qualification failure was a RANKER REACHABILITY
+defect, and fixing it inside qualification would have papered over the wrong
+layer.
+
+The pair's red is RESTORED with a case that still reproduces — with no plain
+row on the shelf, ranking alone still seats the babyfood purée, because
+**composite-seating is a property of WHAT IS ON THE SHELF, not of how the
+query is spelled.** Qualification remains independently justified; one
+demonstration of the need was removed and the need survives in a form the
+fold cannot reach. *A red that has quietly gone green makes its green half
+prove less than it claims.*
+
+### 0.6  BASELINE ADMISSION AND FREEZE  ✅ **DONE** *(2026-08-13, `0c255cd`)*
+
+77 hand-adjudicated `(identity_key, evidence_id)` pairs are durable semantic
+fact: **29 admit · 45 reject · 3 signed UNRESOLVED**. Signatures live as DATA
+in `scripts/baseline_signatures.py`; `accounting()` enforces the six
+pre-freeze conditions and `freeze()` writes them under an open
+`baseline_migration`, which then closes behind itself.
+
+**⭐ A GATE PROVES ITS POPULATION RECONCILES WITH ITSELF, NOT THAT IT IS THE
+RIGHT POPULATION.** The accounting gate immediately caught 8 rows the triage
+narrative had called "quick REJECT" and never signed — prose cannot audit
+itself. It then passed at 77/77 while 77 was still the wrong set: the
+artifact commits **116 candidate pairs and the review covered 6 of them**.
+71 of the 77 were cold-start discoveries. The frontier had selected rows
+consequential relative to the REBUILD candidate sets, not to production.
+
+Two traps caught before writing, both now gated:
+
+* `needs_resolution` would have handed the 3 human UNRESOLVED calls back to
+  the model on every build. A reviewer's refusal to rule spells the same
+  relationship as "nobody looked". A signed row is now SETTLED — still
+  ineligible, never re-rolled; only a changed `source_fingerprint` reopens it.
+* `invalidation_reason=baseline_migration` would have EMPTIED the artifact.
+  `eligible()` refuses any annotation carrying one, so writing it on all 77
+  makes all 29 ADMITS ineligible. **`baseline_migration` is the CAUSE
+  authorising replacement — an argument to `record()`. A signature is not an
+  invalidation.**
+
+### 0.7  RANKER REACHABILITY  ✅ **DONE** *(2026-08-13, `724935b`)*
+
+The freeze exposed a defect that had survived the entire migration: **five
+committed identities priced from NOTHING.** `_from_artifact` returns None
+when `best_candidate` matches nothing and `price()` falls through — no error,
+no log, no metric. `mackerel|roasted` is the identity this migration started
+from.
+
+**MEASURED CAUSE, and it was TWO defects, not one.** Reading the description
+said "category prefix"; reading the SCORE said otherwise:
+
+```text
+banana| potato|    overlap 0.00, token ABSENT           MORPHOLOGY
+oats|              overlap 1.00, 3.0-0.15*13 = 1.05     V1 LENGTH LEVER
+mackerel|roasted   overlap 0.50, id 1.00, 0.90 < 1.2    V1 LENGTH LEVER
+tilapia|roasted    same
+```
+
+`_singular` folds both sides of the comparison. **SYMMETRY IS THE CONTRACT,
+CORRECTNESS IS NOT** — "molasses" folds to "molass" and still matches
+"molasses", which is what lets this be six suffix rules instead of a
+dictionary. Applied to the two coverage ratios ONLY; `_FORM_PENALTY`,
+`_SPECIES_TOKENS`, `_CUT_NARROWERS`, `_COOKED_MARKERS` still match RAW
+literals, with a gate that fails if anyone folds those too.
+
+Collateral over all 27 identities, both live modes: **recovered 2 · lost 0 ·
+winner_changed 0.** The other three need no ranker change — they are a v1
+scoring artifact V2 already fixes.
+
+**THE CLASS, NOT THE FIVE CASES.** `artifact_candidates_present_but_ranker_`
+`returned_none` is now emitted where the rung used to vanish. Invariant:
+every committed identity, in every live mode, either prices or names a reason.
+
+**A 600-NAME REAL-QUERY CORPUS IS NOW THE COLLATERAL CHECK.** A diff scoped
+to the 27 committed identities cannot see the query space users actually
+type. It found the seam this change opened: `best_candidate` chose on FOLDED
+tokens while `score_match` labelled on UNFOLDED ones, so the ranker seated
+the right row and called it `estimated` — and `tool_executor` passes that
+label to the pricing path. **The identity-boundary defect a third time: two
+consumers of one notion, one of them updated.**
+
+### 0.8  SPLIT V2 FROM ITS PREFERENCE  ✅ **DONE** *(Danny, 2026-08-13)*
+
+**DO NOT PROMOTE "V2" AS ONE INDIVISIBLE THING.** It holds two behaviours of
+different maturity, and freezing a baseline against the pair would sign a
+transitional mistake into the record.
+
+```text
+STRUCTURAL SAFETY   folded morphology · identity/coverage gate · cross-food
+                    refusal · cooked-by-default · typed artifact refusal
+                    -> only ever declines a wrong row or reaches a right one
+                    -> 27/27 reachable vs v1's 24/27
+                    -> refuses 15 rows v1 seats; >= 8 are the WRONG FOOD
+                       (asparagus for "boiled egg", shrimp for "squash",
+                        tofu for "fried lamb", portabella for "grilled shrimp")
+
+PREFERENCE POLICY   as_eaten_over_trimmed, a +/-0.4 tie-break
+                    -> NOT freezable: a tie-break decides NEAR-TIES, so the
+                       row it seats differs in dimensions it never evaluates
+```
+
+Margin decomposed term by term: five of the six winners V2 moves are decided
+by `as_eaten` alone with every other term within 0.16.
+
+```text
+beef|fried       knuckle      -> striploin lean+fat   +123 kcal   (CUT)
+beef|grilled     ribeye filet -> shoulder steak        -22 kcal   (CUT)
+beef|roasted     NZ ribs      -> chuck eye roast       +44 kcal   (CUT)
+chicken|fried    meat only    -> meat+skin, BATTER     +70 kcal   (COATING)
+chicken|roasted  meat only    -> meat and skin         +56 kcal   (trim only)
+salmon|          raw          -> cooked dry heat       +52 kcal   (STRUCTURAL)
+```
+
+**THESE ARE CUT CHOICES WEARING A TRIM RULE'S CLOTHES.** A rule named
+`as_eaten_over_trimmed` must not decide knuckle vs striploin, or meat-only vs
+battered, unless cut and coating are separately modelled.
+
+`NUTRITION_AS_EATEN_PREFERENCE` + its own allowlist, **default OFF including
+for the V2 allowlist**. `ranking_policy_version()` reports
+`rank_v1 | rank_v2 | rank_v2+as_eaten`, so "which policy picked this row" —
+the question the mode-divergence finding showed nobody could answer — is now
+recordable.
+
+**⭐ THE SPLIT RESTORED A SIGNATURE ALREADY GIVEN.** `beef|roasted` under the
+preference seats chuck eye roast, unreviewed; without it, `usda:173089` — the
+row a reviewer read and signed. *A signature that applies under one policy
+and not another has not been kept.* Now a gate.
+
+**NINE IDENTITIES PRICED DIFFERENTLY BY USER before this**, `beef|fried` by
+**+69%** (178 fleet / 301 for user 26). Review surface collapsed from **30
+mode-specific pairs to 24 canonical rows**.
+
+### 0.85  TWO SIGNATURES, NOT ONE  *(Danny, 2026-08-13 — STANDING RULE)*
+
+**"ADMISSIBLE EVIDENCE" AND "ACCEPTABLE CANONICAL WINNER" ARE TWO DIFFERENT
+QUESTIONS.** Several rows pass the first and fail the second, and the 24-row
+triage is what forced the distinction into the open.
+
+```text
+ADMISSION       "is this legitimate evidence for this food identity?"
+WINNER REVIEW   "is this the representative row we want pricing to choose?"
+```
+
+**⛔ DO NOT USE `REJECT` TO COMPENSATE FOR A RANKING WEAKNESS. That would turn
+a ranking-policy defect into durable semantic falsehood.** Rejecting
+"Mushrooms, shiitake" because white mushrooms are the better generic would
+write down that shiitake is not a mushroom — a lie, kept forever, to work
+around a ranker the next fix will change anyway.
+
+So a pair now carries TWO independent states:
+
+```text
+semantic disposition   ADMIT | REJECT | UNRESOLVED    durable, about identity
+winner status          SIGNED | HELD                  provisional, about policy
+```
+
+A row can be ADMIT + HELD: valid evidence whose selection as the canonical
+winner is not yet trustworthy. That is the honest encoding for every row whose
+win depends on a policy known to be provisional — and it is what keeps the
+semantic baseline true while the ranking regime is still moving.
+
+### 0.9  REVIEW THE 24 CANONICAL WINNERS  ⬅ **IN FLIGHT**
+
+Worksheet: `data/baseline/phase_1_6_canonical_winners.csv`, one regime
+(`rank_v2`), no mode split. Triage complete, **nothing signed**:
+
+```text
+13  clean ADMIT
+ 1  UNRESOLVED     beef| — manufacturing beef, ONLY candidate; consistent
+                   with the signed sibling usda:173086
+ 1  REJECT?        potato| -> "Potatoes, raw, SKIN" — a PART of the food, not
+                   the food. Ladder holds boiled flesh 87, microwaved 100.
+                   An ADMISSION defect, not a ranking one.
+ 3  RANKING        admissible but unrepresentative: mushrooms| shiitake 56 vs
+                   white 28 · rice| glutinous 97 vs medium-grain 130 ·
+                   salmon| chinook 231 vs Atlantic farmed 206
+ 4  LAB SAMPLE     beef|grilled, beef|fried, chicken|fried, chicken|roasted
+                   all seat "meat only"/"lean only, trimmed to 0\" fat"
+ 2  BLOCKED        mackerel|, tilapia| — see below
+```
+
+**⛔ `cooking_yield` COVERAGE DECIDES RAW-VS-COOKED, AND DOES NOT KNOW TWO OF
+THE FISH.** `_cooked_pref` fires only when `cooking_yield(query) > 1.0`:
+
+```text
+salmon 1.20 FIRES -> cooked 231      mackerel 1.00 no -> RAW 205
+shrimp 1.20 FIRES -> cooked  99      tilapia  1.00 no -> RAW  96
+```
+
+Same food class, opposite outcome, decided by a table's coverage rather than
+by the food. **Signing `mackerel| = raw 205` would freeze a blind spot into
+the baseline** — a table's silence reading as an answer, the identity-boundary
+shape again.
+
+**DANNY'S CALLS ON THE FOUR QUESTIONS, 2026-08-13:**
+
+```text
+1  potato| raw SKIN     REJECT as evidence. A part-of-food record is not a
+                        whole-potato record — an ADMISSION defect. Reject it
+                        and let the ladder move on.
+2  mackerel| tilapia|   ADMIT as evidence (they ARE the fish; rejecting would
+                        be false semantic truth). HOLD as winners pending the
+                        cooking_yield coverage/policy fix.
+3  the 3 unrepresentative  ADMIT as evidence. File "specialty variant beats
+                        generic representative" separately as a RANKER issue.
+4  the 4 lab samples    ADMIT if same food. HOLD as winners. Signing now would
+                        freeze a transitional ranking outcome already expected
+                        to move.
+```
+
+**APPLIED 2026-08-13 — `scripts/winner_review.py`, 9 gates.**
+
+```text
+15 SIGNED · 11 HELD   (potato| deliberately absent, see below)
+   8  as_eaten_preference_awaiting_cut_and_coating_controls
+   2  cooking_yield_has_no_entry_for_this_food
+   1  the only retrieved candidate is a poor representative   <- NEW CAUSE
+```
+
+**⚠ A THIRD BLOCKING CAUSE WAS NEEDED, and is flagged as an extension.**
+`beef|` has exactly ONE candidate, so no ranking policy can improve it and no
+admission call is owed — the row IS beef. The gap is that RETRIEVAL never
+surfaced an ordinary beef row. Neither a ranking defect nor an identity
+question; collapsing it into either would misfile it.
+
+**⚠ A FIFTH ROW WAS HELD, extending the rule rather than the list.**
+`beef|roasted` was not among the four lab samples because it is already
+ADMITTED semantically (`usda:173089`, signed by hand) — but it IS one of the
+five winners the as-eaten split reverted, so the reworked preference is
+expected to move it too.
+
+**⭐ REJECTING THE PART-OF-FOOD ROW DOES NOT PRODUCE A GOOD WINNER.** With
+`usda:170032` ("Potatoes, raw, SKIN") rejected, the ladder does not fall to
+boiled flesh at 87:
+
+```text
+REJECTED   58.0  usda:170032  Potatoes, raw, skin
+           87.0  usda:170114  Potatoes, boiled, cooked in skin, flesh, with salt
+            100  usda:170522  Potatoes, microwaved, cooked in skin, flesh, with salt
+->          132  usda:170115  Potatoes, microwaved, cooked, in skin, skin with salt
+                              58 -> 132 kcal  (+74, +128%)
+```
+
+`usda:170115` is flesh AND skin — a legitimate whole potato, already signed
+ADMIT in the frozen 77 — so admission cannot touch it either. `potato|` is
+therefore REJECT-then-HOLD: the part-of-food row leaves, and its successor is
+a ranking finding. It is deliberately absent from the winner review until the
+artifact is rebuilt, and `accounting()` reports that contradiction as its one
+outstanding failure. **That failure is a true statement about the current
+artifact, not a gap in the review.**
+
+**⭐⭐ THE FROZEN 77 ARE NOT AMENDED.** `usda:170032` was never in the Phase
+1.5 population — the consequence frontier did not reach it. Adding it to
+`baseline_signatures.SIGNATURES` would change a set that was signed, gated and
+closed behind `baseline_migration`, so the record would stop saying what was
+signed: the same class of error as amending a pushed migration. Phase 0.9's
+semantic decisions live in `winner_review.ADMISSION_DECISIONS`, additive and
+attributable to their own round, with a gate pinning the separation.
+
+**SEQUENCE FROM HERE:** reject potato skin → admit valid-but-unrepresentative
+rows semantically → hold mackerel/tilapia and the 4 lab-reference rows from
+the winner freeze → patch `cooking_yield` coverage/policy → rework the
+as-eaten preference with **cut / coating / skin / trim controlled explicitly**
+→ rerun the canonical winner sheet → sign final winners → populate → freeze →
+poison → prove → close Phase 0.
+
+**⚠ AND THE SPLIT HAS AN HONEST COST.** Switching `as_eaten` off leaves USDA
+LAB SAMPLES winning on four identities — "meat only" and "lean only, trimmed
+to 0″ fat" are reference samples, not meals. The preference existed for a real
+reason; the defect was its ±0.4 implementation, not its goal. This argues for
+REWORKING it with cut and coating controlled, not dropping it.
+
 ### 1  RAW REPRODUCIBILITY PROOF
 
 Clean builds against identical frozen inputs, compared on the PRE-RETENTION
@@ -317,7 +629,21 @@ artifact: candidate ids, ordering, eligibility, winner, price, fingerprint.
 **Retention must not be the mechanism creating agreement.**
 **EXIT:** raw generation is itself reproducible.
 
+**⚠ ORDER CORRECTED 2026-08-13: THE POISONED REBUILD IS GATE #2, NOT #1.**
+The committed artifact holds **ZERO annotations** — it predates the store
+(built 08-08). One UN-POISONED build must populate the full retrieved
+population first; only then can a poisoned rebuild prove `resolved_this_build
+== 0`, `retention additions == 0`, `raw == intended`.
+
 ### 2  PERMANENT PRICING-SPINE GATES
+
+**ADDED 2026-08-13, and permanent:** the typed artifact refusal.
+`artifact_candidates_present_but_ranker_returned_none` +
+`artifact_winner_carries_no_per100g` convert a silent rung disappearance into
+an observable invariant violation. Gated four ways — fires when candidates
+exist and nothing wins, does NOT fire on an empty candidate list (silence is
+not failure), does not fire on success, and every committed identity in every
+live mode either prices or names a reason. **Keep this permanently.**
 
 Raw reproducibility · candidate drift · destructive removal · winner drift ·
 price drift · attributable change reasons · no-text reply handling ·
@@ -1619,6 +1945,74 @@ executable gates when it lands, so promotion is running them, not re-deriving
 them.
 
 ## Status board
+
+### ⏱ SESSION 2026-08-13 — BASELINE FROZEN · RANKER REACHED · V2 SPLIT
+
+```text
+LOCAL       724935b (+ uncommitted 0.8 split)   origin/main 929879e
+DEPLOYED    20e3acd — 15 commits behind; auto-deploy has NOT fired since 0.1
+SUITE       SQLite 8817 / 0 · Postgres 8899 / 0 · 4 xfailed   (at 724935b)
+ARTIFACT    27 entries · 116 candidate pairs · 0 annotations (predates store)
+BASELINE    77 signed: 29 admit / 45 reject / 3 UNRESOLVED · migration closed
+REACHABLE   rank_v2 27/27 · rank_v1 24/27
+REVIEW      24 canonical winners triaged, 0 SIGNED
+```
+
+**THE THREE FINDINGS THIS SESSION PRODUCED, IN ORDER OF WEIGHT.**
+
+1. **The reviewed population was not the one production rests on.** The
+   accounting gate caught 8 unsigned rows, then passed at 77/77 while 71 of
+   the 77 were cold-start discoveries. 21 of 27 production winners had never
+   been reviewed. *A gate proves its population reconciles with itself, not
+   that it is the right population.*
+2. **Five committed identities priced from nothing, silently.** Fixed at the
+   RANKER (morphological folding), not in the evidence boundary — and the
+   test that had recorded the plural gap as "a D-class ranking finding …
+   deliberately NOT fixed inside the evidence boundary" was right about the
+   layer. Its red half then stopped reproducing and was RESTORED with a case
+   that still does.
+3. **Reachability depended on a per-user feature flag.** Both modes live at
+   once; 9 identities priced differently BY USER, `beef|fried` by +69%. Now
+   split, so one regime is freezable.
+
+**INSTRUMENTS THAT LIED BY SILENCE THIS SESSION — TWO WERE SELF-INFLICTED.**
+
+```text
+pytest printed no "N passed" for hours   pytest.ini already sets addopts=-q;
+                                          adding -q made it -qq, which
+                                          SUPPRESSES the summary
+"SQLite + Postgres" was SQLite twice     conftest.py:61 hard-pins DATABASE_URL;
+                                          PG gates on TEST_POSTGRES_URL, not
+                                          TEST_DATABASE_URL. THE TELL WAS AN
+                                          IDENTICAL SKIP COUNT (107/107);
+                                          real PG skips 82 fewer.
+confidence_score is not a rung signal    284 rows at 0.85 across many paths;
+                                          NOT used to claim anything
+```
+
+Correct invocations:
+
+```bash
+TZ=UTC .venv/bin/python -m pytest -p no:randomly
+TZ=UTC TEST_POSTGRES_URL="postgresql+psycopg://localhost/arnie_test"        .venv/bin/python -m pytest -p no:randomly
+```
+
+**OPEN, CARRIED FORWARD.**
+
+```text
+0.9   24 winners: 13 clean ADMIT · 1 UNRESOLVED · 1 admission REJECT (potato|
+      raw SKIN) · 3 ranking findings · 4 lab samples · 2 BLOCKED on cooking_yield
+NEW   cooking_yield returns 1.00 for mackerel/tilapia and 1.20 for salmon, so
+      raw-vs-cooked is decided by TABLE COVERAGE, not by the food
+NEW   as_eaten needs rework with cut and coating separately modelled, then a
+      canary — not abandonment; "meat only" is a lab sample, not a meal
+NEW   beef|fried's entire 5-row ladder is New Zealand imported; no domestic
+      row was retrieved at all (a coverage observation, not a signing one)
+NEW   broccoli| carries two distinct "Broccoli, raw" rows (31 and 34 kcal)
+      that the DUPLICATE veto does not catch — different ids, different values
+PUSH  724935b + the 0.8 split are NOT pushed. Pushing deploys 15 commits at
+      once and the morphology fold is NOT flag-gated — it reaches every user.
+```
 
 Kept current. This is the single answer to "where are we"; the phase sections
 above are the detail. **Everything open lives here** — a finding recorded only

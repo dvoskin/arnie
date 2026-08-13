@@ -82,3 +82,84 @@ def cohort_label() -> str:
     if _allowlist():
         return "allowlist"
     return "off"
+
+
+# ── AS-EATEN, SPLIT OUT OF V2 ─────────────────────────────────────────────
+#
+# ⭐ V2 IS NOT ONE THING, AND FREEZING A BASELINE UNDER IT AS THOUGH IT WERE
+# WOULD SIGN A TRANSITIONAL MISTAKE INTO THE RECORD. Measured 2026-08-13,
+# it contains two behaviours of different maturity:
+#
+#   STRUCTURAL SAFETY — folded morphology, the identity/coverage gate,
+#   cross-food refusal, cooked-by-default, the typed artifact refusal. These
+#   only ever decline to seat a wrong row or reach a right one. Over 600 real
+#   production food names, V2 refused 15 rows v1 seats and at least 8 of them
+#   were flatly the wrong food: asparagus for "boiled egg", shrimp for
+#   "squash", tofu for "fried lamb", portabella for "grilled shrimp".
+#
+#   PREFERENCE POLICY — `as_eaten_over_trimmed`, a ±0.4 tie-break. It works
+#   as designed and it is still not safe to freeze against, because a ±0.4
+#   nudge can only overturn a NEAR-TIE: of the six winners it moves, five are
+#   decided by this term alone with every other term within 0.16, so the row
+#   it selects also differs in dimensions the rule never evaluated. It picked
+#   striploin-with-fat over knuckle (+123 kcal, mostly CUT, not trim) and a
+#   BATTERED chicken row over meat-only (+7.7 g carbs, which is added food).
+#
+# These are cut choices wearing a trim rule's clothes. A rule named
+# `as_eaten_over_trimmed` must not decide knuckle vs striploin unless cut is
+# separately modelled — so the preference gets its own switch and its own
+# canary, and the structural half can become canonical without it.
+#
+# DEFAULT OFF, including for the V2 allowlist. Turning it on is a deliberate
+# act with its own release proof, exactly like V2 itself.
+
+
+def _as_eaten_global_on() -> bool:
+    return os.getenv("NUTRITION_AS_EATEN_PREFERENCE",
+                     "").lower() in ("1", "true", "yes")
+
+
+def _as_eaten_allowlist() -> set:
+    out: set = set()
+    for part in (os.getenv("NUTRITION_AS_EATEN_PREFERENCE_ALLOWLIST",
+                           "") or "").split(","):
+        part = part.strip()
+        if part.isdigit():
+            out.add(int(part))
+    return out
+
+
+def as_eaten_active() -> bool:
+    """Whether the as-eaten PREFERENCE applies to the turn in flight.
+
+    Independent of `v2_active`: the caller still requires V2 for the rest of
+    the V2 scoring, but this term can be off while V2 is on. That separation
+    is the point — it is what lets the structurally safe half be promoted
+    without carrying an unproven selector into the frozen baseline.
+    """
+    try:
+        if _as_eaten_global_on():
+            return True
+        allow = _as_eaten_allowlist()
+        if not allow:
+            return False
+        uid = _USER.get()
+        return uid is not None and uid in allow
+    except Exception:                                        # pragma: no cover
+        return _as_eaten_global_on()
+
+
+def as_eaten_cohort_label() -> str:
+    if _as_eaten_global_on():
+        return "global"
+    if _as_eaten_allowlist():
+        return "allowlist"
+    return "off"
+
+
+#: The ranking regime a winner was produced under. Recorded rather than
+#: assumed, because "which policy picked this row" is exactly the question
+#: the mode-divergence finding showed nobody could answer.
+def ranking_policy_version() -> str:
+    return (f"rank_v{'2' if v2_active() else '1'}"
+            f"{'+as_eaten' if (v2_active() and as_eaten_active()) else ''}")

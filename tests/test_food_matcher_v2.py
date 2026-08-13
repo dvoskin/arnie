@@ -32,6 +32,20 @@ def v1(monkeypatch):
     monkeypatch.setenv("NUTRITION_ACCURACY_V2", "false")
 
 
+@pytest.fixture
+def as_eaten(monkeypatch):
+    """⭐ THE PREFERENCE IS NO LONGER PART OF V2, so a test of the preference
+    must ask for it by name. Split on 2026-08-13: `as_eaten_over_trimmed` is a
+    ±0.4 tie-break, and a tie-break only decides NEAR-TIES — so on real USDA
+    data it was selecting rows that differ from the runner-up in CUT and in
+    COATING, dimensions it never evaluates (knuckle -> striploin, +123 kcal;
+    meat-only -> BATTERED, +7.7 g carbs). V2's structural half is what the
+    Phase 0 baseline freezes against; this rides its own flag until cut and
+    coating are separately modelled."""
+    monkeypatch.setenv("NUTRITION_ACCURACY_V2", "true")
+    monkeypatch.setenv("NUTRITION_AS_EATEN_PREFERENCE", "true")
+
+
 def test_v1_rejects_the_verbose_whole_food_row(v1):
     # The bug: a perfect token match thrown out for description length.
     assert best_candidate("skirt steak", SKIRT)[0] is None
@@ -137,12 +151,22 @@ THIGH = [
 ]
 
 
-def test_v2_prefers_meat_and_skin_over_meat_only(v2):
+def test_the_as_eaten_preference_prefers_meat_and_skin(as_eaten):
+    """The behaviour still works when it is asked for — the flag parks it for
+    a canary, it does not retire it."""
     assert best_candidate("chicken thigh", THIGH)[0]["fdc_id"] == 31
 
 
+def test_v2_alone_keeps_the_trimmed_row(v2):
+    """⭐ THE SPLIT, PINNED WHERE IT MATTERS. Structural V2 must NOT drag the
+    preference in — this is the same assertion as the v1 case below, and that
+    it now holds for v2 too is exactly what makes the canonical-safe regime
+    freezable."""
+    assert best_candidate("chicken thigh", THIGH)[0]["fdc_id"] == 30
+
+
 def test_v1_keeps_the_trimmed_row(v1):
-    # As-eaten is v2-only; v1's length tie-break takes the shorter "meat only".
+    # v1's length tie-break takes the shorter "meat only".
     assert best_candidate("chicken thigh", THIGH)[0]["fdc_id"] == 30
 
 
