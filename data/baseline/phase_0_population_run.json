@@ -1,0 +1,12 @@
+{
+ "regime": "rank_v2",
+ "candidate_universe": 115,
+ "seeded_annotations": 77,
+ "human_signatures": 77,
+ "outstanding": 109,
+ "identities_needing_resolution": 26,
+ "resolved_this_build": 109,
+ "is_reproducibility_evidence": false,
+ "annotations": 186,
+ "failures": []
+}
