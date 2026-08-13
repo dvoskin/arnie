@@ -218,6 +218,46 @@ def _reset_for_tests() -> None:
     _CACHED, _CACHE_FAILED = None, False
 
 
+#: Separator between a source namespace and that source's local identifier.
+SOURCE_SEPARATOR = ":"
+
+
+class UnqualifiedEvidence(Exception):
+    """A candidate could not be named source-qualified. Deliberately fatal."""
+
+
+def candidate_evidence_id(candidate: dict) -> str:
+    """The candidate's SOURCE-QUALIFIED identity — never a bare number.
+
+    ⭐ THIS EXISTS BECAUSE THE DESTRUCTIVE PATH DISCARDED THE NAMESPACE.
+    `apply_admission_decisions` took a reviewed `usda:170032`, split it, and
+    matched on `fdc_id` alone — so a two-source ladder holding `usda:123` and
+    `ciqual:123` would have lost BOTH rows to a rejection naming one. The
+    portability invariant landed one commit earlier and proved the ANNOTATION
+    STORE keeps them apart; the removal tool then threw the namespace away at
+    the exact point the operation becomes irreversible.
+
+    ⭐⭐ AND IT RAISES RATHER THAN GUESSING. An unqualified candidate used to
+    be silently readable as USDA's, which is precisely how one provider
+    becomes "the food database". A default here would reintroduce that by
+    convenience, so the absence is fatal and the caller must supply provenance.
+    """
+    stored = str(candidate.get("evidence_id") or "").strip()
+    if stored:
+        if SOURCE_SEPARATOR not in stored:
+            raise UnqualifiedEvidence(
+                f"{stored!r} carries no source namespace; evidence identity is "
+                f"source + local id, never a provider-local number alone")
+        return stored
+    source = str(candidate.get("source") or "").strip()
+    local = str(candidate.get("fdc_id") or "").strip()
+    if not source or not local:
+        raise UnqualifiedEvidence(
+            f"cannot name this candidate source-qualified: {sorted(candidate)}. "
+            f"Guessing a provider is how one source becomes 'the database'")
+    return f"{source}{SOURCE_SEPARATOR}{local}"
+
+
 def evidence_for(entity: str, preparation: str = ""):
     """`ArtifactEvidence` for this identity, or None.
 

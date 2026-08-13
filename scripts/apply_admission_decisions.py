@@ -43,9 +43,13 @@ def apply(dry_run: bool = True) -> dict:
             report["skipped"].append((identity, evidence, "identity absent"))
             continue
 
-        fdc = evidence.split(":", 1)[-1]
+        # ⛔ NEVER `evidence.split(":")[-1]`. That discarded the source
+        # namespace at the exact point the operation becomes irreversible, so
+        # a rejection naming `usda:123` would also have deleted `ciqual:123`.
+        # The portability invariant proves the ANNOTATION STORE keeps those
+        # apart; this is the tool that has to honour it.
         keep = [c for c in (entry.get("candidates") or ())
-                if str(c.get("fdc_id")) != fdc]
+                if art.candidate_evidence_id(c) != evidence]
         if len(keep) == len(entry.get("candidates") or ()):
             report["skipped"].append((identity, evidence, "candidate absent"))
             continue
@@ -66,14 +70,14 @@ def apply(dry_run: bool = True) -> dict:
 
     document["removed_evidence"] = removed
 
-    # the successor under the regime Phase 0 freezes against
-    import os
-    previous = os.environ.get("NUTRITION_ACCURACY_V2")
-    os.environ["NUTRITION_ACCURACY_V2"] = "1"
-    try:
-        import importlib
+    # ⭐ THE REGIME IS DECLARED, NOT ASSEMBLED HERE. This used to set
+    # NUTRITION_ACCURACY_V2 by hand and INHERIT the as-eaten preference from
+    # whatever the caller's shell carried — so a developer with the flag
+    # exported would have computed a different successor, silently, in a tool
+    # that writes to the production artifact.
+    from skills.nutrition.v2_gate import PHASE_0_REGIME, ranking_regime
+    with ranking_regime(PHASE_0_REGIME):
         import core.food_intelligence as fi
-        importlib.reload(fi)
         from core.canonical_pricing import _ranker_query
         for identity, _evidence, _reason in report["removed"]:
             entity, _, preparation = identity.partition("|")
@@ -82,14 +86,10 @@ def apply(dry_run: bool = True) -> dict:
                 list((entries.get(identity) or {}).get("candidates") or ()))
             report["successors"][identity] = (
                 None if winner is None else
-                (f"usda:{winner.get('fdc_id')}",
+                (art.candidate_evidence_id(winner),
                  (winner.get("per100g") or {}).get("calories"),
                  winner.get("description"), conf))
-    finally:
-        if previous is None:
-            os.environ.pop("NUTRITION_ACCURACY_V2", None)
-        else:
-            os.environ["NUTRITION_ACCURACY_V2"] = previous
+        report["ranking_policy_version"] = PHASE_0_REGIME
 
     if not dry_run:
         art.ARTIFACT_PATH.write_text(json.dumps(document, indent=1) + "\n")

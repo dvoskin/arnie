@@ -39,7 +39,8 @@
       "zinc": 0.54,
       "niacin": 0.978,
       "vitamin_b6": 0.091
-     }
+     },
+     "evidence_id": "usda:168389"
     },
     {
      "fdc_id": 169208,
@@ -71,7 +72,8 @@
       "potassium": 253,
       "zinc": 0.59,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:169208"
     },
     {
      "fdc_id": 169207,
@@ -106,7 +108,8 @@
       "calories": 19.0,
       "vitamin_e": 1.22,
       "vitamin_a": 41.0
-     }
+     },
+     "evidence_id": "usda:169207"
     },
     {
      "fdc_id": 168390,
@@ -141,7 +144,8 @@
       "phosphorus": 54.0,
       "sodium": 14.0,
       "protein": 2.4
-     }
+     },
+     "evidence_id": "usda:168390"
     },
     {
      "fdc_id": 169313,
@@ -176,7 +180,8 @@
       "thiamin": 0.162,
       "riboflavin": 0.139,
       "folate": 149
-     }
+     },
+     "evidence_id": "usda:169313"
     },
     {
      "fdc_id": 169314,
@@ -211,7 +216,8 @@
       "niacin": 0.851,
       "vitamin_b6": 0.098,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:169314"
     },
     {
      "fdc_id": 168494,
@@ -246,7 +252,8 @@
       "vitamin_k": 80.0,
       "saturated_fat": 0.096,
       "vitamin_a": 40.0
-     }
+     },
+     "evidence_id": "usda:168494"
     },
     {
      "fdc_id": 169209,
@@ -281,7 +288,8 @@
       "calories": 18.0,
       "monounsaturated_fat": 0.013,
       "polyunsaturated_fat": 0.185
-     }
+     },
+     "evidence_id": "usda:169209"
     }
    ]
   },
@@ -320,7 +328,8 @@
       "niacin": 0.665,
       "vitamin_b6": 0.367,
       "vitamin_e": 0.1
-     }
+     },
+     "evidence_id": "usda:173944"
     },
     {
      "fdc_id": 1105073,
@@ -339,7 +348,8 @@
       "carbs": 20.1,
       "vitamin_a": 1.0,
       "calories": 85.0
-     }
+     },
+     "evidence_id": "usda:1105073"
     }
    ]
   },
@@ -376,7 +386,8 @@
       "cholesterol": 67.0,
       "trans_fat": 0.078,
       "saturated_fat": 1.15
-     }
+     },
+     "evidence_id": "usda:174730"
     }
    ]
   },
@@ -413,7 +424,8 @@
       "cholesterol": 76.0,
       "trans_fat": 0.128,
       "saturated_fat": 2.3
-     }
+     },
+     "evidence_id": "usda:173085"
     },
     {
      "fdc_id": 174751,
@@ -446,7 +458,8 @@
       "vitamin_b6": 0.279,
       "monounsaturated_fat": 8.07,
       "polyunsaturated_fat": 0.561
-     }
+     },
+     "evidence_id": "usda:174751"
     },
     {
      "fdc_id": 174733,
@@ -479,7 +492,8 @@
       "vitamin_b6": 0.323,
       "monounsaturated_fat": 4.7,
       "polyunsaturated_fat": 0.338
-     }
+     },
+     "evidence_id": "usda:174733"
     },
     {
      "fdc_id": 173108,
@@ -512,7 +526,8 @@
       "vitamin_e": 0.81,
       "niacin": 4.98,
       "vitamin_b6": 0.229
-     }
+     },
+     "evidence_id": "usda:173108"
     },
     {
      "fdc_id": 173094,
@@ -545,7 +560,8 @@
       "vitamin_b6": 0.23,
       "monounsaturated_fat": 2.66,
       "polyunsaturated_fat": 0.37
-     }
+     },
+     "evidence_id": "usda:173094"
     }
    ]
   },
@@ -583,7 +599,8 @@
       "calories": 208,
       "niacin": 5.73,
       "vitamin_b6": 0.543
-     }
+     },
+     "evidence_id": "usda:174702"
     },
     {
      "fdc_id": 174703,
@@ -617,7 +634,8 @@
       "phosphorus": 242,
       "sodium": 87.0,
       "iron": 3.56
-     }
+     },
+     "evidence_id": "usda:174703"
     },
     {
      "fdc_id": 171785,
@@ -652,7 +670,8 @@
       "polyunsaturated_fat": 0.453,
       "calories": 186,
       "sugar": 0.0
-     }
+     },
+     "evidence_id": "usda:171785"
     },
     {
      "fdc_id": 171786,
@@ -687,7 +706,8 @@
       "saturated_fat": 2.64,
       "calories": 177,
       "sugar": 0.0
-     }
+     },
+     "evidence_id": "usda:171786"
     },
     {
      "fdc_id": 168731,
@@ -722,7 +742,8 @@
       "cholesterol": 81.0,
       "vitamin_d": 0.1,
       "vitamin_a": 1.0
-     }
+     },
+     "evidence_id": "usda:168731"
     }
    ]
   },
@@ -761,7 +782,8 @@
       "trans_fat": 0.329,
       "saturated_fat": 2.93,
       "cholesterol": 81.0
-     }
+     },
+     "evidence_id": "usda:169497"
     },
     {
      "fdc_id": 169496,
@@ -796,7 +818,8 @@
       "monounsaturated_fat": 4.69,
       "polyunsaturated_fat": 0.431,
       "cholesterol": 84.0
-     }
+     },
+     "evidence_id": "usda:169496"
     },
     {
      "fdc_id": 171215,
@@ -831,7 +854,8 @@
       "trans_fat": 0.882,
       "saturated_fat": 6.46,
       "polyunsaturated_fat": 0.59
-     }
+     },
+     "evidence_id": "usda:171215"
     },
     {
      "fdc_id": 171216,
@@ -866,7 +890,8 @@
       "niacin": 4.31,
       "vitamin_b6": 0.382,
       "polyunsaturated_fat": 0.679
-     }
+     },
+     "evidence_id": "usda:171216"
     },
     {
      "fdc_id": 168674,
@@ -901,7 +926,8 @@
       "trans_fat": 0.373,
       "saturated_fat": 3.42,
       "cholesterol": 83.0
-     }
+     },
+     "evidence_id": "usda:168674"
     },
     {
      "fdc_id": 170820,
@@ -936,7 +962,8 @@
       "vitamin_b6": 0.38,
       "monounsaturated_fat": 7.24,
       "polyunsaturated_fat": 0.664
-     }
+     },
+     "evidence_id": "usda:170820"
     },
     {
      "fdc_id": 173089,
@@ -969,7 +996,8 @@
       "cholesterol": 69.0,
       "trans_fat": 0.183,
       "saturated_fat": 3.58
-     }
+     },
+     "evidence_id": "usda:173089"
     }
    ]
   },
@@ -1003,7 +1031,8 @@
       "vitamin_k": 102,
       "folate": 65.0,
       "vitamin_a": 8.0
-     }
+     },
+     "evidence_id": "usda:747447"
     },
     {
      "fdc_id": 170379,
@@ -1038,7 +1067,8 @@
       "cholesterol": 0.0,
       "vitamin_a": 31.0,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:170379"
     },
     {
      "fdc_id": 169329,
@@ -1070,7 +1100,8 @@
       "phosphorus": 66.0,
       "sodium": 27.0,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:169329"
     },
     {
      "fdc_id": 169331,
@@ -1101,7 +1132,8 @@
       "cholesterol": 0.0,
       "saturated_fat": 0.054,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:169331"
     },
     {
      "fdc_id": 168510,
@@ -1136,7 +1168,8 @@
       "phosphorus": 67.0,
       "sodium": 262,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:168510"
     },
     {
      "fdc_id": 169967,
@@ -1171,7 +1204,8 @@
       "saturated_fat": 0.079,
       "vitamin_a": 77.0,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:169967"
     },
     {
      "fdc_id": 168511,
@@ -1206,7 +1240,8 @@
       "zinc": 0.28,
       "vitamin_e": 1.32,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:168511"
     },
     {
      "fdc_id": 168512,
@@ -1241,7 +1276,8 @@
       "vitamin_k": 99.5,
       "vitamin_a": 56.0,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:168512"
     },
     {
      "fdc_id": 169969,
@@ -1276,7 +1312,8 @@
       "phosphorus": 49.0,
       "sodium": 11.0,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:169969"
     },
     {
      "fdc_id": 170380,
@@ -1311,7 +1348,8 @@
       "vitamin_b12": 0.0,
       "vitamin_e": 1.32,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:170380"
     }
    ]
   },
@@ -1350,7 +1388,8 @@
       "zinc": 0.27,
       "niacin": 0.507,
       "vitamin_b6": 0.184
-     }
+     },
+     "evidence_id": "usda:169986"
     },
     {
      "fdc_id": 170398,
@@ -1385,7 +1424,8 @@
       "sugar": 2.22,
       "vitamin_e": 0.07,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:170398"
     },
     {
      "fdc_id": 168520,
@@ -1420,7 +1460,8 @@
       "vitamin_k": 13.8,
       "vitamin_e": 0.07,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:168520"
     },
     {
      "fdc_id": 170397,
@@ -1455,7 +1496,8 @@
       "vitamin_e": 0.07,
       "vitamin_k": 13.8,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:170397"
     },
     {
      "fdc_id": 168521,
@@ -1490,7 +1532,8 @@
       "vitamin_e": 0.06,
       "vitamin_k": 11.9,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:168521"
     },
     {
      "fdc_id": 170399,
@@ -1525,7 +1568,8 @@
       "vitamin_e": 0.06,
       "vitamin_k": 11.9,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:170399"
     }
    ]
   },
@@ -1563,7 +1607,8 @@
       "vitamin_e": 0.46,
       "sugar": 0.0,
       "fiber": 0.1
-     }
+     },
+     "evidence_id": "usda:171053"
     },
     {
      "fdc_id": 171074,
@@ -1593,7 +1638,8 @@
       "magnesium": 25.0,
       "phosphorus": 176,
       "sodium": 99.0
-     }
+     },
+     "evidence_id": "usda:171074"
     },
     {
      "fdc_id": 171078,
@@ -1627,7 +1673,8 @@
       "vitamin_k": 2.4,
       "sugar": 0.0,
       "vitamin_e": 0.42
-     }
+     },
+     "evidence_id": "usda:171078"
     },
     {
      "fdc_id": 172375,
@@ -1657,7 +1704,8 @@
       "vitamin_b12": 0.35,
       "cholesterol": 94.0,
       "saturated_fat": 2.13
-     }
+     },
+     "evidence_id": "usda:172375"
     },
     {
      "fdc_id": 172379,
@@ -1687,7 +1735,8 @@
       "polyunsaturated_fat": 2.22,
       "niacin": 6.69,
       "vitamin_b6": 0.39
-     }
+     },
+     "evidence_id": "usda:172379"
     },
     {
      "fdc_id": 171448,
@@ -1721,7 +1770,8 @@
       "vitamin_e": 1.24,
       "sugar": 0.0,
       "folate": 18.0
-     }
+     },
+     "evidence_id": "usda:171448"
     }
    ]
   },
@@ -1759,7 +1809,8 @@
       "vitamin_e": 0.54,
       "vitamin_k": 0.0,
       "vitamin_a": 10.0
-     }
+     },
+     "evidence_id": "usda:171534"
     },
     {
      "fdc_id": 171536,
@@ -1792,7 +1843,8 @@
       "saturated_fat": 1.01,
       "monounsaturated_fat": 1.32,
       "polyunsaturated_fat": 0.713
-     }
+     },
+     "evidence_id": "usda:171536"
     }
    ]
   },
@@ -1825,7 +1877,8 @@
       "vitamin_b6": 0.35,
       "monounsaturated_fat": 5.4,
       "polyunsaturated_fat": 2.92
-     }
+     },
+     "evidence_id": "usda:173635"
     },
     {
      "fdc_id": 172395,
@@ -1855,7 +1908,8 @@
       "polyunsaturated_fat": 1.51,
       "niacin": 7.88,
       "vitamin_b6": 0.41
-     }
+     },
+     "evidence_id": "usda:172395"
     },
     {
      "fdc_id": 173639,
@@ -1885,7 +1939,8 @@
       "vitamin_b6": 0.31,
       "monounsaturated_fat": 3.31,
       "polyunsaturated_fat": 2.0
-     }
+     },
+     "evidence_id": "usda:173639"
     },
     {
      "fdc_id": 173637,
@@ -1919,7 +1974,8 @@
       "sugar": 0.0,
       "vitamin_e": 0.27,
       "vitamin_k": 0.3
-     }
+     },
+     "evidence_id": "usda:173637"
     }
    ]
   },
@@ -1953,7 +2009,8 @@
       "vitamin_d": 2.46,
       "folate": 71.0,
       "fiber": 0.0
-     }
+     },
+     "evidence_id": "usda:748967"
     },
     {
      "fdc_id": 173423,
@@ -1988,7 +2045,8 @@
       "polyunsaturated_fat": 3.25,
       "vitamin_d": 2.2,
       "calories": 196
-     }
+     },
+     "evidence_id": "usda:173423"
     },
     {
      "fdc_id": 172186,
@@ -2023,7 +2081,8 @@
       "cholesterol": 370,
       "trans_fat": 0.038,
       "saturated_fat": 3.11
-     }
+     },
+     "evidence_id": "usda:172186"
     },
     {
      "fdc_id": 172187,
@@ -2058,7 +2117,8 @@
       "vitamin_b6": 0.134,
       "vitamin_d": 1.8,
       "calories": 149
-     }
+     },
+     "evidence_id": "usda:172187"
     },
     {
      "fdc_id": 173424,
@@ -2092,7 +2152,8 @@
       "fat": 10.6,
       "carbs": 1.12,
       "niacin": 0.064
-     }
+     },
+     "evidence_id": "usda:173424"
     }
    ]
   },
@@ -2131,7 +2192,8 @@
       "polyunsaturated_fat": 3.25,
       "vitamin_d": 2.2,
       "calories": 196
-     }
+     },
+     "evidence_id": "usda:173423"
     }
    ]
   },
@@ -2169,7 +2231,8 @@
       "riboflavin": 0.312,
       "folate": 1.0,
       "vitamin_b12": 8.71
-     }
+     },
+     "evidence_id": "usda:175119"
     },
     {
      "fdc_id": 175122,
@@ -2199,7 +2262,8 @@
       "zinc": 0.56,
       "monounsaturated_fat": 0.764,
       "polyunsaturated_fat": 0.46
-     }
+     },
+     "evidence_id": "usda:175122"
     },
     {
      "fdc_id": 173673,
@@ -2233,7 +2297,8 @@
       "calcium": 11.0,
       "potassium": 446,
       "zinc": 0.49
-     }
+     },
+     "evidence_id": "usda:173673"
     },
     {
      "fdc_id": 175120,
@@ -2263,7 +2328,8 @@
       "vitamin_b6": 0.46,
       "monounsaturated_fat": 7.01,
       "polyunsaturated_fat": 4.3
-     }
+     },
+     "evidence_id": "usda:175120"
     },
     {
      "fdc_id": 174236,
@@ -2293,7 +2359,8 @@
       "magnesium": 41.0,
       "phosphorus": 318,
       "sodium": 203
-     }
+     },
+     "evidence_id": "usda:174236"
     },
     {
      "fdc_id": 173674,
@@ -2323,7 +2390,8 @@
       "magnesium": 38.0,
       "phosphorus": 271,
       "sodium": 66.0
-     }
+     },
+     "evidence_id": "usda:173674"
     },
     {
      "fdc_id": 171994,
@@ -2357,7 +2425,8 @@
       "zinc": 0.86,
       "monounsaturated_fat": 3.37,
       "polyunsaturated_fat": 2.49
-     }
+     },
+     "evidence_id": "usda:171994"
     }
    ]
   },
@@ -2391,7 +2460,8 @@
       "vitamin_b6": 0.46,
       "monounsaturated_fat": 7.01,
       "polyunsaturated_fat": 4.3
-     }
+     },
+     "evidence_id": "usda:175120"
     },
     {
      "fdc_id": 174236,
@@ -2421,7 +2491,8 @@
       "magnesium": 41.0,
       "phosphorus": 318,
       "sodium": 203
-     }
+     },
+     "evidence_id": "usda:174236"
     },
     {
      "fdc_id": 173674,
@@ -2451,7 +2522,8 @@
       "magnesium": 38.0,
       "phosphorus": 271,
       "sodium": 66.0
-     }
+     },
+     "evidence_id": "usda:173674"
     },
     {
      "fdc_id": 171994,
@@ -2485,7 +2557,8 @@
       "zinc": 0.86,
       "monounsaturated_fat": 3.37,
       "polyunsaturated_fat": 2.49
-     }
+     },
+     "evidence_id": "usda:171994"
     }
    ]
   },
@@ -2524,7 +2597,8 @@
       "folate": 21.0,
       "vitamin_b12": 0.0,
       "cholesterol": 0.0
-     }
+     },
+     "evidence_id": "usda:170097"
     },
     {
      "fdc_id": 168437,
@@ -2559,7 +2633,8 @@
       "saturated_fat": 0.05,
       "monounsaturated_fat": 0.07,
       "polyunsaturated_fat": 0.034
-     }
+     },
+     "evidence_id": "usda:168437"
     },
     {
      "fdc_id": 168537,
@@ -2594,7 +2669,8 @@
       "vitamin_d": 0.2,
       "vitamin_a": 0.0,
       "saturated_fat": 0.061
-     }
+     },
+     "evidence_id": "usda:168537"
     },
     {
      "fdc_id": 169252,
@@ -2629,7 +2705,8 @@
       "saturated_fat": 0.061,
       "vitamin_d": 0.2,
       "vitamin_a": 0.0
-     }
+     },
+     "evidence_id": "usda:169252"
     }
    ]
   },
@@ -2668,7 +2745,8 @@
       "vitamin_a": 0.0,
       "protein": 3.28,
       "vitamin_d": 0.3
-     }
+     },
+     "evidence_id": "usda:169243"
     },
     {
      "fdc_id": 169377,
@@ -2700,7 +2778,8 @@
       "niacin": 6.26,
       "vitamin_b6": 0.122,
       "fat": 0.58
-     }
+     },
+     "evidence_id": "usda:169377"
     }
    ]
   },
@@ -2739,7 +2818,8 @@
       "polyunsaturated_fat": 0.559,
       "trans_fat": 0.001,
       "saturated_fat": 0.31
-     }
+     },
+     "evidence_id": "usda:173905"
     },
     {
      "fdc_id": 171675,
@@ -2773,7 +2853,8 @@
       "fat": 1.52,
       "carbs": 12.0,
       "calories": 71.0
-     }
+     },
+     "evidence_id": "usda:171675"
     }
    ]
   },
@@ -2812,7 +2893,8 @@
       "trans_fat": 0.0,
       "sugar": 0.91,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:170114"
     },
     {
      "fdc_id": 170522,
@@ -2844,7 +2926,8 @@
       "niacin": 1.62,
       "vitamin_b6": 0.319,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:170522"
     },
     {
      "fdc_id": 170115,
@@ -2876,7 +2959,8 @@
       "saturated_fat": 0.026,
       "cholesterol": 0.0,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:170115"
     }
    ]
   },
@@ -2915,7 +2999,8 @@
       "monounsaturated_fat": 5.97,
       "polyunsaturated_fat": 5.4,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:170698"
     }
    ]
   },
@@ -2953,7 +3038,8 @@
       "vitamin_b12": 0.0,
       "vitamin_d": 0.0,
       "vitamin_a": 0.0
-     }
+     },
+     "evidence_id": "usda:169711"
     },
     {
      "fdc_id": 173263,
@@ -2983,7 +3069,8 @@
       "saturated_fat": 0.213,
       "protein": 3.09,
       "calories": 147
-     }
+     },
+     "evidence_id": "usda:173263"
     },
     {
      "fdc_id": 168930,
@@ -3013,7 +3100,8 @@
       "cholesterol": 0.0,
       "saturated_fat": 0.057,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:168930"
     },
     {
      "fdc_id": 168880,
@@ -3044,7 +3132,8 @@
       "thiamin": 0.167,
       "riboflavin": 0.016,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:168880"
     },
     {
      "fdc_id": 168932,
@@ -3073,7 +3162,8 @@
       "saturated_fat": 0.051,
       "protein": 2.36,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:168932"
     }
    ]
   },
@@ -3109,7 +3199,8 @@
       "folate": 30.0,
       "carbs": 0.0,
       "vitamin_b6": 0.4
-     }
+     },
+     "evidence_id": "usda:173688"
     },
     {
      "fdc_id": 173689,
@@ -3140,7 +3231,8 @@
       "vitamin_b12": 3.0,
       "cholesterol": 74.0,
       "saturated_fat": 0.84
-     }
+     },
+     "evidence_id": "usda:173689"
     },
     {
      "fdc_id": 175138,
@@ -3175,7 +3267,8 @@
       "vitamin_c": 0.0,
       "fiber": 0.0,
       "folate": 4.0
-     }
+     },
+     "evidence_id": "usda:175138"
     },
     {
      "fdc_id": 173691,
@@ -3210,7 +3303,8 @@
       "calories": 131,
       "carbs": 0.0,
       "fiber": 0.0
-     }
+     },
+     "evidence_id": "usda:173691"
     },
     {
      "fdc_id": 175167,
@@ -3244,7 +3338,8 @@
       "vitamin_c": 3.9,
       "folate": 26.0,
       "carbs": 0.0
-     }
+     },
+     "evidence_id": "usda:175167"
     },
     {
      "fdc_id": 173686,
@@ -3274,7 +3369,8 @@
       "polyunsaturated_fat": 2.54,
       "niacin": 7.86,
       "vitamin_b6": 0.818
-     }
+     },
+     "evidence_id": "usda:173686"
     },
     {
      "fdc_id": 171999,
@@ -3304,7 +3400,8 @@
       "sodium": 60.0,
       "cholesterol": 85.0,
       "saturated_fat": 3.21
-     }
+     },
+     "evidence_id": "usda:171999"
     },
     {
      "fdc_id": 172000,
@@ -3334,7 +3431,8 @@
       "vitamin_b6": 0.462,
       "monounsaturated_fat": 1.98,
       "polyunsaturated_fat": 1.15
-     }
+     },
+     "evidence_id": "usda:172000"
     },
     {
      "fdc_id": 172001,
@@ -3369,7 +3467,8 @@
       "vitamin_b6": 0.696,
       "monounsaturated_fat": 1.62,
       "polyunsaturated_fat": 0.973
-     }
+     },
+     "evidence_id": "usda:172001"
     },
     {
      "fdc_id": 173692,
@@ -3404,7 +3503,8 @@
       "cholesterol": 61.0,
       "trans_fat": 0.023,
       "saturated_fat": 0.969
-     }
+     },
+     "evidence_id": "usda:173692"
     },
     {
      "fdc_id": 175168,
@@ -3438,7 +3538,8 @@
       "phosphorus": 252,
       "sodium": 61.0,
       "calories": 206
-     }
+     },
+     "evidence_id": "usda:175168"
     },
     {
      "fdc_id": 171998,
@@ -3468,7 +3569,8 @@
       "vitamin_b6": 0.944,
       "monounsaturated_fat": 2.7,
       "polyunsaturated_fat": 3.26
-     }
+     },
+     "evidence_id": "usda:171998"
     },
     {
      "fdc_id": 173716,
@@ -3498,7 +3600,8 @@
       "protein": 24.3,
       "cholesterol": 63.0,
       "saturated_fat": 1.94
-     }
+     },
+     "evidence_id": "usda:173716"
     }
    ]
   },
@@ -3524,7 +3627,8 @@
       "zinc": 1.64,
       "monounsaturated_fat": 0.048,
       "polyunsaturated_fat": 0.079
-     }
+     },
+     "evidence_id": "usda:175180"
     },
     {
      "fdc_id": 175179,
@@ -3546,7 +3650,8 @@
       "cholesterol": 161,
       "trans_fat": 0.004,
       "saturated_fat": 0.101
-     }
+     },
+     "evidence_id": "usda:175179"
     },
     {
      "fdc_id": 171972,
@@ -3580,7 +3685,8 @@
       "calories": 100,
       "sodium": 870,
       "fiber": 0.0
-     }
+     },
+     "evidence_id": "usda:171972"
     }
    ]
   },
@@ -3618,7 +3724,8 @@
       "saturated_fat": 0.585,
       "monounsaturated_fat": 0.498,
       "polyunsaturated_fat": 0.363
-     }
+     },
+     "evidence_id": "usda:175176"
     },
     {
      "fdc_id": 175177,
@@ -3652,7 +3759,8 @@
       "monounsaturated_fat": 0.955,
       "polyunsaturated_fat": 0.6,
       "vitamin_d": 3.7
-     }
+     },
+     "evidence_id": "usda:175177"
     }
    ]
   },
@@ -3690,7 +3798,8 @@
       "monounsaturated_fat": 0.955,
       "polyunsaturated_fat": 0.6,
       "vitamin_d": 3.7
-     }
+     },
+     "evidence_id": "usda:175177"
     }
    ]
   },
@@ -3729,7 +3838,8 @@
       "folate": 27.0,
       "vitamin_b12": 0.0,
       "saturated_fat": 2.92
-     }
+     },
+     "evidence_id": "usda:172451"
     },
     {
      "fdc_id": 174291,
@@ -3760,7 +3870,8 @@
       "polyunsaturated_fat": 5.64,
       "fat": 9.99,
       "vitamin_d": 0.0
-     }
+     },
+     "evidence_id": "usda:174291"
     },
     {
      "fdc_id": 173788,
@@ -3781,7 +3892,8 @@
       "protein": 10.9,
       "carbs": 0.97,
       "calories": 85.0
-     }
+     },
+     "evidence_id": "usda:173788"
     },
     {
      "fdc_id": 173787,
@@ -3802,7 +3914,8 @@
       "carbs": 2.19,
       "calories": 59.0,
       "protein": 6.38
-     }
+     },
+     "evidence_id": "usda:173787"
     }
    ]
   },
@@ -3841,7 +3954,8 @@
       "folate": 27.0,
       "vitamin_b12": 0.0,
       "saturated_fat": 2.92
-     }
+     },
+     "evidence_id": "usda:172451"
     },
     {
      "fdc_id": 174304,
@@ -3872,7 +3986,8 @@
       "vitamin_b12": 0.0,
       "cholesterol": 0.0,
       "saturated_fat": 2.92
-     }
+     },
+     "evidence_id": "usda:174304"
     }
    ]
   }
@@ -3884,6 +3999,13 @@
    "reason": "part_of_food_not_the_food",
    "note": "\"Potatoes, raw, SKIN\" is the SKIN \u2014 a part of the potato, not a whole-potato record. An admission defect, not a ranking preference: the ladder holds boiled flesh at 87 and microwaved flesh at 100, and this row cannot legitimately describe 'potato' at any ranking.",
    "round": "phase_0.9_winner_review"
+  }
+ ],
+ "provenance_notes": [
+  {
+   "round": "phase_0.9_source_qualification",
+   "note": "backfilled source-qualified evidence_id onto every candidate. The artifact was built entirely from USDA, so the namespace is recoverable here and ONLY here \u2014 after this, provenance is carried rather than inferred, and the destructive path compares on it instead of on a provider-local number.",
+   "candidates_qualified": 115
   }
  ]
 }

@@ -102,12 +102,23 @@ def prefer_as_eaten(winner: dict, candidates) -> dict:
     """
     if not winner or not is_trimmed_reference(winner.get("description", "")):
         return winner
-    for candidate in candidates or ():
-        if candidate is winner:
-            continue
-        description = candidate.get("description", "")
-        if not is_as_eaten(description):
-            continue
-        if comparable(winner.get("description", ""), description):
-            return candidate
-    return winner
+
+    description = winner.get("description", "")
+    comparable_forms = [c for c in (candidates or ())
+                        if c is not winner
+                        and is_as_eaten(c.get("description", ""))
+                        and comparable(description, c.get("description", ""))]
+
+    # ⭐⭐ ZERO KEEP · ONE REFINE · MANY REFUSE. Taking the first comparable
+    # row would make CANDIDATE ORDER an implicit preference — a silent third
+    # policy nobody declared, decided by whatever the retrieval happened to
+    # return first. There is no ranking to do here: if the ladder offers two
+    # equally comparable as-eaten forms, this preference genuinely does not
+    # know which, and saying so leaves the winner where an owned policy put it.
+    if len(comparable_forms) != 1:
+        return winner
+
+    chosen = comparable_forms[0]
+    # the refinement may not change anything the preference does not govern
+    assert residue(description) == residue(chosen.get("description", ""))
+    return chosen

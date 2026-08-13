@@ -163,3 +163,67 @@ def as_eaten_cohort_label() -> str:
 def ranking_policy_version() -> str:
     return (f"rank_v{'2' if v2_active() else '1'}"
             f"{'+as_eaten' if (v2_active() and as_eaten_active()) else ''}")
+
+
+# ── THE PROOF REGIME IS DECLARED, NOT INHERITED ───────────────────────────
+#
+# ⭐ A BASELINE THE CALLER'S SHELL CAN MOVE IS NOT FROZEN. The winner review,
+# the artifact rebuild, the population run and the reproducibility proof must
+# all be computed under ONE named policy — and until now each of them set
+# `NUTRITION_ACCURACY_V2` by hand and inherited `NUTRITION_AS_EATEN_PREFERENCE`
+# from whatever the process happened to carry. Two of those tools would have
+# produced different winners under a developer's exported flag, silently.
+#
+# `RANK_V2` is the regime Phase 0 freezes against: V2's structural half with
+# the as-eaten preference OFF. Naming it makes "which policy proved this"
+# answerable from the artifact rather than from shell history.
+RANK_V1 = "rank_v1"
+RANK_V2 = "rank_v2"
+RANK_V2_AS_EATEN = "rank_v2+as_eaten"
+
+_REGIME_FLAGS = {
+    RANK_V1: {"NUTRITION_ACCURACY_V2": "", "NUTRITION_AS_EATEN_PREFERENCE": ""},
+    RANK_V2: {"NUTRITION_ACCURACY_V2": "1", "NUTRITION_AS_EATEN_PREFERENCE": ""},
+    RANK_V2_AS_EATEN: {"NUTRITION_ACCURACY_V2": "1",
+                       "NUTRITION_AS_EATEN_PREFERENCE": "1"},
+}
+
+#: What Phase 0 proves against. Changing this is a policy migration, not a
+#: configuration tweak.
+PHASE_0_REGIME = RANK_V2
+
+
+@contextmanager
+def ranking_regime(regime: str):
+    """Pin BOTH policy dimensions, and refuse to trust the ambient shell.
+
+    Every flag the ranking regime depends on is set explicitly — including the
+    ones the caller wanted OFF, because an unset variable and a variable set
+    elsewhere are the same thing to `os.getenv` and only one of them is a
+    decision.
+    """
+    if regime not in _REGIME_FLAGS:
+        raise ValueError(f"{regime!r} is not a ranking regime; "
+                         f"known: {sorted(_REGIME_FLAGS)}")
+    previous = {k: os.environ.get(k) for k in _REGIME_FLAGS[regime]}
+    os.environ.update(_REGIME_FLAGS[regime])
+    try:
+        import importlib
+
+        import core.food_intelligence as fi
+        importlib.reload(fi)
+        if ranking_policy_version() != regime:
+            raise RuntimeError(
+                f"the regime did not take effect: asked for {regime}, running "
+                f"{ranking_policy_version()}")
+        yield regime
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        import importlib
+
+        import core.food_intelligence as fi
+        importlib.reload(fi)

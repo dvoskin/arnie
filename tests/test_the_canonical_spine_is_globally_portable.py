@@ -222,3 +222,121 @@ def test_the_invalidation_vocabulary_has_no_market_or_provider_member():
         lowered = cause.lower()
         assert "usda" not in lowered and "fdc" not in lowered
         assert "us_" not in lowered and not lowered.endswith("_us")
+
+
+# ── 6. DESTRUCTIVE operations must honour the namespace too ───────────────
+
+def test_a_rejection_removes_only_its_own_source():
+    """⛔ THE MUTATION WITNESS. `apply_admission_decisions` used to compute
+    `evidence.split(":")[-1]` and match on `fdc_id`, discarding the source at
+    the exact point the operation becomes irreversible — so a rejection naming
+    `usda:123` would have deleted `ciqual:123` as well.
+
+    ⭐ THE IRONY IS THE LESSON. The gates above already proved the ANNOTATION
+    STORE keeps those two apart. Proving it for storage and not for DELETION
+    left the invariant true everywhere except where it mattered most."""
+    from skills.nutrition import pricing_artifact as art
+
+    ladder = [{"fdc_id": "123", "evidence_id": "usda:123", "description": "a"},
+              {"fdc_id": "123", "evidence_id": "ciqual:123", "description": "b"}]
+    kept = [c for c in ladder
+            if art.candidate_evidence_id(c) != "usda:123"]
+    assert [c["evidence_id"] for c in kept] == ["ciqual:123"]
+
+
+def test_an_unqualified_candidate_is_refused_not_assumed_usda():
+    """A default here would be how one provider silently becomes "the food
+    database" — by convenience rather than by decision."""
+    from skills.nutrition import pricing_artifact as art
+
+    with pytest.raises(art.UnqualifiedEvidence):
+        art.candidate_evidence_id({"fdc_id": "1"})
+    with pytest.raises(art.UnqualifiedEvidence):
+        art.candidate_evidence_id({"evidence_id": "170032"})
+    assert art.candidate_evidence_id({"source": "ciqual", "fdc_id": "9"}) \
+        == "ciqual:9"
+
+
+def test_every_committed_candidate_carries_its_source():
+    """After the backfill, provenance is CARRIED rather than inferred."""
+    import json
+
+    from skills.nutrition import pricing_artifact as art
+    if not art.ARTIFACT_PATH.exists():
+        pytest.skip("no committed artifact")
+    doc = json.loads(art.ARTIFACT_PATH.read_text())
+    for identity, entry in (doc.get("entries") or {}).items():
+        for candidate in (entry.get("candidates") or ()):
+            evidence = art.candidate_evidence_id(candidate)
+            assert ":" in evidence, (identity, evidence)
+
+
+# ── 7. the proof regime is declared, not inherited ────────────────────────
+
+def test_the_ranking_regime_ignores_a_hostile_caller_environment():
+    """⭐ A BASELINE THE SHELL CAN MOVE IS NOT FROZEN. Every flag the regime
+    depends on is set explicitly — including the ones wanted OFF, because an
+    unset variable and one set elsewhere are identical to `os.getenv` and only
+    one of them is a decision."""
+    import os
+
+    from skills.nutrition import v2_gate
+
+    hostile = {"NUTRITION_ACCURACY_V2": "true",
+               "NUTRITION_AS_EATEN_PREFERENCE": "true"}
+    previous = {k: os.environ.get(k) for k in hostile}
+    os.environ.update(hostile)
+    try:
+        with v2_gate.ranking_regime(v2_gate.RANK_V2) as regime:
+            assert regime == v2_gate.RANK_V2
+            assert v2_gate.ranking_policy_version() == "rank_v2"
+            assert v2_gate.as_eaten_active() is False
+        with v2_gate.ranking_regime(v2_gate.RANK_V1):
+            assert v2_gate.ranking_policy_version() == "rank_v1"
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        import importlib
+        import core.food_intelligence as fi
+        importlib.reload(fi)
+
+
+def test_phase_zero_names_the_regime_it_proves_against():
+    from skills.nutrition import v2_gate
+    assert v2_gate.PHASE_0_REGIME == v2_gate.RANK_V2
+    with pytest.raises(ValueError):
+        with v2_gate.ranking_regime("rank_whatever"):
+            pass
+
+
+# ── 8. the preference refuses ambiguity rather than taking the first ──────
+
+def test_two_comparable_as_eaten_forms_refuse_the_refinement():
+    """⭐ ORDER MUST NOT BECOME AN IMPLICIT PREFERENCE. With two equally
+    comparable as-eaten rows this policy genuinely does not know which, and
+    saying so leaves the winner where an owned policy put it."""
+    from skills.nutrition.preference_dimensions import prefer_as_eaten
+
+    winner = {"fdc_id": "1", "description": "Chicken, meat only, cooked"}
+    one = {"fdc_id": "2", "description": "Chicken, meat and skin, cooked"}
+    assert prefer_as_eaten(winner, [one]) is one            # exactly one
+    two = {"fdc_id": "3", "description": "Chicken, lean and fat, cooked"}
+    assert prefer_as_eaten(winner, [one, two]) is winner     # more than one
+    assert prefer_as_eaten(winner, []) is winner             # none
+
+
+def test_comparability_is_symmetric_and_refinement_preserves_the_residue():
+    from skills.nutrition.preference_dimensions import (comparable,
+                                                        prefer_as_eaten,
+                                                        residue)
+    a = "Chicken, roasting, meat only, cooked, roasted"
+    b = "Chicken, roasting, meat and skin, cooked, roasted"
+    assert comparable(a, b) == comparable(b, a)
+
+    winner = {"fdc_id": "1", "description": a}
+    refined = prefer_as_eaten(winner, [{"fdc_id": "2", "description": b}])
+    assert refined is not winner
+    assert residue(a) == residue(refined["description"])
