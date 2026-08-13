@@ -182,7 +182,18 @@ def score_match(query: str, description: str) -> str:
         return "exact"
     if q in d:
         return "likely"
-    overlap = len(qa & da) / max(1, len(qa))
+    # ⭐ THE SAME FOLD THE RANKER USES, for the same reason. `best_candidate`
+    # picks the winner on folded tokens; if this labelled it on unfolded ones
+    # the two would disagree about what a match IS, and a correctly-matched
+    # food would be reported as "estimated" — measured on "eggs" against
+    # "Egg, whole, cooked, poached", where the ranker seats the row and the
+    # label calls it a guess. `tool_executor` shows that label to the pricing
+    # path, so the disagreement is not cosmetic.
+    #
+    # Containment above stays on the RAW strings deliberately: it is a
+    # stricter test that already behaves, and folding a whole phrase would
+    # change what "contains" means rather than what "matches" means.
+    overlap = len(_folded(qa) & _folded(da)) / max(1, len(_folded(qa)))
     if overlap >= 0.6:
         return "likely"
     return "estimated"
@@ -273,6 +284,57 @@ _COOKED_MARKERS = frozenset({
 })
 
 
+# ── MORPHOLOGICAL FOLDING, and why it is a CANONICALISATION not a lemmatiser ──
+#
+# Measured 2026-08-13: `banana|` and `potato|` scored an overlap of EXACTLY
+# ZERO against "Bananas, raw" and "Potatoes, raw, skin". The artifact held the
+# evidence, the eligibility layer admitted it, a person reviewed it — and
+# `best_candidate` could not see it, because "banana" is not the string
+# "bananas". `_from_artifact` then returned None and the turn priced from a
+# lower rung in silence. USDA writes its headings in the plural; people write
+# food in the singular. Nothing else was wrong.
+#
+# ⭐ SYMMETRY IS THE PROPERTY, CORRECTNESS IS NOT. Both the query and the
+# record go through this same fold, so a linguistically WRONG stem is
+# harmless as long as it is the same on both sides: "leaves" folding to
+# "leave" still matches "leaves". That is why this can be a handful of suffix
+# rules rather than a dictionary — it is not trying to know English, only to
+# agree with itself. A food-name list would be the opposite: knowledge that
+# has to be maintained, and the thing this codebase refuses.
+#
+# ⭐⭐ AND IT IS APPLIED ONLY TO COVERAGE. `_FORM_PENALTY`, `_SPECIES_TOKENS`,
+# `_CUT_NARROWERS`, `_PREP_TOKENS` and `_COOKED_MARKERS` are literal-token
+# sets; folding the sets they are tested against would silently stop "chips"
+# matching `_FORM_PENALTY`. So the raw token sets are kept for every penalty
+# and preference, and the fold is used for the two overlap ratios and nothing
+# else. The blast radius is the coverage measurement, by construction.
+
+#: Endings where a trailing "s" is part of the WORD, not a plural marker —
+#: asparagus, molasses, couscous, bass. Checked before any rule fires.
+_NOT_A_PLURAL = ("ss", "us", "is", "os")
+
+#: Below this length a trailing "s" is more likely to be the word than a
+#: plural ("gas", "ras"), and the tokens that matter here are all longer.
+_MIN_FOLDABLE = 4
+
+
+def _singular(token: str) -> str:
+    """One token, folded toward its singular form. Deterministic and total."""
+    if len(token) < _MIN_FOLDABLE or token.endswith(_NOT_A_PLURAL):
+        return token
+    if token.endswith("ies") and len(token) > 4:
+        return token[:-3] + "y"                      # berries -> berry
+    if token.endswith(("oes", "ches", "shes", "xes", "zes", "sses")):
+        return token[:-2]                            # potatoes -> potato
+    if token.endswith("s"):
+        return token[:-1]                            # bananas -> banana
+    return token
+
+
+def _folded(tokens) -> set:
+    return {_singular(t) for t in tokens}
+
+
 def best_candidate(query: str, candidates: list[dict]) -> tuple[Optional[dict], str]:
     """
     Pick the most canonical USDA match for a query and return (candidate, confidence).
@@ -317,12 +379,16 @@ def best_candidate(query: str, candidates: list[dict]) -> tuple[Optional[dict], 
     # reference sample, not the meal — the same "as logged" principle as cooked-
     # default. Suppressed when the query itself asks for the trimmed form.
     _as_eaten = v2 and not (qa & {"skinless", "lean", "trimmed"})
+    # Folded ONCE per call, for coverage only. `qa` and `qa_id` stay raw below,
+    # because every penalty and preference tests literal membership.
+    qa_f, qa_id_f = _folded(qa), _folded(qa_id)
     best, best_score, best_overlap = None, -999.0, 0.0
     for c in candidates:
         d = normalize_name(c.get("description", ""), split_separators=v2)
         da = set(d.split())
-        overlap = len(qa & da) / max(1, len(qa))
-        id_overlap = len(qa_id & da) / max(1, len(qa_id))
+        da_f = _folded(da)
+        overlap = len(qa_f & da_f) / max(1, len(qa_f))
+        id_overlap = len(qa_id_f & da_f) / max(1, len(qa_id_f))
         score = overlap * 3.0
         # Length term: a tie-break in v2 (0.02), the rejection lever in v1 (0.15).
         score -= (0.02 if v2 else 0.15) * max(0, len(da) - len(qa))

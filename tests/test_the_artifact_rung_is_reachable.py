@@ -10,13 +10,24 @@ because `_from_artifact` returns None when the ranker matches nothing and
 correctly — "mackerel, roasted" — and hands it to `best_candidate`, which
 cannot match it against "Fish, mackerel, Atlantic, cooked, dry heat". Bare
 "mackerel" matches the same row. So the composed query is the thing that
-breaks it, and committed identities price from nothing:
+breaks it, and committed identities price from nothing.
 
-    banana|            'banana' misses "Bananas, raw"      (singular/plural)
-    potato|            'potato' misses "Potatoes, ..."     (singular/plural)
-    oats|              'oats'   misses "Cereals, oats, ..."(category prefix)
-    mackerel|roasted   the preparation term breaks a match that works bare
-    tilapia|roasted    the preparation term breaks a match that works bare
+⭐ WHAT THE FIRST WRITE-UP OF THIS FILE GOT WRONG, corrected by measuring the
+score instead of reading the description: these were never ONE defect.
+
+    banana|          overlap 0.00 — the token is ABSENT.  MORPHOLOGY.
+    potato|          overlap 0.00 — the token is ABSENT.  MORPHOLOGY.
+    oats|            overlap 1.00, no penalty. 3.0 - 0.15*(14-1) = 1.05
+                     against a 1.2 floor. THE V1 LENGTH LEVER, not a
+                     "category prefix" — 'oats' matches perfectly.
+    mackerel|roasted overlap 0.50 ('roasted' vs 'dry heat'), id 1.00.
+    tilapia|roasted  1.5 - 0.15*4 = 0.90. THE V1 LENGTH LEVER, plus v1
+                     having no identity gate.
+
+Morphological folding closed the first two IN EVERY MODE. The remaining three
+are a v1 scoring artifact that V2 already fixes by design (0.02 length
+tie-break + an identity-coverage gate), so they resolve when V2 goes
+fleet-wide rather than needing a ranker change.
 
 This is the identity-boundary lesson at one more consumer: A CANONICALISATION
 IS ONLY AS GOOD AS ITS LEAST CAREFUL CONSUMER. Fixing the query without
@@ -53,11 +64,13 @@ from skills.nutrition import pricing_artifact as art
 
 #: Measured 2026-08-13 against the committed artifact, per flag mode. Never
 #: guessed, and never stated without its mode — the mode IS the finding.
-UNREACHABLE_V2_OFF = {"banana|", "potato|", "oats|", "mackerel|roasted",
-                      "tilapia|roasted"}
-UNREACHABLE_V2_ON = {"banana|", "potato|"}
+#: Re-measured 2026-08-13 AFTER morphological folding landed.
+UNREACHABLE_V2_OFF = {"oats|", "mackerel|roasted", "tilapia|roasted"}
+UNREACHABLE_V2_ON = frozenset()
 
-#: Fails in EVERY mode. A plain noun cannot reach USDA's plural heading.
+#: Now EMPTY. The singular/plural defect was the only one reaching every
+#: user, and it is closed — see
+#: tests/test_the_ranker_folds_plurals_and_says_when_it_cannot.py
 UNREACHABLE_ALWAYS = UNREACHABLE_V2_OFF & UNREACHABLE_V2_ON
 
 
@@ -127,38 +140,31 @@ def test_reachability_depends_on_a_per_user_flag(worksheet=None):
         "the one that reaches every user")
 
 
-@pytest.mark.xfail(strict=True, reason="the ranker cannot match a composed "
-                                       "identity against USDA naming — "
-                                       "delete this marker when it is fixed")
-@pytest.mark.parametrize("v2_on", [False, True])
-def test_every_committed_identity_is_reachable(v2_on):
+def test_every_committed_identity_is_reachable_under_v2():
+    """⭐ NO LONGER AN XFAIL. Under V2 the artifact is fully reachable: 27 of
+    27. This is now a REGRESSION GATE, and it is the strongest argument for
+    taking V2 fleet-wide."""
     entries = _entries()
-    with _v2(v2_on):
+    with _v2(True):
         unreachable = sorted(k for k, v in entries.items()
                              if _winner(k, v) is None)
     assert unreachable == [], (
         f"{len(unreachable)} of {len(entries)} committed identities price "
-        f"from NOTHING with V2 {'on' if v2_on else 'off'}: {unreachable}")
+        f"from NOTHING under V2: {unreachable}")
 
 
-@pytest.mark.xfail(strict=True, reason="singular/plural and the USDA category "
-                                       "prefix defeat the ranker")
-@pytest.mark.parametrize("v2_on", [False, True])
-@pytest.mark.parametrize("query, expected_fragment", [
-    ("banana", "Bananas"),
-    ("potato", "Potatoes"),
-])
-def test_a_singular_request_matches_the_plural_record(query, expected_fragment,
-                                                      v2_on):
-    """⭐ THE MODE-INDEPENDENT DEFECT. Both flag states fail this, so it
-    reaches every user rather than only the ones outside the allowlist."""
-    entry = _entries().get(f"{query}|")
-    if entry is None:
-        pytest.skip(f"{query} not committed")
-    with _v2(v2_on):
-        winner, _ = best_candidate(query, list(entry.get("candidates") or ()))
-    assert winner is not None and expected_fragment.lower() in str(
-        winner.get("description", "")).lower()
+@pytest.mark.xfail(strict=True, reason="v1 subtracts 0.15 per extra "
+                                       "description token, so a verbose USDA "
+                                       "row fails a 1.2 floor it covers "
+                                       "perfectly; V2 already fixes this")
+def test_every_committed_identity_is_reachable_without_v2():
+    entries = _entries()
+    with _v2(False):
+        unreachable = sorted(k for k, v in entries.items()
+                             if _winner(k, v) is None)
+    assert unreachable == [], (
+        f"{len(unreachable)} of {len(entries)} committed identities price "
+        f"from NOTHING with V2 off: {unreachable}")
 
 
 @pytest.mark.xfail(strict=True, reason="with V2 OFF a preparation term in the "

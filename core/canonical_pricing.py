@@ -305,6 +305,25 @@ def _ranker_query(entity: str, preparation: str) -> str:
     return composed or entity
 
 
+# ── THE RUNG MAY NOT DISAPPEAR QUIETLY ────────────────────────────────────
+#
+# Measured 2026-08-13: five committed identities produced NO winner, so this
+# rung returned None and `price()` fell through to a lower one — with no
+# error, no log and no metric. Evidence had been retrieved, mechanically
+# qualified, semantically annotated and in two cases signed by a person, and
+# the turn priced from an estimate anyway. Nothing in the system could report
+# that, which is why it survived a full migration undetected.
+#
+# ⭐ THE FIX FOR THE FIVE IS NOT THE FIX FOR THE CLASS. Morphological folding
+# repairs the cases we found; another naming mismatch upstream would
+# reproduce the identical silence tomorrow. So the FAILURE ITSELF is named
+# and emitted: having candidates and returning nothing is now an event, and a
+# gate asserts it fires. An absent answer must never be indistinguishable
+# from an answered one.
+ARTIFACT_RANKER_NO_WINNER = "artifact_candidates_present_but_ranker_returned_none"
+ARTIFACT_WINNER_UNPRICEABLE = "artifact_winner_carries_no_per100g"
+
+
 def _from_artifact(ev: ArtifactEvidence, *, query: str):
     """Qualified candidates -> the deterministic winner.
 
@@ -312,14 +331,25 @@ def _from_artifact(ev: ArtifactEvidence, *, query: str):
     trace measured at 0 ms. Passing it ONLY qualified candidates is the whole
     change: the legacy path ranked over raw rows, which is how one identity
     priced 295 kcal and then 329.
+
+    Returns None when this rung cannot answer — and says so out loud first.
     """
     from core.food_intelligence import best_candidate
 
-    winner, _conf = best_candidate(query, list(ev.candidates or ()))
+    candidates = list(ev.candidates or ())
+    winner, _conf = best_candidate(query, candidates)
     if not winner:
+        if candidates:
+            logger.warning(
+                "event=%s query=%r candidates=%d fdc_ids=%s",
+                ARTIFACT_RANKER_NO_WINNER, query, len(candidates),
+                ",".join(str(c.get("fdc_id") or "?") for c in candidates[:8]))
         return None
     per100g = winner.get("per100g") or {}
     if not per100g:
+        logger.warning("event=%s query=%r fdc_id=%s",
+                       ARTIFACT_WINNER_UNPRICEABLE, query,
+                       winner.get("fdc_id"))
         return None
     fdc = str(winner.get("fdc_id") or "")
     return (_profile(per100g, source="usda", source_id=fdc,

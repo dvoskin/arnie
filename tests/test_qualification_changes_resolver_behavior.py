@@ -60,25 +60,47 @@ def _ids(rows):
 
 # ── the regression, both halves ─────────────────────────────────────────────
 
-def test_without_qualification_a_noncomparable_row_can_win():
-    """THE RED HALF: the defect must be demonstrably real in the unqualified
-    path, or the green half proves nothing. `best_candidate` over the raw
-    captured rows for a plain-papaya request must seat a row that is NOT the
-    raw fruit — the shipped 2896 behavior."""
+def test_ranking_alone_now_reaches_the_plain_row():
+    """THE RED HALF'S ORIGINAL DEMONSTRATION IS SPENT, AND THIS RECORDS WHY.
+
+    This used to seat "Babyfood, fruit, guava and papaya with tapioca,
+    strained" for a bare "papaya" — the shipped 2896 behaviour. The cause was
+    never the composite's attractiveness: it was that "papaya" could not
+    reach "Papayas, raw" at all, so the only rows the ranker could see were
+    the ones that happened to spell the word in the singular. This test's own
+    skip message asked for the pair to be re-examined when that changed, and
+    morphological folding changed it on 2026-08-13.
+
+    ⭐ SO THE PAIR KEEPS ITS RED, BELOW, WITH A CASE THAT STILL REPRODUCES.
+    A red half that has quietly gone green makes its green half prove less
+    than it claims, which is worse than having no pair at all.
+    """
     from core.food_intelligence import best_candidate
 
-    winner, _conf = best_candidate("papaya", _papaya_rows())
-    assert winner is not None
-    if winner["description"] == "Papayas, raw":
-        pytest.skip("ranking alone now picks the raw row — the defect no "
-                    "longer reproduces from ranking, re-examine this pair")
-    # Measured while writing this test: the winner is the BABYFOOD COMPOSITE
-    # ("Babyfood, fruit, guava and papaya with tapioca, strained") — its
-    # description contains the literal token "papaya", so coverage passes and
-    # the composite penalty does not sink it. String overlap seating a
-    # composite is the entire class this boundary exists to refuse.
-    assert winner["description"] != "Papayas, raw", (
-        "expected the unqualified path to demonstrate the defect")
+    winner, conf = best_candidate("papaya", _papaya_rows())
+    assert winner is not None and winner["description"] == "Papayas, raw", (
+        f"the plural fold regressed — 'papaya' now seats {winner}")
+    assert conf == "exact"
+
+
+def test_without_qualification_a_composite_still_wins_a_bare_request():
+    """THE RED HALF, RESTORED — and it is a better red than the one it
+    replaces. Composite-seating is a property of WHAT IS ON THE SHELF, not of
+    how the query is spelled: when USDA carries no plain row for a food, the
+    ranker's coverage gate is satisfied by a babyfood purée that merely
+    contains the word, and nothing in ranking can tell the difference.
+
+    That is the class this evidence boundary exists to refuse, and it is
+    untouched by anything the fold did."""
+    from core.food_intelligence import best_candidate
+
+    shelf = [r for r in _papaya_rows()
+             if not r["description"].startswith("Papayas, raw")]
+    winner, _conf = best_candidate("papaya", shelf)
+    assert winner is not None, "nothing seated — the red no longer reproduces"
+    assert winner["description"] != "Papayas, raw"
+    assert "Babyfood" in winner["description"], (
+        f"expected the unqualified path to seat a composite, got {winner}")
 
 
 @pytest.mark.asyncio
@@ -98,13 +120,16 @@ async def test_with_qualification_the_bad_row_cannot_win():
     winner, _conf = best_candidate("papaya", list(q.rows))
     # QUALIFICATION DECIDES ELIGIBILITY, NOT TRUTH. With only the raw fruit
     # eligible, the bad rows CANNOT win — that is this boundary's whole claim.
-    # `best_candidate` then happens to return None here: its coverage gate
-    # does not bridge "papaya" to "Papayas, raw" (singular vs plural), so
-    # USDA contributes nothing and the ladder falls to the estimate — still
-    # strictly better than seating the composite. That plural gap is a
-    # D-class ranking finding, recorded in the directive, and deliberately
-    # NOT fixed inside the evidence boundary.
-    assert winner is None or winner["description"] == "Papayas, raw", (
+    #
+    # ⭐ THIS COMMENT USED TO SAY `best_candidate` RETURNS None HERE, because
+    # its coverage gate could not bridge "papaya" to "Papayas, raw" — and it
+    # called that "a D-class ranking finding, recorded in the directive, and
+    # deliberately NOT fixed inside the evidence boundary." That was the right
+    # call about the right layer: it was fixed on 2026-08-13 in the RANKER, by
+    # folding both sides of the comparison, and not in here. The boundary's
+    # claim is unchanged; the row it now seats is simply the correct one
+    # instead of nothing.
+    assert winner is not None and winner["description"] == "Papayas, raw", (
         f"a non-identity row won through the qualified set: {winner}")
 
 
