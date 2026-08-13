@@ -340,3 +340,92 @@ def test_comparability_is_symmetric_and_refinement_preserves_the_residue():
     refined = prefer_as_eaten(winner, [{"fdc_id": "2", "description": b}])
     assert refined is not winner
     assert residue(a) == residue(refined["description"])
+
+
+# ── 9. the preference subtracts OWNED PHRASES, not owned-looking tokens ───
+
+@pytest.mark.parametrize("one, other", [
+    # ⛔ THE DEFECT THE FIRST IMPLEMENTATION ALLOWED. Global token subtraction
+    # deleted `fat`, `lean` and `meat` WHEREVER they appeared, so these
+    # reduced to the same bag of words and compared EQUAL — letting the
+    # preference swap two genuinely different rows on the authority of a rule
+    # that owns neither word in this position.
+    ("Beef, fat, raw", "Beef, lean, raw"),
+    ("Beef, meat, raw", "Beef, fat, raw"),
+    ("Fish, lean, raw", "Fish, fat, raw"),
+])
+def test_a_governed_word_outside_its_owned_phrase_is_not_subtracted(one, other):
+    from skills.nutrition.preference_dimensions import comparable
+    assert not comparable(one, other)
+
+
+@pytest.mark.parametrize("one, other", [
+    ("Chicken, roasting, meat only, cooked, roasted",
+     "Chicken, roasting, meat and skin, cooked, roasted"),
+    ("Beef, chuck, meat only, raw", "Beef, chuck, lean and fat, raw"),
+])
+def test_an_owned_phrase_change_alone_is_comparable(one, other):
+    from skills.nutrition.preference_dimensions import comparable
+    assert comparable(one, other) and comparable(other, one)
+
+
+@pytest.mark.parametrize("dimension, one, other", [
+    ("cut", "Beef, knuckle, meat only, fried",
+     "Beef, striploin, lean and fat, fried"),
+    ("coating", "Chicken, meat only, fried",
+     "Chicken, meat and skin, fried, batter"),
+    ("species", "Fish, salmon, meat only, cooked",
+     "Fish, mackerel, meat and skin, cooked"),
+    ("grade", "Beef, ribeye, lean only, choice, grilled",
+     "Beef, ribeye, lean and fat, select, grilled"),
+    ("preparation", "Chicken, meat only, roasted",
+     "Chicken, meat and skin, fried"),
+    ("origin", "Beef, New Zealand, imported, lean only, roasted",
+     "Beef, lean and fat, roasted"),
+])
+def test_no_unowned_dimension_may_ride_in_on_the_preference(dimension, one,
+                                                            other):
+    """⭐ ONE OWNED DIMENSION, OR NOTHING. Each pair changes the trim phrase
+    AND something the preference does not own — and the second change is what
+    must block it."""
+    from skills.nutrition.preference_dimensions import comparable
+    assert not comparable(one, other), dimension
+
+
+@pytest.mark.parametrize("description", [
+    "Chicken, roasting, meat only, cooked, roasted",
+    'Beef, ribeye, separable lean and fat, trimmed to 0" fat, grilled',
+    "Bananas, raw",
+    "Chicken, skinless, boneless, breast",
+])
+def test_owned_dimension_normalisation_is_idempotent(description):
+    """⚠ THE FIRST MARKER WAS NOT. `\\x00trim_form` looked safe because it was
+    not word-like — and `normalize_name` strips every non-alphanumeric, so a
+    second pass shredded it into "trim form". Both sides of every comparison
+    run through this, so a function that moves on the second application can
+    put a record and a query on different footings."""
+    from skills.nutrition.preference_dimensions import \
+        normalize_owned_dimension as normalise
+    once = normalise(description)
+    assert normalise(once) == once
+
+
+def test_the_residue_keeps_order_and_multiplicity():
+    """A `frozenset` residue made two descriptions comparable whenever they
+    shared a vocabulary, however differently it was arranged."""
+    from skills.nutrition.preference_dimensions import residue
+    assert isinstance(residue("Bananas, raw"), tuple)
+    assert residue("Beef, chuck, raw") != residue("Chuck, beef, raw")
+    assert residue("Rice, white, white") != residue("Rice, white")
+
+
+def test_the_owned_vocabulary_is_phrases_not_bare_tokens():
+    """⭐ THE ARCHITECTURAL LINE. Every owned form names a CONSTRUCTION. A bare
+    token here would return the rule to deleting meaningful words globally."""
+    from skills.nutrition.preference_dimensions import _OWNED_FORMS
+    multiword = [f for f in _OWNED_FORMS if " " in f]
+    assert multiword, "the owned vocabulary lost its phrases"
+    for form in _OWNED_FORMS:
+        assert form not in ("meat", "lean", "fat", "and", "skin"), (
+            f"{form!r} is a bare token — owning it globally is the defect this "
+            f"replaced")

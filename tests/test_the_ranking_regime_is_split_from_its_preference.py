@@ -278,7 +278,9 @@ def test_a_batter_blocks_the_skin_preference():
     plain = "Chicken, broilers or fryers, meat only, cooked, fried"
     battered = "Chicken, broilers or fryers, meat and skin, cooked, fried, batter"
     assert not comparable(plain, battered)
-    assert "batter" in (residue(battered) - residue(plain))
+    # residues are ORDERED tuples now, not sets — order and multiplicity are
+    # part of what a description says
+    assert "batter" in set(residue(battered)) - set(residue(plain))
 
 
 def test_the_reworked_preference_moves_one_winner_not_five():

@@ -32,47 +32,78 @@ applying. No list of cuts is needed to know that.
 """
 from __future__ import annotations
 
-#: The tokens this preference OWNS — the skin/trim axis and nothing else.
-#: Subtracted from both sides before comparison, so two rows that differ only
-#: here are comparable and two that differ anywhere else are not.
+#: ⭐ THE CONSTRUCTIONS THIS PREFERENCE OWNS — PHRASES, NOT TOKENS.
 #:
-#: "and" is included because "meat only" and "meat and skin" would otherwise
-#: differ by it and never compare. "with"/"without" are deliberately EXCLUDED:
-#: they carry salt and preparation distinctions this preference does not own.
-_GOVERNED = frozenset({
-    "meat", "only", "skin", "skinless", "lean", "fat", "separable",
-    "removed", "trimmed", "and",
-})
+#: The first implementation subtracted a token SET globally: `meat`, `lean`,
+#: `fat`, `and` deleted wherever they appeared. Two things were wrong with it,
+#: and neither had reproduced in production yet, which is exactly why they had
+#: to be fixed before the baseline froze against them.
+#:
+#: DELETION WAS TOO BROAD. `fat` and `lean` carry meaning outside the trim
+#: phrases — "Beef, fat, raw" and "Beef, lean, raw" both reduced to
+#: {beef, raw} and compared EQUAL, so the preference could have swapped two
+#: genuinely different rows on the authority of a rule that owns neither word.
+#:
+#: AND A `frozenset` LOST ORDER AND MULTIPLICITY. Two descriptions with the
+#: same bag of remaining words compared equal however differently those words
+#: were arranged.
+#:
+#: So: normalise the owned CONSTRUCTIONS to one marker and compare the ORDERED
+#: token sequence. Longest first, because "meat and skin" must be consumed
+#: before "skin" could be.
+_OWNED_FORMS = ("meat and skin", "lean and fat", "meat only", "lean only",
+                "skin removed", "skinless", "trimmed")
 
-#: The eaten form and the laboratory reference. Phrases, because "meat and
-#: skin" is a form and "skin" alone is a part.
+#: ⚠ THE MARKER MUST SURVIVE `normalize_name`, AND THE FIRST ONE DID NOT.
+#: `\x00trim_form` looked safe precisely because it was not word-like — and
+#: `normalize_name` strips every non-alphanumeric, so a second pass shredded
+#: it into "trim form" and normalisation stopped being idempotent. Both sides
+#: of every comparison run through this, so a function that moves on the
+#: second application can put a record and a query on different footings.
+#: An all-lowercase token survives normalisation unchanged and is not a word
+#: any food description contains.
+_OWNED_MARKER = "ownedtrimform"
+
+#: The eaten form and the laboratory reference.
 _AS_EATEN = ("meat and skin", "lean and fat")
 _TRIMMED = ("meat only", "lean only", "skinless", "skin removed")
 
 
-def _tokens(description: str) -> tuple:
+def _tokens(description: str) -> str:
     from core.food_intelligence import normalize_name
-    return tuple(normalize_name(description or "",
-                                split_separators=True).split())
+    return normalize_name(description or "", split_separators=True)
 
 
-def residue(description: str) -> frozenset:
-    """Everything the preference does NOT govern.
+def normalize_owned_dimension(description: str) -> str:
+    """Collapse every construction this preference owns to one marker.
 
-    Two candidates with the same residue are the same food, cut, coating and
-    grade, differing only in how it was trimmed or whether skin was kept —
-    which is exactly the comparison `as_eaten` exists to make.
+    Idempotent: a marker is not a phrase, so running this twice changes
+    nothing — which matters because both sides of every comparison pass
+    through it and a second application must not shift one of them.
     """
-    return frozenset(_tokens(description)) - _GOVERNED
+    text = _tokens(description)
+    for phrase in sorted(_OWNED_FORMS, key=len, reverse=True):
+        text = text.replace(phrase, _OWNED_MARKER)
+    return text
+
+
+def residue(description: str) -> tuple:
+    """The ORDERED tokens left once the owned construction is normalised.
+
+    A tuple, not a set: order and repetition are part of what a description
+    says, and collapsing them would let this preference call two different
+    foods comparable because they share a vocabulary.
+    """
+    return tuple(normalize_owned_dimension(description).split())
 
 
 def comparable(one: str, other: str) -> bool:
     """May the skin/trim preference choose between these two descriptions?
 
-    ⭐ FALSE IS THE IMPORTANT ANSWER. A differing cut, a batter, a different
-    species or grade all survive the subtraction and make this False — so the
-    preference is structurally unable to decide them, without anyone having to
-    enumerate what a cut is.
+    ⭐ FALSE IS THE IMPORTANT ANSWER. Cut, coating, species, grade, origin and
+    preparation all survive the normalisation and make this False — so the
+    preference is structurally unable to decide them, and nobody has to
+    enumerate what a cut is for that to hold.
     """
     return residue(one) == residue(other)
 
@@ -119,6 +150,8 @@ def prefer_as_eaten(winner: dict, candidates) -> dict:
         return winner
 
     chosen = comparable_forms[0]
-    # the refinement may not change anything the preference does not govern
+    # EXACTLY ONE OWNED DIMENSION CHANGED — not merely "the leftovers match".
+    # The residues are ordered sequences, so this asserts the two descriptions
+    # are identical outside the construction this preference owns.
     assert residue(description) == residue(chosen.get("description", ""))
     return chosen
