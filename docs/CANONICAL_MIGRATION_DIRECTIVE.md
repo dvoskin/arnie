@@ -28,6 +28,46 @@ concurrency locking, canonical settlement, replay/idempotency, ownership seam
                       REMAIN CLOSED
 ```
 
+## ✅ PHASE 0 IS TECHNICALLY CLOSED *(2026-08-13)*
+
+> Given retrieved source-qualified evidence, the frozen semantic baseline, and
+> the explicit `rank_v2` policy regime, Arnie deterministically reproduces the
+> same pre-retention candidate universe, eligibility, winner, winner-review
+> state, price and provenance **without an LLM call**. Every destructive change
+> is attributable. Retention is not required to manufacture semantic coverage
+> or reproducibility.
+>
+> **`HELD` REMAINS `HELD` AND IS NOT UPGRADED BY THIS CLOSURE.** `SIGNED` means
+> a winner was approved; `HELD` means deterministic and NOT approved for broad
+> promotion. Phase 0 closes REPRODUCIBILITY AND ATTRIBUTABILITY, not winner
+> acceptability — which is what keeps a missing fish taxonomy or `beef|`'s
+> retrieval breadth from turning it into an unbounded food-quality project.
+
+```text
+POISONED REBUILD x3 · regime rank_v2
+  poison bites (verified BEFORE trusting its silence)   True
+  resolved_this_build per run                           [0, 0, 0]
+  identities compared                                   27
+  raw fingerprint            f6f4bc2dba07d8d8823b6830b84c33e5
+  frozen winners reproduced                             27/27
+  retention additions                                   0
+
+WINNER ACCOUNTING   27/27 · 13 SIGNED · 14 HELD · accounting 0 failures
+SEMANTIC STORE      186 annotations = 77 human + 109 resolved
+SUITES              SQLite 8908/0 · Postgres 8990/0 · shuffled, both engines
+```
+
+**WHAT IS STILL OWED, AND IS DELIBERATELY NOT PHASE 0'S:** 14 HELD winners
+remain real release blockers for those identities — 5 on `cooking_yield`
+having no entry for the food, 4 on retrieval breadth, 4 on a specialty variant
+outranking the generic, 1 on the as-eaten canary. They are honest, typed and
+owned; none of them is a determinism defect.
+
+**FIRST FOLLOW-UP AFTER CLOSURE:** `ci.yml` passes `-q` on top of
+`pytest.ini`'s, making it `-qq`, which suppresses the summary line the
+workflow then greps for. The build still passes or fails correctly on exit
+code, but the reported summary is empty.
+
 **PHASE 0 PROGRESS, 2026-08-13.** Roughly 95–97%. What was a
 "just run the poisoned rebuild" problem on 08-12 is not: the baseline freeze
 exposed a separate RANKER REACHABILITY defect that had to be fixed first, and

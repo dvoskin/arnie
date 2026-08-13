@@ -1,0 +1,13 @@
+{
+ "regime": "rank_v2",
+ "runs": 3,
+ "poison_bites": true,
+ "resolved_this_build": [
+  0,
+  0,
+  0
+ ],
+ "raw_fingerprint": "f6f4bc2dba07d8d8823b6830b84c33e5e139cf93e7ea60448b7fffaf17d5a464",
+ "identities": 27,
+ "failures": []
+}
