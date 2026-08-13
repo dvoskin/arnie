@@ -99,10 +99,7 @@ def _rows():
 
     # ── SIGNED — the plain form of the requested food ────────────────────
     for identity, evidence, note in [
-        ("asparagus|", "usda:168389", "raw is the generic form of a bare vegetable"),
         ("banana|", "usda:173944", "raw; the only alternative on the ladder is overripe"),
-        ("broccoli|", "usda:747447", "raw is the generic form"),
-        ("cauliflower|", "usda:169986", "raw is the generic form"),
         ("chicken|grilled", "usda:171534",
          "skinless boneless breast is the canonical read of grilled chicken"),
         ("egg|", "usda:172186", "poached; the ladder's cooked forms span 143-155"),
@@ -129,12 +126,34 @@ def _rows():
     # same food class, opposite outcome, decided by A TABLE'S COVERAGE rather
     # than by the food. Signing them would freeze a blind spot: a table's
     # silence read as an answer.
-    hold("mackerel|", "usda:175119", COOKING_YIELD_COVERAGE,
-         "raw 205 wins only because cooking_yield('mackerel') == 1.00; the "
-         "ladder holds Atlantic cooked dry heat at 262")
-    hold("tilapia|", "usda:175176", COOKING_YIELD_COVERAGE,
-         "raw 96 wins only because cooking_yield('tilapia') == 1.00; the "
-         "ladder holds cooked dry heat at 128")
+    # ⭐⭐ AND THE HAND-LIST WAS THREE TIMES TOO SHORT. Deriving the set from
+    # `cooked_preference_state` instead of from the rows whose kcal gap I
+    # happened to notice gives SIX, not two: a bare identity, on an undecided
+    # axis, WHOSE LADDER HOLDS BOTH RAW AND COOKED ROWS — because that is
+    # exactly where a missing policy silently decided something.
+    #
+    #   asparagus|  1 raw / 4 cooked      mackerel|  3 raw / 4 cooked
+    #   broccoli|   4 raw / 6 cooked      potato|    1 raw / 3 cooked
+    #   cauliflower| 1 raw / 4 cooked     tilapia|   1 raw / 1 cooked
+    #
+    # I caught the two fish because their kcal gap was obvious (205 vs 262,
+    # 96 vs 128) and missed three vegetables where the gap is small and the
+    # defect identical. Raw may well be right for a bare vegetable — the point
+    # is that NOTHING DECIDED IT, so it cannot be frozen as though something
+    # had. `banana|`, `egg|`, `mushrooms|`, `oats|`, `rice|` and `tofu|` are
+    # also undecided and are NOT held: their ladders carry one state only, so
+    # the missing policy had nothing to decide between.
+    for identity, evidence, ladder in [
+        ("asparagus|", "usda:168389", "1 raw / 4 cooked"),
+        ("broccoli|", "usda:747447", "4 raw / 6 cooked"),
+        ("cauliflower|", "usda:169986", "1 raw / 4 cooked"),
+        ("mackerel|", "usda:175119", "3 raw / 4 cooked; cooked dry heat is 262"),
+        ("tilapia|", "usda:175176", "1 raw / 1 cooked; cooked dry heat is 128"),
+    ]:
+        hold(identity, evidence, COOKING_YIELD_COVERAGE,
+             f"a raw row wins on an UNDECIDED cooked axis ({ladder}); "
+             f"cooking_yield states nothing for this food, and the table "
+             f"already carries 'fish' — the query simply never contains it")
 
     # ⭐⭐ THE LAB SAMPLES. The as-eaten preference was switched off because a
     # ±0.4 tie-break was deciding CUT and COATING, dimensions it never

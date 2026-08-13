@@ -231,8 +231,40 @@ def portion_prior(food_name: str) -> Optional[float]:
 
 
 def cooking_yield(food_name: str) -> float:
-    """Raw->cooked per-100g factor for a food eaten cooked, else 1.0."""
+    """Raw->cooked per-100g factor for a food eaten cooked, else 1.0.
+
+    ⚠ 1.0 IS AMBIGUOUS HERE AND ALWAYS HAS BEEN. It means BOTH "this food does
+    not concentrate when cooked" (nuts, salad) AND "this table says nothing
+    about this food". Scaling callers can live with that — multiplying by 1.0
+    is the right no-op either way. A POLICY caller cannot: see
+    `cooking_yield_known`.
+    """
     return _lookup({**_COOKING_YIELD, "default": 1.0}, food_name) or 1.0
+
+
+def cooking_yield_known(food_name: str) -> Optional[float]:
+    """The STATED raw->cooked factor, or None when nothing is stated.
+
+    ⭐ ABSENCE IS NOT A YIELD OF 1.0. `cooking_yield` collapses "we know this
+    food does not change" and "we have never been told" into the same number,
+    and a ranking policy that reads it cannot tell them apart. Measured
+    2026-08-13: `mackerel|` and `tilapia|` seated RAW rows while `salmon|`
+    seated a cooked one — same food class, opposite outcome, because the
+    cooked preference fires on `> 1.0` and a miss returns exactly 1.0.
+
+    ⭐⭐ AND THE TABLE IS NOT MISSING TWO ENTRIES. It already carries
+    `"fish": 1.20`; the QUERY is "mackerel", which does not contain the
+    substring "fish". Adding "mackerel" and "tilapia" would fix two examples
+    and leave cod, halibut, trout and sardine to reproduce it — patching the
+    symptom while keeping the defect. What is missing is a TAXONOMY, and a
+    lookup table cannot be made into one by lengthening it.
+
+    So this returns None and the caller must decide what unknown MEANS,
+    explicitly and visibly. `_COOKING_YIELD` carries no "default" key, so a
+    miss is already None here — the ambiguity was introduced by the caller
+    above injecting one.
+    """
+    return _lookup(_COOKING_YIELD, food_name)
 
 
 def added_fat_calories(text: str) -> tuple[int, str]:

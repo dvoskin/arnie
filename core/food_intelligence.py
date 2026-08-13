@@ -243,6 +243,40 @@ def _nutrition_accuracy_v2() -> bool:
         return os.getenv("NUTRITION_ACCURACY_V2", "").lower() in ("1", "true", "yes")
 
 
+# ── THE RAW-VS-COOKED AXIS, THREE-VALUED ON PURPOSE ───────────────────────
+#
+# The cooked preference used to read `cooking_yield(query) > 1.0`, and a table
+# miss returns exactly 1.0 — so "we have never been told about this food" and
+# "this food does not concentrate when cooked" produced the identical ranking
+# outcome. That is absence representable as an answer, the defect this whole
+# phase exists to remove, one layer further down than anyone had looked.
+#
+# Naming the third state does NOT decide the hard question — a bare request
+# for an unknown food still gets no cooked preference, which is the same
+# BEHAVIOUR as before. What changes is that the state is now VISIBLE, so the
+# winner it produces can be held out of a frozen baseline instead of being
+# signed as though the axis had been decided.
+COOKED_PREFERRED = "cooked_preferred"
+COOKED_NOT_PREFERRED = "yield_states_no_concentration"
+COOKED_AXIS_UNDECIDED = "yield_unknown_for_this_food"
+
+
+def cooked_preference_state(query: str) -> str:
+    """Whether a cooked row should be preferred for `query`, or nobody knows.
+
+    ⭐ `COOKED_AXIS_UNDECIDED` IS NOT A SOFTER "no". It says the raw-vs-cooked
+    axis was never established for this food, which is a statement about OUR
+    KNOWLEDGE rather than about the food — and a winner chosen while it holds
+    is not a winner anyone decided on.
+    """
+    from core.portions import cooking_yield_known
+
+    stated = cooking_yield_known(query)
+    if stated is None:
+        return COOKED_AXIS_UNDECIDED
+    return COOKED_PREFERRED if stated > 1.0 else COOKED_NOT_PREFERRED
+
+
 def _as_eaten_preference() -> bool:
     """The as-eaten PREFERENCE, split out of V2 and off by default.
 
@@ -394,19 +428,23 @@ def best_candidate(query: str, candidates: list[dict]) -> tuple[Optional[dict], 
     # source, and cooking-yield only has to rescue foods USDA carries raw-only
     # (skirt steak). Without this, yield was applied to a raw row when a cooked
     # one existed, and overshot.
+    # ⭐ UNKNOWN IS NOT "NO PREFERENCE". `cooking_yield` returns 1.0 both for a
+    # food that genuinely does not concentrate AND for one the table has never
+    # heard of, so reading `> 1.0` silently converted MISSING KNOWLEDGE into a
+    # decision — and `mackerel|`/`tilapia|` seated raw rows while `salmon|`
+    # seated cooked. The state is now three-valued and the undecided case is
+    # named, so a winner produced under it can be held rather than frozen.
     _cooked_pref = False
     if v2 and "raw" not in qa:
-        from core.portions import cooking_yield as _cy
-        _cooked_pref = _cy(query) > 1.0
+        state = cooked_preference_state(query)
+        _cooked_pref = state == COOKED_PREFERRED
     # As-eaten over trimmed (v2): a person eats the thigh with its skin and the
     # steak with its fat unless they say otherwise, so "meat and skin" / "lean
     # and fat" is the right basis and "meat only" / "lean only" / "skinless" is a
     # reference sample, not the meal — the same "as logged" principle as cooked-
     # default. Suppressed when the query itself asks for the trimmed form.
-    # ⭐ NOW ITS OWN POLICY, NOT A PROPERTY OF V2. Still requires v2 (the rest
-    # of the V2 scoring is its context), but no longer arrives with it — so
-    # the structurally safe half can be promoted while this waits for a
-    # canary that controls for cut and coating.
+    # ⭐ ITS OWN POLICY, AND NO LONGER A SCORING TERM — it applies AFTER
+    # ranking, inside a comparability class. See the refinement below.
     _as_eaten = (v2 and _as_eaten_preference()
                  and not (qa & {"skinless", "lean", "trimmed"}))
     # Folded ONCE per call, for coverage only. `qa` and `qa_id` stay raw below,
@@ -444,18 +482,29 @@ def best_candidate(query: str, candidates: list[dict]) -> tuple[Optional[dict], 
                 score += 0.6                                # a cooked row for a cooked food
             if "raw" in da:
                 score -= 0.6                                # avoid the raw reference row
-        if _as_eaten:
-            # A secondary preference (0.4 < the 0.6 cooked swing): the eaten form
-            # over the trimmed reference. Phrase checks on the normalized string —
-            # "meat and skin" is as-eaten, "meat only" the lab sample.
-            if "meat and skin" in d or "lean and fat" in d:
-                score += 0.4
-            if ("meat only" in d or "lean only" in d or "skinless" in d
-                    or "skin removed" in d):
-                score -= 0.4
         if score > best_score:
             best, best_score, best_overlap = c, score, id_overlap
     conf = score_match(query, best.get("description", "")) if best else "estimated"
+
+    # ⭐⭐ THE PREFERENCE, AS A REFINEMENT INSIDE A COMPARABILITY CLASS.
+    #
+    # It used to be a ±0.4 term in the loop above, and a ±0.4 term can only
+    # overturn a NEAR-TIE — so it decided CUT (knuckle -> striploin, +123 kcal)
+    # and COATING (meat only -> battered, +7.7 g carbs), dimensions it never
+    # evaluated. A bigger number would only move the same wrong rows further.
+    #
+    # So it runs AFTER ranking and may only exchange the winner for a row that
+    # is IDENTICAL EXCEPT IN ITS OWN DIMENSION. Comparability is defined by
+    # SUBTRACTION rather than by a cut vocabulary: strip the tokens the
+    # preference governs from both descriptions and require the remainder to
+    # match, so a differing cut or a batter blocks it by simply surviving.
+    # The guarantee is structural — nobody has to enumerate what a cut is.
+    if _as_eaten and best is not None:
+        from skills.nutrition.preference_dimensions import prefer_as_eaten
+        refined = prefer_as_eaten(best, candidates)
+        if refined is not best:
+            best = refined
+            conf = score_match(query, best.get("description", ""))
     if v2:
         # Identity gate: the food nouns must be (nearly) fully covered — a
         # descriptive row for the SAME food — AND survive the composite penalty.

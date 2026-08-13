@@ -46,8 +46,12 @@ import pytest
 
 from skills.nutrition import pricing_artifact as art
 
-#: Measured 2026-08-13. The winners the preference moves, and where each goes.
-PREFERENCE_MOVES = {
+#: ⚠ HISTORY, NOT EXPECTATION. These are the five winners the ORIGINAL ±0.4
+#: term moved, four of them by cut or coating. The reworked preference moves
+#: only `chicken|roasted` — see
+#: `test_the_reworked_preference_moves_one_winner_not_five`. Kept as the
+#: record of what the defect did, so a regression back to it is recognisable.
+PREFERENCE_MOVES_BEFORE_THE_REWORK = {
     "beef|fried": (178.0, 301.0),
     "beef|grilled": (208.0, 186.0),
     "beef|roasted": (197.0, 241.0),
@@ -173,21 +177,26 @@ def test_the_structural_half_alone_reaches_every_committed_identity():
     assert len(winners) == 27
 
 
-def test_the_structural_half_does_not_move_a_single_winner_by_preference():
-    """Every winner the preference decides must revert when it is off, and
-    every winner it does NOT decide must stay put."""
+def test_the_structural_half_is_unaffected_by_the_preference_flag():
+    """⭐ THE SPLIT, RESTATED FOR THE REWORKED PREFERENCE. With the preference
+    OFF, every winner must be the structural regime's own choice — and the
+    four rows the OLD term moved by cut or coating must now be identical in
+    both modes, because the rework cannot reach them at all."""
     with _regime(v2=True, as_eaten=False) as fi:
         safe = _winners(fi)
     with _regime(v2=True, as_eaten=True) as fi:
         full = _winners(fi)
 
+    for identity in ("beef|fried", "beef|grilled", "beef|roasted",
+                     "chicken|fried"):
+        assert (safe[identity].get("fdc_id") == full[identity].get("fdc_id")), (
+            f"{identity} still moves under the preference — it differs in CUT "
+            f"or COATING and the rework must not be able to decide it")
+        assert identity in PREFERENCE_MOVES_BEFORE_THE_REWORK
+
     moved = {k for k in safe
              if (safe[k] or {}).get("fdc_id") != (full[k] or {}).get("fdc_id")}
-    assert moved == set(PREFERENCE_MOVES), (
-        f"the set of preference-decided winners changed: {sorted(moved)}")
-    for key, (without, with_it) in PREFERENCE_MOVES.items():
-        assert float(_kcal(safe[key])) == without, key
-        assert float(_kcal(full[key])) == with_it, key
+    assert moved == {"chicken|roasted"}, moved
 
 
 def test_cooked_by_default_is_structural_and_survives_the_split():
@@ -200,13 +209,15 @@ def test_cooked_by_default_is_structural_and_survives_the_split():
     salmon = winners["salmon|"]
     assert "cooked" in str(salmon.get("description", "")).lower()
     assert float(_kcal(salmon)) == 231.0
-    assert "salmon|" not in PREFERENCE_MOVES
+    assert "salmon|" not in PREFERENCE_MOVES_BEFORE_THE_REWORK
 
 
-def test_the_split_restores_the_signed_row_for_beef_roasted():
-    """⭐⭐⭐ A SIGNATURE THAT APPLIES UNDER ONE POLICY AND NOT ANOTHER HAS NOT
-    BEEN KEPT. Under the preference this seats chuck eye roast, unreviewed;
-    without it, the row a reviewer actually read and signed."""
+def test_beef_roasted_keeps_its_signature_in_BOTH_regimes_now():
+    """⭐⭐⭐ THE SPLIT RESTORED THIS SIGNATURE; THE REWORK KEEPS IT UNDER THE
+    PREFERENCE TOO. Under the ORIGINAL ±0.4 term `beef|roasted` seated chuck
+    eye roast — unreviewed — because the term was deciding a CUT. Now the
+    reviewer's row holds whether the preference is on or off, which is what a
+    signature is supposed to mean."""
     from scripts import baseline_signatures as bs
     signed = bs.by_pair()
 
@@ -216,8 +227,8 @@ def test_the_split_restores_the_signed_row_for_beef_roasted():
         full = _winners(fi)["beef|roasted"]
 
     assert str(safe.get("fdc_id")) == "173089"
+    assert str(full.get("fdc_id")) == "173089"
     assert signed[("beef|roasted", "usda:173089")][0] == bs.ADMIT
-    assert ("beef|roasted", f"usda:{full.get('fdc_id')}") not in signed
 
 
 def test_the_preference_still_works_when_it_is_asked_for():
@@ -228,3 +239,75 @@ def test_the_preference_still_works_when_it_is_asked_for():
     assert float(_kcal(winners["chicken|roasted"])) == 223.0
     assert "meat and skin" in str(
         winners["chicken|roasted"].get("description", "")).lower()
+
+
+# ── 3. the reworked preference: comparability, not a bigger number ────────
+
+def test_the_preference_may_only_decide_its_own_dimension():
+    """⭐ THE REWORK. A ±0.4 tie-break decided CUT and COATING because a
+    tie-break can only overturn a near-tie. The preference now applies AFTER
+    ranking and only between rows identical except in skin/trim — so a
+    differing cut blocks it STRUCTURALLY, with no cut vocabulary anywhere."""
+    from skills.nutrition.preference_dimensions import comparable, residue
+
+    # the ONE comparison the rule was written to make
+    assert comparable("Chicken, roasting, meat only, cooked, roasted",
+                      "Chicken, roasting, meat and skin, cooked, roasted")
+
+    # ...and the four it was silently making instead
+    blocked = [
+        ("Beef, New Zealand, imported, knuckle, cooked, fast fried",
+         "Beef, New Zealand, imported, striploin, separable lean and fat, "
+         "cooked, fast fried"),
+        ('Beef, ribeye filet, boneless, separable lean only, trimmed to 0" '
+         'fat, choice, cooked, grilled',
+         'Beef, shoulder steak, boneless, separable lean and fat, trimmed to '
+         '0" fat, choice, cooked, grilled'),
+        ("Chicken, broilers or fryers, meat only, cooked, fried",
+         "Chicken, broilers or fryers, meat and skin, cooked, fried, batter"),
+    ]
+    for one, other in blocked:
+        assert not comparable(one, other), (one, other)
+        assert residue(one) != residue(other)
+
+
+def test_a_batter_blocks_the_skin_preference():
+    """Batter introduces ANOTHER COMPONENT. Skin being present alongside it
+    must not carry the coating in on skin's authority."""
+    from skills.nutrition.preference_dimensions import comparable, residue
+    plain = "Chicken, broilers or fryers, meat only, cooked, fried"
+    battered = "Chicken, broilers or fryers, meat and skin, cooked, fried, batter"
+    assert not comparable(plain, battered)
+    assert "batter" in (residue(battered) - residue(plain))
+
+
+def test_the_reworked_preference_moves_one_winner_not_five():
+    """⭐⭐ MEASURED. The old term moved 5 winners, 4 of them by cut or
+    coating. The reworked one moves exactly the trim comparison."""
+    with _regime(v2=True, as_eaten=False) as fi:
+        safe = _winners(fi)
+    with _regime(v2=True, as_eaten=True) as fi:
+        reworked = _winners(fi)
+
+    moved = {k for k in safe
+             if (safe[k] or {}).get("fdc_id") != (reworked[k] or {}).get("fdc_id")}
+    assert moved == {"chicken|roasted"}, moved
+    assert float(_kcal(reworked["chicken|roasted"])) == 223.0
+    assert "meat and skin" in str(
+        reworked["chicken|roasted"].get("description", "")).lower()
+
+    # the four cut/coating cases stay exactly where the safe regime put them
+    for identity in ("beef|fried", "beef|grilled", "beef|roasted",
+                     "chicken|fried"):
+        assert (safe[identity].get("fdc_id")
+                == reworked[identity].get("fdc_id")), identity
+
+
+def test_the_refinement_cannot_reach_outside_the_candidate_set():
+    """It exchanges a winner for a SIBLING, never invents one."""
+    from skills.nutrition.preference_dimensions import prefer_as_eaten
+    winner = {"fdc_id": "1", "description": "Chicken, meat only, cooked"}
+    others = [{"fdc_id": "2", "description": "Beef, meat and skin, cooked"}]
+    assert prefer_as_eaten(winner, others) is winner
+    assert prefer_as_eaten(winner, []) is winner
+    assert prefer_as_eaten(None, others) is None

@@ -171,9 +171,82 @@ def test_this_round_does_not_amend_the_frozen_seventy_seven():
             f"decision about it belongs to that round, not this one")
 
 
+def test_the_undecided_cooked_axis_is_derived_not_hand_listed():
+    """⭐ THE HAND-LIST WAS THREE TIMES TOO SHORT. Holding the rows whose kcal
+    gap a reviewer happened to notice is not the same as holding the rows a
+    missing policy actually decided. Derived: a BARE identity, on an UNDECIDED
+    axis, whose ladder carries BOTH raw and cooked rows."""
+    import json
+
+    from skills.nutrition import cooking_state
+    from core.food_intelligence import (COOKED_AXIS_UNDECIDED,
+                                        cooked_preference_state)
+
+    if not art.ARTIFACT_PATH.exists():
+        pytest.skip("no committed artifact")
+    doc = json.loads(art.ARTIFACT_PATH.read_text())
+
+    consequential = set()
+    for key, entry in (doc.get("entries") or {}).items():
+        entity, _, preparation = key.partition("|")
+        if preparation:
+            continue
+        if cooked_preference_state(entity) != COOKED_AXIS_UNDECIDED:
+            continue
+        states = [cooking_state.classify(c.get("description", "")).value
+                  for c in (entry.get("candidates") or ())]
+        if "raw" in states and "cooked" in states:
+            consequential.add(key)
+
+    assert consequential == {"asparagus|", "broccoli|", "cauliflower|",
+                             "mackerel|", "potato|", "tilapia|"}, consequential
+
+    # every one of them is HELD, except potato| whose winner is REJECTED
+    # evidence and which is therefore absent from the review entirely
+    held = {identity for identity, _e, cause in wr.held()
+            if cause == wr.COOKING_YIELD_COVERAGE}
+    assert held == consequential - {"potato|"}, held
+
+
+def test_an_undecided_axis_with_one_state_available_is_not_held():
+    """The rule is not "undecided => hold". `banana|`, `egg|`, `mushrooms|`,
+    `oats|`, `rice|` and `tofu|` are all undecided and carry ONE state on the
+    ladder, so the missing policy had nothing to decide between. Holding them
+    would make the signal mean nothing."""
+    held = {identity for identity, _e, cause in wr.held()
+            if cause == wr.COOKING_YIELD_COVERAGE}
+    for identity in ("banana|", "egg|", "mushrooms|", "oats|", "rice|", "tofu|"):
+        assert identity not in held, identity
+
+
+def test_absence_is_distinguishable_from_a_yield_of_one():
+    """⭐ THE ROOT FIX. `cooking_yield` returns 1.0 for BOTH 'does not
+    concentrate' and 'never heard of it'. `cooking_yield_known` returns None
+    for the second, which is what lets the policy layer tell them apart."""
+    from core.portions import cooking_yield, cooking_yield_known
+    from core.food_intelligence import (COOKED_AXIS_UNDECIDED, COOKED_PREFERRED,
+                                        cooked_preference_state)
+
+    assert cooking_yield("mackerel") == 1.0
+    assert cooking_yield_known("mackerel") is None
+    assert cooked_preference_state("mackerel") == COOKED_AXIS_UNDECIDED
+
+    assert cooking_yield_known("salmon") == 1.20
+    assert cooked_preference_state("salmon") == COOKED_PREFERRED
+
+    # ⭐⭐ AND THE TABLE IS NOT MISSING TWO ENTRIES — it already carries
+    # "fish". The QUERY is what never contains that substring, which is why
+    # adding "mackerel" and "tilapia" would fix two examples and leave cod,
+    # halibut and trout to reproduce it.
+    assert cooking_yield_known("fish") == 1.20
+    assert cooking_yield_known("fish, mackerel, atlantic") == 1.20
+    for unheard in ("cod", "halibut", "trout", "sardine"):
+        assert cooking_yield_known(unheard) is None, unheard
+
+
 def test_the_signed_winners_are_the_only_ones_that_may_freeze():
     signed = dict(wr.frozen_winners())
     held = {identity for identity, _e, _c in wr.held()}
     assert not (set(signed) & held), "an identity is both signed and held"
     assert len(signed) + len(held) == len(wr.by_identity())
-    assert len(signed) == 15 and len(held) == 11
+    assert len(signed) == 12 and len(held) == 14
