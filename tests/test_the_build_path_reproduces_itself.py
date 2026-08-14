@@ -33,6 +33,7 @@ from scripts import build_pricing_artifact as bp
 from scripts import capture_retrieval as cr
 from scripts import prove_build_reproducibility as pbr
 from skills.nutrition import pricing_artifact as art
+from skills.nutrition import semantic_annotations as sa
 
 
 @pytest.fixture
@@ -52,7 +53,13 @@ def test_the_proof_actually_runs(capture):
 
     assert result["poison_bites"] is True, (
         "the poison must raise before its silence proves anything")
-    assert result["identities"] == len(capture["queries"])
+    # ⛔ AGAINST THE COMMITTED ARTIFACT, NOT AGAINST THE CAPTURE'S OWN LENGTH.
+    # The replay iterates the capture, so `identities == len(capture)` was
+    # true by construction and could never fail — a tautology wearing an
+    # assertion's clothes, in a file written to stop exactly that.
+    document = json.loads(art.ARTIFACT_PATH.read_text())
+    assert result["identities"] == len(document["entries"])
+    assert set(capture["queries"]) == set(document["entries"])
     assert result["fingerprint"]
     assert result["capture"] == "seam_recording"
     assert result["capture_fingerprint"] == art.retrieval_fingerprint()
@@ -192,6 +199,76 @@ def test_an_uncaptured_query_fails_loudly_rather_than_reading_as_empty(
     assert starved["statuses"][identity] == bp.FAILED, (
         f"{identity} lost a captured query shape and did not come back "
         f"FAILED — a missing query is reading as a thinner food")
+
+
+def test_an_identity_missing_from_the_capture_is_refused(capture, tmp_path,
+                                                         monkeypatch):
+    """⭐ CAUSAL, and the global gate does NOT cover this. The replay iterates
+    the capture and the artifact comparison iterates the RESULTS, so an
+    identity in the artifact and absent from the capture is never built and
+    never compared — it drops out, and the build reports itself deterministic
+    over a smaller universe.
+
+    The "capture is not thinner than the artifact" check compares fdc_ids as
+    one GLOBAL set, so a candidate captured under a DIFFERENT identity
+    satisfies it: `egg|fried` can vanish while its committed candidate is
+    still somewhere in the corpus."""
+    document = json.loads(art.ARTIFACT_PATH.read_text())
+    dropped = "egg|fried" if "egg|fried" in capture["queries"] \
+        else sorted(capture["queries"])[0]
+
+    thinned = json.loads(json.dumps(capture))
+    thinned["queries"].pop(dropped)
+    path = tmp_path / "thinned.json"
+    path.write_text(json.dumps(thinned))
+    monkeypatch.setattr(pbr, "CAPTURE_PATH", path)
+
+    with pytest.raises(pbr.CaptureIncomplete) as caught:
+        asyncio.run(pbr.prove(runs=1))
+    assert dropped in str(caught.value)
+    assert dropped in document["entries"], "the dropped identity IS committed"
+
+
+def test_unseen_pairs_are_counted_from_the_question_not_the_answer():
+    """⛔ `build_one` omits `unresolved` from its FAILED result — it computes
+    the list, quotes the LENGTH in the reason, and drops the list. Counting
+    from the payload therefore reads ZERO for identities with nothing
+    priceable, which are the ones with the most outstanding work. The counter
+    reads what the resolver was ASKED instead, which no return shape can
+    suppress."""
+    result = asyncio.run(pbr.prove(runs=1))
+
+    batches, pairs = result["resolver_batches"][0], result["unseen_pairs"][0]
+    batch_size = result["qualify_batch"]
+    assert pairs > 0
+    assert sum(result["unseen_pairs_by_identity"].values()) == pairs
+    assert len(result["unseen_pair_ids"]) == pairs
+    # every batch carries at least one pair and at most `batch_size`
+    assert batches <= pairs <= batches * batch_size
+
+
+def test_a_pair_a_human_settled_is_never_counted_as_outstanding_work():
+    """⭐ THE DIFFERENCE BETWEEN 86 AND 87, AND IT IS A REAL DISTINCTION.
+    `beef|/usda:173086` carries a REVIEWED `UNRESOLVED` — a reviewer read the
+    record, judged the evidence insufficient, and declined to rule. That is
+    not the `UNRESOLVED` the system writes when nobody has looked.
+    `needs_resolution` refuses to re-ask it, because replacing a considered
+    refusal with a sampled opinion would erase the review on every rebuild.
+
+    Counting from the RETURN PAYLOAD swept it in as outstanding work, because
+    its stored disposition still reads unresolved. Counting from what the
+    resolver was ASKED excludes it, which is correct: it is settled."""
+    document = json.loads(art.ARTIFACT_PATH.read_text())
+    store = sa.Store.from_payload(
+        (document.get("meta") or {}).get("annotations") or {})
+
+    result = asyncio.run(pbr.prove(runs=1))
+
+    for identity, evidence in result["unseen_pair_ids"]:
+        annotation = store.get(identity, evidence)
+        assert not (annotation is not None and sa.reviewed(annotation)), (
+            f"{identity}/{evidence} was settled by a human and is being "
+            f"counted as work the populate step still owes")
 
 
 def test_a_capture_from_a_moved_contract_is_refused(capture, tmp_path,

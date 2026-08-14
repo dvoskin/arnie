@@ -155,7 +155,7 @@ poisoned build x3 through build_one()      regime rank_v2
   identities built                         27
   fingerprint da009b002460b393  IDENTICAL across runs   <- determinism HOLDS
 
-  ⭐ UNSEEN PAIRS per run                  87    <- SIZES THE POPULATE STEP
+  ⭐ UNSEEN PAIRS per run                  86    <- SIZES THE POPULATE STEP
      resolver batches per run              37    (batch size 3)
      resolver ATTEMPTS per run             111   (up to 3 tries each)
      attempts total, all 3 runs            333   <- NOT a pair count
@@ -179,16 +179,41 @@ the store needs population over "333 pairs". It does not. 333 was raw resolver
 invocations: `build_one` batches unseen rows by `_QUALIFY_BATCH = 3` and
 retries each batch up to `_QUALIFY_ATTEMPTS = 3` times, and the counter
 accumulated across all three proof runs. One missing pair can bill as nine
-attempts. **The measured figure is 87 unique pairs** — the populate step is
+attempts. **The measured figure is 86 unique pairs** — the populate step is
 roughly a quarter the size the headline implied. The proof now emits
 `unseen_pairs`, `unseen_pairs_by_identity`, `resolver_batches` and
 `resolver_attempts` per run, separately named, and a gate reconciles them
 against the batching constants so they cannot drift apart again.
 
 ```text
-87 pairs   ->  37 batches (ceil per identity)  ->  111 attempts/run  ->  333
+86 pairs   ->  37 batches (ceil per identity)  ->  111 attempts/run  ->  333
 heaviest: oats| 8 · rice| 8 · chicken|grilled 7 · egg| 6 · potato|fried 6
 ```
+
+⚠ **AND IT WAS BRIEFLY 87, WHICH IS THE MORE INTERESTING CORRECTION.** The
+first fix counted from `build_one`'s RETURN PAYLOAD, which reads
+`result["unresolved"]`. Two things were wrong with that:
+
+```text
+1  the FAILED branch omits `unresolved` entirely — it computes the list,
+   quotes its LENGTH in the reason string, and drops the list. So an
+   identity with nothing priceable contributes ZERO outstanding pairs no
+   matter how many the resolver was asked about, and the undercount lands
+   precisely on the identities in the worst shape.   (fixed in build_one)
+
+2  the payload counted `beef|/usda:173086`, which is a REVIEWED UNRESOLVED
+   — a human read the record, judged the evidence insufficient, and DECLINED
+   TO RULE. `needs_resolution` refuses to re-ask it on purpose: replacing a
+   considered refusal with a sampled opinion would erase the review on every
+   rebuild. It is SETTLED, not outstanding.
+```
+
+**Counting what the resolver is ASKED, rather than what the build reports,
+fixes both at once** — no return shape can suppress it, and a human's
+non-decision is never billed as work. A gate asserts no counted pair is one a
+reviewer has already settled. The proof now also emits `unseen_pair_ids`, so
+the populate step reads the worklist rather than re-deriving it with a second
+implementation.
 
 ⛔ **THE CLOSURE CONDITION REQUIRES BOTH HALVES, AND IT IS NOW EXECUTABLE.**
 `resolved_this_build == 0` is TRUE today while the resolver is called and
@@ -275,9 +300,10 @@ down that a tofu product is not tofu.
 ✅ apply attributable human annotation overrides (G2)
 ✅ make the build-path proof RUNNABLE and gate it   <- was dead; see above
 ✅ bind all 6 human admissions to their source rows (Danny's call: BACKFILL)
-✅ correct the pair/attempt accounting: 87 unique pairs, not 333
+✅ correct the pair/attempt accounting: 86 unique pairs, not 333
 ◻  populate the store over the SEAM population, not the 08-08 candidates
-      -> 87 unique (identity, evidence) pairs have no annotation
+      -> 86 unique (identity, evidence) pairs have no annotation
+      -> the worklist itself is emitted as `unseen_pair_ids`
 ◻  authoritative rebuild
 ◻  classify EVERY old->new delta: retrieval | mechanical | semantic | source
 ◻  re-freeze ONLY moved winner universes

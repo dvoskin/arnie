@@ -67,6 +67,11 @@ class CaptureMissing(SystemExit):
     """There is no seam capture to replay, and one must not be invented."""
 
 
+class CaptureIncomplete(SystemExit):
+    """The capture and the committed artifact disagree about which identities
+    exist, so a replay would silently build a different universe."""
+
+
 def _fingerprint(results) -> str:
     blob = json.dumps(results, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha256(blob.encode()).hexdigest()
@@ -100,6 +105,27 @@ async def prove(runs: int = 3) -> dict:
     if not stored:
         raise SystemExit("the semantic store is empty — populate first")
 
+    # ⛔ THE IDENTITY SETS MUST AGREE BEFORE A SINGLE BUILD RUNS. The replay
+    # iterates the CAPTURE and the artifact comparison iterates the RESULTS,
+    # so an identity present in the artifact and missing from the capture is
+    # never built and never compared — it simply drops out, and an incomplete
+    # build reports itself as deterministic.
+    #
+    # The "capture is not thinner than the artifact" gate does not cover this:
+    # it compares fdc_ids as one GLOBAL set, so a candidate captured under a
+    # DIFFERENT identity satisfies it. `egg|fried` can go missing while its
+    # committed candidate is still present somewhere in the corpus.
+    committed_identities = set(document.get("entries") or {})
+    captured_identities = set(queries)
+    if captured_identities != committed_identities:
+        missing = sorted(committed_identities - captured_identities)
+        extra = sorted(captured_identities - committed_identities)
+        raise CaptureIncomplete(
+            f"capture and artifact disagree on identities — "
+            f"in the artifact and NOT captured: {missing or 'none'}; "
+            f"captured and NOT in the artifact: {extra or 'none'}. A replay "
+            f"would build a different universe than the one it compares to.")
+
     # ⛔ AN ATTEMPT IS NOT A PAIR, AND CONFLATING THEM OVERSTATES THE WORK.
     # The first version of this counted raw invocations and the directive then
     # reported them as "333 pairs needing annotation". They are not pairs:
@@ -115,13 +141,25 @@ async def prove(runs: int = 3) -> dict:
     # Only the last one measures how much work the populate step actually is.
     resolver_calls = []
     batch_signatures = []
+    # ⛔ COUNTED FROM WHAT WAS ASKED, NOT FROM THE RETURN PAYLOAD. The first
+    # version read `result["unresolved"]`, and `build_one` omits that field
+    # entirely on its FAILED branch — it computes the list, quotes its LENGTH
+    # in the reason string, and drops the list itself. So an identity with no
+    # priceable rows would contribute ZERO unresolved pairs no matter how many
+    # the resolver was actually asked about, and the undercount would land
+    # precisely on the identities in the worst shape. Reading the question
+    # instead of the answer is immune to that.
+    asked_pairs = []
+    _current = [""]
 
     async def _poisoned(identity=None, chunk=None, *_args, **_kwargs):
         resolver_calls.append(1)
         # retries of one chunk are consecutive and identical, so the distinct
         # signature count is the batch count
         batch_signatures.append(
-            (identity, tuple(str(r.get("fdc_id")) for r in (chunk or ()))))
+            (_current[0], tuple(str(r.get("fdc_id")) for r in (chunk or ()))))
+        for row in (chunk or ()):
+            asked_pairs.append((_current[0], f"usda:{row.get('fdc_id')}"))
         raise ResolverPoisoned(
             "the resolver was called during a poisoned build — the store was "
             "supposed to answer this without asking anyone")
@@ -134,6 +172,7 @@ async def prove(runs: int = 3) -> dict:
         poison_bites = True
     resolver_calls.clear()
     batch_signatures.clear()
+    asked_pairs.clear()
 
     original_search, original_qualify = usda._search, eq.qualify_usda_rows
     snapshots = []
@@ -144,9 +183,11 @@ async def prove(runs: int = 3) -> dict:
             results = {}
             calls_before, batches_before = len(resolver_calls), len(
                 batch_signatures)
+            asked_before = len(asked_pairs)
             with ranking_regime(PHASE_0_REGIME):
                 for identity in sorted(queries):
                     entity, _, preparation = identity.partition("|")
+                    _current[0] = identity
 
                     # ⭐ SERVED BY QUERY, BECAUSE THE CAPTURE IS KEYED BY
                     # QUERY. `build_one` issues one `_search` per shape and
@@ -188,10 +229,12 @@ async def prove(runs: int = 3) -> dict:
             # `unresolved` is what `build_one` itself could not answer from
             # the store, per identity — unique evidence ids, no retries and
             # no cross-run accumulation in it.
-            unseen_by_identity = {
-                identity: len(derived["unresolved"])
-                for identity, derived in results.items()
-                if derived["unresolved"]}
+            asked = set(asked_pairs[asked_before:])
+            unseen_by_identity = {}
+            for identity_key, _evidence in asked:
+                unseen_by_identity[identity_key] = \
+                    unseen_by_identity.get(identity_key, 0) + 1
+            snapshot_pair_ids = [list(pair) for pair in asked]
             snapshots.append({
                 "resolved_this_build": len(store.resolved_this_build),
                 "results": results,
@@ -201,6 +244,7 @@ async def prove(runs: int = 3) -> dict:
                     batch_signatures[batches_before:])),
                 "unseen_pairs": sum(unseen_by_identity.values()),
                 "unseen_pairs_by_identity": unseen_by_identity,
+                "unseen_pair_ids": snapshot_pair_ids,
             })
     finally:
         usda._search, eq.qualify_usda_rows = original_search, original_qualify
@@ -253,6 +297,19 @@ async def prove(runs: int = 3) -> dict:
             "resolver_batches": [s["resolver_batches"] for s in snapshots],
             "unseen_pairs": [s["unseen_pairs"] for s in snapshots],
             "unseen_pairs_by_identity": first["unseen_pairs_by_identity"],
+            # ⭐ THE WORKLIST ITSELF, not just its size. These are the pairs a
+            # populate run has to resolve, and emitting them means step 2 does
+            # not have to re-derive the set with a second implementation —
+            # which is how the capture and the build drifted apart in the
+            # first place.
+            #
+            # NOTE WHAT IS ABSENT: a pair a human REVIEWED and left UNRESOLVED
+            # is settled, not outstanding. `needs_resolution` refuses to
+            # re-ask it, because a considered refusal is a decision and
+            # replacing it with a sampled opinion would erase the review on
+            # every rebuild. Counting those as work is how this figure was
+            # briefly 87 instead of 86.
+            "unseen_pair_ids": sorted(first["unseen_pair_ids"]),
             "qualify_batch": bp._QUALIFY_BATCH,
             "qualify_attempts": bp._QUALIFY_ATTEMPTS,
             # ⭐ THE CLOSURE CONDITION, EXECUTABLE RATHER THAN DESCRIBED.
