@@ -13,6 +13,17 @@ variability is removed as a variable rather than assumed away — the question
 is whether the BUILD is deterministic given identical inputs, and a live API
 would make a failure unattributable between our code and theirs.
 
+⛔ AND THE CAPTURE IS THE G1 SEAM RECORDING, KEYED BY QUERY. An earlier
+version of this module synthesised its own corpus from the committed artifact
+and wrote it to the authoritative capture path; when G1 started recording at
+`usda._search`, the schema changed under this reader and it was never
+updated. It handed `build_one` the literal string `"meta"` as an identity and
+died on `'str' object has no attribute 'get'` — and because NOTHING IMPORTED
+IT, the suite stayed green over a proof that could not run. Both halves of
+that are fixed here: the path constant is imported from `capture_retrieval`
+rather than redeclared, and `tests/test_the_build_path_reproduces_itself.py`
+actually invokes this.
+
 ⭐ THE RESOLVER IS POISONED HERE TOO, AND IT MATTERS MORE. In the replay proof
 the resolver could not have been reached anyway. Here the build genuinely
 wants to call it — so a poisoned run that still produces the same artifact
@@ -30,12 +41,20 @@ import json
 import pathlib
 import sys
 
+from scripts import capture_retrieval as cr
 from skills.nutrition import pricing_artifact as art
 from skills.nutrition import semantic_annotations as sa
 from skills.nutrition.v2_gate import PHASE_0_REGIME, ranking_regime
 
-CAPTURE_PATH = (pathlib.Path(__file__).resolve().parents[1]
-                / "data" / "baseline" / "phase_0_source_capture.json")
+#: ⛔ ONE CONSTANT, NOT A SECOND ONE. This module used to declare its own
+#: `CAPTURE_PATH` pointing at the same file `capture_retrieval` writes — and
+#: when G1 rewrote that file at the retrieval seam, the schema changed
+#: underneath and this reader was never updated. `sorted(capture)` started
+#: yielding `['meta', 'queries']`, the build was handed the string `"meta"`
+#: as an identity, and it died on `'str' object has no attribute 'get'`.
+#: Nothing imported this script, so the suite stayed green over a dead proof.
+#: TWO IMPLEMENTATIONS OF ONE NOTION, in the commit that named the phrase.
+CAPTURE_PATH = cr.CAPTURE_PATH
 PROOF_PATH = (pathlib.Path(__file__).resolve().parents[1]
               / "data" / "baseline" / "phase_0_build_proof.json")
 
@@ -44,28 +63,13 @@ class ResolverPoisoned(RuntimeError):
     """The resolver was invoked during a build that must not need it."""
 
 
-def capture_from_artifact() -> dict:
-    """Synthesise a source capture from the committed artifact.
+class CaptureMissing(SystemExit):
+    """There is no seam capture to replay, and one must not be invented."""
 
-    ⚠ STATED PLAINLY: this is a REPLAY CORPUS, not a fresh provider capture.
-    It reconstructs what retrieval would have returned from the candidates the
-    artifact already holds, which is enough to prove the build is
-    DETERMINISTIC over fixed inputs and is NOT enough to prove the artifact
-    matches what USDA would serve today. Those are different claims and only
-    the first is being made here. A true capture needs a live retrieval run
-    recorded to disk, and that is owed.
-    """
-    document = json.loads(art.ARTIFACT_PATH.read_text())
-    capture = {}
-    for identity, entry in (document.get("entries") or {}).items():
-        rows = []
-        for candidate in (entry.get("candidates") or ()):
-            rows.append({"fdc_id": candidate.get("fdc_id"),
-                         "description": candidate.get("description"),
-                         "data_type": candidate.get("data_type") or "sr legacy",
-                         "per100g": candidate.get("per100g") or {}})
-        capture[identity] = rows
-    return capture
+
+class CaptureIncomplete(SystemExit):
+    """The capture and the committed artifact disagree about which identities
+    exist, so a replay would silently build a different universe."""
 
 
 def _fingerprint(results) -> str:
@@ -78,19 +82,84 @@ async def prove(runs: int = 3) -> dict:
     import scripts.build_pricing_artifact as bp
     import skills.nutrition.evidence_qualification as eq
 
+    # ⛔ A MISSING CAPTURE IS REFUSED, NEVER INVENTED. This used to synthesise
+    # a corpus from the committed artifact and WRITE IT to the authoritative
+    # capture path — so the one artifact G1 exists to protect could be
+    # replaced by a reconstruction of the thing it is supposed to check,
+    # by a script nobody ran deliberately. Capture is `capture_retrieval`'s
+    # job and only its job.
     if not CAPTURE_PATH.exists():
-        CAPTURE_PATH.write_text(json.dumps(capture_from_artifact(), indent=1)
-                                + "\n")
+        raise CaptureMissing(
+            f"no seam capture at {CAPTURE_PATH.name} — run "
+            f"`python -m scripts.capture_retrieval --write`. This proof will "
+            f"not manufacture its own inputs.")
     capture = json.loads(CAPTURE_PATH.read_text())
+
+    # ⭐ AND A REPLAY AGAINST A MOVED CONTRACT DESCRIBES A SYSTEM THAT NO
+    # LONGER EXISTS. Refuse it rather than produce numbers about the past.
+    cr.verify_contract(capture)
+    queries = capture["queries"]
+
     document = json.loads(art.ARTIFACT_PATH.read_text())
     stored = (document.get("meta") or {}).get("annotations") or {}
     if not stored:
         raise SystemExit("the semantic store is empty — populate first")
 
-    resolver_calls = []
+    # ⛔ THE IDENTITY SETS MUST AGREE BEFORE A SINGLE BUILD RUNS. The replay
+    # iterates the CAPTURE and the artifact comparison iterates the RESULTS,
+    # so an identity present in the artifact and missing from the capture is
+    # never built and never compared — it simply drops out, and an incomplete
+    # build reports itself as deterministic.
+    #
+    # The "capture is not thinner than the artifact" gate does not cover this:
+    # it compares fdc_ids as one GLOBAL set, so a candidate captured under a
+    # DIFFERENT identity satisfies it. `egg|fried` can go missing while its
+    # committed candidate is still present somewhere in the corpus.
+    committed_identities = set(document.get("entries") or {})
+    captured_identities = set(queries)
+    if captured_identities != committed_identities:
+        missing = sorted(committed_identities - captured_identities)
+        extra = sorted(captured_identities - committed_identities)
+        raise CaptureIncomplete(
+            f"capture and artifact disagree on identities — "
+            f"in the artifact and NOT captured: {missing or 'none'}; "
+            f"captured and NOT in the artifact: {extra or 'none'}. A replay "
+            f"would build a different universe than the one it compares to.")
 
-    async def _poisoned(*_args, **_kwargs):
+    # ⛔ AN ATTEMPT IS NOT A PAIR, AND CONFLATING THEM OVERSTATES THE WORK.
+    # The first version of this counted raw invocations and the directive then
+    # reported them as "333 pairs needing annotation". They are not pairs:
+    # `build_one` batches unseen rows by `_QUALIFY_BATCH` and retries each
+    # batch up to `_QUALIFY_ATTEMPTS` times, and the total accumulates across
+    # every proof run. So one missing pair can bill as nine attempts, and the
+    # headline number was roughly an order of magnitude too large.
+    #
+    #     attempts   raw invocations, retries and runs included
+    #     batches    distinct chunks handed to the resolver
+    #     pairs      unique (identity_key, evidence_id) with no annotation
+    #
+    # Only the last one measures how much work the populate step actually is.
+    resolver_calls = []
+    batch_signatures = []
+    # ⛔ COUNTED FROM WHAT WAS ASKED, NOT FROM THE RETURN PAYLOAD. The first
+    # version read `result["unresolved"]`, and `build_one` omits that field
+    # entirely on its FAILED branch — it computes the list, quotes its LENGTH
+    # in the reason string, and drops the list itself. So an identity with no
+    # priceable rows would contribute ZERO unresolved pairs no matter how many
+    # the resolver was actually asked about, and the undercount would land
+    # precisely on the identities in the worst shape. Reading the question
+    # instead of the answer is immune to that.
+    asked_pairs = []
+    _current = [""]
+
+    async def _poisoned(identity=None, chunk=None, *_args, **_kwargs):
         resolver_calls.append(1)
+        # retries of one chunk are consecutive and identical, so the distinct
+        # signature count is the batch count
+        batch_signatures.append(
+            (_current[0], tuple(str(r.get("fdc_id")) for r in (chunk or ()))))
+        for row in (chunk or ()):
+            asked_pairs.append((_current[0], f"usda:{row.get('fdc_id')}"))
         raise ResolverPoisoned(
             "the resolver was called during a poisoned build — the store was "
             "supposed to answer this without asking anyone")
@@ -102,6 +171,8 @@ async def prove(runs: int = 3) -> dict:
     except ResolverPoisoned:
         poison_bites = True
     resolver_calls.clear()
+    batch_signatures.clear()
+    asked_pairs.clear()
 
     original_search, original_qualify = usda._search, eq.qualify_usda_rows
     snapshots = []
@@ -110,16 +181,41 @@ async def prove(runs: int = 3) -> dict:
         for _ in range(runs):
             store = sa.Store.from_payload(stored)
             results = {}
+            calls_before, batches_before = len(resolver_calls), len(
+                batch_signatures)
+            asked_before = len(asked_pairs)
             with ranking_regime(PHASE_0_REGIME):
-                for identity in sorted(capture):
+                for identity in sorted(queries):
                     entity, _, preparation = identity.partition("|")
+                    _current[0] = identity
 
-                    async def _replay(*_a, _rows=capture[identity], **_k):
-                        return list(_rows)
+                    # ⭐ SERVED BY QUERY, BECAUSE THE CAPTURE IS KEYED BY
+                    # QUERY. `build_one` issues one `_search` per shape and
+                    # dedupes keeping FIRST OCCURRENCE, so which query
+                    # returned a row decides whether it survives at all.
+                    # Answering every shape with one flattened row list would
+                    # replay a DIFFERENT build than the one recorded — the
+                    # ordering the capture went out of its way to preserve
+                    # would be discarded here at the last step.
+                    by_query = {record["query"]: record["rows"]
+                                for record in queries[identity]}
+
+                    async def _replay(query, *_a, _by=by_query,
+                                      _identity=identity, **_k):
+                        # ⛔ AN UNCAPTURED QUERY IS A FAILURE, NOT AN EMPTY
+                        # RESULT. Returning [] would let a contract that grew
+                        # a shape read as a food that retrieved nothing.
+                        if query not in _by:
+                            raise KeyError(
+                                f"{_identity}: the build issued {query!r}, "
+                                f"which the capture does not hold — the "
+                                f"retrieval contract moved under this replay")
+                        return list(_by[query])
 
                     usda._search = _replay
                     result = await bp.build_one(entity, preparation,
-                                                store=store)
+                                                store=store,
+                                                identity_key=identity)
                     results[identity] = {
                         "status": result.get("status"),
                         "candidates": [art.candidate_evidence_id(c)
@@ -129,10 +225,26 @@ async def prove(runs: int = 3) -> dict:
                             result.get("mechanically_refused") or {},
                         "raw": result.get("raw"),
                     }
+            # ⭐ THE PAIR COUNT IS THE ONE THAT SIZES THE POPULATE STEP.
+            # `unresolved` is what `build_one` itself could not answer from
+            # the store, per identity — unique evidence ids, no retries and
+            # no cross-run accumulation in it.
+            asked = set(asked_pairs[asked_before:])
+            unseen_by_identity = {}
+            for identity_key, _evidence in asked:
+                unseen_by_identity[identity_key] = \
+                    unseen_by_identity.get(identity_key, 0) + 1
+            snapshot_pair_ids = [list(pair) for pair in asked]
             snapshots.append({
                 "resolved_this_build": len(store.resolved_this_build),
                 "results": results,
                 "fingerprint": _fingerprint(results),
+                "resolver_attempts": len(resolver_calls) - calls_before,
+                "resolver_batches": len(set(
+                    batch_signatures[batches_before:])),
+                "unseen_pairs": sum(unseen_by_identity.values()),
+                "unseen_pairs_by_identity": unseen_by_identity,
+                "unseen_pair_ids": snapshot_pair_ids,
             })
     finally:
         usda._search, eq.qualify_usda_rows = original_search, original_qualify
@@ -170,7 +282,58 @@ async def prove(runs: int = 3) -> dict:
             "resolved_this_build": [s["resolved_this_build"] for s in snapshots],
             "identities": len(first["results"]),
             "fingerprint": first["fingerprint"],
-            "capture_is_a_replay_corpus_not_a_fresh_provider_capture": True,
+            # WHAT THE SOURCES ACTUALLY ARE, carried in the artifact so the
+            # claim travels with the numbers. G1 replaced the synthesised
+            # corpus this used to build for itself: these rows were recorded
+            # AT `usda._search` while the real build issued its own queries.
+            # Still a RECORDING replayed, so this proves the build is
+            # deterministic over fixed real inputs — NOT that USDA would
+            # serve the same rows today. Those remain different claims.
+            # ⛔ THREE DIFFERENT NUMBERS, NAMED SEPARATELY SO THE BIGGEST ONE
+            # CANNOT BE QUOTED AS THE SMALLEST. attempts = batches x retries x
+            # runs; only `unseen_pairs` sizes the populate step, and it is
+            # per-run because it must not accumulate.
+            "resolver_attempts": [s["resolver_attempts"] for s in snapshots],
+            "resolver_batches": [s["resolver_batches"] for s in snapshots],
+            "unseen_pairs": [s["unseen_pairs"] for s in snapshots],
+            "unseen_pairs_by_identity": first["unseen_pairs_by_identity"],
+            # ⭐ THE WORKLIST ITSELF, not just its size. These are the pairs a
+            # populate run has to resolve, and emitting them means step 2 does
+            # not have to re-derive the set with a second implementation —
+            # which is how the capture and the build drifted apart in the
+            # first place.
+            #
+            # NOTE WHAT IS ABSENT: a pair a human REVIEWED and left UNRESOLVED
+            # is settled, not outstanding. `needs_resolution` refuses to
+            # re-ask it, because a considered refusal is a decision and
+            # replacing it with a sampled opinion would erase the review on
+            # every rebuild. Counting those as work is how this figure was
+            # briefly 87 instead of 86.
+            "unseen_pair_ids": sorted(first["unseen_pair_ids"]),
+            "qualify_batch": bp._QUALIFY_BATCH,
+            "qualify_attempts": bp._QUALIFY_ATTEMPTS,
+            # ⭐ THE CLOSURE CONDITION, EXECUTABLE RATHER THAN DESCRIBED.
+            # `resolved_this_build == 0` alone is NOT sufficient and reading it
+            # that way is how this proof came to look stronger than it was: it
+            # is zero right now while the resolver is being called 333 times
+            # and refused every time. "It could not have asked" requires BOTH
+            # that nothing resolved AND that nothing asked.
+            "closure_condition_met": (
+                poison_bites
+                and all(s["resolved_this_build"] == 0 for s in snapshots)
+                and len(resolver_calls) == 0
+                and not failures),
+            "capture": "seam_recording",
+            "capture_fingerprint": (capture.get("meta") or {})
+                                   .get("retrieval_fingerprint", ""),
+            # PER-IDENTITY OUTCOME, because the aggregate hides the thing the
+            # delta classification needs to read. An uncaptured query reaches
+            # `build_one` through `asyncio.gather(return_exceptions=True)` and
+            # lands as FAILED — so a replay that lost a query shape reports a
+            # provider failure rather than a food that legitimately retrieved
+            # less, and that distinction is only visible here.
+            "statuses": {identity: derived["status"]
+                         for identity, derived in first["results"].items()},
             "failures": failures}
 
 
@@ -179,17 +342,35 @@ if __name__ == "__main__":
     print(f"  POISONED BUILD x{result['runs']} THROUGH build_one() · "
           f"regime {result['regime']}\n")
     print(f"    poison bites (verified first)   {result['poison_bites']}")
-    print(f"    resolver calls                  {result['resolver_calls']}")
     print(f"    resolved_this_build per run     {result['resolved_this_build']}")
     print(f"    identities built                {result['identities']}")
     print(f"    fingerprint                     {result['fingerprint'][:32]}")
+    print()
+    print(f"    ⭐ UNSEEN PAIRS per run         "
+          f"{result['unseen_pairs']}   <- sizes the populate step")
+    print(f"       resolver batches per run     {result['resolver_batches']}"
+          f"   (batch size {result['qualify_batch']})")
+    print(f"       resolver ATTEMPTS per run    {result['resolver_attempts']}"
+          f"   (up to {result['qualify_attempts']} tries each)")
+    print(f"       attempts total, all runs     {result['resolver_calls']}"
+          f"   <- NOT a pair count")
+    if result["unseen_pairs_by_identity"]:
+        print(f"\n    unseen pairs by identity")
+        for identity, count in sorted(
+                result["unseen_pairs_by_identity"].items(),
+                key=lambda kv: (-kv[1], kv[0])):
+            print(f"      {identity:<24} {count}")
     for failure in result["failures"]:
         print(f"    ⛔ {failure}")
     if result["failures"]:
         raise SystemExit(1)
     print(f"\n  ✅ the BUILD PATH reproduces itself from captured sources,")
     print(f"     pre-retention, with a resolver that RAISES if consulted")
-    print(f"  ⚠ the capture is a REPLAY CORPUS, not a fresh provider capture")
+    print(f"  ⚠ sources are a SEAM RECORDING replayed by query "
+          f"({result['capture_fingerprint'][:24]}) —")
+    print(f"     this proves the BUILD is deterministic over fixed real "
+          f"inputs, NOT that")
+    print(f"     the provider would serve these rows today")
     if "--write" in sys.argv:
         PROOF_PATH.write_text(json.dumps(result, indent=1) + "\n")
         print(f"\n  -> {PROOF_PATH.name}")

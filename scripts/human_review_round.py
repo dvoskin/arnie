@@ -44,9 +44,93 @@ LEDGER_PATH = (pathlib.Path(__file__).resolve().parents[1]
 _ADMIT_RELATIONSHIP = sa.COMPATIBLE_SPECIALIZATION
 
 
+class SourceFingerprintUnavailable(SystemExit):
+    """A review cannot be bound to a source row that cannot be identified."""
+
+
+def fingerprints_from_capture(capture=None) -> dict:
+    """`{(identity, evidence_id): row_fingerprint}` for every admitted pair.
+
+    ⛔ THE DEFECT THIS REPLACES. `apply()` took `source_fingerprints` as an
+    optional kwarg, `__main__` called `apply(store)` without it, and the value
+    fell through to `""`. All six decisions shipped with a BLANK fingerprint —
+    so a reviewed annotation was not bound to the row it reviewed, and
+    `stale_source()` could never fire for them, because its comparison
+    requires an existing fingerprint on both sides. An optional argument
+    nobody passes is not a default; it is a hole.
+
+    ⭐ AND EVERY OCCURRENCE IS CHECKED, NOT THE FIRST ONE FOUND. A row can be
+    returned by more than one query shape, so the same source-qualified
+    evidence id legitimately appears several times in the capture. Identical
+    content must fingerprint identically. If it does not, the capture is
+    telling us one evidence id describes two different rows — and taking
+    whichever came first would bind the review to an arbitrary one of them.
+    That is a refusal, not a tie-break.
+    """
+    from scripts import capture_retrieval as cr
+    from scripts.build_pricing_artifact import _row_fingerprint
+
+    if capture is None:
+        if not cr.CAPTURE_PATH.exists():
+            raise SourceFingerprintUnavailable(
+                f"no seam capture at {cr.CAPTURE_PATH.name} — a review cannot "
+                f"be bound to a source row without one")
+        capture = json.loads(cr.CAPTURE_PATH.read_text())
+
+    wanted = {(identity, evidence)
+              for identity, evidence, *_ in wr.ADMISSION_OVERRIDES}
+    found: dict = {}
+    for identity, records in (capture.get("queries") or {}).items():
+        for record in records:
+            for row in record.get("rows") or ():
+                evidence = f"usda:{row.get('fdc_id')}"
+                if (identity, evidence) in wanted:
+                    found.setdefault((identity, evidence), set()).add(
+                        _row_fingerprint(row))
+
+    fingerprints, failures = {}, []
+    for pair in sorted(wanted):
+        prints = found.get(pair)
+        if not prints:
+            failures.append(f"{pair[0]}/{pair[1]}: admitted by a reviewer and "
+                            f"absent from the capture — the decision cannot "
+                            f"be bound to a source row")
+        elif len(prints) > 1:
+            failures.append(f"{pair[0]}/{pair[1]}: {len(prints)} DIFFERENT row "
+                            f"fingerprints for one evidence id "
+                            f"({sorted(prints)}) — one id is describing two "
+                            f"rows, and picking either would be arbitrary")
+        else:
+            fingerprints[pair] = next(iter(prints))
+
+    if failures:
+        raise SourceFingerprintUnavailable("\n  ".join(["", *failures]))
+    return fingerprints
+
+
+def _prior_dispositions() -> dict:
+    """What each pair was BEFORE this round, from the committed ledger.
+
+    ⭐ THE OLD DISPOSITION IS A HISTORICAL FACT, NOT A RE-READING OF THE STORE.
+    Once the round is applied the store says `COMPATIBLE_SPECIALIZATION`, so
+    re-deriving `was` from it would record that the reviewer changed nothing —
+    erasing the very thing this round exists to show, that the resolver marked
+    three mackerel species DIFFERENT_IDENTITY while admitting five salmon of
+    the same class. When the ledger exists it is the authority for `was`.
+    """
+    if not LEDGER_PATH.exists():
+        return {}
+    ledger = json.loads(LEDGER_PATH.read_text())
+    return {(row["identity_key"], row["evidence_id"]): row["was"]
+            for row in (ledger.get("rows") or ())}
+
+
 def apply(store, *, source_fingerprints=None) -> list:
     """Write this round into `store`, returning the ledger of what moved."""
-    source_fingerprints = source_fingerprints or {}
+    # ⛔ DERIVED, NOT DEFAULTED TO EMPTY. See `fingerprints_from_capture`.
+    if source_fingerprints is None:
+        source_fingerprints = fingerprints_from_capture()
+    prior = _prior_dispositions()
     ledger = []
 
     sa.open_baseline_migration()
@@ -54,11 +138,24 @@ def apply(store, *, source_fingerprints=None) -> list:
         for identity, evidence, disposition, reason, note in \
                 wr.ADMISSION_OVERRIDES:
             previous = store.get(identity, evidence)
-            was = previous.relationship if previous else None
+            # the committed ledger outranks the store, which this round has
+            # already moved — see `_prior_dispositions`
+            was = prior.get((identity, evidence),
+                            previous.relationship if previous else None)
             if disposition != wr.bs.ADMIT:
                 raise SystemExit(
                     f"{identity}/{evidence}: this round only ADMITS; a "
                     f"rejection belongs to the round that can explain it")
+
+            fingerprint = source_fingerprints.get((identity, evidence)) or ""
+            if not fingerprint:
+                # ⛔ NEVER "" AGAIN. A blank fingerprint is not a weaker
+                # binding, it is the ABSENCE of one: `stale_source()` compares
+                # only when both sides carry a value, so an unbound review can
+                # never be invalidated by the row moving underneath it.
+                raise SourceFingerprintUnavailable(
+                    f"{identity}/{evidence}: no source fingerprint — refusing "
+                    f"to write a review that is not bound to its row")
 
             store.record(sa.Annotation(
                 identity_key=identity,
@@ -67,9 +164,7 @@ def apply(store, *, source_fingerprints=None) -> list:
                 confidence=1.0,
                 resolver_model=REVIEWER,
                 resolver_version=reason,
-                source_fingerprint=(source_fingerprints.get((identity, evidence))
-                                    or getattr(previous, "source_fingerprint",
-                                               "") or ""),
+                source_fingerprint=fingerprint,
                 review_status=sa.BASELINE_REVIEWED,
             ), cause=sa.MANUAL_INVALIDATION)
 
@@ -109,6 +204,16 @@ def verify(store, ledger) -> tuple:
             failures.append(f"{row['identity_key']}: no review status")
         if annotation.resolver_model != REVIEWER:
             failures.append(f"{row['identity_key']}: provenance is not human")
+        # ⛔ BOUND TO THE ROW IT REVIEWED. All six shipped with "" — reviewed,
+        # attributable in every other field, and floating free of the evidence.
+        if not annotation.source_fingerprint:
+            failures.append(f"{row['identity_key']}/{row['evidence_id']}: "
+                            f"reviewed and NOT BOUND to a source row — "
+                            f"stale_source() can never fire for it")
+        if row["source_fingerprint"] != annotation.source_fingerprint:
+            failures.append(f"{row['identity_key']}: ledger records "
+                            f"{row['source_fingerprint']!r}, store holds "
+                            f"{annotation.source_fingerprint!r}")
         if row["was"] == row["now"]:
             failures.append(f"{row['identity_key']}: recorded as changed but "
                             f"{row['was']} == {row['now']}")

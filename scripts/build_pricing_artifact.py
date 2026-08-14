@@ -343,9 +343,16 @@ async def build_one(entity: str, preparation: str, store=None,
         # is annotated yet, that is a gap to revisit, not a verdict — and it
         # must not be written as an authoritative negative.
         if unresolved:
+            # ⛔ THE LIST IS CARRIED, NOT JUST ITS LENGTH. This branch quoted
+            # `len(unresolved)` in the reason and dropped the list itself, so
+            # every consumer reading `result["unresolved"]` saw nothing for
+            # exactly the identities in the worst shape — nothing priceable
+            # and rows still outstanding. A caller counting outstanding work
+            # would undercount precisely where it mattered most.
             return {"identity": identity, "status": FAILED,
                     "reason": f"{len(unresolved)} of {len(rows)} rows "
-                              f"unresolved; none annotated as priceable"}
+                              f"unresolved; none annotated as priceable",
+                    "unresolved": tuple(unresolved)}
         return {"identity": identity, "status": EMPTY,
                 "reason": f"0 of {len(rows)} rows priceable by policy"}
     result = {"identity": identity, "status": MATERIAL, "candidates": kept,

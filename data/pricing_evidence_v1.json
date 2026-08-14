@@ -4915,7 +4915,7 @@
     "resolver_model": "human:phase_0.9b_delta_review",
     "resolver_version": "same_base_food + form_specialization",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:93293faac84a0ea2",
     "created_at": "",
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
@@ -4980,7 +4980,7 @@
     "resolver_model": "human:phase_0.9b_delta_review",
     "resolver_version": "same_base_food + form_specialization",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:d36e8677a4749b63",
     "created_at": "",
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
@@ -5305,7 +5305,7 @@
     "resolver_model": "human:phase_0.9b_delta_review",
     "resolver_version": "same_base_food + species_specialization + preparation_compatible",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:73dff2cde9b2022a",
     "created_at": "",
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
@@ -5318,7 +5318,7 @@
     "resolver_model": "human:phase_0.9b_delta_review",
     "resolver_version": "same_base_food + species_specialization + preparation_compatible",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:a17264eb5c02bb25",
     "created_at": "",
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
@@ -5331,7 +5331,7 @@
     "resolver_model": "human:phase_0.9b_delta_review",
     "resolver_version": "same_base_food + species_specialization + preparation_compatible",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:070bf87271b0bea6",
     "created_at": "",
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
@@ -6228,7 +6228,7 @@
     "resolver_model": "human:phase_0.9b_delta_review",
     "resolver_version": "same_base_food + form_specialization",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:7c19af9c82ac8458",
     "created_at": "",
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""

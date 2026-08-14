@@ -11,7 +11,7 @@
    "cause": "manual_invalidation",
    "reason": "same_base_food + species_specialization + preparation_compatible",
    "note": "king mackerel, cooked dry heat \u2014 the identical class signed ADMIT for five salmon species; the model contradicted its own salmon verdicts",
-   "source_fingerprint": ""
+   "source_fingerprint": "sha256:070bf87271b0bea6"
   },
   {
    "round": "phase_0.9b_delta_review",
@@ -23,7 +23,7 @@
    "cause": "manual_invalidation",
    "reason": "same_base_food + species_specialization + preparation_compatible",
    "note": "spanish mackerel, cooked dry heat \u2014 same class",
-   "source_fingerprint": ""
+   "source_fingerprint": "sha256:a17264eb5c02bb25"
   },
   {
    "round": "phase_0.9b_delta_review",
@@ -35,7 +35,7 @@
    "cause": "manual_invalidation",
    "reason": "same_base_food + species_specialization + preparation_compatible",
    "note": "Pacific and jack mackerel, cooked dry heat \u2014 same class",
-   "source_fingerprint": ""
+   "source_fingerprint": "sha256:73dff2cde9b2022a"
   },
   {
    "round": "phase_0.9b_delta_review",
@@ -47,7 +47,7 @@
    "cause": "manual_invalidation",
    "reason": "same_base_food + form_specialization",
    "note": "battered fried chicken \u2014 admissible because the request ITSELF asks for fried, the same reasoning that admitted breaded shrimp for shrimp|fried and rejected it for bare shrimp|",
-   "source_fingerprint": ""
+   "source_fingerprint": "sha256:93293faac84a0ea2"
   },
   {
    "round": "phase_0.9b_delta_review",
@@ -59,7 +59,7 @@
    "cause": "manual_invalidation",
    "reason": "same_base_food + form_specialization",
    "note": "grilled skinless breast WITH ADDED SOLUTION \u2014 a brine treatment of the same chicken, on the treatment side of the line that admits salting and smoking while refusing breading",
-   "source_fingerprint": ""
+   "source_fingerprint": "sha256:d36e8677a4749b63"
   },
   {
    "round": "phase_0.9b_delta_review",
@@ -71,7 +71,7 @@
    "cause": "manual_invalidation",
    "reason": "same_base_food + form_specialization",
    "note": "canned shrimp is still shrimp; canning is a preservation form, not a different food. It may be a poor GENERIC representative, which is a ranking question and not an admission one",
-   "source_fingerprint": ""
+   "source_fingerprint": "sha256:7c19af9c82ac8458"
   }
  ]
 }
