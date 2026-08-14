@@ -84,6 +84,76 @@ RANKING_DEFECTS = (
 #
 # So Phase 0.9's semantic decisions are ADDITIVE and attributable to their own
 # round. The frozen 77 stay exactly as they were signed.
+#: ⭐ PHASE 0.9b — THE EIGHT-ROW DELTA the captured-source build exposed.
+#:
+#: Populating the store gave the artifact annotations it did not have when its
+#: candidate lists were written on 08-08, so the live build derives a SMALLER
+#: universe than the artifact holds. Eight rows disagree, and five of them are
+#: the RESOLVER being wrong in a way a reviewer already ruled on.
+#:
+#: ⭐⭐ THE MACKEREL THREE ARE THE IMPORTANT CORRECTION. The model marked king,
+#: spanish and Pacific-and-jack mackerel DIFFERENT_IDENTITY for
+#: `mackerel|roasted` — while the SAME model marked chinook, chum, pink,
+#: sockeye and Atlantic salmon admissible for `salmon|roasted`, and a reviewer
+#: signed those by hand as "same_base_food + species_specialization +
+#: preparation_compatible". A species specialization of the requested fish is
+#: the base food. Letting the model's inconsistency stand would use admission
+#: to solve representativeness, which is exactly what the standing rule
+#: forbids: if a specialized row is legitimate but undesirable as the generic
+#: winner, ADMIT it and let ranking decide.
+ADMISSION_OVERRIDES = (
+    ("mackerel|roasted", "usda:174236", bs.ADMIT,
+     "same_base_food + species_specialization + preparation_compatible",
+     "king mackerel, cooked dry heat — the identical class signed ADMIT for "
+     "five salmon species; the model contradicted its own salmon verdicts"),
+    ("mackerel|roasted", "usda:173674", bs.ADMIT,
+     "same_base_food + species_specialization + preparation_compatible",
+     "spanish mackerel, cooked dry heat — same class"),
+    ("mackerel|roasted", "usda:171994", bs.ADMIT,
+     "same_base_food + species_specialization + preparation_compatible",
+     "Pacific and jack mackerel, cooked dry heat — same class"),
+    ("chicken|fried", "usda:171448", bs.ADMIT,
+     "same_base_food + form_specialization",
+     "battered fried chicken — admissible because the request ITSELF asks "
+     "for fried, the same reasoning that admitted breaded shrimp for "
+     "shrimp|fried and rejected it for bare shrimp|"),
+    ("chicken|grilled", "usda:171536", bs.ADMIT,
+     "same_base_food + form_specialization",
+     "grilled skinless breast WITH ADDED SOLUTION — a brine treatment of the "
+     "same chicken, on the treatment side of the line that admits salting "
+     "and smoking while refusing breading"),
+    # ⭐ CORRECTED. This was a semantic REJECT and should not have been:
+    # canned shrimp IS shrimp. Calling it "not shrimp" to keep it off the
+    # generic ladder would use ADMISSION to solve REPRESENTATIVENESS, the
+    # thing the standing rule forbids — and it would write a durable
+    # falsehood to fix a ranking preference. ADMIT, and let the winner review
+    # hold it if it is a poor generic representative.
+    ("shrimp|", "usda:171972", bs.ADMIT, "same_base_food + form_specialization",
+     "canned shrimp is still shrimp; canning is a preservation form, not a "
+     "different food. It may be a poor GENERIC representative, which is a "
+     "ranking question and not an admission one"),
+)
+
+#: ⛔ NOT SEMANTIC DECISIONS, AND THE DISTINCTION MUST SURVIVE THE REBUILD.
+#: The two HOUSE FOODS tofu rows were nearly signed as human REJECTs. They
+#: should not be: the architecture already has a typed BRANDED_FOR_GENERIC
+#: exclusion, and on the CURRENT retrieval contract — Foundation + SR Legacy
+#: only — branded rows never arrive at all.
+#:
+#: So their absence from a rebuilt artifact has a PROVENANCE, and it is
+#: neither "a reviewer ruled they are not tofu" nor "a veto refused them". It
+#: is RETRIEVAL NO LONGER SUPPLYING THEM. Recording them as semantic rejects
+#: would have written down that a tofu product is not tofu — false, durable,
+#: and an answer to a question nobody asked.
+NOT_SEMANTIC_ABSENCES = (
+    ("tofu|", "usda:173788", "retrieval_no_longer_supplies_branded_rows",
+     "HOUSE FOODS Premium Firm Tofu — branded; the retrieval contract is "
+     "Foundation + SR Legacy, so it is not returned. If it ever were, "
+     "BRANDED_FOR_GENERIC is the typed mechanical exclusion, not a reviewer"),
+    ("tofu|", "usda:173787", "retrieval_no_longer_supplies_branded_rows",
+     "HOUSE FOODS Premium Soft Tofu — same provenance"),
+)
+
 ADMISSION_DECISIONS = (
     ("potato|", "usda:170032", bs.REJECT, "part_of_food_not_the_food",
      "\"Potatoes, raw, SKIN\" is the SKIN — a part of the potato, not a "

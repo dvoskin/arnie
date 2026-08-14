@@ -127,8 +127,47 @@ def _duplicate_key(record):
             nutrition.get("calories"), nutrition.get("protein"))
 
 
-def base_food_mismatch(base_entity: str, description: str) -> bool:
+#: ⛔ THE LEXICAL NAMESPACE THIS VETO IS VALIDATED FOR, AND ONLY THIS ONE.
+#:
+#: `base_food_mismatch` proves a mismatch through the ABSENCE OF SHARED
+#: NORMALIZED TOKENS. That is sound where both sides are drawn from one
+#: lexical namespace — an English provider description against an English
+#: canonical query — and it is measured at precision 1.00 there.
+#:
+#: It is FALSE the moment a second namespace exists:
+#:
+#:     eggplant  <-> aubergine      zero lexical overlap, one concept
+#:     chickpea  <-> garbanzo       zero lexical overlap, one concept
+#:     chicken   <-> poulet         zero lexical overlap, one concept
+#:
+#: Absence of shared tokens may establish a mechanical mismatch ONLY inside a
+#: declared lexical namespace for which the rule has been validated. Across
+#: languages, synonym namespaces or providers it must read as SILENCE, until
+#: a canonical concept layer has established equivalence or difference.
+#:
+#: The architecture this must not block:
+#:     provider text -> provider normalisation -> canonical concept identity
+#:                   -> mechanical comparison
+#: and never:
+#:     arbitrary provider text -> English token overlap -> destructive decision
+#:
+#: ⭐ AND THE NAMESPACE IS ASSERTED BY THE CALLER, NOT NAMED HERE. The first
+#: version of this scope declared `VALIDATED_LEXICAL_NAMESPACE = "usda_en"` —
+#: and the portability gate refused it, correctly: a semantic module that
+#: names one provider is the provider leaking into the spine, which is the
+#: exact thing that invariant exists to stop. The ADAPTER knows which
+#: namespace it speaks; this layer only needs to know whether the caller
+#: asserts the rule was validated there. Default FALSE, so an un-asserting
+#: caller gets silence rather than a veto it has not earned.
+
+
+def base_food_mismatch(base_entity: str, description: str,
+                       *, lexical_veto_validated: bool = False) -> bool:
     """Is the requested food ABSENT from this record's description entirely?
+
+    Applies only when the caller ASSERTS the rule was validated for its
+    lexical namespace; otherwise it returns False — silence — rather than a
+    mismatch it cannot prove.
 
     ⭐ THE CONTRACT IS DELIBERATELY NARROW: if a mismatch is MECHANICALLY
     PROVABLE, refuse it before semantic qualification; if it is not, stay
@@ -149,6 +188,8 @@ def base_food_mismatch(base_entity: str, description: str) -> bool:
     """
     from core.food_intelligence import _folded, normalize_name
 
+    if not lexical_veto_validated:
+        return False                    # namespace not asserted: SILENT
     if not base_entity or not description:
         return False                    # nothing to prove: SILENT, not a veto
     requested = _folded(set(normalize_name(base_entity,
@@ -161,7 +202,8 @@ def base_food_mismatch(base_entity: str, description: str) -> bool:
 
 
 def vetoes(records, *, generic_intent: bool = True,
-           requested_identity: str = "", base_entity: str = "") -> tuple:
+           requested_identity: str = "", base_entity: str = "",
+           lexical_veto_validated: bool = False) -> tuple:
     """Every mechanical veto over these records, in record order.
 
     `requested_identity` is the composed identity being priced — "mackerel,
@@ -185,7 +227,8 @@ def vetoes(records, *, generic_intent: bool = True,
         # model. Running this only after qualification would make it
         # ceremonial — the semantic layer would already have removed the rows.
         if base_entity and base_food_mismatch(
-                base_entity, getattr(record, "title", "")):
+                base_entity, getattr(record, "title", ""),
+                lexical_veto_validated=lexical_veto_validated):
             out.append(Ineligible(evidence_id, BASE_FOOD_MISMATCH,
                                   detail=str(getattr(record, "title", ""))[:60]))
             continue
@@ -242,7 +285,9 @@ def vetoes(records, *, generic_intent: bool = True,
 
 def ineligible_ids(records, *, generic_intent: bool = True,
                    requested_identity: str = "",
-                   base_entity: str = "") -> frozenset:
+                   base_entity: str = "",
+                   lexical_veto_validated: bool = False) -> frozenset:
     return frozenset(v.evidence_id for v in vetoes(
         records, generic_intent=generic_intent,
-        requested_identity=requested_identity, base_entity=base_entity))
+        requested_identity=requested_identity, base_entity=base_entity,
+        lexical_veto_validated=lexical_veto_validated))

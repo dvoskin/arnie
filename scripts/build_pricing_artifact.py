@@ -26,6 +26,11 @@ exists", which sends pricing to the estimate rung. Writing that because USDA
 """
 from __future__ import annotations
 
+#: The provider this adapter speaks for. Every candidate it emits is named
+#: SOURCE-QUALIFIED, because an evidence id is a namespace plus a local id and
+#: never the local id alone.
+SOURCE = "usda"
+
 import argparse
 import asyncio
 import json
@@ -171,9 +176,21 @@ async def build_one(entity: str, preparation: str, store=None,
     mechanical = el.vetoes([_as_record(r) for r in rows],
                            generic_intent=True,
                            requested_identity=identity,
-                           base_entity=entity)
-    refused = {v.evidence_id: v.reason for v in mechanical
-               if v.reason == el.BASE_FOOD_MISMATCH}
+                           base_entity=entity,
+                           # ⭐ THE ADAPTER ASSERTS ITS OWN NAMESPACE. This
+                           # module speaks USDA English, the lexical veto was
+                           # measured at precision 1.00 against exactly that,
+                           # and naming the provider HERE is legitimate —
+                           # source belongs to evidence.
+                           lexical_veto_validated=(SOURCE == "usda"))
+    # ⛔ EVERY REASON THE LAYER EMITS, NOT ONE OF THEM. The first wiring
+    # filtered to BASE_FOOD_MISMATCH alone, so `vetoes()` computed the
+    # cooking-state conflict, the heat-medium conflict, the branded-for-generic
+    # exclusion, the duplicate and the no-energy refusal — and the build threw
+    # all five away. "Phases 0.1-0.3 are wired" was a stronger claim than the
+    # code supported: the CALL was there and the RESULT was discarded, which
+    # looks identical to being wired from any distance except this line.
+    refused = {v.evidence_id: v.reason for v in mechanical}
     if refused:
         print(f"    {identity_key or entity:<28} {len(refused)} row(s) "
               f"MECHANICALLY REFUSED before the resolver "
@@ -297,7 +314,28 @@ async def build_one(entity: str, preparation: str, store=None,
         elif sa.disposition(annotation).startswith("unresolved"):
             unresolved.append(evidence_id)
 
-    kept = [{"fdc_id": r.get("fdc_id"), "description": r.get("description"),
+    # ⛔ THE SOURCE QUALIFICATION WAS APPLIED TO THE DATA AND NOT TO THE
+    # PRODUCER. `candidate_evidence_id` was added, the committed artifact was
+    # backfilled, gates were written — and this line kept emitting candidates
+    # carrying only `fdc_id`, so THE NEXT REAL BUILD WOULD HAVE WRITTEN AN
+    # ARTIFACT WITH NO NAMESPACES AT ALL, silently reverting the portability
+    # fix while every existing gate stayed green against the backfilled file.
+    #
+    # Naming the provider HERE is legitimate and is why the portability gates
+    # exclude evidence adapters: source belongs to evidence. What may not
+    # happen is a bare provider-local number escaping into the artifact, where
+    # a second source's identical id would merge with it.
+    # ⚠ `data_type` IS CARRIED, and leaving it out disabled a veto silently.
+    # The artifact's candidates never stored it, so a capture built from the
+    # artifact had to default every row to a curated type — which means
+    # `BRANDED_FOR_GENERIC` could not fire, and two HOUSE FOODS rows that the
+    # mechanical layer would refuse for free had to be rejected by hand
+    # instead. A corpus that cannot exercise a veto is a corpus that quietly
+    # proves less than it appears to.
+    kept = [{"evidence_id": f"{SOURCE}:{r.get('fdc_id')}",
+             "source": SOURCE,
+             "fdc_id": r.get("fdc_id"), "description": r.get("description"),
+             "data_type": r.get("data_type") or "",
              "per100g": r.get("per100g") or {}}
             for r in kept if (r.get("per100g") or {}).get("calories")]
     if not kept:

@@ -28,7 +28,127 @@ concurrency locking, canonical settlement, replay/idempotency, ownership seam
                       REMAIN CLOSED
 ```
 
-## ✅ PHASE 0 IS TECHNICALLY CLOSED *(2026-08-13)*
+## ⚠ PHASE 0 — ARCHITECTURE CLOSED, CLOSURE EVIDENCE BEING REFRESHED *(2026-08-14)*
+
+**THE ARCHITECTURE STAYS CLOSED. THE EVIDENCE DOES NOT YET MATCH IT.** A
+review of `a4b6d23` found that the proof it rested on replays a FROZEN
+ARTIFACT and never calls `build_one` — so it establishes replay determinism,
+not `captured source -> production builder -> pre-retention equality`. Driving
+the real build path then exposed defects the replay proof structurally could
+not see.
+
+```text
+Phase 0 ARCHITECTURE          CLOSED — do not reopen
+Phase 0 CLOSURE EVIDENCE      ~80-85%, refresh owed
+Phase 0.5                     implemented and causally wired
+B-1.7a                        DO NOT START until the three gates below close
+```
+
+### ⛔ WHAT DRIVING THE REAL BUILD PATH FOUND
+
+**1. THE ELIGIBILITY LAYER HAD ZERO PRODUCTION CALLERS.** Phases 0.1/0.2/0.3
+and 0.5 built `skills/nutrition/eligibility.py` and nothing imported it —
+`cooking_state.py` went with it, its only importer being the module nothing
+imported. Its 23 gates passed against dead code and always would have: they
+call `el.vetoes(...)` directly, which proves the function WORKS and says
+nothing about whether anything INVOKES it. Fixed `d28fc02`, wired into
+`build_one` BEFORE the resolver.
+
+**2. AND THE FIRST WIRING CONSUMED ONE REASON OF SIX.** `vetoes()` emits
+base-food mismatch, cooking-state conflict, heat-medium conflict,
+branded-for-generic, duplicate and no-energy; the build filtered to the first
+and discarded the rest. THE CALL WAS THERE AND THE RESULT WAS THROWN AWAY,
+which is indistinguishable from being wired at any distance except that line.
+Now consumed in full: 34 of 249 captured rows refused (17 mismatch, 12
+cooking-state, 5 heat-medium).
+
+**3. THE SOURCE-QUALIFICATION FIX WAS APPLIED TO THE DATA, NOT THE PRODUCER.**
+`candidate_evidence_id` was added, 115 candidates backfilled, gates written —
+and `build_one` kept emitting `{fdc_id, description, per100g}`. **The next
+real build would have written an artifact with no namespaces**, silently
+reverting the portability invariant while every gate stayed green against the
+backfilled file. `data_type` was missing the same way, which disabled
+`BRANDED_FOR_GENERIC` in any capture built from the artifact.
+
+**4. A REBUILD ON A THIN CAPTURE IS UNINTERPRETABLE.** A first rebuild took
+27 identities to 24 and 115 candidates to 73, losing `mushrooms|`, `oats|` and
+`rice|` entirely. Cause was MINE: the capture issued only `entity` and
+`entity + prep` while the build issues `art.QUERY_SHAPES`. **A rebuild that
+shrinks the artifact by a third is only interpretable if its inputs are known
+to be at least as good as the ones it replaces.** Reverted, nothing committed.
+
+### THE THREE GATES BEFORE B-1.7a *(Danny, 2026-08-14)*
+
+**G1 — CAPTURE FIDELITY.** The capture must be produced by the SAME retrieval
+invocation `build_one` uses, never by a second script reconstructing
+`QUERY_SHAPES`. Record query string -> ORDERED rows (the build dedupes
+preserving first occurrence, and order can reach ranking), provider namespace,
+data type, and `retrieval_fingerprint`. Gate that the capture fingerprint
+equals the build's current one. This removes another "two implementations of
+one notion" seam — the defect family this migration keeps finding.
+
+**G2 — HUMAN AUTHORITY.** An adjudication that changes candidate ELIGIBILITY
+cannot live in `winner_review.py`: `build_one` decides candidates from
+`sa.eligible(annotation)`. Decisions must enter the ANNOTATION STORE as a new
+attributable review round carrying identity, source-qualified evidence, old
+disposition, new disposition, reviewer/cause, source fingerprint and round —
+with a gate proving an ordinary resolver rebuild cannot overwrite them. Do NOT
+amend the frozen 77. `winner_review.py` stays about REPRESENTATIVENESS; the
+store stays the authority for ADMISSION.
+
+**G3 — LEXICAL-VETO SCOPE.** `base_food_mismatch` proves mismatch through
+ABSENCE OF SHARED TOKENS. Sound inside one lexical namespace, false the moment
+a second exists: `eggplant`/`aubergine`, `chickpea`/`garbanzo`,
+`chicken`/`poulet` each have zero overlap and are one concept. Scoped to
+`VALIDATED_LEXICAL_NAMESPACE = "usda_en"`; every other namespace reads as
+SILENCE. The architecture this must not block:
+`provider text -> provider normalisation -> canonical concept identity ->
+mechanical comparison`, never `arbitrary provider text -> English token
+overlap -> destructive decision`.
+
+### THE EIGHT-ROW DELTA — 6 SEMANTIC ADMITS + 2 RETRIEVAL ABSENCES
+
+Populating the store gave the artifact annotations its 08-08 candidate lists
+never had, so the live build derives a smaller universe. Eight rows disagree.
+
+```text
+ADMIT   mackerel|roasted  usda:174236 / 173674 / 171994   king · spanish ·
+                          Pacific-and-jack, cooked dry heat
+ADMIT   chicken|fried     usda:171448   battered
+ADMIT   chicken|grilled   usda:171536   with added solution
+ADMIT   shrimp|           usda:171972   canned
+retrieval  tofu|          usda:173788 / 173787   HOUSE FOODS
+```
+
+⭐ **THE RESOLVER CONTRADICTED ITSELF ON THE MACKEREL THREE.** It marked them
+DIFFERENT_IDENTITY while marking chinook/chum/pink/sockeye/Atlantic salmon
+admissible for `salmon|roasted` — the identical class, hand-signed as
+"same_base_food + species_specialization + preparation_compatible".
+
+⭐⭐ **AND TWO CALLS WERE CORRECTED BEFORE THEY BECAME DURABLE.** Canned
+shrimp was nearly a semantic REJECT; canned shrimp IS shrimp, and calling it
+otherwise would use ADMISSION to solve REPRESENTATIVENESS. The HOUSE FOODS
+rows were nearly human rejects too — their absence has a PROVENANCE and it is
+RETRIEVAL (Foundation + SR Legacy returns no branded rows), neither a
+reviewer's verdict nor a veto. Recording them as rejects would have written
+down that a tofu product is not tofu.
+
+### SEQUENCE FROM A CLEAN BASE
+
+```text
+commit the sound hardening -> clean tree
+-> capture at the REAL retrieval seam (G1)
+-> apply attributable human annotation overrides (G2)
+-> authoritative rebuild
+-> classify EVERY old->new delta: retrieval | mechanical | semantic | source
+-> re-freeze ONLY moved winner universes
+-> poisoned real-build replay: resolved=0, retention additions=0
+-> exact-tree SQLite + Postgres
+-> controlled production canary   (prod is 29 commits behind)
+-> B-1.7a starts
+```
+
+## ✅ PHASE 0 IS TECHNICALLY CLOSED *(2026-08-13 — SUPERSEDED ABOVE)*
 
 > Given retrieved source-qualified evidence, the frozen semantic baseline, and
 > the explicit `rank_v2` policy regime, Arnie deterministically reproduces the

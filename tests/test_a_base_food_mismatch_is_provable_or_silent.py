@@ -62,12 +62,14 @@ MUST_SURVIVE = [
 
 @pytest.mark.parametrize("entity, description", KNOWN_MISMATCHES)
 def test_every_provable_mismatch_is_vetoed(entity, description):
-    assert el.base_food_mismatch(entity, description)
+    assert el.base_food_mismatch(entity, description,
+                                 lexical_veto_validated=True)
 
 
 @pytest.mark.parametrize("entity, description", MUST_SURVIVE)
 def test_no_legitimate_row_is_touched(entity, description):
-    assert not el.base_food_mismatch(entity, description)
+    assert not el.base_food_mismatch(entity, description,
+                                     lexical_veto_validated=True)
 
 
 @pytest.mark.parametrize("entity, description", [
@@ -76,7 +78,8 @@ def test_no_legitimate_row_is_touched(entity, description):
 def test_nothing_to_prove_means_silence_not_a_veto(entity, description):
     """⛔ AN ABSENT INPUT IS NOT A NEGATIVE ANSWER — the standing rule, one
     more layer down. A missing title must not read as 'not this food'."""
-    assert not el.base_food_mismatch(entity, description)
+    assert not el.base_food_mismatch(entity, description,
+                                     lexical_veto_validated=True)
 
 
 def test_the_committed_artifact_yields_no_additional_vetoes():
@@ -112,7 +115,8 @@ def test_it_runs_before_any_semantic_work():
                              structured={"data_type": "sr legacy"},
                              nutrition={"calories": 29},
                              provider_record_id="1")
-    found = el.vetoes([record], base_entity="beef")
+    found = el.vetoes([record], base_entity="beef",
+                      lexical_veto_validated=True)
     assert len(found) == 1
     assert found[0].reason == el.BASE_FOOD_MISMATCH
 
@@ -137,8 +141,36 @@ def test_a_weakened_rule_fails_the_discovery_cases():
     try:
         el.base_food_mismatch = lambda *_a, **_k: False
         survived = [pair for pair in KNOWN_MISMATCHES
-                    if not el.base_food_mismatch(*pair)]
+                    if not el.base_food_mismatch(
+                        *pair, lexical_veto_validated=True)]
         assert len(survived) == len(KNOWN_MISMATCHES)
     finally:
         el.base_food_mismatch = original
-    assert all(el.base_food_mismatch(*pair) for pair in KNOWN_MISMATCHES)
+    assert all(el.base_food_mismatch(*pair, lexical_veto_validated=True)
+               for pair in KNOWN_MISMATCHES)
+
+
+# ── the veto is scoped to the namespace it was validated in ───────────────
+
+def test_the_veto_is_silent_outside_its_validated_lexical_namespace():
+    """⛔ ABSENCE OF SHARED TOKENS PROVES NOTHING ACROSS NAMESPACES.
+    `eggplant`/`aubergine`, `chickpea`/`garbanzo`, `chicken`/`poulet` each
+    have ZERO lexical overlap and are one concept. A rule that reads absence
+    as mismatch is conservative and correct against one English provider, and
+    actively destructive the moment a second namespace exists."""
+    assert el.base_food_mismatch("beef", "Mushrooms, portabella, grilled",
+                                 lexical_veto_validated=True)
+    # an un-asserting caller gets SILENCE, never a veto it has not earned
+    assert not el.base_food_mismatch("beef", "Mushrooms, portabella, grilled")
+    for requested, foreign in [("eggplant", "Aubergine, crue"),
+                               ("chickpea", "Garbanzos, cocidos"),
+                               ("chicken", "Poulet, rôti")]:
+        assert not el.base_food_mismatch(requested, foreign)
+
+
+def test_the_semantic_layer_does_not_name_the_namespace_it_trusts():
+    """⭐ THE PORTABILITY GATE CAUGHT THE FIRST VERSION OF THIS SCOPE. It
+    declared VALIDATED_LEXICAL_NAMESPACE = "usda_en" — a provider named inside
+    a module that decides identity. The ADAPTER knows which namespace it
+    speaks; this layer only needs the caller's assertion."""
+    assert not hasattr(el, "VALIDATED_LEXICAL_NAMESPACE")
