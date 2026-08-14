@@ -138,13 +138,70 @@ def test_the_round_records_what_it_changed_from(store):
     assert ledger["round"] == hr.ROUND
     assert len(ledger["rows"]) == len(wr.ADMISSION_OVERRIDES)
     for row in ledger["rows"]:
+        # ⛔ `source_fingerprint` WAS THE ONE ATTRIBUTABLE FIELD MISSING FROM
+        # THIS TUPLE, and it was "" on all six rows. The gate checked every
+        # field that was populated and none that was not, which is how a
+        # commit could claim the six carry "was / now / reviewer / cause /
+        # source fingerprint / round" with five of six true.
         for field in ("identity_key", "evidence_id", "was", "now", "reviewer",
-                      "cause", "reason"):
+                      "cause", "reason", "source_fingerprint"):
             assert str(row.get(field) or "").strip(), row
         assert row["was"] == sa.DIFFERENT_IDENTITY
         assert row["now"] != row["was"]
         assert row["cause"] == sa.MANUAL_INVALIDATION
         assert ":" in row["evidence_id"]
+
+
+def test_every_human_admission_is_bound_to_the_row_it_reviewed(store, capture):
+    """⛔ A REVIEW THAT IS NOT BOUND TO ITS EVIDENCE CANNOT BE INVALIDATED BY
+    THE EVIDENCE MOVING. `stale_source()` compares fingerprints only when BOTH
+    sides carry one, so a blank fingerprint does not weaken the binding — it
+    removes it, silently and permanently, for exactly the six rows a human
+    took the trouble to adjudicate."""
+    derived = hr.fingerprints_from_capture(capture)
+
+    for identity, evidence, *_ in wr.ADMISSION_OVERRIDES:
+        annotation = store.get(identity, evidence)
+        assert annotation.source_fingerprint, (identity, evidence)
+        assert annotation.source_fingerprint == derived[(identity, evidence)], (
+            f"{identity}/{evidence} is bound to a fingerprint the capture "
+            f"does not produce")
+        assert not store.stale_source(identity, evidence,
+                                      derived[(identity, evidence)])
+
+
+def test_one_evidence_id_with_two_row_fingerprints_is_refused(capture):
+    """⭐ CAUSAL, and it is about which failure is SAFE. An evidence id found
+    twice with different content means one source-qualified id is describing
+    two rows. Taking whichever came first would bind a human decision to an
+    arbitrary one of them and record it as though it were considered."""
+    identity, evidence, *_ = wr.ADMISSION_OVERRIDES[0]
+    forged = json.loads(json.dumps(capture))
+
+    for record in forged["queries"][identity]:
+        for row in record["rows"]:
+            if f"usda:{row.get('fdc_id')}" == evidence:
+                row["description"] = row.get("description", "") + " (ALTERED)"
+                break
+        break
+
+    with pytest.raises(hr.SourceFingerprintUnavailable) as caught:
+        hr.fingerprints_from_capture(forged)
+    assert "DIFFERENT row fingerprints" in str(caught.value)
+
+
+def test_an_admission_absent_from_the_capture_is_refused(capture):
+    """The other half: a decision about a row the capture does not hold
+    cannot be bound to anything, and must not default to blank."""
+    stripped = json.loads(json.dumps(capture))
+    identity, evidence, *_ = wr.ADMISSION_OVERRIDES[0]
+    for record in stripped["queries"][identity]:
+        record["rows"] = [row for row in record["rows"]
+                          if f"usda:{row.get('fdc_id')}" != evidence]
+
+    with pytest.raises(hr.SourceFingerprintUnavailable) as caught:
+        hr.fingerprints_from_capture(stripped)
+    assert "absent from the capture" in str(caught.value)
 
 
 def test_an_ordinary_rebuild_cannot_undo_a_human_decision(store):

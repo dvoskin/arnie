@@ -97,7 +97,7 @@ to be at least as good as the ones it replaces.** Reverted, nothing committed.
 G1 capture fidelity   ✅ 2db4029 — recorded AT the seam, 397 rows, fingerprint
                          sha256:5508eb9e, every committed candidate present
 G2 human authority    ✅ 2db4029 — 6 admissions in the ANNOTATION STORE
-                         ⚠ source_fingerprint BLANK on all six; see below
+                         + backfilled: all six now BOUND to their source rows
 G3 lexical scope      ✅ 5a4c7f4 — the veto reads SILENCE unless the CALLER
                          asserts its namespace; the layer names no provider
 ```
@@ -155,7 +155,10 @@ poisoned build x3 through build_one()      regime rank_v2
   identities built                         27
   fingerprint da009b002460b393  IDENTICAL across runs   <- determinism HOLDS
 
-  ⛔ resolver calls                        333   (each one RAISED)
+  ⭐ UNSEEN PAIRS per run                  87    <- SIZES THE POPULATE STEP
+     resolver batches per run              37    (batch size 3)
+     resolver ATTEMPTS per run             111   (up to 3 tries each)
+     attempts total, all 3 runs            333   <- NOT a pair count
   ⛔ candidate deltas, build vs artifact
        cauliflower| 9/6 · chicken|roasted 5/4 · egg| 6/5 · mackerel| 8/7
        salmon| 14/13 · shrimp| 4/3 · tofu| 2/4
@@ -164,12 +167,46 @@ poisoned build x3 through build_one()      regime rank_v2
 **WHAT THIS DOES AND DOES NOT MEAN.** The build IS deterministic over fixed
 real inputs — the fingerprint is byte-identical across three runs, which is
 the claim the script exists to make and it holds. What does NOT hold is
-`resolved_this_build == 0` meaning "it could not have asked": it asked 333
-times and was refused 333 times. **`tofu| 2/4` is the two HOUSE FOODS rows,
-already typed as a RETRIEVAL absence.** The other six deltas are the store
-admitting rows the 08-08 candidate lists never held — the eight-row delta's
-larger cousin, and exactly the population the authoritative rebuild must
-classify by retrieval | mechanical | semantic | source.
+`resolved_this_build == 0` meaning "it could not have asked": it asked and was
+refused every time. **`tofu| 2/4` is the two HOUSE FOODS rows, already typed
+as a RETRIEVAL absence.** The other six deltas are the store admitting rows
+the 08-08 candidate lists never held — the eight-row delta's larger cousin,
+and exactly the population the authoritative rebuild must classify by
+retrieval | mechanical | semantic | source.
+
+⚠ **AND THE FIRST VERSION OF THIS SECTION QUOTED THE WRONG NUMBER.** It said
+the store needs population over "333 pairs". It does not. 333 was raw resolver
+invocations: `build_one` batches unseen rows by `_QUALIFY_BATCH = 3` and
+retries each batch up to `_QUALIFY_ATTEMPTS = 3` times, and the counter
+accumulated across all three proof runs. One missing pair can bill as nine
+attempts. **The measured figure is 87 unique pairs** — the populate step is
+roughly a quarter the size the headline implied. The proof now emits
+`unseen_pairs`, `unseen_pairs_by_identity`, `resolver_batches` and
+`resolver_attempts` per run, separately named, and a gate reconciles them
+against the batching constants so they cannot drift apart again.
+
+```text
+87 pairs   ->  37 batches (ceil per identity)  ->  111 attempts/run  ->  333
+heaviest: oats| 8 · rice| 8 · chicken|grilled 7 · egg| 6 · potato|fried 6
+```
+
+⛔ **THE CLOSURE CONDITION REQUIRES BOTH HALVES, AND IT IS NOW EXECUTABLE.**
+`resolved_this_build == 0` is TRUE today while the resolver is called and
+refused every time — reading that zero alone as "it could not have asked" is
+the unarmed-instrument error this migration keeps finding. The proof computes
+`closure_condition_met` as:
+
+```text
+poison_bites  AND  resolved_this_build == 0 for every run
+              AND  resolver_calls == 0
+              AND  no failures
+```
+
+**WHEN THE STORE IS POPULATED ACROSS THE SEAM, TIGHTEN THE GATE IMMEDIATELY**
+— `test_resolved_zero_alone_does_not_mean_the_resolver_was_unreachable` says
+so in its own body. Until then an all-red-but-deterministic build must not be
+able to satisfy the "deterministic over fixed inputs" test and read as
+closure.
 
 **This is a measurement, not a regression.** Nothing shipped worse; an
 instrument that could not run now runs and reports the real state.
@@ -237,39 +274,56 @@ down that a tofu product is not tofu.
 ✅ capture at the REAL retrieval seam (G1)
 ✅ apply attributable human annotation overrides (G2)
 ✅ make the build-path proof RUNNABLE and gate it   <- was dead; see above
-◻  BLOCKED: source_fingerprint on the 6 human admissions  (decision owed)
+✅ bind all 6 human admissions to their source rows (Danny's call: BACKFILL)
+✅ correct the pair/attempt accounting: 87 unique pairs, not 333
 ◻  populate the store over the SEAM population, not the 08-08 candidates
-      -> 333 pairs currently have no annotation and would ask the resolver
+      -> 87 unique (identity, evidence) pairs have no annotation
 ◻  authoritative rebuild
 ◻  classify EVERY old->new delta: retrieval | mechanical | semantic | source
 ◻  re-freeze ONLY moved winner universes
-◻  poisoned real-build replay: resolved=0, retention additions=0
+◻  poisoned real-build proof: resolved=0 AND resolver_calls=0, retention=0
+      -> then TIGHTEN the gate to require closure_condition_met
 ◻  exact-tree SQLite + Postgres
 ◻  controlled production canary   (prod is 30 commits behind)
 ◻  B-1.7a starts
 ```
 
-**⛔ THE FINGERPRINT DECISION, AND IT IS NOT MINE TO MAKE.** The six human
-admissions carry `source_fingerprint: ""`. The rows are all present in the
-seam capture and `_row_fingerprint` yields a real value for each
-(`usda:174236 -> sha256:070bf87271b0bea6`), so the field is recoverable two
-ways and they are not equivalent:
+### ✅ THE SIX HUMAN ADMISSIONS ARE BOUND TO THEIR ROWS *(Danny, 2026-08-14)*
+
+All six shipped with `source_fingerprint: ""`. That is not a weaker binding —
+it is the ABSENCE of one: `stale_source()` compares only when BOTH sides carry
+a value, so the six rows a human took the trouble to adjudicate were the only
+ones that could never be invalidated by their evidence moving underneath them.
+
+**DECIDED: BACKFILL FROM THE SEAM CAPTURE, NOW, NOT DEFERRED INTO THE
+REBUILD.** The review decision already exists; adding the fingerprint
+completes its provenance rather than re-adjudicating it.
 
 ```text
-BACKFILL IN PLACE   derive from the capture, write into the store and the
-                    ledger, preserve was=DIFFERENT_IDENTITY. Corrects main
-                    now and keeps the fix reviewable on its own. Cost: it
-                    WRITES to the artifact's annotations outside a rebuild.
-CLEAN RE-DERIVE     let populate -> human_review_round produce them during
-                    the authoritative rebuild, where `was` comes out right
-                    by construction. Cost: couples this fix to the rebuild,
-                    and main stays wrong until then.
+mackerel|roasted usda:174236  sha256:070bf87271b0bea6
+mackerel|roasted usda:173674  sha256:a17264eb5c02bb25
+mackerel|roasted usda:171994  sha256:73dff2cde9b2022a
+chicken|fried    usda:171448  sha256:93293faac84a0ea2
+chicken|grilled  usda:171536  sha256:d36e8677a4749b63
+shrimp|          usda:171972  sha256:7c19af9c82ac8458
 ```
 
-Either way `apply()` must stop defaulting the fingerprint to `""` — an
-optional kwarg nobody passes is what made this silent — and the gate's
-required-field tuple must include `source_fingerprint`. Those two are not in
-dispute and are held only because the gate turns red until the data is fixed.
+The artifact diff is exactly twelve lines — six `""` out, six fingerprints in.
+`was = DIFFERENT_IDENTITY` is preserved because the committed LEDGER, not the
+already-moved store, is the authority for what each pair was before the round.
+
+**⭐ AND EVERY OCCURRENCE IS CHECKED, NOT THE FIRST ONE FOUND.** A row can be
+returned by more than one query shape, so one evidence id legitimately appears
+several times in the capture. `fingerprints_from_capture()` requires EXACTLY
+ONE unique `_row_fingerprint` per pair and REFUSES otherwise: two different
+fingerprints under one source-qualified id means the id is describing two
+rows, and taking whichever came first would bind a human decision to an
+arbitrary one of them. Absence is refused the same way. Both are gated
+causally.
+
+`apply()` no longer defaults the fingerprint to `""` — an optional kwarg
+nobody passes is not a default, it is a hole — and both `verify()` and the
+gate's required-field tuple now include `source_fingerprint`.
 
 ## ✅ PHASE 0 IS TECHNICALLY CLOSED *(2026-08-13 — SUPERSEDED ABOVE)*
 
@@ -2305,10 +2359,20 @@ which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 Last reconciled 2026-08-14 against a REVIEW OF `2db4029`, which found three
 holes in the G1/G2 gates themselves — a blank `source_fingerprint` on all six
 human admissions, an expected-query-set that was computed and never asserted,
-and a build-path proof that could not run and that nothing imported. Two are
-fixed; the fingerprint needs a decision. Driving the now-runnable proof also
-measured that the semantic store does not cover the seam population (333
-pairs). All of it is recorded in the Phase 0 sections at the top of this
+and a build-path proof that could not run and that nothing imported. All three
+are fixed; the fingerprints are BACKFILLED from the seam capture on Danny's
+call, with a uniqueness gate.
+
+Driving the now-runnable proof measured that the semantic store does not cover
+the seam population. **A first pass reported that gap as "333 pairs" and that
+was wrong** — 333 was raw resolver invocations, batched by 3 and retried up to
+3 times across 3 runs. The measured figure is **87 unique pairs**, and the
+proof now emits pairs, batches and attempts as separately named per-run
+counters so the largest can no longer be quoted as the smallest.
+
+The closure condition is now executable and requires BOTH `resolved_this_build
+== 0` AND `resolver_calls == 0`; today the first is true and the second is
+not. All of it is recorded in the Phase 0 sections at the top of this
 document, and the roadmap header — which had been running 2,100 lines behind
 this board, still saying "start at 0.9" with three gates owed — now agrees
 with it.
@@ -2329,6 +2393,8 @@ G1 capture         CLOSED — recorded AT the retrieval seam, 397 rows,
                    every committed candidate is present
 G2 human authority CLOSED — 6 decisions moved into the ANNOTATION STORE with
                    was/now/reviewer/cause/fingerprint/round, unre-rollable
+                   ⚠ "fingerprint" was "" on all six when this line was
+                   written; backfilled from the seam capture 2026-08-14
 G3 lexical scope   CLOSED — the veto applies only where the CALLER asserts
                    its namespace; the semantic layer names no provider
 eight-row delta    5 ADMIT / 3 REJECT -> 6 ADMIT + 2 RETRIEVAL absences

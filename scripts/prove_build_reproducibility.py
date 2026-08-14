@@ -100,10 +100,28 @@ async def prove(runs: int = 3) -> dict:
     if not stored:
         raise SystemExit("the semantic store is empty — populate first")
 
+    # ⛔ AN ATTEMPT IS NOT A PAIR, AND CONFLATING THEM OVERSTATES THE WORK.
+    # The first version of this counted raw invocations and the directive then
+    # reported them as "333 pairs needing annotation". They are not pairs:
+    # `build_one` batches unseen rows by `_QUALIFY_BATCH` and retries each
+    # batch up to `_QUALIFY_ATTEMPTS` times, and the total accumulates across
+    # every proof run. So one missing pair can bill as nine attempts, and the
+    # headline number was roughly an order of magnitude too large.
+    #
+    #     attempts   raw invocations, retries and runs included
+    #     batches    distinct chunks handed to the resolver
+    #     pairs      unique (identity_key, evidence_id) with no annotation
+    #
+    # Only the last one measures how much work the populate step actually is.
     resolver_calls = []
+    batch_signatures = []
 
-    async def _poisoned(*_args, **_kwargs):
+    async def _poisoned(identity=None, chunk=None, *_args, **_kwargs):
         resolver_calls.append(1)
+        # retries of one chunk are consecutive and identical, so the distinct
+        # signature count is the batch count
+        batch_signatures.append(
+            (identity, tuple(str(r.get("fdc_id")) for r in (chunk or ()))))
         raise ResolverPoisoned(
             "the resolver was called during a poisoned build — the store was "
             "supposed to answer this without asking anyone")
@@ -115,6 +133,7 @@ async def prove(runs: int = 3) -> dict:
     except ResolverPoisoned:
         poison_bites = True
     resolver_calls.clear()
+    batch_signatures.clear()
 
     original_search, original_qualify = usda._search, eq.qualify_usda_rows
     snapshots = []
@@ -123,6 +142,8 @@ async def prove(runs: int = 3) -> dict:
         for _ in range(runs):
             store = sa.Store.from_payload(stored)
             results = {}
+            calls_before, batches_before = len(resolver_calls), len(
+                batch_signatures)
             with ranking_regime(PHASE_0_REGIME):
                 for identity in sorted(queries):
                     entity, _, preparation = identity.partition("|")
@@ -163,10 +184,23 @@ async def prove(runs: int = 3) -> dict:
                             result.get("mechanically_refused") or {},
                         "raw": result.get("raw"),
                     }
+            # ⭐ THE PAIR COUNT IS THE ONE THAT SIZES THE POPULATE STEP.
+            # `unresolved` is what `build_one` itself could not answer from
+            # the store, per identity — unique evidence ids, no retries and
+            # no cross-run accumulation in it.
+            unseen_by_identity = {
+                identity: len(derived["unresolved"])
+                for identity, derived in results.items()
+                if derived["unresolved"]}
             snapshots.append({
                 "resolved_this_build": len(store.resolved_this_build),
                 "results": results,
                 "fingerprint": _fingerprint(results),
+                "resolver_attempts": len(resolver_calls) - calls_before,
+                "resolver_batches": len(set(
+                    batch_signatures[batches_before:])),
+                "unseen_pairs": sum(unseen_by_identity.values()),
+                "unseen_pairs_by_identity": unseen_by_identity,
             })
     finally:
         usda._search, eq.qualify_usda_rows = original_search, original_qualify
@@ -211,6 +245,27 @@ async def prove(runs: int = 3) -> dict:
             # Still a RECORDING replayed, so this proves the build is
             # deterministic over fixed real inputs — NOT that USDA would
             # serve the same rows today. Those remain different claims.
+            # ⛔ THREE DIFFERENT NUMBERS, NAMED SEPARATELY SO THE BIGGEST ONE
+            # CANNOT BE QUOTED AS THE SMALLEST. attempts = batches x retries x
+            # runs; only `unseen_pairs` sizes the populate step, and it is
+            # per-run because it must not accumulate.
+            "resolver_attempts": [s["resolver_attempts"] for s in snapshots],
+            "resolver_batches": [s["resolver_batches"] for s in snapshots],
+            "unseen_pairs": [s["unseen_pairs"] for s in snapshots],
+            "unseen_pairs_by_identity": first["unseen_pairs_by_identity"],
+            "qualify_batch": bp._QUALIFY_BATCH,
+            "qualify_attempts": bp._QUALIFY_ATTEMPTS,
+            # ⭐ THE CLOSURE CONDITION, EXECUTABLE RATHER THAN DESCRIBED.
+            # `resolved_this_build == 0` alone is NOT sufficient and reading it
+            # that way is how this proof came to look stronger than it was: it
+            # is zero right now while the resolver is being called 333 times
+            # and refused every time. "It could not have asked" requires BOTH
+            # that nothing resolved AND that nothing asked.
+            "closure_condition_met": (
+                poison_bites
+                and all(s["resolved_this_build"] == 0 for s in snapshots)
+                and len(resolver_calls) == 0
+                and not failures),
             "capture": "seam_recording",
             "capture_fingerprint": (capture.get("meta") or {})
                                    .get("retrieval_fingerprint", ""),
@@ -230,10 +285,24 @@ if __name__ == "__main__":
     print(f"  POISONED BUILD x{result['runs']} THROUGH build_one() · "
           f"regime {result['regime']}\n")
     print(f"    poison bites (verified first)   {result['poison_bites']}")
-    print(f"    resolver calls                  {result['resolver_calls']}")
     print(f"    resolved_this_build per run     {result['resolved_this_build']}")
     print(f"    identities built                {result['identities']}")
     print(f"    fingerprint                     {result['fingerprint'][:32]}")
+    print()
+    print(f"    ⭐ UNSEEN PAIRS per run         "
+          f"{result['unseen_pairs']}   <- sizes the populate step")
+    print(f"       resolver batches per run     {result['resolver_batches']}"
+          f"   (batch size {result['qualify_batch']})")
+    print(f"       resolver ATTEMPTS per run    {result['resolver_attempts']}"
+          f"   (up to {result['qualify_attempts']} tries each)")
+    print(f"       attempts total, all runs     {result['resolver_calls']}"
+          f"   <- NOT a pair count")
+    if result["unseen_pairs_by_identity"]:
+        print(f"\n    unseen pairs by identity")
+        for identity, count in sorted(
+                result["unseen_pairs_by_identity"].items(),
+                key=lambda kv: (-kv[1], kv[0])):
+            print(f"      {identity:<24} {count}")
     for failure in result["failures"]:
         print(f"    ⛔ {failure}")
     if result["failures"]:

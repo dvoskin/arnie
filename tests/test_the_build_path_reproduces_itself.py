@@ -67,6 +67,66 @@ def test_the_build_is_deterministic_over_fixed_inputs():
         "a poisoned build must never RECORD a resolution")
 
 
+# ── the accounting, because the wrong number was being quoted ─────────────
+
+def test_an_attempt_is_not_a_pair():
+    """⛔ THE MISREPORT. 333 raw invocations were quoted as "333 pairs needing
+    annotation". They are batches x retries x runs — one missing pair can bill
+    as nine attempts. Only the unique-pair count sizes the populate step, and
+    the three numbers must stay separately named so the biggest cannot be
+    read as the smallest."""
+    result = asyncio.run(pbr.prove(runs=3))
+
+    pairs = result["unseen_pairs"]
+    batches = result["resolver_batches"]
+    attempts = result["resolver_attempts"]
+
+    assert len(pairs) == len(batches) == len(attempts) == 3, "per run, not aggregate"
+    assert len(set(pairs)) == 1, f"pairs must not accumulate across runs: {pairs}"
+    assert pairs[0] < result["resolver_calls"], (
+        "the unique-pair count must be strictly smaller than total attempts, "
+        "or the two are being conflated again")
+    assert result["resolver_calls"] == sum(attempts)
+
+
+def test_the_accounting_reconciles_against_the_batching_constants():
+    """⭐ INTERNAL CONSISTENCY, so a future change to `_QUALIFY_BATCH` or
+    `_QUALIFY_ATTEMPTS` cannot quietly desynchronise these counters from the
+    build they claim to describe."""
+    import math
+
+    result = asyncio.run(pbr.prove(runs=1))
+    by_identity = result["unseen_pairs_by_identity"]
+    batch, tries = result["qualify_batch"], result["qualify_attempts"]
+
+    assert sum(by_identity.values()) == result["unseen_pairs"][0]
+    assert sum(math.ceil(n / batch) for n in by_identity.values()) == \
+        result["resolver_batches"][0]
+    # every poisoned batch exhausts its retries, so this is an equality today
+    # and an upper bound by construction
+    assert result["resolver_attempts"][0] <= result["resolver_batches"][0] * tries
+
+
+def test_resolved_zero_alone_does_not_mean_the_resolver_was_unreachable():
+    """⭐ THE DISTINCTION THAT MUST SURVIVE TO CLOSURE. `resolved_this_build`
+    is 0 right now while the resolver is called and refused hundreds of times.
+    Reading that zero as "it could not have asked" is exactly the unarmed
+    instrument this migration keeps finding, so the closure predicate requires
+    BOTH conditions and is computed rather than described.
+
+    ⚠ WHEN THE STORE IS POPULATED ACROSS THE SEAM, TIGHTEN THIS: assert
+    `closure_condition_met is True` and delete the branch below. Until then an
+    all-red-but-deterministic build must not read as closure."""
+    result = asyncio.run(pbr.prove(runs=1))
+
+    assert result["resolved_this_build"] == [0]
+    if result["resolver_calls"]:
+        assert result["closure_condition_met"] is False, (
+            "the resolver was called, so closure must not be reported met")
+    else:
+        assert result["closure_condition_met"] is True
+
+
 # ── the schema seam that actually broke ───────────────────────────────────
 
 def test_the_proof_reads_the_capture_that_capture_retrieval_writes():
