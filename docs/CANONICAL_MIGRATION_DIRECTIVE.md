@@ -17,13 +17,23 @@
 
 ## ⏭ THE ROADMAP — READ THIS FIRST *(Danny, 2026-08-11; revised 2026-08-14)*
 
-**THE NEXT SESSION STARTS AT THE AUTHORITATIVE REBUILD — PHASE 0 STEP 1.**
-Not at B-1.7a, and not at any B slice. Phase 0.9 is applied, G1/G2/G3 are
-closed, and the build-path proof now RUNS — which is how we learned the store
-does not yet cover the retrieval population (see THE STORE IS NOT POPULATED
-OVER THE SEAM below). The open defect is confined to BUILD-TIME PRICING
-EVIDENCE AUTHORITY and does NOT reopen downstream canonical mutation
-correctness.
+**THE NEXT SESSION STARTS AT THE BATCH-COMPLETENESS RECORDER, THEN THE
+86-PAIR POPULATE.** Not at B-1.7a, and not at any B slice. Phase 0.9 is
+applied, G1/G2/G3 are closed, the build-path proof RUNS and is gated, and an
+abstention can no longer be written down as a confident negative. The open
+defect is confined to BUILD-TIME PRICING EVIDENCE AUTHORITY and does NOT
+reopen downstream canonical mutation correctness.
+
+```text
+main            53f0b25   (#74 24f783e, #75 53f0b25 — both merged 2026-08-14)
+suite           8972 passed / 0 failed, SQLite leg   CI `test` green
+production      20e3acd, 33 commits behind, deliberately undeployed
+⛔ CI `battery`  HAS NEVER RUN — 31 attempts, 0 successes; see below
+```
+
+⛔ **THE POPULATE IS BLOCKED ON A CREDENTIAL, NOT ON CODE.** The 86 pairs need
+37 unpoisoned resolver batches, and no session has had `ANTHROPIC_API_KEY`.
+Everything upstream of that call is done and gated.
 
 ⚠ **THIS HEADER RAN 2,100 LINES BEHIND ITS OWN BOARD.** It said "start at
 0.9" and listed three gates as owed while the status board — reconciled the
@@ -36,6 +46,57 @@ B-1 · B-1.5 · B-1.6   REMAIN CLOSED
 concurrency locking, canonical settlement, replay/idempotency, ownership seam
                       REMAIN CLOSED
 ```
+
+## ⛔ THE BEHAVIOUR GATE HAS NEVER RUN *(measured 2026-08-14 — STANDING, OPEN)*
+
+**`.github/workflows/eval.yml` HAS NEVER PASSED. 31 RUNS SINCE 2026-08-04,
+ZERO SUCCESSES**, including all 11 nightly runs on `main`. Every one dies at
+the same step, ~24 seconds in, before a single case executes:
+
+```text
+Step 5  "Require the API key"   FAILURE     ANTHROPIC_API_KEY secret is not set
+Step 6  "Run the battery"       SKIPPED
+```
+
+⭐ **THE GUARD IS CORRECT AND SHOULD NOT BE TOUCHED.** Its own comment records
+why it exists: without the key every case fails auth and the run scores a
+false 6/20, which "has cost this project a debugging session before". Removing
+or softening it would restore exactly the false-green it was written to
+prevent. **The fix is a repository secret, not a commit.**
+
+⛔ **AND THIS IS THE FAMILY THIS MIGRATION KEEPS CATALOGUING, IN
+INFRASTRUCTURE RATHER THAN CODE.** Read the workflow's own header:
+
+> THE BEHAVIOUR GATE THE UNIT SUITE CANNOT BE. […] Every regression this
+> project has shipped to users was green in pytest.
+
+The gate written *specifically because* pytest-green regressions reach users
+has itself never fired. Same shape as the eligibility layer nothing imported,
+the veto result thrown away, and the `matched: 0` read off an unarmed
+instrument — an instrument that cannot fail is not evidence.
+
+**WHERE THE SECRET MUST GO, because this was tried once and missed.** The
+`battery` job declares **no `environment:` key**, so it can only read
+REPOSITORY or ORGANIZATION secrets. A GitHub *Environment* secret is invisible
+to it, and the Claude Code cloud environment is a different system entirely.
+
+```text
+Settings -> Secrets and variables -> Actions -> Repository secrets
+  Name: ANTHROPIC_API_KEY          <- exact, case-sensitive
+✗ Settings -> Environments -> <env> -> Environment secrets   NOT visible
+✗ the Claude Code "Arnie" cloud environment                  NOT GitHub
+```
+
+Verification is cheap and unambiguous: `workflow_dispatch` on `eval.yml`. If
+the secret is missing it dies at the guard in ~24s having spent nothing; if it
+is present the battery actually runs, ~10 min and paid calls, 22 cases x 3
+reps serial. **Run 35 (dispatch on `main` @ `53f0b25`, 18:31Z) failed at the
+guard — so as of this stamp it is still not set.**
+
+⚠ **EXPECT THE FIRST REAL RUN TO BE INFORMATIVE RATHER THAN GREEN.** Eleven
+days of food-lane change have landed without this gate. Its first genuine
+result is a measurement of accumulated drift, not a regression introduced by
+whatever commit happens to trigger it.
 
 ## ⚠ PHASE 0 — ARCHITECTURE CLOSED, CLOSURE EVIDENCE BEING REFRESHED *(2026-08-14)*
 
@@ -350,6 +411,9 @@ negative again, or the suite is not testing what was wrong.
 
 ### SEQUENCE FROM A CLEAN BASE
 
+**FROZEN BY DANNY, 2026-08-14.** The ordering below is not a suggestion; two
+of its steps exist because getting them backwards manufactures a false result.
+
 ```text
 ✅ commit the sound hardening -> clean tree
 ✅ capture at the REAL retrieval seam (G1)
@@ -358,19 +422,57 @@ negative again, or the suite is not testing what was wrong.
 ✅ bind all 6 human admissions to their source rows (Danny's call: BACKFILL)
 ✅ correct the pair/attempt accounting: 86 unique pairs, not 333
 ✅ STOP AN ABSTENTION BECOMING A CONFIDENT NEGATIVE   <- BLOCKED the populate
+        #74 -> 24f783e     #75 -> 53f0b25     both merged 2026-08-14
+
 ◻  batch-completeness instrumentation on the seam-population path
+      -> per batch: requested ids -> judged / abstained / kept, retries,
+         truncation and no-text events, final outcome
+      -> prove it against a STUB that abstains, truncates and part-returns
+         before it is ever pointed at the real model
 ◻  populate the store over the SEAM population, not the 08-08 candidates
-      -> 86 unique (identity, evidence) pairs have no annotation
-      -> the worklist itself is emitted as `unseen_pair_ids`; the seam
-         population CONSUMES it and must never rediscover it
-◻  authoritative rebuild
+      -> 86 unique (identity, evidence) pairs, emitted as `unseen_pair_ids`
+      -> the seam population CONSUMES that worklist, never rediscovers it
+      -> 37 batches at size 3, UNPOISONED
+      ⛔ BLOCKED: needs ANTHROPIC_API_KEY in the session environment
+      ⚠ 37 batches is a FLOOR, not a total — abstained rows now stay
+        revisitable, so one pass may not settle all 86. The batch report,
+        not the batch count, says whether the populate is done.
+◻  spot-check the six fingerprint bindings end to end
+      -> unchanged source SKIPS; moved source makes stale_source FIRE
+◻  poison the resolver
+◻  authoritative rebuild over the captured seam population
+◻  ⭐ WRITE THE REBUILT ARTIFACT TO ITS AUTHORITATIVE PATH
+      ⛔ ORDERING TRAP: the closure proof compares BUILD vs COMMITTED by
+         reading `art.ARTIFACT_PATH` from disk. Run it between the rebuild
+         and this write and it compares new truth against the old artifact,
+         reports deltas by construction, and closure becomes unreachable for
+         a reason that has nothing to do with the spine.
 ◻  classify EVERY old->new delta: retrieval | mechanical | semantic | source
-◻  re-freeze ONLY moved winner universes
-◻  poisoned real-build proof: resolved=0 AND resolver_calls=0, retention=0
-      -> then TIGHTEN the gate to require closure_condition_met
+      ⚠ RE-MEASURE FIRST. Today's seven deltas (cauliflower| 9/6, salmon|
+        14/13, …) were taken against the PRE-POPULATE store. They are a
+        pointer to where to look, NOT the classification worklist.
+◻  re-freeze ONLY the winner universes that legitimately moved
+      -> a freeze turns movement into a REVIEWED EVENT; it does not forbid
+         legitimate source-universe evolution forever
+◻  closure proof: poison_bites AND resolved_this_build=0 AND
+   resolver_calls=0 AND no failures AND committed == derived
+      -> then TIGHTEN the gate to require closure_condition_met is True
 ◻  exact-tree SQLite + Postgres
-◻  controlled production canary   (prod is 30 commits behind)
+◻  controlled production canary   (prod is 33 commits behind)
 ◻  B-1.7a starts
+```
+
+**NAMING DISCIPLINE, so a future session cannot conflate the two populates:**
+
+```text
+populate_semantic_store.py    ARTIFACT population — the committed artifact's
+                              candidates, deliberately WITHOUT re-retrieving.
+                              Its contract is truthful and stays as it is.
+the new path                  SEAM / AUTHORITATIVE population — consumes
+                              `unseen_pair_ids` over the seam capture.
+candidate_universe_fingerprint  a BASELINE that must either remain equal or
+                              be explicitly superseded through a classified
+                              re-freeze. Never silently restamped.
 ```
 
 ### ✅ THE SIX HUMAN ADMISSIONS ARE BOUND TO THEIR ROWS *(Danny, 2026-08-14)*
@@ -2441,7 +2543,35 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-14 against the SEAM-POPULATION SLICE, opened from
+Last reconciled 2026-08-14 (session close) against `53f0b25`, with #74 and #75
+both MERGED. What this pass changed:
+
+```text
+main              24f783e -> 53f0b25   (#75, the abstention fix)
+production        20e3acd, 30 -> 33 commits behind, still undeployed
+roadmap header    next step is the RECORDER then the 86-pair populate,
+                  not the authoritative rebuild — the rebuild is four steps
+                  further down and two of those steps are order-critical
+sequence block    reordered to Danny's frozen order, with the ARTIFACT WRITE
+                  made explicit: the closure proof reads the committed
+                  artifact from disk, so running it before the write compares
+                  new truth against the old file and can never reach closure
+naming            artifact population vs seam population vs the fingerprint
+                  baseline, written down so the two populates cannot merge
+CI battery        NEW STANDING ITEM — 31 runs since 2026-08-04, 0 successes
+```
+
+**THE ONE THING BLOCKING EVERYTHING DOWNSTREAM IS A CREDENTIAL.** The 86-pair
+populate needs 37 unpoisoned resolver batches and no session has had
+`ANTHROPIC_API_KEY`. The same missing secret — as a REPOSITORY secret, which
+is a different store — is why the behaviour gate has never run. One rotation
+plus two settings pages unblocks both. Nothing upstream of that call is owed.
+
+⚠ A key was pasted into a session transcript on 2026-08-14. It was never used,
+written to disk or committed, but it must be treated as burned: rotate before
+installing anywhere.
+
+Previously reconciled 2026-08-14 against the SEAM-POPULATION SLICE, opened from
 merged main after #74. Building the batch-completeness instrumentation found
 that a PARTIAL abstention was being written as `DIFFERENT_IDENTITY` at
 confidence 0.95 — a durable, confident verdict about a row no model assessed,
@@ -2495,7 +2625,7 @@ G3 lexical scope   CLOSED — the veto applies only where the CALLER asserts
 eight-row delta    5 ADMIT / 3 REJECT -> 6 ADMIT + 2 RETRIEVAL absences
 winner accounting  27/27 · 13 SIGNED · 14 HELD — UNCHANGED, and now known to
                    describe a universe the rebuild has not yet reproduced
-production         20e3acd, 30 commits behind, deliberately undeployed
+production         20e3acd, 33 commits behind, deliberately undeployed
 ```
 
 STILL OWED, and the reason Phase 0's closure evidence is not yet refreshed:
