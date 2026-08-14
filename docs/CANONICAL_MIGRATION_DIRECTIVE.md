@@ -1079,6 +1079,143 @@ entries on candidate universe, eligibility, winner, price and fallback. The
 fats must be ADDITIVE and existing pricing STABLE unless a change is
 attributable. **EXIT: B-1.7a CLOSED.**
 
+### 3a  ⛔ THE CANARY'S REAL FINDING — A PROVEN CAPABILITY IS NOT AN ADOPTED ONE  *(2026-08-14)*
+
+**THE GENERAL FOOD SETTLEMENT LANE DOES NOT USE CANONICAL PRICING.** Not a
+consumer bug, not a broken seam — a lane that was never built.
+
+```text
+assemble() callers        core/b1_quantity_operation.py:1486   <- exactly ONE
+turns/stages/food.py      no price(), no assemble, no canonical_pricing
+turns/stages/execute_native.py -> handlers.tool_executor.execute_tool_calls
+```
+
+`NativeExecutionStage` delegates to the LEGACY tool executor. So the canonical
+pricing spine has exactly one door — the **B-1 quantity-clarification flow** —
+and a plain "2 bananas" that never triggers a clarification never enters it,
+whatever `TURN_COORDINATOR_MODE` says.
+
+**HOW THE CANARY FOUND IT, IN TWO RUNS.**
+
+```text
+run 1  new_observe   0/6 artifact-backed   legacy ladder settled, as designed
+run 2  new_execute   0/6 artifact-backed   native stages ran, canonical:create
+                                           written, quantity ownership improved
+                                           (150 g stayed 150 g) — and pricing
+                                           still never called assemble()
+```
+
+⭐ **AND THE ONE NUMBER THAT LOOKED LIKE A PASS WAS A COINCIDENCE.** `banana`
+came back at exactly 210 — the artifact's prediction. It is also `2 x 105`,
+the estimator's per-banana figure, and `confidence_score` was 0.65 rather than
+`_from_artifact`'s 0.85. Reporting it as a win would have been
+coincidence-as-evidence. The trace resolved it: the estimator produced it.
+
+**WHAT WAS PROVEN OFFLINE AND REMAINS TRUE.** `_artifact(entity, prep)` ->
+`ArtifactEvidence` -> `price(artifact=ev)` returns **6/6 artifact-backed,
+every evidence id matching the freeze exactly** — banana 210 `usda:173944`,
+mackerel 305 `usda:168149`, salmon 346 honouring the stated 150 g, potato 132
+with no invented preparation. The consumer is correct. Nothing invokes it.
+
+⭐⭐ **THE CORRECTED BOUNDARY, AND IT IS THE POINT OF THIS ENTRY:**
+
+```text
+Phase 0 producer                 CLOSED
+artifact / evidence build        CLOSED
+canonical pricing consumer       CLOSED WHERE INVOKED
+B-1 quantity-clarification path  connected and proven
+GENERAL FOOD SETTLEMENT          still on the older path
+GENERAL CANONICAL OWNERSHIP      NOT BUILT
+```
+
+A closure claim about the producer said nothing about adoption, and for a day
+the two were conflated. **Every artifact-consumption gate written this session
+passes — against a path production does not take for ordinary food.**
+
+### 3a.1  THE NEXT SLICE — GENERAL CANONICAL FOOD SETTLEMENT OWNERSHIP
+
+Not an ad-hoc wiring job. A deliberate slice with acceptance criteria:
+
+```text
+route ordinary food turns through canonical pricing inputs
+preserve EXPLICIT quantity                    ("150g salmon" stays 150 g)
+preserve or ASK preparation, never invent it  ("a potato" is not fried)
+consume artifact evidence when available
+POISON legacy qualification and prove the turn still settles
+emit artifact provenance on the committed row (conf 0.85 · source_id · rung)
+canary representative cases
+only then widen to the oils
+```
+
+⭐⭐⭐ **AND THE PERMANENT RULE THIS EPISODE BUYS:**
+
+> Every new canonical PRODUCER requires a CONSUMER-SIDE POISONED PROOF that a
+> real turn actually consumes its output before the producer may be called
+> production-proven.
+
+A poisoned build proof shows the artifact can be rebuilt without a model. It
+says nothing about whether any turn reads it. Those are different claims and
+only the second one reaches a user.
+
+**REVISED SEQUENCE:** freeze current Phase 0 closure → scope the general
+canonical settlement slice → implement and prove it → canary → five oils →
+close B-1.7a → B-1.7b.
+
+**THE FIVE OILS ARE BLOCKED ON THIS**, and the reason is not caution: adding
+oil evidence to an artifact ordinary food turns do not consume would be
+building on the same conflation this entry exists to record.
+
+### 3b  THE TRANCHE CANARY — A RELEASE GATE, NOT A SMOKE TEST  *(Danny, 2026-08-14)*
+
+Production is **32 commits behind** and this tranche changed the ARTIFACT, the
+SEMANTIC STORE and the BUILD PATH. A generic smoke test would exercise none of
+what actually moved, so the canary targets the invariants most likely to have
+been disturbed — and it is a GATE: the five oils do not start until it passes.
+
+```text
+DEPLOY the tranche, then exercise LIVE:
+
+  morphology / identity normalization     banana · potato · eggs — the
+                                          singular/plural fold that made five
+                                          identities reachable at all
+  quantity clarification + repricing      B-1's slice, answered and repriced
+  preparation clarification               B-1.5's independent material fields
+  canonical pricing from the artifact     an artifact-backed settle, confirmed
+                                          from the DB and not from reply text
+  mechanical refusal / fail-closed        a base-food mismatch, a cooking-state
+                                          conflict — refused BEFORE the model
+  one known HELD ranking case             mackerel| or egg| — production must
+                                          seat WHAT THE FREEZE SAYS IT SEATS
+  one human-reviewed REJECTION            usda:170032 must not reappear; a
+                                          rejected row staying rejected is the
+                                          symmetry rule proven in production
+```
+
+**CONFIRM AFTER:** deployed SHA via `/health.commit` · the artifact hash the
+deployed build is reading · telemetry showing the canonical lane took the
+turns. Flags stay conservative — `NUTRITION_ACCURACY_V2` on its allowlist,
+`NUTRITION_AS_EATEN_PREFERENCE` off fleet-wide. **No flag widening during the
+canary.**
+
+⭐ THE POINT: the frozen accounting is a claim about what production does.
+Until production is observed doing it, that claim is local.
+
+### 3c  THE FIVE OILS — THE REGENERATION STANDARD
+
+> The five oils may ADD evidence. They may NOT silently alter existing
+> production pricing. **Any movement in the existing 27 is a FINDING, not
+> expected regeneration noise.**
+
+This is the same standard the seam rebuild already met — 27 -> 27, six ladders
+grew, zero lost, zero unexplained — and it is the reason that rebuild was
+interpretable at all. A regeneration that shrugs at moved winners is a
+regeneration nobody can audit.
+
+Every delta in the existing 27 must classify as `retrieval | mechanical |
+semantic | source`, exactly as the seam rebuild's did, and any signature whose
+candidate universe moves expires as UNVERIFIED and is re-reviewed rather than
+re-derived.
+
 ### 4  B-1.7b — MATERIALITY / CLARIFICATION POLICY  *(rewritten 2026-08-14)*
 
 **PURPOSE: decide whether an unresolved food attribute is important enough
