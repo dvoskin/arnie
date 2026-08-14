@@ -142,6 +142,53 @@ async def build_one(entity: str, preparation: str, store=None,
         return {"identity": identity, "status": EMPTY,
                 "reason": "no curated rows"}
 
+    # ── ⭐ MECHANICAL ELIGIBILITY, ON THE RETRIEVAL POPULATION, BEFORE THE
+    # RESOLVER IS CONSULTED.
+    #
+    # Phases 0.1-0.3 and 0.5 built this layer and NOTHING CALLED IT. The
+    # module had no non-test importer at all, so every veto it can prove was
+    # exercised only by its own tests — the same shape as the enum member that
+    # was present in main and constructed exactly once. A capability that is
+    # correct, tested, and unreachable is not a capability.
+    #
+    # Placement is the point: run after qualification and the semantic layer
+    # has already removed these rows, making the veto ceremonial. Run HERE and
+    # a record that never mentions the requested food is refused for a typed
+    # mechanical reason, is never sent to the model, and costs nothing.
+    from types import SimpleNamespace
+
+    from skills.nutrition import eligibility as el
+
+    def _as_record(row):
+        """Adapt a provider row to what the eligibility layer reads."""
+        return SimpleNamespace(
+            evidence_id=f"usda:{row.get('fdc_id')}",
+            title=row.get("description") or "",
+            structured={"data_type": row.get("data_type") or ""},
+            nutrition=row.get("per100g") or {},
+            provider_record_id=str(row.get("fdc_id") or ""))
+
+    mechanical = el.vetoes([_as_record(r) for r in rows],
+                           generic_intent=True,
+                           requested_identity=identity,
+                           base_entity=entity)
+    refused = {v.evidence_id: v.reason for v in mechanical
+               if v.reason == el.BASE_FOOD_MISMATCH}
+    if refused:
+        print(f"    {identity_key or entity:<28} {len(refused)} row(s) "
+              f"MECHANICALLY REFUSED before the resolver "
+              f"({el.BASE_FOOD_MISMATCH})")
+        rows = [r for r in rows
+                if f"usda:{r.get('fdc_id')}" not in refused]
+        if not rows:
+            # ⛔ Refusing every row is a RETRIEVAL outcome, not an admission
+            # one — the same reasoning that stops a rejection emptying an
+            # entry. Say so rather than reporting an empty identity.
+            return {"identity": identity, "status": EMPTY,
+                    "reason": f"all rows mechanically refused: "
+                              f"{el.BASE_FOOD_MISMATCH}",
+                    "mechanically_refused": refused}
+
     # QUALIFICATION IS THE EXPENSIVE STEP, and moving it here is the entire
     # point: measured 6,538-13,546 ms per call on the settle path.
     #
@@ -263,8 +310,12 @@ async def build_one(entity: str, preparation: str, store=None,
                               f"unresolved; none annotated as priceable"}
         return {"identity": identity, "status": EMPTY,
                 "reason": f"0 of {len(rows)} rows priceable by policy"}
-    return {"identity": identity, "status": MATERIAL, "candidates": kept,
-            "raw": len(rows), "unresolved": tuple(unresolved)}
+    result = {"identity": identity, "status": MATERIAL, "candidates": kept,
+              "raw": len(rows), "unresolved": tuple(unresolved)}
+    if refused:
+        # ATTRIBUTABLE: a row that left before the model saw it still says why
+        result["mechanically_refused"] = refused
+    return result
 
 
 def _retain_unexplained(entries: dict) -> int:
