@@ -94,6 +94,20 @@ class Qualification:
     raw_count: int = 0
     kept_count: int = 0
     resolver_version: str = ""
+    #: ⛔ THE ROWS THE MODEL DECLINED TO JUDGE, and they are NOT the same thing
+    #: as the rows it judged and rejected. Only `rows` used to leave this
+    #: function, so a caller could see what was KEPT and had no way to tell a
+    #: considered "not this food" from "the model did not answer about this
+    #: one". `build_one` then wrote DIFFERENT_IDENTITY at confidence 0.95 for
+    #: both — a durable, confident negative about a row nobody assessed, which
+    #: `needs_resolution` would never reopen.
+    #:
+    #: An outage is already handled: ALL-abstain becomes
+    #: `resolver_down_no_candidates`. This is the PARTIAL case — some rows
+    #: judged, some abstained — which reads as a fully successful batch from
+    #: the outside and is exactly how a completed model operation can silently
+    #: shrink the evidence universe.
+    abstained: tuple = ()
 
 
 class ResolverReplyUnusable(RuntimeError):
@@ -211,8 +225,10 @@ async def qualify_usda_rows(food_name: str, rows, complete=None,
                        "USDA contributes NO candidate this turn; the ladder's "
                        "qualification-free rungs still serve the user",
                        food_name, exc_info=True)
+        # NOTHING was assessed, so every row is unjudged — not rejected.
         return Qualification(rows=(), disposition="resolver_down_no_candidates",
-                             raw_count=len(rows), kept_count=0)
+                             raw_count=len(rows), kept_count=0,
+                             abstained=tuple(rows))
 
     if all(a.abstained for a in assessments):
         # Indistinguishable from "resolver down" at this distance — and either
@@ -223,12 +239,20 @@ async def qualify_usda_rows(food_name: str, rows, complete=None,
                        food_name, len(rows),
                        int((_time.monotonic() - _t0) * 1000))
         return Qualification(rows=(), disposition="resolver_down_no_candidates",
-                             raw_count=len(rows), kept_count=0)
+                             raw_count=len(rows), kept_count=0,
+                             abstained=tuple(rows))
 
     kept = tuple(
         row for row, a in zip(rows, assessments)
         if a.relationship in IDENTITY_BEARING
         and a.confidence >= MINIMUM_IDENTITY_CONFIDENCE)
+    # ⛔ THE PARTIAL ABSTENTION, WHICH LOOKS LIKE A COMPLETED BATCH. Only
+    # ALL-abstain is treated as an outage above; a batch where SOME rows were
+    # judged and others were not returns `qualified` and drops the unjudged
+    # ones out of `kept` — indistinguishable, from outside, from rows the
+    # model considered and rejected. Carrying them explicitly is what lets a
+    # caller record "no answer" instead of manufacturing "no".
+    abstained = tuple(row for row, a in zip(rows, assessments) if a.abstained)
     # THE TRACE CONTRACT (Danny): everything the production turn needs to
     # answer "is the model call expensive enough to optimize" — invocation,
     # counts, latency, per-relationship dispositions — in ONE line, so the
@@ -244,4 +268,5 @@ async def qualify_usda_rows(food_name: str, rows, complete=None,
         dict(dispositions))
     return Qualification(rows=kept, disposition="qualified",
                          raw_count=len(rows), kept_count=len(kept),
-                         resolver_version=assessments[0].resolver_version)
+                         resolver_version=assessments[0].resolver_version,
+                         abstained=abstained)

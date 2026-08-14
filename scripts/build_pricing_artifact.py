@@ -271,6 +271,9 @@ async def build_one(entity: str, preparation: str, store=None,
             getattr(q, "disposition", "") == "resolver_down_no_candidates"
             and not q.rows)
         judged = {str(r.get("fdc_id")) for r in ((q.rows if q else None) or ())}
+        # rows the model declined to assess — never a negative verdict
+        abstained_ids = {str(r.get("fdc_id"))
+                         for r in (getattr(q, "abstained", None) or ())}
 
         for row in chunk:
             evidence_id = f"usda:{row.get('fdc_id')}"
@@ -281,9 +284,35 @@ async def build_one(entity: str, preparation: str, store=None,
                     resolver_model=RESOLVER_MODEL,
                     source_fingerprint=_row_fingerprint(row)))
                 continue
+            # ⛔ AN ABSENT ANSWER IS NOT A NEGATIVE ANSWER. "Anything it saw
+            # and did not keep is a judged negative" was FALSE for the rows the
+            # model ABSTAINED on. Only an ALL-abstain batch is treated as an
+            # outage upstream; a PARTIAL abstention returns `qualified`, the
+            # unjudged rows fall out of `kept`, and this line then wrote
+            # DIFFERENT_IDENTITY at confidence 0.95 — a durable, confident
+            # verdict about a row nobody assessed. `needs_resolution` sees a
+            # resolved annotation and never reopens it, so the row is gone for
+            # good, and afterwards it is indistinguishable from a real
+            # rejection.
+            #
+            # This is `541ed12` one layer down: the qualifier stopped deleting
+            # evidence, and the store write underneath it kept doing so.
+            if str(row.get("fdc_id")) in abstained_ids:
+                store.record(sa.Annotation(
+                    identity_key=identity_key, evidence_id=evidence_id,
+                    relationship=sa.UNRESOLVED, confidence=0.0,
+                    resolver_model=RESOLVER_MODEL,
+                    resolver_version=getattr(q, "resolver_version", "") or "",
+                    source_fingerprint=_row_fingerprint(row)))
+                # deliberately NOT appended to resolved_this_build: nothing was
+                # resolved, and counting it would let a population run report
+                # work it did not do.
+                continue
+
             # The resolver KEPT it -> it judged the pair identity-bearing at
-            # or above its own floor. Anything it saw and did not keep is a
-            # judged negative. Both are recorded; only the first can price.
+            # or above its own floor. Anything it saw, ASSESSED, and did not
+            # keep is a judged negative. Both are recorded; only the first can
+            # price.
             hit = str(row.get("fdc_id")) in judged
             fingerprint = _row_fingerprint(row)
             cause = (sa.SOURCE_CHANGED
