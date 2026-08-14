@@ -292,6 +292,62 @@ RETRIEVAL (Foundation + SR Legacy returns no branded rows), neither a
 reviewer's verdict nor a veto. Recording them as rejects would have written
 down that a tofu product is not tofu.
 
+### ⛔ AN ABSTENTION WAS BECOMING A CONFIDENT NEGATIVE *(found 2026-08-14, before the populate)*
+
+**THIS WOULD HAVE CORRUPTED THE POPULATE RUN, DURABLY AND INVISIBLY.** Found
+while building the batch-completeness instrumentation, which exists precisely
+because "a batch can look like a completed model operation while silently
+shrinking the evidence universe". It does worse than shrink it: it writes down
+a falsehood.
+
+```text
+qualify_usda_rows   treats ONLY an all-abstain batch as an outage
+a PARTIAL abstention returns disposition="qualified", and the unjudged
+  rows simply fall out of `kept`
+build_one           judged = {ids in q.rows};  everything else ->
+                    DIFFERENT_IDENTITY at confidence 0.95
+needs_resolution    sees a RESOLVED annotation -> never reopens it
+```
+
+Measured on a stubbed partial batch, before the fix:
+
+```text
+usda:1  KEPT              SAME_IDENTITY       0.95
+usda:2  ABSTAINED         DIFFERENT_IDENTITY  0.95   <- nobody assessed it
+usda:3  judged-rejected   DIFFERENT_IDENTITY  0.95
+        every one of them  needs_resolution = False
+```
+
+**A durable, confident verdict about a row no model ever assessed** — and
+afterwards indistinguishable from a real rejection, so nothing downstream can
+count how often it happened. Over 86 pairs in 37 batches, every partial
+abstention would have become a permanent false negative that no rebuild
+reopens.
+
+⭐ **THIS IS `541ed12` ONE LAYER DOWN.** "An absent answer is not a negative
+answer — stop the qualifier deleting evidence" fixed the QUALIFIER. The store
+write underneath it kept doing the same thing, on the stated reasoning that
+"anything it saw and did not keep is a judged negative" — true for a
+rejection, false for an abstention.
+
+```text
+Qualification.abstained   the rows the model DECLINED to judge, carried out
+                          of the qualifier instead of dropped on the floor
+build_one                 abstained -> UNRESOLVED, confidence 0.0, and NOT
+                          counted in resolved_this_build
+                          judged-and-rejected -> DIFFERENT_IDENTITY, unchanged
+```
+
+**THE PRODUCTION TURN PATH WAS NEVER AFFECTED.** `tool_executor` reads
+`q.rows` for ranking and writes no durable annotation, so an abstention there
+only means the row does not compete that turn — correct fail-closed behaviour.
+The defect was confined to `build_one`, the durable-annotation writer, which
+is the right scope and is where the fix lives.
+
+Gated causally, including a test that reintroduces the defect: a
+`Qualification` reporting no abstentions must produce the confident false
+negative again, or the suite is not testing what was wrong.
+
 ### SEQUENCE FROM A CLEAN BASE
 
 ```text
@@ -301,9 +357,12 @@ down that a tofu product is not tofu.
 ✅ make the build-path proof RUNNABLE and gate it   <- was dead; see above
 ✅ bind all 6 human admissions to their source rows (Danny's call: BACKFILL)
 ✅ correct the pair/attempt accounting: 86 unique pairs, not 333
+✅ STOP AN ABSTENTION BECOMING A CONFIDENT NEGATIVE   <- BLOCKED the populate
+◻  batch-completeness instrumentation on the seam-population path
 ◻  populate the store over the SEAM population, not the 08-08 candidates
       -> 86 unique (identity, evidence) pairs have no annotation
-      -> the worklist itself is emitted as `unseen_pair_ids`
+      -> the worklist itself is emitted as `unseen_pair_ids`; the seam
+         population CONSUMES it and must never rediscover it
 ◻  authoritative rebuild
 ◻  classify EVERY old->new delta: retrieval | mechanical | semantic | source
 ◻  re-freeze ONLY moved winner universes
@@ -2382,7 +2441,17 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-14 against a REVIEW OF `2db4029`, which found three
+Last reconciled 2026-08-14 against the SEAM-POPULATION SLICE, opened from
+merged main after #74. Building the batch-completeness instrumentation found
+that a PARTIAL abstention was being written as `DIFFERENT_IDENTITY` at
+confidence 0.95 — a durable, confident verdict about a row no model assessed,
+which `needs_resolution` would never reopen. It would have corrupted the
+86-pair populate run invisibly. Fixed before any live batch ran;
+`Qualification` now carries the abstained rows and `build_one` records them
+`UNRESOLVED`. Production's turn path was never affected. See the section above
+the sequence block.
+
+Previously reconciled 2026-08-14 against a REVIEW OF `2db4029`, which found three
 holes in the G1/G2 gates themselves — a blank `source_fingerprint` on all six
 human admissions, an expected-query-set that was computed and never asserted,
 and a build-path proof that could not run and that nothing imported. All three
