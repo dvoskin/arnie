@@ -78,8 +78,8 @@
    "reason": "cooking_yield_has_no_entry_for_this_food",
    "note": "a raw row wins on an UNDECIDED cooked axis (1 raw / 4 cooked); cooking_yield states nothing for this food, and the table already carries 'fish' \u2014 the query simply never contains it",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "df2120ece88d77af",
-   "candidate_count": 6
+   "candidate_universe_fingerprint": "521fd2bae3444f47",
+   "candidate_count": 9
   },
   {
    "identity_key": "chicken|fried",
@@ -108,18 +108,18 @@
    "reason": "as_eaten_preference_awaiting_cut_and_coating_controls",
    "note": "'meat only' 167; the reworked preference DOES move this to meat and skin 223 \u2014 it is held only because the preference is off in the regime Phase 0 freezes against, so it clears with that canary",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "fd785f2144f89503",
-   "candidate_count": 4
+   "candidate_universe_fingerprint": "a05c59451ccfb7eb",
+   "candidate_count": 5
   },
   {
    "identity_key": "egg|",
-   "winner_evidence_id": "usda:172186",
-   "winner_status": "signed",
-   "reason": "poached; the ladder's cooked forms span 143-155",
-   "note": "poached; the ladder's cooked forms span 143-155",
+   "winner_evidence_id": "usda:172185",
+   "winner_status": "held",
+   "reason": "a specialty variant outranks the generic form",
+   "note": "omelet 154 kcal is seated; poached 143 is the cleaner generic for a preparation-unspecified egg \u2014 omelet is more transformed and can imply added fat or milk. Admission unchanged: an omelet is an egg",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "5ed332bd5df69e48",
-   "candidate_count": 5
+   "candidate_universe_fingerprint": "d86ddfc0a605e67b",
+   "candidate_count": 6
   },
   {
    "identity_key": "egg|fried",
@@ -133,13 +133,13 @@
   },
   {
    "identity_key": "mackerel|",
-   "winner_evidence_id": "usda:175119",
+   "winner_evidence_id": "usda:168149",
    "winner_status": "held",
-   "reason": "cooking_yield_has_no_entry_for_this_food",
-   "note": "a raw row wins on an UNDECIDED cooked axis (3 raw / 4 cooked; cooked dry heat is 262); cooking_yield states nothing for this food, and the table already carries 'fish' \u2014 the query simply never contains it",
+   "reason": "a specialty variant outranks the generic form",
+   "note": "salted 305 kcal is seated; raw 205 is the better generic baseline \u2014 salting materially changes sodium and water state and is a narrower form. 49% OVERSTATEMENT. Admission unchanged: salting is preservation, not a different food",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "209353e1c7c73741",
-   "candidate_count": 7
+   "candidate_universe_fingerprint": "0b04a0830eafe017",
+   "candidate_count": 9
   },
   {
    "identity_key": "mackerel|roasted",
@@ -218,8 +218,8 @@
    "reason": "a specialty variant outranks the generic form",
    "note": "chinook \u2014 the fattiest salmon \u2014 231 kcal wins; Atlantic farmed cooked 206 is on the same ladder and is the salmon most people eat",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "8b5ea892017578ec",
-   "candidate_count": 13
+   "candidate_universe_fingerprint": "4afaec51789f1d68",
+   "candidate_count": 14
   },
   {
    "identity_key": "shrimp|",
@@ -228,8 +228,8 @@
    "reason": "shrimp cooked",
    "note": "shrimp cooked",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "f2b30ca986a5ac30",
-   "candidate_count": 3
+   "candidate_universe_fingerprint": "18d2d26472141cca",
+   "candidate_count": 4
   },
   {
    "identity_key": "tilapia|",

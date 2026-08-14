@@ -1,0 +1,1640 @@
+{
+ "seed": {
+  "kept": [
+   {
+    "identity_key": "banana|",
+    "evidence_id": "usda:167732",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "beef|grilled",
+    "evidence_id": "usda:169243",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "beef|grilled",
+    "evidence_id": "usda:172935",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "beef|roasted",
+    "evidence_id": "usda:172935",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "beef|roasted",
+    "evidence_id": "usda:173089",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "beef|roasted",
+    "evidence_id": "usda:174597",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "beef|",
+    "evidence_id": "usda:170198",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "beef|",
+    "evidence_id": "usda:170199",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "beef|",
+    "evidence_id": "usda:172012",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "beef|",
+    "evidence_id": "usda:172935",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "beef|",
+    "evidence_id": "usda:172936",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "beef|",
+    "evidence_id": "usda:173086",
+    "relationship": "UNRESOLVED"
+   },
+   {
+    "identity_key": "beef|",
+    "evidence_id": "usda:174579",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "beef|",
+    "evidence_id": "usda:174618",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "butter|",
+    "evidence_id": "usda:173410",
+    "relationship": "SAME_IDENTITY"
+   },
+   {
+    "identity_key": "butter|",
+    "evidence_id": "usda:173411",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "cauliflower|",
+    "evidence_id": "usda:169389",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "cauliflower|",
+    "evidence_id": "usda:169390",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "cauliflower|",
+    "evidence_id": "usda:169391",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "chicken|fried",
+    "evidence_id": "usda:169842",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "chicken|fried",
+    "evidence_id": "usda:170343",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "chicken|fried",
+    "evidence_id": "usda:170350",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "chicken|fried",
+    "evidence_id": "usda:170738",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "chicken|fried",
+    "evidence_id": "usda:171448",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "chicken|grilled",
+    "evidence_id": "usda:169243",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "chicken|grilled",
+    "evidence_id": "usda:171536",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "chicken|grilled",
+    "evidence_id": "usda:172957",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "chicken|roasted",
+    "evidence_id": "usda:173646",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "coconut oil|",
+    "evidence_id": "usda:171412",
+    "relationship": "SAME_IDENTITY"
+   },
+   {
+    "identity_key": "coconut oil|",
+    "evidence_id": "usda:330458",
+    "relationship": "SAME_IDENTITY"
+   },
+   {
+    "identity_key": "egg|fried",
+    "evidence_id": "usda:168199",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "egg|fried",
+    "evidence_id": "usda:169732",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "egg|fried",
+    "evidence_id": "usda:172185",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "egg|fried",
+    "evidence_id": "usda:172187",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "egg|fried",
+    "evidence_id": "usda:172451",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "egg|",
+    "evidence_id": "usda:172185",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "egg|",
+    "evidence_id": "usda:172187",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "egg|",
+    "evidence_id": "usda:172673",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "egg|",
+    "evidence_id": "usda:172674",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "egg|",
+    "evidence_id": "usda:172741",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "egg|",
+    "evidence_id": "usda:174901",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "mackerel|roasted",
+    "evidence_id": "usda:171994",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "mackerel|roasted",
+    "evidence_id": "usda:173674",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "mackerel|roasted",
+    "evidence_id": "usda:174236",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "mackerel|roasted",
+    "evidence_id": "usda:175120",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "mackerel|",
+    "evidence_id": "usda:168149",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "mayonnaise|",
+    "evidence_id": "usda:171009",
+    "relationship": "SAME_IDENTITY"
+   },
+   {
+    "identity_key": "mayonnaise|",
+    "evidence_id": "usda:171443",
+    "relationship": "UNRESOLVED"
+   },
+   {
+    "identity_key": "mayonnaise|",
+    "evidence_id": "usda:173594",
+    "relationship": "UNRESOLVED"
+   },
+   {
+    "identity_key": "mushrooms|grilled",
+    "evidence_id": "usda:169377",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "olive oil|",
+    "evidence_id": "usda:171413",
+    "relationship": "SAME_IDENTITY"
+   },
+   {
+    "identity_key": "potato|fried",
+    "evidence_id": "usda:169764",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "potato|fried",
+    "evidence_id": "usda:173423",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "potato|",
+    "evidence_id": "usda:167943",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "potato|",
+    "evidence_id": "usda:168446",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "potato|",
+    "evidence_id": "usda:168484",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "potato|",
+    "evidence_id": "usda:168854",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "potato|",
+    "evidence_id": "usda:170088",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "potato|",
+    "evidence_id": "usda:170092",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "potato|",
+    "evidence_id": "usda:170115",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "potato|",
+    "evidence_id": "usda:170133",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "potato|",
+    "evidence_id": "usda:173343",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "rice|",
+    "evidence_id": "usda:168897",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "rice|",
+    "evidence_id": "usda:168914",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "rice|",
+    "evidence_id": "usda:173161",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "salmon|grilled",
+    "evidence_id": "usda:171999",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "salmon|roasted",
+    "evidence_id": "usda:171999",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "salmon|roasted",
+    "evidence_id": "usda:172000",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "salmon|roasted",
+    "evidence_id": "usda:172001",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "salmon|roasted",
+    "evidence_id": "usda:173692",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "salmon|roasted",
+    "evidence_id": "usda:175168",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "salmon|",
+    "evidence_id": "usda:172343",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "salmon|",
+    "evidence_id": "usda:173687",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "shrimp|fried",
+    "evidence_id": "usda:171970",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "shrimp|fried",
+    "evidence_id": "usda:172037",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "shrimp|",
+    "evidence_id": "usda:171970",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "shrimp|",
+    "evidence_id": "usda:171971",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "shrimp|",
+    "evidence_id": "usda:171972",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "tilapia|roasted",
+    "evidence_id": "usda:167634",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "tilapia|roasted",
+    "evidence_id": "usda:170686",
+    "relationship": "DIFFERENT_IDENTITY"
+   },
+   {
+    "identity_key": "tilapia|roasted",
+    "evidence_id": "usda:175177",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "vegetable oil|",
+    "evidence_id": "usda:171422",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   },
+   {
+    "identity_key": "vegetable oil|",
+    "evidence_id": "usda:172370",
+    "relationship": "COMPATIBLE_SPECIALIZATION"
+   }
+  ],
+  "reopened": [],
+  "discarded": 103
+ },
+ "batches": [
+  {
+   "food": "asparagus",
+   "requested": [
+    "usda:168389",
+    "usda:169208",
+    "usda:169207"
+   ],
+   "judged_kept": [
+    "usda:168389",
+    "usda:169208",
+    "usda:169207"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "asparagus",
+   "requested": [
+    "usda:168390",
+    "usda:169313",
+    "usda:171537"
+   ],
+   "judged_kept": [
+    "usda:168390",
+    "usda:169313"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:171537"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "asparagus",
+   "requested": [
+    "usda:169314",
+    "usda:168494",
+    "usda:169209"
+   ],
+   "judged_kept": [
+    "usda:169314",
+    "usda:168494",
+    "usda:169209"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "banana",
+   "requested": [
+    "usda:173945",
+    "usda:173944",
+    "usda:1105073"
+   ],
+   "judged_kept": [
+    "usda:173944",
+    "usda:1105073"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:173945"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "banana",
+   "requested": [
+    "usda:167629",
+    "usda:169394",
+    "usda:168849"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:167629",
+    "usda:168849",
+    "usda:169394"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "banana",
+   "requested": [
+    "usda:171351"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:171351"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "beef",
+   "requested": [
+    "usda:170602",
+    "usda:170200",
+    "usda:173332"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:170200",
+    "usda:170602",
+    "usda:173332"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "beef",
+   "requested": [
+    "usda:174730",
+    "usda:170606"
+   ],
+   "judged_kept": [
+    "usda:174730"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:170606"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "beef, fried",
+   "requested": [
+    "usda:173085",
+    "usda:168623",
+    "usda:168627"
+   ],
+   "judged_kept": [
+    "usda:173085"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:168623",
+    "usda:168627"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "beef, fried",
+   "requested": [
+    "usda:174751",
+    "usda:174733",
+    "usda:173108"
+   ],
+   "judged_kept": [
+    "usda:174751",
+    "usda:174733",
+    "usda:173108"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "beef, fried",
+   "requested": [
+    "usda:173094",
+    "usda:172935"
+   ],
+   "judged_kept": [
+    "usda:173094"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:172935"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "beef, grilled",
+   "requested": [
+    "usda:174702",
+    "usda:174703",
+    "usda:171785"
+   ],
+   "judged_kept": [
+    "usda:174702",
+    "usda:174703",
+    "usda:171785"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "beef, grilled",
+   "requested": [
+    "usda:171786",
+    "usda:168731",
+    "usda:170200"
+   ],
+   "judged_kept": [
+    "usda:171786",
+    "usda:168731"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:170200"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "beef, grilled",
+   "requested": [
+    "usda:172936",
+    "usda:174618"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:172936",
+    "usda:174618"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "beef, roasted",
+   "requested": [
+    "usda:169497",
+    "usda:169496",
+    "usda:171215"
+   ],
+   "judged_kept": [
+    "usda:169497",
+    "usda:169496",
+    "usda:171215"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "beef, roasted",
+   "requested": [
+    "usda:171216",
+    "usda:168674",
+    "usda:170820"
+   ],
+   "judged_kept": [
+    "usda:171216",
+    "usda:168674",
+    "usda:170820"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "beef, roasted",
+   "requested": [
+    "usda:170791"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:170791"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "broccoli",
+   "requested": [
+    "usda:747447",
+    "usda:170379",
+    "usda:170382"
+   ],
+   "judged_kept": [
+    "usda:747447",
+    "usda:170379"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:170382"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "broccoli",
+   "requested": [
+    "usda:170381",
+    "usda:169392",
+    "usda:169404"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:169392",
+    "usda:169404",
+    "usda:170381"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "broccoli",
+   "requested": [
+    "usda:169329",
+    "usda:169331",
+    "usda:168510"
+   ],
+   "judged_kept": [
+    "usda:169329",
+    "usda:169331",
+    "usda:168510"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "broccoli",
+   "requested": [
+    "usda:169967",
+    "usda:168511",
+    "usda:168512"
+   ],
+   "judged_kept": [
+    "usda:169967",
+    "usda:168511",
+    "usda:168512"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "broccoli",
+   "requested": [
+    "usda:169969",
+    "usda:170380"
+   ],
+   "judged_kept": [
+    "usda:169969",
+    "usda:170380"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "cauliflower",
+   "requested": [
+    "usda:169986",
+    "usda:170398",
+    "usda:168520"
+   ],
+   "judged_kept": [
+    "usda:169986",
+    "usda:170398",
+    "usda:168520"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "cauliflower",
+   "requested": [
+    "usda:170397",
+    "usda:168521",
+    "usda:170399"
+   ],
+   "judged_kept": [
+    "usda:170397",
+    "usda:168521",
+    "usda:170399"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "chicken, fried",
+   "requested": [
+    "usda:171058",
+    "usda:171053",
+    "usda:174491"
+   ],
+   "judged_kept": [
+    "usda:171053"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:171058",
+    "usda:174491"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "chicken, fried",
+   "requested": [
+    "usda:171074",
+    "usda:171078",
+    "usda:172375"
+   ],
+   "judged_kept": [
+    "usda:171074",
+    "usda:171078",
+    "usda:172375"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "chicken, fried",
+   "requested": [
+    "usda:172379",
+    "usda:167719"
+   ],
+   "judged_kept": [
+    "usda:172379"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:167719"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "chicken, grilled",
+   "requested": [
+    "usda:171534",
+    "usda:170724",
+    "usda:173312"
+   ],
+   "judged_kept": [
+    "usda:171534"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:170724",
+    "usda:173312"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "chicken, grilled",
+   "requested": [
+    "usda:171513",
+    "usda:169857",
+    "usda:170368"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:169857",
+    "usda:170368",
+    "usda:171513"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "chicken, grilled",
+   "requested": [
+    "usda:170786",
+    "usda:170752"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:170752",
+    "usda:170786"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "chicken, roasted",
+   "requested": [
+    "usda:173635",
+    "usda:172395",
+    "usda:173639"
+   ],
+   "judged_kept": [
+    "usda:173635",
+    "usda:172395",
+    "usda:173639"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "chicken, roasted",
+   "requested": [
+    "usda:173637",
+    "usda:173633",
+    "usda:174496"
+   ],
+   "judged_kept": [
+    "usda:173637"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:173633",
+    "usda:174496"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "chicken, roasted",
+   "requested": [
+    "usda:174608"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:174608"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "egg",
+   "requested": [
+    "usda:747997",
+    "usda:748967",
+    "usda:748236"
+   ],
+   "judged_kept": [
+    "usda:748967"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:747997",
+    "usda:748236"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "egg",
+   "requested": [
+    "usda:173429",
+    "usda:173423",
+    "usda:172186"
+   ],
+   "judged_kept": [
+    "usda:173423",
+    "usda:172186"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:173429"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "egg",
+   "requested": [
+    "usda:169732",
+    "usda:173424",
+    "usda:169734"
+   ],
+   "judged_kept": [
+    "usda:173424"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:169732",
+    "usda:169734"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "egg",
+   "requested": [
+    "usda:168901"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:168901"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "egg, fried",
+   "requested": [
+    "usda:173423"
+   ],
+   "judged_kept": [
+    "usda:173423"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "mackerel",
+   "requested": [
+    "usda:175119",
+    "usda:175122",
+    "usda:173673"
+   ],
+   "judged_kept": [
+    "usda:175119",
+    "usda:175122",
+    "usda:173673"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "mackerel",
+   "requested": [
+    "usda:175120",
+    "usda:175121",
+    "usda:174236"
+   ],
+   "judged_kept": [
+    "usda:175120",
+    "usda:175121",
+    "usda:174236"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "mackerel",
+   "requested": [
+    "usda:173674",
+    "usda:171994"
+   ],
+   "judged_kept": [
+    "usda:173674",
+    "usda:171994"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "mackerel, roasted",
+   "requested": [
+    "usda:168149",
+    "usda:175121"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:168149",
+    "usda:175121"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "mushrooms",
+   "requested": [
+    "usda:170097",
+    "usda:168437",
+    "usda:168537"
+   ],
+   "judged_kept": [
+    "usda:170097",
+    "usda:168437",
+    "usda:168537"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "mushrooms",
+   "requested": [
+    "usda:169252"
+   ],
+   "judged_kept": [
+    "usda:169252"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "mushrooms, grilled",
+   "requested": [
+    "usda:169243",
+    "usda:170097",
+    "usda:168437"
+   ],
+   "judged_kept": [
+    "usda:169243"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:168437",
+    "usda:170097"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "oats",
+   "requested": [
+    "usda:173576",
+    "usda:172666",
+    "usda:172676"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:172666",
+    "usda:172676",
+    "usda:173576"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "oats",
+   "requested": [
+    "usda:172769",
+    "usda:168873",
+    "usda:168872"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:168872",
+    "usda:168873",
+    "usda:172769"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "oats",
+   "requested": [
+    "usda:174626",
+    "usda:172677",
+    "usda:173905"
+   ],
+   "judged_kept": [
+    "usda:173905"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:172677",
+    "usda:174626"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "oats",
+   "requested": [
+    "usda:171675"
+   ],
+   "judged_kept": [
+    "usda:171675"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "potato",
+   "requested": [
+    "usda:170114",
+    "usda:170519",
+    "usda:170522"
+   ],
+   "judged_kept": [
+    "usda:170114",
+    "usda:170522"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:170519"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "potato",
+   "requested": [
+    "usda:170542",
+    "usda:173508",
+    "usda:170032"
+   ],
+   "judged_kept": [
+    "usda:170032"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:170542",
+    "usda:173508"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "potato, fried",
+   "requested": [
+    "usda:169267",
+    "usda:168444",
+    "usda:168445"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:168444",
+    "usda:168445",
+    "usda:169267"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "potato, fried",
+   "requested": [
+    "usda:170698",
+    "usda:168948",
+    "usda:168946"
+   ],
+   "judged_kept": [
+    "usda:170698"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:168946",
+    "usda:168948"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "potato, fried",
+   "requested": [
+    "usda:168015"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:168015"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "rice",
+   "requested": [
+    "usda:167967",
+    "usda:169679",
+    "usda:169680"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:167967",
+    "usda:169679",
+    "usda:169680"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "rice",
+   "requested": [
+    "usda:168855",
+    "usda:167966",
+    "usda:168951"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:167966",
+    "usda:168855",
+    "usda:168951"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "rice",
+   "requested": [
+    "usda:170251",
+    "usda:169711",
+    "usda:173914"
+   ],
+   "judged_kept": [
+    "usda:169711"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:170251",
+    "usda:173914"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "rice",
+   "requested": [
+    "usda:173263",
+    "usda:168930",
+    "usda:168880"
+   ],
+   "judged_kept": [
+    "usda:173263",
+    "usda:168930",
+    "usda:168880"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "rice",
+   "requested": [
+    "usda:168932"
+   ],
+   "judged_kept": [
+    "usda:168932"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "salmon",
+   "requested": [
+    "usda:173688",
+    "usda:173689",
+    "usda:175138"
+   ],
+   "judged_kept": [
+    "usda:173688",
+    "usda:173689",
+    "usda:175138"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "salmon",
+   "requested": [
+    "usda:173691",
+    "usda:175167",
+    "usda:173686"
+   ],
+   "judged_kept": [
+    "usda:173691",
+    "usda:175167",
+    "usda:173686"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "salmon",
+   "requested": [
+    "usda:173722",
+    "usda:171999",
+    "usda:172000"
+   ],
+   "judged_kept": [
+    "usda:171999",
+    "usda:172000"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:173722"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "salmon",
+   "requested": [
+    "usda:172001",
+    "usda:173692",
+    "usda:175168"
+   ],
+   "judged_kept": [
+    "usda:172001",
+    "usda:173692",
+    "usda:175168"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "salmon",
+   "requested": [
+    "usda:171998",
+    "usda:173716"
+   ],
+   "judged_kept": [
+    "usda:171998",
+    "usda:173716"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "shrimp",
+   "requested": [
+    "usda:175180",
+    "usda:175179",
+    "usda:173160"
+   ],
+   "judged_kept": [
+    "usda:175180",
+    "usda:175179"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:173160"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "shrimp",
+   "requested": [
+    "usda:169008",
+    "usda:168077",
+    "usda:168080"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:168077",
+    "usda:168080",
+    "usda:169008"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "tilapia",
+   "requested": [
+    "usda:175176",
+    "usda:175177"
+   ],
+   "judged_kept": [
+    "usda:175176",
+    "usda:175177"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "tofu",
+   "requested": [
+    "usda:167722",
+    "usda:172451",
+    "usda:167695"
+   ],
+   "judged_kept": [
+    "usda:172451"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:167695",
+    "usda:167722"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "tofu",
+   "requested": [
+    "usda:172450",
+    "usda:174291",
+    "usda:174280"
+   ],
+   "judged_kept": [
+    "usda:174291"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:172450",
+    "usda:174280"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "tofu",
+   "requested": [
+    "usda:173788",
+    "usda:173787"
+   ],
+   "judged_kept": [
+    "usda:173788",
+    "usda:173787"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [],
+   "unaccounted": []
+  },
+  {
+   "food": "tofu, fried",
+   "requested": [
+    "usda:172451",
+    "usda:174304",
+    "usda:167722"
+   ],
+   "judged_kept": [
+    "usda:172451",
+    "usda:174304"
+   ],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:167722"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "tofu, fried",
+   "requested": [
+    "usda:167695",
+    "usda:172450",
+    "usda:174291"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:167695",
+    "usda:172450",
+    "usda:174291"
+   ],
+   "unaccounted": []
+  },
+  {
+   "food": "tofu, fried",
+   "requested": [
+    "usda:174280",
+    "usda:173788"
+   ],
+   "judged_kept": [],
+   "abstained": [],
+   "disposition": "qualified",
+   "judged_rejected": [
+    "usda:173788",
+    "usda:174280"
+   ],
+   "unaccounted": []
+  }
+ ],
+ "resolved_this_build": 189,
+ "annotations": 272,
+ "unaccounted_total": 0,
+ "abstained_total": 0,
+ "judged_rejected_total": 84,
+ "judged_kept_total": 105,
+ "requested_total": 189,
+ "completeness_holds": true,
+ "failures": []
+}

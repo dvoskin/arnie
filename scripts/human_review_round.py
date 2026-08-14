@@ -37,6 +37,23 @@ REVIEWER = "human:phase_0.9b_delta_review"
 LEDGER_PATH = (pathlib.Path(__file__).resolve().parents[1]
                / "data" / "baseline" / "phase_0_9b_review_round.json")
 
+#: ⭐ THE SYMMETRY RULE, IN CODE OWNERSHIP TERMS.
+#:
+#:     An eligibility-affecting human decision is authoritative ONLY when it
+#:     lives in the semantic annotation store, is bound to the exact source
+#:     fingerprint, and is consumed by `sa.eligible()`.
+#:
+#: `winner_review.ADMISSION_DECISIONS` may remain historical and audit
+#: context. It must never be the ONLY place an ADMIT or a REJECT exists.
+#:
+#: This round originally handled ADMITs only, and the asymmetry cost exactly
+#: what it was always going to: the six admissions moved into the store and
+#: the one rejection did not, so `usda:170032` — a part-of-food row a reviewer
+#: refused — came back the moment the seam capture re-retrieved it and the
+#: writer annotated it fresh. A negative decision that lives outside the layer
+#: that reads decisions is not a decision; it is a note about one.
+_REJECT_RELATIONSHIP = sa.DIFFERENT_IDENTITY
+
 #: The relationship a human ADMIT asserts. `COMPATIBLE_SPECIALIZATION` rather
 #: than `SAME_IDENTITY` because every row in this round is a specialization —
 #: a mackerel species, a battered form, a brined breast, a canned form — and
@@ -78,7 +95,7 @@ def fingerprints_from_capture(capture=None) -> dict:
         capture = json.loads(cr.CAPTURE_PATH.read_text())
 
     wanted = {(identity, evidence)
-              for identity, evidence, *_ in wr.ADMISSION_OVERRIDES}
+              for identity, evidence, *_ in _eligibility_decisions()}
     found: dict = {}
     for identity, records in (capture.get("queries") or {}).items():
         for record in records:
@@ -106,6 +123,20 @@ def fingerprints_from_capture(capture=None) -> dict:
     if failures:
         raise SourceFingerprintUnavailable("\n  ".join(["", *failures]))
     return fingerprints
+
+
+def _eligibility_decisions() -> tuple:
+    """Every human decision that changes ELIGIBILITY, both directions.
+
+    ⛔ THE ROUND USED TO READ ONLY `ADMISSION_OVERRIDES`. The Phase 0.9
+    rejection of `usda:170032` sat in `ADMISSION_DECISIONS` and never reached
+    the store, so a rebuild re-admitted a row a reviewer had refused. Both
+    sources are read here, and a REJECT is carried with exactly the provenance
+    an ADMIT gets.
+    """
+    return tuple(wr.ADMISSION_OVERRIDES) + tuple(
+        row for row in wr.ADMISSION_DECISIONS
+        if row[2] in (wr.bs.ADMIT, wr.bs.REJECT))
 
 
 def _prior_dispositions() -> dict:
@@ -136,16 +167,18 @@ def apply(store, *, source_fingerprints=None) -> list:
     sa.open_baseline_migration()
     try:
         for identity, evidence, disposition, reason, note in \
-                wr.ADMISSION_OVERRIDES:
+                _eligibility_decisions():
             previous = store.get(identity, evidence)
             # the committed ledger outranks the store, which this round has
             # already moved — see `_prior_dispositions`
             was = prior.get((identity, evidence),
                             previous.relationship if previous else None)
-            if disposition != wr.bs.ADMIT:
+            relationship = (_ADMIT_RELATIONSHIP if disposition == wr.bs.ADMIT
+                            else _REJECT_RELATIONSHIP)
+            if disposition not in (wr.bs.ADMIT, wr.bs.REJECT):
                 raise SystemExit(
-                    f"{identity}/{evidence}: this round only ADMITS; a "
-                    f"rejection belongs to the round that can explain it")
+                    f"{identity}/{evidence}: {disposition!r} is not an "
+                    f"eligibility decision this round can carry")
 
             fingerprint = source_fingerprints.get((identity, evidence)) or ""
             if not fingerprint:
@@ -160,7 +193,7 @@ def apply(store, *, source_fingerprints=None) -> list:
             store.record(sa.Annotation(
                 identity_key=identity,
                 evidence_id=evidence,
-                relationship=_ADMIT_RELATIONSHIP,
+                relationship=relationship,
                 confidence=1.0,
                 resolver_model=REVIEWER,
                 resolver_version=reason,
@@ -173,7 +206,8 @@ def apply(store, *, source_fingerprints=None) -> list:
                 "identity_key": identity,
                 "evidence_id": evidence,
                 "was": was,
-                "now": _ADMIT_RELATIONSHIP,
+                "now": relationship,
+                "disposition": disposition,
                 "reviewer": REVIEWER,
                 "cause": sa.MANUAL_INVALIDATION,
                 "reason": reason,
@@ -188,18 +222,21 @@ def apply(store, *, source_fingerprints=None) -> list:
 
 def verify(store, ledger) -> tuple:
     failures = []
-    if len(ledger) != len(wr.ADMISSION_OVERRIDES):
+    if len(ledger) != len(_eligibility_decisions()):
         failures.append(f"{len(ledger)} rows written, "
-                        f"{len(wr.ADMISSION_OVERRIDES)} adjudicated")
+                        f"{len(_eligibility_decisions())} adjudicated")
     for row in ledger:
         annotation = store.get(row["identity_key"], row["evidence_id"])
         if annotation is None:
             failures.append(f"{row['identity_key']}: not in the store")
             continue
-        if not sa.eligible(annotation):
-            failures.append(f"{row['identity_key']}/{row['evidence_id']}: "
-                            f"ADMITTED by a reviewer and still not eligible — "
-                            f"the decision did not reach the layer that reads it")
+        expected_eligible = row.get("disposition") == wr.bs.ADMIT
+        if sa.eligible(annotation) != expected_eligible:
+            failures.append(
+                f"{row['identity_key']}/{row['evidence_id']}: reviewer said "
+                f"{row.get('disposition')} and `sa.eligible` says "
+                f"{sa.eligible(annotation)} — the decision did not reach the "
+                f"layer that reads decisions")
         if not sa.reviewed(annotation):
             failures.append(f"{row['identity_key']}: no review status")
         if annotation.resolver_model != REVIEWER:

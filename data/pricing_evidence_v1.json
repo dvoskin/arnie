@@ -7,8 +7,11 @@
   "asparagus|": {
    "candidates": [
     {
+     "evidence_id": "usda:168389",
+     "source": "usda",
      "fdc_id": 168389,
      "description": "Asparagus, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "saturated_fat": 0.04,
       "vitamin_c": 5.6,
@@ -39,12 +42,14 @@
       "zinc": 0.54,
       "niacin": 0.978,
       "vitamin_b6": 0.091
-     },
-     "evidence_id": "usda:168389"
+     }
     },
     {
+     "evidence_id": "usda:169208",
+     "source": "usda",
      "fdc_id": 169208,
      "description": "Asparagus, frozen, unprepared",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 1.9,
       "vitamin_a": 47.0,
@@ -72,12 +77,14 @@
       "potassium": 253,
       "zinc": 0.59,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:169208"
+     }
     },
     {
+     "evidence_id": "usda:169207",
+     "source": "usda",
      "fdc_id": 169207,
      "description": "Asparagus, canned, drained solids",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 1.6,
       "sodium": 287,
@@ -108,12 +115,14 @@
       "calories": 19.0,
       "vitamin_e": 1.22,
       "vitamin_a": 41.0
-     },
-     "evidence_id": "usda:169207"
+     }
     },
     {
+     "evidence_id": "usda:168390",
+     "source": "usda",
      "fdc_id": 168390,
      "description": "Asparagus, cooked, boiled, drained",
+     "data_type": "SR Legacy",
      "per100g": {
       "sugar": 1.3,
       "monounsaturated_fat": 0.0,
@@ -144,12 +153,14 @@
       "phosphorus": 54.0,
       "sodium": 14.0,
       "protein": 2.4
-     },
-     "evidence_id": "usda:168390"
+     }
     },
     {
+     "evidence_id": "usda:169313",
+     "source": "usda",
      "fdc_id": 169313,
      "description": "Asparagus, cooked, boiled, drained, with salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 50.0,
       "saturated_fat": 0.048,
@@ -180,12 +191,14 @@
       "thiamin": 0.162,
       "riboflavin": 0.139,
       "folate": 149
-     },
-     "evidence_id": "usda:169313"
+     }
     },
     {
+     "evidence_id": "usda:169314",
+     "source": "usda",
      "fdc_id": 169314,
      "description": "Asparagus, canned, no salt added, solids and liquids",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 1.8,
       "fiber": 1.0,
@@ -216,12 +229,14 @@
       "niacin": 0.851,
       "vitamin_b6": 0.098,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:169314"
+     }
     },
     {
+     "evidence_id": "usda:168494",
+     "source": "usda",
      "fdc_id": 168494,
      "description": "Asparagus, frozen, cooked, boiled, drained, with salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 1.6,
       "trans_fat": 0.0,
@@ -252,12 +267,14 @@
       "vitamin_k": 80.0,
       "saturated_fat": 0.096,
       "vitamin_a": 40.0
-     },
-     "evidence_id": "usda:168494"
+     }
     },
     {
+     "evidence_id": "usda:169209",
+     "source": "usda",
      "fdc_id": 169209,
      "description": "Asparagus, frozen, cooked, boiled, drained, without salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "trans_fat": 0.0,
       "fat": 0.42,
@@ -288,16 +305,20 @@
       "calories": 18.0,
       "monounsaturated_fat": 0.013,
       "polyunsaturated_fat": 0.185
-     },
-     "evidence_id": "usda:169209"
+     }
     }
-   ]
+   ],
+   "raw": 9,
+   "unresolved": []
   },
   "banana|": {
    "candidates": [
     {
+     "evidence_id": "usda:173944",
+     "source": "usda",
      "fdc_id": 173944,
      "description": "Bananas, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "saturated_fat": 0.112,
       "vitamin_a": 3.0,
@@ -328,12 +349,14 @@
       "niacin": 0.665,
       "vitamin_b6": 0.367,
       "vitamin_e": 0.1
-     },
-     "evidence_id": "usda:173944"
+     }
     },
     {
+     "evidence_id": "usda:1105073",
+     "source": "usda",
      "fdc_id": 1105073,
      "description": "Bananas, overripe, raw",
+     "data_type": "Foundation",
      "per100g": {
       "fat": 0.22,
       "niacin": 0.57,
@@ -348,16 +371,24 @@
       "carbs": 20.1,
       "vitamin_a": 1.0,
       "calories": 85.0
-     },
-     "evidence_id": "usda:1105073"
+     }
     }
-   ]
+   ],
+   "raw": 8,
+   "unresolved": [],
+   "mechanically_refused": {
+    "usda:170287": "mechanical_base_food_mismatch",
+    "usda:169700": "mechanical_base_food_mismatch"
+   }
   },
   "beef|": {
    "candidates": [
     {
+     "evidence_id": "usda:174730",
+     "source": "usda",
      "fdc_id": 174730,
      "description": "Beef, New Zealand, imported, manufacturing beef, cooked, boiled",
+     "data_type": "SR Legacy",
      "per100g": {
       "fat": 3.26,
       "carbs": 0.0,
@@ -386,16 +417,22 @@
       "cholesterol": 67.0,
       "trans_fat": 0.078,
       "saturated_fat": 1.15
-     },
-     "evidence_id": "usda:174730"
+     }
     }
+   ],
+   "raw": 13,
+   "unresolved": [
+    "usda:173086"
    ]
   },
   "beef|fried": {
    "candidates": [
     {
+     "evidence_id": "usda:173085",
+     "source": "usda",
      "fdc_id": 173085,
      "description": "Beef, New Zealand, imported, knuckle, cooked, fast fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "fat": 7.58,
       "carbs": 0.0,
@@ -424,12 +461,14 @@
       "cholesterol": 76.0,
       "trans_fat": 0.128,
       "saturated_fat": 2.3
-     },
-     "evidence_id": "usda:173085"
+     }
     },
     {
+     "evidence_id": "usda:174751",
+     "source": "usda",
      "fdc_id": 174751,
      "description": "Beef, New Zealand, imported, striploin, separable lean and fat, cooked, fast fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 24.9,
       "fiber": 0.0,
@@ -458,12 +497,14 @@
       "vitamin_b6": 0.279,
       "monounsaturated_fat": 8.07,
       "polyunsaturated_fat": 0.561
-     },
-     "evidence_id": "usda:174751"
+     }
     },
     {
+     "evidence_id": "usda:174733",
+     "source": "usda",
      "fdc_id": 174733,
      "description": "Beef, New Zealand, imported, striploin, separable lean only, cooked, fast fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 28.5,
       "fiber": 0.0,
@@ -492,12 +533,14 @@
       "vitamin_b6": 0.323,
       "monounsaturated_fat": 4.7,
       "polyunsaturated_fat": 0.338
-     },
-     "evidence_id": "usda:174733"
+     }
     },
     {
+     "evidence_id": "usda:173108",
+     "source": "usda",
      "fdc_id": 173108,
      "description": "Beef, New Zealand, imported, tenderloin, separable lean and fat, cooked, fast fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 29.3,
       "fiber": 0.0,
@@ -526,12 +569,14 @@
       "vitamin_e": 0.81,
       "niacin": 4.98,
       "vitamin_b6": 0.229
-     },
-     "evidence_id": "usda:173108"
+     }
     },
     {
+     "evidence_id": "usda:173094",
+     "source": "usda",
      "fdc_id": 173094,
      "description": "Beef, New Zealand, imported, tenderloin, separable lean only, cooked, fast fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 29.4,
       "fiber": 0.0,
@@ -560,16 +605,27 @@
       "vitamin_b6": 0.23,
       "monounsaturated_fat": 2.66,
       "polyunsaturated_fat": 0.37
-     },
-     "evidence_id": "usda:173094"
+     }
     }
-   ]
+   ],
+   "raw": 8,
+   "unresolved": [],
+   "mechanically_refused": {
+    "usda:172451": "mechanical_base_food_mismatch",
+    "usda:173423": "mechanical_base_food_mismatch",
+    "usda:168383": "mechanical_base_food_mismatch",
+    "usda:173878": "mechanical_base_food_mismatch",
+    "usda:174879": "mechanical_base_food_mismatch"
+   }
   },
   "beef|grilled": {
    "candidates": [
     {
+     "evidence_id": "usda:174702",
+     "source": "usda",
      "fdc_id": 174702,
      "description": "Beef, ribeye filet, boneless, separable lean only, trimmed to 0\" fat, choice, cooked, grilled",
+     "data_type": "SR Legacy",
      "per100g": {
       "sodium": 56.0,
       "vitamin_a": 1.0,
@@ -599,12 +655,14 @@
       "calories": 208,
       "niacin": 5.73,
       "vitamin_b6": 0.543
-     },
-     "evidence_id": "usda:174702"
+     }
     },
     {
+     "evidence_id": "usda:174703",
+     "source": "usda",
      "fdc_id": 174703,
      "description": "Beef, ribeye filet, boneless, separable lean only, trimmed to 0\" fat, select, cooked, grilled",
+     "data_type": "SR Legacy",
      "per100g": {
       "monounsaturated_fat": 3.21,
       "polyunsaturated_fat": 0.255,
@@ -634,12 +692,14 @@
       "phosphorus": 242,
       "sodium": 87.0,
       "iron": 3.56
-     },
-     "evidence_id": "usda:174703"
+     }
     },
     {
+     "evidence_id": "usda:171785",
+     "source": "usda",
      "fdc_id": 171785,
      "description": "Beef, shoulder steak, boneless, separable lean and fat, trimmed to 0\" fat, choice, cooked, grilled",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_c": 0.0,
       "thiamin": 0.079,
@@ -670,12 +730,14 @@
       "polyunsaturated_fat": 0.453,
       "calories": 186,
       "sugar": 0.0
-     },
-     "evidence_id": "usda:171785"
+     }
     },
     {
+     "evidence_id": "usda:171786",
+     "source": "usda",
      "fdc_id": 171786,
      "description": "Beef, shoulder steak, boneless, separable lean and fat, trimmed to 0\" fat, select, cooked, grilled",
+     "data_type": "SR Legacy",
      "per100g": {
       "calcium": 12.0,
       "potassium": 366,
@@ -706,12 +768,14 @@
       "saturated_fat": 2.64,
       "calories": 177,
       "sugar": 0.0
-     },
-     "evidence_id": "usda:171786"
+     }
     },
     {
+     "evidence_id": "usda:168731",
+     "source": "usda",
      "fdc_id": 168731,
      "description": "Beef, shoulder steak, boneless, separable lean only, trimmed to 0\" fat, choice, cooked, grilled",
+     "data_type": "SR Legacy",
      "per100g": {
       "carbs": 0.0,
       "vitamin_c": 0.0,
@@ -742,16 +806,26 @@
       "cholesterol": 81.0,
       "vitamin_d": 0.1,
       "vitamin_a": 1.0
-     },
-     "evidence_id": "usda:168731"
+     }
     }
-   ]
+   ],
+   "raw": 9,
+   "unresolved": [],
+   "mechanically_refused": {
+    "usda:169243": "mechanical_base_food_mismatch",
+    "usda:169030": "mechanical_base_food_mismatch",
+    "usda:173877": "mechanical_base_food_mismatch",
+    "usda:171634": "mechanical_base_food_mismatch"
+   }
   },
   "beef|roasted": {
    "candidates": [
     {
+     "evidence_id": "usda:169497",
+     "source": "usda",
      "fdc_id": 169497,
      "description": "Beef, chuck eye roast, boneless, America's Beef Roast, separable lean only, trimmed to 0\" fat, select, cooked, roasted",
+     "data_type": "SR Legacy",
      "per100g": {
       "fat": 7.12,
       "carbs": 0.0,
@@ -782,12 +856,14 @@
       "trans_fat": 0.329,
       "saturated_fat": 2.93,
       "cholesterol": 81.0
-     },
-     "evidence_id": "usda:169497"
+     }
     },
     {
+     "evidence_id": "usda:169496",
+     "source": "usda",
      "fdc_id": 169496,
      "description": "Beef, chuck eye roast, boneless, America's Beef Roast, separable lean only, trimmed to 0\" fat, choice, cooked, roasted",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 26.4,
       "fiber": 0.0,
@@ -818,12 +894,14 @@
       "monounsaturated_fat": 4.69,
       "polyunsaturated_fat": 0.431,
       "cholesterol": 84.0
-     },
-     "evidence_id": "usda:169496"
+     }
     },
     {
+     "evidence_id": "usda:171215",
+     "source": "usda",
      "fdc_id": 171215,
      "description": "Beef, chuck eye roast, boneless, America's Beef Roast, separable lean and fat, trimmed to 0\" fat, choice, cooked, roasted",
+     "data_type": "SR Legacy",
      "per100g": {
       "monounsaturated_fat": 7.51,
       "fat": 15.9,
@@ -854,12 +932,14 @@
       "trans_fat": 0.882,
       "saturated_fat": 6.46,
       "polyunsaturated_fat": 0.59
-     },
-     "evidence_id": "usda:171215"
+     }
     },
     {
+     "evidence_id": "usda:171216",
+     "source": "usda",
      "fdc_id": 171216,
      "description": "Beef, chuck eye roast, boneless, America's Beef Roast, separable lean and fat, trimmed to 0\" fat, select, cooked, roasted",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 24.9,
       "fiber": 0.0,
@@ -890,12 +970,14 @@
       "niacin": 4.31,
       "vitamin_b6": 0.382,
       "polyunsaturated_fat": 0.679
-     },
-     "evidence_id": "usda:171216"
+     }
     },
     {
+     "evidence_id": "usda:168674",
+     "source": "usda",
      "fdc_id": 168674,
      "description": "Beef, chuck eye roast, boneless, America's Beef Roast, separable lean only, trimmed to 0\" fat, all grades, cooked, roasted",
+     "data_type": "SR Legacy",
      "per100g": {
       "fat": 8.46,
       "carbs": 0.0,
@@ -926,12 +1008,14 @@
       "trans_fat": 0.373,
       "saturated_fat": 3.42,
       "cholesterol": 83.0
-     },
-     "evidence_id": "usda:168674"
+     }
     },
     {
+     "evidence_id": "usda:170820",
+     "source": "usda",
      "fdc_id": 170820,
      "description": "Beef, chuck eye roast, boneless, America's Beef Roast, separable lean and fat, trimmed to 0\" fat, all grades, cooked, roasted",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 24.6,
       "fiber": 0.0,
@@ -962,12 +1046,14 @@
       "vitamin_b6": 0.38,
       "monounsaturated_fat": 7.24,
       "polyunsaturated_fat": 0.664
-     },
-     "evidence_id": "usda:170820"
+     }
     },
     {
+     "evidence_id": "usda:173089",
+     "source": "usda",
      "fdc_id": 173089,
      "description": "Beef, New Zealand, imported, ribs prepared, cooked, fast roasted",
+     "data_type": "SR Legacy",
      "per100g": {
       "fat": 9.74,
       "carbs": 0.09,
@@ -996,16 +1082,20 @@
       "cholesterol": 69.0,
       "trans_fat": 0.183,
       "saturated_fat": 3.58
-     },
-     "evidence_id": "usda:173089"
+     }
     }
-   ]
+   ],
+   "raw": 10,
+   "unresolved": []
   },
   "broccoli|": {
    "candidates": [
     {
+     "evidence_id": "usda:747447",
+     "source": "usda",
      "fdc_id": 747447,
      "description": "Broccoli, raw",
+     "data_type": "Foundation",
      "per100g": {
       "monounsaturated_fat": 0.011,
       "polyunsaturated_fat": 0.017,
@@ -1031,12 +1121,14 @@
       "vitamin_k": 102,
       "folate": 65.0,
       "vitamin_a": 8.0
-     },
-     "evidence_id": "usda:747447"
+     }
     },
     {
+     "evidence_id": "usda:170379",
+     "source": "usda",
      "fdc_id": 170379,
      "description": "Broccoli, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "monounsaturated_fat": 0.031,
       "polyunsaturated_fat": 0.112,
@@ -1067,12 +1159,14 @@
       "cholesterol": 0.0,
       "vitamin_a": 31.0,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:170379"
+     }
     },
     {
+     "evidence_id": "usda:169329",
+     "source": "usda",
      "fdc_id": 169329,
      "description": "Broccoli, leaves, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 2.3,
       "carbs": 5.06,
@@ -1100,12 +1194,14 @@
       "phosphorus": 66.0,
       "sodium": 27.0,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:169329"
+     }
     },
     {
+     "evidence_id": "usda:169331",
+     "source": "usda",
      "fdc_id": 169331,
      "description": "Broccoli, stalks, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 20.0,
       "trans_fat": 0.0,
@@ -1132,12 +1228,14 @@
       "cholesterol": 0.0,
       "saturated_fat": 0.054,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:169331"
+     }
     },
     {
+     "evidence_id": "usda:168510",
+     "source": "usda",
      "fdc_id": 168510,
      "description": "Broccoli, cooked, boiled, drained, with salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "trans_fat": 0.0,
       "cholesterol": 0.0,
@@ -1168,12 +1266,14 @@
       "phosphorus": 67.0,
       "sodium": 262,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:168510"
+     }
     },
     {
+     "evidence_id": "usda:169967",
+     "source": "usda",
      "fdc_id": 169967,
      "description": "Broccoli, cooked, boiled, drained, without salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_c": 64.9,
       "trans_fat": 0.0,
@@ -1204,12 +1304,14 @@
       "saturated_fat": 0.079,
       "vitamin_a": 77.0,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:169967"
+     }
     },
     {
+     "evidence_id": "usda:168511",
+     "source": "usda",
      "fdc_id": 168511,
      "description": "Broccoli, frozen, chopped, cooked, boiled, drained, with salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 3.0,
       "vitamin_k": 88.1,
@@ -1240,12 +1342,14 @@
       "zinc": 0.28,
       "vitamin_e": 1.32,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:168511"
+     }
     },
     {
+     "evidence_id": "usda:168512",
+     "source": "usda",
      "fdc_id": 168512,
      "description": "Broccoli, frozen, spears, cooked, boiled, drained, with salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 3.0,
       "trans_fat": 0.0,
@@ -1276,12 +1380,14 @@
       "vitamin_k": 99.5,
       "vitamin_a": 56.0,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:168512"
+     }
     },
     {
+     "evidence_id": "usda:169969",
+     "source": "usda",
      "fdc_id": 169969,
      "description": "Broccoli, frozen, chopped, cooked, boiled, drained, without salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 51.0,
       "vitamin_k": 88.1,
@@ -1312,12 +1418,14 @@
       "phosphorus": 49.0,
       "sodium": 11.0,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:169969"
+     }
     },
     {
+     "evidence_id": "usda:170380",
+     "source": "usda",
      "fdc_id": 170380,
      "description": "Broccoli, frozen, spears, cooked, boiled, drained, without salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "sugar": 1.47,
       "carbs": 5.36,
@@ -1348,16 +1456,20 @@
       "vitamin_b12": 0.0,
       "vitamin_e": 1.32,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:170380"
+     }
     }
-   ]
+   ],
+   "raw": 14,
+   "unresolved": []
   },
   "cauliflower|": {
    "candidates": [
     {
+     "evidence_id": "usda:169986",
+     "source": "usda",
      "fdc_id": 169986,
      "description": "Cauliflower, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 0.0,
       "carbs": 4.97,
@@ -1388,12 +1500,14 @@
       "zinc": 0.27,
       "niacin": 0.507,
       "vitamin_b6": 0.184
-     },
-     "evidence_id": "usda:169986"
+     }
     },
     {
+     "evidence_id": "usda:170398",
+     "source": "usda",
      "fdc_id": 170398,
      "description": "Cauliflower, frozen, unprepared",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 1.0,
       "trans_fat": 0.0,
@@ -1424,12 +1538,87 @@
       "sugar": 2.22,
       "vitamin_e": 0.07,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:170398"
+     }
     },
     {
+     "evidence_id": "usda:169389",
+     "source": "usda",
+     "fdc_id": 169389,
+     "description": "Cauliflower, green, raw",
+     "data_type": "SR Legacy",
+     "per100g": {
+      "fiber": 3.2,
+      "iron": 0.73,
+      "magnesium": 20.0,
+      "phosphorus": 62.0,
+      "sodium": 23.0,
+      "vitamin_c": 88.1,
+      "thiamin": 0.08,
+      "riboflavin": 0.102,
+      "folate": 57.0,
+      "vitamin_k": 20.2,
+      "calcium": 33.0,
+      "potassium": 300,
+      "zinc": 0.64,
+      "fat": 0.3,
+      "vitamin_e": 0.04,
+      "niacin": 0.734,
+      "vitamin_b6": 0.222,
+      "protein": 2.95,
+      "vitamin_a": 8.0,
+      "carbs": 6.09,
+      "calories": 31.0,
+      "sugar": 3.03,
+      "trans_fat": 0.0,
+      "vitamin_b12": 0.0,
+      "saturated_fat": 0.047,
+      "cholesterol": 0.0,
+      "monounsaturated_fat": 0.028,
+      "polyunsaturated_fat": 0.133,
+      "vitamin_d": 0.0
+     }
+    },
+    {
+     "evidence_id": "usda:169391",
+     "source": "usda",
+     "fdc_id": 169391,
+     "description": "Cauliflower, green, cooked, with salt",
+     "data_type": "SR Legacy",
+     "per100g": {
+      "carbs": 6.28,
+      "calories": 32.0,
+      "vitamin_a": 7.0,
+      "trans_fat": 0.0,
+      "protein": 3.04,
+      "fiber": 3.3,
+      "iron": 0.72,
+      "magnesium": 19.0,
+      "phosphorus": 57.0,
+      "sodium": 259,
+      "vitamin_c": 72.6,
+      "thiamin": 0.07,
+      "riboflavin": 0.1,
+      "folate": 41.0,
+      "vitamin_b12": 0.0,
+      "saturated_fat": 0.049,
+      "cholesterol": 0.0,
+      "calcium": 32.0,
+      "potassium": 278,
+      "zinc": 0.63,
+      "niacin": 0.681,
+      "vitamin_b6": 0.206,
+      "fat": 0.31,
+      "monounsaturated_fat": 0.029,
+      "polyunsaturated_fat": 0.137,
+      "vitamin_d": 0.0
+     }
+    },
+    {
+     "evidence_id": "usda:168520",
+     "source": "usda",
      "fdc_id": 168520,
      "description": "Cauliflower, cooked, boiled, drained, with salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 2.3,
       "iron": 0.32,
@@ -1460,12 +1649,52 @@
       "vitamin_k": 13.8,
       "vitamin_e": 0.07,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:168520"
+     }
     },
     {
+     "evidence_id": "usda:169390",
+     "source": "usda",
+     "fdc_id": 169390,
+     "description": "Cauliflower, green, cooked, no salt added",
+     "data_type": "SR Legacy",
+     "per100g": {
+      "carbs": 6.28,
+      "calories": 32.0,
+      "trans_fat": 0.0,
+      "niacin": 0.681,
+      "vitamin_b6": 0.206,
+      "fat": 0.31,
+      "calcium": 32.0,
+      "potassium": 278,
+      "zinc": 0.63,
+      "cholesterol": 0.0,
+      "vitamin_b12": 0.0,
+      "vitamin_c": 72.6,
+      "thiamin": 0.07,
+      "riboflavin": 0.1,
+      "folate": 41.0,
+      "fiber": 3.3,
+      "iron": 0.72,
+      "magnesium": 19.0,
+      "phosphorus": 57.0,
+      "sodium": 23.0,
+      "protein": 3.04,
+      "vitamin_d": 0.0,
+      "vitamin_k": 20.8,
+      "saturated_fat": 0.043,
+      "vitamin_a": 7.0,
+      "sugar": 3.12,
+      "vitamin_e": 0.04,
+      "monounsaturated_fat": 0.03,
+      "polyunsaturated_fat": 0.137
+     }
+    },
+    {
+     "evidence_id": "usda:170397",
+     "source": "usda",
      "fdc_id": 170397,
      "description": "Cauliflower, cooked, boiled, drained, without salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "sugar": 2.08,
       "calcium": 16.0,
@@ -1496,12 +1725,14 @@
       "vitamin_e": 0.07,
       "vitamin_k": 13.8,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:170397"
+     }
     },
     {
+     "evidence_id": "usda:168521",
+     "source": "usda",
      "fdc_id": 168521,
      "description": "Cauliflower, frozen, cooked, boiled, drained, with salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 2.7,
       "monounsaturated_fat": 0.015,
@@ -1532,12 +1763,14 @@
       "vitamin_e": 0.06,
       "vitamin_k": 11.9,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:168521"
+     }
     },
     {
+     "evidence_id": "usda:170399",
+     "source": "usda",
      "fdc_id": 170399,
      "description": "Cauliflower, frozen, cooked, boiled, drained, without salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "carbs": 3.75,
       "calories": 19.0,
@@ -1568,16 +1801,20 @@
       "vitamin_e": 0.06,
       "vitamin_k": 11.9,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:170399"
+     }
     }
-   ]
+   ],
+   "raw": 9,
+   "unresolved": []
   },
   "chicken|fried": {
    "candidates": [
     {
+     "evidence_id": "usda:171053",
+     "source": "usda",
      "fdc_id": 171053,
      "description": "Chicken, broilers or fryers, meat only, cooked, fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_k": 2.8,
       "vitamin_a": 18.0,
@@ -1607,12 +1844,14 @@
       "vitamin_e": 0.46,
       "sugar": 0.0,
       "fiber": 0.1
-     },
-     "evidence_id": "usda:171053"
+     }
     },
     {
+     "evidence_id": "usda:171074",
+     "source": "usda",
      "fdc_id": 171074,
      "description": "Chicken, broilers or fryers, back, meat only, cooked, fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 29.0,
       "fat": 15.3,
@@ -1638,12 +1877,14 @@
       "magnesium": 25.0,
       "phosphorus": 176,
       "sodium": 99.0
-     },
-     "evidence_id": "usda:171074"
+     }
     },
     {
+     "evidence_id": "usda:171078",
+     "source": "usda",
      "fdc_id": 171078,
      "description": "Chicken, broilers or fryers, breast, meat only, cooked, fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 7.0,
       "vitamin_d": 0.1,
@@ -1673,12 +1914,14 @@
       "vitamin_k": 2.4,
       "sugar": 0.0,
       "vitamin_e": 0.42
-     },
-     "evidence_id": "usda:171078"
+     }
     },
     {
+     "evidence_id": "usda:172375",
+     "source": "usda",
      "fdc_id": 172375,
      "description": "Chicken, broilers or fryers, drumstick, meat only, cooked, fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 18.0,
       "fat": 8.08,
@@ -1704,12 +1947,14 @@
       "vitamin_b12": 0.35,
       "cholesterol": 94.0,
       "saturated_fat": 2.13
-     },
-     "evidence_id": "usda:172375"
+     }
     },
     {
+     "evidence_id": "usda:172379",
+     "source": "usda",
      "fdc_id": 172379,
      "description": "Chicken, broilers or fryers, leg, meat only, cooked, fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 20.0,
       "vitamin_c": 0.0,
@@ -1735,12 +1980,14 @@
       "polyunsaturated_fat": 2.22,
       "niacin": 6.69,
       "vitamin_b6": 0.39
-     },
-     "evidence_id": "usda:172379"
+     }
     },
     {
+     "evidence_id": "usda:171448",
+     "source": "usda",
      "fdc_id": 171448,
      "description": "Chicken, broilers or fryers, meat and skin, cooked, fried, batter",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 28.0,
       "vitamin_d": 0.2,
@@ -1770,16 +2017,20 @@
       "vitamin_e": 1.24,
       "sugar": 0.0,
       "folate": 18.0
-     },
-     "evidence_id": "usda:171448"
+     }
     }
-   ]
+   ],
+   "raw": 13,
+   "unresolved": []
   },
   "chicken|grilled": {
    "candidates": [
     {
+     "evidence_id": "usda:171534",
+     "source": "usda",
      "fdc_id": 171534,
      "description": "Chicken, broiler or fryers, breast, skinless, boneless, meat only, cooked, grilled",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 30.5,
       "fiber": 0.0,
@@ -1809,12 +2060,14 @@
       "vitamin_e": 0.54,
       "vitamin_k": 0.0,
       "vitamin_a": 10.0
-     },
-     "evidence_id": "usda:171534"
+     }
     },
     {
+     "evidence_id": "usda:171536",
+     "source": "usda",
      "fdc_id": 171536,
      "description": "Chicken, broiler or fryers, breast, skinless, boneless, meat only, with added solution, cooked, grilled",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 29.5,
       "fiber": 0.0,
@@ -1843,16 +2096,25 @@
       "saturated_fat": 1.01,
       "monounsaturated_fat": 1.32,
       "polyunsaturated_fat": 0.713
-     },
-     "evidence_id": "usda:171536"
+     }
     }
-   ]
+   ],
+   "raw": 10,
+   "unresolved": [],
+   "mechanically_refused": {
+    "usda:173877": "mechanical_base_food_mismatch",
+    "usda:171634": "mechanical_base_food_mismatch",
+    "usda:169243": "mechanical_base_food_mismatch"
+   }
   },
   "chicken|roasted": {
    "candidates": [
     {
+     "evidence_id": "usda:173635",
+     "source": "usda",
      "fdc_id": 173635,
      "description": "Chicken, roasting, meat and skin, cooked, roasted",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 24.0,
       "cholesterol": 76.0,
@@ -1877,12 +2139,14 @@
       "vitamin_b6": 0.35,
       "monounsaturated_fat": 5.4,
       "polyunsaturated_fat": 2.92
-     },
-     "evidence_id": "usda:173635"
+     }
     },
     {
+     "evidence_id": "usda:172395",
+     "source": "usda",
      "fdc_id": 172395,
      "description": "Chicken, roasting, meat only, cooked, roasted",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 12.0,
       "vitamin_c": 0.0,
@@ -1908,12 +2172,14 @@
       "polyunsaturated_fat": 1.51,
       "niacin": 7.88,
       "vitamin_b6": 0.41
-     },
-     "evidence_id": "usda:172395"
+     }
     },
     {
+     "evidence_id": "usda:173639",
+     "source": "usda",
      "fdc_id": 173639,
      "description": "Chicken, roasting, dark meat, meat only, cooked, roasted",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 16.0,
       "protein": 23.2,
@@ -1939,12 +2205,14 @@
       "vitamin_b6": 0.31,
       "monounsaturated_fat": 3.31,
       "polyunsaturated_fat": 2.0
-     },
-     "evidence_id": "usda:173639"
+     }
     },
     {
+     "evidence_id": "usda:173637",
+     "source": "usda",
      "fdc_id": 173637,
      "description": "Chicken, roasting, light meat, meat only, cooked, roasted",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 8.0,
       "vitamin_d": 0.1,
@@ -1974,16 +2242,56 @@
       "sugar": 0.0,
       "vitamin_e": 0.27,
       "vitamin_k": 0.3
-     },
-     "evidence_id": "usda:173637"
+     }
+    },
+    {
+     "evidence_id": "usda:173646",
+     "source": "usda",
+     "fdc_id": 173646,
+     "description": "Chicken, capons, meat and skin, cooked, roasted",
+     "data_type": "SR Legacy",
+     "per100g": {
+      "niacin": 8.95,
+      "vitamin_b6": 0.43,
+      "fat": 11.6,
+      "carbs": 0.0,
+      "calories": 229,
+      "calcium": 14.0,
+      "potassium": 255,
+      "zinc": 1.74,
+      "monounsaturated_fat": 4.75,
+      "polyunsaturated_fat": 2.52,
+      "fiber": 0.0,
+      "iron": 1.49,
+      "magnesium": 24.0,
+      "phosphorus": 246,
+      "sodium": 49.0,
+      "vitamin_c": 0.0,
+      "thiamin": 0.07,
+      "riboflavin": 0.17,
+      "folate": 6.0,
+      "vitamin_b12": 0.33,
+      "cholesterol": 86.0,
+      "saturated_fat": 3.26,
+      "protein": 29.0
+     }
     }
-   ]
+   ],
+   "raw": 8,
+   "unresolved": [],
+   "mechanically_refused": {
+    "usda:172397": "cooking_medium_conflicts_with_the_request",
+    "usda:172396": "cooking_state_conflicts_with_the_request"
+   }
   },
   "egg|": {
    "candidates": [
     {
+     "evidence_id": "usda:748967",
+     "source": "usda",
      "fdc_id": 748967,
      "description": "Eggs, Grade A, Large, egg whole",
+     "data_type": "Foundation",
      "per100g": {
       "calories": 148,
       "thiamin": 0.077,
@@ -2009,12 +2317,14 @@
       "vitamin_d": 2.46,
       "folate": 71.0,
       "fiber": 0.0
-     },
-     "evidence_id": "usda:748967"
+     }
     },
     {
+     "evidence_id": "usda:173423",
+     "source": "usda",
      "fdc_id": 173423,
      "description": "Egg, whole, cooked, fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 0.0,
       "vitamin_c": 0.0,
@@ -2045,12 +2355,52 @@
       "polyunsaturated_fat": 3.25,
       "vitamin_d": 2.2,
       "calories": 196
-     },
-     "evidence_id": "usda:173423"
+     }
     },
     {
+     "evidence_id": "usda:172185",
+     "source": "usda",
+     "fdc_id": 172185,
+     "description": "Egg, whole, cooked, omelet",
+     "data_type": "SR Legacy",
+     "per100g": {
+      "fiber": 0.0,
+      "vitamin_k": 4.5,
+      "vitamin_c": 0.0,
+      "folate": 39.0,
+      "protein": 10.6,
+      "cholesterol": 313,
+      "trans_fat": 0.709,
+      "saturated_fat": 3.32,
+      "iron": 1.48,
+      "magnesium": 11.0,
+      "phosphorus": 167,
+      "sodium": 155,
+      "vitamin_a": 172,
+      "vitamin_b12": 0.76,
+      "thiamin": 0.034,
+      "riboflavin": 0.386,
+      "fat": 11.7,
+      "carbs": 0.64,
+      "monounsaturated_fat": 4.84,
+      "polyunsaturated_fat": 2.71,
+      "sugar": 0.31,
+      "calcium": 48.0,
+      "potassium": 117,
+      "zinc": 1.09,
+      "vitamin_e": 1.29,
+      "niacin": 0.064,
+      "vitamin_b6": 0.143,
+      "vitamin_d": 1.7,
+      "calories": 154
+     }
+    },
+    {
+     "evidence_id": "usda:172186",
+     "source": "usda",
      "fdc_id": 172186,
      "description": "Egg, whole, cooked, poached",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 0.0,
       "vitamin_c": 0.0,
@@ -2081,12 +2431,14 @@
       "cholesterol": 370,
       "trans_fat": 0.038,
       "saturated_fat": 3.11
-     },
-     "evidence_id": "usda:172186"
+     }
     },
     {
+     "evidence_id": "usda:172187",
+     "source": "usda",
      "fdc_id": 172187,
      "description": "Egg, whole, cooked, scrambled",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_k": 4.0,
       "sugar": 1.39,
@@ -2117,12 +2469,14 @@
       "vitamin_b6": 0.134,
       "vitamin_d": 1.8,
       "calories": 149
-     },
-     "evidence_id": "usda:172187"
+     }
     },
     {
+     "evidence_id": "usda:173424",
+     "source": "usda",
      "fdc_id": 173424,
      "description": "Egg, whole, cooked, hard-boiled",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_k": 0.3,
       "sugar": 1.12,
@@ -2152,16 +2506,20 @@
       "fat": 10.6,
       "carbs": 1.12,
       "niacin": 0.064
-     },
-     "evidence_id": "usda:173424"
+     }
     }
-   ]
+   ],
+   "raw": 16,
+   "unresolved": []
   },
   "egg|fried": {
    "candidates": [
     {
+     "evidence_id": "usda:173423",
+     "source": "usda",
      "fdc_id": 173423,
      "description": "Egg, whole, cooked, fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 0.0,
       "vitamin_c": 0.0,
@@ -2192,16 +2550,70 @@
       "polyunsaturated_fat": 3.25,
       "vitamin_d": 2.2,
       "calories": 196
-     },
-     "evidence_id": "usda:173423"
+     }
     }
-   ]
+   ],
+   "raw": 4,
+   "unresolved": [],
+   "mechanically_refused": {
+    "usda:168383": "mechanical_base_food_mismatch",
+    "usda:173878": "mechanical_base_food_mismatch",
+    "usda:174879": "mechanical_base_food_mismatch",
+    "usda:172186": "cooking_medium_conflicts_with_the_request",
+    "usda:172451": "mechanical_base_food_mismatch",
+    "usda:169009": "mechanical_base_food_mismatch",
+    "usda:167672": "mechanical_base_food_mismatch",
+    "usda:170721": "mechanical_base_food_mismatch",
+    "usda:168199": "mechanical_base_food_mismatch",
+    "usda:170726": "mechanical_base_food_mismatch",
+    "usda:169267": "mechanical_base_food_mismatch"
+   }
   },
   "mackerel|": {
    "candidates": [
     {
+     "evidence_id": "usda:168149",
+     "source": "usda",
+     "fdc_id": 168149,
+     "description": "Fish, mackerel, salted",
+     "data_type": "SR Legacy",
+     "per100g": {
+      "vitamin_k": 7.8,
+      "vitamin_e": 2.38,
+      "sugar": 0.0,
+      "fat": 25.1,
+      "carbs": 0.0,
+      "calories": 305,
+      "niacin": 3.3,
+      "vitamin_b6": 0.41,
+      "calcium": 66.0,
+      "potassium": 520,
+      "zinc": 1.1,
+      "monounsaturated_fat": 8.32,
+      "polyunsaturated_fat": 6.21,
+      "protein": 18.5,
+      "cholesterol": 95.0,
+      "saturated_fat": 7.15,
+      "vitamin_c": 0.0,
+      "thiamin": 0.02,
+      "riboflavin": 0.19,
+      "folate": 15.0,
+      "vitamin_b12": 12.0,
+      "vitamin_d": 25.2,
+      "fiber": 0.0,
+      "iron": 1.4,
+      "magnesium": 60.0,
+      "phosphorus": 254,
+      "sodium": 4450.0,
+      "vitamin_a": 47.0
+     }
+    },
+    {
+     "evidence_id": "usda:175119",
+     "source": "usda",
      "fdc_id": 175119,
      "description": "Fish, mackerel, Atlantic, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "monounsaturated_fat": 5.46,
       "polyunsaturated_fat": 3.35,
@@ -2231,12 +2643,14 @@
       "riboflavin": 0.312,
       "folate": 1.0,
       "vitamin_b12": 8.71
-     },
-     "evidence_id": "usda:175119"
+     }
     },
     {
+     "evidence_id": "usda:175122",
+     "source": "usda",
      "fdc_id": 175122,
      "description": "Fish, mackerel, king, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 218,
       "protein": 20.3,
@@ -2262,12 +2676,14 @@
       "zinc": 0.56,
       "monounsaturated_fat": 0.764,
       "polyunsaturated_fat": 0.46
-     },
-     "evidence_id": "usda:175122"
+     }
     },
     {
+     "evidence_id": "usda:173673",
+     "source": "usda",
      "fdc_id": 173673,
      "description": "Fish, mackerel, spanish, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "sugar": 0.0,
       "vitamin_k": 0.1,
@@ -2297,12 +2713,14 @@
       "calcium": 11.0,
       "potassium": 446,
       "zinc": 0.49
-     },
-     "evidence_id": "usda:173673"
+     }
     },
     {
+     "evidence_id": "usda:175120",
+     "source": "usda",
      "fdc_id": 175120,
      "description": "Fish, mackerel, Atlantic, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 54.0,
       "protein": 23.8,
@@ -2328,12 +2746,51 @@
       "vitamin_b6": 0.46,
       "monounsaturated_fat": 7.01,
       "polyunsaturated_fat": 4.3
-     },
-     "evidence_id": "usda:175120"
+     }
     },
     {
+     "evidence_id": "usda:175121",
+     "source": "usda",
+     "fdc_id": 175121,
+     "description": "Fish, mackerel, jack, canned, drained solids",
+     "data_type": "SR Legacy",
+     "per100g": {
+      "sugar": 0.0,
+      "vitamin_e": 1.03,
+      "vitamin_k": 0.1,
+      "vitamin_a": 130,
+      "vitamin_d": 7.3,
+      "fat": 6.3,
+      "carbs": 0.0,
+      "calories": 156,
+      "calcium": 241,
+      "potassium": 194,
+      "zinc": 1.02,
+      "monounsaturated_fat": 2.22,
+      "polyunsaturated_fat": 1.65,
+      "niacin": 6.18,
+      "vitamin_b6": 0.21,
+      "protein": 23.2,
+      "fiber": 0.0,
+      "iron": 2.04,
+      "magnesium": 37.0,
+      "phosphorus": 301,
+      "sodium": 379,
+      "cholesterol": 79.0,
+      "saturated_fat": 1.86,
+      "vitamin_c": 0.9,
+      "thiamin": 0.04,
+      "riboflavin": 0.212,
+      "folate": 5.0,
+      "vitamin_b12": 6.94
+     }
+    },
+    {
+     "evidence_id": "usda:174236",
+     "source": "usda",
      "fdc_id": 174236,
      "description": "Fish, mackerel, king, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 252,
       "niacin": 10.5,
@@ -2359,12 +2816,14 @@
       "magnesium": 41.0,
       "phosphorus": 318,
       "sodium": 203
-     },
-     "evidence_id": "usda:174236"
+     }
     },
     {
+     "evidence_id": "usda:173674",
+     "source": "usda",
      "fdc_id": 173674,
      "description": "Fish, mackerel, spanish, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 33.0,
       "fat": 6.32,
@@ -2390,12 +2849,14 @@
       "magnesium": 38.0,
       "phosphorus": 271,
       "sodium": 66.0
-     },
-     "evidence_id": "usda:173674"
+     }
     },
     {
+     "evidence_id": "usda:171994",
+     "source": "usda",
      "fdc_id": 171994,
      "description": "Fish, mackerel, Pacific and jack, mixed species, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_e": 1.25,
       "sugar": 0.0,
@@ -2425,16 +2886,20 @@
       "zinc": 0.86,
       "monounsaturated_fat": 3.37,
       "polyunsaturated_fat": 2.49
-     },
-     "evidence_id": "usda:171994"
+     }
     }
-   ]
+   ],
+   "raw": 9,
+   "unresolved": []
   },
   "mackerel|roasted": {
    "candidates": [
     {
+     "evidence_id": "usda:175120",
+     "source": "usda",
      "fdc_id": 175120,
      "description": "Fish, mackerel, Atlantic, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 54.0,
       "protein": 23.8,
@@ -2460,12 +2925,14 @@
       "vitamin_b6": 0.46,
       "monounsaturated_fat": 7.01,
       "polyunsaturated_fat": 4.3
-     },
-     "evidence_id": "usda:175120"
+     }
     },
     {
+     "evidence_id": "usda:174236",
+     "source": "usda",
      "fdc_id": 174236,
      "description": "Fish, mackerel, king, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 252,
       "niacin": 10.5,
@@ -2491,12 +2958,14 @@
       "magnesium": 41.0,
       "phosphorus": 318,
       "sodium": 203
-     },
-     "evidence_id": "usda:174236"
+     }
     },
     {
+     "evidence_id": "usda:173674",
+     "source": "usda",
      "fdc_id": 173674,
      "description": "Fish, mackerel, spanish, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 33.0,
       "fat": 6.32,
@@ -2522,12 +2991,14 @@
       "magnesium": 38.0,
       "phosphorus": 271,
       "sodium": 66.0
-     },
-     "evidence_id": "usda:173674"
+     }
     },
     {
+     "evidence_id": "usda:171994",
+     "source": "usda",
      "fdc_id": 171994,
      "description": "Fish, mackerel, Pacific and jack, mixed species, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_e": 1.25,
       "sugar": 0.0,
@@ -2557,16 +3028,27 @@
       "zinc": 0.86,
       "monounsaturated_fat": 3.37,
       "polyunsaturated_fat": 2.49
-     },
-     "evidence_id": "usda:171994"
+     }
     }
-   ]
+   ],
+   "raw": 6,
+   "unresolved": [],
+   "mechanically_refused": {
+    "usda:175119": "cooking_state_conflicts_with_the_request",
+    "usda:175122": "cooking_state_conflicts_with_the_request",
+    "usda:173673": "cooking_state_conflicts_with_the_request",
+    "usda:173635": "mechanical_base_food_mismatch",
+    "usda:172395": "mechanical_base_food_mismatch"
+   }
   },
   "mushrooms|": {
    "candidates": [
     {
+     "evidence_id": "usda:170097",
+     "source": "usda",
      "fdc_id": 170097,
      "description": "Mushrooms, shiitake, cooked, with salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "trans_fat": 0.0,
       "saturated_fat": 0.05,
@@ -2597,12 +3079,14 @@
       "folate": 21.0,
       "vitamin_b12": 0.0,
       "cholesterol": 0.0
-     },
-     "evidence_id": "usda:170097"
+     }
     },
     {
+     "evidence_id": "usda:168437",
+     "source": "usda",
      "fdc_id": 168437,
      "description": "Mushrooms, shiitake, cooked, without salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "trans_fat": 0.0,
       "carbs": 14.4,
@@ -2633,12 +3117,14 @@
       "saturated_fat": 0.05,
       "monounsaturated_fat": 0.07,
       "polyunsaturated_fat": 0.034
-     },
-     "evidence_id": "usda:168437"
+     }
     },
     {
+     "evidence_id": "usda:168537",
+     "source": "usda",
      "fdc_id": 168537,
      "description": "Mushrooms, white, cooked, boiled, drained, with salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "trans_fat": 0.0,
       "fiber": 2.2,
@@ -2669,12 +3155,14 @@
       "vitamin_d": 0.2,
       "vitamin_a": 0.0,
       "saturated_fat": 0.061
-     },
-     "evidence_id": "usda:168537"
+     }
     },
     {
+     "evidence_id": "usda:169252",
+     "source": "usda",
      "fdc_id": 169252,
      "description": "Mushrooms, white, cooked, boiled, drained, without salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "trans_fat": 0.0,
       "vitamin_k": 0.0,
@@ -2705,16 +3193,20 @@
       "saturated_fat": 0.061,
       "vitamin_d": 0.2,
       "vitamin_a": 0.0
-     },
-     "evidence_id": "usda:169252"
+     }
     }
-   ]
+   ],
+   "raw": 4,
+   "unresolved": []
   },
   "mushrooms|grilled": {
    "candidates": [
     {
+     "evidence_id": "usda:169243",
+     "source": "usda",
      "fdc_id": 169243,
      "description": "Mushrooms, portabella, grilled",
+     "data_type": "SR Legacy",
      "per100g": {
       "folate": 19.0,
       "vitamin_b12": 0.0,
@@ -2745,12 +3237,14 @@
       "vitamin_a": 0.0,
       "protein": 3.28,
       "vitamin_d": 0.3
-     },
-     "evidence_id": "usda:169243"
+     }
     },
     {
+     "evidence_id": "usda:169377",
+     "source": "usda",
      "fdc_id": 169377,
      "description": "Mushrooms, portabella, exposed to ultraviolet light, grilled",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_c": 0.0,
       "vitamin_k": 0.0,
@@ -2778,16 +3272,26 @@
       "niacin": 6.26,
       "vitamin_b6": 0.122,
       "fat": 0.58
-     },
-     "evidence_id": "usda:169377"
+     }
     }
-   ]
+   ],
+   "raw": 4,
+   "unresolved": [],
+   "mechanically_refused": {
+    "usda:173877": "mechanical_base_food_mismatch",
+    "usda:171634": "mechanical_base_food_mismatch",
+    "usda:168537": "cooking_medium_conflicts_with_the_request",
+    "usda:169252": "cooking_medium_conflicts_with_the_request"
+   }
   },
   "oats|": {
    "candidates": [
     {
+     "evidence_id": "usda:173905",
+     "source": "usda",
      "fdc_id": 173905,
      "description": "Cereals, oats, regular and quick, unenriched, cooked with water (includes boiling and microwaving), without salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 0.0,
       "vitamin_c": 0.0,
@@ -2818,12 +3322,14 @@
       "polyunsaturated_fat": 0.559,
       "trans_fat": 0.001,
       "saturated_fat": 0.31
-     },
-     "evidence_id": "usda:173905"
+     }
     },
     {
+     "evidence_id": "usda:171675",
+     "source": "usda",
      "fdc_id": 171675,
      "description": "Cereals, oats, regular and quick and instant, unenriched, cooked with water (includes boiling and microwaving), with salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 2.54,
       "fiber": 1.7,
@@ -2853,16 +3359,20 @@
       "fat": 1.52,
       "carbs": 12.0,
       "calories": 71.0
-     },
-     "evidence_id": "usda:171675"
+     }
     }
-   ]
+   ],
+   "raw": 10,
+   "unresolved": []
   },
   "potato|": {
    "candidates": [
     {
+     "evidence_id": "usda:170114",
+     "source": "usda",
      "fdc_id": 170114,
      "description": "Potatoes, boiled, cooked in skin, flesh, with salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "carbs": 20.1,
       "calories": 87.0,
@@ -2893,12 +3403,14 @@
       "trans_fat": 0.0,
       "sugar": 0.91,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:170114"
+     }
     },
     {
+     "evidence_id": "usda:170522",
+     "source": "usda",
      "fdc_id": 170522,
      "description": "Potatoes, microwaved, cooked in skin, flesh, with salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 1.6,
       "vitamin_a": 0.0,
@@ -2926,12 +3438,14 @@
       "niacin": 1.62,
       "vitamin_b6": 0.319,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:170522"
+     }
     },
     {
+     "evidence_id": "usda:170115",
+     "source": "usda",
      "fdc_id": 170115,
      "description": "Potatoes, microwaved, cooked, in skin, skin with salt",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 5.5,
       "carbs": 29.6,
@@ -2959,16 +3473,20 @@
       "saturated_fat": 0.026,
       "cholesterol": 0.0,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:170115"
+     }
     }
-   ]
+   ],
+   "raw": 15,
+   "unresolved": []
   },
   "potato|fried": {
    "candidates": [
     {
+     "evidence_id": "usda:170698",
+     "source": "usda",
      "fdc_id": 170698,
      "description": "Fast foods, potato, french fried in vegetable oil",
+     "data_type": "SR Legacy",
      "per100g": {
       "folate": 30.0,
       "vitamin_a": 0.0,
@@ -2999,16 +3517,29 @@
       "monounsaturated_fat": 5.97,
       "polyunsaturated_fat": 5.4,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:170698"
+     }
     }
-   ]
+   ],
+   "raw": 8,
+   "unresolved": [],
+   "mechanically_refused": {
+    "usda:173423": "mechanical_base_food_mismatch",
+    "usda:168383": "mechanical_base_food_mismatch",
+    "usda:173878": "mechanical_base_food_mismatch",
+    "usda:174879": "mechanical_base_food_mismatch",
+    "usda:171058": "mechanical_base_food_mismatch",
+    "usda:174187": "mechanical_base_food_mismatch",
+    "usda:171957": "mechanical_base_food_mismatch"
+   }
   },
   "rice|": {
    "candidates": [
     {
+     "evidence_id": "usda:169711",
+     "source": "usda",
      "fdc_id": 169711,
      "description": "Rice, white, glutinous, unenriched, cooked",
+     "data_type": "SR Legacy",
      "per100g": {
       "sugar": 0.05,
       "vitamin_e": 0.04,
@@ -3038,12 +3569,14 @@
       "vitamin_b12": 0.0,
       "vitamin_d": 0.0,
       "vitamin_a": 0.0
-     },
-     "evidence_id": "usda:169711"
+     }
     },
     {
+     "evidence_id": "usda:173263",
+     "source": "usda",
      "fdc_id": 173263,
      "description": "Rice, brown, parboiled, cooked, UNCLE BENS",
+     "data_type": "SR Legacy",
      "per100g": {
       "fat": 0.85,
       "carbs": 31.3,
@@ -3069,12 +3602,14 @@
       "saturated_fat": 0.213,
       "protein": 3.09,
       "calories": 147
-     },
-     "evidence_id": "usda:173263"
+     }
     },
     {
+     "evidence_id": "usda:168930",
+     "source": "usda",
      "fdc_id": 168930,
      "description": "Rice, white, medium-grain, cooked, unenriched",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 0.0,
       "fat": 0.21,
@@ -3100,12 +3635,14 @@
       "cholesterol": 0.0,
       "saturated_fat": 0.057,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:168930"
+     }
     },
     {
+     "evidence_id": "usda:168880",
+     "source": "usda",
      "fdc_id": 168880,
      "description": "Rice, white, medium-grain, enriched, cooked",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 0.0,
       "folate": 58.0,
@@ -3132,12 +3669,14 @@
       "thiamin": 0.167,
       "riboflavin": 0.016,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:168880"
+     }
     },
     {
+     "evidence_id": "usda:168932",
+     "source": "usda",
      "fdc_id": 168932,
      "description": "Rice, white, short-grain, cooked, unenriched",
+     "data_type": "SR Legacy",
      "per100g": {
       "fat": 0.19,
       "carbs": 28.7,
@@ -3162,16 +3701,20 @@
       "saturated_fat": 0.051,
       "protein": 2.36,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:168932"
+     }
     }
-   ]
+   ],
+   "raw": 16,
+   "unresolved": []
   },
   "salmon|": {
    "candidates": [
     {
+     "evidence_id": "usda:173688",
+     "source": "usda",
      "fdc_id": 173688,
      "description": "Fish, salmon, chinook, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_e": 1.22,
       "fat": 10.4,
@@ -3199,12 +3742,51 @@
       "folate": 30.0,
       "carbs": 0.0,
       "vitamin_b6": 0.4
-     },
-     "evidence_id": "usda:173688"
+     }
     },
     {
+     "evidence_id": "usda:173687",
+     "source": "usda",
+     "fdc_id": 173687,
+     "description": "Fish, salmon, chinook, smoked",
+     "data_type": "SR Legacy",
+     "per100g": {
+      "sugar": 0.0,
+      "vitamin_k": 0.1,
+      "vitamin_a": 26.0,
+      "vitamin_d": 17.1,
+      "vitamin_e": 1.35,
+      "sodium": 672,
+      "niacin": 4.72,
+      "vitamin_b6": 0.278,
+      "calcium": 11.0,
+      "potassium": 175,
+      "zinc": 0.31,
+      "monounsaturated_fat": 2.02,
+      "polyunsaturated_fat": 0.995,
+      "fat": 4.32,
+      "carbs": 0.0,
+      "calories": 117,
+      "protein": 18.3,
+      "fiber": 0.0,
+      "iron": 0.85,
+      "magnesium": 18.0,
+      "phosphorus": 164,
+      "cholesterol": 23.0,
+      "saturated_fat": 0.929,
+      "vitamin_c": 0.0,
+      "thiamin": 0.023,
+      "riboflavin": 0.101,
+      "folate": 2.0,
+      "vitamin_b12": 3.26
+     }
+    },
+    {
+     "evidence_id": "usda:173689",
+     "source": "usda",
      "fdc_id": 173689,
      "description": "Fish, salmon, chum, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_e": 1.09,
       "vitamin_a": 30.0,
@@ -3231,12 +3813,14 @@
       "vitamin_b12": 3.0,
       "cholesterol": 74.0,
       "saturated_fat": 0.84
-     },
-     "evidence_id": "usda:173689"
+     }
     },
     {
+     "evidence_id": "usda:175138",
+     "source": "usda",
      "fdc_id": 175138,
      "description": "Fish, salmon, pink, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_k": 0.4,
       "sugar": 0.0,
@@ -3267,12 +3851,14 @@
       "vitamin_c": 0.0,
       "fiber": 0.0,
       "folate": 4.0
-     },
-     "evidence_id": "usda:175138"
+     }
     },
     {
+     "evidence_id": "usda:173691",
+     "source": "usda",
      "fdc_id": 173691,
      "description": "Fish, salmon, sockeye, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_k": 0.1,
       "vitamin_c": 0.0,
@@ -3303,12 +3889,14 @@
       "calories": 131,
       "carbs": 0.0,
       "fiber": 0.0
-     },
-     "evidence_id": "usda:173691"
+     }
     },
     {
+     "evidence_id": "usda:175167",
+     "source": "usda",
      "fdc_id": 175167,
      "description": "Fish, salmon, Atlantic, farmed, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "monounsaturated_fat": 3.77,
       "polyunsaturated_fat": 3.89,
@@ -3338,12 +3926,14 @@
       "vitamin_c": 3.9,
       "folate": 26.0,
       "carbs": 0.0
-     },
-     "evidence_id": "usda:175167"
+     }
     },
     {
+     "evidence_id": "usda:173686",
+     "source": "usda",
      "fdc_id": 173686,
      "description": "Fish, salmon, Atlantic, wild, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 12.0,
       "vitamin_c": 0.0,
@@ -3369,12 +3959,14 @@
       "polyunsaturated_fat": 2.54,
       "niacin": 7.86,
       "vitamin_b6": 0.818
-     },
-     "evidence_id": "usda:173686"
+     }
     },
     {
+     "evidence_id": "usda:171999",
+     "source": "usda",
      "fdc_id": 171999,
      "description": "Fish, salmon, chinook, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 149,
       "fat": 13.4,
@@ -3400,12 +3992,14 @@
       "sodium": 60.0,
       "cholesterol": 85.0,
       "saturated_fat": 3.21
-     },
-     "evidence_id": "usda:171999"
+     }
     },
     {
+     "evidence_id": "usda:172000",
+     "source": "usda",
      "fdc_id": 172000,
      "description": "Fish, salmon, chum, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 34.0,
       "protein": 25.8,
@@ -3431,12 +4025,14 @@
       "vitamin_b6": 0.462,
       "monounsaturated_fat": 1.98,
       "polyunsaturated_fat": 1.15
-     },
-     "evidence_id": "usda:172000"
+     }
     },
     {
+     "evidence_id": "usda:172001",
+     "source": "usda",
      "fdc_id": 172001,
      "description": "Fish, salmon, pink, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 24.6,
       "fiber": 0.0,
@@ -3467,12 +4063,14 @@
       "vitamin_b6": 0.696,
       "monounsaturated_fat": 1.62,
       "polyunsaturated_fat": 0.973
-     },
-     "evidence_id": "usda:172001"
+     }
     },
     {
+     "evidence_id": "usda:173692",
+     "source": "usda",
      "fdc_id": 173692,
      "description": "Fish, salmon, sockeye, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "carbs": 0.0,
       "sugar": 0.0,
@@ -3503,12 +4101,14 @@
       "cholesterol": 61.0,
       "trans_fat": 0.023,
       "saturated_fat": 0.969
-     },
-     "evidence_id": "usda:173692"
+     }
     },
     {
+     "evidence_id": "usda:175168",
+     "source": "usda",
      "fdc_id": 175168,
      "description": "Fish, salmon, Atlantic, farmed, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "calcium": 15.0,
       "sugar": 0.0,
@@ -3538,12 +4138,14 @@
       "phosphorus": 252,
       "sodium": 61.0,
       "calories": 206
-     },
-     "evidence_id": "usda:175168"
+     }
     },
     {
+     "evidence_id": "usda:171998",
+     "source": "usda",
      "fdc_id": 171998,
      "description": "Fish, salmon, Atlantic, wild, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 13.0,
       "protein": 25.4,
@@ -3569,12 +4171,14 @@
       "vitamin_b6": 0.944,
       "monounsaturated_fat": 2.7,
       "polyunsaturated_fat": 3.26
-     },
-     "evidence_id": "usda:171998"
+     }
     },
     {
+     "evidence_id": "usda:173716",
+     "source": "usda",
      "fdc_id": 173716,
      "description": "Fish, salmon, coho, farmed, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "vitamin_a": 59.0,
       "fat": 8.23,
@@ -3600,16 +4204,20 @@
       "protein": 24.3,
       "cholesterol": 63.0,
       "saturated_fat": 1.94
-     },
-     "evidence_id": "usda:173716"
+     }
     }
-   ]
+   ],
+   "raw": 16,
+   "unresolved": []
   },
   "shrimp|": {
    "candidates": [
     {
+     "evidence_id": "usda:175180",
+     "source": "usda",
      "fdc_id": 175180,
      "description": "Crustaceans, shrimp, cooked",
+     "data_type": "SR Legacy",
      "per100g": {
       "protein": 24.0,
       "iron": 0.51,
@@ -3627,12 +4235,14 @@
       "zinc": 1.64,
       "monounsaturated_fat": 0.048,
       "polyunsaturated_fat": 0.079
-     },
-     "evidence_id": "usda:175180"
+     }
     },
     {
+     "evidence_id": "usda:175179",
+     "source": "usda",
      "fdc_id": 175179,
      "description": "Crustaceans, shrimp, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "fat": 0.51,
       "carbs": 0.0,
@@ -3650,12 +4260,14 @@
       "cholesterol": 161,
       "trans_fat": 0.004,
       "saturated_fat": 0.101
-     },
-     "evidence_id": "usda:175179"
+     }
     },
     {
+     "evidence_id": "usda:171972",
+     "source": "usda",
      "fdc_id": 171972,
      "description": "Crustaceans, shrimp, mixed species, canned",
+     "data_type": "SR Legacy",
      "per100g": {
       "sugar": 0.0,
       "vitamin_c": 4.1,
@@ -3685,16 +4297,58 @@
       "calories": 100,
       "sodium": 870,
       "fiber": 0.0
-     },
-     "evidence_id": "usda:171972"
+     }
+    },
+    {
+     "evidence_id": "usda:171971",
+     "source": "usda",
+     "fdc_id": 171971,
+     "description": "Crustaceans, shrimp, mixed species, cooked, moist heat (may contain additives to retain moisture)",
+     "data_type": "SR Legacy",
+     "per100g": {
+      "trans_fat": 0.035,
+      "saturated_fat": 0.521,
+      "monounsaturated_fat": 0.361,
+      "polyunsaturated_fat": 0.59,
+      "protein": 22.8,
+      "fiber": 0.0,
+      "iron": 0.32,
+      "magnesium": 37.0,
+      "phosphorus": 306,
+      "sodium": 947,
+      "vitamin_a": 90.0,
+      "vitamin_d": 0.1,
+      "vitamin_c": 0.0,
+      "thiamin": 0.032,
+      "riboflavin": 0.024,
+      "folate": 24.0,
+      "vitamin_b12": 1.66,
+      "vitamin_k": 0.4,
+      "cholesterol": 211,
+      "vitamin_e": 2.2,
+      "niacin": 2.68,
+      "vitamin_b6": 0.242,
+      "fat": 1.7,
+      "carbs": 1.52,
+      "calories": 119,
+      "sugar": 0.0,
+      "calcium": 91.0,
+      "potassium": 170,
+      "zinc": 1.63
+     }
     }
-   ]
+   ],
+   "raw": 9,
+   "unresolved": []
   },
   "tilapia|": {
    "candidates": [
     {
+     "evidence_id": "usda:175176",
+     "source": "usda",
      "fdc_id": 175176,
      "description": "Fish, tilapia, raw",
+     "data_type": "SR Legacy",
      "per100g": {
       "calcium": 10.0,
       "potassium": 302,
@@ -3724,12 +4378,14 @@
       "saturated_fat": 0.585,
       "monounsaturated_fat": 0.498,
       "polyunsaturated_fat": 0.363
-     },
-     "evidence_id": "usda:175176"
+     }
     },
     {
+     "evidence_id": "usda:175177",
+     "source": "usda",
      "fdc_id": 175177,
      "description": "Fish, tilapia, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "cholesterol": 57.0,
       "saturated_fat": 0.94,
@@ -3759,16 +4415,27 @@
       "monounsaturated_fat": 0.955,
       "polyunsaturated_fat": 0.6,
       "vitamin_d": 3.7
-     },
-     "evidence_id": "usda:175177"
+     }
     }
-   ]
+   ],
+   "raw": 2,
+   "unresolved": [],
+   "mechanically_refused": {
+    "usda:170287": "mechanical_base_food_mismatch",
+    "usda:169700": "mechanical_base_food_mismatch",
+    "usda:168871": "mechanical_base_food_mismatch",
+    "usda:168917": "mechanical_base_food_mismatch",
+    "usda:169746": "mechanical_base_food_mismatch"
+   }
   },
   "tilapia|roasted": {
    "candidates": [
     {
+     "evidence_id": "usda:175177",
+     "source": "usda",
      "fdc_id": 175177,
      "description": "Fish, tilapia, cooked, dry heat",
+     "data_type": "SR Legacy",
      "per100g": {
       "cholesterol": 57.0,
       "saturated_fat": 0.94,
@@ -3798,16 +4465,32 @@
       "monounsaturated_fat": 0.955,
       "polyunsaturated_fat": 0.6,
       "vitamin_d": 3.7
-     },
-     "evidence_id": "usda:175177"
+     }
     }
-   ]
+   ],
+   "raw": 1,
+   "unresolved": [],
+   "mechanically_refused": {
+    "usda:173635": "mechanical_base_food_mismatch",
+    "usda:172395": "mechanical_base_food_mismatch",
+    "usda:175176": "cooking_state_conflicts_with_the_request",
+    "usda:170686": "mechanical_base_food_mismatch",
+    "usda:167634": "mechanical_base_food_mismatch",
+    "usda:172397": "mechanical_base_food_mismatch",
+    "usda:173844": "mechanical_base_food_mismatch",
+    "usda:174597": "mechanical_base_food_mismatch",
+    "usda:173639": "mechanical_base_food_mismatch",
+    "usda:173637": "mechanical_base_food_mismatch"
+   }
   },
   "tofu|": {
    "candidates": [
     {
+     "evidence_id": "usda:172451",
+     "source": "usda",
      "fdc_id": 172451,
      "description": "Tofu, fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "sugar": 2.72,
       "vitamin_e": 0.04,
@@ -3838,12 +4521,14 @@
       "folate": 27.0,
       "vitamin_b12": 0.0,
       "saturated_fat": 2.92
-     },
-     "evidence_id": "usda:172451"
+     }
     },
     {
+     "evidence_id": "usda:174291",
+     "source": "usda",
      "fdc_id": 174291,
      "description": "Tofu, hard, prepared with nigari",
+     "data_type": "SR Legacy",
      "per100g": {
       "trans_fat": 0.0,
       "carbs": 4.39,
@@ -3870,12 +4555,14 @@
       "polyunsaturated_fat": 5.64,
       "fat": 9.99,
       "vitamin_d": 0.0
-     },
-     "evidence_id": "usda:174291"
+     }
     },
     {
+     "evidence_id": "usda:173788",
+     "source": "usda",
      "fdc_id": 173788,
      "description": "HOUSE FOODS Premium Firm Tofu",
+     "data_type": "SR Legacy",
      "per100g": {
       "fat": 4.19,
       "sugar": 0.4,
@@ -3892,12 +4579,14 @@
       "protein": 10.9,
       "carbs": 0.97,
       "calories": 85.0
-     },
-     "evidence_id": "usda:173788"
+     }
     },
     {
+     "evidence_id": "usda:173787",
+     "source": "usda",
      "fdc_id": 173787,
      "description": "HOUSE FOODS Premium Soft Tofu",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 0.8,
       "iron": 1.53,
@@ -3914,16 +4603,20 @@
       "carbs": 2.19,
       "calories": 59.0,
       "protein": 6.38
-     },
-     "evidence_id": "usda:173787"
+     }
     }
-   ]
+   ],
+   "raw": 8,
+   "unresolved": []
   },
   "tofu|fried": {
    "candidates": [
     {
+     "evidence_id": "usda:172451",
+     "source": "usda",
      "fdc_id": 172451,
      "description": "Tofu, fried",
+     "data_type": "SR Legacy",
      "per100g": {
       "sugar": 2.72,
       "vitamin_e": 0.04,
@@ -3954,12 +4647,14 @@
       "folate": 27.0,
       "vitamin_b12": 0.0,
       "saturated_fat": 2.92
-     },
-     "evidence_id": "usda:172451"
+     }
     },
     {
+     "evidence_id": "usda:174304",
+     "source": "usda",
      "fdc_id": 174304,
      "description": "Tofu, fried, prepared with calcium sulfate",
+     "data_type": "SR Legacy",
      "per100g": {
       "fiber": 3.9,
       "trans_fat": 0.0,
@@ -3986,10 +4681,18 @@
       "vitamin_b12": 0.0,
       "cholesterol": 0.0,
       "saturated_fat": 2.92
-     },
-     "evidence_id": "usda:174304"
+     }
     }
-   ]
+   ],
+   "raw": 8,
+   "unresolved": [],
+   "mechanically_refused": {
+    "usda:173423": "mechanical_base_food_mismatch",
+    "usda:168383": "mechanical_base_food_mismatch",
+    "usda:173878": "mechanical_base_food_mismatch",
+    "usda:174879": "mechanical_base_food_mismatch",
+    "usda:171058": "mechanical_base_food_mismatch"
+   }
   }
  },
  "removed_evidence": [
@@ -4018,7 +4721,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:9159da45cf7f09d8",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4031,7 +4734,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:1506881626a9fb43",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4044,7 +4747,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:6df253583631a2d5",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4057,7 +4760,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:ca1fef4027411fff",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4070,7 +4773,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:b73e479d4178ec51",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4083,7 +4786,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:87c9da026ec362d5",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4096,7 +4799,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:3a3d8fd291716a71",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4109,7 +4812,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:1b3e19f2663c18fb",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "asparagus|\u241fusda:171537": {
+    "identity_key": "asparagus|",
+    "evidence_id": "usda:171537",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:1e032321feebb1b8",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4122,7 +4838,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:8381c77d5eb03953",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "banana|\u241fusda:167629": {
+    "identity_key": "banana|",
+    "evidence_id": "usda:167629",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:bbed64c5c4ffb42f",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4140,6 +4869,45 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "banana|\u241fusda:168849": {
+    "identity_key": "banana|",
+    "evidence_id": "usda:168849",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:84519c07cfb43da3",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "banana|\u241fusda:169394": {
+    "identity_key": "banana|",
+    "evidence_id": "usda:169394",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:65a5135dc080a8a5",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "banana|\u241fusda:171351": {
+    "identity_key": "banana|",
+    "evidence_id": "usda:171351",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:dc9a12c94891c728",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "banana|\u241fusda:173944": {
     "identity_key": "banana|",
     "evidence_id": "usda:173944",
@@ -4148,7 +4916,59 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:3f36c425266b7d19",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "banana|\u241fusda:173945": {
+    "identity_key": "banana|",
+    "evidence_id": "usda:173945",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:09bdc21a3cd47c4e",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "beef|fried\u241fusda:168623": {
+    "identity_key": "beef|fried",
+    "evidence_id": "usda:168623",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:a9c5419053e32e9f",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "beef|fried\u241fusda:168627": {
+    "identity_key": "beef|fried",
+    "evidence_id": "usda:168627",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:f4c83b96b5303fbc",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "beef|fried\u241fusda:172935": {
+    "identity_key": "beef|fried",
+    "evidence_id": "usda:172935",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:4dcb8bc0dcfe9261",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4161,7 +4981,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:e3e8d4b292a80328",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4174,7 +4994,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:e3ffbb7ff8290d6f",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4187,7 +5007,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:2b1f7e25823b8f6d",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4200,7 +5020,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:ec9ff29633b24a4f",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4213,7 +5033,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:b37ce50e7645a492",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4226,7 +5046,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:3d60d69b6d1a9035",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4244,6 +5064,19 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "beef|grilled\u241fusda:170200": {
+    "identity_key": "beef|grilled",
+    "evidence_id": "usda:170200",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:3d88f0e4ecdaf327",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "beef|grilled\u241fusda:171785": {
     "identity_key": "beef|grilled",
     "evidence_id": "usda:171785",
@@ -4252,7 +5085,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:1c283bfb1ed54874",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4265,7 +5098,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:860e04fccbcfd119",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4283,6 +5116,32 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "beef|grilled\u241fusda:172936": {
+    "identity_key": "beef|grilled",
+    "evidence_id": "usda:172936",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:537fba5d4d176f48",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "beef|grilled\u241fusda:174618": {
+    "identity_key": "beef|grilled",
+    "evidence_id": "usda:174618",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:165e9960f61f4660",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "beef|grilled\u241fusda:174702": {
     "identity_key": "beef|grilled",
     "evidence_id": "usda:174702",
@@ -4291,7 +5150,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:5b79c5b5fb3d839c",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4304,7 +5163,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:22c3609e6d0b6654",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4317,7 +5176,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:88f630319aecb8d6",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4330,7 +5189,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:e4ed897cf200e6cd",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4343,7 +5202,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:0a9b5acdcf66fb1b",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "beef|roasted\u241fusda:170791": {
+    "identity_key": "beef|roasted",
+    "evidence_id": "usda:170791",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:74c27c048c1d6685",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4356,7 +5228,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:f789dfaf4d702805",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4369,7 +5241,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:82e35ba60e049c64",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4382,7 +5254,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:14653ecedccc2c89",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4452,6 +5324,45 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "beef|\u241fusda:170200": {
+    "identity_key": "beef|",
+    "evidence_id": "usda:170200",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:3d88f0e4ecdaf327",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "beef|\u241fusda:170602": {
+    "identity_key": "beef|",
+    "evidence_id": "usda:170602",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:15172c1d8374a875",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "beef|\u241fusda:170606": {
+    "identity_key": "beef|",
+    "evidence_id": "usda:170606",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:cf5dcd69e19a8ced",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "beef|\u241fusda:172012": {
     "identity_key": "beef|",
     "evidence_id": "usda:172012",
@@ -4504,6 +5415,19 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "beef|\u241fusda:173332": {
+    "identity_key": "beef|",
+    "evidence_id": "usda:173332",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:8ace05044a7d1a99",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "beef|\u241fusda:174579": {
     "identity_key": "beef|",
     "evidence_id": "usda:174579",
@@ -4538,7 +5462,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:c1548e94162c9c63",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4551,7 +5475,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:c50997f50193b2f9",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4564,7 +5488,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:e200f1f025cf31c8",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4577,7 +5501,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:d73b2aee0cf78a4e",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4590,7 +5514,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:4776b04cf27b0eeb",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4603,7 +5527,33 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:8e5ed4f338276f82",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "broccoli|\u241fusda:169392": {
+    "identity_key": "broccoli|",
+    "evidence_id": "usda:169392",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:fd70c6f0bb18fdea",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "broccoli|\u241fusda:169404": {
+    "identity_key": "broccoli|",
+    "evidence_id": "usda:169404",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:d8941c65a838db0f",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4616,7 +5566,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:80461a220e031b2f",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4629,7 +5579,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:38b721787447c36a",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4642,7 +5592,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:5b73664a173f9e3c",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4655,7 +5605,33 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:a88395da0edcdba7",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "broccoli|\u241fusda:170381": {
+    "identity_key": "broccoli|",
+    "evidence_id": "usda:170381",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:6d3283d414c03476",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "broccoli|\u241fusda:170382": {
+    "identity_key": "broccoli|",
+    "evidence_id": "usda:170382",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:6b70cae3bb2d8e4e",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4668,7 +5644,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:c2621c7fa6a1ef7f",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4707,7 +5683,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:dc7cd4159a3c0781",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4720,7 +5696,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:5cb370cdf6a9f0b8",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4772,7 +5748,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:c4cab6e11a07a43e",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4785,7 +5761,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:b8a8d16ca7bf761e",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4798,7 +5774,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:c9599a5421d64a0f",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4811,7 +5787,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:3eaa666ed681b296",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "chicken|fried\u241fusda:167719": {
+    "identity_key": "chicken|fried",
+    "evidence_id": "usda:167719",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:19c2df07d2389936",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4876,7 +5865,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:a7f9a673c3113b5b",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "chicken|fried\u241fusda:171058": {
+    "identity_key": "chicken|fried",
+    "evidence_id": "usda:171058",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:fb04871c2927b275",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4889,7 +5891,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:b45dd63cf02c9c7d",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4902,7 +5904,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:494ff0e0674d3f11",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4928,7 +5930,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:e89c3a2e489199b7",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4941,7 +5943,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:7e9282a7939a5928",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "chicken|fried\u241fusda:174491": {
+    "identity_key": "chicken|fried",
+    "evidence_id": "usda:174491",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:d8092cdbc3c50487",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4959,6 +5974,84 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "chicken|grilled\u241fusda:169857": {
+    "identity_key": "chicken|grilled",
+    "evidence_id": "usda:169857",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:b780376ebd15d64d",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "chicken|grilled\u241fusda:170368": {
+    "identity_key": "chicken|grilled",
+    "evidence_id": "usda:170368",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:46cb595a2253db99",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "chicken|grilled\u241fusda:170724": {
+    "identity_key": "chicken|grilled",
+    "evidence_id": "usda:170724",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:0475dda7bf2f7930",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "chicken|grilled\u241fusda:170752": {
+    "identity_key": "chicken|grilled",
+    "evidence_id": "usda:170752",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:259214a27ae23bf5",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "chicken|grilled\u241fusda:170786": {
+    "identity_key": "chicken|grilled",
+    "evidence_id": "usda:170786",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:684cfa38a863a201",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "chicken|grilled\u241fusda:171513": {
+    "identity_key": "chicken|grilled",
+    "evidence_id": "usda:171513",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:31c81e5dbf814461",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "chicken|grilled\u241fusda:171534": {
     "identity_key": "chicken|grilled",
     "evidence_id": "usda:171534",
@@ -4967,7 +6060,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:3a0325c893d70475",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -4998,6 +6091,19 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "chicken|grilled\u241fusda:173312": {
+    "identity_key": "chicken|grilled",
+    "evidence_id": "usda:173312",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:0a967eec940708c4",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "chicken|roasted\u241fusda:172395": {
     "identity_key": "chicken|roasted",
     "evidence_id": "usda:172395",
@@ -5006,7 +6112,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:8a6684ad99088f4d",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "chicken|roasted\u241fusda:173633": {
+    "identity_key": "chicken|roasted",
+    "evidence_id": "usda:173633",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:cadb2067db0b589e",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5019,7 +6138,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:fdb960597fb518a9",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5032,7 +6151,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:21c60f38f0558b93",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5045,7 +6164,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:8da6b5a02730f4a1",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5061,6 +6180,32 @@
     "source_fingerprint": "",
     "created_at": "",
     "review_status": "baseline_reviewed",
+    "invalidation_reason": ""
+   },
+   "chicken|roasted\u241fusda:174496": {
+    "identity_key": "chicken|roasted",
+    "evidence_id": "usda:174496",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:0c2dd6b218174c99",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "chicken|roasted\u241fusda:174608": {
+    "identity_key": "chicken|roasted",
+    "evidence_id": "usda:174608",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:32902139a072ffe3",
+    "created_at": "",
+    "review_status": "unreviewed",
     "invalidation_reason": ""
    },
    "coconut oil|\u241fusda:171412": {
@@ -5162,7 +6307,46 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:846ad465374fda15",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "egg|\u241fusda:168901": {
+    "identity_key": "egg|",
+    "evidence_id": "usda:168901",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:46e900c00ab11880",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "egg|\u241fusda:169732": {
+    "identity_key": "egg|",
+    "evidence_id": "usda:169732",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:7c0fc1786de3a615",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "egg|\u241fusda:169734": {
+    "identity_key": "egg|",
+    "evidence_id": "usda:169734",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:cdce693c07fb26fe",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5188,7 +6372,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:b62c7e572e4625f3",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5253,7 +6437,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:846ad465374fda15",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5266,7 +6450,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:c57dcf6a0e914ae9",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "egg|\u241fusda:173429": {
+    "identity_key": "egg|",
+    "evidence_id": "usda:173429",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:fa5c74c4e3cb4eef",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5284,6 +6481,32 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "egg|\u241fusda:747997": {
+    "identity_key": "egg|",
+    "evidence_id": "usda:747997",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:2b314dbe3473d254",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "egg|\u241fusda:748236": {
+    "identity_key": "egg|",
+    "evidence_id": "usda:748236",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:98f4589a3bdcc865",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "egg|\u241fusda:748967": {
     "identity_key": "egg|",
     "evidence_id": "usda:748967",
@@ -5292,7 +6515,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:79d551d1cb320be9",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "mackerel|roasted\u241fusda:168149": {
+    "identity_key": "mackerel|roasted",
+    "evidence_id": "usda:168149",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:cdbf2ff10e29ec9f",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5349,6 +6585,19 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "mackerel|roasted\u241fusda:175121": {
+    "identity_key": "mackerel|roasted",
+    "evidence_id": "usda:175121",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:6ce98bbaf37a3c54",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "mackerel|\u241fusda:168149": {
     "identity_key": "mackerel|",
     "evidence_id": "usda:168149",
@@ -5370,7 +6619,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:73dff2cde9b2022a",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5383,7 +6632,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:2025425efb6dec23",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5396,7 +6645,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:a17264eb5c02bb25",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5409,7 +6658,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:070bf87271b0bea6",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5422,7 +6671,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:b702720d2d87494d",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5435,7 +6684,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:f15e795df229e304",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "mackerel|\u241fusda:175121": {
+    "identity_key": "mackerel|",
+    "evidence_id": "usda:175121",
+    "relationship": "SAME_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:6ce98bbaf37a3c54",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5448,7 +6710,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:05ca332514154f02",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5492,6 +6754,19 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "mushrooms|grilled\u241fusda:168437": {
+    "identity_key": "mushrooms|grilled",
+    "evidence_id": "usda:168437",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:1fc6c3885ab04304",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "mushrooms|grilled\u241fusda:169243": {
     "identity_key": "mushrooms|grilled",
     "evidence_id": "usda:169243",
@@ -5500,7 +6775,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:1cc180208931207e",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5518,6 +6793,19 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "mushrooms|grilled\u241fusda:170097": {
+    "identity_key": "mushrooms|grilled",
+    "evidence_id": "usda:170097",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:83b7169464e80a06",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "mushrooms|\u241fusda:168437": {
     "identity_key": "mushrooms|",
     "evidence_id": "usda:168437",
@@ -5526,7 +6814,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:1fc6c3885ab04304",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5539,7 +6827,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:4e6164e2b6a5be49",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5552,7 +6840,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:d8131ff3b8a76c7e",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5565,7 +6853,33 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:83b7169464e80a06",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "oats|\u241fusda:168872": {
+    "identity_key": "oats|",
+    "evidence_id": "usda:168872",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:26869bd288ff6b57",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "oats|\u241fusda:168873": {
+    "identity_key": "oats|",
+    "evidence_id": "usda:168873",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:50bc811105e30873",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5578,7 +6892,72 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:e78c25097200fd1f",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "oats|\u241fusda:172666": {
+    "identity_key": "oats|",
+    "evidence_id": "usda:172666",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:8c84af8cc95b4b8f",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "oats|\u241fusda:172676": {
+    "identity_key": "oats|",
+    "evidence_id": "usda:172676",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:fabfe1350b197b84",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "oats|\u241fusda:172677": {
+    "identity_key": "oats|",
+    "evidence_id": "usda:172677",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:de8082906405a4af",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "oats|\u241fusda:172769": {
+    "identity_key": "oats|",
+    "evidence_id": "usda:172769",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:8c22230400bbbb98",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "oats|\u241fusda:173576": {
+    "identity_key": "oats|",
+    "evidence_id": "usda:173576",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:4fbd644618bce404",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5591,7 +6970,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:151b051a47b45d39",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "oats|\u241fusda:174626": {
+    "identity_key": "oats|",
+    "evidence_id": "usda:174626",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:44b55ec5d16ec70e",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5607,6 +6999,84 @@
     "source_fingerprint": "",
     "created_at": "",
     "review_status": "baseline_reviewed",
+    "invalidation_reason": ""
+   },
+   "potato|fried\u241fusda:168015": {
+    "identity_key": "potato|fried",
+    "evidence_id": "usda:168015",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:4563b94ca8bd5ddd",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "potato|fried\u241fusda:168444": {
+    "identity_key": "potato|fried",
+    "evidence_id": "usda:168444",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:9e34b383ce6309b8",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "potato|fried\u241fusda:168445": {
+    "identity_key": "potato|fried",
+    "evidence_id": "usda:168445",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:d379d54e573397f0",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "potato|fried\u241fusda:168946": {
+    "identity_key": "potato|fried",
+    "evidence_id": "usda:168946",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:6761b7c89ef5d0a8",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "potato|fried\u241fusda:168948": {
+    "identity_key": "potato|fried",
+    "evidence_id": "usda:168948",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:73b5d32d5453f544",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "potato|fried\u241fusda:169267": {
+    "identity_key": "potato|fried",
+    "evidence_id": "usda:169267",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:f6219bcc59761e8f",
+    "created_at": "",
+    "review_status": "unreviewed",
     "invalidation_reason": ""
    },
    "potato|fried\u241fusda:169764": {
@@ -5630,7 +7100,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:c75efb4f6589040b",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5700,6 +7170,19 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "potato|\u241fusda:170032": {
+    "identity_key": "potato|",
+    "evidence_id": "usda:170032",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 1.0,
+    "resolver_model": "human:phase_0.9b_delta_review",
+    "resolver_version": "part_of_food_not_the_food",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:5b6db425af549839",
+    "created_at": "",
+    "review_status": "baseline_reviewed",
+    "invalidation_reason": ""
+   },
    "potato|\u241fusda:170088": {
     "identity_key": "potato|",
     "evidence_id": "usda:170088",
@@ -5734,7 +7217,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:a76d4dfb64478ddd",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5765,6 +7248,19 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "potato|\u241fusda:170519": {
+    "identity_key": "potato|",
+    "evidence_id": "usda:170519",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:c4e2053c00ff258e",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "potato|\u241fusda:170522": {
     "identity_key": "potato|",
     "evidence_id": "usda:170522",
@@ -5773,7 +7269,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:ada76dc7c3675fe7",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "potato|\u241fusda:170542": {
+    "identity_key": "potato|",
+    "evidence_id": "usda:170542",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:e59e2b7b8cdb38a0",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5791,6 +7300,58 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "potato|\u241fusda:173508": {
+    "identity_key": "potato|",
+    "evidence_id": "usda:173508",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:ee6c78e3d660fbb2",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "rice|\u241fusda:167966": {
+    "identity_key": "rice|",
+    "evidence_id": "usda:167966",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:437a80dc515ac056",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "rice|\u241fusda:167967": {
+    "identity_key": "rice|",
+    "evidence_id": "usda:167967",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:1607e6fd94699acb",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "rice|\u241fusda:168855": {
+    "identity_key": "rice|",
+    "evidence_id": "usda:168855",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:57e5c66e74ec4648",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "rice|\u241fusda:168880": {
     "identity_key": "rice|",
     "evidence_id": "usda:168880",
@@ -5799,7 +7360,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:a8f5ab49ff2a3ee1",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5838,7 +7399,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:ef43bfb1e2985e41",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5851,7 +7412,46 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:e6c91c91bc666afb",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "rice|\u241fusda:168951": {
+    "identity_key": "rice|",
+    "evidence_id": "usda:168951",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:4284dd0308fb73ab",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "rice|\u241fusda:169679": {
+    "identity_key": "rice|",
+    "evidence_id": "usda:169679",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:74e19091021e0487",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "rice|\u241fusda:169680": {
+    "identity_key": "rice|",
+    "evidence_id": "usda:169680",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:05964c7f8bc84585",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5864,7 +7464,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:9ea9cda089b4fd01",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "rice|\u241fusda:170251": {
+    "identity_key": "rice|",
+    "evidence_id": "usda:170251",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:89b4549b306d4f76",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5890,7 +7503,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:4632bb1091d3448a",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "rice|\u241fusda:173914": {
+    "identity_key": "rice|",
+    "evidence_id": "usda:173914",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:6f5cbc5e42af32c5",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5981,7 +7607,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:9f6ccb0dcd27adf7",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -5994,7 +7620,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:2e5ad9eda8b401fc",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6007,7 +7633,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:0207a78438c108c7",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6020,7 +7646,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:df9d1412c7607e99",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6046,7 +7672,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:831ecfb630a40448",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6072,7 +7698,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:fdeb9c947ee6fb3e",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6085,7 +7711,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:63cf585011586d10",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6098,7 +7724,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:aa4d072da209f89b",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6111,7 +7737,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:fbc2ae8e1f7312ec",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6124,7 +7750,20 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:dc75a428d17e37a5",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "salmon|\u241fusda:173722": {
+    "identity_key": "salmon|",
+    "evidence_id": "usda:173722",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:96648fa1ab28c839",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6137,7 +7776,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:7f770c27222b1988",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6150,7 +7789,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:c895827966718ce6",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6163,7 +7802,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:7e39ad244f88c03c",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6192,6 +7831,45 @@
     "source_fingerprint": "",
     "created_at": "",
     "review_status": "baseline_reviewed",
+    "invalidation_reason": ""
+   },
+   "shrimp|\u241fusda:168077": {
+    "identity_key": "shrimp|",
+    "evidence_id": "usda:168077",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:3552007c227edf87",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "shrimp|\u241fusda:168080": {
+    "identity_key": "shrimp|",
+    "evidence_id": "usda:168080",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:7aaaa3522187cb95",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "shrimp|\u241fusda:169008": {
+    "identity_key": "shrimp|",
+    "evidence_id": "usda:169008",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:f274f056d9ca3cd1",
+    "created_at": "",
+    "review_status": "unreviewed",
     "invalidation_reason": ""
    },
    "shrimp|\u241fusda:171970": {
@@ -6233,6 +7911,19 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
+   "shrimp|\u241fusda:173160": {
+    "identity_key": "shrimp|",
+    "evidence_id": "usda:173160",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:2d0f5e4a587bbe32",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
    "shrimp|\u241fusda:175179": {
     "identity_key": "shrimp|",
     "evidence_id": "usda:175179",
@@ -6241,7 +7932,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:db19de980eb4ac66",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6254,7 +7945,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:2ecbf34c87f328a4",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6306,7 +7997,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:681de7b88504cf40",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6319,7 +8010,46 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:1b63f5ecd1aa723f",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "tofu|fried\u241fusda:167695": {
+    "identity_key": "tofu|fried",
+    "evidence_id": "usda:167695",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:44aac1cddd62fcf6",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "tofu|fried\u241fusda:167722": {
+    "identity_key": "tofu|fried",
+    "evidence_id": "usda:167722",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:bc300ebcc169202e",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "tofu|fried\u241fusda:172450": {
+    "identity_key": "tofu|fried",
+    "evidence_id": "usda:172450",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:be27691314c0993b",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6332,7 +8062,46 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:6a7f4d5ee878ace3",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "tofu|fried\u241fusda:173788": {
+    "identity_key": "tofu|fried",
+    "evidence_id": "usda:173788",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:c4167bb16d5a7067",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "tofu|fried\u241fusda:174280": {
+    "identity_key": "tofu|fried",
+    "evidence_id": "usda:174280",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:a2cc31f30e307ac5",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "tofu|fried\u241fusda:174291": {
+    "identity_key": "tofu|fried",
+    "evidence_id": "usda:174291",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:3bee4a8257a5b80a",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6345,7 +8114,46 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:9cd1cfe28642eecb",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "tofu|\u241fusda:167695": {
+    "identity_key": "tofu|",
+    "evidence_id": "usda:167695",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:44aac1cddd62fcf6",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "tofu|\u241fusda:167722": {
+    "identity_key": "tofu|",
+    "evidence_id": "usda:167722",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:bc300ebcc169202e",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "tofu|\u241fusda:172450": {
+    "identity_key": "tofu|",
+    "evidence_id": "usda:172450",
+    "relationship": "DIFFERENT_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:be27691314c0993b",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6358,7 +8166,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:6a7f4d5ee878ace3",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6366,12 +8174,12 @@
    "tofu|\u241fusda:173787": {
     "identity_key": "tofu|",
     "evidence_id": "usda:173787",
-    "relationship": "DIFFERENT_IDENTITY",
+    "relationship": "SAME_IDENTITY",
     "confidence": 0.95,
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:f91787b05d8520d7",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6379,12 +8187,25 @@
    "tofu|\u241fusda:173788": {
     "identity_key": "tofu|",
     "evidence_id": "usda:173788",
+    "relationship": "SAME_IDENTITY",
+    "confidence": 0.95,
+    "resolver_model": "claude-sonnet-5",
+    "resolver_version": "food_evidence_semantics_v1",
+    "semantic_policy_version": "food_semantic_policy_v1",
+    "source_fingerprint": "sha256:c4167bb16d5a7067",
+    "created_at": "",
+    "review_status": "unreviewed",
+    "invalidation_reason": ""
+   },
+   "tofu|\u241fusda:174280": {
+    "identity_key": "tofu|",
+    "evidence_id": "usda:174280",
     "relationship": "DIFFERENT_IDENTITY",
     "confidence": 0.95,
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:a2cc31f30e307ac5",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6397,7 +8218,7 @@
     "resolver_model": "claude-sonnet-5",
     "resolver_version": "food_evidence_semantics_v1",
     "semantic_policy_version": "food_semantic_policy_v1",
-    "source_fingerprint": "",
+    "source_fingerprint": "sha256:3bee4a8257a5b80a",
     "created_at": "",
     "review_status": "unreviewed",
     "invalidation_reason": ""
@@ -6428,6 +8249,9 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    }
-  }
+  },
+  "store_writer": "post_140e994",
+  "rebuilt_from": "phase_0_source_capture.json",
+  "ranking_policy_version": "rank_v2"
  }
 }

@@ -1,0 +1,65 @@
+{
+ "regime": "rank_v2",
+ "runs": 3,
+ "poison_bites": true,
+ "resolver_calls": 0,
+ "resolved_this_build": [
+  0,
+  0,
+  0
+ ],
+ "identities": 27,
+ "fingerprint": "8691dfb3fe93c07efaac53a0cc8a55c4a59394a6bfd65a1ebf5cccccb399d0f6",
+ "resolver_attempts": [
+  0,
+  0,
+  0
+ ],
+ "resolver_batches": [
+  0,
+  0,
+  0
+ ],
+ "unseen_pairs": [
+  0,
+  0,
+  0
+ ],
+ "unseen_pairs_by_identity": {},
+ "unseen_pair_ids": [],
+ "qualify_batch": 3,
+ "qualify_attempts": 3,
+ "closure_condition_met": true,
+ "capture": "seam_recording",
+ "capture_fingerprint": "sha256:5508eb9e65d797d59b6cea52f5ea9141",
+ "statuses": {
+  "asparagus|": "ok",
+  "banana|": "ok",
+  "beef|": "ok",
+  "beef|fried": "ok",
+  "beef|grilled": "ok",
+  "beef|roasted": "ok",
+  "broccoli|": "ok",
+  "cauliflower|": "ok",
+  "chicken|fried": "ok",
+  "chicken|grilled": "ok",
+  "chicken|roasted": "ok",
+  "egg|": "ok",
+  "egg|fried": "ok",
+  "mackerel|": "ok",
+  "mackerel|roasted": "ok",
+  "mushrooms|": "ok",
+  "mushrooms|grilled": "ok",
+  "oats|": "ok",
+  "potato|": "ok",
+  "potato|fried": "ok",
+  "rice|": "ok",
+  "salmon|": "ok",
+  "shrimp|": "ok",
+  "tilapia|": "ok",
+  "tilapia|roasted": "ok",
+  "tofu|": "ok",
+  "tofu|fried": "ok"
+ },
+ "failures": []
+}

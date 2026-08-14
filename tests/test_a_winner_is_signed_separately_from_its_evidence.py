@@ -207,12 +207,18 @@ def test_the_undecided_cooked_axis_is_derived_not_hand_listed():
     # to make. An admission fix closed a ranking ambiguity as a side effect;
     # `potato|` is still HELD, but now for representativeness rather than for
     # an undecided axis.
+    # ⭐ `mackerel|` LEFT THIS SET WITHOUT ITS LADDER CHANGING SHAPE. The
+    # rebuild seats SALTED instead of raw, so the blocker is no longer an
+    # undecided cooked axis — it is a specialty variant outranking the generic
+    # form, a 49% overstatement. Filing it under the old cause would leave it
+    # waiting on a `cooking_yield` fix that cannot reach it.
     assert consequential == {"asparagus|", "broccoli|", "cauliflower|",
                              "mackerel|", "tilapia|"}, consequential
 
     held = {identity for identity, _e, cause in wr.held()
             if cause == wr.COOKING_YIELD_COVERAGE}
-    assert held == consequential, held
+    assert held == consequential - {"mackerel|"}, held
+    assert wr.by_identity()["mackerel|"][2] == wr.SPECIALTY_BEATS_GENERIC_CAUSE
     assert wr.by_identity()["potato|"][1] == wr.HELD
     assert (wr.by_identity()["potato|"][2]
             == wr.SPECIALTY_BEATS_GENERIC_CAUSE)
@@ -259,4 +265,4 @@ def test_the_signed_winners_are_the_only_ones_that_may_freeze():
     held = {identity for identity, _e, _c in wr.held()}
     assert not (set(signed) & held), "an identity is both signed and held"
     assert len(signed) + len(held) == len(wr.by_identity())
-    assert len(signed) == 13 and len(held) == 14
+    assert len(signed) == 12 and len(held) == 15

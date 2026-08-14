@@ -122,7 +122,7 @@ def test_held_is_never_silently_upgraded_to_signed():
     upgrade it, the distinction would be decorative."""
     frozen = json.loads(fz.FREEZE_PATH.read_text())
     held = [r for r in frozen["rows"] if r["winner_status"] == wr.HELD]
-    assert len(held) == 14
+    assert len(held) == 15
     for row in held:
         assert row["reason"] in wr.BLOCKING_CAUSES, row["identity_key"]
 

@@ -1079,7 +1079,87 @@ entries on candidate universe, eligibility, winner, price and fallback. The
 fats must be ADDITIVE and existing pricing STABLE unless a change is
 attributable. **EXIT: B-1.7a CLOSED.**
 
-### 4  B-1.7b — MATERIALITY POLICY
+### 4  B-1.7b — MATERIALITY / CLARIFICATION POLICY  *(rewritten 2026-08-14)*
+
+**PURPOSE: decide whether an unresolved food attribute is important enough
+that Arnie must ASK before pricing. It is NOT another ranking project.**
+
+> If plausible interpretations of an unresolved attribute can produce a
+> MATERIALLY DIFFERENT nutritional result, Arnie must resolve that attribute
+> before settlement. If the consequence is immaterial, Arnie may proceed
+> without asking.
+
+⭐ **THREE QUESTIONS THAT MUST NEVER BE CONFLATED**, and the 08-14 winner
+review is what forced them apart:
+
+```text
+IDENTITY        is this legitimately the food?           -> admission
+REPRESENTATIVE  which admissible row would pricing pick? -> ranking
+MATERIALITY     is the uncertainty important enough that Arnie should ASK
+                rather than accept that representative?  -> B-1.7b
+```
+
+⭐⭐ **AND THE MOST IMPORTANT RULE THIS PHASE PRODUCED:**
+
+> **THE EXISTENCE OF A RANKER WINNER MUST NEVER ITSELF PROVE THAT
+> CLARIFICATION IS UNNECESSARY.**
+
+A ranker can always produce a winner. That says nothing about whether the
+question it silently answered was worth asking.
+
+#### THE TWO PERMANENT ACCEPTANCE FIXTURES
+
+Both are real, both are in the frozen accounting as ADMIT + HELD, and both
+exist because the system could settle them silently and should not.
+
+**`egg|` — the acceptance case.** "2 eggs" leaves preparation unresolved, and
+the plausible outcomes span boiled/poached against fried/scrambled/omelet with
+materially different nutrition. Bare `egg|` must not settle merely because the
+ranker can seat omelet at 154. The policy should activate a preparation ask —
+*How were they prepared? Boiled · Fried · Scrambled · Poached* — after which
+canonical identity becomes preparation-specific and pricing proceeds normally.
+
+**`mackerel|` — the consequence case.** Bare `mackerel|` currently exposes
+**raw 205 vs salted 305 — ~49%**, and the ranker seats salted for no reason
+but that "salted" is a shorter lexical match to a bare query.
+
+⛔ **THE CORRECT CONCLUSION IS NOT "make raw always outrank salted".** It is
+that the unresolved state/form is MATERIALLY CONSEQUENTIAL, so bare
+`mackerel|` cannot silently inherit a specialty representative when that
+choice materially changes nutrition. Arnie either asks the appropriate
+clarification or deterministically refuses that specialty representation as a
+safe default.
+
+#### WHAT 1.7b BUILDS
+
+1. A DETERMINISTIC definition of material nutritional difference across
+   plausible admissible interpretations.
+2. Attribute-level consequence evaluation: preparation, added fat, state/form,
+   quantity, and every other activated field.
+3. Typed outcomes — `ASK` · `SAFE_TO_ESTIMATE` · `ACCEPT` · `REFUSE`.
+4. A deterministic explanation of WHY an attribute became necessary.
+5. NEGATIVE invariants proving Arnie does not ask unnecessary questions.
+6. POSITIVE invariants proving materially consequential ambiguity cannot
+   silently settle.
+
+**MATERIALITY IS LOCALE- AND SOURCE-INDEPENDENT** (global-readiness invariant):
+"did this added fat materially affect nutrition?" is a FOOD-DOMAIN policy
+question, never a USDA or English-text one.
+
+#### EXIT
+
+> For every unresolved pricing-relevant attribute, Arnie deterministically
+> knows whether the uncertainty is materially consequential, and materially
+> consequential ambiguity cannot reach settlement without resolution or an
+> explicitly safe policy.
+
+Then B-1.7c handles the COMPOSITION consequences of those answers — added oil
+becoming a second food contribution rather than a multiplier.
+
+**SEQUENCE:** finish current closure → five oils → B-1.7a CLOSED → **B-1.7b**
+→ B-1.7c composition.
+
+### 4b  B-1.7b — ORIGINAL MATERIALITY NOTE *(superseded above)*
 
 Deterministic policy over nutritional impact, confidence, preparation impact,
 added-fat significance: ask vs estimate vs accept vs refuse.

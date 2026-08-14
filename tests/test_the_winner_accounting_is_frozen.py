@@ -38,7 +38,7 @@ def test_the_counts_are_exactly_what_was_signed(frozen):
     for row in rows:
         counts[row["winner_status"]] += 1
     assert len(rows) == 27
-    assert counts == {"signed": 13, "held": 14}
+    assert counts == {"signed": 12, "held": 15}
 
 
 def test_every_row_binds_all_six_facts(frozen):
@@ -77,7 +77,7 @@ def test_the_freeze_refuses_a_regime_it_was_not_computed_under(frozen):
 
 def test_every_held_row_names_a_blocking_cause(frozen):
     held = [r for r in frozen["rows"] if r["winner_status"] == wr.HELD]
-    assert len(held) == 14
+    assert len(held) == 15
     for row in held:
         assert row["reason"] in wr.BLOCKING_CAUSES, row["identity_key"]
 
@@ -98,8 +98,10 @@ def test_the_delta_from_the_earlier_counts_reconciles():
     and the arithmetic is CHECKED, because a delta nobody can reconstruct is a
     delta that gets normalised."""
     assert fz.reconcile_delta() == ()
-    assert fz.PRIOR == {"identities": 26, "signed": 15, "held": 11}
-    assert len(fz.MOVEMENTS) == 5
+    # ⭐ PRIOR MOVES EVERY TIME A ROUND CLOSES — it is the count this freeze
+    # reconciles FROM, not a constant. The delta arithmetic is the invariant.
+    assert fz.PRIOR == {"identities": 27, "signed": 13, "held": 14}
+    assert len(fz.MOVEMENTS) == 1
     for identity, was, now, why in fz.MOVEMENTS:
         assert now in ("signed", "held")
         assert was in ("signed", "held", None)

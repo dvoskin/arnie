@@ -136,7 +136,7 @@ def test_the_round_records_what_it_changed_from(store):
         pytest.skip("no review round recorded")
     ledger = json.loads(hr.LEDGER_PATH.read_text())
     assert ledger["round"] == hr.ROUND
-    assert len(ledger["rows"]) == len(wr.ADMISSION_OVERRIDES)
+    assert len(ledger["rows"]) == len(hr._eligibility_decisions())
     for row in ledger["rows"]:
         # ⛔ `source_fingerprint` WAS THE ONE ATTRIBUTABLE FIELD MISSING FROM
         # THIS TUPLE, and it was "" on all six rows. The gate checked every
@@ -146,7 +146,13 @@ def test_the_round_records_what_it_changed_from(store):
         for field in ("identity_key", "evidence_id", "was", "now", "reviewer",
                       "cause", "reason", "source_fingerprint"):
             assert str(row.get(field) or "").strip(), row
-        assert row["was"] == sa.DIFFERENT_IDENTITY
+        # ⚠ THIS ASSERTED `was == DIFFERENT_IDENTITY` and was too specific.
+        # It was true only while every row was an ADMISSION of something the
+        # model had rejected. The potato rejection is the mirror image — the
+        # model had said SAME_IDENTITY — and hardcoding one direction would
+        # have made the gate refuse the very symmetry it should protect.
+        # The real invariant is that the round MOVED something.
+        assert row["was"] in sa.RELATIONSHIPS
         assert row["now"] != row["was"]
         assert row["cause"] == sa.MANUAL_INVALIDATION
         assert ":" in row["evidence_id"]
@@ -230,3 +236,72 @@ def test_the_two_branded_rows_are_not_semantic_decisions():
     for identity, evidence, cause, _note in wr.NOT_SEMANTIC_ABSENCES:
         assert (identity, evidence) not in overridden
         assert "retrieval" in cause
+
+
+# ── the symmetry rule: BOTH directions live in the store ─────────────────
+
+def test_every_human_eligibility_decision_lives_in_the_store(store):
+    """⭐ THE OWNERSHIP RULE, ENFORCED IN BOTH DIRECTIONS.
+
+        An eligibility-affecting human decision is authoritative ONLY when it
+        lives in the semantic annotation store, is bound to the exact source
+        fingerprint, and is consumed by `sa.eligible()`.
+
+    `winner_review` may keep them as audit context; it must never be the ONLY
+    place one exists. The round originally carried ADMITs alone, so six
+    admissions reached the store and one rejection did not — and `usda:170032`,
+    a part-of-food row a reviewer refused, came back the instant the seam
+    capture re-retrieved it and the writer annotated it `SAME_IDENTITY`."""
+    from scripts import baseline_signatures as bs
+
+    for identity, evidence, disposition, *_ in hr._eligibility_decisions():
+        annotation = store.get(identity, evidence)
+        assert annotation is not None, (identity, evidence)
+        assert sa.reviewed(annotation), (identity, evidence)
+        assert sa.eligible(annotation) is (disposition == bs.ADMIT), (
+            f"{identity}/{evidence}: reviewer said {disposition} and "
+            f"sa.eligible says {sa.eligible(annotation)}")
+        assert annotation.source_fingerprint, (
+            f"{identity}/{evidence}: unbound — `stale_source` compares only "
+            f"when both sides carry a value, so this review could never be "
+            f"invalidated by its row moving")
+
+
+def test_a_human_rejection_is_carried_not_just_an_admission():
+    """ANTI-VACUITY. If the round ever silently drops REJECTs again, the
+    counts diverge here before a rebuild can re-admit anything."""
+    from scripts import baseline_signatures as bs
+
+    decisions = hr._eligibility_decisions()
+    rejects = [d for d in decisions if d[2] == bs.REJECT]
+    admits = [d for d in decisions if d[2] == bs.ADMIT]
+    assert rejects, "the round carries no rejection — the asymmetry is back"
+    assert admits and len(decisions) == len(rejects) + len(admits)
+
+
+def test_the_rejected_part_of_food_row_stays_out_attributably(store):
+    """⛔ THE REGRESSION THIS CLOSES, pinned to its row. Its absence must be a
+    NAMED HUMAN DECISION — not a veto, not a resolver verdict, not silence."""
+    import json
+
+    annotation = store.get("potato|", "usda:170032")
+    assert annotation is not None
+    assert annotation.relationship == sa.DIFFERENT_IDENTITY
+    assert not sa.eligible(annotation)
+    assert sa.reviewed(annotation)
+    assert annotation.resolver_model.startswith("human:")
+    assert annotation.resolver_version == "part_of_food_not_the_food"
+    assert annotation.source_fingerprint
+
+    document = json.loads(art.ARTIFACT_PATH.read_text())
+    present = {art.candidate_evidence_id(c)
+               for c in (document["entries"]["potato|"].get("candidates") or ())}
+    assert "usda:170032" not in present
+
+
+def test_a_reviewed_rejection_is_never_re_asked(store):
+    """The writer must not re-annotate a row a human ruled on — which is how
+    it became SAME_IDENTITY in the first place."""
+    assert not store.needs_resolution("potato|", "usda:170032")
+    with pytest.raises(sa.AnnotationReplacementRefused):
+        store.record(sa.Annotation("potato|", "usda:170032", sa.SAME_IDENTITY))

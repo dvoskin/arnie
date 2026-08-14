@@ -70,6 +70,27 @@ RANKING_DEFECTS = (
     ("salmon|", "usda:171999", SPECIALTY_BEATS_GENERIC,
      "chinook — the fattiest salmon — 231 kcal wins; Atlantic farmed cooked "
      "206 is on the same ladder and is the salmon most people eat"),
+    # ⭐ ADDED BY THE POST-REBUILD RE-REVIEW. Both are cases where a reviewer
+    # named a better generic representative and THE RANKER SEATS SOMETHING
+    # ELSE. The freeze records what production DOES; the hold records what a
+    # reviewer WANTED and why. Overriding the freeze instead would assert a
+    # row production never seats — the split-brain authority this whole phase
+    # removed — and changing the ranker would reopen frozen architecture on
+    # the eve of closure.
+    ("egg|", "usda:172185", SPECIALTY_BEATS_GENERIC,
+     "omelet 154 kcal is seated; poached 143 is the cleaner generic for a "
+     "preparation-unspecified egg — omelet is more transformed and can imply "
+     "added fat or milk. Admission unchanged: an omelet is an egg"),
+    # ⛔ THE MATERIAL ONE. 305 vs 205 is a 49% OVERSTATEMENT, and the ranker
+    # prefers salted only because it is a shorter, closer lexical match to a
+    # bare "mackerel" query than "Atlantic, raw" is. Nothing about nutrition
+    # decided it. This is precisely what B-1.7b materiality policy should
+    # surface rather than tolerate silently.
+    ("mackerel|", "usda:168149", SPECIALTY_BEATS_GENERIC,
+     "salted 305 kcal is seated; raw 205 is the better generic baseline — "
+     "salting materially changes sodium and water state and is a narrower "
+     "form. 49% OVERSTATEMENT. Admission unchanged: salting is preservation, "
+     "not a different food"),
 )
 
 
@@ -178,7 +199,7 @@ def _rows():
         ("banana|", "usda:173944", "raw; the only alternative on the ladder is overripe"),
         ("chicken|grilled", "usda:171534",
          "skinless boneless breast is the canonical read of grilled chicken"),
-        ("egg|", "usda:172186", "poached; the ladder's cooked forms span 143-155"),
+
         ("egg|fried", "usda:173423", "the only candidate, and exactly the request"),
         ("mackerel|roasted", "usda:175120",
          "Atlantic cooked dry heat; already ADMITTED semantically, and dry "
@@ -232,7 +253,6 @@ def _rows():
         ("asparagus|", "usda:168389", "1 raw / 4 cooked"),
         ("broccoli|", "usda:747447", "4 raw / 6 cooked"),
         ("cauliflower|", "usda:169986", "1 raw / 4 cooked"),
-        ("mackerel|", "usda:175119", "3 raw / 4 cooked; cooked dry heat is 262"),
         ("tilapia|", "usda:175176", "1 raw / 1 cooked; cooked dry heat is 128"),
     ]:
         hold(identity, evidence, COOKING_YIELD_COVERAGE,

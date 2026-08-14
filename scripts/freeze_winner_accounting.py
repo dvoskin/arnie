@@ -44,7 +44,7 @@ from skills.nutrition.v2_gate import PHASE_0_REGIME, ranking_regime
 FREEZE_PATH = (pathlib.Path(__file__).resolve().parents[1]
                / "data" / "baseline" / "phase_0_winner_freeze.json")
 
-EXPECTED = {"identities": 27, "signed": 13, "held": 14}
+EXPECTED = {"identities": 27, "signed": 12, "held": 15}
 
 #: ⭐ THE DELTA, RECONCILED ROW BY ROW RATHER THAN NARRATED.
 #:
@@ -53,37 +53,37 @@ EXPECTED = {"identities": 27, "signed": 13, "held": 14}
 #: a SEMANTIC decision can be mistaken for a BOOKKEEPING one, so the movements
 #: are enumerated and the arithmetic is checked — a delta nobody can reconstruct
 #: is a delta that gets normalised.
-PRIOR = {"identities": 26, "signed": 15, "held": 11}
+PRIOR = {"identities": 27, "signed": 13, "held": 14}
 
 MOVEMENTS = (
-    ("potato|", None, "held",
-     "ADDED. Absent from the earlier count because its winner was REJECTED "
-     "evidence (the part-of-food raw-skin row) and a rejected row may hold no "
-     "winner state. The artifact rebuild removed it; the successor at 132 kcal "
-     "is held for representativeness. 26 identities -> 27."),
-    ("asparagus|", "signed", "held",
-     "SIGNED -> HELD. Deriving the undecided-cooked-axis population from "
-     "`cooked_preference_state` instead of from the two rows whose kcal gap was "
-     "obvious found six, not two. Raw may well be right for a bare vegetable — "
-     "nothing DECIDED it."),
-    # ⚠ "Same derivation." was the original text here, and the gate requiring
-    # a movement to actually EXPLAIN itself rejected it. A cross-reference is
-    # not a reason: whoever reads this row later has the row, not the one
-    # above it.
-    ("broccoli|", "signed", "held",
-     "SIGNED -> HELD. Its ladder carries 4 raw and 6 cooked rows on an "
-     "undecided cooked axis, so the raw winner was selected with no policy "
-     "governing raw-vs-cooked for this food."),
-    ("cauliflower|", "signed", "held",
-     "SIGNED -> HELD. Its ladder carries 1 raw and 4 cooked rows on an "
-     "undecided cooked axis, so the raw winner was selected with no policy "
-     "governing raw-vs-cooked for this food."),
-    ("beef|roasted", "held", "signed",
-     "HELD -> SIGNED. Re-adjudicated against the reworked preference: the "
-     "'lab sample' label was WRONG — 'ribs prepared, fast roasted' is an "
-     "ordinary row, not a lean-only reference, so the preference was never "
-     "going to move it. Stable under both regimes, and hand-signed ADMIT."),
+    # ⭐ THE POST-REBUILD RE-FREEZE. The seam-capture rebuild grew six ladders
+    # and moved two winners; the reviewer kept both old representatives, and
+    # the RANKER SEATS NEITHER. The freeze records what production does — a
+    # signature naming a row production never seats would be the split-brain
+    # authority this phase removed — so the reviewer's preference is carried
+    # as the HOLD'S REASON instead.
+    ("egg|", "signed", "held",
+     "SIGNED -> HELD. The rebuild added a candidate and the ranker moved from "
+     "poached 143 to omelet 154. The reviewer kept poached as the cleaner "
+     "generic for a preparation-unspecified egg — omelet is more transformed "
+     "and can imply added fat or milk — so the seated winner is recorded and "
+     "held for representativeness. Admission unchanged: an omelet is an egg."),
 )
+
+#: ⭐⭐ RE-STAMPED, NOT RE-DECIDED. Their ladders grew, so every signature
+#: expired as UNVERIFIED — and the winner did not move, so the decision itself
+#: still stands and is simply re-asserted over the fuller universe.
+RESTAMPED = ("cauliflower|", "chicken|roasted", "shrimp|", "salmon|")
+
+#: ⛔ AND ONE HOLD CHANGED ITS CAUSE WITHOUT CHANGING ITS COUNT. `mackerel|`
+#: was held because `cooking_yield` says nothing about mackerel, so a raw row
+#: won an undecided axis. The rebuild seats SALTED instead — 305 kcal against
+#: raw's 205, a 49% OVERSTATEMENT — for no reason but that "salted" is a
+#: shorter lexical match to a bare query. The blocker is now the ranking
+#: defect, not the missing yield entry, and filing it under the old cause
+#: would leave it waiting on a fix that cannot reach it.
+RECAUSED = (("mackerel|", "cooking_yield_has_no_entry_for_this_food",
+             "a specialty variant outranks the generic form"),)
 
 
 def reconcile_delta() -> tuple:
