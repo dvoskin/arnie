@@ -13,6 +13,17 @@ variability is removed as a variable rather than assumed away — the question
 is whether the BUILD is deterministic given identical inputs, and a live API
 would make a failure unattributable between our code and theirs.
 
+⛔ AND THE CAPTURE IS THE G1 SEAM RECORDING, KEYED BY QUERY. An earlier
+version of this module synthesised its own corpus from the committed artifact
+and wrote it to the authoritative capture path; when G1 started recording at
+`usda._search`, the schema changed under this reader and it was never
+updated. It handed `build_one` the literal string `"meta"` as an identity and
+died on `'str' object has no attribute 'get'` — and because NOTHING IMPORTED
+IT, the suite stayed green over a proof that could not run. Both halves of
+that are fixed here: the path constant is imported from `capture_retrieval`
+rather than redeclared, and `tests/test_the_build_path_reproduces_itself.py`
+actually invokes this.
+
 ⭐ THE RESOLVER IS POISONED HERE TOO, AND IT MATTERS MORE. In the replay proof
 the resolver could not have been reached anyway. Here the build genuinely
 wants to call it — so a poisoned run that still produces the same artifact
@@ -30,12 +41,20 @@ import json
 import pathlib
 import sys
 
+from scripts import capture_retrieval as cr
 from skills.nutrition import pricing_artifact as art
 from skills.nutrition import semantic_annotations as sa
 from skills.nutrition.v2_gate import PHASE_0_REGIME, ranking_regime
 
-CAPTURE_PATH = (pathlib.Path(__file__).resolve().parents[1]
-                / "data" / "baseline" / "phase_0_source_capture.json")
+#: ⛔ ONE CONSTANT, NOT A SECOND ONE. This module used to declare its own
+#: `CAPTURE_PATH` pointing at the same file `capture_retrieval` writes — and
+#: when G1 rewrote that file at the retrieval seam, the schema changed
+#: underneath and this reader was never updated. `sorted(capture)` started
+#: yielding `['meta', 'queries']`, the build was handed the string `"meta"`
+#: as an identity, and it died on `'str' object has no attribute 'get'`.
+#: Nothing imported this script, so the suite stayed green over a dead proof.
+#: TWO IMPLEMENTATIONS OF ONE NOTION, in the commit that named the phrase.
+CAPTURE_PATH = cr.CAPTURE_PATH
 PROOF_PATH = (pathlib.Path(__file__).resolve().parents[1]
               / "data" / "baseline" / "phase_0_build_proof.json")
 
@@ -44,28 +63,8 @@ class ResolverPoisoned(RuntimeError):
     """The resolver was invoked during a build that must not need it."""
 
 
-def capture_from_artifact() -> dict:
-    """Synthesise a source capture from the committed artifact.
-
-    ⚠ STATED PLAINLY: this is a REPLAY CORPUS, not a fresh provider capture.
-    It reconstructs what retrieval would have returned from the candidates the
-    artifact already holds, which is enough to prove the build is
-    DETERMINISTIC over fixed inputs and is NOT enough to prove the artifact
-    matches what USDA would serve today. Those are different claims and only
-    the first is being made here. A true capture needs a live retrieval run
-    recorded to disk, and that is owed.
-    """
-    document = json.loads(art.ARTIFACT_PATH.read_text())
-    capture = {}
-    for identity, entry in (document.get("entries") or {}).items():
-        rows = []
-        for candidate in (entry.get("candidates") or ()):
-            rows.append({"fdc_id": candidate.get("fdc_id"),
-                         "description": candidate.get("description"),
-                         "data_type": candidate.get("data_type") or "sr legacy",
-                         "per100g": candidate.get("per100g") or {}})
-        capture[identity] = rows
-    return capture
+class CaptureMissing(SystemExit):
+    """There is no seam capture to replay, and one must not be invented."""
 
 
 def _fingerprint(results) -> str:
@@ -78,10 +77,24 @@ async def prove(runs: int = 3) -> dict:
     import scripts.build_pricing_artifact as bp
     import skills.nutrition.evidence_qualification as eq
 
+    # ⛔ A MISSING CAPTURE IS REFUSED, NEVER INVENTED. This used to synthesise
+    # a corpus from the committed artifact and WRITE IT to the authoritative
+    # capture path — so the one artifact G1 exists to protect could be
+    # replaced by a reconstruction of the thing it is supposed to check,
+    # by a script nobody ran deliberately. Capture is `capture_retrieval`'s
+    # job and only its job.
     if not CAPTURE_PATH.exists():
-        CAPTURE_PATH.write_text(json.dumps(capture_from_artifact(), indent=1)
-                                + "\n")
+        raise CaptureMissing(
+            f"no seam capture at {CAPTURE_PATH.name} — run "
+            f"`python -m scripts.capture_retrieval --write`. This proof will "
+            f"not manufacture its own inputs.")
     capture = json.loads(CAPTURE_PATH.read_text())
+
+    # ⭐ AND A REPLAY AGAINST A MOVED CONTRACT DESCRIBES A SYSTEM THAT NO
+    # LONGER EXISTS. Refuse it rather than produce numbers about the past.
+    cr.verify_contract(capture)
+    queries = capture["queries"]
+
     document = json.loads(art.ARTIFACT_PATH.read_text())
     stored = (document.get("meta") or {}).get("annotations") or {}
     if not stored:
@@ -111,15 +124,36 @@ async def prove(runs: int = 3) -> dict:
             store = sa.Store.from_payload(stored)
             results = {}
             with ranking_regime(PHASE_0_REGIME):
-                for identity in sorted(capture):
+                for identity in sorted(queries):
                     entity, _, preparation = identity.partition("|")
 
-                    async def _replay(*_a, _rows=capture[identity], **_k):
-                        return list(_rows)
+                    # ⭐ SERVED BY QUERY, BECAUSE THE CAPTURE IS KEYED BY
+                    # QUERY. `build_one` issues one `_search` per shape and
+                    # dedupes keeping FIRST OCCURRENCE, so which query
+                    # returned a row decides whether it survives at all.
+                    # Answering every shape with one flattened row list would
+                    # replay a DIFFERENT build than the one recorded — the
+                    # ordering the capture went out of its way to preserve
+                    # would be discarded here at the last step.
+                    by_query = {record["query"]: record["rows"]
+                                for record in queries[identity]}
+
+                    async def _replay(query, *_a, _by=by_query,
+                                      _identity=identity, **_k):
+                        # ⛔ AN UNCAPTURED QUERY IS A FAILURE, NOT AN EMPTY
+                        # RESULT. Returning [] would let a contract that grew
+                        # a shape read as a food that retrieved nothing.
+                        if query not in _by:
+                            raise KeyError(
+                                f"{_identity}: the build issued {query!r}, "
+                                f"which the capture does not hold — the "
+                                f"retrieval contract moved under this replay")
+                        return list(_by[query])
 
                     usda._search = _replay
                     result = await bp.build_one(entity, preparation,
-                                                store=store)
+                                                store=store,
+                                                identity_key=identity)
                     results[identity] = {
                         "status": result.get("status"),
                         "candidates": [art.candidate_evidence_id(c)
@@ -170,7 +204,24 @@ async def prove(runs: int = 3) -> dict:
             "resolved_this_build": [s["resolved_this_build"] for s in snapshots],
             "identities": len(first["results"]),
             "fingerprint": first["fingerprint"],
-            "capture_is_a_replay_corpus_not_a_fresh_provider_capture": True,
+            # WHAT THE SOURCES ACTUALLY ARE, carried in the artifact so the
+            # claim travels with the numbers. G1 replaced the synthesised
+            # corpus this used to build for itself: these rows were recorded
+            # AT `usda._search` while the real build issued its own queries.
+            # Still a RECORDING replayed, so this proves the build is
+            # deterministic over fixed real inputs — NOT that USDA would
+            # serve the same rows today. Those remain different claims.
+            "capture": "seam_recording",
+            "capture_fingerprint": (capture.get("meta") or {})
+                                   .get("retrieval_fingerprint", ""),
+            # PER-IDENTITY OUTCOME, because the aggregate hides the thing the
+            # delta classification needs to read. An uncaptured query reaches
+            # `build_one` through `asyncio.gather(return_exceptions=True)` and
+            # lands as FAILED — so a replay that lost a query shape reports a
+            # provider failure rather than a food that legitimately retrieved
+            # less, and that distinction is only visible here.
+            "statuses": {identity: derived["status"]
+                         for identity, derived in first["results"].items()},
             "failures": failures}
 
 
@@ -189,7 +240,11 @@ if __name__ == "__main__":
         raise SystemExit(1)
     print(f"\n  ✅ the BUILD PATH reproduces itself from captured sources,")
     print(f"     pre-retention, with a resolver that RAISES if consulted")
-    print(f"  ⚠ the capture is a REPLAY CORPUS, not a fresh provider capture")
+    print(f"  ⚠ sources are a SEAM RECORDING replayed by query "
+          f"({result['capture_fingerprint'][:24]}) —")
+    print(f"     this proves the BUILD is deterministic over fixed real "
+          f"inputs, NOT that")
+    print(f"     the provider would serve these rows today")
     if "--write" in sys.argv:
         PROOF_PATH.write_text(json.dumps(result, indent=1) + "\n")
         print(f"\n  -> {PROOF_PATH.name}")

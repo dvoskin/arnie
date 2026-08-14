@@ -15,12 +15,21 @@
 > `tests/test_the_canonical_invariants.py`; this document is the sequencing
 > authority.
 
-## ⏭ THE ROADMAP — READ THIS FIRST *(Danny, 2026-08-11; revised 2026-08-13)*
+## ⏭ THE ROADMAP — READ THIS FIRST *(Danny, 2026-08-11; revised 2026-08-14)*
 
-**THE NEXT SESSION STARTS AT PHASE 0.9 — REVIEWING THE 24 CANONICAL WINNERS.**
-Not at B-1.7a, and not at any B slice. The open defect is confined to
-BUILD-TIME PRICING EVIDENCE AUTHORITY and does NOT reopen downstream canonical
-mutation correctness.
+**THE NEXT SESSION STARTS AT THE AUTHORITATIVE REBUILD — PHASE 0 STEP 1.**
+Not at B-1.7a, and not at any B slice. Phase 0.9 is applied, G1/G2/G3 are
+closed, and the build-path proof now RUNS — which is how we learned the store
+does not yet cover the retrieval population (see THE STORE IS NOT POPULATED
+OVER THE SEAM below). The open defect is confined to BUILD-TIME PRICING
+EVIDENCE AUTHORITY and does NOT reopen downstream canonical mutation
+correctness.
+
+⚠ **THIS HEADER RAN 2,100 LINES BEHIND ITS OWN BOARD.** It said "start at
+0.9" and listed three gates as owed while the status board — reconciled the
+same day — recorded all three CLOSED. The staleness gate only checks a date
+stamp, so it passed throughout. Reconciling the board is not reconciling the
+document; the head is what a parallel session actually reads.
 
 ```text
 B-1 · B-1.5 · B-1.6   REMAIN CLOSED
@@ -59,8 +68,13 @@ base-food mismatch, cooking-state conflict, heat-medium conflict,
 branded-for-generic, duplicate and no-energy; the build filtered to the first
 and discarded the rest. THE CALL WAS THERE AND THE RESULT WAS THROWN AWAY,
 which is indistinguishable from being wired at any distance except that line.
-Now consumed in full: 34 of 249 captured rows refused (17 mismatch, 12
-cooking-state, 5 heat-medium).
+Now consumed in full: 34 rows refused (17 mismatch, 12 cooking-state, 5
+heat-medium). ⚠ **THAT 34 WAS MEASURED AGAINST THE 249-ROW RECONSTRUCTED
+CAPTURE, WHICH G1 THEN REPLACED WITH A 397-ROW SEAM RECORDING** — so the
+denominator in the original note ("of 249") described a corpus that no longer
+exists. The refusals now visible on the real build path are per-identity and
+larger; they are reported by `prove_build_reproducibility.py` and must be
+classified by the authoritative rebuild rather than quoted as a single total.
 
 **3. THE SOURCE-QUALIFICATION FIX WAS APPLIED TO THE DATA, NOT THE PRODUCER.**
 `candidate_evidence_id` was added, 115 candidates backfilled, gates written —
@@ -77,7 +91,90 @@ backfilled file. `data_type` was missing the same way, which disabled
 shrinks the artifact by a third is only interpretable if its inputs are known
 to be at least as good as the ones it replaces.** Reverted, nothing committed.
 
-### THE THREE GATES BEFORE B-1.7a *(Danny, 2026-08-14)*
+### THE THREE GATES BEFORE B-1.7a — ALL CLOSED *(2026-08-14)*
+
+```text
+G1 capture fidelity   ✅ 2db4029 — recorded AT the seam, 397 rows, fingerprint
+                         sha256:5508eb9e, every committed candidate present
+G2 human authority    ✅ 2db4029 — 6 admissions in the ANNOTATION STORE
+                         ⚠ source_fingerprint BLANK on all six; see below
+G3 lexical scope      ✅ 5a4c7f4 — the veto reads SILENCE unless the CALLER
+                         asserts its namespace; the layer names no provider
+```
+
+⛔ **AND THE GATES THEMSELVES SHIPPED WITH THREE HOLES, ALL THE SAME SHAPE:
+THE CHECK EXISTED AND DID NOT FIRE.** Found by review of `2db4029`, fixed in
+the commit that carries this text. None was a wrong answer; each was a
+correct-looking check that could not observe what it claimed to.
+
+```text
+1  source_fingerprint is "" on all 6 human admissions.  `apply()` takes
+   `source_fingerprints` as an optional kwarg and `__main__` calls
+   `apply(store)` without it, so it falls through to "". The gate's
+   required-non-empty tuple lists every attributable field EXCEPT this one.
+   -> the commit claimed the six carry "was / now / reviewer / cause /
+      source fingerprint / round". Five of six were true.
+   -> OPEN: needs a decision, see below.
+
+2  the capture gate computed the expected query set and never compared it.
+   `expected` was assigned and referenced nowhere; the loop counted records
+   and read their metadata. A capture holding the RIGHT NUMBER of the WRONG
+   QUERIES passed — the exact capture the gate exists to reject.
+   -> FIXED. Asserted, and against `prep_onto.name_with` rather than a
+      re-spelled string transform, which would have been a second
+      implementation of the notion the gate is checking.
+
+3  prove_build_reproducibility.py could not run at all. It declared its OWN
+   CAPTURE_PATH at the file G1 rewrote, so it read the seam capture's
+   `{meta, queries}` envelope as a flat identity map, handed `build_one` the
+   literal string "meta" as a food, and died on 'str' has no attribute 'get'.
+   NOTHING IMPORTED IT, so the suite stayed green over a dead proof.
+   -> FIXED. One constant, imported from `capture_retrieval`. Replays BY
+      QUERY, because the build dedupes keeping first occurrence. A missing
+      capture is refused, never synthesised onto the authoritative path.
+      And `tests/test_the_build_path_reproduces_itself.py` now INVOKES it.
+```
+
+⭐ **THE PATTERN IS WORTH NAMING ONCE MORE.** A kwarg nobody passes, a
+variable nobody asserts, a script nobody imports — the same family as the
+eligibility layer with no caller, the veto result thrown away, and the
+`matched: 0` read off an unarmed instrument. Each was written correctly. None
+could fire.
+
+### ⛔ THE STORE IS NOT POPULATED OVER THE SEAM *(measured 2026-08-14)*
+
+**Driving the now-runnable build proof against the G1 capture is what finally
+showed this**, and no replay proof could have: the store was populated over
+the committed artifact's CANDIDATES, while the real build sees the retrieval
+POPULATION.
+
+```text
+poisoned build x3 through build_one()      regime rank_v2
+  poison bites                             True
+  resolved_this_build per run              [0, 0, 0]
+  identities built                         27
+  fingerprint da009b002460b393  IDENTICAL across runs   <- determinism HOLDS
+
+  ⛔ resolver calls                        333   (each one RAISED)
+  ⛔ candidate deltas, build vs artifact
+       cauliflower| 9/6 · chicken|roasted 5/4 · egg| 6/5 · mackerel| 8/7
+       salmon| 14/13 · shrimp| 4/3 · tofu| 2/4
+```
+
+**WHAT THIS DOES AND DOES NOT MEAN.** The build IS deterministic over fixed
+real inputs — the fingerprint is byte-identical across three runs, which is
+the claim the script exists to make and it holds. What does NOT hold is
+`resolved_this_build == 0` meaning "it could not have asked": it asked 333
+times and was refused 333 times. **`tofu| 2/4` is the two HOUSE FOODS rows,
+already typed as a RETRIEVAL absence.** The other six deltas are the store
+admitting rows the 08-08 candidate lists never held — the eight-row delta's
+larger cousin, and exactly the population the authoritative rebuild must
+classify by retrieval | mechanical | semantic | source.
+
+**This is a measurement, not a regression.** Nothing shipped worse; an
+instrument that could not run now runs and reports the real state.
+
+### THE ORIGINAL GATE TEXT *(kept — it is the specification)*
 
 **G1 — CAPTURE FIDELITY.** The capture must be produced by the SAME retrieval
 invocation `build_one` uses, never by a second script reconstructing
@@ -136,17 +233,43 @@ down that a tofu product is not tofu.
 ### SEQUENCE FROM A CLEAN BASE
 
 ```text
-commit the sound hardening -> clean tree
--> capture at the REAL retrieval seam (G1)
--> apply attributable human annotation overrides (G2)
--> authoritative rebuild
--> classify EVERY old->new delta: retrieval | mechanical | semantic | source
--> re-freeze ONLY moved winner universes
--> poisoned real-build replay: resolved=0, retention additions=0
--> exact-tree SQLite + Postgres
--> controlled production canary   (prod is 29 commits behind)
--> B-1.7a starts
+✅ commit the sound hardening -> clean tree
+✅ capture at the REAL retrieval seam (G1)
+✅ apply attributable human annotation overrides (G2)
+✅ make the build-path proof RUNNABLE and gate it   <- was dead; see above
+◻  BLOCKED: source_fingerprint on the 6 human admissions  (decision owed)
+◻  populate the store over the SEAM population, not the 08-08 candidates
+      -> 333 pairs currently have no annotation and would ask the resolver
+◻  authoritative rebuild
+◻  classify EVERY old->new delta: retrieval | mechanical | semantic | source
+◻  re-freeze ONLY moved winner universes
+◻  poisoned real-build replay: resolved=0, retention additions=0
+◻  exact-tree SQLite + Postgres
+◻  controlled production canary   (prod is 30 commits behind)
+◻  B-1.7a starts
 ```
+
+**⛔ THE FINGERPRINT DECISION, AND IT IS NOT MINE TO MAKE.** The six human
+admissions carry `source_fingerprint: ""`. The rows are all present in the
+seam capture and `_row_fingerprint` yields a real value for each
+(`usda:174236 -> sha256:070bf87271b0bea6`), so the field is recoverable two
+ways and they are not equivalent:
+
+```text
+BACKFILL IN PLACE   derive from the capture, write into the store and the
+                    ledger, preserve was=DIFFERENT_IDENTITY. Corrects main
+                    now and keeps the fix reviewable on its own. Cost: it
+                    WRITES to the artifact's annotations outside a rebuild.
+CLEAN RE-DERIVE     let populate -> human_review_round produce them during
+                    the authoritative rebuild, where `was` comes out right
+                    by construction. Cost: couples this fix to the rebuild,
+                    and main stays wrong until then.
+```
+
+Either way `apply()` must stop defaulting the fingerprint to `""` — an
+optional kwarg nobody passes is what made this silent — and the gate's
+required-field tuple must include `source_fingerprint`. Those two are not in
+dispute and are held only because the gate turns red until the data is fixed.
 
 ## ✅ PHASE 0 IS TECHNICALLY CLOSED *(2026-08-13 — SUPERSEDED ABOVE)*
 
@@ -2179,7 +2302,18 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-14 against `5a4c7f4` + the G1/G2 hardening, by
+Last reconciled 2026-08-14 against a REVIEW OF `2db4029`, which found three
+holes in the G1/G2 gates themselves — a blank `source_fingerprint` on all six
+human admissions, an expected-query-set that was computed and never asserted,
+and a build-path proof that could not run and that nothing imported. Two are
+fixed; the fingerprint needs a decision. Driving the now-runnable proof also
+measured that the semantic store does not cover the seam population (333
+pairs). All of it is recorded in the Phase 0 sections at the top of this
+document, and the roadmap header — which had been running 2,100 lines behind
+this board, still saying "start at 0.9" with three gates owed — now agrees
+with it.
+
+Previously reconciled 2026-08-14 against `5a4c7f4` + the G1/G2 hardening, by
 re-reading the Phase 0 sections against the code rather than against the
 previous board. What that reconciliation actually changed:
 

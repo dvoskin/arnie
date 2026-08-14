@@ -23,6 +23,7 @@ import pytest
 from scripts import capture_retrieval as cap
 from scripts import human_review_round as hr
 from scripts import winner_review as wr
+from skills.nutrition import preparation_ontology as prep_onto
 from skills.nutrition import pricing_artifact as art
 from skills.nutrition import semantic_annotations as sa
 
@@ -61,8 +62,25 @@ def test_the_capture_was_taken_at_the_seam_not_reconstructed(capture):
     assert meta["rows_per_shape"] == art.ROWS_PER_SHAPE
 
     for identity, records in capture["queries"].items():
-        expected = {shape.format(identity=identity.replace("|", ", ").rstrip(", "))
-                    for shape in art.QUERY_SHAPES}
+        # ⭐ NAMED BY THE REAL PRODUCER, NOT BY A RESTATEMENT OF IT.
+        # `build_one` spells the identity with `prep_onto.name_with`. Writing
+        # that transform out again here would make this gate a SECOND
+        # implementation of the notion it exists to check — and two
+        # implementations of one notion is the defect family that produced
+        # the thin capture in the first place.
+        entity, _, preparation = identity.partition("|")
+        name = prep_onto.name_with(entity, preparation) if preparation \
+            else entity
+        expected = {shape.format(identity=name) for shape in art.QUERY_SHAPES}
+
+        # ⛔ THE ASSERTION THIS GATE WAS MISSING. `expected` was computed and
+        # then never compared against anything. The docstring promised "the
+        # recorded queries must be the ones the CONTRACT produces" while the
+        # body only counted the records and read their metadata — so a
+        # capture holding the RIGHT NUMBER of the WRONG QUERIES passed. That
+        # is exactly the capture this gate was written to reject.
+        assert {record["query"] for record in records} == expected, identity
+
         assert len(records) == len(art.QUERY_SHAPES), identity
         for record in records:
             assert record["data_types"] == list(art.DATA_TYPES)
