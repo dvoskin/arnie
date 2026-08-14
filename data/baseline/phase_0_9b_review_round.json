@@ -1,0 +1,77 @@
+{
+ "round": "phase_0.9b_delta_review",
+ "rows": [
+  {
+   "round": "phase_0.9b_delta_review",
+   "identity_key": "mackerel|roasted",
+   "evidence_id": "usda:174236",
+   "was": "DIFFERENT_IDENTITY",
+   "now": "COMPATIBLE_SPECIALIZATION",
+   "reviewer": "human:phase_0.9b_delta_review",
+   "cause": "manual_invalidation",
+   "reason": "same_base_food + species_specialization + preparation_compatible",
+   "note": "king mackerel, cooked dry heat \u2014 the identical class signed ADMIT for five salmon species; the model contradicted its own salmon verdicts",
+   "source_fingerprint": ""
+  },
+  {
+   "round": "phase_0.9b_delta_review",
+   "identity_key": "mackerel|roasted",
+   "evidence_id": "usda:173674",
+   "was": "DIFFERENT_IDENTITY",
+   "now": "COMPATIBLE_SPECIALIZATION",
+   "reviewer": "human:phase_0.9b_delta_review",
+   "cause": "manual_invalidation",
+   "reason": "same_base_food + species_specialization + preparation_compatible",
+   "note": "spanish mackerel, cooked dry heat \u2014 same class",
+   "source_fingerprint": ""
+  },
+  {
+   "round": "phase_0.9b_delta_review",
+   "identity_key": "mackerel|roasted",
+   "evidence_id": "usda:171994",
+   "was": "DIFFERENT_IDENTITY",
+   "now": "COMPATIBLE_SPECIALIZATION",
+   "reviewer": "human:phase_0.9b_delta_review",
+   "cause": "manual_invalidation",
+   "reason": "same_base_food + species_specialization + preparation_compatible",
+   "note": "Pacific and jack mackerel, cooked dry heat \u2014 same class",
+   "source_fingerprint": ""
+  },
+  {
+   "round": "phase_0.9b_delta_review",
+   "identity_key": "chicken|fried",
+   "evidence_id": "usda:171448",
+   "was": "DIFFERENT_IDENTITY",
+   "now": "COMPATIBLE_SPECIALIZATION",
+   "reviewer": "human:phase_0.9b_delta_review",
+   "cause": "manual_invalidation",
+   "reason": "same_base_food + form_specialization",
+   "note": "battered fried chicken \u2014 admissible because the request ITSELF asks for fried, the same reasoning that admitted breaded shrimp for shrimp|fried and rejected it for bare shrimp|",
+   "source_fingerprint": ""
+  },
+  {
+   "round": "phase_0.9b_delta_review",
+   "identity_key": "chicken|grilled",
+   "evidence_id": "usda:171536",
+   "was": "DIFFERENT_IDENTITY",
+   "now": "COMPATIBLE_SPECIALIZATION",
+   "reviewer": "human:phase_0.9b_delta_review",
+   "cause": "manual_invalidation",
+   "reason": "same_base_food + form_specialization",
+   "note": "grilled skinless breast WITH ADDED SOLUTION \u2014 a brine treatment of the same chicken, on the treatment side of the line that admits salting and smoking while refusing breading",
+   "source_fingerprint": ""
+  },
+  {
+   "round": "phase_0.9b_delta_review",
+   "identity_key": "shrimp|",
+   "evidence_id": "usda:171972",
+   "was": "DIFFERENT_IDENTITY",
+   "now": "COMPATIBLE_SPECIALIZATION",
+   "reviewer": "human:phase_0.9b_delta_review",
+   "cause": "manual_invalidation",
+   "reason": "same_base_food + form_specialization",
+   "note": "canned shrimp is still shrimp; canning is a preservation form, not a different food. It may be a poor GENERIC representative, which is a ranking question and not an admission one",
+   "source_fingerprint": ""
+  }
+ ]
+}

@@ -2179,7 +2179,36 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-11 against the identity-boundary fixes, the 08-10
+Last reconciled 2026-08-14 against `5a4c7f4` + the G1/G2 hardening, by
+re-reading the Phase 0 sections against the code rather than against the
+previous board. What that reconciliation actually changed:
+
+```text
+Phase 0            CLOSED -> ARCHITECTURE CLOSED, CLOSURE EVIDENCE REFRESHING
+                   a4b6d23's proof replays a FROZEN ARTIFACT and never calls
+                   build_one, so it showed replay determinism and not
+                   captured-source -> production builder -> equality
+0.5                implemented -> CAUSALLY WIRED, all six veto reasons
+                   consumed (34 of 397 rows refused at the seam)
+G1 capture         CLOSED — recorded AT the retrieval seam, 397 rows,
+                   fingerprint sha256:5508eb9e matches the build's own, and
+                   every committed candidate is present
+G2 human authority CLOSED — 6 decisions moved into the ANNOTATION STORE with
+                   was/now/reviewer/cause/fingerprint/round, unre-rollable
+G3 lexical scope   CLOSED — the veto applies only where the CALLER asserts
+                   its namespace; the semantic layer names no provider
+eight-row delta    5 ADMIT / 3 REJECT -> 6 ADMIT + 2 RETRIEVAL absences
+winner accounting  27/27 · 13 SIGNED · 14 HELD — UNCHANGED, and now known to
+                   describe a universe the rebuild has not yet reproduced
+production         20e3acd, 30 commits behind, deliberately undeployed
+```
+
+STILL OWED, and the reason Phase 0's closure evidence is not yet refreshed:
+the authoritative rebuild against the seam capture, delta classification by
+retrieval | mechanical | semantic | source, re-freeze of moved ladders, and
+the poisoned real-build proof. B-1.7a does not start before those.
+
+Previously reconciled 2026-08-11 against the identity-boundary fixes, the 08-10
 production trace (user 26, entries 2963–2967), and the code itself. The
 **session-close block below the board is the current answer to "where are
 we"** — measured state, what is proven on which path, and what is still owed;
