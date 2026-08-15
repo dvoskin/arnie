@@ -151,6 +151,31 @@ def memory_key_is_addressable(name_norm: str) -> bool:
     return bool(_HAS_SEMANTIC_CONTENT.search(name_norm or ""))
 
 
+def memory_key(food_name: str, canonical_entity_id: str = "") -> str:
+    """WHICH KEY ADDRESSES THIS USER'S MEMORY OF THIS FOOD.
+
+    ⭐ ONE FUNCTION FOR READ AND WRITE, IN BOTH LANES. The two must never
+    disagree: a reader on the canonical key and a writer on the legacy one
+    would cache every food where nobody looks for it, which is a subtler
+    version of the collision this whole boundary exists to fix.
+
+    A resolved identity wins because it is the SAME key for the same food
+    however it was named — `Помидор` and `Tomato` are one memory, and
+    `Творог 2%` cannot collide with `Кукуруза варёная` no matter what digits
+    they share. Without one, today's key exactly: `normalize_name`.
+
+    ⚠ MONOTONIC BY CONSTRUCTION. An absent or unusable entity falls straight
+    through to the legacy key, so a food that works today keeps working — and
+    the containment still applies afterwards, because a canonical entity that
+    somehow arrived letterless is no more addressable than a legacy key that
+    did.
+    """
+    canonical = normalize_name(str(canonical_entity_id or "").strip())
+    if memory_key_is_addressable(canonical):
+        return canonical
+    return normalize_name(food_name)
+
+
 # Generic food categories whose calories swing wildly by brand/recipe. A name made
 # up ONLY of these words ("protein bar", "shake", "smoothie") is ambiguous — we must
 # NOT silently reuse a previously-logged specific item or a USDA guess for it; the

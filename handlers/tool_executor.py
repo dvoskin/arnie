@@ -2548,7 +2548,12 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
     )
     from db.queries import get_user_food_match, upsert_user_food_match
 
-    name_norm = normalize_name(food_name)
+    # ⭐ ONE KEY FUNCTION, SHARED WITH THE CANONICAL LANE. `name_norm` is used
+    # for the memory READ below and for the cache WRITES further down, so both
+    # lanes and both directions address the same row for the same food.
+    from core.food_intelligence import memory_key as _memory_key
+    name_norm = _memory_key(food_name,
+                            str((inp or {}).get("canonical_entity_id") or ""))
     generic = is_generic_food_name(food_name)
     # The model's OWN declaration, kept apart from the heuristic. `is_packaged`
     # below is the widened value — right for the cheap lanes (OFF is a branded

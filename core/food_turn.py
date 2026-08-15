@@ -4442,6 +4442,12 @@ def _log_call(it: dict, source: Optional[str] = None) -> Optional[dict]:
     inp = {"food_name": food, "quantity": qty,
            "estimated": True, "confidence": 0.65,
            "source": source or _SOURCE}
+    # THE IDENTITY TRAVELS WITH THE CALL. Stamped at interpretation by
+    # `stamp_canonical_identity`; absent whenever ENTITY_RESOLUTION_MODE is off,
+    # which is what makes every consumer below fall through to today's path.
+    _entity = str(it.get("canonical_entity_id") or "").strip()
+    if _entity:
+        inp["canonical_entity_id"] = _entity
     _basis = str(it.get("basis") or "").strip().lower()
     if _basis in ("stated", "regular", "estimate"):
         inp["basis"] = _basis

@@ -24,7 +24,8 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-async def _memory(db, user_id: int, identity: str):
+async def _memory(db, user_id: int, identity: str,
+                  canonical_entity_id: str = ""):
     """This user's trusted match for the identity, as `MemoryEvidence`.
 
     Reuses `user_food_matches` UNCHANGED — measured at 133 ms on a warm
@@ -33,10 +34,14 @@ async def _memory(db, user_id: int, identity: str):
     from core.canonical_pricing import MemoryEvidence
 
     try:
-        from core.food_intelligence import normalize_name
+        from core.food_intelligence import memory_key
         from db.queries import get_user_food_match
 
-        name_norm = normalize_name(identity)
+        # ⭐ THE RESOLVED IDENTITY WHEN THERE IS ONE, today's key when there is
+        # not. `memory_key` is shared with the legacy lane deliberately: two
+        # definitions of "which row is this food's" is how a cache comes to be
+        # written where nobody reads it.
+        name_norm = memory_key(identity, canonical_entity_id)
         if not name_norm:
             return None
         m = await get_user_food_match(db, user_id, name_norm)
@@ -94,7 +99,8 @@ async def assemble(db, *, user_id: int, entity: str, preparation: str,
     preparation from memory lookups or lose the artifact hit.
     """
     return {
-        "memory": await _memory(db, user_id, identity),
+        "memory": await _memory(db, user_id, identity,
+                                str(item.get("canonical_entity_id") or "")),
         # PRODUCT stays None until an exact authoritative identifier is
         # carried on the item. A fuzzy name match must never be promoted here:
         # `_match: "exact"` once said so about a pizza.
