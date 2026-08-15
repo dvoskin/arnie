@@ -3398,6 +3398,38 @@ async def _execute_tool_calls(
     the pipeline detects and sends as a photo to the user.
     """
     results = {}
+
+    # ⛔⛔ THE SECOND ENTRANCE TO THE ADOPTION SEAM, AND IT CARRIES MOST OF THE
+    # TRAFFIC. Wiring the identity producer to the structured interpreter's
+    # output covered ONE food turn in FOUR: measured 2026-08-15, three of four
+    # ordinary food turns logged `entity_identity_skipped
+    # reason=no_interpretation` — the structured lane declined, and the food was
+    # logged from HERE, by the legacy tool path, where no interpreter `items`
+    # dict exists at all. A seam with one of its two doors covered is how a
+    # producer comes to look adopted.
+    #
+    # ⭐ THIS IS THE LEGACY PATH'S "INTERPRETATION TIME": once per BATCH, before
+    # any dispatch, outside `_analyze_food` and outside pricing. Putting it
+    # inside `_analyze_food` would add a model call to the settlement path and
+    # would be the interoperation Danny's steer rules out; this is adoption
+    # wiring and touches no settlement ownership.
+    #
+    # ⚠ IT BUILDS ITS OWN DICT AND HANDS BACK NOTHING. The tool inputs are not
+    # touched, so no `canonical_entity_id` can reach `memory_key` and no price
+    # can move — shadow stays annotation-only.
+    try:
+        from core.conversation import _record_turn_identities
+
+        _identity_foods = [
+            {"food": str((call.get("input") or {}).get("food_name") or "").strip()}
+            for call in (tool_calls or [])
+            if call.get("name") == "log_food"
+            and str((call.get("input") or {}).get("food_name") or "").strip()]
+        if _identity_foods:
+            await _record_turn_identities({"items": _identity_foods}, db)
+    except Exception as _ident_err:               # noqa: BLE001
+        logger.warning(f"identity recording unavailable, batch unchanged: {_ident_err}")
+
     # Typed execution view (P0.3a): cleared now, published at the end — a
     # prior batch can never leak into a turn whose executor was mocked.
     from core.execution_result import LAST_EXECUTION as _LAST_EXEC

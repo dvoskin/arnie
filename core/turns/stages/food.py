@@ -72,6 +72,55 @@ def entity_resolution_mode() -> str:
     return mode if mode in ("off", "shadow") else "off"
 
 
+async def record_identities(out, db) -> dict:
+    """Resolve this turn's foods and PERSIST what they mean. Annotates nothing.
+
+    ⛔⛔ THIS EXISTS BECAUSE THE PRODUCER HAD ONE CALL SITE AND ORDINARY TRAFFIC
+    NEVER REACHED IT. Measured 2026-08-15 on the real turn path: the same foods
+    that write four resolutions when `stamp_canonical_identity` is called
+    directly wrote ZERO through `run_chat_turn`, because the only caller is
+    `FoodPlanStage.run` and production runs `TURN_COORDINATOR_MODE=legacy_only`,
+    where no stage runs at all. A shadow canary would have reported "no
+    behaviour change" — produced by the feature never running.
+
+    ⭐ AND THE SPLIT IS THE WHOLE POINT: PERSISTENCE AND ANNOTATION ARE
+    DIFFERENT DECISIONS. Stamping `canonical_entity_id` onto an item is not
+    cosmetic — it travels through `_log_call` into `_analyze_food`, where
+    `memory_key(food, entity)` addresses a DIFFERENT memory row, which changes
+    the price. That is consumption, and consumption is a later step with its own
+    canary.
+
+    So the ordinary legacy turn calls THIS, which writes durable resolution
+    evidence and changes nothing a user or a row can see. `shadow` means
+    annotation-only: same operations, same food rows, same prices, same
+    narration, and exactly one new side effect — the store filling up.
+
+    ⚠ IT CANNOT FAIL A TURN, and that is not decoration either: a food turn must
+    not break over an identity annotation nothing yet consumes.
+    """
+    if entity_resolution_mode() == "off" or db is None or not out:
+        return {}
+    items = [item for item in (out.get("items") or ()) if isinstance(item, dict)]
+    surfaces = [str(item.get("food") or "").strip() for item in items]
+    if not any(surfaces):
+        return {}
+    try:
+        from skills.nutrition.entity_resolver import ensure_resolved
+
+        resolved = await ensure_resolved(db, [s for s in surfaces if s])
+    except Exception as e:
+        logger.warning(f"entity resolution unavailable, identity unchanged: {e}")
+        return {}
+    # ⭐ ATTEMPTED, not just resolved. A count of successes cannot distinguish
+    # "the producer ran and this turn's foods were unresolvable" from "the
+    # producer never ran" — and telling those apart is the entire reason this
+    # function exists.
+    logger.info("event=entity_identity_recorded attempted=%d resolved=%d",
+                len([s for s in surfaces if s]),
+                sum(1 for s in surfaces if resolved.get(s)))
+    return resolved
+
+
 async def stamp_canonical_identity(out, db) -> None:
     """Resolve this turn's foods and hang the canonical entity on each item.
 
@@ -90,28 +139,27 @@ async def stamp_canonical_identity(out, db) -> None:
     returns no resolution; this adds the outer guard for everything else,
     because a food turn must not break over an identity annotation that nothing
     yet consumes.
+
+    ⚠ THE RESOLUTION HALF NOW LIVES IN `record_identities`, and this is the
+    ANNOTATING caller. Two producers would be two answers to one question, so
+    there is one — this adds only the stamp, which is the part that makes the
+    identity CONSUMABLE and therefore the part an ordinary shadow turn must NOT
+    do. See `record_identities` for why that line matters.
     """
-    if entity_resolution_mode() == "off" or db is None or not out:
+    resolved = await record_identities(out, db)
+    if not resolved:
         return
     items = [item for item in (out.get("items") or ()) if isinstance(item, dict)]
-    surfaces = [str(item.get("food") or "").strip() for item in items]
-    if not any(surfaces):
-        return
-    try:
-        from skills.nutrition.entity_resolver import ensure_resolved
-
-        resolved = await ensure_resolved(db, [s for s in surfaces if s])
-    except Exception as e:
-        logger.warning(f"entity resolution unavailable, identity unchanged: {e}")
-        return
-    for item, surface in zip(items, surfaces):
-        entity = resolved.get(surface)
+    for item in items:
+        entity = resolved.get(str(item.get("food") or "").strip())
         if entity:
-            # ⚠ NOTHING READS THIS YET. Consumption is a separate change, so
-            # stamping it is observable only in the store and in this log line.
+            # ⚠ THIS IS CONSUMPTION'S DOORWAY. The stamp travels through
+            # `_log_call` into `_analyze_food`, where it changes which memory
+            # row `memory_key` addresses — and so the price.
             item["canonical_entity_id"] = entity
     logger.info("event=entity_identity_stamped foods=%d resolved=%d",
-                len(surfaces), sum(1 for s in surfaces if resolved.get(s)))
+                len(items), sum(1 for i in items
+                                if i.get("canonical_entity_id")))
 
 
 def plan_from_interpretation(out) -> TurnPlan:

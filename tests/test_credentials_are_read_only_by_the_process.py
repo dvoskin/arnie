@@ -93,11 +93,15 @@ def test_no_runtime_module_carries_a_credential_literal():
 #: RAISED 30 -> 31 on 2026-08-15 for `scripts/corpus_through_the_real_turn.py`,
 #: the §0 step-3 corpus driver. Same shape as the one before it: a person runs
 #: it by hand, it needs a real model key, and it points at a scratch DB.
+#: RAISED 31 -> 32 on 2026-08-15 for `scripts/prove_the_seam_is_reachable.py`,
+#: the eight-turn consumer-side proof that ordinary traffic reaches the identity
+#: producer. Same shape again: by hand, real key, scratch DB.
 #:
 #: ⭐ THE RATCHET FIRED ON THE COMMIT THAT ADDED IT, which is the whole design:
 #: the number moved because someone decided it should, in the same commit,
-#: rather than drifting while nobody was looking. It has now done that twice.
-SCRIPTS_READING_ENV_BASELINE = 31
+#: rather than drifting while nobody was looking. It has now done that three
+#: times in one day, and each time the number moved WITH ITS REASON.
+SCRIPTS_READING_ENV_BASELINE = 32
 
 
 def test_the_env_reading_habit_does_not_spread_beyond_scripts():

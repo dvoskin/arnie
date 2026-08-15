@@ -676,6 +676,39 @@ class _BubbleStreamer:
         self.held = False
 
 
+async def _record_turn_identities(out, db) -> None:
+    """Persist what this turn's foods MEAN, and change nothing else.
+
+    ⚠ A FOOD TURN MUST NOT BREAK OVER AN IDENTITY ANNOTATION NOTHING YET
+    CONSUMES, so the outer guard is here as well as inside the producer. The
+    inner one covers resolution failing; this one covers the import itself —
+    the difference between a resolver that answers badly and a resolver that
+    is not there at all, and only one of those is survivable by the inner
+    guard.
+
+    ⭐ NO `entity_resolution_mode()` CHECK HERE, DELIBERATELY. The producer owns
+    that decision; asking it twice is how two callers come to disagree about
+    what `off` means.
+    """
+    try:
+        from core.turns.stages.food import entity_resolution_mode, record_identities
+
+        # ⭐ "THE INTERPRETER DECLINED" AND "THE SEAM NEVER RAN" ARE DIFFERENT
+        # FACTS WITH ONE SPELLING, and telling them apart is the whole point of
+        # this slice. The producer returns silently when there is nothing to
+        # record, so an eight-turn proof that logged four foods and recorded
+        # ONE read as "the seam is not wired" when it was wired and three turns
+        # had no interpretation to hand it — the structured lane declined and
+        # the food was logged by the legacy tool path instead.
+        #
+        # ⚠ Only when resolution is ON, so an `off` deployment stays silent.
+        if not (out or {}).get("items") and entity_resolution_mode() != "off":
+            logger.info("event=entity_identity_skipped reason=no_interpretation")
+        await record_identities(out, db)
+    except Exception as e:                       # noqa: BLE001
+        logger.warning(f"identity recording unavailable, turn unchanged: {e}")
+
+
 async def run_turn(*args, **kwargs) -> TurnResult:
     """Entry point for a turn: one food trace, one time budget (PRs #29, #30).
 
@@ -1649,6 +1682,30 @@ async def _run_turn(
                                       thread_active=bool(
                                           _route_mid or _photo_food),
                                       on_first_food=_early_heads_up)
+                # ⛔⛔ THE ADOPTION SEAM. Until 2026-08-15 the interpretation
+                # boundary's producer had exactly one call site —
+                # `FoodPlanStage.run` — and ordinary traffic never reached it,
+                # because production runs `TURN_COORDINATOR_MODE=legacy_only`
+                # where no stage runs at all. Measured on the real turn path:
+                # four foods that write four resolutions when the producer is
+                # called directly wrote ZERO through `run_chat_turn`. A shadow
+                # canary would have reported "no behaviour change" — the
+                # strongest possible result, produced by the feature never
+                # running.
+                #
+                # ⭐ IT IS HERE, ON THE LEGACY PATH, DELIBERATELY. The
+                # alternative — routing ordinary turns through `FoodPlanStage`
+                # to reach the resolver — would drag settlement ownership into
+                # a slice that is only supposed to make the producer reachable,
+                # and would silently merge this with the general canonical
+                # settlement migration. This runs whatever the coordinator mode.
+                #
+                # ⭐⭐ AND IT RECORDS WITHOUT STAMPING. `record_identities`
+                # persists what a food means and annotates nothing, so shadow
+                # stays annotation-only: same operations, same rows, same
+                # prices, same narration, one new side effect. Stamping is
+                # consumption and belongs to a later step with its own canary.
+                await _record_turn_identities(_sft, db)
                 if _sft is not None and _sft.get("_writes_only"):
                     # A STASH MAY PAY ITS DEBT WITHOUT TAKING THE TURN.
                     # `_settle_deferred` recovered held food on a turn the
@@ -1938,6 +1995,10 @@ async def _run_turn(
                     _sft = await _sft_run(_user_text or "", user,
                                           prior={"original": _user_text or "",
                                                  "question": ""})
+                    # The stash-failure re-interpretation is a rarer door to
+                    # the same room; a seam with one of its two entrances
+                    # covered is how a producer comes to look adopted.
+                    await _record_turn_identities(_sft, db)
                     if _sft and _sft["action"] not in ("log", "commit"):
                         _sft = _to_legacy("ask_stash_failed")
             # The user engaged with the question — resolve the pending so it
