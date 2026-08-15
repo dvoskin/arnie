@@ -54,11 +54,11 @@ P9   one REAL turn through the routing seam (scratch DB)   ✅ PASS — rung=
                                                               ⛔ AND IT TOOK
                                                               FIVE GATES, NOT
                                                               FOUR
-P10  presentation from the canonical branch                ⛔⛔ MEASURED AND
-                                                              BROKEN: legacy
-                                                              renders 1 card,
-                                                              canonical renders
-                                                              ZERO. <- NEXT
+P10  presentation from the canonical branch                ⚠ CORRECTED — the
+                                                              card gap is the
+                                                              NATIVE RENDERER's,
+                                                              not this slice's.
+                                                              See §3a.3
 P11  P2 coverage AT MEAL LEVEL, with its routing rate
 P12  one-user canary — ONLY once the coordinator actually
      routes that user through the branch
@@ -2406,6 +2406,39 @@ settlement is **forbidden to use**, and nothing the interpretation boundary is
 
 Step 2 is not optional: **a poison must be proven to bite before its silence
 counts.**
+
+### 3a.3  ⚠ THE CARD GAP BELONGS TO THE NATIVE RENDERER *(measured 2026-08-16)*
+
+**A native turn renders NO CARD, whoever settles it.** `NativeRenderStage.run`
+returns `Response.from_text(text)` — text only, by construction.
+
+```text
+non-native + legacy      meal_commits 0   cards 1
+native     + legacy      meal_commits 0   cards 0    <- the CONTROL
+native     + canonical   meal_commits 1   cards 0    rungs ['artifact']
+```
+
+⛔⛔ **AND THE FIRST VERSION OF THIS FINDING WAS WRONG, IN A WAY WORTH KEEPING.**
+It read *"legacy renders 1 card, canonical renders 0"* and blamed general
+settlement. That comparison changed TWO variables at once — the first arm was
+non-native AND legacy. **The control arm is the only thing that separated
+them**, and without it this slice would have acquired a defect it did not
+cause, and someone would have "fixed" the settlement owner.
+
+⭐ **WHAT THE SLICE DOES OWE, AND NOW DOES:** the canonical branch publishes an
+`ExecutionResult` (`general_settlement.execution_view`). Without it
+`affected_entities(None)` is empty, so the snapshot has no committed
+operations — every consumer of the execution view, not only the card, sees an
+empty turn. That is fixed regardless of who fixes the renderer.
+
+⚠ **STILL OPEN, NAMED:** `write_canonical_meal` records the ledger event but
+does not return its id, so `ledger_event_ids` is empty for a canonically
+settled turn and **no undo token can be surfaced from it**. That belongs with
+B-1.8's correction work.
+
+**The card is a COORDINATOR-MIGRATION blocker, not a settlement blocker.** It
+gates the canary either way: a turn that logs correctly and shows the user
+nothing is worse than no canary.
 
 ### 3b  THE TRANCHE CANARY — A RELEASE GATE, NOT A SMOKE TEST  *(Danny, 2026-08-14)*
 

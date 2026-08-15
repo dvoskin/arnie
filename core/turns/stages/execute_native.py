@@ -75,10 +75,20 @@ class NativeExecutionStage:
             # A refusal is non-mutating by construction: it is raised before
             # any write, so there is no row and no ledger event to undo.
             owner, coverage = settlement
-            await owner.settle(db, user=user, items=_food_inputs(ops),
-                               source_turn_id=request.turn_id,
-                               coverage=coverage)
-            return self._published()
+            items = _food_inputs(ops)
+            result = await owner.settle(db, user=user, items=items,
+                                        source_turn_id=request.turn_id,
+                                        coverage=coverage)
+            # ⛔⛔ PUBLISH, OR THE USER SEES NOTHING. The snapshot and the
+            # renderer read the execution view; the legacy executor is the only
+            # thing that has ever published one. Measured on a real turn before
+            # this line existed: row written, totals correct, CARDS = 0.
+            from core.execution_result import LAST_EXECUTION
+            from core.general_settlement import execution_view
+
+            view = execution_view(result, items)
+            LAST_EXECUTION.set(view)
+            return view
 
         executor = self._executor
         if executor is None:

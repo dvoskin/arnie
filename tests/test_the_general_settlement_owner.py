@@ -21,6 +21,7 @@ from __future__ import annotations
 import ast
 import inspect
 import pathlib
+import re
 
 import pytest
 
@@ -310,7 +311,16 @@ def test_a1_the_owner_is_the_only_settlement_the_stage_invokes_when_supported():
     legacy = source.index("execute_tool_calls")
     assert canonical < legacy, (
         "the legacy executor is reachable before canonical settlement returns")
-    assert "return self._published()" in source[canonical:legacy]
+    # ⚠ THE PROPERTY, NOT THE STATEMENT. This pinned the literal
+    # `return self._published()` and broke the moment the canonical branch
+    # started returning its own execution view — a true change failing a gate
+    # for a reason that had nothing to do with the contract. What A1 requires
+    # is that the branch RETURNS before legacy is reachable, whatever it
+    # returns.
+    between = source[canonical:legacy]
+    assert re.search(r"^\s+return\s+\S", between, re.M), (
+        "canonical settlement does not return before the legacy executor — a "
+        "supported turn could be settled twice")
 
 
 def test_a1_the_chain_is_resolvedmeal_then_coordinator_then_writer():

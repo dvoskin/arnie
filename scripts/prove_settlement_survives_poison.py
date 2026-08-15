@@ -241,12 +241,24 @@ async def run_through_the_turn(url: str) -> int:
         os.environ["TURN_COORDINATOR_MODE"] = "new_execute"
         os.environ["TURN_COORDINATOR_LANES"] = "structured_food"
         os.environ["TURN_COORDINATOR_ALLOWLIST"] = str(uid)
-        os.environ["GENERAL_SETTLEMENT_ALLOWLIST"] = str(uid)
+        # ⭐ THE CONTROL. Set `GENERAL_SETTLEMENT_ALLOWLIST=` (empty) to drive
+        # the SAME native turn with LEGACY settling it. Without that arm,
+        # "canonical renders no card" cannot be told apart from "the native
+        # renderer renders no card" — and blaming the wrong layer is how a
+        # slice acquires a defect it did not cause.
+        if "GENERAL_SETTLEMENT_ALLOWLIST" not in os.environ:
+            os.environ["GENERAL_SETTLEMENT_ALLOWLIST"] = str(uid)
         print(f"    user                      : {uid}")
         print(f"    TURN_COORDINATOR_MODE     : new_execute")
         print(f"    TURN_COORDINATOR_LANES    : structured_food")
         print(f"    TURN_COORDINATOR_ALLOWLIST   : {uid}")
-        print(f"    GENERAL_SETTLEMENT_ALLOWLIST : {uid}")
+        # ⚠ THE ACTUAL VALUE, NOT THE ONE THIS SCRIPT INTENDED. The first
+        # version printed `{uid}` unconditionally, so the CONTROL arm — run
+        # with an empty cohort — printed a cohort it did not have. An
+        # instrument that reports its intent instead of its state is how a
+        # control arm gets mistaken for the treatment.
+        print(f"    GENERAL_SETTLEMENT_ALLOWLIST : "
+              f"{os.environ.get('GENERAL_SETTLEMENT_ALLOWLIST') or '(empty — CONTROL ARM, legacy settles)'}")
 
         from core.chat_service import run_chat_turn
 

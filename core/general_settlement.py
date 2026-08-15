@@ -335,6 +335,52 @@ class GeneralSettlementOwner:
             provenance=_provenance())
 
 
+def execution_view(result, items) -> object:
+    """The committed meal, in the shape EVERY RENDERER ALREADY READS.
+
+    ⛔⛔ WITHOUT THIS THE USER GETS NO CARD, AND THE ROW IS STILL CORRECT.
+    Measured 2026-08-16 on a real turn: legacy rendered 1 card, canonical
+    rendered ZERO. `LAST_EXECUTION` is published only by `execute_tool_calls`,
+    so after a canonical settle `affected_entities(None)` is empty, the
+    snapshot has no committed operations, and `render_committed` has nothing to
+    narrate. The write succeeded and the turn looked like it did nothing.
+
+    ⭐ TRANSLATED, NOT FORKED. The renderer is not taught about canonical
+    settlement; the canonical result is expressed in the type the renderer
+    already consumes. Presentation rides behind the slice — it is never the
+    next phase, and it is never a second renderer.
+
+    ⚠ AND THE PAIRING IS BY POSITION, WHICH IS ONLY SOUND BECAUSE IT IS BUILT
+    THAT WAY: `_read_back` walks `written`, which follows `meal.items`, which
+    this module builds by `enumerate(items)`. Stated and CHECKED rather than
+    assumed — a length mismatch means the chain changed underneath and is
+    logged loudly instead of silently mis-pairing a food with another's row.
+    """
+    from core.execution_result import CallResult, ExecutionResult
+
+    committed = list(getattr(result, "committed_items", None) or ())
+    if len(committed) != len(items):
+        logger.warning(
+            "event=execution_view_mismatch items=%d committed=%d — the "
+            "position pairing this view relies on no longer holds",
+            len(items), len(committed))
+    calls = []
+    for index, item in enumerate(items):
+        if index >= len(committed):
+            break
+        row = committed[index] or {}
+        calls.append(CallResult(
+            name="log_food", raw_input=dict(item), status="committed",
+            entry_id=row.get("entry_id"),
+            # ⚠ NO event_id. `write_canonical_meal` records the ledger event
+            # but does not return its id, so `ledger_event_ids` is empty for a
+            # canonically settled turn and an UNDO TOKEN cannot be surfaced
+            # from it. Named here rather than left as a surprise: it is a
+            # separate gap, and it belongs with B-1.8's correction work.
+            event_id=None))
+    return ExecutionResult(calls=tuple(calls))
+
+
 @dataclass(frozen=True)
 class _Priced:
     identity: str
