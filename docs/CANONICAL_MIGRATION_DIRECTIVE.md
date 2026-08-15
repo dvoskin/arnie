@@ -150,6 +150,72 @@ direction. ⛔ **Do not start step 5 on the strength of a quiet canary.**
 writes resolutions, and `shadow_actually_resolved_something` is a live check
 rather than a hypothetical one.
 
+#### 0z — ✅✅ INTERPRETATION ADOPTION IS CLOSED *(2026-08-15, PROVEN IN PRODUCTION)*
+
+**Every step of Danny's frozen §0 sequence is done, and each was proven on the
+real turn path rather than in a gate.**
+
+```text
+1  record ask/pending foods at stage time    ✅ 82efb5a · proven telegram:9345
+2  gates + dual-engine                       ✅ SQLite 9136/0 · PG 9218/0
+3  resolver truncation reliability           ✅ bf4b8ba · Russian single resolves
+4  real-model proof, non-English singles     ✅ 4/4 claims
+5  weighted corpus in shadow                 ✅ 46 identities, 0 false collapses
+6  consume canary, cohort of one             ✅ c8482c1 · proven telegram:9362/9365
+7  B-1 prices + provenance watched           ✅ correct, incl. one rung=memory
+8  close interpretation adoption             ✅ THIS SECTION
+```
+
+⭐ **THE BEFORE/AFTER, ON THE FOOD THAT FAILED ALL DAY.** `Сметана 5%`:
+
+```text
+before   memory_key_refused key='5'          the rung was never even consulted
+         canonical_priced rung=estimate
+after    entity_identity_consumed stamped=1  key = 'smetana 5percent'
+         pricing.memory: 4ms                 the rung RAN and returned nothing
+         canonical_priced rung=estimate      price unchanged: 80 kcal/100g
+```
+
+⭐⭐ **AND THE CAVEAT IS THE MOST USEFUL PART. CONSUMPTION MADE THE KEY
+ADDRESSABLE; IT DID NOT MAKE THE ROW EXIST.** `evidence_qualified raw=8 kept=0
+dispositions={'DIFFERENT_IDENTITY': 8}` — nothing seats a candidate for Russian
+sour cream, so nothing caches, so the correct key still addresses nothing. The
+corpus said this in advance: **2 of 22 QUALIFIED foods ever cached, 2 of 27
+non-English.** The identity boundary fixes ADDRESSING. Cacheability is a
+different defect with a different owner, and it is now the thing standing
+between the 30.4% population and a memory hit.
+
+**WHAT IS PROVEN**
+
+```text
+producer reachable from ordinary turns   seam 1 (log) · 2 (tool batch) · 3 (ask)
+shadow is annotation-only                0 identity-keyed rows across 836
+consume is scoped by its own cohort      coordinator rollout cannot widen it
+resolver does not truncate               Russian singles resolve
+no false collapse                        46 identities, 0 merges
+PRODUCT binds nothing                    5 rows, 0 binding
+61eec60 memory rung                      live, decided a correct B-1 price
+```
+
+**WHAT REMAINS, NAMED RATHER THAN LEFT**
+
+1. ⛔ **The B-1 ASK path does not consume.** A food staged into a pending
+   operation settles via `assemble()` from the staged item, not from a tool
+   call, so the tool-input stamp never reaches it. A bare `Сметана 5%` still
+   refuses the key. Scoped, not surprising, not started.
+2. ⚠ **Seam 2 is unproven on fleet traffic.** `structured_food_executes_
+   natively` is `{allowlisted_user: true, fleet: false}` and user 26 is the
+   allowlist, so the fleet's door has unit and mutation proof only. One
+   non-allowlisted shadow canary closes it.
+3. ⚠ **Entity-id form is unstable across calls** — `kefir 1percent`,
+   `ground turkey 96 percent lean`, `ground turkey 94 lean`. Stable per
+   surface, so harmless today. One measured cross-language duplicate:
+   `Листья салата` → `lettuce leaves` vs `Lettuce leaves` → `lettuce`.
+4. ⛔ **Canonical rows cannot be corrected** through the ordinary
+   interpretation path — carried to B-1.8 (§6), firewall not to be reopened.
+
+**NEXT: general canonical settlement owner, A1–A10 (§3a.2).**
+
 #### 0b — ✅ CLOSED BY THE ADOPTION SEAM `54d91bd` *(2026-08-15)*
 
 **FIXED. The producer is now on the path ordinary food traffic takes**, and the
