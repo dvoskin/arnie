@@ -49,7 +49,36 @@ artifact is the DECIDING rung on **13 of them — 1.9%**. Only the 5.6%
 oils live in it. Landing all five moves real coverage under one point. See
 §3a.2 for the full breakdown and the instrument's honest limits.
 
-### 1 — INTERPRETATION-DERIVED IDENTITY *(the next P0)*
+### 1 — INTERPRETATION-DERIVED IDENTITY — ⚠ BUILT END TO END, SHIPS DARK *(status 2026-08-15)*
+
+```text
+02ab6eb   HEAD · SQLite 9090/0 · Postgres 9172/0
+fac8f97   containment — a memory key must name a food      DEPLOYED, LIVE
+44f137f   substrate: 3 states + migration entres001        pushed
+05a5166   producer: interpreted meaning, once              pushed
+d24868a   DISTINCT reuse + PRODUCT separation              pushed
+ee7457f   live reuse proof 4/4                             pushed
+d3a4fc2   credential boundary gate                         pushed
+02d87b3   wired at interpretation — ENTITY_RESOLUTION_MODE=off
+1f13347   identity keys durable memory                     pushed
+61eec60   P0 memory-rung repair + remeasure                pushed
+02ab6eb   measurement loop closed apples-to-apples         pushed
+```
+
+**ONLY `fac8f97` CHANGES PRODUCTION BEHAVIOUR.** `ENTITY_RESOLUTION_MODE`
+defaults `off`, so nothing is stamped and nothing is consumed.
+
+**OWED, BOTH OUTSIDE THIS SESSION'S REACH:**
+1. **exact-head CI** on `05a5166` → `02ab6eb` (`gh` unavailable here)
+2. **a shadow window** — the resolution store is EMPTY, so no
+   `canonical_entity_id` has ever been passed in production. Today's 43.7% is
+   the REPAIRED RUNG ON TODAY'S KEYS. Until real traffic fills the store, no
+   rerun can show what the boundary is worth.
+
+**THEN:** remeasure with identities populated → general canonical settlement
+owner → PRODUCT rung → oils last.
+
+### 1 — THE ORIGINAL BRIEF
 
 > **THE INVARIANT: surface language is for DISPLAY and AUDIT. Canonical
 > identity comes from INTERPRETED FOOD MEANING.**
