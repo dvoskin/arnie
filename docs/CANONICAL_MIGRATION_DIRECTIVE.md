@@ -109,18 +109,44 @@ d3a4fc2   credential boundary gate                         pushed
 02ab6eb   measurement loop closed apples-to-apples         pushed
 ```
 
-**ONLY `fac8f97` CHANGES PRODUCTION BEHAVIOUR.** `ENTITY_RESOLUTION_MODE`
-defaults `off`, so nothing is stamped and nothing is consumed.
+**ONLY `fac8f97` IS CURRENTLY DEPLOYED.** The interpretation-resolution FEATURE
+is dark: `ENTITY_RESOLUTION_MODE` defaults `off`, so nothing is stamped and
+nothing is consumed.
+
+⚠⚠ **AN EARLIER DRAFT SAID "ONLY `fac8f97` CHANGES PRODUCTION BEHAVIOUR" AND
+THAT IS TOO BROAD** *(Danny, 2026-08-15)*. It is true of what is DEPLOYED. It is
+false of the TRANCHE. `61eec60` repairs `_memory()` in
+`core/canonical_pricing_inputs.py`; `assemble()` is its only route to
+production and has exactly one caller — `core/b1_quantity_operation.py:1486`,
+the LIVE B-1 quantity clarification path. The rung returned None for 836 of 836
+rows and now returns evidence, so a B-1 settlement can price from a user memory
+row where it previously fell through to artifact-or-estimate — **with the mode
+flag off and nothing resolved.**
+
+⭐ **THE DISTINCTION IS DEPLOYED-vs-BEHAVIOURAL, AND IT GENERALISES.** A feature
+flag gates the feature it was written for. It does not gate a defect repair that
+happened to travel in the same tranche, and "ten of eleven commits are inert" is
+the kind of summary that hides exactly one live change in a rounding. The dark
+deploy makes ten commits free; it does not make `61eec60` free. **Canary
+B-1 settlement PRICES, not only resolution writes.**
 
 **OWED, BOTH OUTSIDE THIS SESSION'S REACH:**
-1. **exact-head CI** on `05a5166` → `02ab6eb` (`gh` unavailable here)
-2. **a shadow window** — the resolution store is EMPTY, so no
-   `canonical_entity_id` has ever been passed in production. Today's 43.7% is
-   the REPAIRED RUNG ON TODAY'S KEYS. Until real traffic fills the store, no
-   rerun can show what the boundary is worth.
+1. **exact-head CI** on `05a5166` → the tranche tip (`gh` unavailable here)
+2. **the dark deploy**, then `ENTITY_RESOLUTION_MODE=shadow` for a canary cohort
 
-**THEN:** remeasure with identities populated → general canonical settlement
-owner → PRODUCT rung → oils last.
+⛔ **WHAT IS *NOT* OWED ANY MORE: WAITING.** An earlier draft of this section
+listed a third debt — *"the resolution store is EMPTY, so until real traffic
+fills it no rerun can show what the boundary is worth."* **§0 retires exactly
+that.** Today's 43.7% is still the honest caption (the REPAIRED RUNG ON TODAY'S
+KEYS, no identity ever passed in production), but the remeasure does not wait on
+organic volume: the corpus is BUILT from the measured distributions and driven
+through the real turn path. Live traffic owes routing, persistence, latency,
+provenance and rollback — never coverage.
+
+**THEN, IN §0's ORDER — 3 through 7 BEFORE 8:** weighted corpus through the real
+turn path → canary shadow → canary consumption → historical replay through the
+now-real consumer path → general canonical settlement owner → PRODUCT rung →
+oils last.
 
 ### 1 — THE ORIGINAL BRIEF
 
