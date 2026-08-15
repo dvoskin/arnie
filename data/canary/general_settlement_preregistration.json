@@ -1,0 +1,237 @@
+{
+ "what_this_is": [
+  "A9 — the settlement canary, PRE-REGISTERED OFFLINE. Written down BEFORE any",
+  "production observation so that what is compared afterwards is the",
+  "EVIDENCE_ID, not the calorie number.",
+  "⛔ `calories_per_100g_NOT_PROVENANCE` is recorded and is NOT the proof. A",
+  "matching calorie number is a coincidence until the evidence id agrees —",
+  "banana 210 = 2x105 taught that at the cost of a session."
+ ],
+ "preregistered": "2026-08-16",
+ "resolver_version": "food_evidence_semantics_v1",
+ "vocabulary_fingerprint": "sha256:ece89f94d6940c53e811f1dae4e365a8",
+ "artifact_identities": 27,
+ "reachable": [
+  {
+   "identity": "asparagus|",
+   "entity": "asparagus",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:168389",
+   "calories_per_100g_NOT_PROVENANCE": 20.0
+  },
+  {
+   "identity": "banana|",
+   "entity": "banana",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:173944",
+   "calories_per_100g_NOT_PROVENANCE": 89.0
+  },
+  {
+   "identity": "beef|",
+   "entity": "beef",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:174730",
+   "calories_per_100g_NOT_PROVENANCE": 126.0
+  },
+  {
+   "identity": "beef|fried",
+   "entity": "beef",
+   "preparation": "fried",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:173085",
+   "calories_per_100g_NOT_PROVENANCE": 178.0
+  },
+  {
+   "identity": "beef|grilled",
+   "entity": "beef",
+   "preparation": "grilled",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:174702",
+   "calories_per_100g_NOT_PROVENANCE": 208.0
+  },
+  {
+   "identity": "beef|roasted",
+   "entity": "beef",
+   "preparation": "roasted",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:173089",
+   "calories_per_100g_NOT_PROVENANCE": 197.0
+  },
+  {
+   "identity": "broccoli|",
+   "entity": "broccoli",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:747447",
+   "calories_per_100g_NOT_PROVENANCE": 31.0
+  },
+  {
+   "identity": "cauliflower|",
+   "entity": "cauliflower",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:169986",
+   "calories_per_100g_NOT_PROVENANCE": 25.0
+  },
+  {
+   "identity": "chicken|fried",
+   "entity": "chicken",
+   "preparation": "fried",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:171053",
+   "calories_per_100g_NOT_PROVENANCE": 219.0
+  },
+  {
+   "identity": "chicken|grilled",
+   "entity": "chicken",
+   "preparation": "grilled",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:171534",
+   "calories_per_100g_NOT_PROVENANCE": 151.0
+  },
+  {
+   "identity": "chicken|roasted",
+   "entity": "chicken",
+   "preparation": "roasted",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:172395",
+   "calories_per_100g_NOT_PROVENANCE": 167.0
+  },
+  {
+   "identity": "egg|",
+   "entity": "egg",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:172185",
+   "calories_per_100g_NOT_PROVENANCE": 154.0
+  },
+  {
+   "identity": "egg|fried",
+   "entity": "egg",
+   "preparation": "fried",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:173423",
+   "calories_per_100g_NOT_PROVENANCE": 196.0
+  },
+  {
+   "identity": "mackerel|",
+   "entity": "mackerel",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:168149",
+   "calories_per_100g_NOT_PROVENANCE": 305.0
+  },
+  {
+   "identity": "mushrooms|",
+   "entity": "mushrooms",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:170097",
+   "calories_per_100g_NOT_PROVENANCE": 56.0
+  },
+  {
+   "identity": "mushrooms|grilled",
+   "entity": "mushrooms",
+   "preparation": "grilled",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:169243",
+   "calories_per_100g_NOT_PROVENANCE": 29.0
+  },
+  {
+   "identity": "potato|",
+   "entity": "potato",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:170115",
+   "calories_per_100g_NOT_PROVENANCE": 132.0
+  },
+  {
+   "identity": "potato|fried",
+   "entity": "potato",
+   "preparation": "fried",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:170698",
+   "calories_per_100g_NOT_PROVENANCE": 312.0
+  },
+  {
+   "identity": "rice|",
+   "entity": "rice",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:169711",
+   "calories_per_100g_NOT_PROVENANCE": 97.0
+  },
+  {
+   "identity": "salmon|",
+   "entity": "salmon",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:173688",
+   "calories_per_100g_NOT_PROVENANCE": 179.0
+  },
+  {
+   "identity": "shrimp|",
+   "entity": "shrimp",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:175180",
+   "calories_per_100g_NOT_PROVENANCE": 99.0
+  },
+  {
+   "identity": "tilapia|",
+   "entity": "tilapia",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:175176",
+   "calories_per_100g_NOT_PROVENANCE": 96.0
+  },
+  {
+   "identity": "tofu|",
+   "entity": "tofu",
+   "preparation": "",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:174291",
+   "calories_per_100g_NOT_PROVENANCE": 145.0
+  },
+  {
+   "identity": "tofu|fried",
+   "entity": "tofu",
+   "preparation": "fried",
+   "expected_rung": "artifact",
+   "expected_evidence_id": "usda:172451",
+   "calories_per_100g_NOT_PROVENANCE": 270.0
+  }
+ ],
+ "committed_but_unreachable": [
+  {
+   "identity": "mackerel|roasted",
+   "reason": "PricingRefused: no rung could price 'mackerel'"
+  },
+  {
+   "identity": "oats|",
+   "reason": "PricingRefused: no rung could price 'oats'"
+  },
+  {
+   "identity": "tilapia|roasted",
+   "reason": "PricingRefused: no rung could price 'tilapia'"
+  }
+ ],
+ "unreachable_note": [
+  "⛔ THESE ARE COMMITTED IDENTITIES THE RANKER CANNOT REACH — `_from_artifact`",
+  "returns None and `price()` falls through. Recorded rather than skipped:",
+  "a canary built only from what happens to work would report the artifact as",
+  "fully addressable, which is the silence this project keeps paying for.",
+  "The three below are the same class as the 2026-08-13 finding: bare `mackerel` cannot match the committed row `mackerel, roasted`, so asking for more finds less."
+ ],
+ "measurement_mode": [
+  "⛔⛔ THIS COUNT HAS A MODE, AND A NUMBER WITHOUT ITS MODE IS NOT A FACT.",
+  "Measured OFFLINE: price(entity, preparation, artifact=evidence_for(...)) with",
+  "NO user, NO memory rung and NO per-user flag. Reachability has previously been",
+  "measured as 5-of-27 dead for the fleet and 2-of-27 for user 26, because it",
+  "depends on the per-user NUTRITION_ACCURACY_V2 allowlist. 3 here is the",
+  "artifact-only figure and MUST NOT be compared against those without saying so."
+ ]
+}
