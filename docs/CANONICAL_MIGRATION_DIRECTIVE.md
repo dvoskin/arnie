@@ -49,6 +49,50 @@ artifact is the DECIDING rung on **13 of them — 1.9%**. Only the 5.6%
 oils live in it. Landing all five moves real coverage under one point. See
 §3a.2 for the full breakdown and the instrument's honest limits.
 
+### 0 — ⛔ FROZEN RULE: NO PHASE BLOCKS ON ORGANIC TRAFFIC *(Danny, 2026-08-15)*
+
+> **No phase may block on organic traffic VOLUME if the required evidence can be
+> reproduced from HISTORICAL traffic or a PREREGISTERED corpus. Live traffic is
+> required only for canary proof of ROUTING, PERSISTENCE, LATENCY, PROVENANCE
+> and ROLLBACK behaviour.**
+
+⭐ **THE SPLIT THIS FREEZES.** Use historical production data + synthetic replay
+for COVERAGE and CORRECTNESS. Use live production only to prove DEPLOYMENT
+behaviour and catch environment-only defects. Production traffic is for CANARY
+VALIDATION, not for discovering the next architecture step.
+
+⚠ **AND IT RETIRES A REAL BLOCKER I RAISED.** The interpretation boundary was
+sitting behind "the store is empty, so no rerun can show what it is worth" —
+which is exactly the shape this rule forbids. The corpus is built from the
+measured distributions, not waited for.
+
+**THE CONTROLLED EVIDENCE PROGRAM:**
+
+```text
+ 1  exact-head CI on main                                    ← owner: Danny
+ 2  deploy the interpretation boundary DARK (mode=off)        ← owner: Danny
+ 3  synthetic production-like corpus through the REAL turn path:
+      multilingual · branded · modifier-heavy · bare uncovered
+      known collisions · egg/mackerel materiality · quantity+preparation variants
+ 4  WEIGHT that corpus by the ALREADY-MEASURED production distributions
+      (NON-ENGLISH 30.4% · BRANDED 9.8% · QUALIFIED 7.7% · BARE 5.6%)
+      so it approximates traffic rather than being a toy fixture set
+ 5  ENTITY_RESOLUTION_MODE=shadow for CANARY USERS ONLY — prove:
+      resolution writes · NO turn behaviour change · no false collapse
+      no PRODUCT binding · latency acceptable
+ 6  promote consumption for the CANARY COHORT, without waiting for volume
+ 7  re-run the 30-day historical corpus through the now-real consumer path:
+      MEMORY · ARTIFACT · PRODUCT · REFUSE/ESTIMATE
+      false-collapse rate · unresolved rate · p50/p95 latency
+ 8  -> GENERAL CANONICAL SETTLEMENT OWNER          ← the next substantive build
+ 9  canary that slice
+10  next largest measured gap (expected PRODUCT)
+11  oils / B-1.7a
+12  B-1.7b -> 1.7c -> B-1.8 -> B-2 -> promote/delete legacy -> C/D/E/F
+```
+
+**NOT MORE PHASE-0-STYLE ARCHAEOLOGY** unless a gate exposes a real defect.
+
 ### 1 — INTERPRETATION-DERIVED IDENTITY — ⚠ BUILT END TO END, SHIPS DARK *(status 2026-08-15)*
 
 ```text
