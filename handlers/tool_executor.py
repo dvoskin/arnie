@@ -3418,7 +3418,7 @@ async def _execute_tool_calls(
     # touched, so no `canonical_entity_id` can reach `memory_key` and no price
     # can move — shadow stays annotation-only.
     try:
-        from core.conversation import _record_turn_identities
+        from core.turns.stages.food import record_turn_identities
 
         _identity_foods = [
             {"food": str((call.get("input") or {}).get("food_name") or "").strip()}
@@ -3426,7 +3426,7 @@ async def _execute_tool_calls(
             if call.get("name") == "log_food"
             and str((call.get("input") or {}).get("food_name") or "").strip()]
         if _identity_foods:
-            await _record_turn_identities({"items": _identity_foods}, db)
+            await record_turn_identities({"items": _identity_foods}, db)
     except Exception as _ident_err:               # noqa: BLE001
         logger.warning(f"identity recording unavailable, batch unchanged: {_ident_err}")
 

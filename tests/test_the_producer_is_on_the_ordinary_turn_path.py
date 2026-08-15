@@ -451,3 +451,45 @@ def test_the_diagnostic_never_echoes_food_names_or_user_ids():
     for leak in ("surface_form", "parsed_food_name", "display_name)",
                  "user_id"):
         assert f'out["{leak}' not in source, f"{leak} is being returned"
+
+
+def test_every_seam_import_actually_resolves():
+    """⛔⛔ THE GATE THAT WAS MISSING, AND IT COST A BROKEN PUSH.
+
+    `f43b2d5` shipped `from core.conversation import _record_turn_identities`
+    after that function had moved to `core.turns.stages.food`. The seam's own
+    guard catches ImportError and logs a warning, so the failure mode is
+    SILENT: every legacy-tool-path food turn stops recording and the turn looks
+    perfectly healthy.
+
+    ⭐ AND EVERY OTHER GATE STAYED GREEN, because they assert the CALL exists.
+    An AST gate proves a name is written down; it cannot prove the name
+    resolves to anything. Same family as "a stub is a statement about the
+    contract, never evidence the stubbed thing exists" — one level up, about
+    imports rather than about behaviour.
+
+    So this IMPORTS what the seams import, by name, and fails if it is not
+    there.
+    """
+    import ast
+    import importlib
+    import pathlib
+
+    for module_path in ("handlers/tool_executor.py", "core/conversation.py"):
+        source = (pathlib.Path(__file__).resolve().parents[1]
+                  / module_path).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or not node.module:
+                continue
+            names = [a.name for a in node.names]
+            if not any("record_turn_identities" in n or
+                       "record_identities" in n for n in names):
+                continue
+            module = importlib.import_module(node.module)
+            for name in names:
+                assert hasattr(module, name), (
+                    f"{module_path}:{node.lineno} imports {name!r} from "
+                    f"{node.module!r}, which does not define it. The seam's "
+                    f"guard swallows the ImportError, so this fails SILENTLY "
+                    f"and every affected food turn stops recording.")
