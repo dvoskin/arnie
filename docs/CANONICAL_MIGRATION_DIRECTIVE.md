@@ -15,7 +15,51 @@
 > `tests/test_the_canonical_invariants.py`; this document is the sequencing
 > authority.
 
-## ⏭⏭⏭ THE FROZEN ROADMAP — MEASURED-ADOPTION ORDER *(Danny, 2026-08-14. THIS SUPERSEDES THE SEQUENCING BELOW.)*
+## ⏭⏭⏭⏭ CORRECTED SEQUENCING *(Danny, 2026-08-16. THIS SUPERSEDES EVERY SEQUENCE BELOW, INCLUDING THE FROZEN ROADMAP.)*
+
+> **The correct state: interpretation adoption is FUNCTIONALLY CONNECTED in
+> production for one user. Its CORPUS-BASED EVIDENCE is INVALID until the
+> attribution instrument is repaired and rerun.** 2026-08-15 published those two
+> claims as one and closed the section on the strength of the second.
+
+```text
+P0   correct the closure language and FREEZE the rollout   <- this commit
+P1   repair corpus correlation
+P2   rerun the corpus from a clean database
+P3   review the evidence and re-close interpretation adoption
+P4   amend §3a.2 with decisions A-D
+P5   approve the A1-A10 plan
+P6   build ResolvedMeal + GeneralSettlementOwner
+P7   add routing, refusal, provenance and ownership gates
+P8   execute the A7 poisoned proof
+P9   pre-register the offline canary
+P10  canary behind an independent fail-closed cohort
+P11  measure coverage and miss rate BEFORE any expansion
+```
+
+⛔ **THE IMMEDIATE NEXT MOVE IS P1, NOT SETTLEMENT CODE.** Planning A1–A10 may
+continue. **Implementation is BLOCKED until P2–P4 are complete.**
+
+⛔ **ROLLOUT IS FROZEN.**
+
+```text
+ENTITY_RESOLUTION_CONSUME_ALLOWLIST = 26        keep it — do not widen
+cohort expansion                     PROHIBITED until P3 closes
+```
+
+**What P0 changed** *(documentation only — no code, no schema, no flag)*:
+§0z restated from "closed" to "functionally connected, evidence closure
+pending" · both corpus run artifacts marked invalid for reconciliation-derived
+conclusions and preserved byte for byte · the invalid ratios and weighted
+conclusions removed from the handoff · the cacheability phenomenon kept and
+deliberately unquantified · the stale caller count corrected in §3a.2 · the two
+blocking contract ambiguities recorded with recommended resolutions, **pending
+P4 and not yet in force**.
+
+**The defect, the invalidation scope, and the P1/P2 contracts:**
+[CORPUS_ATTRIBUTION_DEFECT_0816.md](CORPUS_ATTRIBUTION_DEFECT_0816.md).
+
+## ⏭⏭⏭ THE FROZEN ROADMAP — MEASURED-ADOPTION ORDER *(Danny, 2026-08-14. SUPERSEDED FOR SEQUENCING BY THE CORRECTION ABOVE; the content below remains the plan of record for steps 2 onward.)*
 
 > **We are no longer building B in SPECIFICATION order. We are building it in
 > MEASURED-ADOPTION order.** The spine is good. Now we make sure real user
@@ -150,21 +194,38 @@ direction. ⛔ **Do not start step 5 on the strength of a quiet canary.**
 writes resolutions, and `shadow_actually_resolved_something` is a live check
 rather than a hypothetical one.
 
-#### 0z — ✅✅ INTERPRETATION ADOPTION IS CLOSED *(2026-08-15, PROVEN IN PRODUCTION)*
+#### 0z — ⚠ INTERPRETATION ADOPTION IS FUNCTIONALLY CONNECTED; EVIDENCE CLOSURE IS PENDING *(restated 2026-08-16)*
 
-**Every step of Danny's frozen §0 sequence is done, and each was proven on the
-real turn path rather than in a gate.**
+> **CORRECTION.** This section read *"INTERPRETATION ADOPTION IS CLOSED"* from
+> 2026-08-15 to 2026-08-16. It is not closed. **The production connection is
+> real and independently proven for one user. Step 5's corpus evidence is
+> INVALID** — its attribution instrument matched rows to corpus items by
+> `normalize_name`, which reduces every digit-free Cyrillic surface to the empty
+> string and then treats that key as a wildcard. **29 of 29 attributed `ru` rows
+> in the shadow run name a different food than the one that produced them.**
+> Full account: [CORPUS_ATTRIBUTION_DEFECT_0816.md](CORPUS_ATTRIBUTION_DEFECT_0816.md).
+>
+> Closure returns only after P2 republishes with `ambiguous = incorrect =
+> unexplained rows = false collapses = PRODUCT bindings = 0`.
+
+**Where the frozen §0 sequence actually stands:**
 
 ```text
 1  record ask/pending foods at stage time    ✅ 82efb5a · proven telegram:9345
 2  gates + dual-engine                       ✅ SQLite 9136/0 · PG 9218/0
 3  resolver truncation reliability           ✅ bf4b8ba · Russian single resolves
 4  real-model proof, non-English singles     ✅ 4/4 claims
-5  weighted corpus in shadow                 ✅ 46 identities, 0 false collapses
+5  weighted corpus in shadow                 ⛔ INVALID — attribution instrument
+                                                broken; rerun required (P1, P2)
 6  consume canary, cohort of one             ✅ c8482c1 · proven telegram:9362/9365
 7  B-1 prices + provenance watched           ✅ correct, incl. one rung=memory
-8  close interpretation adoption             ✅ THIS SECTION
+8  close interpretation adoption             ⛔ NOT CLOSED — blocked on step 5
 ```
+
+⛔ **AND THE COHORT IS FROZEN WHILE THIS IS OPEN.**
+`ENTITY_RESOLUTION_CONSUME_ALLOWLIST=26` stays as it is; **expansion is
+prohibited until P3 closes.** Steps 1–4, 6 and 7 are what justify keeping the
+cohort of one; none of them justifies widening it.
 
 ⭐ **THE BEFORE/AFTER, ON THE FOOD THAT FAILED ALL DAY.** `Сметана 5%`:
 
@@ -180,22 +241,33 @@ after    entity_identity_consumed stamped=1  key = 'smetana 5percent'
 ADDRESSABLE; IT DID NOT MAKE THE ROW EXIST.** `evidence_qualified raw=8 kept=0
 dispositions={'DIFFERENT_IDENTITY': 8}` — nothing seats a candidate for Russian
 sour cream, so nothing caches, so the correct key still addresses nothing. The
-corpus said this in advance: **2 of 22 QUALIFIED foods ever cached, 2 of 27
-non-English.** The identity boundary fixes ADDRESSING. Cacheability is a
-different defect with a different owner, and it is now the thing standing
-between the 30.4% population and a memory hit.
+identity boundary fixes ADDRESSING. **Cacheability is a different defect with a
+different owner**, and it now stands between the non-English population and a
+memory hit.
 
-**WHAT IS PROVEN**
+⛔ **ITS PREVALENCE IS UNKNOWN AND MUST NOT BE STATED.** This paragraph carried
+*"2 of 22 QUALIFIED foods ever cached, 2 of 27 non-English"* until 2026-08-16.
+Both ratios were reconciliation-derived and are **withdrawn**. The phenomenon
+above stands on the live `Сметана 5%` turn alone, which is enough to name it and
+not enough to size it. Do not write it as a rate, a fraction, or a population
+share until P2 republishes one.
+
+**WHAT IS PROVEN** — none of it reconciliation-derived
 
 ```text
 producer reachable from ordinary turns   seam 1 (log) · 2 (tool batch) · 3 (ask)
-shadow is annotation-only                0 identity-keyed rows across 836
+shadow is annotation-only                0 identity-keyed rows across 836 (prod DB)
 consume is scoped by its own cohort      coordinator rollout cannot widen it
 resolver does not truncate               Russian singles resolve
-no false collapse                        46 identities, 0 merges
-PRODUCT binds nothing                    5 rows, 0 binding
+no false collapse                        46 identities, 0 merges (resolution store)
+PRODUCT binds nothing                    5 rows, 0 binding (consumer-side read)
 61eec60 memory rung                      live, decided a correct B-1 price
 ```
+
+⚠ **THE LAST THREE ARE STORE-SIDE READS, WHICH IS WHY THEY SURVIVED.** They come
+from `FoodEntityResolution` and `entity_id_for_surface`, never from `_reconcile`.
+Anything in the same run that joined a written ROW to a corpus ITEM did not
+survive — see the invalidation list in the defect record.
 
 **WHAT REMAINS, NAMED RATHER THAN LEFT**
 
@@ -214,7 +286,10 @@ PRODUCT binds nothing                    5 rows, 0 binding
 4. ⛔ **Canonical rows cannot be corrected** through the ordinary
    interpretation path — carried to B-1.8 (§6), firewall not to be reopened.
 
-**NEXT: general canonical settlement owner, A1–A10 (§3a.2).**
+**NEXT: P1 — repair corpus correlation.** *(This line read "NEXT: general
+canonical settlement owner, A1–A10" until 2026-08-16.)* A1–A10 may be PLANNED;
+**implementation is blocked until P2–P4 complete**, and §3a.2 carries two
+blocking contract ambiguities that are not yet resolved.
 
 #### 0b — ✅ CLOSED BY THE ADOPTION SEAM `54d91bd` *(2026-08-15)*
 
@@ -280,49 +355,64 @@ FOR THE THIRD TIME.** `prove_distinct_reuse` and `prove_memory_addressing` are
 both TRUE and both call one level below the turn. Every gate over the producer
 passes. Nothing asked whether a turn reaches it.
 
-#### 0c — WHAT THE OFF RUN MEASURED, AND ITS ONE FALSIFIED PREDICTION
+#### 0c — ⛔ WITHDRAWN: WHAT THE OFF RUN "MEASURED" *(invalidated 2026-08-16)*
 
-100 turns · 81 entries · p50 6.0 s · p95 9.6 s. Drift on the comparable basis:
+> **EVERY NUMBER THIS SECTION PUBLISHED WAS RECONCILIATION-DERIVED AND IS
+> WITHDRAWN.** `run_off.json` shares the broken attribution instrument: **26 of
+> its 27 attributed `ru` rows name a different food than the one that produced
+> them.** The drift table, the per-population cacheability ratios, and the
+> branded-prediction verdict all depended on joining a written row to its corpus
+> item. See [CORPUS_ATTRIBUTION_DEFECT_0816.md](CORPUS_ATTRIBUTION_DEFECT_0816.md).
+>
+> **What survives from this run:** 100 turns · 81 entries · 0 turn failures ·
+> 0 recovery bubbles · p50 6.0 s · p95 9.6 s. Those are per-turn measurements
+> and never pass through the reconciler.
+>
+> **The original text is kept below, struck**, because the shape of the error —
+> a run that reported a confident, well-formed, internally consistent mix over
+> mis-attributed rows — is the thing worth remembering.
+
+~~Drift on the comparable basis:~~
 
 ```text
-NON-ENGLISH   29.6%  vs 31.3%   -1.7   ✓
-BARE          8.6%   vs  5.7%   +2.9   ✓
-ARTIFACT      0.0%   vs  1.9%   -1.9   ✓
-MEMORY        34.6%  vs 43.7%   -9.1   ✗
-QUALIFIED     27.2%  vs  7.6%  +19.6   ✗
-BRANDED       0.0%   vs  9.9%   -9.9   ✗
+WITHDRAWN — reconciliation-derived
+NON-ENGLISH   29.6%  vs 31.3%   -1.7
+BARE          8.6%   vs  5.7%   +2.9
+ARTIFACT      0.0%   vs  1.9%   -1.9
+MEMORY        34.6%  vs 43.7%   -9.1
+QUALIFIED     27.2%  vs  7.6%  +19.6
+BRANDED       0.0%   vs  9.9%   -9.9
 ```
 
-⭐ **THE LAST THREE HAVE ONE CAUSE, AND IT IS A REAL FINDING ABOUT THE SYSTEM,
-NOT A CORPUS DEFECT.** Which populations ever reach a cached row:
+~~⭐ **THE LAST THREE HAVE ONE CAUSE, AND IT IS A REAL FINDING ABOUT THE SYSTEM,
+NOT A CORPUS DEFECT.** Which populations ever reach a cached row:~~
 
 ```text
-en-staples  16 of 24     plain English food caches, and repetition rescues it
-branded      8 of  8     caches fine HERE
-qualified    2 of 22     modifier-heavy names essentially NEVER cache
-ru           2 of 27     non-English never caches — the fac8f97 containment
+WITHDRAWN — reconciliation-derived
+en-staples  16 of 24
+branded      8 of  8
+qualified    2 of 22
+ru           2 of 27
 ```
 
-⭐⭐ **THE QUALIFIED POPULATION IS UNCACHEABLE, NOT MERELY UNCOVERED.**
-Repetition does not rescue it: retrieval cannot seat "Spicy White Tuna Poke
-Bowl, heavy sauce", so nothing is ever written to memory and the food misses on
-EVERY log, forever. The directive has treated QUALIFIED as a registry-extension
-fix (`split_identity`'s three-word vocabulary). That is still true and it is not
-the whole cost — those 7.6% also never accumulate memory, which is why the
-bucket persists rather than decaying as users repeat themselves.
+⚠ **THE HYPOTHESIS SURVIVES THE NUMBERS; DO NOT LET IT SMUGGLE THEM BACK IN.**
+That modifier-heavy and non-English names may be **uncacheable rather than
+merely uncovered** — retrieval cannot seat "Spicy White Tuna Poke Bowl, heavy
+sauce", so nothing is written to memory and the food misses on every log — is
+consistent with the live `Сметана 5%` turn (`evidence_qualified raw=8 kept=0`,
+`DIFFERENT_IDENTITY: 8`), which is independent of the corpus. **It is a named
+mechanism with no measured prevalence.** P2 owes the size of it.
 
-⚠ **AND THE CORPUS'S OWN PREREGISTERED PREDICTION WAS FALSIFIED, WHICH IS THE
-INSTRUMENT WORKING.** It predicted repeated branded logs would still MISS,
-because 'Barebells Salty Peanut Protein Bar' appears four times among
-production's ten sampled BRANDED entries. Here all 8 branded entries cached.
-So the scratch environment seats candidates production does not — likely
-retrieval (an OFF breaker opened during the run) rather than anything
-structural. **Production's BRANDED miss should therefore be re-read as
-possibly ENVIRONMENTAL, and that is worth checking before the PRODUCT rung is
-built for it in step 10.**
+⚠ **THE BRANDED PREDICTION IS NEITHER CONFIRMED NOR FALSIFIED.** The claim that
+all 8 branded entries cached — and therefore that production's BRANDED miss
+might be ENVIRONMENTAL — rests on the same attribution. **Do not build the
+PRODUCT rung on it, and do not discard the environmental hypothesis either.**
+Re-ask it in P2.
 
-**OWED BY DANNY:** API credits for the shadow corpus run — now worth spending,
-because the seam is proven reachable and the run will measure something.
+**OWED BY DANNY:** API credits for the shadow corpus run — ⛔ **but NOT until P1
+lands** *(2026-08-16)*. The seam is reachable and a run will measure something;
+with the reconciler as it stands, what it measures is mis-attributed. Spending
+the budget before the repair buys 120 real turns of the same defect.
 ⚠ **Also owed:** exact-head CI, deploy dark, then `ENTITY_RESOLUTION_MODE=shadow`
 for a canary cohort — watching **B-1 settlement PRICES**, not only resolution
 writes, because `61eec60` is a live behaviour change on deploy.
@@ -1924,7 +2014,13 @@ is to be fed into `price()`. The general lane gets its own settlement owner on
 the spine that already exists, and legacy keeps whatever it still owns until it
 owns nothing.
 
-#### ⭐ THE SPINE IS ALREADY THREE-QUARTERS ADOPTED — measured, not assumed
+#### ⚠ THE SPINE'S ADOPTION — CORRECTED TOPOLOGY *(2026-08-16)*
+
+> **CORRECTION.** This heading read *"THE SPINE IS ALREADY THREE-QUARTERS
+> ADOPTED — measured, not assumed"* and the body claimed *"`write_canonical_meal`
+> already has three callers"*. **The caller count was stale and the fraction it
+> implied is unsupported.** A static caller count is not an adoption measure;
+> behavioural settlement paths are.
 
 ```text
 owner                              writer                    pricer
@@ -1933,11 +2029,30 @@ core/b1_quantity_operation.py      canonical                 CANONICAL (assemble
 ordinary chat food turn            legacy execute_tool_calls legacy _analyze_food
 ```
 
-`write_canonical_meal` already has three callers; `assemble()` has one. So the
-missing component is not a spine, a writer, a commit coordinator or an
-idempotency layer — all four are built, proven and carrying production traffic.
-**It is one general settlement owner**, the ordinary-turn equivalent of
-`_AnswerOperation` (B-1) and `DirectOperation` (quick_log).
+**The measured topology of `write_canonical_meal`:**
+
+```text
+ONE direct caller
+  core/b1_quantity_operation.py:1591   _writer() -> write_canonical_meal
+
+TWO paths inject it as a writer argument to commit_or_load_existing
+  api/quick_log.py:215                 writer=write_canonical_meal    COMMITS
+  core/canonical_shadow.py:124         writer=write_canonical_meal    NEVER COMMITS
+                                       (savepoint, rollback is unconditional)
+  core/b1_quantity_operation.py:1546   writer=_writer                 COMMITS
+```
+
+⭐ **SO TWO BEHAVIOURAL SETTLEMENT PATHS COMMIT CANONICALLY** — the B-1 answer
+path and quick_log — **a third executes the spine and rolls it back by
+construction**, and the ordinary chat food turn is legacy end to end. **Restate
+adoption as behavioural paths, never as a caller count**; "three-quarters" is
+not recalculated here and must not be quoted until it is.
+
+`assemble()` still has one caller. The missing component is still not a spine, a
+writer, a commit coordinator or an idempotency layer — all four are built,
+proven and carrying production traffic. **It is one general settlement owner**,
+the ordinary-turn equivalent of `_AnswerOperation` (B-1) and `DirectOperation`
+(quick_log).
 
 #### ⭐⭐ AND "NEVER INVENT A PREPARATION" IS ALREADY STRUCTURAL
 
@@ -2083,6 +2198,96 @@ A10 coverage measured and RECORDED: of one real day of food, how many items
 A9 and A7 are the two that could not have been written before this week: A9
 because a coincidence nearly passed for a proof, A7 because a producer proof
 was mistaken for an adoption proof.
+
+⛔ **DO NOT IMPLEMENT A1–A10 AS WRITTEN.** Two ambiguities block them, A6 is
+wrong as stated, and A7's poison boundary is under-specified. Recommended
+resolutions are recorded below **as pending decisions — they are NOT yet in
+force.** Amending the criteria is **P4**, and P4 comes after the corpus rerun.
+
+#### ⛔ BLOCKING CONTRACT AMBIGUITIES — RECOMMENDED RESOLUTIONS, PENDING P4 *(2026-08-16)*
+
+> **Status: RECORDED, NOT ADOPTED.** Written down now so the reasoning is not
+> lost between P0 and P4. Nothing here amends A1–A10 yet.
+
+**A — WHAT THE CANONICAL OWNER OWNS.** *(Must be settled in the directive before
+A2 is implemented, because A2 is an import assertion and cannot be written
+against an undrawn boundary.)*
+
+```text
+GeneralSettlementOwner owns        typed canonical routing · assemble() · price()
+                                   ResolvedMeal construction · exactly-once claim
+                                   canonical persistence · pricing provenance
+                                   canonical ledger event · typed refusal propagation
+shared post-settlement owns        card construction · rendering
+                                   conversation acknowledgement · read-model formatting
+legacy owns                        legacy-routed settlement, and nothing else
+```
+
+⛔ **Do not import `_analyze_food` into the canonical owner and do not retain its
+enrichment behaviour there.** Canonical idempotency **replaces** legacy dedup for
+canonical writes; the old executor must not survive as a hidden second
+settlement owner.
+
+**B — THE STALE CALLER COUNT.** Corrected above in this section. The adoption
+claim is restated around behavioural paths; "three-quarters adopted" stays
+unquoted until recalculated against the real topology.
+
+**C — A6 VERSUS A10.** A6 as written requires the committed row to carry
+`rung=artifact`, which would force every settlement to report the artifact rung
+and put it in conflict with A10's coverage measurement.
+
+```text
+CORRECT CONTRACT   provenance must identify the rung that ACTUALLY DECIDED
+                   the price — whichever rung that is
+ARTIFACT PROOF     forced by a FIXTURE, not by bending precedence:
+                     memory absent · artifact present and eligible
+                     artifact must win · persisted provenance reports 'artifact'
+SEPARATE FIXTURES  one proves memory · one proves refusal
+```
+
+⛔ **Do not manipulate normal rung precedence merely to satisfy A6.**
+
+**D — THE COVERAGE PREDICATE.** A **pure, pre-settlement routing check**.
+
+```text
+MAY READ    canonical identity eligibility · local artifact availability
+            eligible memory availability · required quantity/identity completeness
+            rollout cohort
+MUST NOT    call assemble() · call USDA, web retrieval or the resolver
+            price the meal · write state · claim idempotency
+            fall back after a canonical write has begun
+
+RESULT      Supported(expected_source, reason) | Unsupported(reason)
+ROUTING     unsupported -> untouched legacy path
+            supported   -> canonical owner
+```
+
+⛔ **Once canonical routing begins, `PricingRefused` PROPAGATES.** It may not
+silently cross back into legacy settlement — that re-creates the second
+settlement owner this slice exists to remove.
+
+#### ⚠ A7 — THE POISON BOUNDARY MUST SEPARATE INTERPRETATION FROM SETTLEMENT *(2026-08-16, pending P4)*
+
+⛔ **A GLOBAL RESOLVER POISON WOULD INVALIDATE THE PROOF**, because it also kills
+the legitimate pre-settlement identity work the turn needs to produce a
+structured item at all. The poison must target the dependencies canonical
+settlement is **forbidden to use**, and nothing the interpretation boundary is
+**required** to use.
+
+```text
+1  pre-register an artifact-addressable identity
+2  prove each poisoned dependency RAISES when called directly   (the bite)
+3  enter through a REAL user turn
+4  let the normal interpretation boundary produce the structured item
+5  poison the SETTLEMENT-SIDE seams only:
+     USDA qualification · legacy executor enrichment · resolver fallback
+6  confirm canonical settlement succeeds FROM THE ARTIFACT
+7  confirm provenance and committed macros came from the artifact
+8  confirm poison call counts remain ZERO during canonical settlement
+```
+
+Step 2 is not optional: **a poison must be proven to bite before its silence
+counts.**
 
 ### 3b  THE TRANCHE CANARY — A RELEASE GATE, NOT A SMOKE TEST  *(Danny, 2026-08-14)*
 
