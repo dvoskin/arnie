@@ -276,11 +276,21 @@ class GeneralSettlementOwner:
                     # is readable from the DB, never scraped from reply text,
                     # and never a claim that the artifact decided when memory
                     # did.
+                    # ⛔ `PricedFood` HAS NO `confidence` FIELD, and the first
+                    # version of this dict recorded `getattr(..., 0.0)` — which
+                    # persisted **confidence: 0.0** on every canonical row. A
+                    # default standing in for an absent value is the exact
+                    # failure `_CONF_NUM` was written to end: "no confidence
+                    # was recorded" and "confidence is zero" are different
+                    # facts, and only one of them is true here. Omitted.
+                    #
+                    # `basis` is recorded instead because it EXISTS: it says
+                    # what the numbers were scaled from, which is what a later
+                    # correction has to correct against.
                     attributes={"pricing": {
                         "rung": priced.analysis.rung.value,
                         "evidence_id": priced.analysis.evidence_id or "",
-                        "confidence": float(
-                            getattr(priced.analysis, "confidence", 0.0) or 0.0),
+                        "basis": getattr(priced.analysis, "basis", "") or "",
                         "expected_source": (coverage.expected_source
                                             if coverage else ""),
                     }})

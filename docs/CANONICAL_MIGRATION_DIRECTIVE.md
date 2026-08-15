@@ -48,11 +48,17 @@ P8   dual-engine on the EXACT tree                         ✅ 77c842e, clean:
 ⛔⛔ P6 CLOSES IMPLEMENTATION. THE COORDINATOR MIGRATION CLOSES ADOPTION.
    P2 QUANTIFIES THE CEILING BETWEEN THEM.  *(Danny, 2026-08-16)*
 
-P9   one REAL turn through the routing seam (scratch DB)   <- NEXT, and cheap
-P10  presentation from the canonical branch                 does the user still
-                                                            get the card when
-                                                            LAST_EXECUTION is
-                                                            legacy-only?
+P9   one REAL turn through the routing seam (scratch DB)   ✅ PASS — rung=
+                                                              artifact through
+                                                              run_chat_turn.
+                                                              ⛔ AND IT TOOK
+                                                              FIVE GATES, NOT
+                                                              FOUR
+P10  presentation from the canonical branch                ⛔⛔ MEASURED AND
+                                                              BROKEN: legacy
+                                                              renders 1 card,
+                                                              canonical renders
+                                                              ZERO. <- NEXT
 P11  P2 coverage AT MEAL LEVEL, with its routing rate
 P12  one-user canary — ONLY once the coordinator actually
      routes that user through the branch

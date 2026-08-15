@@ -182,12 +182,144 @@ async def run(url: str) -> int:
         await engine.dispose()
 
 
+async def run_through_the_turn(url: str) -> int:
+    """⛔⛔ THE PROOF A7 CANNOT GIVE: does an ORDINARY TURN reach the owner?
+
+    A7 calls `settle()` directly, one level below the turn — which is exactly
+    the shape that has now cost this project three sessions. `record_identities`
+    worked and no turn reached it. `stamp_canonical_identity` worked and no turn
+    reached it. A shadow canary would have reported "no behaviour change",
+    produced by the feature never running.
+
+    So this drives `run_chat_turn` with the coordinator in native execution and
+    both cohorts set, and then asks the DATABASE which owner wrote the row:
+    canonical settlement stamps the deciding rung into
+    `meal_commits.result_payload`, and the legacy executor cannot.
+
+    ⚠ SCRATCH DB AND THIS PROCESS ONLY. The flags below are set in this
+    script's own environment; nothing here is production config.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from db.database import make_engine
+    from db.models import (DailyLog, FoodEntry, MealCommit, User,
+                           UserPreferences)
+    from db.queries import get_or_create_today_log, reload_user
+
+    identity = _artifact_identity()
+    engine = make_engine(url)
+    session = async_sessionmaker(engine, expire_on_commit=False)
+    print("\n  THE ROUTING SEAM — one REAL turn through run_chat_turn\n")
+    try:
+        async with session() as db:
+            user = User(telegram_id=f"seam:{os.getpid()}", name="Seam", age=37,
+                        sex="male", height_cm=178.0, current_weight_kg=86.0,
+                        goal_weight_kg=80.0, primary_goal="cut",
+                        training_experience="advanced", injuries="none",
+                        timezone="America/New_York", onboarding_completed=True)
+            db.add(user)
+            db.add(UserPreferences(user=user, calorie_target=2126,
+                                   protein_target=190, coaching_style="direct",
+                                   accountability_level="high",
+                                   wake_time="07:00", sleep_time="23:30"))
+            await db.flush()
+            uid = user.id
+            await get_or_create_today_log(db, uid, "America/New_York")
+            await db.commit()
+
+        # Every gate between an ordinary turn and the owner, opened explicitly
+        # so the run says which ones it needed.
+        # ⛔⛔ FIVE GATES IN SERIES, NOT FOUR. The first run of this proof set
+        # MODE, the coordinator ALLOWLIST and the settlement cohort — and the
+        # turn still went to legacy, wrote a row and rendered a card, looking
+        # for all the world like a working canonical turn. The missing one was
+        # `TURN_COORDINATOR_LANES`: `_enabled_lanes()` reads it, an unset value
+        # is an EMPTY SET, and an empty set enables NOTHING. Fail-closed and
+        # correct — and invisible, because the turn still succeeds via legacy.
+        # Named individually here so a future run says which gate it needed.
+        os.environ["TURN_COORDINATOR_MODE"] = "new_execute"
+        os.environ["TURN_COORDINATOR_LANES"] = "structured_food"
+        os.environ["TURN_COORDINATOR_ALLOWLIST"] = str(uid)
+        os.environ["GENERAL_SETTLEMENT_ALLOWLIST"] = str(uid)
+        print(f"    user                      : {uid}")
+        print(f"    TURN_COORDINATOR_MODE     : new_execute")
+        print(f"    TURN_COORDINATOR_LANES    : structured_food")
+        print(f"    TURN_COORDINATOR_ALLOWLIST   : {uid}")
+        print(f"    GENERAL_SETTLEMENT_ALLOWLIST : {uid}")
+
+        from core.chat_service import run_chat_turn
+
+        async with session() as db:
+            user = await reload_user(db, uid)
+            result = await run_chat_turn(
+                db, user, f"I ate 100 g of {identity}", platform="ios",
+                schedule_background=False,
+                client_msg_id=f"seam:{os.getpid()}")
+            await db.commit()
+
+        bubbles = list(getattr(getattr(result, "response", None), "bubbles",
+                               None) or [])
+        cards = list(getattr(getattr(result, "response", None), "cards", None)
+                     or [])
+
+        async with session() as db:
+            rows = (await db.execute(
+                select(FoodEntry).join(
+                    DailyLog, DailyLog.id == FoodEntry.daily_log_id)
+                .where(DailyLog.user_id == uid))).scalars().all()
+            commits = (await db.execute(
+                select(MealCommit).where(MealCommit.user_id == uid)
+            )).scalars().all()
+
+        # ⭐ WHICH OWNER WROTE IT, ASKED OF THE DATABASE. A canonical settle
+        # records the deciding rung; the legacy executor has nowhere to put one.
+        import json as _json
+
+        # ⚠ THE PAYLOAD IS NESTED UNDER `result`, AND THE FIRST VERSION OF THIS
+        # READER LOOKED FOR `committed_items` AT THE TOP LEVEL. It found
+        # nothing and printed "legacy wrote it" over a row that canonical
+        # settlement had just written with rung=artifact. **The instrument
+        # reported a FALSE NEGATIVE about the very thing it exists to detect**
+        # — the same class as `matched: 0` from a regex that could not match.
+        # Read defensively from both shapes, and never conclude "legacy" from
+        # an absence this reader could have caused.
+        rungs = []
+        for commit in commits:
+            payload = commit.result_payload
+            if isinstance(payload, str):
+                payload = _json.loads(payload or "{}")
+            payload = payload or {}
+            body = payload.get("result") if isinstance(
+                payload.get("result"), dict) else payload
+            for item in (body or {}).get("committed_items") or []:
+                rungs.append((item.get("pricing") or {}).get("rung"))
+
+        print(f"\n    food rows written         : {len(rows)}"
+              f"  {[r.parsed_food_name for r in rows]}")
+        print(f"    meal_commits              : {len(commits)}")
+        print(f"    pricing rungs recorded    : {rungs or '— (legacy wrote it)'}")
+        print(f"    reply bubbles             : {len(bubbles)}")
+        print(f"    cards                     : {len(cards)}")
+
+        canonical = any(rungs)
+        print(f"\n    -> {'PASS' if canonical and rows else '⛔ FAIL'} — "
+              f"{'an ordinary turn reached the general settlement owner'
+                 if canonical else
+                 'the turn did NOT reach canonical settlement'}\n")
+        return 0 if (canonical and rows) else 1
+    finally:
+        await engine.dispose()
+
+
 def main() -> int:
     url = os.getenv("ARNIE_PROVE_DB")
     if not url:
         raise SystemExit("set ARNIE_PROVE_DB to a SCRATCH database")
     os.environ.setdefault("DATABASE_URL", url)
     _load_key()
+    if "--through-the-turn" in sys.argv:
+        return asyncio.run(run_through_the_turn(url))
     return asyncio.run(run(url))
 
 
