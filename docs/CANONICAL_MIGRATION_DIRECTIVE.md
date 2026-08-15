@@ -146,9 +146,44 @@ result, produced by the feature never running.** The corpus's
 `--compare` refuses to interpret a zero-resolution shadow run in either
 direction. ⛔ **Do not start step 5 on the strength of a quiet canary.**
 
-#### 0b — ⛔⛔⛔ THE PRODUCER IS NOT REACHABLE FROM AN ORDINARY FOOD TURN *(2026-08-15, MEASURED)*
+✅ **CLOSED — see §0b above.** The seam landed in `54d91bd`; a real turn now
+writes resolutions, and `shadow_actually_resolved_something` is a live check
+rather than a hypothetical one.
 
-**THIS BLOCKS STEP 5, AND IT IS THE SESSION'S HEADLINE.** Two runs, same scratch
+#### 0b — ✅ CLOSED BY THE ADOPTION SEAM `54d91bd` *(2026-08-15)*
+
+**FIXED. The producer is now on the path ordinary food traffic takes**, and the
+sequence Danny froze from this state is:
+
+```text
+wire identity producer into ordinary turn path   ✅ 54d91bd
+local / dual-engine gates                        ✅ SQLite 9098/0 · PG 9181/0
+shadow real-turn corpus                          <- next, and only now worth spending on
+canary shadow -> canary consumption -> replay/re-measure
+general canonical settlement owner -> settlement canary -> oils
+```
+
+⭐ **THE SEAM HAS TWO DOORS, AND THE SECOND CARRIES MOST OF THE TRAFFIC.** Wired
+to the structured interpreter's output alone it covered **one food turn in
+four**: three of four ordinary food turns emit `entity_identity_skipped
+reason=no_interpretation`, because the structured lane declines and the food is
+logged from the legacy tool batch where no interpreter `items` dict exists. The
+store went **0 rows → 1 (seam 1) → 4 (both)**.
+
+⭐⭐ **`record_identities` PERSISTS AND ANNOTATES NOTHING.** The stamp travels
+through `_log_call` into `_analyze_food`, where `memory_key(food, entity)`
+addresses a different memory row and so changes the PRICE. Recording is shadow;
+stamping is consumption, and consumption keeps its own canary.
+
+⚠ **AND THE MUTATION GATE'S FIRST VERSION WAS HOLLOW** — it substring-scanned
+for `observing(` and the mutation defeated it with an aliased import. The gate
+now states the property structurally and names no flag: *the recorder may not
+sit inside any conditional the interpreter is not*. **Below is the original
+finding, kept because the shape recurs.**
+
+#### 0b(i) — ⛔⛔⛔ THE PRODUCER WAS NOT REACHABLE FROM AN ORDINARY FOOD TURN *(2026-08-15, MEASURED)*
+
+**THIS BLOCKED STEP 5, AND IT WAS THE SESSION'S HEADLINE.** Two runs, same scratch
 database, same `ENTITY_RESOLUTION_MODE=shadow`, minutes apart:
 
 ```text
@@ -220,8 +255,17 @@ structural. **Production's BRANDED miss should therefore be re-read as
 possibly ENVIRONMENTAL, and that is worth checking before the PRODUCT rung is
 built for it in step 10.**
 
-**OWED BY DANNY:** API credits if the corpus is to be re-run after rebalancing.
-⚠ **Not urgent** — steps 5-7 are blocked on §0b, which is a code change.
+**OWED BY DANNY:** API credits for the shadow corpus run — now worth spending,
+because the seam is proven reachable and the run will measure something.
+⚠ **Also owed:** exact-head CI, deploy dark, then `ENTITY_RESOLUTION_MODE=shadow`
+for a canary cohort — watching **B-1 settlement PRICES**, not only resolution
+writes, because `61eec60` is a live behaviour change on deploy.
+
+⭐ **AND ONE STANDING RULE FROM THIS SESSION** *(Danny, 2026-08-15)*: **do not
+spend 120-turn runs on architectural reachability questions.** Use 4-12
+preregistered turns to prove the seam, then spend larger corpus budget only
+after the seam is proven reachable. The 120-turn shadow body queued before this
+finding would have measured a feature that never ran.
 
 ### 1 — INTERPRETATION-DERIVED IDENTITY — ⚠ BUILT END TO END, SHIPS DARK *(status 2026-08-15)*
 
