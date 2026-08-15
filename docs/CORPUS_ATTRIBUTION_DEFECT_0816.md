@@ -240,6 +240,32 @@ radius of a mismatch — it is why `en-staples`, `qualified` and `branded` show
 zero name mismatches — but it does not solve **delayed settlement** or
 **within-user ordering**, which is exactly where the surviving doubt lives.
 
+## ⛔⛔ P2 MUST PUBLISH THREE COVERAGE NUMBERS, NEVER ONE *(Danny, 2026-08-16)*
+
+The general settlement owner only ever sees turns routed as `STRUCTURED_FOOD`,
+and on 2026-08-15 **three of four ordinary food turns never reached that lane**
+(`entity_identity_skipped reason=no_interpretation` — the food was logged from
+the legacy tool batch). So a support rate measured inside structured traffic
+describes a quarter of the product and reads like all of it.
+
+```text
+A  structured-food routing rate    structured turns / ALL food turns
+B  A11 support rate WITHIN structured   supported meals / structured meals
+C  whole-product coverage          supported meals / ALL food meals  =  A x B
+```
+
+⛔ **C IS THE ONLY ONE THAT DESCRIBES THE PRODUCT, AND B IS THE ONE THAT WILL
+LOOK BEST.** B is what this slice can move on its own, so B is what a later
+reader will quote. **No support rate publishes without its routing rate beside
+it.** Every one of these numbers can be individually correct while the
+population underneath changes — the quiet version of the `16 of 15 (106.7%)`
+error, where numerator and denominator counted different things.
+
+⚠ **AND THE MEAL IS THE UNIT, NOT THE ENTRY.** A11 declines the whole meal when
+ANY item lacks local evidence, so a 44.6% addressable ENTRY rate does not imply
+a 44.6% supported MEAL rate. Measuring per entry would overstate coverage by
+construction.
+
 ## P2 — WHAT THE RE-RUN MUST PUBLISH, AND WHAT CLOSES IT
 
 Run from a clean database. Publish all of:

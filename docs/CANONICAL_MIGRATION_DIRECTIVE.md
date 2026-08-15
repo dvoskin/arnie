@@ -40,7 +40,27 @@ P6   build ResolvedMeal + GeneralSettlementOwner           ✅ A1-A9 + A11 built
                                                               poison calls = 0
 P7   negative twins for every positive invariant           ✅ 11 twins; two
                                                               mutations RED
-P8   dual-engine (Postgres) + A9 production canary         <- NEXT
+P8   dual-engine on the EXACT tree                         ✅ 77c842e, clean:
+                                                              SQLite 9195/0/107s
+                                                              PG     9277/0/25s
+                                                              9306 collected both
+
+⛔⛔ P6 CLOSES IMPLEMENTATION. THE COORDINATOR MIGRATION CLOSES ADOPTION.
+   P2 QUANTIFIES THE CEILING BETWEEN THEM.  *(Danny, 2026-08-16)*
+
+P9   one REAL turn through the routing seam (scratch DB)   <- NEXT, and cheap
+P10  presentation from the canonical branch                 does the user still
+                                                            get the card when
+                                                            LAST_EXECUTION is
+                                                            legacy-only?
+P11  P2 coverage AT MEAL LEVEL, with its routing rate
+P12  one-user canary — ONLY once the coordinator actually
+     routes that user through the branch
+P13  B-1.8 keeps the canonical correction defect. Do NOT
+     weaken the ownership firewall to make this slice look
+     finished
+P14  only after coordinator adoption is proven may general
+     settlement be called PRODUCTION-OWNED
 P2   rerun the corpus from a clean database                 costs credits. NO
                                                             LONGER A CLOSURE
                                                             GATE — it is the
