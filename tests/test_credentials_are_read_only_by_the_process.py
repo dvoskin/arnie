@@ -90,11 +90,14 @@ def test_no_runtime_module_carries_a_credential_literal():
 #: churn that relitigates history instead of protecting the future.
 #: RAISED 29 -> 30 on 2026-08-14 for `scripts/prove_memory_addressing.py`, a
 #: consumer-side proof a person runs by hand against a scratch database.
+#: RAISED 30 -> 31 on 2026-08-15 for `scripts/corpus_through_the_real_turn.py`,
+#: the §0 step-3 corpus driver. Same shape as the one before it: a person runs
+#: it by hand, it needs a real model key, and it points at a scratch DB.
 #:
 #: ⭐ THE RATCHET FIRED ON THE COMMIT THAT ADDED IT, which is the whole design:
 #: the number moved because someone decided it should, in the same commit,
-#: rather than drifting while nobody was looking.
-SCRIPTS_READING_ENV_BASELINE = 30
+#: rather than drifting while nobody was looking. It has now done that twice.
+SCRIPTS_READING_ENV_BASELINE = 31
 
 
 def test_the_env_reading_habit_does_not_spread_beyond_scripts():

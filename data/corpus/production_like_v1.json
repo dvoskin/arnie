@@ -1,0 +1,918 @@
+{
+  "corpus_version": "production_like_v1",
+  "preregistered": "2026-08-15",
+  "what_this_is": [
+    "The PREREGISTERED corpus required by directive §0 step 3-4. It is committed",
+    "DATA, not generated at run time, because a corpus assembled by the same run",
+    "that reports on it can be reshaped after the fact to fit its own result.",
+    "Written down first; run second; compared third.",
+    "",
+    "⭐ THE BODY IS CALIBRATION, THE PROBES ARE THE EXPERIMENT. `body` must",
+    "reproduce production's MEASURED rung mix when run with",
+    "ENTITY_RESOLUTION_MODE=off, because off IS production today. If it does not",
+    "reproduce it, the corpus is not production-like and nothing measured through",
+    "it transfers. `probes` exist to exercise named invariants and are EXCLUDED",
+    "from the mix arithmetic — folding them in would corrupt the calibration, and",
+    "leaving them out entirely would miss the cases §0 step 3 names.",
+    "",
+    "⭐⭐ MEMORY COVERAGE IS A PROPERTY OF REPETITION, NOT OF VOCABULARY. 43.7% of",
+    "real production entries reach the MEMORY rung because users log their staples",
+    "again, and the legacy path caches a seated candidate into user_food_matches on",
+    "the FIRST log. So the covered fraction here is produced by REPEAT TURNS BY THE",
+    "SAME SYNTHETIC USER — never by seeding rows. A seeded row would prove the",
+    "lookup works; only a repeat proves the loop that fills it works.",
+    "",
+    "⚠ AND MEMORY IS PER-USER, so every repeat must be by the user that established",
+    "it. The `user` field is load-bearing, not decoration.",
+    "",
+    "⛔⛔ EVERY REPEAT IS PHRASED AS A NEW EATING OCCASION, AND THAT IS NOT",
+    "STYLE — DO NOT 'SIMPLIFY' THESE BACK TO IDENTICAL STRINGS. The first smoke",
+    "run drove 8 turns and wrote 6 rows: the two repeats were IDENTICAL to their",
+    "establishing text, and the turn path correctly read them as double-taps and",
+    "deduplicated them. A compressed corpus makes a second meal look like a",
+    "client retry.",
+    "",
+    "⭐ THE DEDUP IS RIGHT AND THE CORPUS WAS WRONG. In production a repeat is",
+    "hours or days later; here it is seconds. So the repeats carry the add-intent",
+    "a real user supplies at that moment — 'another', 'again', 'more', a changed",
+    "portion. Reverting them would silently delete the entire MEMORY population",
+    "and report it as a coverage finding."
+  ],
+  "weighted_by": {
+    "source": "data/coverage/coverage_last_30_days_through_the_rung.json",
+    "population": "687 real production food entries, 30 days, rung EXECUTED",
+    "note": "the EXECUTED record is the weight source, not the simulated one — see directive §1e"
+  },
+  "target_mix_pct": {
+    "MEMORY": 43.7,
+    "ARTIFACT": 1.9,
+    "NON-ENGLISH": 31.3,
+    "BRANDED": 9.9,
+    "QUALIFIED": 7.6,
+    "BARE+UNCOVERED": 5.7
+  },
+  "target_mix_note": [
+    "Percentages of ALL entries. The four uncovered buckets are counted ONLY for",
+    "entries that reach ESTIMATE_OR_REFUSE, exactly as scripts.measure_identity_",
+    "coverage does — so a Russian food that reaches MEMORY counts as MEMORY and",
+    "not as NON-ENGLISH. Uncovered pcts are restated against the 687-entry",
+    "executed run (215/68/52/39) rather than the 691-entry simulated one, so the",
+    "corpus and its target come from ONE population.",
+    "",
+    "⛔ THE BUCKET IS NEVER READ FROM `declared`. It is computed by",
+    "scripts.measure_identity_coverage.classify on the food name the interpreter",
+    "ACTUALLY produced — the same _looks_branded heuristic and the same non-ASCII",
+    "test production uses. `declared` is a PREDICTION, and a disagreement between",
+    "prediction and classifier is reported as a corpus defect rather than",
+    "silently resolved in favour of either."
+  ],
+  "body_plan": {
+    "entries": 100,
+    "MEMORY": 44,
+    "ARTIFACT": 2,
+    "NON-ENGLISH": 30,
+    "BRANDED": 10,
+    "QUALIFIED": 8,
+    "BARE+UNCOVERED": 6,
+    "how_memory_is_earned": "6 bare + 8 qualified establishers, then 44 repeats of those 14 by the same user",
+    "the_branded_repeats_are_a_prediction": [
+      "Four of the ten BRANDED entries are REPEATS and are still declared BRANDED,",
+      "not MEMORY. That is deliberate and it is a falsifiable prediction about",
+      "production: 'Barebells Salty Peanut Protein Bar' appears four times in the",
+      "ten sampled BRANDED entries, so in real traffic a repeated branded log is",
+      "STILL missing — which can only mean retrieval never seats a candidate for",
+      "it, so nothing is ever cached to memory.",
+      "",
+      "⭐ IF THIS RUN SHOWS THEM REACHING MEMORY, THE PREDICTION IS WRONG AND THAT",
+      "IS THE FINDING — it would mean the scratch run seats candidates production",
+      "does not, and every other number here would need re-reading in that light.",
+      "The run reports the disagreement; it does not relabel the entry to match."
+    ],
+    "ordering": "round-robin across users, each user's own order preserved"
+  },
+  "body": [
+    {
+      "user": "en-staples",
+      "text": "200g chicken breast",
+      "food": "Chicken breast",
+      "declared": "BARE+UNCOVERED",
+      "role": "establish"
+    },
+    {
+      "user": "qualified",
+      "text": "salmon, pan-cooked with oil",
+      "food": "Salmon, pan-cooked with oil",
+      "declared": "QUALIFIED",
+      "role": "establish"
+    },
+    {
+      "user": "ru",
+      "text": "Помидор",
+      "food": "Помидор",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "branded",
+      "text": "Barebells Salty Peanut Protein Bar",
+      "food": "Barebells Salty Peanut Protein Bar",
+      "declared": "BRANDED",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "a cup of white rice",
+      "food": "White rice",
+      "declared": "BARE+UNCOVERED",
+      "role": "establish"
+    },
+    {
+      "user": "qualified",
+      "text": "ground turkey, 96% lean",
+      "food": "Ground turkey, 96% lean",
+      "declared": "QUALIFIED",
+      "role": "establish"
+    },
+    {
+      "user": "ru",
+      "text": "ещё один помидор",
+      "food": "Помидор",
+      "declared": "NON-ENGLISH",
+      "role": "repeat-that-cannot-hit"
+    },
+    {
+      "user": "branded",
+      "text": "another Barebells Salty Peanut Protein Bar",
+      "food": "Barebells Salty Peanut Protein Bar",
+      "declared": "BRANDED",
+      "role": "repeat"
+    },
+    {
+      "user": "en-staples",
+      "text": "a handful of almonds",
+      "food": "Almonds",
+      "declared": "BARE+UNCOVERED",
+      "role": "establish"
+    },
+    {
+      "user": "qualified",
+      "text": "scrambled eggs with peppers, onions, and cheese",
+      "food": "Scrambled eggs with peppers, onions, and cheese",
+      "declared": "QUALIFIED",
+      "role": "establish"
+    },
+    {
+      "user": "ru",
+      "text": "Пицца сырная",
+      "food": "Пицца сырная",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "branded",
+      "text": "Barebells Caramel Cashew Protein Bar",
+      "food": "Barebells Caramel Cashew Protein Bar",
+      "declared": "BRANDED",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "black coffee",
+      "food": "Black coffee",
+      "declared": "BARE+UNCOVERED",
+      "role": "establish"
+    },
+    {
+      "user": "qualified",
+      "text": "home fries with peppers and onions",
+      "food": "Home fries with peppers and onions",
+      "declared": "QUALIFIED",
+      "role": "establish"
+    },
+    {
+      "user": "ru",
+      "text": "ещё кусок пиццы сырной",
+      "food": "Пицца сырная",
+      "declared": "NON-ENGLISH",
+      "role": "repeat-that-cannot-hit"
+    },
+    {
+      "user": "branded",
+      "text": "Quest Protein Chips Sour Cream & Onion",
+      "food": "Quest Protein Chips Sour Cream & Onion",
+      "declared": "BRANDED",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "french fries",
+      "food": "French fries",
+      "declared": "BARE+UNCOVERED",
+      "role": "establish"
+    },
+    {
+      "user": "qualified",
+      "text": "grilled kielbasa sausage",
+      "food": "Grilled kielbasa sausage",
+      "declared": "QUALIFIED",
+      "role": "establish"
+    },
+    {
+      "user": "ru",
+      "text": "Карбонара",
+      "food": "Карбонара",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "branded",
+      "text": "Quest Protein Chips Salsa Verde",
+      "food": "Quest Protein Chips Salsa Verde",
+      "declared": "BRANDED",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "grilled eggplant",
+      "food": "Eggplant",
+      "declared": "BARE+UNCOVERED",
+      "role": "establish"
+    },
+    {
+      "user": "qualified",
+      "text": "poke rice bowl with crab mix",
+      "food": "Poke rice bowl with crab mix",
+      "declared": "QUALIFIED",
+      "role": "establish"
+    },
+    {
+      "user": "ru",
+      "text": "ещё порция карбонары",
+      "food": "Карбонара",
+      "declared": "NON-ENGLISH",
+      "role": "repeat-that-cannot-hit"
+    },
+    {
+      "user": "branded",
+      "text": "Royo Everything Bagel",
+      "food": "Royo Everything Bagel",
+      "declared": "BRANDED",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "another 180g of chicken breast",
+      "food": "Chicken breast",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "ground turkey, 94% lean, pan-cooked",
+      "food": "Ground turkey, 94% lean, pan-cooked",
+      "declared": "QUALIFIED",
+      "role": "establish"
+    },
+    {
+      "user": "ru",
+      "text": "Листья салата",
+      "food": "Листья салата",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "branded",
+      "text": "another Royo Everything Bagel",
+      "food": "Royo Everything Bagel",
+      "declared": "BRANDED",
+      "role": "repeat"
+    },
+    {
+      "user": "en-staples",
+      "text": "another cup of white rice",
+      "food": "White rice",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "spicy white tuna poke bowl, heavy sauce",
+      "food": "Spicy White Tuna Poke Bowl, heavy sauce",
+      "declared": "QUALIFIED",
+      "role": "establish"
+    },
+    {
+      "user": "ru",
+      "text": "ещё листья салата",
+      "food": "Листья салата",
+      "declared": "NON-ENGLISH",
+      "role": "repeat-that-cannot-hit"
+    },
+    {
+      "user": "branded",
+      "text": "Archer's Jersey",
+      "food": "Archer's Jersey",
+      "declared": "BRANDED",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "another handful of almonds",
+      "food": "Almonds",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "more salmon, pan-cooked with oil",
+      "food": "Salmon, pan-cooked with oil",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Котлеты куриные",
+      "food": "Котлеты куриные",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "branded",
+      "text": "one more Barebells Salty Peanut Protein Bar",
+      "food": "Barebells Salty Peanut Protein Bar",
+      "declared": "BRANDED",
+      "role": "repeat"
+    },
+    {
+      "user": "en-staples",
+      "text": "another black coffee",
+      "food": "Black coffee",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "another serving of ground turkey, 96% lean",
+      "food": "Ground turkey, 96% lean",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "ещё котлеты куриные",
+      "food": "Котлеты куриные",
+      "declared": "NON-ENGLISH",
+      "role": "repeat-that-cannot-hit"
+    },
+    {
+      "user": "branded",
+      "text": "another bag of Quest Protein Chips Sour Cream & Onion",
+      "food": "Quest Protein Chips Sour Cream & Onion",
+      "declared": "BRANDED",
+      "role": "repeat"
+    },
+    {
+      "user": "en-staples",
+      "text": "another portion of french fries",
+      "food": "French fries",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "another plate of scrambled eggs with peppers, onions, and cheese",
+      "food": "Scrambled eggs with peppers, onions, and cheese",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Макароны с томатом",
+      "food": "Макароны с томатом",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "more grilled eggplant",
+      "food": "Eggplant",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "more home fries with peppers and onions",
+      "food": "Home fries with peppers and onions",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "ещё макароны с томатом",
+      "food": "Макароны с томатом",
+      "declared": "NON-ENGLISH",
+      "role": "repeat-that-cannot-hit"
+    },
+    {
+      "user": "en-staples",
+      "text": "had chicken breast again, 150g",
+      "food": "Chicken breast",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "another grilled kielbasa sausage",
+      "food": "Grilled kielbasa sausage",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Шоколад",
+      "food": "Шоколад",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "more white rice, half a cup",
+      "food": "White rice",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "another poke rice bowl with crab mix",
+      "food": "Poke rice bowl with crab mix",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "ещё шоколад",
+      "food": "Шоколад",
+      "declared": "NON-ENGLISH",
+      "role": "repeat-that-cannot-hit"
+    },
+    {
+      "user": "en-staples",
+      "text": "more almonds, about 20g",
+      "food": "Almonds",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "more ground turkey, 94% lean, pan-cooked",
+      "food": "Ground turkey, 94% lean, pan-cooked",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Капучино на обычном молоке",
+      "food": "Капучино на обычном молоке",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "second black coffee of the day",
+      "food": "Black coffee",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "another spicy white tuna poke bowl, heavy sauce",
+      "food": "Spicy White Tuna Poke Bowl, heavy sauce",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "ещё капучино на обычном молоке",
+      "food": "Капучино на обычном молоке",
+      "declared": "NON-ENGLISH",
+      "role": "repeat-that-cannot-hit"
+    },
+    {
+      "user": "en-staples",
+      "text": "more french fries",
+      "food": "French fries",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "another portion of salmon, pan-cooked with oil",
+      "food": "Salmon, pan-cooked with oil",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Хамон",
+      "food": "Хамон",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "another serving of grilled eggplant",
+      "food": "Eggplant",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "more ground turkey, 96% lean",
+      "food": "Ground turkey, 96% lean",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "ещё хамон",
+      "food": "Хамон",
+      "declared": "NON-ENGLISH",
+      "role": "repeat-that-cannot-hit"
+    },
+    {
+      "user": "en-staples",
+      "text": "more chicken breast, about 200g",
+      "food": "Chicken breast",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "more scrambled eggs with peppers, onions, and cheese",
+      "food": "Scrambled eggs with peppers, onions, and cheese",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Гречка",
+      "food": "Гречка",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "white rice again, one cup",
+      "food": "White rice",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "another serving of home fries with peppers and onions",
+      "food": "Home fries with peppers and onions",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "ещё гречка",
+      "food": "Гречка",
+      "declared": "NON-ENGLISH",
+      "role": "repeat-that-cannot-hit"
+    },
+    {
+      "user": "en-staples",
+      "text": "almonds again, small handful",
+      "food": "Almonds",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "more grilled kielbasa sausage",
+      "food": "Grilled kielbasa sausage",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Куриная грудка",
+      "food": "Куриная грудка",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "one more black coffee",
+      "food": "Black coffee",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "poke rice bowl with crab mix again",
+      "food": "Poke rice bowl with crab mix",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "ещё куриная грудка",
+      "food": "Куриная грудка",
+      "declared": "NON-ENGLISH",
+      "role": "repeat-that-cannot-hit"
+    },
+    {
+      "user": "en-staples",
+      "text": "french fries again, small",
+      "food": "French fries",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "another serving of ground turkey, 94% lean, pan-cooked",
+      "food": "Ground turkey, 94% lean, pan-cooked",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Сырники",
+      "food": "Сырники",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "grilled eggplant again",
+      "food": "Eggplant",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "spicy white tuna poke bowl again, heavy sauce",
+      "food": "Spicy White Tuna Poke Bowl, heavy sauce",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Борщ",
+      "food": "Борщ",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "one more chicken breast, 170g",
+      "food": "Chicken breast",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "salmon again, pan-cooked with oil",
+      "food": "Salmon, pan-cooked with oil",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Оливье",
+      "food": "Оливье",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "a second helping of white rice",
+      "food": "White rice",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "ground turkey again, 96% lean",
+      "food": "Ground turkey, 96% lean",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Селёдка под шубой",
+      "food": "Селёдка под шубой",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "one more handful of almonds",
+      "food": "Almonds",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "scrambled eggs with peppers, onions, and cheese again",
+      "food": "Scrambled eggs with peppers, onions, and cheese",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Сёмга слабосолёная",
+      "food": "Сёмга слабосолёная",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "black coffee again",
+      "food": "Black coffee",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "qualified",
+      "text": "grilled kielbasa sausage again",
+      "food": "Grilled kielbasa sausage",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Овсянка на воде",
+      "food": "Овсянка на воде",
+      "declared": "NON-ENGLISH",
+      "role": "establish"
+    },
+    {
+      "user": "en-staples",
+      "text": "grilled mackerel",
+      "food": "Mackerel",
+      "declared": "ARTIFACT",
+      "role": "artifact-only"
+    },
+    {
+      "user": "qualified",
+      "text": "one more poke rice bowl with crab mix",
+      "food": "Poke rice bowl with crab mix",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Кефир 1%",
+      "food": "Кефир 1%",
+      "declared": "NON-ENGLISH",
+      "role": "digit-residue-key"
+    },
+    {
+      "user": "en-staples",
+      "text": "asparagus",
+      "food": "Asparagus",
+      "declared": "ARTIFACT",
+      "role": "artifact-only"
+    },
+    {
+      "user": "qualified",
+      "text": "home fries with peppers and onions again",
+      "food": "Home fries with peppers and onions",
+      "declared": "MEMORY",
+      "role": "repeat"
+    },
+    {
+      "user": "ru",
+      "text": "Молоко (2.5%)",
+      "food": "Молоко (2.5%)",
+      "declared": "NON-ENGLISH",
+      "role": "digit-residue-key"
+    }
+  ],
+  "probes_note": [
+    "EXCLUDED FROM THE MIX. Each probe is a named invariant with a stated",
+    "expectation for BOTH modes, so a run cannot be read as confirming whichever",
+    "outcome it produced. `off` is today's production behaviour and is the",
+    "control; `shadow` is the experiment.",
+    "",
+    "⭐ P2 IS THE HEADLINE AND IT IS WHY THE 'WAIT FOR TRAFFIC' BLOCKER WAS WRONG.",
+    "One food in two languages writes TWO memory rows today and ONE under the",
+    "boundary — observable in a scratch DB in minutes, with no organic volume."
+  ],
+  "probes": [
+    {
+      "id": "P1",
+      "invariant": "no false collapse across a digit-residue collision",
+      "user": "probe-collision",
+      "turns": [
+        "Творог 2%",
+        "Кукуруза варёная (2 початка)",
+        "Творог 2%"
+      ],
+      "expect_off": "both non-addressable under fac8f97 containment; творог reaches NO row, and specifically not the corn row",
+      "expect_shadow": "творог and corn address DIFFERENT canonical identities; творог still never reaches the corn row",
+      "kills": "the live misprice of 2026-08-14 — Творог 2% priced from boiled corn at 3.33 g protein"
+    },
+    {
+      "id": "P2",
+      "invariant": "one food in two languages is ONE memory",
+      "user": "probe-language",
+      "turns": [
+        "Помидор",
+        "Tomato",
+        "Помидор"
+      ],
+      "expect_off": "TWO user_food_matches rows — the Russian key is non-addressable, the English one is 'tomato'",
+      "expect_shadow": "ONE row, addressed by both surfaces",
+      "kills": "the 30.4% NON-ENGLISH bucket, measured rather than argued"
+    },
+    {
+      "id": "P3",
+      "invariant": "reuse without collapse",
+      "user": "probe-reuse",
+      "turns": [
+        "Творог 5%",
+        "Творог 5% жирности",
+        "Творог 2%"
+      ],
+      "expect_off": "three surface forms, no shared identity",
+      "expect_shadow": "turns 1 and 2 share ONE identity; turn 3 does NOT join them",
+      "kills": "a reuse step that merges everything would satisfy turn 2 perfectly and price 2% curd from 5% forever"
+    },
+    {
+      "id": "P4",
+      "invariant": "preparation materiality is a DIFFERENT row, never a defaulted one",
+      "user": "probe-materiality",
+      "turns": [
+        "mackerel",
+        "mackerel, roasted",
+        "egg",
+        "eggs, fried"
+      ],
+      "expect_off": "mackerel| and mackerel|roasted are distinct artifact rows; egg| hits and eggs|fried MISSES",
+      "expect_shadow": "unchanged — materiality is an artifact property, not a resolution property",
+      "kills": "an unstated preparation silently acquiring one (A4), and records the plural gap eggs|fried"
+    },
+    {
+      "id": "P5",
+      "invariant": "an explicit quantity survives the turn unchanged",
+      "user": "probe-quantity",
+      "turns": [
+        "150g salmon",
+        "2 eggs",
+        "a 6 oz chicken breast"
+      ],
+      "expect_off": "150 g reaches the committed row as 150 g",
+      "expect_shadow": "unchanged",
+      "kills": "A3's precursor — quantity drift at settlement"
+    },
+    {
+      "id": "P6",
+      "invariant": "bare and composed keys are different keys on the general path",
+      "user": "probe-preparation",
+      "turns": [
+        "chicken",
+        "chicken, fried",
+        "potato",
+        "potato, fried"
+      ],
+      "expect_off": "chicken| vs chicken|fried and potato| vs potato|fried resolve to four distinct artifact entries",
+      "expect_shadow": "unchanged",
+      "kills": "A4/A5's precursor — 'a potato is not fried'"
+    },
+    {
+      "id": "P7",
+      "invariant": "a branded product binds NO food identity",
+      "user": "probe-product",
+      "turns": [
+        "Barebells Salty Peanut Protein Bar",
+        "Barebells Salty Peanut Protein Bar"
+      ],
+      "expect_off": "no resolution row at all",
+      "expect_shadow": "state=PRODUCT, canonical_entity_id EMPTY, and it enters no distinct set",
+      "kills": "a label being mistaken for a food identity — the PRODUCT rung has no producer and must not acquire one by accident"
+    }
+  ],
+  "honest_limits": [
+    "SYNTHETIC UTTERANCES, REAL FOOD NAMES. The food names are drawn from the",
+    "measured production samples in data/coverage/; the surrounding phrasing is",
+    "written. So this approximates WHAT users log, not HOW they type.",
+    "",
+    "ONE ITEM PER TURN in the body, so entries ≈ turns. Production averages more",
+    "than one item per turn, and the coverage instrument counts entries. The",
+    "corpus matches the instrument, not the turn count.",
+    "",
+    "THE REPEAT SCHEDULE IS COMPRESSED. Fourteen staples repeated inside one",
+    "session is not how a month of logging looks; it reaches the same rung by the",
+    "same mechanism in less wall-clock. Latency percentiles from this corpus are",
+    "therefore about the PATH, not about a production day's pacing.",
+    "",
+    "MEMORY POPULATION DEPENDS ON LIVE RETRIEVAL. The legacy path caches a seated",
+    "candidate, and seating one needs USDA/OFF/web. If retrieval is unavailable",
+    "the covered fraction collapses — which the run's anti-vacuity gate reports",
+    "as a failure rather than as a coverage finding."
+  ]
+}

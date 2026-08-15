@@ -1,0 +1,786 @@
+"""⭐ STEP 3-4 OF THE §0 PROGRAM — the preregistered corpus, through the REAL turn.
+
+Directive §0 froze the rule that no phase may block on organic traffic VOLUME
+when the evidence can be reproduced from historical traffic or a preregistered
+corpus. This is the instrument that makes that rule cash out: it drives
+`data/corpus/production_like_v1.json` through `core.chat_service.run_chat_turn`
+— the same function the iOS API and the Telegram handler call — and reports
+which rung real-shaped food actually reaches.
+
+⛔ NOT A HARNESS THAT RESEMBLES A TURN. `prove_memory_addressing` calls
+`stamp_canonical_identity` and `assemble` directly, one level BELOW the turn,
+which is why it can prove the rung addresses a row and still say nothing about
+whether an ordinary turn reaches it. This script enters at `run_chat_turn` and
+observes only the DATABASE afterwards. Nothing is read from reply text.
+
+⛔⛔ THE TRAP THIS INSTRUMENT IS BUILT AROUND — IT WOULD OTHERWISE MEASURE ITS
+OWN SIDE EFFECT. The legacy path CACHES a seated candidate into
+`user_food_matches` during the turn. So asking `_memory()` after the turn
+returns evidence for almost every entry, and the instrument would report ~100%
+MEMORY — a number produced entirely by the measurement being taken too late.
+The settle read happens BEFORE the cache write, so this script snapshots the
+addressable memory keys BEFORE each turn and counts MEMORY only when the rung
+returns evidence AND the key existed beforehand. Evidence under a key the turn
+itself created is reported separately as `cached_by_this_turn`, which is a
+different fact and is the mechanism by which the NEXT log reaches MEMORY.
+
+⭐ THE BUCKET IS NEVER READ FROM THE CORPUS. `declared` is a PREDICTION. The
+realized bucket comes from `scripts.measure_identity_coverage.classify` applied
+to the name the interpreter ACTUALLY produced — production's `_looks_branded`
+and production's non-ASCII test. A disagreement is REPORTED as a divergence,
+never resolved in favour of either side.
+
+⭐⭐ MEMORY COVERAGE IS EARNED BY REPETITION, NEVER BY SEEDING. Not one row is
+inserted by hand. If the covered fraction fails to appear, that is a finding
+about the retrieval-and-cache loop, not a corpus defect to be patched with an
+INSERT.
+
+⚠ REAL MODEL CALLS, REAL RETRIEVAL, REAL ROWS. This is EVIDENCE, not a gate,
+and it must never join the suite. Point it at a SCRATCH database.
+
+    ARNIE_CORPUS_DB=postgresql+psycopg://$(whoami)@localhost:5432/arnie_migcheck \\
+        ../arnie/.venv/bin/python -m scripts.corpus_through_the_real_turn --mode off
+
+    # the comparison the whole step exists for
+    ... --mode off --write && ... --mode shadow --write && ... --compare
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import collections
+import json
+import os
+import pathlib
+import statistics
+import sys
+import time
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+
+CORPUS_PATH = (pathlib.Path(__file__).resolve().parents[1]
+               / "data" / "corpus" / "production_like_v1.json")
+RECORD_DIR = pathlib.Path(__file__).resolve().parents[1] / "data" / "corpus"
+
+#: Every bucket must land within this many POINTS of the production weight for
+#: the corpus to be called production-like. Chosen before the first run: the
+#: rolling-window wobble between the 691-entry and 687-entry production
+#: measurements was itself about half a point, so anything tighter would be
+#: claiming precision the baseline does not have.
+MIX_TOLERANCE_PTS = 3.0
+
+
+def _load_key() -> None:
+    """The API key from the environment, or from the gitignored ../arnie/.env.
+
+    NEVER a literal in this file — same rule as every other script here, and
+    the credential ratchet enforces it.
+    """
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return
+    env = pathlib.Path(__file__).resolve().parents[2] / "arnie" / ".env"
+    for line in (env.read_text().splitlines() if env.exists() else ()):
+        if line.startswith("ANTHROPIC_API_KEY="):
+            os.environ["ANTHROPIC_API_KEY"] = line.split("=", 1)[1].strip("\"' ")
+            return
+    raise SystemExit("no ANTHROPIC_API_KEY, and none in ../arnie/.env")
+
+
+async def _fresh_user(session, handle: str, mode: str, run_id: str):
+    """One synthetic user, created through the models the app uses.
+
+    ⭐ RE-RUNNABLE BY CREATING, NEVER BY DELETING. The first version of this
+    function deleted the previous run's user and died on
+    `achievements_user_id_fkey` — a turn writes to more tables than the food
+    lane's own, so hand-rolled teardown is a growing list of foreign keys that
+    is wrong again the next time a turn learns to write somewhere new. The
+    handle carries a RUN ID instead, so every run gets users nobody has touched
+    and nothing needs deleting.
+
+    ⚠ THE MODE IS IN THE HANDLE TOO, and that is not cosmetic: an `off` run and
+    a `shadow` run sharing a user would let the first run's cached memory rows
+    decide the second run's rung mix, which is the one comparison this whole
+    instrument exists to make.
+
+    ⚠ SCRATCH DBs ACCUMULATE USERS. That is the intended trade — a stale row in
+    a scratch database costs nothing, and per-user memory means an old user
+    cannot contaminate a new one.
+    """
+    from db.models import User, UserPreferences
+    from db.queries import get_or_create_today_log
+
+    telegram_id = f"corpus:{mode}:{run_id}:{handle}"
+    async with session() as db:
+        user = User(
+            telegram_id=telegram_id, name="Corpus", age=37, sex="male",
+            height_cm=178.0, current_weight_kg=86.0, goal_weight_kg=80.0,
+            primary_goal="cut", training_experience="advanced", injuries="none",
+            timezone="America/New_York", onboarding_completed=True)
+        db.add(user)
+        db.add(UserPreferences(user=user, calorie_target=2126, protein_target=190,
+                               coaching_style="direct", accountability_level="high",
+                               wake_time="07:00", sleep_time="23:30"))
+        await db.flush()
+        uid = user.id
+        await get_or_create_today_log(db, uid, "America/New_York")
+        await db.commit()
+    return uid
+
+
+def _is_recovery(result) -> bool:
+    """Did this turn come back as the canned apology rather than as a turn?
+
+    ⭐ ASKED OF THE REPLY, USING THE APP'S OWN PREDICATE. `core.recovery`
+    derives the signatures from the bubble pool itself, so a reworded bubble
+    cannot silently stop being recognised here — the same reason
+    `chat_service` refuses to keep a transcribed copy of that list.
+    """
+    from core.recovery import is_recovery_text
+
+    response = getattr(result, "response", None)
+    bubbles = getattr(response, "bubbles", None) or []
+    return any(is_recovery_text(bubble) for bubble in bubbles)
+
+
+async def _addressable_memory_keys(db, user_id: int) -> set:
+    """The keys this user can reach RIGHT NOW — the pre-turn snapshot.
+
+    `cal_100 IS NOT NULL` is not a stylistic filter: `_memory()` discards a row
+    without it, so a row lacking it is not reachable and must not count as one.
+    """
+    from sqlalchemy import select
+
+    from db.models import UserFoodMatch
+    rows = (await db.execute(
+        select(UserFoodMatch.name_norm).where(
+            UserFoodMatch.user_id == user_id,
+            UserFoodMatch.cal_100.isnot(None)))).scalars().all()
+    return set(rows)
+
+
+async def _entries_after(db, user_id: int, after_id: int):
+    """The food rows THIS turn wrote, identified by id watermark."""
+    from sqlalchemy import select
+
+    from db.models import DailyLog, FoodEntry
+    return (await db.execute(
+        select(FoodEntry)
+        .join(DailyLog, DailyLog.id == FoodEntry.daily_log_id)
+        .where(DailyLog.user_id == user_id, FoodEntry.id > after_id)
+        .order_by(FoodEntry.id))).scalars().all()
+
+
+async def _max_entry_id(db, user_id: int) -> int:
+    from sqlalchemy import func, select
+
+    from db.models import DailyLog, FoodEntry
+    got = (await db.execute(
+        select(func.coalesce(func.max(FoodEntry.id), 0))
+        .select_from(FoodEntry)
+        .join(DailyLog, DailyLog.id == FoodEntry.daily_log_id)
+        .where(DailyLog.user_id == user_id))).scalar()
+    return int(got or 0)
+
+
+async def _identity_for(db, name: str) -> str:
+    """The identity a CONSUMER would address this surface form by.
+
+    ⚠ NOT READ OFF THE FOOD ROW — `food_entries` HAS NO IDENTITY COLUMN. The
+    stamp rides the tool-call input and is never persisted on the entry, so the
+    only honest way to ask "what would settlement have addressed this by" after
+    the fact is to make the call settlement makes: `entity_id_for_surface`.
+
+    ⭐ AND ITS EMPTY STRING IS THE CONTRACT, NOT A MISS. No row, a stale
+    contract and an UNRESOLVED judgement all arrive as `""`, which means "keep
+    today's behaviour" — so passing it straight through reproduces off-mode
+    exactly, which is what makes the two runs comparable.
+    """
+    from skills.nutrition.entity_resolution import entity_id_for_surface
+
+    try:
+        return await entity_id_for_surface(db, name)
+    except Exception:                    # noqa: BLE001
+        return ""
+
+
+async def _rung_for(db, user_id: int, name: str, entity_id: str,
+                    pre_keys: set) -> str:
+    """Which rung this entry reached, EXECUTED — with the temporal guard.
+
+    ⭐ THE LADDER'S OWN ORDER, because that is what `price()` does: memory
+    first, artifact second. Asking the artifact in isolation is the mistake
+    that once made "28 priceable" read as the artifact's contribution when a
+    higher rung already owned 15 of them.
+
+    ⛔ AND THE GUARD IS THE WHOLE POINT. `_memory()` is executed — no
+    reimplementation of the predicate — but its answer only counts as MEMORY
+    when the key was addressable BEFORE this turn ran. Otherwise the number
+    being reported is the turn's own cache write coming back around.
+    """
+    from core.canonical_pricing_inputs import _memory
+    from core.food_intelligence import memory_key
+    from skills.nutrition.pricing_artifact import evidence_for, split_identity
+
+    key = memory_key(name, entity_id)
+    evidence = await _memory(db, user_id, name, entity_id)
+    if evidence is not None:
+        return "MEMORY" if key in pre_keys else "CACHED_BY_THIS_TURN"
+    entity, preparation = split_identity(name)
+    if evidence_for(entity, preparation) is not None:
+        return "ARTIFACT"
+    return "ESTIMATE_OR_REFUSE"
+
+
+async def run_body(*, mode: str, limit: int, url: str) -> dict:
+    """Drive the corpus body through the real turn path and observe the DB."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from core.chat_service import run_chat_turn
+    from db.database import make_engine
+    from db.queries import reload_user
+    from scripts.measure_identity_coverage import classify
+
+    corpus = json.loads(CORPUS_PATH.read_text())
+    body = corpus["body"][:limit] if limit else corpus["body"]
+
+    os.environ["ENTITY_RESOLUTION_MODE"] = mode
+    engine = make_engine(url)
+    session = async_sessionmaker(engine, expire_on_commit=False)
+
+    # ⛔ THE RESOLUTION STORE IS GLOBAL, NOT PER-USER, so a fresh user does not
+    # give a fresh experiment. Rows left by an earlier run (or by
+    # `prove_distinct_reuse`) would let this run REUSE identities it never
+    # established, and an `off` run would report resolutions it did not write.
+    # Cleared here, and it is the reason this must point at a scratch DB.
+    async with session() as db:
+        from sqlalchemy import delete
+
+        from db.models import FoodEntityResolution
+        await db.execute(delete(FoodEntityResolution))
+        await db.commit()
+
+    run_id = time.strftime("%Y%m%dT%H%M%S")
+    users: dict = {}
+    for handle in dict.fromkeys(e["user"] for e in body):
+        users[handle] = await _fresh_user(session, handle, mode, run_id)
+
+    entries_seen, latencies, failures, recovered = [], [], [], []
+    try:
+        for index, item in enumerate(body):
+            uid = users[item["user"]]
+            async with session() as db:
+                pre_keys = await _addressable_memory_keys(db, uid)
+                watermark = await _max_entry_id(db, uid)
+
+            async with session() as db:
+                user = await reload_user(db, uid)
+                started = time.monotonic()
+                try:
+                    result = await run_chat_turn(db, user, item["text"],
+                                                 platform="ios",
+                                                 schedule_background=False)
+                    await db.commit()
+                    error = None
+                    # ⛔⛔ A TURN THAT NEVER REACHED THE MODEL DOES NOT RAISE.
+                    # It returns a recovery bubble, so `except` sees nothing and
+                    # the run reports "0 turn failures" over an empty mix — a
+                    # provider outage wearing the shape of a coverage finding.
+                    # This is how the run knows the difference between "no
+                    # coverage" and "no run", and it cost a 16-turn run to learn:
+                    # the API key's credit balance was exhausted and every
+                    # number came back a clean, confident zero.
+                    if _is_recovery(result):
+                        recovered.append({"index": index, "text": item["text"]})
+                except Exception as exc:          # noqa: BLE001 — recorded, not swallowed
+                    await db.rollback()
+                    error = repr(exc)[:200]
+                elapsed_ms = (time.monotonic() - started) * 1000
+            latencies.append(elapsed_ms)
+            if error:
+                failures.append({"index": index, "text": item["text"],
+                                 "error": error})
+
+            # ⛔⛔ ROWS ARE NOT ATTRIBUTED TO THE TURN THAT WAS RUNNING WHEN THEY
+            # APPEARED. Measured on the first 14 turns: turn 0 ('200g chicken
+            # breast') produced no row of its own, and turn 1 ('a cup of white
+            # rice') produced TWO — 'Chicken breast' 200 g and 'White rice' 1
+            # cup. Held food rides `deferred_calls` and commits on the FOLLOWING
+            # turn, so a watermark taken around a single turn mis-attributes it,
+            # and an instrument that drove one turn per user would never see the
+            # row at all.
+            #
+            # ⭐ WHAT IS TIME-SENSITIVE IS THE RUNG, NOT THE LABEL. `pre_keys`
+            # must be the snapshot from the turn the row actually landed in, or
+            # the memory guard is meaningless — so the rung is computed HERE,
+            # now, and only the corpus label is deferred to the reconciliation
+            # pass below.
+            async with session() as db:
+                rows = await _entries_after(db, uid, watermark)
+                for row in rows:
+                    name = str(row.parsed_food_name or "")
+                    entity_id = await _identity_for(db, name)
+                    rung = await _rung_for(db, uid, name, entity_id, pre_keys)
+                    entries_seen.append({
+                        "landed_on_turn": index, "user": item["user"],
+                        "parsed_food_name": name,
+                        "canonical_entity_id": entity_id, "rung": rung,
+                        # The bucket is only meaningful for an entry that
+                        # reached no evidence — exactly as the production
+                        # instrument counts it.
+                        "bucket": (classify(name)
+                                   if rung == "ESTIMATE_OR_REFUSE" else None),
+                        "calories": row.calories, "quantity": row.quantity,
+                        "latency_ms": round(elapsed_ms)})
+
+        # ⛔ THE LAST TURN'S FOOD IS STILL HELD WHEN THE CORPUS ENDS. Held food
+        # rides `deferred_calls` and commits on the FOLLOWING turn, so without
+        # this every user's final entry would be missing and would be reported
+        # as a coverage gap. One neutral turn per user flushes it — the same way
+        # production flushes it, by there being a next turn.
+        #
+        # ⚠ IT IS NEUTRAL ON PURPOSE: it must commit what is held and log
+        # nothing of its own, so any row it produces shows up in
+        # `rows_the_corpus_did_not_predict` rather than quietly joining the mix.
+        for handle, uid in users.items():
+            async with session() as db:
+                pre_keys = await _addressable_memory_keys(db, uid)
+                watermark = await _max_entry_id(db, uid)
+            async with session() as db:
+                user = await reload_user(db, uid)
+                try:
+                    await run_chat_turn(db, user, "thanks", platform="ios",
+                                        schedule_background=False)
+                    await db.commit()
+                except Exception:                # noqa: BLE001
+                    await db.rollback()
+            async with session() as db:
+                for row in await _entries_after(db, uid, watermark):
+                    name = str(row.parsed_food_name or "")
+                    entity_id = await _identity_for(db, name)
+                    entries_seen.append({
+                        "landed_on_turn": -1, "user": handle,
+                        "parsed_food_name": name,
+                        "canonical_entity_id": entity_id,
+                        "rung": await _rung_for(db, uid, name, entity_id, pre_keys),
+                        "bucket": None, "calories": row.calories,
+                        "quantity": row.quantity, "latency_ms": None,
+                        "flushed": True})
+        # The bucket for a flushed row is filled in during reconciliation, once
+        # it is known which corpus item it belongs to.
+        for entry in entries_seen:
+            if entry.get("flushed") and entry["rung"] == "ESTIMATE_OR_REFUSE":
+                entry["bucket"] = classify(entry["parsed_food_name"])
+
+        async with session() as db:
+            resolutions = await _resolution_rows(db)
+    finally:
+        await engine.dispose()
+
+    observations, unmatched = _reconcile(body, entries_seen)
+    return _report(corpus, observations, unmatched, latencies, failures,
+                   recovered, resolutions, mode=mode, turns=len(body))
+
+
+def _reconcile(body, entries_seen):
+    """Attach each written row to the corpus item it came from.
+
+    ⭐ BY FOOD AND BY USER, IN ORDER — NEVER BY TURN INDEX, because the turn
+    path defers commits. Matching is on `normalize_name`, the production
+    normalizer, so 'Chicken Breast' and 'chicken breast' are the same food here
+    for exactly the reason they are the same food to the lookup.
+
+    ⚠ AND BOTH LEFTOVERS ARE REPORTED. A corpus item with no row is an entry
+    missing from every percentage below it; a row with no corpus item is the
+    turn writing something the corpus never predicted — a multi-item split, or
+    the interpreter naming a food differently. Silently dropping either is how
+    a mix gets computed over a survivor set and read as a population.
+    """
+    from core.food_intelligence import normalize_name
+
+    pending: dict = collections.defaultdict(list)
+    for position, item in enumerate(body):
+        pending[item["user"]].append([position, item, None])
+
+    unmatched_rows = []
+    for entry in entries_seen:
+        candidates = pending[entry["user"]]
+        target = normalize_name(entry["parsed_food_name"])
+        slot = next((c for c in candidates
+                     if c[2] is None and normalize_name(c[1]["food"]) == target), None)
+        if slot is None:
+            # A looser pass before giving up: the interpreter renames
+            # ('grilled eggplant' -> 'Grilled eggplant', 'Eggs' -> 'Egg').
+            slot = next((c for c in candidates
+                         if c[2] is None
+                         and (target in normalize_name(c[1]["food"])
+                              or normalize_name(c[1]["food"]) in target)), None)
+        if slot is None:
+            unmatched_rows.append(entry)
+            continue
+        slot[2] = entry
+
+    observations = []
+    for user_slots in pending.values():
+        for position, item, entry in user_slots:
+            base = {"position": position, "user": item["user"],
+                    "text": item["text"], "declared": item["declared"],
+                    "role": item["role"], "predicted_food": item["food"]}
+            if entry is None:
+                observations.append({**base, "parsed_food_name": None,
+                                     "canonical_entity_id": "",
+                                     "rung": "NO_ROW_WRITTEN", "bucket": None,
+                                     "calories": None, "quantity": None,
+                                     "latency_ms": None})
+            else:
+                observations.append({**base, **entry})
+    observations.sort(key=lambda o: o["position"])
+    return observations, unmatched_rows
+
+
+async def _resolution_rows(db) -> list:
+    """Everything the interpretation boundary wrote, as plain dicts."""
+    from sqlalchemy import select
+
+    from db.models import FoodEntityResolution
+    rows = (await db.execute(select(FoodEntityResolution))).scalars().all()
+    return [{"surface_key": r.surface_key,
+             "canonical_entity_id": str(r.canonical_entity_id or ""),
+             "state": getattr(r.state, "value", str(r.state))} for r in rows]
+
+
+def _report(corpus, observations, unmatched_rows, latencies, failures,
+            recovered, resolutions, *, mode: str, turns: int) -> dict:
+    entries = [o for o in observations if o["rung"] != "NO_ROW_WRITTEN"]
+    rungs = collections.Counter(o["rung"] for o in entries)
+    buckets = collections.Counter(o["bucket"] for o in entries if o["bucket"])
+    total = max(len(entries), 1)
+
+    realized = {name: round(100 * count / total, 1)
+                for name, count in {**rungs, **buckets}.items()}
+
+    # ⛔⛔ THE PRODUCTION BASELINE HAS NO TEMPORAL GUARD, AND COMPARING THE
+    # GUARDED NUMBER TO IT WOULD BE THE §1e ERROR AGAIN — two populations read
+    # as one result.
+    #
+    # `measure_identity_coverage` asks `_memory()` about 30-day-old entries,
+    # long after the turn that wrote them cached its own candidate. So an entry
+    # whose food was FIRST SEEN on that turn still reads as MEMORY there,
+    # because by measurement time the row exists. Production's 43.7% is
+    # therefore "these entries' foods are addressable in memory TODAY", not
+    # "these entries were priced from memory AT SETTLE TIME".
+    #
+    # ⭐ SO BOTH NUMBERS ARE REPORTED, AND THE COMPARABLE ONE IS THE UNGUARDED
+    # ONE. MEMORY + CACHED_BY_THIS_TURN is what the production instrument would
+    # have said about these same rows, and it is what the drift check uses.
+    # The guarded number is the sharper fact and is stated alongside — it is
+    # what settlement actually had, and no existing baseline can see it.
+    unguarded = dict(rungs)
+    unguarded["MEMORY"] = (rungs.get("MEMORY", 0)
+                           + rungs.get("CACHED_BY_THIS_TURN", 0))
+    unguarded.pop("CACHED_BY_THIS_TURN", None)
+    realized_comparable = {name: round(100 * count / total, 1)
+                           for name, count in {**unguarded, **buckets}.items()}
+
+    target = corpus["target_mix_pct"]
+    drift = {name: round(realized_comparable.get(name, 0.0) - pct, 1)
+             for name, pct in target.items()}
+
+    # ⛔ THE PREDICTION IS NEVER RESOLVED IN ITS OWN FAVOUR. `declared` said
+    # what this entry would do; the executed rung and the production classifier
+    # said what it did. Where they differ, both are printed.
+    divergences = []
+    for observation in entries:
+        actual = (observation["bucket"] or observation["rung"])
+        if actual != observation["declared"]:
+            divergences.append({
+                "text": observation["text"], "role": observation["role"],
+                "declared": observation["declared"], "actual": actual,
+                "parsed_food_name": observation["parsed_food_name"]})
+
+    return {
+        "corpus_version": corpus["corpus_version"],
+        "mode": mode,
+        "turns_driven": turns,
+        "entries_written": len(entries),
+        "corpus_items_with_no_row": sum(
+            1 for o in observations if o["rung"] == "NO_ROW_WRITTEN"),
+        "rows_the_corpus_did_not_predict": unmatched_rows,
+        "turn_failures": failures,
+        "turns_that_returned_a_recovery_bubble": recovered,
+        "driven_through": "core.chat_service.run_chat_turn",
+        "rungs": dict(rungs),
+        "uncovered_buckets": dict(buckets),
+        "realized_mix_pct": realized,
+        "realized_mix_pct_comparable": realized_comparable,
+        "memory_at_settle_pct": realized.get("MEMORY", 0.0),
+        "memory_addressable_after_pct": realized_comparable.get("MEMORY", 0.0),
+        "why_two_memory_numbers": (
+            "settle-time MEMORY is what pricing actually had; the addressable-"
+            "after number is what scripts.measure_identity_coverage would report "
+            "on these same rows, because it measures long after each turn cached "
+            "its own candidate. Only the second is comparable to production's "
+            "43.7%."),
+        "target_mix_pct": target,
+        "drift_pts": drift,
+        "mix_within_tolerance": all(
+            abs(value) <= MIX_TOLERANCE_PTS for value in drift.values()),
+        "mix_tolerance_pts": MIX_TOLERANCE_PTS,
+        "resolution_rows": len(resolutions),
+        "resolution_states": dict(collections.Counter(
+            r["state"] for r in resolutions)),
+        "latency_ms": {
+            "p50": round(statistics.median(latencies)) if latencies else None,
+            "p95": (round(sorted(latencies)[int(len(latencies) * 0.95) - 1])
+                    if len(latencies) >= 20 else None),
+            "max": round(max(latencies)) if latencies else None,
+        },
+        "declared_vs_actual_divergences": divergences,
+        "anti_vacuity": _anti_vacuity(entries, rungs, resolutions, mode,
+                                      recovered, turns),
+        "observations": observations,
+        "instrument_limits": [
+            "the MEMORY count is guarded by a PRE-TURN key snapshot; without it "
+            "the turn's own cache write reads as coverage",
+            "CACHED_BY_THIS_TURN is not a rung — it is the mechanism the NEXT "
+            "log reaches MEMORY by, reported separately so neither is inflated",
+            "one item per body turn, so entries ~= turns; production averages more",
+            "synthetic phrasing around real production food names",
+            "latency is this machine against the real providers, not production",
+        ],
+    }
+
+
+def _anti_vacuity(entries, rungs, resolutions, mode: str,
+                  recovered, turns: int) -> dict:
+    """⭐ THE CHECKS THAT STOP A HOLLOW RUN FROM READING AS A RESULT.
+
+    A green run means nothing until something proves the run happened at all.
+    Each of these has a specific way of failing silently, and each has cost this
+    project a session at least once.
+    """
+    memory_by_repeat = sum(
+        1 for o in entries if o["role"].startswith("repeat")
+        and o["rung"] == "MEMORY")
+    checks = {
+        # ⛔ FIRST, BECAUSE IT EXPLAINS EVERY OTHER FAILURE BELOW IT. A turn that
+        # cannot reach the model returns a recovery bubble and raises nothing,
+        # so an outage reports as a clean zero across the board.
+        "turns_reached_the_model": len(recovered) < max(turns // 4, 1),
+        # A corpus that wrote no rows would report a beautifully empty mix.
+        "rows_were_actually_written": len(entries) > 0,
+        # If retrieval never seats a candidate, nothing caches, and every
+        # "covered" entry silently becomes ESTIMATE — the mix would then be
+        # measuring the provider outage, not the corpus.
+        "memory_was_earned_by_repetition": memory_by_repeat > 0,
+        # The rung must be reachable at all, or MEMORY=0 is ambiguous between
+        # "no coverage" and "the rung is dead again" — which is exactly the
+        # ambiguity that hid a dead rung for the life of the canonical lane.
+        "memory_rung_returned_evidence": rungs.get("MEMORY", 0) > 0,
+        "artifact_rung_returned_evidence": rungs.get("ARTIFACT", 0) > 0,
+    }
+    if mode == "shadow":
+        # ⛔ THE MODE FLAG MUST BE PROVEN TO BITE. A shadow run that wrote no
+        # resolutions is indistinguishable from an off run, and would otherwise
+        # be reported as "no behaviour change" — the strongest possible result,
+        # produced by the feature never running.
+        checks["shadow_actually_resolved_something"] = len(resolutions) > 0
+    else:
+        checks["off_wrote_no_resolutions"] = len(resolutions) == 0
+    return {"checks": checks, "all_passed": all(checks.values()),
+            "memory_hits_on_repeat_turns": memory_by_repeat}
+
+
+def render(report: dict) -> str:
+    out = [f"\n  CORPUS `{report['corpus_version']}` · mode={report['mode']} · "
+           f"through {report['driven_through']}\n",
+           f"    {report['turns_driven']} turns driven · "
+           f"{report['entries_written']} entries written · "
+           f"{len(report['turn_failures'])} turn failures\n"]
+
+    for name in ("MEMORY", "ARTIFACT", "CACHED_BY_THIS_TURN",
+                 "ESTIMATE_OR_REFUSE"):
+        count = report["rungs"].get(name, 0)
+        pct = report["realized_mix_pct"].get(name, 0.0)
+        out.append(f"    {count:5d}  {pct:5.1f}%   {name}")
+    out.append("")
+    for name, count in sorted(report["uncovered_buckets"].items(),
+                              key=lambda kv: -kv[1]):
+        out.append(f"    {count:5d}  "
+                   f"{report['realized_mix_pct'].get(name, 0.0):5.1f}%   {name}")
+
+    out.append(f"\n    MEMORY, TWO WAYS — at settle "
+               f"{report['memory_at_settle_pct']:.1f}%  ·  addressable after "
+               f"{report['memory_addressable_after_pct']:.1f}%")
+    out.append("    (production's 43.7% is the SECOND kind — it measures rows "
+               "long after their\n     own turn cached them, so only the second "
+               "is comparable)")
+
+    out.append("\n    REALIZED vs PRODUCTION (comparable basis, points of drift)")
+    for name, value in report["drift_pts"].items():
+        flag = " " if abs(value) <= report["mix_tolerance_pts"] else "⛔"
+        out.append(f"    {flag}  {name:18} "
+                   f"{report['realized_mix_pct_comparable'].get(name, 0.0):5.1f}%"
+                   f"  vs {report['target_mix_pct'][name]:5.1f}%   {value:+.1f}")
+    verdict = "PRODUCTION-LIKE" if report["mix_within_tolerance"] else "NOT PRODUCTION-LIKE"
+    out.append(f"\n    -> {verdict} "
+               f"(tolerance ±{report['mix_tolerance_pts']} pts)")
+
+    latency = report["latency_ms"]
+    out.append(f"\n    latency  p50 {latency['p50']} ms · p95 {latency['p95']} ms "
+               f"· max {latency['max']} ms")
+    out.append(f"    resolutions written {report['resolution_rows']} "
+               f"{report['resolution_states'] or ''}")
+
+    # ⛔ A TURN THAT WROTE NO ROW IS NOT A NEUTRAL EVENT — it silently removes an
+    # entry from every percentage below it. Named, never just counted.
+    silent = [o for o in report["observations"] if o["rung"] == "NO_ROW_WRITTEN"]
+    if silent:
+        out.append(f"\n    ⛔ {len(silent)} CORPUS ITEM(S) NEVER PRODUCED A ROW — "
+                   f"each is an entry missing from the mix")
+        for item in silent[:14]:
+            out.append(f"      {item['role']:22} {item['text'][:52]!r}")
+        if len(silent) > 14:
+            out.append(f"      … {len(silent) - 14} more (see the JSON record)")
+    stray = report["rows_the_corpus_did_not_predict"]
+    if stray:
+        out.append(f"\n    ⚠ {len(stray)} ROW(S) THE CORPUS DID NOT PREDICT")
+        for row in stray[:8]:
+            out.append(f"      turn {row['landed_on_turn']:3}  "
+                       f"{row['rung']:20} {(row['parsed_food_name'] or '?')[:38]!r}")
+
+    out.append("\n    ANTI-VACUITY")
+    for name, passed in report["anti_vacuity"]["checks"].items():
+        out.append(f"      {'PASS' if passed else '⛔ FAIL'}  {name}")
+
+    divergences = report["declared_vs_actual_divergences"]
+    out.append(f"\n    DECLARED vs ACTUAL — {len(divergences)} divergence(s)")
+    for item in divergences[:12]:
+        out.append(f"      {item['declared']:16} -> {item['actual']:20} "
+                   f"{(item['parsed_food_name'] or '?')[:34]!r}")
+    if len(divergences) > 12:
+        out.append(f"      … {len(divergences) - 12} more (see the JSON record)")
+
+    out.append("\n    LIMITS")
+    for limit in report["instrument_limits"]:
+        out.append(f"      · {limit}")
+    return "\n".join(out) + "\n"
+
+
+def validate_corpus() -> int:
+    """⭐ THE PREREGISTRATION CHECK — no model, no database, no network.
+
+    Everything about the corpus that can be checked WITHOUT running it, checked
+    before a single token is spent: that the composition matches its own stated
+    plan, that no two utterances are identical (which is how the first smoke run
+    lost its repeats to dedup), and — the one that matters — that every
+    `declared` bucket agrees with what PRODUCTION'S OWN CLASSIFIER says about the
+    food name the entry predicts.
+
+    ⛔ THE CLASSIFIER IS THE AUTHORITY, NEVER THE LABEL. `classify` is imported
+    from the instrument that measured production, so it carries the same
+    `_looks_branded` heuristic and the same non-ASCII test. A corpus whose
+    labels disagree with it is not weighted by production's distributions; it is
+    weighted by mine.
+
+    ⚠ ITS HONEST LIMIT: this checks the PREDICTED food name. What the
+    interpreter actually emits can differ, and only a run can say. This makes
+    the corpus internally sound; it does not make it correct.
+    """
+    from scripts.measure_identity_coverage import classify
+
+    corpus = json.loads(CORPUS_PATH.read_text())
+    body, plan = corpus["body"], corpus["body_plan"]
+    problems = []
+
+    counts = collections.Counter(item["declared"] for item in body)
+    if len(body) != plan["entries"]:
+        problems.append(f"{len(body)} entries, plan says {plan['entries']}")
+    for name, expected in plan.items():
+        if isinstance(expected, int) and name != "entries":
+            if counts[name] != expected:
+                problems.append(
+                    f"{name}: plan {expected}, corpus has {counts[name]}")
+
+    repeated = [text for text, count in
+                collections.Counter(i["text"] for i in body).items() if count > 1]
+    for text in repeated:
+        problems.append(f"duplicate utterance {text!r} — dedup will eat it")
+
+    # Only entries the corpus predicts will MISS carry a bucket; MEMORY and
+    # ARTIFACT are rung predictions and the classifier says nothing about them.
+    mislabelled = []
+    for item in body:
+        if item["declared"] in ("MEMORY", "ARTIFACT"):
+            continue
+        actual = classify(item["food"])
+        declared = item["declared"]
+        if not actual.startswith(declared.split("+")[0].split(" ")[0]):
+            mislabelled.append((item["food"], declared, actual))
+    for food, declared, actual in mislabelled:
+        problems.append(f"{food!r} declared {declared}, classifier says {actual}")
+
+    print(f"\n  PREREGISTRATION CHECK — {corpus['corpus_version']} "
+          f"· {len(body)} entries · no model, no DB\n")
+    for name, count in sorted(counts.items(), key=lambda kv: -kv[1]):
+        target = corpus["target_mix_pct"].get(name)
+        share = 100 * count / max(len(body), 1)
+        against = f"  vs production {target:5.1f}%" if target else ""
+        print(f"    {count:5d}  {share:5.1f}%   {name:18}{against}")
+    print(f"\n    {len(body) - len(mislabelled)}/{len(body)} labels agree with "
+          f"the production classifier")
+    print(f"    {len(repeated)} duplicate utterance(s)")
+    if problems:
+        print("\n  ⛔ PROBLEMS\n")
+        for problem in problems:
+            print(f"    · {problem}")
+        print()
+        return 1
+    print("\n  -> the corpus is internally sound and labelled the way production "
+          "classifies.\n     What it cannot tell you is what the interpreter will "
+          "actually emit.\n")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--validate", action="store_true",
+                        help="check the corpus without running it (no model, no DB)")
+    parser.add_argument("--mode", choices=("off", "shadow"), default="off")
+    parser.add_argument("--limit", type=int, default=0,
+                        help="drive only the first N body entries (smoke)")
+    parser.add_argument("--write", action="store_true",
+                        help="record the run as JSON next to the corpus")
+    args = parser.parse_args()
+
+    if args.validate:
+        return validate_corpus()
+
+    url = os.getenv("ARNIE_CORPUS_DB")
+    if not url:
+        raise SystemExit(
+            "set ARNIE_CORPUS_DB to a SCRATCH database — this writes real rows")
+
+    # ⛔ THE TURN DOES NOT WRITE EVERYTHING THROUGH THE SESSION IT IS HANDED,
+    # AND THE FIRST SMOKE RUN PROVED IT. Food rows landed in Postgres while the
+    # turn logged `no such table: turn_metrics (sqlite3.OperationalError)` — the
+    # metrics write goes through the APP-GLOBAL engine, which falls back to
+    # SQLite when DATABASE_URL is unset. Half the turn was being observed in one
+    # database and half of it was failing, silently, in another.
+    #
+    # ⚠ SET BEFORE ANY APP MODULE IMPORTS, because the global engine binds at
+    # import time — which is why this lives in main() and not in run_body().
+    os.environ.setdefault("DATABASE_URL", url)
+    _load_key()
+
+    report = asyncio.run(run_body(mode=args.mode, limit=args.limit, url=url))
+    print(render(report))
+    if args.write:
+        suffix = f"_limit{args.limit}" if args.limit else ""
+        path = RECORD_DIR / f"run_{args.mode}{suffix}.json"
+        path.write_text(json.dumps(report, indent=1, ensure_ascii=False))
+        print(f"  recorded -> {path}\n")
+    return 0 if report["anti_vacuity"]["all_passed"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
