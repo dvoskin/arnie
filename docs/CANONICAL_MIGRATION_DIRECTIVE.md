@@ -127,6 +127,33 @@ DISTINCT  Творог -> tvorog          Сметана -> smetana
 RESOLVED  Помидор -> tomato   White rice   Chicken breast   Eggplant
 ```
 
+✅ **AND THE LIVE REUSE PROOF IS NOW DONE** — `scripts/prove_distinct_reuse.py`,
+real model, real store, table cleared first (reuse against leftovers would prove
+the store remembers, not that the judgement works):
+
+```text
+1  'Творог 5%'            -> 'tvorog 5 percent'       establishes one identity
+2  'Творог 5% жирности'   -> 'tvorog 5 percent'       REUSED
+3  'Творог 2%'            -> 'tvorog 2 percent fat'   did NOT collapse
+4  Barebells Salty Peanut -> PRODUCT, bound {}        binds nothing, offered to nobody
+```
+
+⭐ **STEP 3 IS THE ONE THAT MATTERS.** A reuse step that merged everything would
+satisfy step 2 perfectly and then price 2% curd from 5% forever after. The model
+was shown an established `tvorog 5 percent` and DECLINED it. Duplicate
+identities are cheap; a false collapse is permanent.
+
+⚠ The ids are not formally uniform — `tvorog 5 percent` vs
+`tvorog 2 percent fat` — and that is not a defect: they are different foods, so
+their ids SHOULD differ. Consistency for any ONE food comes from the store,
+which keys on `surface_key`. The defect would be two ids for one food, which is
+what step 2 rules out.
+
+⚠ Deliberately NOT in the suite: a proof that costs money and depends on a
+provider is EVIDENCE, not a gate.
+
+**SUPERSEDED — what the earlier probe did not show:**
+
 ⚠ AND WHAT THE LIVE PROBE DID NOT SHOW. The smoke harness calls `interpret()`
 directly, so the reuse step — which lives in `ensure_resolved` — never ran in
 it. The `tvorog 5% fat` / `tvorog 5%` variance visible there is RAW PRODUCER
