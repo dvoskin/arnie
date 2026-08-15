@@ -1165,6 +1165,174 @@ close B-1.7a → B-1.7b.
 oil evidence to an artifact ordinary food turns do not consume would be
 building on the same conflation this entry exists to record.
 
+### 3a.2  THE SLICE, SCOPED  *(2026-08-14. Danny: "I don't care so much about preserving the legacy path or trying to wire new architecture into the legacy path. So let's not waste time away on relinking it.")*
+
+**DIRECTION SET: this is an OWNERSHIP TRANSFER, not an interoperation.** No
+canonical call is to be threaded into `_analyze_food`, and no legacy candidate
+is to be fed into `price()`. The general lane gets its own settlement owner on
+the spine that already exists, and legacy keeps whatever it still owns until it
+owns nothing.
+
+#### ⭐ THE SPINE IS ALREADY THREE-QUARTERS ADOPTED — measured, not assumed
+
+```text
+owner                              writer                    pricer
+api/quick_log.py                   canonical                 CLIENT-supplied macros
+core/b1_quantity_operation.py      canonical                 CANONICAL (assemble+price)
+ordinary chat food turn            legacy execute_tool_calls legacy _analyze_food
+```
+
+`write_canonical_meal` already has three callers; `assemble()` has one. So the
+missing component is not a spine, a writer, a commit coordinator or an
+idempotency layer — all four are built, proven and carrying production traffic.
+**It is one general settlement owner**, the ordinary-turn equivalent of
+`_AnswerOperation` (B-1) and `DirectOperation` (quick_log).
+
+#### ⭐⭐ AND "NEVER INVENT A PREPARATION" IS ALREADY STRUCTURAL
+
+`pricing_artifact.split_identity()` — registry-driven, no food list, no regex
+identity — is the inverse of `preparation_ontology.name_with`:
+
+```text
+interpreter emits  "Chicken, fried"   ->  chicken|fried    a DIFFERENT row
+interpreter emits  "chicken"          ->  chicken|         a DIFFERENT row
+```
+
+An unstated preparation produces the BARE KEY, which is a distinct artifact
+entry — not a defaulted one. So Danny's "a potato is not fried" is not a rule
+this slice must add; it is a property the identity boundary already has, and
+what the slice owes is a GATE proving it holds on the general path too. The
+interpreter's item already carries `food` as a typed field (`core/food_turn.py`
+`_log_call`), which `split_identity` decomposes without asking a model anything.
+
+#### ⛔⛔ THE ONE REAL COST, STATED BEFORE ANYONE IS SURPRISED BY IT
+
+Legacy `fetch_candidates` RETRIEVES — live USDA, OFF, and the web meal enrich
+cascade. Canonical `assemble()` retrieves NOTHING, by design: that is Gate B,
+and a synchronous `price()` is the structural statement of it.
+
+```text
+food IS in the artifact (27 today)   canonical is BETTER   the migration's point
+food has a user memory row           canonical is EQUAL    same user_food_matches read
+food is in NEITHER                   canonical is WORSE    estimate rung, where legacy
+                                                           would have found a live USDA row
+```
+
+**That third line is the entire risk of this slice**, and no amount of care in
+the wiring reduces it — it is a coverage fact, not a code defect. It is also
+the number this migration has never actually measured: what fraction of a real
+day's food the committed artifact covers.
+
+#### ⛔⛔⛔ THEN I MEASURED IT, AND THE MEASUREMENT DECIDES
+
+**691 real production food entries, 30 days, 267 of them user 26.** Each name
+decomposed through the SAME `split_identity` the pricer uses, then asked of the
+artifact and of `user_food_matches`. No model, no network beyond one DB read.
+
+```text
+WHICH RUNG CANONICAL SETTLEMENT WOULD ACTUALLY REACH
+
+    308   44.6%   MEMORY      (wins — it outranks artifact)
+     13    1.9%   ARTIFACT
+    370   53.5%   estimate rung / refuse
+   ────────────────────────────────────────────────────────
+    321   46.5%   EVIDENCE-BACKED
+```
+
+⭐ **THE ARTIFACT IS THE DECIDING RUNG ON 13 OF 691 ENTRIES.** It could have
+priced 28 — memory already owned 15 of those and outranks it. So the whole of
+Phase 0 (77 signatures, 27 winners, the poisoned rebuild, the accounting
+freeze, every gate in this directive) governs **1.9% of real logged food**.
+Nothing about that work is wrong. But nobody had this number, and it is the
+number that decides what to build next.
+
+⭐⭐ **AND OPTION (2) IS DEAD ON ARRIVAL.** Canonical-owns-everything with no
+fallback would take 53.5% of real food to the estimate rung or to a refusal.
+Not viable, not even on one account. The choice is not the one I framed.
+
+#### THE 53.5% IS NOT RANDOM — IT IS THREE NAMED POPULATIONS
+
+```text
+210  30.4%  NON-ENGLISH   Помидор · Котлеты куриные · Капучино на обычном молоке
+ 68   9.8%  BRANDED       Barebells · Royo Everything Bagel · Quest Protein Chips
+ 53   7.7%  QUALIFIED     Salmon, pan-cooked with oil · Ground turkey, 96% lean
+ 39   5.6%  BARE + UNCOVERED   Eggplant · French fries · Chicken wings · Almonds
+```
+
+Each names a defect this directive has already written down, now measured live:
+
+**NON-ENGLISH — the global-readiness invariant, violated in production today.**
+The invariant says *language → interpretation*. The identity key is built from
+the SURFACE STRING, so `Помидор` can never reach `tomato|` no matter how many
+identities the artifact holds. **30.4% of real food, and the largest single
+population by a factor of three.**
+
+**BRANDED — a rung with no producer.** `Rung.PRODUCT` exists, ranks second, and
+`assemble()` hard-codes `"product": None`. It has never had a producer. This is
+the population that should never be artifact rows at all — a Barebells bar is a
+label, not a food identity.
+
+**QUALIFIED — `split_identity`'s vocabulary is THREE WORDS: fried, grilled,
+roasted.** "pan-cooked", "steamed", "boiled", "scrambled", "baked" are not in
+it, so the qualifier stays glued to the entity and builds a key nothing can
+reach. This is the identity-boundary defect class of 2026-08-10 at a new site,
+and the fix is registry extension, not code. ⭐ `White rice` misses while bare
+`rice|` HITS — so the boundary problem is modifiers generally, not preparation
+specifically.
+
+**⭐⭐⭐ ONLY 5.6% IS WHAT "ADD MORE ARTIFACT IDENTITIES" FIXES — WHICH MEANS
+THE FIVE OILS ARE NOT THE HIGHEST-VALUE NEXT TRANCHE, AND THIS MEASUREMENT IS
+WHY.** Oils live in the 5.6% bucket. Landing all five moves real coverage by
+well under one point, while the interpretation boundary sits at 30.4%
+unattended. The oils were sequenced next when the only visible axis was
+artifact quality. That is no longer the only visible axis.
+
+#### THE DECISION, RESTATED HONESTLY
+
+Canonical settlement can own the turns it has evidence for — **46.5% today,
+memory-dominated** — and that is a real and defensible first tranche. It cannot
+own the rest, and no wiring decision changes that. So:
+
+- the slice ships behind a **coverage predicate**, because the measured
+  alternative is refusing half of real food;
+- the predicate is a **typed pre-settlement routing decision**, not a canonical
+  call threaded into `_analyze_food` — which is what Danny's steer rules out;
+- and the predicate's miss rate is **emitted as telemetry from day one**, so
+  the cliff stays measured rather than rescued invisibly.
+
+⚠ NOTE THE HONEST LIMIT OF THIS MEASUREMENT: it approximates `_memory()`'s
+lookup (`normalize_name` on the composed name) rather than executing it, and it
+counts entries rather than turns. It is a scoping instrument, not a gate.
+
+#### ACCEPTANCE CRITERIA
+
+```text
+A1  a general settlement owner exists on ResolvedMeal -> commit_or_load_existing
+    -> write_canonical_meal, and it is the ONLY thing NativeExecutionStage
+    invokes for structured_food under the lane flag
+A2  it prices via assemble() + price() and imports nothing from
+    handlers.tool_executor — gated by an import/AST assertion, not by reading
+A3  an EXPLICIT quantity survives settlement unchanged   ("150g salmon" -> 150 g)
+A4  an UNSTATED preparation produces the BARE key       (potato| never potato|fried)
+A5  a STATED preparation produces the composed key      (both routes -> one key)
+A6  the committed row carries artifact provenance       rung=artifact · evidence_id
+    · confidence 0.85 — read from the DB, never from reply text
+A7  ⭐ CONSUMER-SIDE POISONED PROOF: with legacy qualification, the USDA client
+    and the resolver all poisoned to raise, a real turn still settles from the
+    artifact — and the poison is VERIFIED TO BITE before its silence counts
+A8  a food in neither artifact nor memory REFUSES rather than committing a
+    number no evidence backs, and the refusal writes no row and no ledger event
+A9  the six canary identities are pre-registered OFFLINE with their expected
+    evidence_ids, THEN observed in production — a matching calorie number is
+    NOT provenance (banana 210 = 2x105 taught that at a cost)
+A10 coverage measured and RECORDED: of one real day of food, how many items
+    reached an evidence-backed rung
+```
+
+A9 and A7 are the two that could not have been written before this week: A9
+because a coincidence nearly passed for a proof, A7 because a producer proof
+was mistaken for an adoption proof.
+
 ### 3b  THE TRANCHE CANARY — A RELEASE GATE, NOT A SMOKE TEST  *(Danny, 2026-08-14)*
 
 Production is **32 commits behind** and this tranche changed the ARTIFACT, the
