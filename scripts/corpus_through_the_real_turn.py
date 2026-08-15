@@ -35,8 +35,33 @@ inserted by hand. If the covered fraction fails to appear, that is a finding
 about the retrieval-and-cache loop, not a corpus defect to be patched with an
 INSERT.
 
+⛔⛔ ATTRIBUTION v2 *(2026-08-16, P1)* — ROWS ARE CORRELATED BY TURN ID, NEVER BY
+FOOD NAME. v1 matched `normalize_name(row)` against `normalize_name(item)`, which
+is EMPTY for digit-free Cyrillic — 28 of the 30 Russian items shared the key `''`
+— and whose substring fallback made that key a WILDCARD, because `'' in anything`
+is True. **29 of 29 attributed `ru` rows in run_shadow.json, and 26 of 27 in
+run_off.json, name a different food than the one that produced them.** It also
+consumed candidates in CORPUS order while rows arrived in DAY order, which
+identical English names hid and Cyrillic could not. The recorded artifacts are
+kept as evidence and `--compare` refuses them; see
+`docs/CORPUS_ATTRIBUTION_DEFECT_0816.md`.
+
+The replacement is a closed join made of ids:
+
+    client_msg_id per driven turn   -> make_turn_id returns "ios:<id>" verbatim
+    ledger_events(entry_id,turn_id) -> the turn that COMMITTED each row
+    a flush turn DECLARES the turn it settles, before it is driven
+    turn_metrics.turn_id            -> proof a driven turn actually RAN
+
+⭐ AND HELD FOOD IS DRAINED RATHER THAN DISENTANGLED. `deferred_calls` commits on
+a LATER turn, so one turn can settle two foods. v1 tried to tell them apart
+afterwards, by name. `_drain` settles a user's outstanding food BEFORE driving
+them again, so at most one food per user is ever in flight and every commit
+window belongs to exactly one corpus item.
+
 ⚠ REAL MODEL CALLS, REAL RETRIEVAL, REAL ROWS. This is EVIDENCE, not a gate,
 and it must never join the suite. Point it at a SCRATCH database.
+`tests/test_the_corpus_attributes_by_turn_not_by_name.py` gates the pure part.
 
     ARNIE_CORPUS_DB=postgresql+psycopg://$(whoami)@localhost:5432/arnie_migcheck \\
         ../arnie/.venv/bin/python -m scripts.corpus_through_the_real_turn --mode off
@@ -228,6 +253,54 @@ async def _max_entry_id(db, user_id: int) -> int:
     return int(got or 0)
 
 
+async def _created_turn_id(db, entry_id: int) -> str:
+    """The turn that COMMITTED this row, read from the ledger — never inferred.
+
+    ⭐ THIS IS THE CORRELATION KEY, AND IT IS THE WHOLE OF P1.
+    `record_ledger_event` stamps `turn_id` from the canonical turn contextvar
+    at the moment the row is written, so `ledger_events(entry_id, turn_id)` is a
+    join between a committed entry and the turn that committed it. Measured on
+    the 2026-08-15 scratch database: **378 of 378 food rows carry a `created`
+    event with a non-null turn_id.**
+
+    ⛔ ITS ABSENCE IS A FINDING, NOT A DEFAULT. An empty string here means the
+    row cannot be attributed at all, and `_attribute` reports it as
+    UNATTRIBUTED rather than letting it fall into a total.
+    """
+    from sqlalchemy import select
+
+    from db.models import LedgerEvent
+
+    got = (await db.execute(
+        select(LedgerEvent.turn_id)
+        .where(LedgerEvent.entry_id == entry_id,
+               LedgerEvent.event_type == "created")
+        .order_by(LedgerEvent.id))).scalars().first()
+    return str(got or "")
+
+
+async def _turn_ids_that_ran(db) -> set:
+    """Every turn id `turn_metrics` saw — the proof a driven turn RAN.
+
+    ⛔ A FLUSH THAT NEVER EXECUTED DRAINS NOTHING, AND LOOKS EXACTLY LIKE A
+    FLUSH THAT FOUND NOTHING TO DRAIN. Both write no food row. The difference is
+    only visible here, so every driven turn id is checked against this set and a
+    missing one FAILS the run rather than reading as a clean "no held food".
+
+    ⚠ AND IT IS ALSO HOW THE OLD IDENTITY COLLISION SHOWS UP. `make_turn_id`
+    falls back to sha1 over (channel, user, text, HOUR) when no client id is
+    supplied, so two identical utterances inside one hour share an id — measured
+    on the scratch DB as 810 metric rows over 740 distinct ids. That is why this
+    instrument now passes an explicit `client_msg_id` per driven turn.
+    """
+    from sqlalchemy import select
+
+    from db.models import TurnMetric
+
+    rows = (await db.execute(select(TurnMetric.turn_id))).scalars().all()
+    return {str(r) for r in rows if r}
+
+
 async def _identity_for(db, name: str) -> str:
     """The identity a CONSUMER would address this surface form by.
 
@@ -282,6 +355,7 @@ async def run_body(*, mode: str, limit: int, url: str) -> dict:
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
     from core.chat_service import run_chat_turn
+    from core.turn_identity import make_turn_id
     from db.database import make_engine
     from db.queries import reload_user
     from scripts.measure_identity_coverage import classify
@@ -322,114 +396,140 @@ async def run_body(*, mode: str, limit: int, url: str) -> dict:
     total_days = max((i["_day"] for i in body), default=0) + 1
 
     entries_seen, latencies, failures, recovered = [], [], [], []
+    #: Every turn this run drove, in order, each with the id the ledger will
+    #: stamp on whatever it writes. This list — not the food names — is what
+    #: attribution joins on.
+    driven: list = []
+    #: handle -> the item turn whose food has NOT settled yet. At most one, by
+    #: construction: it is drained before the same user is driven again.
+    outstanding: dict = {}
+    flush_seq = 0
+
+    async def _drive(*, handle, text, client_msg_id, kind, index=None,
+                     flushes=None, record_latency=True):
+        """Drive ONE turn under a KNOWN turn id, and capture what it committed.
+
+        ⭐ `client_msg_id` IS THE REPAIR'S FOUNDATION. `make_turn_id` returns
+        `f"{channel}:{client_id}"` verbatim when a client id is present, and
+        falls back to sha1 over (channel, user, text, HOUR) when it is not — so
+        without this, the `establish` and the `repeat` of one food share a turn
+        id inside the same hour and the join is ambiguous before it starts.
+        Measured on the 2026-08-15 scratch DB: 810 metric rows, 740 distinct ids.
+        """
+        nonlocal flush_seq
+        uid = users[handle]
+        turn_id = make_turn_id("ios", client_msg_id, uid, text)
+
+        async with session() as db:
+            pre_keys = await _addressable_memory_keys(db, uid)
+            watermark = await _max_entry_id(db, uid)
+
+        async with session() as db:
+            user = await reload_user(db, uid)
+            started = time.monotonic()
+            try:
+                result = await run_chat_turn(db, user, text, platform="ios",
+                                             schedule_background=False,
+                                             client_msg_id=client_msg_id)
+                await db.commit()
+                error = None
+                # ⛔⛔ A TURN THAT NEVER REACHED THE MODEL DOES NOT RAISE. It
+                # returns a recovery bubble, so `except` sees nothing and the run
+                # reports "0 turn failures" over an empty mix — a provider outage
+                # wearing the shape of a coverage finding. It cost a 16-turn run
+                # to learn: the API key's credits were exhausted and every number
+                # came back a clean, confident zero.
+                if _is_recovery(result):
+                    recovered.append({"index": index, "text": text})
+            except Exception as exc:      # noqa: BLE001 — recorded, not swallowed
+                await db.rollback()
+                error = repr(exc)[:200]
+            elapsed_ms = (time.monotonic() - started) * 1000
+
+        if record_latency:
+            latencies.append(elapsed_ms)
+        if error:
+            failures.append({"index": index, "text": text, "error": error})
+
+        record = {"seq": len(driven), "kind": kind, "turn_id": turn_id,
+                  "user": handle, "index": index, "flushes": flushes,
+                  "text": text}
+        driven.append(record)
+
+        # ⭐ WHAT IS TIME-SENSITIVE IS THE RUNG, NOT THE LABEL. `pre_keys` must be
+        # the snapshot from the turn the row actually landed in, or the memory
+        # guard is meaningless — so the rung is computed HERE. The corpus LABEL
+        # is deferred, and is now attached by turn id rather than by name.
+        captured = []
+        async with session() as db:
+            for row in await _entries_after(db, uid, watermark):
+                name = str(row.parsed_food_name or "")
+                entity_id = await _identity_for(db, name)
+                rung = await _rung_for(db, uid, name, entity_id, pre_keys)
+                captured.append({
+                    "entry_id": int(row.id),
+                    # THE CORRELATION KEY. The turn that committed this row,
+                    # read from the ledger — for held food that is the FLUSH
+                    # turn, which `_attribute` maps back to its origin.
+                    "committed_by": await _created_turn_id(db, int(row.id)),
+                    "observed_in_turn": turn_id,
+                    "user": handle,
+                    "parsed_food_name": name,
+                    "canonical_entity_id": entity_id, "rung": rung,
+                    # The bucket is only meaningful for an entry that reached no
+                    # evidence — exactly as the production instrument counts it.
+                    "bucket": (classify(name)
+                               if rung == "ESTIMATE_OR_REFUSE" else None),
+                    "calories": row.calories, "quantity": row.quantity,
+                    "latency_ms": round(elapsed_ms)})
+        entries_seen.extend(captured)
+        return record, captured
+
+    async def _drain(handle):
+        """Settle this user's held food BEFORE driving them again.
+
+        ⛔⛔ THIS IS WHAT REPLACES GUESSING. Held food rides `deferred_calls` and
+        commits on the FOLLOWING turn, so a turn can commit two foods: the one it
+        names and the one it inherited. The 2026-08-15 run tried to tell them
+        apart AFTERWARDS, by name, and got 29 of 29 Russian rows wrong. Draining
+        first removes the question instead of answering it: at most one food per
+        user is ever outstanding, so every commit window belongs to exactly one
+        corpus item and the flush DECLARES its origin at drive time.
+
+        ⚠ THE FLUSH TEXT IS UNIQUE ON PURPOSE. A repeated utterance can be
+        collapsed by the text-window dedup, and a flush that was deduped drains
+        nothing while looking exactly like a flush that found nothing to drain.
+        """
+        nonlocal flush_seq
+        origin = outstanding.get(handle)
+        if origin is None:
+            return
+        flush_seq += 1
+        await _drive(handle=handle, text=f"thanks ({flush_seq})",
+                     client_msg_id=f"corpus:{run_id}:flush:{flush_seq}",
+                     kind="flush", index=origin["index"],
+                     flushes=origin["turn_id"], record_latency=False)
+        outstanding[handle] = None
+
     try:
         for day in range(total_days):
             todays_items = [(i, item) for i, item in enumerate(body)
                             if item["_day"] == day]
             for index, item in todays_items:
-                uid = users[item["user"]]
-                async with session() as db:
-                    pre_keys = await _addressable_memory_keys(db, uid)
-                    watermark = await _max_entry_id(db, uid)
+                handle = item["user"]
+                await _drain(handle)
+                record, captured = await _drive(
+                    handle=handle, text=item["text"],
+                    client_msg_id=f"corpus:{run_id}:{index}",
+                    kind="item", index=index)
+                # Settled within its own turn, or held for the next one. Asked of
+                # the LEDGER's id, never of the row's name or of the window.
+                if not any(row["committed_by"] == record["turn_id"]
+                           for row in captured):
+                    outstanding[handle] = record
 
-                async with session() as db:
-                    user = await reload_user(db, uid)
-                    started = time.monotonic()
-                    try:
-                        result = await run_chat_turn(db, user, item["text"],
-                                                     platform="ios",
-                                                     schedule_background=False)
-                        await db.commit()
-                        error = None
-                        # ⛔⛔ A TURN THAT NEVER REACHED THE MODEL DOES NOT RAISE.
-                        # It returns a recovery bubble, so `except` sees nothing and
-                        # the run reports "0 turn failures" over an empty mix — a
-                        # provider outage wearing the shape of a coverage finding.
-                        # This is how the run knows the difference between "no
-                        # coverage" and "no run", and it cost a 16-turn run to learn:
-                        # the API key's credit balance was exhausted and every
-                        # number came back a clean, confident zero.
-                        if _is_recovery(result):
-                            recovered.append({"index": index, "text": item["text"]})
-                    except Exception as exc:          # noqa: BLE001 — recorded, not swallowed
-                        await db.rollback()
-                        error = repr(exc)[:200]
-                    elapsed_ms = (time.monotonic() - started) * 1000
-                latencies.append(elapsed_ms)
-                if error:
-                    failures.append({"index": index, "text": item["text"],
-                                     "error": error})
-
-                # ⛔⛔ ROWS ARE NOT ATTRIBUTED TO THE TURN THAT WAS RUNNING WHEN THEY
-                # APPEARED. Measured on the first 14 turns: turn 0 ('200g chicken
-                # breast') produced no row of its own, and turn 1 ('a cup of white
-                # rice') produced TWO — 'Chicken breast' 200 g and 'White rice' 1
-                # cup. Held food rides `deferred_calls` and commits on the FOLLOWING
-                # turn, so a watermark taken around a single turn mis-attributes it,
-                # and an instrument that drove one turn per user would never see the
-                # row at all.
-                #
-                # ⭐ WHAT IS TIME-SENSITIVE IS THE RUNG, NOT THE LABEL. `pre_keys`
-                # must be the snapshot from the turn the row actually landed in, or
-                # the memory guard is meaningless — so the rung is computed HERE,
-                # now, and only the corpus label is deferred to the reconciliation
-                # pass below.
-                async with session() as db:
-                    rows = await _entries_after(db, uid, watermark)
-                    for row in rows:
-                        name = str(row.parsed_food_name or "")
-                        entity_id = await _identity_for(db, name)
-                        rung = await _rung_for(db, uid, name, entity_id, pre_keys)
-                        entries_seen.append({
-                            "landed_on_turn": index, "user": item["user"],
-                            "parsed_food_name": name,
-                            "canonical_entity_id": entity_id, "rung": rung,
-                            # The bucket is only meaningful for an entry that
-                            # reached no evidence — exactly as the production
-                            # instrument counts it.
-                            "bucket": (classify(name)
-                                       if rung == "ESTIMATE_OR_REFUSE" else None),
-                            "calories": row.calories, "quantity": row.quantity,
-                            "latency_ms": round(elapsed_ms)})
-
-            # ⛔ THE LAST TURN'S FOOD IS STILL HELD WHEN THE CORPUS ENDS. Held food
-            # rides `deferred_calls` and commits on the FOLLOWING turn, so without
-            # this every user's final entry would be missing and would be reported
-            # as a coverage gap. One neutral turn per user flushes it — the same way
-            # production flushes it, by there being a next turn.
-            #
-            # ⚠ IT IS NEUTRAL ON PURPOSE: it must commit what is held and log
-            # nothing of its own, so any row it produces shows up in
-            # `rows_the_corpus_did_not_predict` rather than quietly joining the mix.
-            for handle, uid in users.items():
-                async with session() as db:
-                    pre_keys = await _addressable_memory_keys(db, uid)
-                    watermark = await _max_entry_id(db, uid)
-                async with session() as db:
-                    user = await reload_user(db, uid)
-                    try:
-                        await run_chat_turn(db, user, "thanks", platform="ios",
-                                            schedule_background=False)
-                        await db.commit()
-                    except Exception:                # noqa: BLE001
-                        await db.rollback()
-                async with session() as db:
-                    for row in await _entries_after(db, uid, watermark):
-                        name = str(row.parsed_food_name or "")
-                        entity_id = await _identity_for(db, name)
-                        entries_seen.append({
-                            "landed_on_turn": -1, "user": handle,
-                            "parsed_food_name": name,
-                            "canonical_entity_id": entity_id,
-                            "rung": await _rung_for(db, uid, name, entity_id, pre_keys),
-                            "bucket": None, "calories": row.calories,
-                            "quantity": row.quantity, "latency_ms": None,
-                            "flushed": True})
-            # The bucket for a flushed row is filled in during reconciliation, once
-            # it is known which corpus item it belongs to.
-            for entry in entries_seen:
-                if entry.get("flushed") and entry["rung"] == "ESTIMATE_OR_REFUSE":
-                    entry["bucket"] = classify(entry["parsed_food_name"])
+            for handle in list(users):
+                await _drain(handle)
 
             # ⭐ THE DAY ENDS HERE. Re-date the finished log into the past so the
             # next day opens a fresh one — dedup resets, memory persists. The
@@ -441,68 +541,161 @@ async def run_body(*, mode: str, limit: int, url: str) -> dict:
 
         async with session() as db:
             resolutions = await _resolution_rows(db)
+            turn_ids_that_ran = await _turn_ids_that_ran(db)
     finally:
         await engine.dispose()
 
-    observations, unmatched = _reconcile(body, entries_seen)
-    return _report(corpus, observations, unmatched, latencies, failures,
-                   recovered, resolutions, mode=mode, turns=len(body))
+    attribution = _attribute(driven, entries_seen, body, turn_ids_that_ran)
+    return _report(corpus, attribution, latencies, failures,
+                   recovered, resolutions, mode=mode, turns=len(driven),
+                   items=len(body))
 
 
-def _reconcile(body, entries_seen):
-    """Attach each written row to the corpus item it came from.
+#: Bumped whenever the correlation CONTRACT changes. `--compare` refuses any
+#: recorded run below the current version, which is how the 2026-08-15
+#: artifacts stay readable as evidence without ever being read as results.
+ATTRIBUTION_VERSION = 2
 
-    ⭐ BY FOOD AND BY USER, IN ORDER — NEVER BY TURN INDEX, because the turn
-    path defers commits. Matching is on `normalize_name`, the production
-    normalizer, so 'Chicken Breast' and 'chicken breast' are the same food here
-    for exactly the reason they are the same food to the lookup.
 
-    ⚠ AND BOTH LEFTOVERS ARE REPORTED. A corpus item with no row is an entry
-    missing from every percentage below it; a row with no corpus item is the
-    turn writing something the corpus never predicted — a multi-item split, or
-    the interpreter naming a food differently. Silently dropping either is how
-    a mix gets computed over a survivor set and read as a population.
+def _position_for_row(row, origin_of):
+    """The corpus position that produced this row. IDS ONLY, BY CONSTRUCTION.
+
+    ⛔ THE DECISION LIVES HERE, ALONE, SO THAT IT CAN BE GATED STRUCTURALLY.
+    It reads one key — the turn id the ledger stamped — and looks it up. There
+    is no name to be lossy about, no order to drift, and no second pass to fall
+    through to. `None` means "this row cannot be attributed", which is a typed
+    outcome and never a default slot.
     """
-    from core.food_intelligence import normalize_name
+    return origin_of.get(row.get("committed_by") or "")
 
-    pending: dict = collections.defaultdict(list)
-    for position, item in enumerate(body):
-        pending[item["user"]].append([position, item, None])
 
-    unmatched_rows = []
-    for entry in entries_seen:
-        candidates = pending[entry["user"]]
-        target = normalize_name(entry["parsed_food_name"])
-        slot = next((c for c in candidates
-                     if c[2] is None and normalize_name(c[1]["food"]) == target), None)
-        if slot is None:
-            # A looser pass before giving up: the interpreter renames
-            # ('grilled eggplant' -> 'Grilled eggplant', 'Eggs' -> 'Egg').
-            slot = next((c for c in candidates
-                         if c[2] is None
-                         and (target in normalize_name(c[1]["food"])
-                              or normalize_name(c[1]["food"]) in target)), None)
-        if slot is None:
-            unmatched_rows.append(entry)
+def _attribute(driven, rows, body, turn_ids_that_ran):
+    """Attach each committed row to the corpus item whose TURN produced it.
+
+    ⛔⛔ BY TURN ID. NEVER BY NAME, NEVER BY ORDER, NEVER BY POSITION.
+
+    Version 1 matched `normalize_name(row.parsed_food_name)` against
+    `normalize_name(item.food)`. `normalize_name` strips non-Latin script, so 28
+    of the 30 Russian items shared the key `''` — and its substring fallback
+    made that key a WILDCARD, because `'' in anything` is True. Measured on the
+    recorded artifacts: **29 of 29 attributed `ru` rows in run_shadow.json, and
+    26 of 27 in run_off.json, name a different food than the one that produced
+    them.** It also consumed candidates in CORPUS order while rows arrived in
+    DAY order, which identical English names hid and Cyrillic could not.
+
+    ⭐ SO NO FOOD NAME REACHES THIS FUNCTION'S DECISION. `ledger_events` stamps
+    `turn_id` on the row it describes; the driver stamped a unique
+    `client_msg_id` on the turn; a flush turn DECLARES the turn it settles. The
+    join is closed and it is made of ids. Translation cannot move a row, because
+    nothing here reads what the food is called.
+
+    ⚠ AND EVERY LEFTOVER IS TYPED, NOT DROPPED. A row that cannot be attributed
+    and an item that produced nothing are both findings; folding either into a
+    total is how a mix gets computed over a survivor set and read as a
+    population.
+    """
+    # turn id -> the corpus position it settles. An item turn settles its own;
+    # a flush turn settles the turn it was driven to drain, which the driver
+    # recorded BEFORE the flush ran rather than deducing afterwards.
+    origin_of: dict = {}
+    for record in driven:
+        if record["kind"] == "item" and record["index"] is not None:
+            origin_of[record["turn_id"]] = record["index"]
+    for record in driven:
+        if record["kind"] == "flush" and record["flushes"]:
+            settled = origin_of.get(record["flushes"])
+            if settled is not None:
+                origin_of[record["turn_id"]] = settled
+
+    problems: list = []
+
+    # GATE — no matcher key may be shared by two driven turns. With a client id
+    # this is guaranteed by construction; unasserted, a silent fallback to the
+    # hour-bucket hash would reintroduce exactly the ambiguity this replaced.
+    seen_ids: dict = {}
+    for record in driven:
+        if record["turn_id"] in seen_ids:
+            problems.append({
+                "kind": "duplicate_turn_id", "turn_id": record["turn_id"],
+                "seqs": [seen_ids[record["turn_id"]], record["seq"]]})
+        seen_ids[record["turn_id"]] = record["seq"]
+
+    # GATE — a driven turn that never reached `turn_metrics` did not run. A
+    # flush that did not run drains nothing and is indistinguishable, by its
+    # food rows alone, from a flush that found nothing to drain.
+    did_not_run = [r["turn_id"] for r in driven
+                   if r["turn_id"] not in turn_ids_that_ran]
+    for turn_id in did_not_run:
+        problems.append({"kind": "driven_turn_never_ran", "turn_id": turn_id})
+
+    # GATE — one row, one turn. A row observed in two windows would be counted
+    # twice; `_entries_after` should make that impossible, which is the reason
+    # to check rather than the reason to assume.
+    by_entry: dict = {}
+    for row in rows:
+        by_entry.setdefault(row["entry_id"], []).append(row)
+    for entry_id, seen in by_entry.items():
+        if len(seen) > 1:
+            problems.append({"kind": "row_observed_more_than_once",
+                             "entry_id": entry_id, "times": len(seen)})
+        if len({r["committed_by"] for r in seen}) > 1:
+            problems.append({"kind": "row_maps_to_more_than_one_turn",
+                             "entry_id": entry_id,
+                             "turns": sorted({r["committed_by"] for r in seen})})
+
+    attributed: dict = collections.defaultdict(list)
+    unattributed: list = []
+    for row in rows:
+        turn_id = row.get("committed_by") or ""
+        position = _position_for_row(row, origin_of)
+        if position is None:
+            unattributed.append({
+                **row,
+                "reason": ("no_ledger_turn_id" if not turn_id
+                           else "committing_turn_not_driven_by_this_run")})
             continue
-        slot[2] = entry
+        attributed[position].append(row)
 
     observations = []
-    for user_slots in pending.values():
-        for position, item, entry in user_slots:
-            base = {"position": position, "user": item["user"],
-                    "text": item["text"], "declared": item["declared"],
-                    "role": item["role"], "predicted_food": item["food"]}
-            if entry is None:
-                observations.append({**base, "parsed_food_name": None,
-                                     "canonical_entity_id": "",
-                                     "rung": "NO_ROW_WRITTEN", "bucket": None,
-                                     "calories": None, "quantity": None,
-                                     "latency_ms": None})
-            else:
-                observations.append({**base, **entry})
-    observations.sort(key=lambda o: o["position"])
-    return observations, unmatched_rows
+    for position, item in enumerate(body):
+        base = {"position": position, "user": item["user"],
+                "text": item["text"], "declared": item["declared"],
+                "role": item["role"], "predicted_food": item["food"]}
+        settled = attributed.get(position) or []
+        if not settled:
+            observations.append({**base, "parsed_food_name": None,
+                                 "canonical_entity_id": "",
+                                 "rung": "NO_ROW_WRITTEN", "bucket": None,
+                                 "calories": None, "quantity": None,
+                                 "latency_ms": None, "entry_id": None,
+                                 "committed_by": None})
+            continue
+        for row in settled:
+            observations.append({**base, **row})
+    observations.sort(key=lambda o: (o["position"], o.get("entry_id") or 0))
+
+    complete = not problems and not unattributed
+    return {
+        "version": ATTRIBUTION_VERSION,
+        "correlated_by": "ledger_events.turn_id joined on entry_id, with an "
+                         "explicit client_msg_id per driven turn and a flush "
+                         "turn that declares the turn it settles",
+        "complete": complete,
+        "driven_turns": len(driven),
+        "item_turns": sum(1 for r in driven if r["kind"] == "item"),
+        "flush_turns": sum(1 for r in driven if r["kind"] == "flush"),
+        "rows_seen": len(rows),
+        "rows_attributed": sum(len(v) for v in attributed.values()),
+        "rows_unattributed": unattributed,
+        "items_with_no_row": sum(1 for o in observations
+                                 if o["rung"] == "NO_ROW_WRITTEN"),
+        "items_with_more_than_one_row": {
+            str(position): len(settled)
+            for position, settled in sorted(attributed.items())
+            if len(settled) > 1},
+        "problems": problems,
+        "observations": observations,
+    }
 
 
 async def _resolution_rows(db) -> list:
@@ -624,8 +817,20 @@ def _resolution_quality(resolutions, observations, body) -> dict:
     }
 
 
-def _report(corpus, observations, unmatched_rows, latencies, failures,
-            recovered, resolutions, *, mode: str, turns: int) -> dict:
+def _report(corpus, attribution, latencies, failures,
+            recovered, resolutions, *, mode: str, turns: int,
+            items: int) -> dict:
+    """The run, as a record — with every percentage gated on attribution.
+
+    ⛔ A PERCENTAGE MAY NOT PUBLISH WHILE ATTRIBUTION COMPLETENESS IS UNPROVEN.
+    That is the rule the 2026-08-15 artifacts broke: they were internally
+    consistent, well formed, confident, and computed over rows attached to the
+    wrong items. When `attribution.complete` is False every ratio below is
+    `None` and the counts stand alone — a missing number is recoverable, a
+    wrong one gets quoted.
+    """
+    observations = attribution["observations"]
+    publish = bool(attribution["complete"])
     entries = [o for o in observations if o["rung"] != "NO_ROW_WRITTEN"]
     rungs = collections.Counter(o["rung"] for o in entries)
     buckets = collections.Counter(o["bucket"] for o in entries if o["bucket"])
@@ -688,23 +893,33 @@ def _report(corpus, observations, unmatched_rows, latencies, failures,
                 "declared": observation["declared"], "actual": actual,
                 "parsed_food_name": observation["parsed_food_name"]})
 
+    withheld = (None if publish else
+                "attribution incomplete — see attribution.problems and "
+                "attribution.rows_unattributed. A percentage may not publish "
+                "while attribution completeness is unproven.")
+
     return {
         "corpus_version": corpus["corpus_version"],
         "mode": mode,
+        "attribution": {k: v for k, v in attribution.items()
+                        if k != "observations"},
+        "percentages_withheld_because": withheld,
         "turns_driven": turns,
+        "corpus_items_driven": items,
         "entries_written": len(entries),
-        "corpus_items_with_no_row": sum(
-            1 for o in observations if o["rung"] == "NO_ROW_WRITTEN"),
-        "rows_the_corpus_did_not_predict": unmatched_rows,
+        "corpus_items_with_no_row": attribution["items_with_no_row"],
+        "rows_the_corpus_did_not_predict": attribution["rows_unattributed"],
         "turn_failures": failures,
         "turns_that_returned_a_recovery_bubble": recovered,
         "driven_through": "core.chat_service.run_chat_turn",
         "rungs": dict(rungs),
         "uncovered_buckets": dict(buckets),
-        "realized_mix_pct": realized,
-        "realized_mix_pct_comparable": realized_comparable,
-        "memory_at_settle_pct": realized.get("MEMORY", 0.0),
-        "memory_addressable_after_pct": realized_comparable.get("MEMORY", 0.0),
+        "realized_mix_pct": realized if publish else None,
+        "realized_mix_pct_comparable": realized_comparable if publish else None,
+        "memory_at_settle_pct": (realized.get("MEMORY", 0.0) if publish
+                                 else None),
+        "memory_addressable_after_pct": (
+            realized_comparable.get("MEMORY", 0.0) if publish else None),
         "why_two_memory_numbers": (
             "settle-time MEMORY is what pricing actually had; the addressable-"
             "after number is what scripts.measure_identity_coverage would report "
@@ -712,9 +927,10 @@ def _report(corpus, observations, unmatched_rows, latencies, failures,
             "its own candidate. Only the second is comparable to production's "
             "43.7%."),
         "target_mix_pct": target,
-        "drift_pts": drift,
-        "mix_within_tolerance": all(
-            abs(value) <= MIX_TOLERANCE_PTS for value in drift.values()),
+        "drift_pts": drift if publish else None,
+        "mix_within_tolerance": (all(abs(value) <= MIX_TOLERANCE_PTS
+                                     for value in drift.values())
+                                 if publish else None),
         "mix_tolerance_pts": MIX_TOLERANCE_PTS,
         "resolution_rows": len(resolutions),
         "resolution_states": dict(collections.Counter(
@@ -729,7 +945,7 @@ def _report(corpus, observations, unmatched_rows, latencies, failures,
         },
         "declared_vs_actual_divergences": divergences,
         "anti_vacuity": _anti_vacuity(entries, rungs, resolutions, mode,
-                                      recovered, turns),
+                                      recovered, turns, attribution),
         "observations": observations,
         "instrument_limits": [
             "the MEMORY count is guarded by a PRE-TURN key snapshot; without it "
@@ -744,7 +960,7 @@ def _report(corpus, observations, unmatched_rows, latencies, failures,
 
 
 def _anti_vacuity(entries, rungs, resolutions, mode: str,
-                  recovered, turns: int) -> dict:
+                  recovered, turns: int, attribution: dict) -> dict:
     """⭐ THE CHECKS THAT STOP A HOLLOW RUN FROM READING AS A RESULT.
 
     A green run means nothing until something proves the run happened at all.
@@ -775,6 +991,12 @@ def _anti_vacuity(entries, rungs, resolutions, mode: str,
         # ambiguity that hid a dead rung for the life of the canonical lane.
         "memory_rung_returned_evidence": rungs.get("MEMORY", 0) > 0,
         "artifact_rung_returned_evidence": rungs.get("ARTIFACT", 0) > 0,
+        # ⛔⛔ AND THE ONE THAT WOULD HAVE STOPPED 2026-08-15. Every other check
+        # here passed on that run: turns reached the model, rows were written,
+        # memory was earned by repetition. All of it was true, and every
+        # percentage was still computed over rows attached to the wrong items.
+        # A run may be alive and still be unable to say what it measured.
+        "attribution_was_complete": bool(attribution["complete"]),
     }
     if mode == "shadow":
         # ⛔ THE MODE FLAG MUST BE PROVEN TO BITE. A shadow run that wrote no
@@ -788,40 +1010,79 @@ def _anti_vacuity(entries, rungs, resolutions, mode: str,
             "memory_hits_on_repeat_turns": memory_by_repeat}
 
 
+def _pct(report: dict, field: str, name: str) -> str:
+    """A percentage, or a visible refusal to state one — never a silent zero."""
+    table = report.get(field)
+    if table is None:
+        return "  — %"
+    return f"{table.get(name, 0.0):5.1f}%"
+
+
 def render(report: dict) -> str:
+    attribution = report.get("attribution") or {}
     out = [f"\n  CORPUS `{report['corpus_version']}` · mode={report['mode']} · "
            f"through {report['driven_through']}\n",
-           f"    {report['turns_driven']} turns driven · "
+           f"    {report['turns_driven']} turns driven "
+           f"({attribution.get('item_turns', '?')} items + "
+           f"{attribution.get('flush_turns', '?')} flushes) · "
            f"{report['entries_written']} entries written · "
            f"{len(report['turn_failures'])} turn failures\n"]
+
+    # ⛔ THE ATTRIBUTION VERDICT COMES FIRST, BECAUSE EVERYTHING UNDER IT DEPENDS
+    # ON IT. A reader who sees the mix before the verdict has already formed the
+    # belief the verdict is meant to prevent.
+    out.append(f"    ATTRIBUTION v{attribution.get('version')} — "
+               f"{attribution.get('correlated_by', '')[:58]}…")
+    out.append(f"      {attribution.get('rows_attributed', 0)} of "
+               f"{attribution.get('rows_seen', 0)} rows attributed · "
+               f"{len(attribution.get('rows_unattributed') or [])} unattributed "
+               f"· {len(attribution.get('problems') or [])} problem(s)")
+    if not report.get("percentages_withheld_because"):
+        out.append("      ✅ COMPLETE — percentages may publish\n")
+    else:
+        out.append("      ⛔⛔ INCOMPLETE — EVERY PERCENTAGE IS WITHHELD")
+        for problem in (attribution.get("problems") or [])[:8]:
+            out.append(f"         {problem}")
+        for row in (attribution.get("rows_unattributed") or [])[:6]:
+            out.append(f"         unattributed entry {row.get('entry_id')} "
+                       f"({row.get('reason')})")
+        out.append("")
 
     for name in ("MEMORY", "ARTIFACT", "CACHED_BY_THIS_TURN",
                  "ESTIMATE_OR_REFUSE"):
         count = report["rungs"].get(name, 0)
-        pct = report["realized_mix_pct"].get(name, 0.0)
-        out.append(f"    {count:5d}  {pct:5.1f}%   {name}")
+        out.append(f"    {count:5d}  {_pct(report, 'realized_mix_pct', name)}"
+                   f"   {name}")
     out.append("")
     for name, count in sorted(report["uncovered_buckets"].items(),
                               key=lambda kv: -kv[1]):
-        out.append(f"    {count:5d}  "
-                   f"{report['realized_mix_pct'].get(name, 0.0):5.1f}%   {name}")
+        out.append(f"    {count:5d}  {_pct(report, 'realized_mix_pct', name)}"
+                   f"   {name}")
 
-    out.append(f"\n    MEMORY, TWO WAYS — at settle "
-               f"{report['memory_at_settle_pct']:.1f}%  ·  addressable after "
-               f"{report['memory_addressable_after_pct']:.1f}%")
-    out.append("    (production's 43.7% is the SECOND kind — it measures rows "
-               "long after their\n     own turn cached them, so only the second "
-               "is comparable)")
+    if report["realized_mix_pct"] is None:
+        out.append("\n    (the mix, the two memory numbers and the drift table "
+                   "are WITHHELD —\n     " +
+                   str(report["percentages_withheld_because"])[:96] + ")")
+    else:
+        out.append(f"\n    MEMORY, TWO WAYS — at settle "
+                   f"{report['memory_at_settle_pct']:.1f}%  ·  addressable after "
+                   f"{report['memory_addressable_after_pct']:.1f}%")
+        out.append("    (production's 43.7% is the SECOND kind — it measures "
+                   "rows long after their\n     own turn cached them, so only "
+                   "the second is comparable)")
 
-    out.append("\n    REALIZED vs PRODUCTION (comparable basis, points of drift)")
-    for name, value in report["drift_pts"].items():
-        flag = " " if abs(value) <= report["mix_tolerance_pts"] else "⛔"
-        out.append(f"    {flag}  {name:18} "
-                   f"{report['realized_mix_pct_comparable'].get(name, 0.0):5.1f}%"
-                   f"  vs {report['target_mix_pct'][name]:5.1f}%   {value:+.1f}")
-    verdict = "PRODUCTION-LIKE" if report["mix_within_tolerance"] else "NOT PRODUCTION-LIKE"
-    out.append(f"\n    -> {verdict} "
-               f"(tolerance ±{report['mix_tolerance_pts']} pts)")
+        out.append("\n    REALIZED vs PRODUCTION (comparable basis, points of "
+                   "drift)")
+        for name, value in report["drift_pts"].items():
+            flag = " " if abs(value) <= report["mix_tolerance_pts"] else "⛔"
+            out.append(
+                f"    {flag}  {name:18} "
+                f"{report['realized_mix_pct_comparable'].get(name, 0.0):5.1f}%"
+                f"  vs {report['target_mix_pct'][name]:5.1f}%   {value:+.1f}")
+        verdict = ("PRODUCTION-LIKE" if report["mix_within_tolerance"]
+                   else "NOT PRODUCTION-LIKE")
+        out.append(f"\n    -> {verdict} "
+                   f"(tolerance ±{report['mix_tolerance_pts']} pts)")
 
     latency = report["latency_ms"]
     out.append(f"\n    latency  p50 {latency['p50']} ms · p95 {latency['p95']} ms "
@@ -862,8 +1123,9 @@ def render(report: dict) -> str:
     if stray:
         out.append(f"\n    ⚠ {len(stray)} ROW(S) THE CORPUS DID NOT PREDICT")
         for row in stray[:8]:
-            out.append(f"      turn {row['landed_on_turn']:3}  "
-                       f"{row['rung']:20} {(row['parsed_food_name'] or '?')[:38]!r}")
+            out.append(f"      entry {row.get('entry_id')}  "
+                       f"{row.get('reason', '?'):38}  {row['rung']:20} "
+                       f"{(row['parsed_food_name'] or '?')[:38]!r}")
 
     out.append("\n    ANTI-VACUITY")
     for name, passed in report["anti_vacuity"]["checks"].items():
@@ -1052,6 +1314,38 @@ def compare_runs() -> int:
             raise SystemExit(f"missing {path} — run both modes with --write first")
     off = json.loads(off_path.read_text())
     shadow = json.loads(shadow_path.read_text())
+
+    # ⛔⛔ THE REFUSAL THAT THE 2026-08-15 RUNS EARNED. Both recorded artifacts
+    # were produced by the name-matching reconciler and are preserved as
+    # evidence, not as results: 29 of 29 attributed `ru` rows in run_shadow.json
+    # name a different food than the one that produced them. A marker file
+    # cannot stop a script from reading them; this can.
+    #
+    # ⚠ AND IT IS KEYED ON THE CONTRACT VERSION, NOT ON A FILE HASH. A hash
+    # denylist protects against the two files that exist today; a version floor
+    # protects against every future run whose correlation contract is older than
+    # the one the comparison assumes.
+    for label, report, path in (("off", off, off_path),
+                                ("shadow", shadow, shadow_path)):
+        attribution = report.get("attribution") or {}
+        version = attribution.get("version", 1)
+        if version < ATTRIBUTION_VERSION:
+            raise SystemExit(
+                f"\n  ⛔ REFUSING TO COMPARE — {path.name} was recorded with "
+                f"attribution v{version}, and v{ATTRIBUTION_VERSION} is "
+                f"required.\n     v1 matched rows to corpus items BY FOOD NAME "
+                f"through `normalize_name`,\n     which is empty for Cyrillic "
+                f"and whose substring fallback made that key a\n     wildcard. "
+                f"Re-run both arms; see docs/CORPUS_ATTRIBUTION_DEFECT_0816.md."
+                f"\n")
+        if not attribution.get("complete"):
+            raise SystemExit(
+                f"\n  ⛔ REFUSING TO COMPARE — the {label} run's attribution is "
+                f"INCOMPLETE.\n     {len(attribution.get('problems') or [])} "
+                f"problem(s), "
+                f"{len(attribution.get('rows_unattributed') or [])} "
+                f"unattributed row(s).\n     A percentage may not publish while "
+                f"attribution completeness is unproven.\n")
 
     def non_english_reaching_memory(report):
         from scripts.measure_identity_coverage import NON_ASCII

@@ -34,9 +34,11 @@ Do not quote, re-derive, or compare: `realized_mix_pct`,
 any per-population cacheability ratio, or any role-dependent claim
 (`establish` / `repeat`, "memory earned by repetition").
 
-⚠ `scripts.corpus_through_the_real_turn --compare` **still reads both files.**
-Its refusal is a P1 code change and has not landed. Until it does, this marker
-is the only guard.
+✅ **`--compare` NOW REFUSES BOTH FILES** *(P1, 2026-08-16)*. It requires
+`attribution.version >= 2`; these carry no attribution block at all, so they
+read as v1 and the comparison exits 1 naming the reason. This marker is no
+longer the only guard — but it stays, because a marker explains and a guard only
+stops.
 
 ## WHAT MAY STILL BE QUOTED
 

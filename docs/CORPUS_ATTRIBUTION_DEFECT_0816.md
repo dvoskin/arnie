@@ -133,7 +133,73 @@ previously quantified it was reconciliation-derived. Do not write "QUALIFIED
 never caches" as a rate, a fraction, or a population share until P2 republishes
 one.
 
-## P1 — WHAT REPAIR MEANS
+## ✅ P1 IS DONE — ATTRIBUTION v2 *(2026-08-16)*
+
+**The join is now closed and made of ids.** No food name reaches the decision.
+
+```text
+client_msg_id per driven turn      make_turn_id returns "ios:<id>" VERBATIM,
+                                   so the establish and the repeat of one food
+                                   can no longer share an hour-bucket hash
+ledger_events(entry_id, turn_id)   the turn that COMMITTED each row
+                                   (measured: 378 of 378 rows carry one)
+a flush turn DECLARES its origin   written down before it is driven, never
+                                   deduced afterwards
+turn_metrics.turn_id               proof a driven turn actually RAN — a flush
+                                   that was deduped drains nothing and looks
+                                   exactly like a flush with nothing to drain
+```
+
+⭐ **HELD FOOD IS DRAINED, NOT DISENTANGLED.** `_drain` settles a user's
+outstanding food **before** driving them again, so at most one food per user is
+ever in flight and every commit window belongs to exactly one corpus item. v1
+tried to separate two foods in one window afterwards, by name. This removes the
+question instead of answering it.
+
+⭐⭐ **AND THE DECISION IS FOUR LINES, ALONE, SO IT CAN BE GATED STRUCTURALLY.**
+`_position_for_row` reads one key and looks it up. The AST gate asserts the only
+string it may name is the correlation key and the only call it may make is a
+dict lookup — so there is nowhere for a comparison, a fuzzy pass or a fallback
+to live.
+
+**PROVEN BY MUTATION — each verified to LAND before its result was read:**
+
+```text
+name-similarity fallback in the decision fn   RED  the AST gate
+a faithful v1 rescue pass inside _attribute   RED  "an unattributable row is not
+                                                    rescued by an identical name"
+publish = True regardless of completeness     RED  x3, the percentage gates
+```
+
+⚠ **THE SECOND MUTATION IS THE ONE THAT MATTERS**, because the AST gate did NOT
+catch it — it lives outside the gated function and uses no banned name. A
+structural gate and a behavioural gate cover different halves, and this session
+needed both.
+
+**PROVEN LIVE, on the scratch database:**
+
+```text
+6-item smoke     6 of 6 rows attributed · 0 unattributed · 0 problems
+18-item smoke    18 items + 1 FLUSH · 18 of 18 attributed · 0 problems
+                 ios:corpus:...:flush:1  ->  Пицца сырная
+```
+
+⭐⭐⭐ **THE FLUSH CARRIED A RUSSIAN ROW — the exact case v1 got wrong.** Held
+food committed under the flush turn's id and was mapped back to its declared
+origin. Had that mapping failed, the row would have been reported UNATTRIBUTED
+and the run would have refused to publish, which is the whole point.
+
+⚠ **AND THE FIRST SMOKE PROVED NOTHING ABOUT THE FLUSH PATH** — it drove 0
+flushes, because its six items were one per user and each settled in its own
+turn. A green run over a path that never executed is the shape this whole
+session is about. The 18-item run is the one that counts.
+
+Also landed: `--compare` **refuses** any report below `ATTRIBUTION_VERSION`, and
+refuses a complete-but-unattributed one. Verified against the recorded
+artifacts — it exits 1 and names the reason. Suite: **9152 passed · 107 skipped
+· 4 xfail · 0 failed** (baseline 9136; the 16 new tests are the difference).
+
+## P1 — WHAT REPAIR MEANT
 
 ⛔ **`surface_key()` ALONE IS NOT THE FIX.** It removes the empty-Cyrillic
 collision — that is real and it is why the resolution store was never affected —

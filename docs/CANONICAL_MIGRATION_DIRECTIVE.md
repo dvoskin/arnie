@@ -23,9 +23,10 @@
 > claims as one and closed the section on the strength of the second.
 
 ```text
-P0   correct the closure language and FREEZE the rollout   <- this commit
-P1   repair corpus correlation
-P2   rerun the corpus from a clean database
+P0   correct the closure language and FREEZE the rollout   ✅ 11511f1
+P1   repair corpus correlation                             ✅ attribution v2
+P2   rerun the corpus from a clean database                <- NEXT, and it
+                                                              costs API credits
 P3   review the evidence and re-close interpretation adoption
 P4   amend §3a.2 with decisions A-D
 P5   approve the A1-A10 plan
