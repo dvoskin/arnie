@@ -113,6 +113,39 @@ def _food_pipeline(user_id: Optional[int] = None) -> dict:
     except Exception as e:                           # pragma: no cover
         out["TURN_COORDINATOR_MODE"] = {"error": str(e)}
 
+    # ⛔ THE MODE ALONE IS NOT THE ANSWER, AND READING IT AS ONE COST A
+    # DIAGNOSIS ON 2026-08-14. `lane_executes_natively` is an AND of three
+    # conditions — mode, lane enrolled, user allowlisted — so
+    # `TURN_COORDINATOR_MODE: new_execute` beside no enabled lane means legacy
+    # executes every turn, while this block said the coordinator was executing.
+    # A canary spent two runs asking why canonical pricing never fired.
+    #
+    # Reported through `lane_executes_natively` itself rather than by
+    # re-deriving the conjunction here: a diagnostic that recomputes the
+    # predicate it reports can disagree with it, which is the failure being
+    # fixed. `structured_food` is named because it is the lane this migration
+    # promotes; the raw vars ride alongside so an unenrolled lane is
+    # distinguishable from an unset var.
+    try:
+        from core.turns.coordinator import (_allowlist, _enabled_lanes,
+                                            lane_executes_natively)
+        _allow = sorted(_allowlist())
+        out["TURN_COORDINATOR_LANES"] = _flag(
+            "TURN_COORDINATOR_LANES", sorted(_enabled_lanes()))
+        out["TURN_COORDINATOR_ALLOWLIST"] = _flag(
+            "TURN_COORDINATOR_ALLOWLIST", _allow)
+        out["structured_food_executes_natively"] = {
+            # For a user IN the allowlist — the only cohort for which native
+            # execution is reachable at all when one is set.
+            "allowlisted_user": lane_executes_natively(
+                "structured_food", _allow[0] if _allow else None),
+            # And for everyone else, which is the fleet.
+            "fleet": lane_executes_natively("structured_food", None)
+            if not _allow else False,
+        }
+    except Exception as e:                           # pragma: no cover
+        out["TURN_COORDINATOR_LANES"] = {"error": str(e)}
+
     # A FLAG NOBODY CAN SEE IS A DECISION NOBODY MAKES. The master audit's own
     # finding was flags parked in shadow with no owner and no review date
     # (`FOOD_FAST_PATH_SHADOW`, "shadow since 07-29, no decision date"). This
