@@ -70,6 +70,64 @@ interpreter prompt ALREADY warns that renaming a food can change which grade is
 the default. The prompt is right. The defect is that identity is built from the
 surface string at all.
 
+### 1b — ⭐ THE PRODUCER, MEASURED LIVE — AND WHAT IT CHANGED *(2026-08-14)*
+
+36 real production non-English foods through the real resolver:
+
+```text
+31 resolved · 5 distinct · 0 unresolved
+```
+
+⭐ **GATE 3 HOLDS WITHOUT BEING ASKED TO.** `Творог -> tvorog` and
+`Сметана -> smetana`, both DISTINCT, both with reasons naming why the English
+approximation would change the food. творог did not become cottage cheese and
+сметана did not become sour cream — with no list, no catalogue, and no
+food-specific instruction.
+
+⛔ **BUT ONLY 1 OF 31 RESOLVED ENTITIES REACHES THE ARTIFACT.**
+
+```text
+HIT   Банан   -> banana
+miss  Помидор -> tomato      Огурец -> cucumber      Авокадо -> avocado
+miss  Кефир   -> kefir       Индейка -> turkey       Клубника -> strawberry
+```
+
+The translations are right; the artifact holds 27 entries and none of these are
+in it. **SO THE BOUNDARY DOES NOT MOVE THE ARTIFACT RUNG.** Its payoff is making
+these foods ADDRESSABLE AT ALL — which principally means the MEMORY rung, where
+44.6% of production already lives and where §1a's containment currently makes
+every one of them non-addressable. A unit-gates-only reading would have reported
+this backwards.
+
+⚠ **OPEN 1 — DISTINCT IDS ARE NOT STABLE.** Three ids for one food family, and
+they differ in punctuation AND in semantics:
+
+```text
+Творог                  -> tvorog
+Творог 5%               -> tvorog_5%
+Творог (5% или средний) -> tvorog 5% fat
+```
+
+The requirement is "a stable lowercase identifier"; per-surface variation breaks
+it, so one food logged with different wording becomes several identities.
+Deterministic normalization fixes the punctuation half and not the `5%` vs
+`5% fat` half. The principled fix is a second step asking whether a new DISTINCT
+food matches an ALREADY-STORED distinct id — a growing store rather than a
+curated catalogue, the same shape as the semantic annotation store. **DECISION
+OWED.**
+
+⚠ **OPEN 2 — BRANDED PRODUCTS LEAK INTO DISTINCT.**
+`Simple Wolf Wrap (Original Dough) -> wolfnights_simple_wolf_wrap`. That is the
+PRODUCT rung's population (roadmap step 4), not a distinct-food identity. Needs
+a gate before the producer is wired into a turn.
+
+⚠⚠ **AND A GATE ONLY A LIVE RUN COULD HAVE CAUGHT.** `_get_client` imported
+`_get_anthropic` from `core.micro_estimator`, which imports it from `core.llm`
+and does not re-export it. **All 14 unit gates passed** — every one of them
+stubs `_get_client`, so the single line they could not exercise was the single
+line that was broken. **A stub is a statement about the CONTRACT; it is never
+evidence that the thing being stubbed exists.**
+
 ### 1a — ⛔ P0 CONTAINMENT: A MEMORY KEY MUST NAME A FOOD *(landed 2026-08-14)*
 
 **FOUND WHILE DESIGNING STEP 1, AND IT WAS NOT COVERAGE DEBT — IT WAS A LIVE
