@@ -55,6 +55,30 @@ RESOLVER_MODEL = "claude-sonnet-5"
 _TOKENS_PER_FOOD = 220
 _MAX_BATCH = 12
 
+#: ⛔⛔ A FLOOR, BECAUSE PER-FOOD ARITHMETIC IS WRONG AT n=1. `220 * 1` is 220
+#: tokens for a single food, and on 2026-08-15 that truncated a one-food batch
+#: in production — `event=entity_resolution_truncated foods=1` on `Творог 3%`.
+#: The per-food term is right for a BATCH and far too tight for a single, so a
+#: floor is added rather than the slope being raised: this is the same shape as
+#: the artifact qualifier, which asks for 3000 and does not compute a budget.
+#:
+#: ⚠ AND THE FOOD IT TRUNCATED WAS THE NON-ENGLISH ONE. If a longer reply is
+#: more likely for the population this boundary exists to serve, the budget is
+#: not a detail — it is the difference between serving 30.4% of real food and
+#: abstaining on it.
+_MIN_TOKENS = 1024
+
+
+class UnusableReply(Exception):
+    """The reply cannot be READ. Says nothing about what the food MEANS.
+
+    ⭐ NAMED, BECAUSE THE ALTERNATIVE IS A CATEGORY ERROR. "Truncated",
+    "no text block", "not JSON" are all transport failures, and the one thing
+    they must never become is a semantic verdict — an `unresolved` state, a
+    lowered confidence, or a partial parse of a cut answer. Absence of a
+    readable answer is absence, and the caller records it as such.
+    """
+
 _SYSTEM = (
     "You map a food NAME, written in any language, to a canonical food "
     "identity. You are not looking anything up and you are not being given a "
@@ -146,6 +170,53 @@ def _parse(text: str, asked: dict) -> list:
     return out
 
 
+def _readable_text(reply) -> str:
+    """The text of a reply, or raise `UnusableReply`. TOTAL — never partial.
+
+    ⭐ ONE PLACE DECIDES WHETHER A REPLY CAN BE READ AT ALL, and it decides
+    before anything looks at what the reply says. Truncation, an empty content
+    list, a reply whose only block is a thinking block: all of them mean the
+    same thing to a caller — there is no answer here — and none of them means
+    anything about the food.
+
+    ⚠ TRUNCATION IS CHECKED FIRST AND IS NOT NEGOTIABLE. The prefix that
+    arrived is not a smaller correct answer; it is an answer about some foods
+    and silence about the rest, and once written down the silence is
+    indistinguishable from a verdict.
+    """
+    if getattr(reply, "stop_reason", None) == "max_tokens":
+        raise UnusableReply("truncated: a cut reply is not a shorter answer")
+    blocks = getattr(reply, "content", None) or ()
+    text = "".join(getattr(block, "text", "") or "" for block in blocks
+                   if getattr(block, "type", None) == "text")
+    if not text.strip():
+        raise UnusableReply("no text block in the reply")
+    return text
+
+
+async def _ask_the_model(names: list) -> list:
+    """One call, one readable answer, or `UnusableReply`.
+
+    ⭐ THINKING OFF, EXPLICITLY, and it is the repository's own contract rather
+    than a local choice: `core/llm.py` sets `thinking={"type": "disabled"}` on
+    every tuned call with the note that Sonnet 5 runs ADAPTIVE thinking
+    otherwise, making `content[0]` a thinking block and letting hidden tokens
+    eat the budget. This resolver was the one call site that never adopted it —
+    and it was also the one that truncated a single food at 220 tokens.
+    """
+    reply = await _get_client().messages.create(
+        model=RESOLVER_MODEL,
+        max_tokens=max(_MIN_TOKENS, _TOKENS_PER_FOOD * len(names)),
+        # Verified accepted by sonnet-5 in core/llm.py; without it the tokens
+        # this budget reserves for JSON are spent on reasoning nobody reads.
+        thinking={"type": "disabled"},
+        system=_SYSTEM,
+        messages=[{"role": "user",
+                   "content": json.dumps({"foods": names},
+                                         ensure_ascii=False)}])
+    return _readable_text(reply)
+
+
 async def interpret(surfaces: Iterable[str]) -> list:
     """One batch, one call. `[]` on ANY failure — never a partial verdict."""
     asked = {}
@@ -158,35 +229,61 @@ async def interpret(surfaces: Iterable[str]) -> list:
     names = list(asked.values())[:_MAX_BATCH]
 
     try:
-        reply = await _get_client().messages.create(
-            model=RESOLVER_MODEL, max_tokens=_TOKENS_PER_FOOD * len(names),
-            system=_SYSTEM,
-            messages=[{"role": "user",
-                       "content": json.dumps({"foods": names},
-                                             ensure_ascii=False)}])
+        text = await _ask_the_model(names)
+    except UnusableReply as unusable:
+        # ⭐⭐ THE RETRY IS TRANSPORT, NEVER A VOTE ON MEANING *(Danny,
+        # 2026-08-15)*. A batch that could not be READ is re-asked ONE FOOD AT
+        # A TIME, because the commonest unusable reply is one that ran out of
+        # room — and a single food needs a fraction of it. What the retry may
+        # produce is a readable answer or an absence. It may NOT produce a
+        # verdict: no `unresolved` state, no lowered confidence, no partial
+        # parse of the cut reply that provoked it. Retrying for meaning would
+        # make the second answer authoritative over the first for no reason
+        # beyond its arrival order.
+        #
+        # ⚠ AND ONLY WHEN THERE IS SOMETHING TO SPLIT. Re-asking a single food
+        # identically is not a retry, it is the same call again.
+        logger.warning("event=entity_resolution_unusable foods=%d reason=%s",
+                       len(names), unusable)
+        if len(names) == 1:
+            return []
+        return await _retry_one_at_a_time(names, asked)
     except Exception as exc:
         logger.warning("event=entity_resolution_unavailable foods=%d err=%s — "
                        "no resolution recorded, identity keeps today's "
                        "behaviour", len(names), exc)
         return []
 
-    # ⚠ TRUNCATION ABSTAINS THE WHOLE BATCH. The prefix that arrived is not a
-    # smaller correct answer; it is an answer about some foods and silence
-    # about the rest, and the silence is indistinguishable from a verdict once
-    # it has been written down.
-    if getattr(reply, "stop_reason", None) == "max_tokens":
-        logger.warning("event=entity_resolution_truncated foods=%d — the whole "
-                       "batch abstains; a cut reply is not a shorter answer",
-                       len(names))
-        return []
-
-    text = "".join(block.text for block in (getattr(reply, "content", []) or ())
-                   if getattr(block, "type", None) == "text")
     try:
         return _parse(text, asked)
     except Exception as exc:
         logger.warning("event=entity_resolution_unparseable err=%s", exc)
         return []
+
+
+async def _retry_one_at_a_time(names: list, asked: dict) -> list:
+    """Re-ask each food alone. Every failure is an ABSENCE, never a verdict.
+
+    ⚠ THE WHOLE-BATCH ABSTENTION RULE STILL HOLDS *within* each retry: a single
+    food's reply is either readable and parsed, or it contributes nothing. What
+    changes is that one unreadable food no longer silences the other eleven,
+    which is the only thing the original guard got wrong.
+    """
+    recovered = []
+    for name in names:
+        try:
+            text = await _ask_the_model([name])
+            recovered.extend(_parse(text, asked))
+        except UnusableReply as unusable:
+            logger.warning("event=entity_resolution_unusable_single "
+                           "food=%r reason=%s — recorded as ABSENT, not as a "
+                           "negative", name[:40], unusable)
+        except Exception as exc:
+            logger.warning("event=entity_resolution_unavailable_single "
+                           "food=%r err=%s", name[:40], exc)
+    logger.info("event=entity_resolution_retried foods=%d recovered=%d",
+                len(names), len(recovered))
+    return recovered
 
 
 _REUSE_SYSTEM = (
@@ -229,18 +326,25 @@ async def _reuse_existing_distinct(db, resolution):
     if not known or proposed in known:
         return resolution
     try:
+        # ⚠ SAME DEFECT AS `interpret`, SAME FIX. This call also budgeted a
+        # couple of hundred tokens with adaptive thinking left on, and its
+        # truncation is arguably worse: an unreadable reply here abstains the
+        # REUSE decision, so `Творог 5% жирности` mints a second identity
+        # beside `Творог 5%` — the exact fragmentation `d24868a` exists to
+        # prevent. Abstaining is still the correct fallback; being forced into
+        # it by an output budget is not.
         reply = await _get_client().messages.create(
-            model=RESOLVER_MODEL, max_tokens=200, system=_REUSE_SYSTEM,
+            model=RESOLVER_MODEL, max_tokens=_MIN_TOKENS,
+            thinking={"type": "disabled"}, system=_REUSE_SYSTEM,
             messages=[{"role": "user", "content": json.dumps(
                 {"food": {"name": resolution.surface_form,
                           "meaning": resolution.interpreted_meaning},
                  "established": [{"identity": k, "meaning": v}
                                  for k, v in sorted(known.items())][:60]},
                 ensure_ascii=False)}])
-        if getattr(reply, "stop_reason", None) == "max_tokens":
-            return resolution
-        text = "".join(b.text for b in (getattr(reply, "content", []) or ())
-                       if getattr(b, "type", None) == "text")
+        # ⭐ AND IT ABSTAINS BY KEEPING ITS OWN IDENTITY, which is the safe
+        # direction: a duplicate identity is cheap, a false merge is permanent.
+        text = _readable_text(reply)
         start, end = text.find("{"), text.rfind("}")
         match = normalize_entity_id(
             str(json.loads(text[start:end + 1]).get("match") or ""))

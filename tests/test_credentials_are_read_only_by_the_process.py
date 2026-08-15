@@ -96,12 +96,16 @@ def test_no_runtime_module_carries_a_credential_literal():
 #: RAISED 31 -> 32 on 2026-08-15 for `scripts/prove_the_seam_is_reachable.py`,
 #: the eight-turn consumer-side proof that ordinary traffic reaches the identity
 #: producer. Same shape again: by hand, real key, scratch DB.
+#: RAISED 32 -> 33 on 2026-08-15 for
+#: `scripts/prove_the_russian_single_resolves.py`, which reproduces the
+#: production truncation deliberately by starving the token budget. Same shape:
+#: by hand, real key, scratch DB.
 #:
 #: ⭐ THE RATCHET FIRED ON THE COMMIT THAT ADDED IT, which is the whole design:
 #: the number moved because someone decided it should, in the same commit,
-#: rather than drifting while nobody was looking. It has now done that three
+#: rather than drifting while nobody was looking. It has now done that four
 #: times in one day, and each time the number moved WITH ITS REASON.
-SCRIPTS_READING_ENV_BASELINE = 32
+SCRIPTS_READING_ENV_BASELINE = 33
 
 
 def test_the_env_reading_habit_does_not_spread_beyond_scripts():
