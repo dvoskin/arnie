@@ -3418,7 +3418,8 @@ async def _execute_tool_calls(
     # touched, so no `canonical_entity_id` can reach `memory_key` and no price
     # can move — shadow stays annotation-only.
     try:
-        from core.turns.stages.food import record_turn_identities
+        from core.turns.stages.food import (identity_is_consumable,
+                                             record_turn_identities)
 
         _identity_foods = [
             {"food": str((call.get("input") or {}).get("food_name") or "").strip()}
@@ -3426,7 +3427,43 @@ async def _execute_tool_calls(
             if call.get("name") == "log_food"
             and str((call.get("input") or {}).get("food_name") or "").strip()]
         if _identity_foods:
-            await record_turn_identities({"items": _identity_foods}, db)
+            _resolved = await record_turn_identities(
+                {"items": _identity_foods}, db) or {}
+
+            # ⛔⛔ THE CONSUMER SEAM, AND IT IS HERE FOR ONE REASON: THIS INPUT
+            # IS WHAT PRICING READS. `_analyze_food` computes
+            # `memory_key(food_name, inp.get("canonical_entity_id"))` from the
+            # very dict below, so writing the identity onto `call["input"]`
+            # BEFORE dispatch is the only place a stamp still reaches the
+            # memory key on the legacy path.
+            #
+            # ⚠ AND THE STAMP'S OTHER CALL SITE CANNOT DO IT. `FoodPlanStage.
+            # run` annotates the interpreter's `items`, but an `action=log`
+            # return carries `tool_calls` and NO `items` — the calls are
+            # already built by the time any seam sees the result. Measured live
+            # on 2026-08-15: consume mode + cohort [26] produced
+            # `memory_key_refused key='5'` twice, because the only annotator
+            # was on a path these turns never take.
+            #
+            # ⭐ GATED BY THE COHORT, NOT THE MODE. `identity_is_consumable`
+            # takes the user, so coordinator rollout cannot widen price
+            # movement — the invariant the previous slice exists to hold.
+            if _resolved and identity_is_consumable(getattr(user, "id", None)):
+                _stamped = 0
+                for _call in (tool_calls or []):
+                    if _call.get("name") != "log_food":
+                        continue
+                    _inp = _call.get("input") or {}
+                    _entity = _resolved.get(
+                        str(_inp.get("food_name") or "").strip())
+                    if _entity:
+                        _inp["canonical_entity_id"] = _entity
+                        _stamped += 1
+                if _stamped:
+                    logger.info(
+                        "event=entity_identity_consumed user=%s stamped=%d — "
+                        "the identity now addresses memory, so a price may move",
+                        getattr(user, "id", None), _stamped)
     except Exception as _ident_err:               # noqa: BLE001
         logger.warning(f"identity recording unavailable, batch unchanged: {_ident_err}")
 

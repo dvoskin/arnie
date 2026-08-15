@@ -682,3 +682,82 @@ async def test_the_stamp_asks_the_cohort_not_just_the_mode(monkeypatch):
     await food_stage.stamp_canonical_identity(inside, db=object(), user_id=26)
     assert inside["items"][0].get("canonical_entity_id") == "tomato", (
         "the cohort member was not stamped — consumption is unreachable")
+
+
+# ── the CONSUMER seam: the stamp that reaches pricing ─────────────────────────
+
+def test_the_consumer_seam_stamps_the_tool_input_pricing_reads():
+    """⛔⛔ THE CONSUMER-SIDE MIRROR OF THE ORIGINAL DEFECT.
+
+    Measured live 2026-08-15 with mode=consume and cohort=[26]:
+
+        entity_identity_recorded attempted=1 recorded=1 distinct=1
+        memory_key_refused user=26 key='5'          <- STILL refused
+        canonical_priced rung=estimate
+
+    and NO `entity_identity_not_consumed` line anywhere — meaning
+    `stamp_canonical_identity` never ran. Its only call site is
+    `FoodPlanStage.run`, and these turns executed through `core.conversation`.
+    Consumption was correctly gated and guarding a door nobody walks through.
+
+    ⭐ AND AN `action=log` RETURN CANNOT BE STAMPED LATER. It carries
+    `tool_calls` and NO `items` (core/food_turn.py:3350, :4795, :5109) — the
+    calls are already built when any seam sees the result. So the only place a
+    stamp still reaches the memory key is the tool INPUT, which is what
+    `_analyze_food` reads via
+    `memory_key(food_name, inp.get("canonical_entity_id"))`.
+    """
+    import ast
+    import pathlib
+
+    source = (pathlib.Path(__file__).resolve().parents[1]
+              / "handlers" / "tool_executor.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    executors = [n for n in ast.walk(tree)
+                 if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef))
+                 and n.name.lstrip("_") == "execute_tool_calls"]
+    body = "\n".join(ast.get_source_segment(source, e) or "" for e in executors)
+
+    assert "identity_is_consumable" in body, (
+        "the tool batch never asks whether this user may consume — either "
+        "nobody consumes, or everybody does")
+    assert 'canonical_entity_id"] = ' in body or \
+           '"canonical_entity_id"]=' in body, (
+        "nothing writes canonical_entity_id onto the tool input; the stamp "
+        "cannot reach memory_key and consume mode is inert")
+
+
+def test_consumption_is_gated_on_the_user_not_the_mode_alone():
+    """The stamp-back must ask `identity_is_consumable(<user>)`, not the bare
+    mode. Passing no argument would make the cohort unreachable and hand price
+    movement back to the coordinator rollout."""
+    import ast
+    import pathlib
+
+    source = (pathlib.Path(__file__).resolve().parents[1]
+              / "handlers" / "tool_executor.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call)
+             and (getattr(n.func, "id", None)
+                  or getattr(n.func, "attr", None)) == "identity_is_consumable"]
+    assert calls, "identity_is_consumable is never called in the tool batch"
+    for call in calls:
+        assert call.args or call.keywords, (
+            f"identity_is_consumable() at line {call.lineno} is called with no "
+            f"user — the cohort cannot be consulted, so it gates nothing")
+
+
+def test_the_recording_wrapper_still_annotates_nothing_itself():
+    """⭐ THE SPLIT SURVIVES THE CHANGE. `record_turn_identities` now RETURNS
+    the mapping so a consuming caller can annotate what it owns — but it must
+    still never annotate anything itself, or `shadow` starts stamping again
+    through the back door."""
+    import inspect
+
+    import core.turns.stages.food as food_stage
+
+    source = inspect.getsource(food_stage.record_turn_identities)
+    assert "canonical_entity_id" not in source, (
+        "the shared recording wrapper annotates — shadow would then consume")

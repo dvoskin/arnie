@@ -236,7 +236,7 @@ async def _log_identity_states(surfaces, resolved, db) -> None:
              "product", "unresolved", "absent")))
 
 
-async def record_turn_identities(out, db) -> None:
+async def record_turn_identities(out, db) -> dict:
     """⭐ THE SHARED SEAM OPERATION — both entrances call THIS, and it lives here.
 
     ⛔ OWNERSHIP DIRECTION *(Danny, 2026-08-15)*. The first version of the seam
@@ -265,9 +265,14 @@ async def record_turn_identities(out, db) -> None:
         # turns had nothing to hand it.
         if not (out or {}).get("items") and entity_resolution_mode() != "off":
             logger.info("event=entity_identity_skipped reason=no_interpretation")
-        await record_identities(out, db)
+        # ⭐ RETURNS THE MAPPING so a CONSUMING caller can annotate what it owns.
+        # The wrapper still never annotates anything itself — persistence and
+        # annotation stay different decisions, and the caller that holds the
+        # settlement-bound structure is the only one that can stamp it.
+        return await record_identities(out, db)
     except Exception as e:                       # noqa: BLE001
         logger.warning(f"identity recording unavailable, turn unchanged: {e}")
+    return {}
 
 
 async def stamp_canonical_identity(out, db, user_id=None) -> None:
