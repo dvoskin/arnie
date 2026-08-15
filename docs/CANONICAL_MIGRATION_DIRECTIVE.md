@@ -93,6 +93,62 @@ measured distributions, not waited for.
 
 **NOT MORE PHASE-0-STYLE ARCHAEOLOGY** unless a gate exposes a real defect.
 
+#### 0a — STEP 3 STATUS: BUILT AND VERIFIED OFFLINE · THE RUN IS BLOCKED *(2026-08-15)*
+
+```text
+data/corpus/production_like_v1.json          preregistered, committed
+scripts/corpus_through_the_real_turn.py      drives run_chat_turn, committed
+--validate                                   PASSES: no model, no DB, no network
+the actual run                               ⛔ BLOCKED — API credit balance
+```
+
+**`--validate` passes at 100/100**: every label agrees with PRODUCTION'S OWN
+classifier (`_looks_branded`, the non-ASCII test), no duplicate utterances, and
+every bucket within **1.3 points** of the measured mix. ⛔ **No coverage number
+is claimed yet** — the last run made 543 calls and every one was rejected.
+
+⭐ **THREE FIDELITY DEFECTS THE RUNS FOUND, AND THEY GENERALISE TO ANY
+SYNTHETIC CORPUS THIS PROJECT BUILDS:**
+
+1. ⛔⛔ **A ONE-DAY CORPUS CANNOT REPRODUCE A THIRTY-DAY MEMORY RATE, BY
+   CONSTRUCTION.** 100 turns wrote 45 rows; 39 of 44 memory-declared entries
+   produced none; every miss was a REPEAT and nothing was mis-parsed. The 43.7%
+   is earned ACROSS DAYS, and the dedup guard is scoped to TODAY's log — it
+   exists to stop exactly the shape compression creates. The corpus now runs as
+   simulated days, re-dating each finished log: dedup resets, memory persists.
+   ⚠ Via the DAY, never `core.clock` — the one-clock migration exists to stop
+   code inventing its own time.
+2. ⛔⛔ **A BARE MENTION DOES NOT LOG, IT ASKS** — conversationally, NOT through
+   the structured pending path, so the log carries no clarification signal at
+   all. And asks ACCUMULATE: one unanswered question silently truncates every
+   later turn for that user. Portions moved into the body; the ask/answer loop
+   moved to probe P8, where it is the subject rather than a confound.
+3. ⛔ **ROWS ARE NOT ATTRIBUTED TO THE TURN THAT WAS RUNNING.** Held food rides
+   `deferred_calls` and commits on the FOLLOWING turn. Reconciliation is by food
+   and user, in order — never by turn index.
+
+⭐⭐ **AND ONE CORRECTION TO AN EXISTING INSTRUMENT — `measure_identity_coverage`
+HAS NO TEMPORAL GUARD.** It asks `_memory()` about 30-day-old entries, long
+after each turn cached its own candidate, so **43.7% means "addressable today",
+not "priced from memory at settle time"**. The corpus reports BOTH, and its
+drift check uses the comparable one. Comparing a settle-time number to 43.7%
+would be the §1e two-populations error a second time.
+
+⚠ **UNVERIFIED, AND THE SHADOW RUN IS WHAT SETTLES IT.** Read from the call
+graph, not yet from a run: `stamp_canonical_identity` — the boundary's ONLY
+producer — is called from one site, `FoodPlanStage.run`, reachable only under
+`TURN_COORDINATOR_MODE=new_execute`, or `new_observe` **with**
+`TURN_COORDINATOR_OBSERVE_DEEP=1`. Production's default is `MODE_LEGACY_ONLY`,
+where `observing()` is False. **If that holds, a shadow canary writes ZERO
+resolutions and reports as "no behaviour change" — the most reassuring possible
+result, produced by the feature never running.** The corpus's
+`shadow_actually_resolved_something` check exists for precisely this, and
+`--compare` refuses to interpret a zero-resolution shadow run in either
+direction. ⛔ **Do not start step 5 on the strength of a quiet canary.**
+
+**OWED BY DANNY:** API credits for the corpus run (~2 modes x ~120 turns, plus
+probes).
+
 ### 1 — INTERPRETATION-DERIVED IDENTITY — ⚠ BUILT END TO END, SHIPS DARK *(status 2026-08-15)*
 
 ```text
