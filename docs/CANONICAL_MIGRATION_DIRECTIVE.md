@@ -70,6 +70,71 @@ interpreter prompt ALREADY warns that renaming a food can change which grade is
 the default. The prompt is right. The defect is that identity is built from the
 surface string at all.
 
+### 1a — ⛔ P0 CONTAINMENT: A MEMORY KEY MUST NAME A FOOD *(landed 2026-08-14)*
+
+**FOUND WHILE DESIGNING STEP 1, AND IT WAS NOT COVERAGE DEBT — IT WAS A LIVE
+MISPRICE.** `normalize_name` keeps `[a-z0-9 ]`, so a food named in a non-Latin
+script normalizes to whatever DIGITS it happened to contain, and those digits
+were the key into durable per-user food memory.
+
+```text
+'Творог 5%'                    -> '5'
+'Молоко (2.5%)'                -> '25'
+'Кукуруза варёная (2 початка)' -> '2'
+'Омлет из 2 яиц'               -> '2'
+```
+
+MEASURED, 180 days: **361 distinct non-English foods · 300 normalizing to
+EMPTY · 6 KEYS each shared by several DIFFERENT foods of one user**, one key
+carrying nine (глазунья · омлет · шакшука · …).
+
+⭐ **AND ONE PRICED A REAL MEAL FROM THE WRONG FOOD:**
+
+```text
+cached  u=76 key '2'  'Кукуруза варёная (2 початка)'    boiled corn
+        per100g  54.0 kcal · 3.33 p · 5.0 c · 2.08 f    last_used 2026-08-04
+entry   2026-08-04  'Творог 2%'  150 g                  2% cottage cheese
+        committed 81.0 kcal · 5.0 p · 7.5 c · 3.1 f
+        per100g   54.0 · 3.33 · 5.00 · 2.07   <- IDENTICAL, ALL FOUR MACROS
+```
+
+Real 2% творог carries ~18 g protein per 100 g. It committed at **3.33** — from
+the MEMORY rung, at high confidence. A wrong number wearing evidence, which is
+the failure class this whole migration exists to delete.
+
+⭐⭐ **THE KEY FAILS IN BOTH DIRECTIONS AT ONCE.** It MERGES corn, cottage
+cheese and fried eggs onto `'2'`, and it SPLITS one food across
+`Творог 4% жирности` → `'4'` and `Творог 5% жирности` → `'5'`. Neither is
+identity.
+
+**THE CONTAINMENT** — `core.food_intelligence.memory_key_is_addressable`,
+enforced inside `get_user_food_match` AND `upsert_user_food_match`:
+
+> A memory identity key must contain meaningful alphabetic content. Empty or
+> numeric-only keys are non-addressable.
+
+⭐⭐⭐ **KEY QUALITY, NOT LANGUAGE** *(Danny)*. There is no Cyrillic test and
+there must never be one — a key that lost all its letters is non-addressable
+whoever wrote it, which is what makes this generalize to every script
+normalization has not been taught. ⚠ `str.isalpha()` would have been the wrong
+predicate: `'п'` IS alpha to Python, so it would answer about a string
+normalization is about to delete entirely.
+
+⚠ **BOTH DOORS, ONE RULE.** Guarding only the READ would be worse than
+guarding neither: `upsert` looks up through the guarded reader, so a refused
+read takes the CREATE branch and every non-Latin food would mint a fresh `'2'`
+row per log — one collision becoming an unbounded pile, and
+`scalar_one_or_none` raises on several.
+
+**COST, MEASURED: 11 of 836 memory rows (1.3%) become unreachable** — every one
+of them a digit-residue row. Those foods now re-resolve fresh instead of
+returning a neighbour's macros. **In this layer no evidence is strictly better
+than wrong evidence.** ⚠ The rows are left in place, not deleted: unreachable is
+already safe, and deleting production data is a separate decision with an owner.
+
+**THIS IS CONTAINMENT, NOT THE FIX.** These foods are now SAFE rather than
+ADDRESSABLE. Step 1 is what makes them addressable.
+
 ### 2 — GENERAL CANONICAL SETTLEMENT OWNER
 
 ```text

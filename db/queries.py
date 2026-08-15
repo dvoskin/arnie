@@ -3346,7 +3346,23 @@ def is_premium(user) -> bool:
 # ── Recurring food memory (USDA matches per user) ──────────────────────────────
 
 async def get_user_food_match(db: AsyncSession, user_id: int, name_norm: str):
-    """Fetch a user's stored match for a normalized food name, if any."""
+    """Fetch a user's stored match for a normalized food name, if any.
+
+    ⛔ A KEY WITH NO LETTERS ADDRESSES NOTHING. Enforced HERE rather than at
+    each call site because the same key reaches durable memory from the legacy
+    pricer, the canonical `assemble()`, the cache writer and the cache
+    invalidator — four doors, and a guard on three of them is a defect with a
+    longer fuse. `memory_key_is_addressable` carries the production evidence.
+    """
+    from core.food_intelligence import memory_key_is_addressable
+
+    if not memory_key_is_addressable(name_norm):
+        logger.info(
+            "event=memory_key_refused user=%s key=%r reason=no_semantic_content "
+            "— a normalized key that kept no letters cannot identify a food, "
+            "and addressing memory with one returns whichever food shares its "
+            "digits", user_id, name_norm)
+        return None
     result = await db.execute(
         select(UserFoodMatch).where(and_(
             UserFoodMatch.user_id == user_id,
@@ -3401,6 +3417,19 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
     Defaults to generic rather than user authority: this function is called
     automatically after every successful lookup, so the common case is a cache.
     """
+    # ⛔ AND A CACHE MAY NOT STORE A FOOD IT CANNOT NAME. The read guard alone
+    # would be worse than none here: `get_user_food_match` returning None for a
+    # letterless key makes this function take its CREATE branch, so every
+    # non-Latin food would mint a fresh `'2'` row on every log — turning a
+    # collision into an unbounded pile of them. Both doors, one rule.
+    from core.food_intelligence import memory_key_is_addressable
+
+    if not memory_key_is_addressable(name_norm):
+        logger.info(
+            "event=memory_write_refused user=%s key=%r display=%r "
+            "reason=no_semantic_content", user_id, name_norm, display_name)
+        return None
+
     # A CACHE MAY NOT STORE AN IMPOSSIBLE FOOD. Fat is 9 calories per gram, so
     # nothing edible exceeds 900 per 100 g — anything above that is a unit
     # error, usually kilojoules in a kcal field or a per-container figure in a

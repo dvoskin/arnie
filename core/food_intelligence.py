@@ -103,6 +103,54 @@ def normalize_name(name: str, split_separators: bool = False) -> str:
     return re.sub(r"\s+", " ", n)
 
 
+#: A normalized key carries semantic content only if something ALPHABETIC
+#: survived normalization. Deliberately `a-z` and not `str.isalpha()`: `'п'`
+#: IS alpha to Python, and writing the check that way would accept a raw
+#: Cyrillic string while `normalize_name` is about to delete every character
+#: of it — a predicate that answers about a string nobody will ever key on.
+_HAS_SEMANTIC_CONTENT = re.compile(r"[a-z]")
+
+
+def memory_key_is_addressable(name_norm: str) -> bool:
+    """May this normalized name address durable per-user food memory?
+
+    ⛔ THE DEFECT THIS CLOSES WAS LIVE, AND IT MISPRICED A REAL MEAL.
+    `normalize_name` keeps `[a-z0-9 ]`, so a food named in any non-Latin script
+    normalizes to whatever DIGITS it happened to contain:
+
+        'Творог 5%'                    -> '5'
+        'Молоко (2.5%)'                -> '25'
+        'Кукуруза варёная (2 початка)' -> '2'
+        'Омлет из 2 яиц'               -> '2'
+
+    Measured in production 2026-08-14 over 180 days: 361 distinct non-English
+    foods, 300 normalizing to EMPTY and 6 KEYS each shared by several DIFFERENT
+    foods of the same user — one key carrying nine. On 2026-08-04 a user's
+    `Творог 2%` (2% cottage cheese) was priced from their
+    `Кукуруза варёная (2 початка)` (boiled corn) row: 54.0 kcal and 3.33 g
+    protein per 100 g, all four macros identical to the corn cache, committed
+    at roughly a fifth of cottage cheese's real protein.
+
+    ⭐ THE PREDICATE IS ABOUT KEY QUALITY, NOT LANGUAGE (Danny, 2026-08-14).
+    There is no Cyrillic here and no script test — a key that lost all of its
+    letters is non-addressable whoever wrote it, which is why this also catches
+    a hypothetical `'2'` from an English name and generalizes to every locale
+    normalization has not been taught yet.
+
+    ⭐⭐ AND IT FAILS TOWARD NO EVIDENCE. Refusing the lookup costs some
+    non-English foods a memory hit they were getting by accident; it cannot
+    return another food's numbers. In this layer no evidence is strictly better
+    than wrong evidence — the same rule that makes `PricingRefused` an
+    exception rather than a zero.
+
+    ⚠ THIS IS CONTAINMENT, NOT THE FIX. The real correction is the
+    interpretation boundary: identity derived from interpreted meaning rather
+    than from surviving bytes, so these foods become addressable instead of
+    merely safe.
+    """
+    return bool(_HAS_SEMANTIC_CONTENT.search(name_norm or ""))
+
+
 # Generic food categories whose calories swing wildly by brand/recipe. A name made
 # up ONLY of these words ("protein bar", "shake", "smoothie") is ambiguous — we must
 # NOT silently reuse a previously-logged specific item or a USDA guess for it; the
