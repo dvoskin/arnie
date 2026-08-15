@@ -254,12 +254,15 @@ async def test_consume_is_the_state_that_annotates(monkeypatch):
         return {"Помидор": "tomato"}
 
     monkeypatch.setenv("ENTITY_RESOLUTION_MODE", "consume")
+    # ⚠ CONSUMPTION NOW HAS TWO CONDITIONS: the mode AND the cohort. This test
+    # asserted the mode alone and correctly went red when the cohort landed.
+    monkeypatch.setenv("ENTITY_RESOLUTION_CONSUME_ALLOWLIST", "26")
     monkeypatch.setattr(resolver, "ensure_resolved", _fake_ensure_resolved)
     monkeypatch.setattr(food_stage, "_log_identity_states",
                         lambda *a, **k: _noop())
 
     out = {"action": "log", "items": [{"food": "Помидор", "amount": 1}]}
-    await food_stage.stamp_canonical_identity(out, db=object())
+    await food_stage.stamp_canonical_identity(out, db=object(), user_id=26)
     assert out["items"][0].get("canonical_entity_id") == "tomato"
 
 
@@ -572,3 +575,110 @@ def test_stage_time_recording_adds_no_pricing_or_settlement_dependency():
             f"the stage-time recording block reaches {forbidden!r} — that is "
             f"settlement, and moving model-dependent work there is what Gate B "
             f"forbids")
+
+
+# ── consume is scoped by its OWN cohort ───────────────────────────────────────
+
+@pytest.mark.parametrize("coordinator_mode",
+                         ["legacy_only", "new_observe", "new_execute"])
+@pytest.mark.parametrize("coordinator_allowlist", ["", "26", "26,27,28"])
+def test_coordinator_rollout_cannot_widen_identity_consumption(
+        coordinator_mode, coordinator_allowlist, monkeypatch):
+    """⛔⛔ THE COUPLING THIS SLICE EXISTS TO BREAK *(Danny, 2026-08-15)*.
+
+    Consumption's real condition used to be `mode == consume` AND coordinator
+    native execution AND `TURN_COORDINATOR_ALLOWLIST` — because the only
+    caller of the stamp is `FoodPlanStage.run`, which only the native lane
+    reaches. So widening the COORDINATOR rollout silently widened PRICE
+    MOVEMENT, from a dial named after neither.
+
+        Coordinator enrollment decides which execution PATH runs.
+        Identity-consume enrollment decides whether canonical identity may
+        affect PRICING. Neither rollout may implicitly widen the other.
+
+    Across the whole cross product of coordinator mode x coordinator allowlist,
+    with the consume cohort EMPTY, nobody may consume.
+    """
+    from core.turns.stages.food import identity_is_consumable
+
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", coordinator_mode)
+    monkeypatch.setenv("TURN_COORDINATOR_ALLOWLIST", coordinator_allowlist)
+    monkeypatch.setenv("ENTITY_RESOLUTION_MODE", "consume")
+    monkeypatch.delenv("ENTITY_RESOLUTION_CONSUME_ALLOWLIST", raising=False)
+
+    for user_id in (26, 27, 28, None):
+        assert identity_is_consumable(user_id) is False, (
+            f"user {user_id} consumes with an EMPTY consume cohort under "
+            f"coordinator {coordinator_mode}/{coordinator_allowlist} — the "
+            f"coordinator rollout is still deciding price movement")
+
+
+def test_the_consume_cohort_admits_only_who_it_names(monkeypatch):
+    """User 26 consumes; user 27 does not. The canary is one user by
+    construction, not by accident of another flag."""
+    from core.turns.stages.food import identity_is_consumable
+
+    monkeypatch.setenv("ENTITY_RESOLUTION_MODE", "consume")
+    monkeypatch.setenv("ENTITY_RESOLUTION_CONSUME_ALLOWLIST", "26")
+
+    assert identity_is_consumable(26) is True
+    assert identity_is_consumable(27) is False
+    assert identity_is_consumable(None) is False, (
+        "a turn with no user id consumed — the cohort cannot have been checked")
+
+
+def test_an_empty_cohort_means_nobody_not_everybody(monkeypatch):
+    """⛔ FAIL CLOSED, DELIBERATELY AGAINST THE HOUSE CONVENTION.
+    `lane_executes_natively` reads an empty allowlist as EVERYONE, and
+    render.yaml records the same for NUTRITION_RESOLVER_MODE. Survivable for a
+    flag that picks an execution path; not for the one that moves a number on a
+    user's plate. An operator who sets the mode and forgets the cohort must
+    enrol nobody."""
+    from core.turns.stages.food import identity_is_consumable
+
+    monkeypatch.setenv("ENTITY_RESOLUTION_MODE", "consume")
+    for empty in ("", "   ", ","):
+        monkeypatch.setenv("ENTITY_RESOLUTION_CONSUME_ALLOWLIST", empty)
+        assert identity_is_consumable(26) is False, (
+            f"an empty cohort {empty!r} enrolled the fleet in price movement")
+
+
+def test_shadow_is_unchanged_by_the_cohort(monkeypatch):
+    """The cohort gates CONSUMPTION only. A user inside it must still not
+    consume while the mode is shadow — otherwise the cohort has quietly become
+    a second way to turn the feature on."""
+    from core.turns.stages.food import identity_is_consumable
+
+    monkeypatch.setenv("ENTITY_RESOLUTION_CONSUME_ALLOWLIST", "26")
+    for mode in ("off", "shadow"):
+        monkeypatch.setenv("ENTITY_RESOLUTION_MODE", mode)
+        assert identity_is_consumable(26) is False, (
+            f"user 26 consumes under mode={mode} because they are in the "
+            f"cohort — the cohort is not a mode")
+
+
+@pytest.mark.asyncio
+async def test_the_stamp_asks_the_cohort_not_just_the_mode(monkeypatch):
+    """End of the chain: the annotating producer must refuse a user outside the
+    cohort even in consume mode, and stamp one inside it."""
+    import core.turns.stages.food as food_stage
+    import skills.nutrition.entity_resolver as resolver
+
+    async def _fake(db, surfaces):
+        return {"Помидор": "tomato"}
+
+    monkeypatch.setattr(resolver, "ensure_resolved", _fake)
+    monkeypatch.setattr(food_stage, "_log_identity_states",
+                        lambda *a, **k: _noop())
+    monkeypatch.setenv("ENTITY_RESOLUTION_MODE", "consume")
+    monkeypatch.setenv("ENTITY_RESOLUTION_CONSUME_ALLOWLIST", "26")
+
+    outside = {"action": "log", "items": [{"food": "Помидор", "amount": 1}]}
+    await food_stage.stamp_canonical_identity(outside, db=object(), user_id=27)
+    assert "canonical_entity_id" not in outside["items"][0], (
+        "a user outside the consume cohort was stamped")
+
+    inside = {"action": "log", "items": [{"food": "Помидор", "amount": 1}]}
+    await food_stage.stamp_canonical_identity(inside, db=object(), user_id=26)
+    assert inside["items"][0].get("canonical_entity_id") == "tomato", (
+        "the cohort member was not stamped — consumption is unreachable")

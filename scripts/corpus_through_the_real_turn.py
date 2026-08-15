@@ -506,14 +506,122 @@ def _reconcile(body, entries_seen):
 
 
 async def _resolution_rows(db) -> list:
-    """Everything the interpretation boundary wrote, as plain dicts."""
+    """Everything the interpretation boundary wrote, as plain dicts.
+
+    ⭐ THE CONSUMER VIEW RIDES ALONG, because "did a PRODUCT bind anything" is a
+    question for `entity_id_for_surface` and not for the raw column —
+    `MAY_NAME_AN_ENTITY` deliberately lets a PRODUCT row CARRY an id while
+    `binds` excludes it.
+    """
     from sqlalchemy import select
 
     from db.models import FoodEntityResolution
+    from skills.nutrition.entity_resolution import entity_id_for_surface
+
     rows = (await db.execute(select(FoodEntityResolution))).scalars().all()
-    return [{"surface_key": r.surface_key,
-             "canonical_entity_id": str(r.canonical_entity_id or ""),
-             "state": getattr(r.state, "value", str(r.state))} for r in rows]
+    out = []
+    for row in rows:
+        out.append({
+            "surface_form": row.surface_form,
+            "surface_key": row.surface_key,
+            "canonical_entity_id": str(row.canonical_entity_id or ""),
+            "state": getattr(row.state, "value", str(row.state)),
+            "consumer_binds": await entity_id_for_surface(db, row.surface_form),
+        })
+    return out
+
+
+def _resolution_quality(resolutions, observations, body) -> dict:
+    """⭐ THE FIVE THINGS STEP 5 MUST MEASURE *(Danny, 2026-08-15)*.
+
+    Quality of the STORE, not reachability of the seam — the seam is proven and
+    this is the question that decides whether consume mode is safe to turn on.
+    """
+    import collections
+    import re
+
+    non_ascii = re.compile(r"[^\x00-\x7f]")
+
+    by_state = collections.Counter(r["state"] for r in resolutions)
+
+    # ⛔ FRAGMENTATION: several DISTINCT ids for what is plainly one food family.
+    # Measured live on 2026-08-15: `tvorog 3pct`, `tvorog 5percent`,
+    # `tvorog 2percent`, `smetana 5percent` — two suffix conventions across four
+    # samples. Harmless while ids are stored per surface; under CONSUME the id
+    # becomes the memory key, so a family that fragments is a family whose
+    # memory fragments with it.
+    #
+    # ⚠ THE FAMILY IS THE FIRST TOKEN, WHICH IS A HEURISTIC AND IS LABELLED AS
+    # ONE. It groups `tvorog *` correctly and would group two genuinely
+    # different foods sharing a first word. It is an indicator, not a verdict.
+    # ⛔ TWO CORRECTIONS THE FIRST FULL RUN FORCED.
+    #
+    # 1  FRAGMENTATION CROSSES STATES. The first version filtered to
+    #    `distinct`, and missed `ground turkey 96 percent lean` (RESOLVED)
+    #    sitting beside `ground turkey 94 lean pan cooked` (DISTINCT). A family
+    #    does not split along the state column.
+    # 2  PRODUCTS ARE EXCLUDED. `barebells caramel cashew` and `barebells salty
+    #    peanut` share a first token because they share a BRAND — two different
+    #    products, correctly two identities. Counting them as fragmentation
+    #    reported 4 families when only 2 were real, which is a metric crying
+    #    wolf at exactly the moment its number decides a rollout.
+    families = collections.defaultdict(set)
+    for row in resolutions:
+        entity = row["canonical_entity_id"]
+        if entity and row["state"] != "product":
+            families[entity.split()[0]].add(entity)
+    fragmented = {family: sorted(ids) for family, ids in families.items()
+                  if len(ids) > 1}
+
+    # ⛔ THE DENOMINATOR IS WHAT THE CORPUS DROVE, NOT WHAT COMMITTED. The
+    # first version divided resolutions by foods that produced a FOOD ROW and
+    # reported "16 of 15 (106.7%)" and "driven without a row: -2" — impossible
+    # numbers, because resolution happens at interpretation time and every ASK
+    # turn resolves a food that has not committed yet. Numerator and
+    # denominator were counting different populations.
+    #
+    # ⭐ SO THE POPULATION IS THE CORPUS ITSELF: the foods this run set out to
+    # drive. That is knowable up front, does not move with settlement, and is
+    # the only denominator under which "success" means what it sounds like.
+    driven = {str(item.get("food") or "") for item in body if item.get("food")}
+    ru_driven = {name for name in driven if non_ascii.search(name)}
+    ru_resolved = {r["surface_form"] for r in resolutions
+                   if non_ascii.search(r["surface_form"] or "")}
+
+    # PRODUCT must bind NOTHING to a consumer, whatever it carries.
+    products = [r for r in resolutions if r["state"] == "product"]
+    bound_products = [r for r in products if r["consumer_binds"]]
+
+    # ⭐ CONVERGENCE IS THE POINT, SO IT IS MEASURED. Two surfaces reaching ONE
+    # identity is the whole purpose of the boundary — and its absence is the
+    # failure `Листья салата` -> `lettuce leaves` vs `Lettuce leaves` ->
+    # `lettuce` shows. Reporting only fragmentation would count the cost and
+    # never the benefit.
+    converged = collections.defaultdict(list)
+    for row in resolutions:
+        if row["canonical_entity_id"]:
+            converged[row["canonical_entity_id"]].append(row["surface_form"])
+    shared = {entity: surfaces for entity, surfaces in converged.items()
+              if len(surfaces) > 1}
+
+    return {
+        "states": dict(by_state),
+        "identities_reached_by_more_than_one_surface": shared,
+        "non_english_driven": len(ru_driven),
+        "non_english_with_a_row": len(ru_resolved),
+        "non_english_success_pct": (
+            round(100 * len(ru_resolved) / len(ru_driven), 1)
+            if ru_driven else None),
+        # ⚠ ABSENCE IS INFERRED HERE, not read from the producer's telemetry:
+        # foods driven that never produced a row. Truncation is one cause among
+        # several (unresolved, a surface the interpreter renamed), so this is an
+        # UPPER BOUND on the truncation rate and the log is the tiebreaker.
+        "driven_without_a_resolution": max(
+            0, len(driven) - len({r["surface_form"] for r in resolutions})),
+        "distinct_families_fragmented": fragmented,
+        "products": len(products),
+        "products_binding_something": [r["surface_form"] for r in bound_products],
+    }
 
 
 def _report(corpus, observations, unmatched_rows, latencies, failures,
@@ -611,6 +719,8 @@ def _report(corpus, observations, unmatched_rows, latencies, failures,
         "resolution_rows": len(resolutions),
         "resolution_states": dict(collections.Counter(
             r["state"] for r in resolutions)),
+        "resolution_quality": _resolution_quality(
+            resolutions, observations, corpus["body"]),
         "latency_ms": {
             "p50": round(statistics.median(latencies)) if latencies else None,
             "p95": (round(sorted(latencies)[int(len(latencies) * 0.95) - 1])
@@ -718,6 +828,25 @@ def render(report: dict) -> str:
                f"· max {latency['max']} ms")
     out.append(f"    resolutions written {report['resolution_rows']} "
                f"{report['resolution_states'] or ''}")
+    quality = report.get("resolution_quality") or {}
+    if quality:
+        out.append("\n    RESOLUTION QUALITY — the step-5 questions")
+        out.append(f"      states                {quality['states']}")
+        out.append(f"      non-English           "
+                   f"{quality['non_english_with_a_row']} of "
+                   f"{quality['non_english_driven']} got a row"
+                   f"  ({quality['non_english_success_pct']}%)")
+        out.append(f"      no resolution at all  "
+                   f"{quality['driven_without_a_resolution']}   (upper bound on "
+                   f"truncation — read the log to split it)")
+        out.append(f"      PRODUCT rows          {quality['products']}, "
+                   f"binding something: "
+                   f"{quality['products_binding_something'] or 'none'}")
+        fragmented = quality["distinct_families_fragmented"]
+        out.append(f"      DISTINCT fragmentation {len(fragmented)} famil(ies) "
+                   f"with >1 id")
+        for family, ids in list(fragmented.items())[:6]:
+            out.append(f"        {family}: {ids}")
 
     # ⛔ A TURN THAT WROTE NO ROW IS NOT A NEUTRAL EVENT — it silently removes an
     # entry from every percentage below it. Named, never just counted.

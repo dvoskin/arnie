@@ -113,9 +113,13 @@ async def test_consume_is_the_state_that_stamps(resolver, monkeypatch):
     """The other half: `consume` must still annotate, or the split has quietly
     deleted consumption's doorway while every recording gate stays green."""
     monkeypatch.setenv("ENTITY_RESOLUTION_MODE", "consume")
+    # ⚠ AND THE COHORT. Price movement is scoped by the feature that moves
+    # prices, not by the coordinator rollout — so `consume` alone stamps
+    # nobody, and this test says so by naming a user.
+    monkeypatch.setenv("ENTITY_RESOLUTION_CONSUME_ALLOWLIST", "26")
     out = _interpretation()
 
-    await stamp_canonical_identity(out, _DB())
+    await stamp_canonical_identity(out, _DB(), user_id=26)
 
     assert [item["canonical_entity_id"] for item in out["items"]] == [
         "tomato", "tvorog 2 percent"]

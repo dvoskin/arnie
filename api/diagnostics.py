@@ -126,7 +126,19 @@ def _food_pipeline(user_id: Optional[int] = None) -> dict:
                                             identity_is_consumable)
         out["ENTITY_RESOLUTION_MODE"] = _flag(
             "ENTITY_RESOLUTION_MODE", entity_resolution_mode())
-        out["consumes_identity"] = {"effective": identity_is_consumable()}
+        # ⭐ THE COHORT, NOT JUST THE MODE. `consume` with an empty cohort
+        # enrols nobody, so reporting the mode alone would say "consuming"
+        # about a deployment that consumes for no one — and reporting a bare
+        # boolean would hide WHO. Sizes and ids, never env content.
+        from core.turns.stages.food import _consume_allowlist
+        _consume = sorted(_consume_allowlist())
+        out["ENTITY_RESOLUTION_CONSUME_ALLOWLIST"] = {
+            "effective": _consume,
+            "env_set": os.getenv("ENTITY_RESOLUTION_CONSUME_ALLOWLIST") is not None}
+        out["consumes_identity"] = {
+            "effective_for_anyone": bool(_consume) and
+            entity_resolution_mode() == "consume",
+            "cohort_size": len(_consume)}
     except Exception as e:                           # pragma: no cover
         out["ENTITY_RESOLUTION_MODE"] = {"error": str(e)}
 
@@ -428,8 +440,11 @@ async def identity_adoption_summary() -> dict:
                                             identity_is_consumable)
         from db.models import FoodEntityResolution, UserFoodMatch
 
+        from core.turns.stages.food import _consume_allowlist
         out["mode"] = entity_resolution_mode()
-        out["consumes_identity"] = identity_is_consumable()
+        out["consume_cohort"] = sorted(_consume_allowlist())
+        out["consumes_identity_for_anyone"] = bool(
+            out["consume_cohort"]) and out["mode"] == "consume"
 
         async with AsyncSessionLocal() as db:
             rows = (await db.execute(

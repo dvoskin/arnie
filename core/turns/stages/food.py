@@ -52,7 +52,9 @@ class FoodPlanStage:
         except Exception as e:
             logger.warning(f"food plan stage failed: {e}")
             out = None
-        await stamp_canonical_identity(out, meta.get("db"))
+        await stamp_canonical_identity(
+            out, meta.get("db"),
+            user_id=getattr(meta.get("user"), "id", None))
         return plan_from_interpretation(out)
 
 
@@ -91,13 +93,55 @@ def entity_resolution_mode() -> str:
     return mode if mode in _MODES else "off"
 
 
-def identity_is_consumable() -> bool:
-    """May an identity be stamped onto an item this turn?
+def _consume_allowlist() -> frozenset:
+    """The users for whom a canonical identity may affect PRICING.
+
+    ⛔⛔ FAIL CLOSED, AND THIS DELIBERATELY BREAKS THE HOUSE CONVENTION.
+    `lane_executes_natively` treats an empty `TURN_COORDINATOR_ALLOWLIST` as
+    EVERYONE, and `render.yaml` records the same reading for
+    `NUTRITION_RESOLVER_MODE` ("empty allowlist = everyone"). That default is
+    survivable for a flag that chooses an execution path. It is not survivable
+    for the flag that decides whether a model's identity judgement moves a
+    number on a user's plate: an operator who sets the mode and forgets the
+    cohort would enrol the entire fleet in price movement, and the symptom
+    would be prices changing for people nobody canaried.
+
+    So: unset or empty means NOBODY, and a turn with no user id means nobody
+    either. Widening is always an explicit act.
+    """
+    import os
+
+    raw = os.getenv("ENTITY_RESOLUTION_CONSUME_ALLOWLIST", "") or ""
+    return frozenset(int(part) for part in raw.replace(",", " ").split()
+                     if part.strip().isdigit())
+
+
+def identity_is_consumable(user_id=None) -> bool:
+    """May an identity be stamped onto THIS USER's item — i.e. reach pricing?
 
     ⭐ ONE PREDICATE, ASKED BY THE ONE FUNCTION THAT ANNOTATES. A second caller
     deciding this for itself is how `shadow` came to mean two things.
+
+    ⭐⭐ AND THE COHORT BELONGS TO THE FEATURE THAT MOVES PRICES *(Danny,
+    2026-08-15)*. Before this, consumption's real condition was
+    `mode == consume AND coordinator native execution AND
+    TURN_COORDINATOR_ALLOWLIST` — so widening the COORDINATOR rollout would
+    silently widen identity consumption. Two rollouts on one dial, and only one
+    of them named after the behaviour being exposed.
+
+        Coordinator enrollment decides which execution PATH runs.
+        Identity-consume enrollment decides whether canonical identity may
+        affect PRICING. Neither rollout may implicitly widen the other.
     """
-    return entity_resolution_mode() == "consume"
+    if entity_resolution_mode() != "consume":
+        return False
+    allowed = _consume_allowlist()
+    if not allowed or user_id is None:
+        return False
+    try:
+        return int(user_id) in allowed
+    except (TypeError, ValueError):
+        return False
 
 
 async def record_identities(out, db) -> dict:
@@ -226,7 +270,7 @@ async def record_turn_identities(out, db) -> None:
         logger.warning(f"identity recording unavailable, turn unchanged: {e}")
 
 
-async def stamp_canonical_identity(out, db) -> None:
+async def stamp_canonical_identity(out, db, user_id=None) -> None:
     """Resolve this turn's foods and hang the canonical entity on each item.
 
     ⛔ INTERPRETATION TIME, NOT SETTLE TIME. A model call belongs where one is
@@ -260,9 +304,10 @@ async def stamp_canonical_identity(out, db) -> None:
     # CONSUME on coordinator traffic, from one flag, with the difference
     # invisible in the flag's name. The stamp changes `memory_key` and so the
     # price; shadow must never reach it, whatever the coordinator mode.
-    if not identity_is_consumable():
-        logger.info("event=entity_identity_not_consumed mode=%s resolved=%d",
-                    entity_resolution_mode(), len(resolved))
+    if not identity_is_consumable(user_id):
+        logger.info("event=entity_identity_not_consumed mode=%s user=%s "
+                    "resolved=%d", entity_resolution_mode(), user_id,
+                    len(resolved))
         return
     items = [item for item in (out.get("items") or ()) if isinstance(item, dict)]
     for item in items:
