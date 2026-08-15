@@ -17,19 +17,32 @@
 
 ## ⏭⏭⏭⏭ CORRECTED SEQUENCING *(Danny, 2026-08-16. THIS SUPERSEDES EVERY SEQUENCE BELOW, INCLUDING THE FROZEN ROADMAP.)*
 
-> **The correct state: interpretation adoption is FUNCTIONALLY CONNECTED in
-> production for one user. Its CORPUS-BASED EVIDENCE is INVALID until the
-> attribution instrument is repaired and rerun.** 2026-08-15 published those two
-> claims as one and closed the section on the strength of the second.
+> **The state, after P1 sharpened P0.** Interpretation adoption is **CLOSED for
+> ADDRESSING**, on production evidence plus store-side measurement that never
+> touched the broken instrument. **Coverage and cacheability are OPEN and
+> UNQUANTIFIED.** 2026-08-15 published both as one claim; P0 retracted both; P1
+> showed the retraction was too wide. §0z carries the scoped closure.
 
 ```text
 P0   correct the closure language and FREEZE the rollout   ✅ 11511f1
-P1   repair corpus correlation                             ✅ attribution v2
-P2   rerun the corpus from a clean database                <- NEXT, and it
-                                                              costs API credits
-P3   review the evidence and re-close interpretation adoption
-P4   amend §3a.2 with decisions A-D
+P1   repair corpus correlation                             ✅ 79ba9ad  v2
+P3   re-close interpretation adoption — SCOPED             ✅ §0z, this commit
+P4   amend §3a.2 with decisions A-D                        <- NEXT. No credits,
+                                                              no traffic; these
+                                                              are contract
+                                                              defects and A2/A6
+                                                              cannot be built
+                                                              around them
 P5   approve the A1-A10 plan
+P2   rerun the corpus from a clean database                 costs credits. NO
+                                                            LONGER A CLOSURE
+                                                            GATE — it is the
+                                                            input A10 and the
+                                                            coverage predicate
+                                                            (decision D) need,
+                                                            and the precondition
+                                                            for widening the
+                                                            cohort
 P6   build ResolvedMeal + GeneralSettlementOwner
 P7   add routing, refusal, provenance and ownership gates
 P8   execute the A7 poisoned proof
@@ -38,8 +51,17 @@ P10  canary behind an independent fail-closed cohort
 P11  measure coverage and miss rate BEFORE any expansion
 ```
 
-⛔ **THE IMMEDIATE NEXT MOVE IS P1, NOT SETTLEMENT CODE.** Planning A1–A10 may
-continue. **Implementation is BLOCKED until P2–P4 are complete.**
+⭐ **WHY P2 MOVED RATHER THAN VANISHED.** It was sequenced as a closure gate
+when the corpus was believed to carry the adoption evidence. It does not — step
+5's five measurements are store-side. What the corpus uniquely owns is the
+COVERAGE number, and coverage is what the settlement slice's own risk turns on:
+`assemble()` retrieves nothing, so the coverage predicate's miss rate is the
+whole of that slice's exposure. **P2 is now a design input to P6, not a
+permission slip for P3.**
+
+⛔ **THE IMMEDIATE NEXT MOVE IS P4 — the A–D decisions.** A1–A10 implementation
+stays BLOCKED until they land, and the coverage predicate additionally waits on
+P2. ⛔ **Cohort expansion stays prohibited until P2 publishes a miss rate.**
 
 ⛔ **ROLLOUT IS FROZEN.**
 
@@ -195,38 +217,61 @@ direction. ⛔ **Do not start step 5 on the strength of a quiet canary.**
 writes resolutions, and `shadow_actually_resolved_something` is a live check
 rather than a hypothetical one.
 
-#### 0z — ⚠ INTERPRETATION ADOPTION IS FUNCTIONALLY CONNECTED; EVIDENCE CLOSURE IS PENDING *(restated 2026-08-16)*
+#### 0z — ✅ INTERPRETATION ADOPTION IS CLOSED — ADDRESSING, NOT COVERAGE *(re-closed 2026-08-16, SCOPED)*
 
-> **CORRECTION.** This section read *"INTERPRETATION ADOPTION IS CLOSED"* from
-> 2026-08-15 to 2026-08-16. It is not closed. **The production connection is
-> real and independently proven for one user. Step 5's corpus evidence is
-> INVALID** — its attribution instrument matched rows to corpus items by
-> `normalize_name`, which reduces every digit-free Cyrillic surface to the empty
-> string and then treats that key as a wildcard. **29 of 29 attributed `ru` rows
-> in the shadow run name a different food than the one that produced them.**
-> Full account: [CORPUS_ATTRIBUTION_DEFECT_0816.md](CORPUS_ATTRIBUTION_DEFECT_0816.md).
+> **THIS SECTION HAS BEEN WRONG IN BOTH DIRECTIONS, AND THE HISTORY IS THE
+> POINT.** It read *"ADOPTION IS CLOSED"* on 08-15 while publishing a corpus mix
+> computed over mis-attributed rows. P0 retracted the whole section on 08-16.
+> P1 then showed the retraction was **too wide**: the evidence step 5 actually
+> owed is structurally independent of the broken instrument.
 >
-> Closure returns only after P2 republishes with `ambiguous = incorrect =
-> unexplained rows = false collapses = PRODUCT bindings = 0`.
+> ⭐ **THE CHECK THAT SETTLED IT.** `_resolution_quality` — the function whose
+> docstring names *"THE FIVE THINGS STEP 5 MUST MEASURE"* — takes
+> `(resolutions, observations, body)` and **never references `observations`**.
+> Every step-5 number comes from the RESOLUTION STORE and the DRIVEN CORPUS.
+> Neither passes through `_reconcile`. The attribution defect destroyed the
+> MIX — which rung real food reaches, per-population cacheability, drift — and
+> **the mix was never the adoption gate.** It is the coverage question, and
+> coverage is open below.
+>
+> **So what is closed is ADDRESSING, and it is closed on production evidence.**
 
-**Where the frozen §0 sequence actually stands:**
+**The frozen §0 sequence, with each claim's instrument named:**
 
 ```text
 1  record ask/pending foods at stage time    ✅ 82efb5a · proven telegram:9345
-2  gates + dual-engine                       ✅ SQLite 9136/0 · PG 9218/0
+2  gates + dual-engine                       ✅ SQLite 9152/0 · PG 9218/0
 3  resolver truncation reliability           ✅ bf4b8ba · Russian single resolves
 4  real-model proof, non-English singles     ✅ 4/4 claims
-5  weighted corpus in shadow                 ⛔ INVALID — attribution instrument
-                                                broken; rerun required (P1, P2)
+5  weighted corpus in shadow                 ✅ STORE-SIDE ONLY — 46 identities,
+                                                0 false collapses, 5 PRODUCT
+                                                rows binding nothing, 19/19
+                                                non-English resolved. Read from
+                                                FoodEntityResolution and
+                                                entity_id_for_surface, never
+                                                from the reconciler.
+                                             ⛔ the MIX from that same run is
+                                                WITHDRAWN — see §0c.
 6  consume canary, cohort of one             ✅ c8482c1 · proven telegram:9362/9365
 7  B-1 prices + provenance watched           ✅ correct, incl. one rung=memory
-8  close interpretation adoption             ⛔ NOT CLOSED — blocked on step 5
+8  close interpretation adoption             ✅ THIS SECTION, SCOPED
 ```
 
-⛔ **AND THE COHORT IS FROZEN WHILE THIS IS OPEN.**
-`ENTITY_RESOLUTION_CONSUME_ALLOWLIST=26` stays as it is; **expansion is
-prohibited until P3 closes.** Steps 1–4, 6 and 7 are what justify keeping the
-cohort of one; none of them justifies widening it.
+⛔⛔ **WHAT IS *NOT* CLOSED, AND MUST NOT BE READ INTO THE ABOVE.**
+
+```text
+ADDRESSABILITY   closed   the key names the food; the rung is consulted
+CACHEABILITY     OPEN     nothing seats a candidate, so the correct key
+                          addresses nothing — and its PREVALENCE IS UNKNOWN
+COVERAGE / MIX   OPEN     unmeasured since 08-16; P2 owes the number
+```
+
+⛔ **AND THE COHORT STAYS FROZEN.** `ENTITY_RESOLUTION_CONSUME_ALLOWLIST=26`
+does not move. **Widening is a COVERAGE decision, not an adoption one** — the
+blast radius of consumption is mispricing, and the instrument that would size
+that risk is exactly the one whose numbers were withdrawn. Adoption being
+closed is not a reason to widen; a measured miss rate is. **Expansion stays
+prohibited until P2 publishes one.**
 
 ⭐ **THE BEFORE/AFTER, ON THE FOOD THAT FAILED ALL DAY.** `Сметана 5%`:
 
