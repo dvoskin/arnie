@@ -428,12 +428,22 @@ async def _read_back(db, written) -> tuple:
             raise RuntimeError(
                 f"{item.name!r} was written as entry {entry.id} and cannot be "
                 f"read back in the same transaction")
+        pricing = (item.attributes or {}).get("pricing")
         committed.append({
             "entry_id": row.id,
             # Persisted with the result, so a duplicate replay and every later
             # reader can tell client-priced from catalog-priced without a
             # schema change — meal_commits.result_payload is the durable home.
             "nutrition_provenance": item.nutrition_provenance.value,
+            # ⭐ A6 — THE RUNG THAT ACTUALLY DECIDED THE PRICE, when the caller
+            # recorded one. `food_entries` has no rung column, so this payload
+            # is the durable home here too, and it is what makes "read the
+            # provenance from the DB, never from reply text" possible at all.
+            #
+            # ⚠ OMITTED RATHER THAN DEFAULTED when absent: a caller that did
+            # not record a rung must not be reported as having priced from one.
+            # Callers that never set it (B-1, quick_log) see no payload change.
+            **({"pricing": dict(pricing)} if pricing else {}),
             # Where the row LIVES, not just what it is. The quick-log response
             # contract returns daily_log_id, and the idempotency claim stores
             # it so a replay can answer without a join — a result that cannot

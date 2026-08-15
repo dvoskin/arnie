@@ -105,7 +105,12 @@ def test_no_runtime_module_carries_a_credential_literal():
 #: the number moved because someone decided it should, in the same commit,
 #: rather than drifting while nobody was looking. It has now done that four
 #: times in one day, and each time the number moved WITH ITS REASON.
-SCRIPTS_READING_ENV_BASELINE = 33
+#: 2026-08-16, P6/A7: +1 for `scripts/prove_settlement_survives_poison.py`.
+#: It reads `../arnie/.env` for ANTHROPIC_API_KEY through the same `_load_key`
+#: every proof script uses — never a literal — and `ARNIE_PROVE_DB` for its
+#: scratch database. Raised WITH ITS REASON in the commit that adds the script,
+#: which is the whole point of the ratchet.
+SCRIPTS_READING_ENV_BASELINE = 34
 
 
 def test_the_env_reading_habit_does_not_spread_beyond_scripts():

@@ -23,6 +23,17 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+def _food_inputs(ops) -> list:
+    """The `log_food` inputs among the approved operations, in order.
+
+    ⚠ `log_food` ONLY. `update_food_entry` and deletions are corrections, and
+    canonical rows cannot be corrected through this path yet (B-1.8, §6). A
+    turn carrying one is not this slice and routes to legacy whole.
+    """
+    return [dict(op.get("input") or {}) for op in (ops or [])
+            if (op or {}).get("name") == "log_food"]
+
+
 class ExactlyOnceRefusal(RuntimeError):
     """The turn was already executed. Not an error the user should see — the
     renderer replays the prior answer."""
@@ -47,8 +58,27 @@ class NativeExecutionStage:
         if db is None or user is None:
             raise RuntimeError("native execution requires db and user")
 
+        # ⭐ A1/A11 — ROUTING HAPPENS BEFORE THE CLAIM, AND IT IS PURE.
+        # `Unsupported` must reach the UNTOUCHED legacy path: not a canonical
+        # attempt that falls back, not a claim taken and released — untouched.
+        # So the decision is made here, before anything mutates.
+        settlement = await self._canonical_route(db, user, ops)
+
         if not await self._claim(db, user, request, ops):
             raise ExactlyOnceRefusal(request.turn_id)
+
+        if settlement is not None:
+            # ⛔⛔ NO FALLBACK PAST THIS LINE (A8). Once canonical settlement
+            # owns the turn, `PricingRefused` PROPAGATES — catching it here to
+            # run the legacy executor would put one turn under two settlement
+            # owners, which is the dual authority this slice exists to delete.
+            # A refusal is non-mutating by construction: it is raised before
+            # any write, so there is no row and no ledger event to undo.
+            owner, coverage = settlement
+            await owner.settle(db, user=user, items=_food_inputs(ops),
+                               source_turn_id=request.turn_id,
+                               coverage=coverage)
+            return self._published()
 
         executor = self._executor
         if executor is None:
@@ -57,6 +87,40 @@ class NativeExecutionStage:
                        source_type=request.source_type or request.platform,
                        user_message=request.text or "")
         return self._published()
+
+    async def _canonical_route(self, db, user, ops):
+        """`(owner, coverage)` when canonical settlement owns this turn, else None.
+
+        ⛔ FOUR CONDITIONS, ALL EXPLICIT. The cohort, the shape (every approved
+        operation is a food log — a turn that also updates or deletes is not
+        this slice), and the coverage predicate. Any of them declining routes
+        to legacy untouched.
+
+        ⚠ AND A ROUTING FAILURE ROUTES TO LEGACY, LOUDLY. An exception while
+        DECIDING must not take down a turn that legacy could have served; an
+        exception while SETTLING must propagate, and does — this try covers
+        only the decision.
+        """
+        from core.general_settlement import (GeneralSettlementOwner, Supported,
+                                             coverage_for, settlement_cohort)
+
+        if not settlement_cohort(getattr(user, "id", None)):
+            return None
+        calls = _food_inputs(ops)
+        if not calls or len(calls) != len(ops):
+            return None
+        try:
+            coverage = await coverage_for(db, user_id=int(user.id), items=calls)
+        except Exception:                              # noqa: BLE001
+            logger.warning("coverage predicate failed; routing to legacy",
+                           exc_info=True)
+            return None
+        logger.info("event=settlement_route user=%s decision=%s reason=%s",
+                    user.id, type(coverage).__name__,
+                    getattr(coverage, "reason", ""))
+        if not isinstance(coverage, Supported):
+            return None
+        return GeneralSettlementOwner(), coverage
 
     # ── helpers ───────────────────────────────────────────────────────────────
     async def _claim(self, db, user, request, ops) -> bool:

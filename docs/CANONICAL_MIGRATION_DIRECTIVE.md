@@ -31,11 +31,16 @@ P4   amend §3a.2 with decisions A-D                        ✅ IN FORCE. A6 and
                                                               A7 amended, A2's
                                                               boundary drawn,
                                                               A11 added
-P5   approve the A1-A10 plan                               <- DANNY. The
-                                                              contract is now
-                                                              decidable; this is
-                                                              a go/no-go, not
-                                                              more analysis
+P5   approve the A1-A10 plan                               ✅ GO (Danny)
+P6   build ResolvedMeal + GeneralSettlementOwner           ✅ A1-A9 + A11 built,
+                                                              gated, mutation-
+                                                              proven. A7 PASSED
+                                                              live: rung=artifact
+                                                              evidence=usda:168389
+                                                              poison calls = 0
+P7   negative twins for every positive invariant           ✅ 11 twins; two
+                                                              mutations RED
+P8   dual-engine (Postgres) + A9 production canary         <- NEXT
 P2   rerun the corpus from a clean database                 costs credits. NO
                                                             LONGER A CLOSURE
                                                             GATE — it is the
