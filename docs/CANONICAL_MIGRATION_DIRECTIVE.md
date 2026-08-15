@@ -26,14 +26,16 @@
 ```text
 P0   correct the closure language and FREEZE the rollout   ✅ 11511f1
 P1   repair corpus correlation                             ✅ 79ba9ad  v2
-P3   re-close interpretation adoption — SCOPED             ✅ §0z, this commit
-P4   amend §3a.2 with decisions A-D                        <- NEXT. No credits,
-                                                              no traffic; these
-                                                              are contract
-                                                              defects and A2/A6
-                                                              cannot be built
-                                                              around them
-P5   approve the A1-A10 plan
+P3   re-close interpretation adoption — SCOPED             ✅ fc2db9d  §0z
+P4   amend §3a.2 with decisions A-D                        ✅ IN FORCE. A6 and
+                                                              A7 amended, A2's
+                                                              boundary drawn,
+                                                              A11 added
+P5   approve the A1-A10 plan                               <- DANNY. The
+                                                              contract is now
+                                                              decidable; this is
+                                                              a go/no-go, not
+                                                              more analysis
 P2   rerun the corpus from a clean database                 costs credits. NO
                                                             LONGER A CLOSURE
                                                             GATE — it is the
@@ -2216,48 +2218,84 @@ own the rest, and no wiring decision changes that. So:
 lookup (`normalize_name` on the composed name) rather than executing it, and it
 counts entries rather than turns. It is a scoping instrument, not a gate.
 
-#### ACCEPTANCE CRITERIA
+#### ACCEPTANCE CRITERIA — ✅ AMENDED AND IN FORCE *(P4, 2026-08-16)*
+
+> **A6 and A7 are AMENDED; A2 and A11 are new. The originals are struck below**,
+> because A6 as first written would have forced every settlement to report
+> `rung=artifact` and put it in direct conflict with A10.
 
 ```text
 A1  a general settlement owner exists on ResolvedMeal -> commit_or_load_existing
     -> write_canonical_meal, and it is the ONLY thing NativeExecutionStage
     invokes for structured_food under the lane flag
+    ⛔ the seam to displace is `execute_native.py:55`, which today imports
+       `execute_tool_calls` from handlers.tool_executor
+
 A2  it prices via assemble() + price() and imports nothing from
     handlers.tool_executor — gated by an import/AST assertion, not by reading
+    ⭐ AMENDED — the boundary A2 asserts against is now DRAWN, below. Do not
+      import `_analyze_food` (handlers/tool_executor.py:2963) and do not
+      reproduce its enrichment inside the owner. Canonical idempotency REPLACES
+      legacy dedup for canonical writes; the old executor must not survive as a
+      hidden second settlement owner.
+
 A3  an EXPLICIT quantity survives settlement unchanged   ("150g salmon" -> 150 g)
 A4  an UNSTATED preparation produces the BARE key       (potato| never potato|fried)
 A5  a STATED preparation produces the composed key      (both routes -> one key)
-A6  the committed row carries artifact provenance       rung=artifact · evidence_id
-    · confidence 0.85 — read from the DB, never from reply text
-A7  ⭐ CONSUMER-SIDE POISONED PROOF: with legacy qualification, the USDA client
-    and the resolver all poisoned to raise, a real turn still settles from the
-    artifact — and the poison is VERIFIED TO BITE before its silence counts
+
+A6  ⭐ AMENDED. PROVENANCE MUST IDENTIFY THE RUNG THAT ACTUALLY DECIDED THE
+    PRICE — whichever rung that is — read from the DB, never from reply text.
+    The artifact case is forced by a FIXTURE, never by bending precedence:
+        memory ABSENT · artifact PRESENT and ELIGIBLE · artifact must WIN
+        · persisted provenance reports `artifact` · evidence_id · confidence 0.85
+    Separate fixtures prove MEMORY and prove REFUSAL.
+    ~~was: the committed row carries artifact provenance rung=artifact~~
+    ⛔ that phrasing demanded every settlement report the artifact rung, which
+       A10 then has to contradict to measure anything.
+
+A7  ⭐ AMENDED — CONSUMER-SIDE POISONED PROOF, WITH A BOUNDARY. Poison the
+    SETTLEMENT-side seams only (USDA qualification · legacy executor enrichment
+    · resolver fallback), never interpretation's own identity work. Full
+    sequence below. The poison is VERIFIED TO BITE before its silence counts.
+    ~~was: with ... the resolver ... poisoned to raise~~
+    ⛔ a GLOBAL resolver poison kills the pre-settlement identity work the turn
+       needs to produce a structured item at all, so the proof would pass by
+       never reaching settlement.
+
 A8  a food in neither artifact nor memory REFUSES rather than committing a
     number no evidence backs, and the refusal writes no row and no ledger event
+    ⭐ and `PricingRefused` (core/canonical_pricing.py:128) PROPAGATES once
+      canonical routing has begun — it may not cross back into legacy settlement
+
 A9  the six canary identities are pre-registered OFFLINE with their expected
     evidence_ids, THEN observed in production — a matching calorie number is
     NOT provenance (banana 210 = 2x105 taught that at a cost)
+
 A10 coverage measured and RECORDED: of one real day of food, how many items
     reached an evidence-backed rung
+
+A11 ⭐ NEW — THE COVERAGE PREDICATE IS PURE AND PRE-SETTLEMENT, and its miss
+    rate is emitted as telemetry from day one. Contract below.
 ```
 
 A9 and A7 are the two that could not have been written before this week: A9
 because a coincidence nearly passed for a proof, A7 because a producer proof
 was mistaken for an adoption proof.
 
-⛔ **DO NOT IMPLEMENT A1–A10 AS WRITTEN.** Two ambiguities block them, A6 is
-wrong as stated, and A7's poison boundary is under-specified. Recommended
-resolutions are recorded below **as pending decisions — they are NOT yet in
-force.** Amending the criteria is **P4**, and P4 comes after the corpus rerun.
+⚠ **WHAT STILL GATES IMPLEMENTATION.** The contract is now decidable, so A1–A10
+may be built once the plan is approved (**P5**). **A11 and A10 additionally wait
+on P2**, because a coverage predicate cannot be tuned against a coverage number
+that does not exist.
 
-#### ⛔ BLOCKING CONTRACT AMBIGUITIES — RECOMMENDED RESOLUTIONS, PENDING P4 *(2026-08-16)*
+#### ✅ THE CONTRACT DECISIONS — DECIDED AND IN FORCE *(P4, 2026-08-16)*
 
-> **Status: RECORDED, NOT ADOPTED.** Written down now so the reasoning is not
-> lost between P0 and P4. Nothing here amends A1–A10 yet.
+> **Status: IN FORCE.** Recorded as recommendations under P0, decided here.
+> Every symbol named below was verified to exist before it was written as
+> contract.
 
-**A — WHAT THE CANONICAL OWNER OWNS.** *(Must be settled in the directive before
-A2 is implemented, because A2 is an import assertion and cannot be written
-against an undrawn boundary.)*
+**A — WHAT THE CANONICAL OWNER OWNS.** ✅ **DECIDED.** *(A2 is an import
+assertion and could not be written against an undrawn boundary. This is the
+boundary.)*
 
 ```text
 GeneralSettlementOwner owns        typed canonical routing · assemble() · price()
@@ -2278,9 +2316,10 @@ settlement owner.
 claim is restated around behavioural paths; "three-quarters adopted" stays
 unquoted until recalculated against the real topology.
 
-**C — A6 VERSUS A10.** A6 as written requires the committed row to carry
-`rung=artifact`, which would force every settlement to report the artifact rung
-and put it in conflict with A10's coverage measurement.
+**C — A6 VERSUS A10.** ✅ **DECIDED — A6 IS AMENDED ABOVE.** As first written it
+required the committed row to carry `rung=artifact`, which would force every
+settlement to report the artifact rung and put it in conflict with A10's
+coverage measurement.
 
 ```text
 CORRECT CONTRACT   provenance must identify the rung that ACTUALLY DECIDED
@@ -2293,7 +2332,9 @@ SEPARATE FIXTURES  one proves memory · one proves refusal
 
 ⛔ **Do not manipulate normal rung precedence merely to satisfy A6.**
 
-**D — THE COVERAGE PREDICATE.** A **pure, pre-settlement routing check**.
+**D — THE COVERAGE PREDICATE.** ✅ **DECIDED — this is A11.** A **pure,
+pre-settlement routing check**. ⚠ Its THRESHOLDS wait on P2: the contract is
+decided, the miss rate it is tuned against is not yet measured.
 
 ```text
 MAY READ    canonical identity eligibility · local artifact availability
@@ -2312,7 +2353,7 @@ ROUTING     unsupported -> untouched legacy path
 silently cross back into legacy settlement — that re-creates the second
 settlement owner this slice exists to remove.
 
-#### ⚠ A7 — THE POISON BOUNDARY MUST SEPARATE INTERPRETATION FROM SETTLEMENT *(2026-08-16, pending P4)*
+#### ✅ A7 — THE POISON BOUNDARY SEPARATES INTERPRETATION FROM SETTLEMENT *(DECIDED, P4, 2026-08-16)*
 
 ⛔ **A GLOBAL RESOLVER POISON WOULD INVALIDATE THE PROOF**, because it also kills
 the legitimate pre-settlement identity work the turn needs to produce a
