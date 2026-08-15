@@ -2167,6 +2167,30 @@ Correction · edit · delete · undo · stale answer · repeated correction ·
 multi-field repair · post-settlement repair.
 **EXIT:** every canonical food write can be safely repaired.
 
+#### ⛔ CARRIED IN FROM THE 08-15 CANARY — CANONICAL ROWS CANNOT BE CORRECTED YET
+
+> **Canonical-created food rows cannot yet be corrected through the ordinary
+> interpretation path.** *(observed live, user 26, turn `telegram:9350`)*
+
+```text
+19:07:14  interpreter_output action=update updates=[{entry_id:2992, 200g}]
+19:07:14  correction_apply outcome=applied route=ratio ratio=1.149 cal=329.9
+19:07:14  ERROR cross_owner_mutation_refused entry=2992
+                owner=canonical:create authority=inferred_interpretation writer=None
+19:07:16  tools=update_food_entry:error flags=tool_error voice_profile=recovery
+```
+
+⭐ **THE FIREWALL DID EXACTLY WHAT IT IS FOR** *(Danny, 2026-08-15)*. Entry 2992
+was written `canonical:create` by B-1; the update arrived carrying
+`inferred_interpretation` authority, and an authority mismatch on a canonical
+row is precisely what it must refuse. **Do not reopen the ownership firewall.**
+
+⚠ **WHAT IS MISSING IS A CANONICAL CORRECTION PATH** — one that takes an
+ordinary interpreted correction and translates it into an AUTHORIZED mutation.
+That is this section's work, not the interpretation boundary's. The user-visible
+cost meanwhile is a recovery bubble on a perfectly reasonable correction, so it
+is a real defect with a real owner, deliberately not fixed where it was found.
+
 ### 7  B-2 — REAL MULTI-FOOD MEALS
 
 Restaurant meals · mixed dishes · bowls · sandwiches · sauces · leftovers ·
