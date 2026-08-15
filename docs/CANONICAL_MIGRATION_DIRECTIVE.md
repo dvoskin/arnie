@@ -146,8 +146,82 @@ result, produced by the feature never running.** The corpus's
 `--compare` refuses to interpret a zero-resolution shadow run in either
 direction. ⛔ **Do not start step 5 on the strength of a quiet canary.**
 
-**OWED BY DANNY:** API credits for the corpus run (~2 modes x ~120 turns, plus
-probes).
+#### 0b — ⛔⛔⛔ THE PRODUCER IS NOT REACHABLE FROM AN ORDINARY FOOD TURN *(2026-08-15, MEASURED)*
+
+**THIS BLOCKS STEP 5, AND IT IS THE SESSION'S HEADLINE.** Two runs, same scratch
+database, same `ENTITY_RESOLUTION_MODE=shadow`, minutes apart:
+
+```text
+stamp_canonical_identity CALLED DIRECTLY      4 resolutions written
+  (scripts.prove_memory_addressing)           Помидор -> tomato · творог != corn
+                                              Barebells -> PRODUCT, entity EMPTY
+
+the SAME foods through run_chat_turn          4 food rows written
+  (scripts.corpus_through_the_real_turn)      0 resolutions written
+```
+
+⭐ **THE PRODUCER WORKS. THE ORDINARY TURN PATH NEVER REACHES IT.**
+`stamp_canonical_identity` has ONE call site — `FoodPlanStage.run` — reachable
+only under `TURN_COORDINATOR_MODE=new_execute`, or `new_observe` **with**
+`TURN_COORDINATOR_OBSERVE_DEEP=1`. Production's default is `MODE_LEGACY_ONLY`,
+where `observing()` is False and no stage runs at all.
+
+⛔⛔ **SO A SHADOW CANARY WOULD HAVE REPORTED "NO BEHAVIOUR CHANGE" — THE
+STRONGEST POSSIBLE RESULT — PRODUCED BY THE FEATURE NEVER RUNNING.** §0 step 5
+asks the canary to prove "resolution writes · NO turn behaviour change"; the
+second half would have passed for the worst reason, and the first half is what
+catches it. ⚠ **Do not start step 5 until the producer is on the path an
+ordinary turn takes.** The next substantive engineering step is wiring it there
+— a CODE change, no traffic and no API spend required to decide it.
+
+⭐⭐ **AND NOTE THE SHAPE: THIS IS "A PROVEN CAPABILITY IS NOT AN ADOPTED ONE"
+FOR THE THIRD TIME.** `prove_distinct_reuse` and `prove_memory_addressing` are
+both TRUE and both call one level below the turn. Every gate over the producer
+passes. Nothing asked whether a turn reaches it.
+
+#### 0c — WHAT THE OFF RUN MEASURED, AND ITS ONE FALSIFIED PREDICTION
+
+100 turns · 81 entries · p50 6.0 s · p95 9.6 s. Drift on the comparable basis:
+
+```text
+NON-ENGLISH   29.6%  vs 31.3%   -1.7   ✓
+BARE          8.6%   vs  5.7%   +2.9   ✓
+ARTIFACT      0.0%   vs  1.9%   -1.9   ✓
+MEMORY        34.6%  vs 43.7%   -9.1   ✗
+QUALIFIED     27.2%  vs  7.6%  +19.6   ✗
+BRANDED       0.0%   vs  9.9%   -9.9   ✗
+```
+
+⭐ **THE LAST THREE HAVE ONE CAUSE, AND IT IS A REAL FINDING ABOUT THE SYSTEM,
+NOT A CORPUS DEFECT.** Which populations ever reach a cached row:
+
+```text
+en-staples  16 of 24     plain English food caches, and repetition rescues it
+branded      8 of  8     caches fine HERE
+qualified    2 of 22     modifier-heavy names essentially NEVER cache
+ru           2 of 27     non-English never caches — the fac8f97 containment
+```
+
+⭐⭐ **THE QUALIFIED POPULATION IS UNCACHEABLE, NOT MERELY UNCOVERED.**
+Repetition does not rescue it: retrieval cannot seat "Spicy White Tuna Poke
+Bowl, heavy sauce", so nothing is ever written to memory and the food misses on
+EVERY log, forever. The directive has treated QUALIFIED as a registry-extension
+fix (`split_identity`'s three-word vocabulary). That is still true and it is not
+the whole cost — those 7.6% also never accumulate memory, which is why the
+bucket persists rather than decaying as users repeat themselves.
+
+⚠ **AND THE CORPUS'S OWN PREREGISTERED PREDICTION WAS FALSIFIED, WHICH IS THE
+INSTRUMENT WORKING.** It predicted repeated branded logs would still MISS,
+because 'Barebells Salty Peanut Protein Bar' appears four times among
+production's ten sampled BRANDED entries. Here all 8 branded entries cached.
+So the scratch environment seats candidates production does not — likely
+retrieval (an OFF breaker opened during the run) rather than anything
+structural. **Production's BRANDED miss should therefore be re-read as
+possibly ENVIRONMENTAL, and that is worth checking before the PRODUCT rung is
+built for it in step 10.**
+
+**OWED BY DANNY:** API credits if the corpus is to be re-run after rebalancing.
+⚠ **Not urgent** — steps 5-7 are blocked on §0b, which is a code change.
 
 ### 1 — INTERPRETATION-DERIVED IDENTITY — ⚠ BUILT END TO END, SHIPS DARK *(status 2026-08-15)*
 

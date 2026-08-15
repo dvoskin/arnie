@@ -1,0 +1,942 @@
+event=food_trace_config outcome=unsalted setting=FOOD_TRACE_SALT effect=pseudonyms_reversible
+event=scribe_shadow user=41 counts={'suspicious_unnamed': 1} flagged=[{'tool': 'log_food', 'item': 'Tomato', 'reason': 'on-board <90min — carryover re-fire shape'}] omission_hint=False
+event=off_breaker state=open fails=1 cooldown_s=120 url=https://world.openfoodfacts.org/cgi/search.pl — skipping straight to the fallback
+event=off_breaker state=open fails=1 cooldown_s=120 url=https://world.openfoodfacts.org/cgi/search.pl — skipping straight to the fallback
+event=scribe_shadow user=41 counts={'justified': 1, 'suspicious_unnamed': 1} flagged=[{'tool': 'log_food', 'item': 'Сырники', 'reason': 'on-board <90min — carryover re-fire shape'}] omission_hint=False
+scribe shadow failed (observe-only)
+Traceback (most recent call last):
+  File "/Users/danielvoskin/Code Learn/arnie-food-lane/core/conversation.py", line 2509, in _run_turn
+    getattr(_log_for_tools, "food_entries", None) or [],
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 569, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1096, in get
+    value = self._fire_loader_callables(state, key, passive)
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1131, in _fire_loader_callables
+    return self.callable_(state, passive)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 978, in _load_for_state
+    return self._emit_lazyload(
+           ~~~~~~~~~~~~~~~~~~~^
+        session,
+        ^^^^^^^^
+    ...<7 lines>...
+        execution_options,
+        ^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 1141, in _emit_lazyload
+    result = session.execute(
+        stmt, params, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2372, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2270, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2368, in _handle_dbapi_exception
+    raise exc_info[1].with_traceback(exc_info[2])
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/dialects/postgresql/psycopg.py", line 642, in execute
+    result = self.await_(self._cursor.execute(query, params, **kw))
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 123, in await_only
+    raise exc.MissingGreenlet(
+    ...<2 lines>...
+    )
+sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
+event=total_claim_phantom user=42 claimed=1076 db=0
+event=orchestrator_rescue ios:42 tools=['log_food']
+event=log_rescue outcome=logged trigger=phantom ios:42 tools=['log_food']
+scribe shadow failed (observe-only)
+Traceback (most recent call last):
+  File "/Users/danielvoskin/Code Learn/arnie-food-lane/core/conversation.py", line 2509, in _run_turn
+    getattr(_log_for_tools, "food_entries", None) or [],
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 569, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1096, in get
+    value = self._fire_loader_callables(state, key, passive)
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1131, in _fire_loader_callables
+    return self.callable_(state, passive)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 978, in _load_for_state
+    return self._emit_lazyload(
+           ~~~~~~~~~~~~~~~~~~~^
+        session,
+        ^^^^^^^^
+    ...<7 lines>...
+        execution_options,
+        ^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 1141, in _emit_lazyload
+    result = session.execute(
+        stmt, params, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2372, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2270, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2368, in _handle_dbapi_exception
+    raise exc_info[1].with_traceback(exc_info[2])
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/dialects/postgresql/psycopg.py", line 642, in execute
+    result = self.await_(self._cursor.execute(query, params, **kw))
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 123, in await_only
+    raise exc.MissingGreenlet(
+    ...<2 lines>...
+    )
+sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
+event=total_claim_phantom user=39 claimed=1726 db=214
+event=orchestrator_rescue ios:39 tools=['log_food']
+event=log_rescue outcome=logged trigger=phantom ios:39 tools=['log_food']
+scribe shadow failed (observe-only)
+Traceback (most recent call last):
+  File "/Users/danielvoskin/Code Learn/arnie-food-lane/core/conversation.py", line 2509, in _run_turn
+    getattr(_log_for_tools, "food_entries", None) or [],
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 569, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1096, in get
+    value = self._fire_loader_callables(state, key, passive)
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1131, in _fire_loader_callables
+    return self.callable_(state, passive)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 978, in _load_for_state
+    return self._emit_lazyload(
+           ~~~~~~~~~~~~~~~~~~~^
+        session,
+        ^^^^^^^^
+    ...<7 lines>...
+        execution_options,
+        ^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 1141, in _emit_lazyload
+    result = session.execute(
+        stmt, params, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2372, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2270, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2368, in _handle_dbapi_exception
+    raise exc_info[1].with_traceback(exc_info[2])
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/dialects/postgresql/psycopg.py", line 642, in execute
+    result = self.await_(self._cursor.execute(query, params, **kw))
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 123, in await_only
+    raise exc.MissingGreenlet(
+    ...<2 lines>...
+    )
+sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
+event=off_breaker state=open fails=1 cooldown_s=120 url=https://world.openfoodfacts.org/cgi/search.pl — skipping straight to the fallback
+Dead-end reply for ios:41: 'Шоколад logged.|||Всё ещё жду ответ по котлетам, домашние ил' — repairing
+TURN_HEALTH ios:41 flags=dead_end
+food composer model call failed: exceeded 6.0s of turn budget
+event=total_claim_phantom user=39 claimed=1933 db=1015
+event=log_rescue outcome=unrescued ios:39 — model fired no tool
+Quality repair fired for ios:39 (streaming_dead_end=False, logging_dead_end=False, mechanics=False)
+TOTAL_MISMATCH ios:39: stated=1933 db=1015
+TURN_HEALTH ios:39 flags=total_mismatch
+TURN_HEALTH ios:42 flags=phantom_log_claim
+scribe shadow failed (observe-only)
+Traceback (most recent call last):
+  File "/Users/danielvoskin/Code Learn/arnie-food-lane/core/conversation.py", line 2509, in _run_turn
+    getattr(_log_for_tools, "food_entries", None) or [],
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 569, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1096, in get
+    value = self._fire_loader_callables(state, key, passive)
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1131, in _fire_loader_callables
+    return self.callable_(state, passive)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 978, in _load_for_state
+    return self._emit_lazyload(
+           ~~~~~~~~~~~~~~~~~~~^
+        session,
+        ^^^^^^^^
+    ...<7 lines>...
+        execution_options,
+        ^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 1141, in _emit_lazyload
+    result = session.execute(
+        stmt, params, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2372, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2270, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2368, in _handle_dbapi_exception
+    raise exc_info[1].with_traceback(exc_info[2])
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/dialects/postgresql/psycopg.py", line 642, in execute
+    result = self.await_(self._cursor.execute(query, params, **kw))
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 123, in await_only
+    raise exc.MissingGreenlet(
+    ...<2 lines>...
+    )
+sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
+event=total_claim_phantom user=39 claimed=2143 db=385
+event=orchestrator_rescue ios:39 tools=['log_food']
+event=log_rescue outcome=logged trigger=phantom ios:39 tools=['log_food']
+event=off_breaker state=open fails=1 cooldown_s=120 url=https://world.openfoodfacts.org/cgi/search.pl — skipping straight to the fallback
+scribe shadow failed (observe-only)
+Traceback (most recent call last):
+  File "/Users/danielvoskin/Code Learn/arnie-food-lane/core/conversation.py", line 2509, in _run_turn
+    getattr(_log_for_tools, "food_entries", None) or [],
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 569, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1096, in get
+    value = self._fire_loader_callables(state, key, passive)
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1131, in _fire_loader_callables
+    return self.callable_(state, passive)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 978, in _load_for_state
+    return self._emit_lazyload(
+           ~~~~~~~~~~~~~~~~~~~^
+        session,
+        ^^^^^^^^
+    ...<7 lines>...
+        execution_options,
+        ^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 1141, in _emit_lazyload
+    result = session.execute(
+        stmt, params, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2372, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2270, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2368, in _handle_dbapi_exception
+    raise exc_info[1].with_traceback(exc_info[2])
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/dialects/postgresql/psycopg.py", line 642, in execute
+    result = self.await_(self._cursor.execute(query, params, **kw))
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 123, in await_only
+    raise exc.MissingGreenlet(
+    ...<2 lines>...
+    )
+sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
+event=total_claim_phantom user=39 claimed=2343 db=430
+event=log_rescue outcome=unrescued ios:39 — model fired no tool
+Quality repair fired for ios:39 (streaming_dead_end=False, logging_dead_end=False, mechanics=False)
+scribe shadow failed (observe-only)
+Traceback (most recent call last):
+  File "/Users/danielvoskin/Code Learn/arnie-food-lane/core/conversation.py", line 2509, in _run_turn
+    getattr(_log_for_tools, "food_entries", None) or [],
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 569, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1096, in get
+    value = self._fire_loader_callables(state, key, passive)
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1131, in _fire_loader_callables
+    return self.callable_(state, passive)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 978, in _load_for_state
+    return self._emit_lazyload(
+           ~~~~~~~~~~~~~~~~~~~^
+        session,
+        ^^^^^^^^
+    ...<7 lines>...
+        execution_options,
+        ^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 1141, in _emit_lazyload
+    result = session.execute(
+        stmt, params, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2372, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2270, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2368, in _handle_dbapi_exception
+    raise exc_info[1].with_traceback(exc_info[2])
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/dialects/postgresql/psycopg.py", line 642, in execute
+    result = self.await_(self._cursor.execute(query, params, **kw))
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 123, in await_only
+    raise exc.MissingGreenlet(
+    ...<2 lines>...
+    )
+sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
+event=total_claim_phantom user=39 claimed=2802 db=385
+event=orchestrator_rescue ios:39 tools=['log_food']
+event=log_rescue outcome=logged trigger=phantom ios:39 tools=['log_food']
+event=total_claim_phantom user=39 claimed=2808 db=390
+event=log_rescue outcome=unrescued ios:39 — model fired no tool
+Quality repair fired for ios:39 (streaming_dead_end=False, logging_dead_end=False, mechanics=False)
+scribe shadow failed (observe-only)
+Traceback (most recent call last):
+  File "/Users/danielvoskin/Code Learn/arnie-food-lane/core/conversation.py", line 2509, in _run_turn
+    getattr(_log_for_tools, "food_entries", None) or [],
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 569, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1096, in get
+    value = self._fire_loader_callables(state, key, passive)
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1131, in _fire_loader_callables
+    return self.callable_(state, passive)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 978, in _load_for_state
+    return self._emit_lazyload(
+           ~~~~~~~~~~~~~~~~~~~^
+        session,
+        ^^^^^^^^
+    ...<7 lines>...
+        execution_options,
+        ^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 1141, in _emit_lazyload
+    result = session.execute(
+        stmt, params, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2372, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2270, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2368, in _handle_dbapi_exception
+    raise exc_info[1].with_traceback(exc_info[2])
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/dialects/postgresql/psycopg.py", line 642, in execute
+    result = self.await_(self._cursor.execute(query, params, **kw))
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 123, in await_only
+    raise exc.MissingGreenlet(
+    ...<2 lines>...
+    )
+sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
+scribe shadow failed (observe-only)
+Traceback (most recent call last):
+  File "/Users/danielvoskin/Code Learn/arnie-food-lane/core/conversation.py", line 2509, in _run_turn
+    getattr(_log_for_tools, "food_entries", None) or [],
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 569, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1096, in get
+    value = self._fire_loader_callables(state, key, passive)
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/attributes.py", line 1131, in _fire_loader_callables
+    return self.callable_(state, passive)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 978, in _load_for_state
+    return self._emit_lazyload(
+           ~~~~~~~~~~~~~~~~~~~^
+        session,
+        ^^^^^^^^
+    ...<7 lines>...
+        execution_options,
+        ^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/strategies.py", line 1141, in _emit_lazyload
+    result = session.execute(
+        stmt, params, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2372, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/session.py", line 2270, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/orm/context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2368, in _handle_dbapi_exception
+    raise exc_info[1].with_traceback(exc_info[2])
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/dialects/postgresql/psycopg.py", line 642, in execute
+    result = self.await_(self._cursor.execute(query, params, **kw))
+  File "/Users/danielvoskin/Code Learn/arnie/.venv/lib/python3.14/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 123, in await_only
+    raise exc.MissingGreenlet(
+    ...<2 lines>...
+    )
+sqlalchemy.exc.MissingGreenlet: greenlet_spawn has not been called; can't call await_only() here. Was IO attempted in an unexpected place? (Background on this error at: https://sqlalche.me/e/20/xd2s)
+event=off_breaker state=open fails=1 cooldown_s=120 url=https://world.openfoodfacts.org/cgi/search.pl — skipping straight to the fallback
+TURN_HEALTH ios:39 flags=phantom_log_claim
+Dead-end reply for ios:41: 'All good 🙂' — repairing
+TURN_HEALTH ios:41 flags=dead_end
+
+  CORPUS `production_like_v1` · mode=off · through core.chat_service.run_chat_turn
+
+    100 turns driven · 81 entries written · 0 turn failures
+
+       16   19.8%   MEMORY
+        0    0.0%   ARTIFACT
+       12   14.8%   CACHED_BY_THIS_TURN
+       53   65.4%   ESTIMATE_OR_REFUSE
+
+       24   29.6%   NON-ENGLISH  (interpretation boundary)
+       22   27.2%   QUALIFIED    (identity boundary — modifiers)
+        7    8.6%   BARE + UNCOVERED (a real artifact gap)
+
+    MEMORY, TWO WAYS — at settle 19.8%  ·  addressable after 34.6%
+    (production's 43.7% is the SECOND kind — it measures rows long after their
+     own turn cached them, so only the second is comparable)
+
+    REALIZED vs PRODUCTION (comparable basis, points of drift)
+    ⛔  MEMORY              34.6%  vs  43.7%   -9.1
+       ARTIFACT             0.0%  vs   1.9%   -1.9
+    ⛔  NON-ENGLISH          0.0%  vs  31.3%   -31.3
+    ⛔  BRANDED              0.0%  vs   9.9%   -9.9
+    ⛔  QUALIFIED            0.0%  vs   7.6%   -7.6
+    ⛔  BARE+UNCOVERED       0.0%  vs   5.7%   -5.7
+
+    -> NOT PRODUCTION-LIKE (tolerance ±3.0 pts)
+
+    latency  p50 6020 ms · p95 9615 ms · max 14934 ms
+    resolutions written 0 
+
+    ⛔ 19 CORPUS ITEM(S) NEVER PRODUCED A ROW — each is an entry missing from the mix
+      establish              "a serving of Archer's Jersey"
+      repeat                 'one more one Barebells Salty Peanut Protein Bar'
+      repeat                 'one more a cup of White rice'
+      repeat                 'another 150g of Ground turkey, 94% lean, pan-cooked'
+      repeat                 'one more a medium portion of French fries'
+      repeat                 'one more a 3-egg plate of Scrambled eggs with pepper'
+      repeat                 'a cup of White rice again'
+      repeat                 'one more a cup of Home fries with peppers and onions'
+      repeat                 'one more a regular Poke rice bowl with crab mix'
+      repeat                 'a medium portion of French fries again'
+      repeat                 'one more 150g of Ground turkey, 94% lean, pan-cooked'
+      repeat                 'a further a cup of White rice'
+      establish              '150 г Селёдка под шубой'
+      repeat                 'a 3-egg plate of Scrambled eggs with peppers, onions'
+      … 5 more (see the JSON record)
+
+    ANTI-VACUITY
+      PASS  turns_reached_the_model
+      PASS  rows_were_actually_written
+      PASS  memory_was_earned_by_repetition
+      PASS  memory_rung_returned_evidence
+      ⛔ FAIL  artifact_rung_returned_evidence
+      PASS  off_wrote_no_resolutions
+
+    DECLARED vs ACTUAL — 69 divergence(s)
+      BARE+UNCOVERED   -> CACHED_BY_THIS_TURN  'Chicken breast'
+      QUALIFIED        -> QUALIFIED    (identity boundary — modifiers) 'Salmon, pan-cooked with oil'
+      NON-ENGLISH      -> CACHED_BY_THIS_TURN  'Tomato'
+      BRANDED          -> CACHED_BY_THIS_TURN  'Barebells Salty Peanut Protein Bar'
+      BARE+UNCOVERED   -> BARE + UNCOVERED (a real artifact gap) 'White rice'
+      QUALIFIED        -> CACHED_BY_THIS_TURN  'Ground turkey, 96% lean'
+      NON-ENGLISH      -> NON-ENGLISH  (interpretation boundary) 'Пицца сырная'
+      BRANDED          -> MEMORY               'Barebells Salty Peanut Protein Bar'
+      BARE+UNCOVERED   -> CACHED_BY_THIS_TURN  'Almonds'
+      QUALIFIED        -> QUALIFIED    (identity boundary — modifiers) 'Scrambled eggs with peppers, onion'
+      NON-ENGLISH      -> NON-ENGLISH  (interpretation boundary) 'Карбонара'
+      BRANDED          -> CACHED_BY_THIS_TURN  'Barebells Caramel Cashew Protein B'
+      … 57 more (see the JSON record)
+
+    LIMITS
+      · the MEMORY count is guarded by a PRE-TURN key snapshot; without it the turn's own cache write reads as coverage
+      · CACHED_BY_THIS_TURN is not a rung — it is the mechanism the NEXT log reaches MEMORY by, reported separately so neither is inflated
+      · one item per body turn, so entries ~= turns; production averages more
+      · synthetic phrasing around real production food names
+      · latency is this machine against the real providers, not production
+
+  recorded -> /Users/danielvoskin/Code Learn/arnie-food-lane/data/corpus/run_off.json
+

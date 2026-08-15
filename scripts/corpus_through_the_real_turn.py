@@ -549,6 +549,21 @@ def _report(corpus, observations, unmatched_rows, latencies, failures,
     realized_comparable = {name: round(100 * count / total, 1)
                            for name, count in {**unguarded, **buckets}.items()}
 
+    # ⛔ THE BUCKET NAMES AND THE TARGET NAMES ARE NOT THE SAME STRINGS, and the
+    # first full run reported every bucket as 0.0% and flagged all four ⛔
+    # because of it — while the tally directly above showed 24 · 22 · 7. A drift
+    # table that reads a missing key as a measured zero does not under-report,
+    # it INVENTS a finding. Keyed off the target names, which are the short ones.
+    for short in list(corpus["target_mix_pct"]):
+        if short in realized_comparable:
+            continue
+        head = short.split("+")[0].strip()
+        for long, value in list(realized_comparable.items()):
+            if long.startswith(head) and long not in corpus["target_mix_pct"]:
+                realized_comparable[short] = value
+                break
+        realized_comparable.setdefault(short, 0.0)
+
     target = corpus["target_mix_pct"]
     drift = {name: round(realized_comparable.get(name, 0.0) - pct, 1)
              for name, pct in target.items()}
@@ -633,7 +648,12 @@ def _anti_vacuity(entries, rungs, resolutions, mode: str,
         # ⛔ FIRST, BECAUSE IT EXPLAINS EVERY OTHER FAILURE BELOW IT. A turn that
         # cannot reach the model returns a recovery bubble and raises nothing,
         # so an outage reports as a clean zero across the board.
-        "turns_reached_the_model": len(recovered) < max(turns // 4, 1),
+        # ⚠ A MAJORITY, NOT A PERFECT RECORD. This was `turns // 4` and it read
+        # a FOUR-turn run with ONE 60-second turn-budget timeout as "the run
+        # never happened" — while all four rows had been written. A guard that
+        # cries outage at a single slow turn gets ignored, and then it is not a
+        # guard. What it must separate is an outage from a bad day.
+        "turns_reached_the_model": len(recovered) < max(turns // 2, 1),
         # A corpus that wrote no rows would report a beautifully empty mix.
         "rows_were_actually_written": len(entries) > 0,
         # If retrieval never seats a candidate, nothing caches, and every
