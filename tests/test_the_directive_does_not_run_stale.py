@@ -113,19 +113,37 @@ def test_the_board_does_not_claim_a_closed_state_for_open_work():
     # pricing unbuilt: the blocker is missing SEMANTIC STATE, not a missing
     # lifecycle, and a board that forgot that distinction would re-open B-1.6
     # to chase a pricing problem.
-    # ⭐ THE ROADMAP IS THE FIRST SECTION, and the next session starts at
-    # PHASE 0 — the pricing AUTHORITY MIGRATION, not at a B slice. A reader
-    # who lands on B-1.7a and starts building would be laying policy on an
-    # evidence substrate that is not reproducible at build time.
+    # PHASE 0 CLOSED 2026-08-14 (`a4b6d23`, re-frozen `bcb7b45`), so the
+    # "authority migration is next" assertion it held is retired HERE, in the
+    # commit that re-sequences the roadmap — which is the mechanism.
+    #
+    # ⭐⭐⭐ WHAT REPLACES IT IS A STRONGER CLAIM THAN A PHASE NAME. Danny froze
+    # a MEASURED-ADOPTION order on 2026-08-14, and the thing a stale copy-paste
+    # would quietly revert is not the roadmap's position — it is the REASON the
+    # oils moved. Measured on 691 real production entries, the artifact is the
+    # deciding rung on 13 of them (1.9%), while the non-English/modifier miss
+    # bucket is 30.4%. A reader who lands on B-1.7a and starts building would
+    # be widening what the spine can theoretically do while ordinary turns
+    # still cannot reach it — the exact conflation Phase 0's closure taught.
+    #
+    # So the gate asserts the ORDER and the MEASUREMENT together: either can be
+    # edited, but not silently, and not without the other.
     text_head = text[:text.index("## End goal")]
-    assert "THE ROADMAP — READ THIS FIRST" in text_head, (
-        "the roadmap is no longer the first section of the directive — it "
-        "must precede everything, because the next session starts at a phase "
-        "that is not where the board's detail sections would send them")
-    assert "PRICING AUTHORITY MIGRATION" in text_head, (
-        "the roadmap no longer names the authority migration as the immediate "
-        "next work. Build-time qualification still holds stochastic authority; "
-        "starting anywhere else builds on a moving substrate")
+    assert "THE FROZEN ROADMAP — MEASURED-ADOPTION ORDER" in text_head, (
+        "the frozen roadmap is no longer the first section of the directive — "
+        "it must precede everything, because the sequencing was re-derived "
+        "from measurement and the detail sections below it still carry the "
+        "old specification order")
+    assert "INTERPRETATION BOUNDARY" in text_head, (
+        "the roadmap no longer names the interpretation boundary as the "
+        "immediate next work. Canonical identity is still built from the "
+        "SURFACE STRING, so 30.4% of real food cannot reach the spine at all — "
+        "starting anywhere else widens a spine real turns do not arrive at")
+    assert "1.9%" in text_head, (
+        "the roadmap no longer carries the measurement that re-sequenced it. "
+        "Without 'the artifact decides 1.9% of real food' the oils read as an "
+        "arbitrary deferral instead of a measured one, and the next reader "
+        "restores the specification order in good faith")
 
     assert "B-1.7" in board, (
         "the board no longer tracks B-1.7 — added-fat identity, materiality "

@@ -15,7 +15,110 @@
 > `tests/test_the_canonical_invariants.py`; this document is the sequencing
 > authority.
 
-## ⏭ THE ROADMAP — READ THIS FIRST *(Danny, 2026-08-11; revised 2026-08-14)*
+## ⏭⏭⏭ THE FROZEN ROADMAP — MEASURED-ADOPTION ORDER *(Danny, 2026-08-14. THIS SUPERSEDES THE SEQUENCING BELOW.)*
+
+> **We are no longer building B in SPECIFICATION order. We are building it in
+> MEASURED-ADOPTION order.** The spine is good. Now we make sure real user
+> behaviour actually reaches it before we keep widening what the spine can
+> theoretically do.
+
+**THE IMMEDIATE GOAL IS NO LONGER "FINISH THE FIVE OILS."** It is: get ordinary
+real food turns onto the canonical spine reliably, then expand what that spine
+can do.
+
+```text
+ 1  INTERPRETATION BOUNDARY          <- P0, next
+ 2  general canonical settlement owner
+ 3  RE-MEASURE real coverage         <- decides step 4; do not skip to features
+ 4  next largest measured gap        (expected: PRODUCT/branded rung)
+ 5  B-1.7a  added-fat identity       (the oils — now that turns can consume them)
+ 6  B-1.7b  materiality / ask policy
+ 7  B-1.7c  composition
+ 8  B-1.8   correction / repair
+ 9  B-2     messy real food
+10  PROMOTE canonical · DELETE legacy    -> one food system
+11  C  conversation / one voice      (users cannot tell which lane ran)
+12  D  personalization / memory      (metric: clarifications per meal FALLS)
+13  E  coaching intelligence         (what happened -> means -> matters next)
+14  F  proactive agency              (knowing when to SPEAK and when to STAY SILENT)
+```
+
+**WHY THE OILS MOVED.** Measured 2026-08-14 on 691 real production entries: the
+artifact is the DECIDING rung on **13 of them — 1.9%**. Only the 5.6%
+"bare + uncovered" bucket is what adding artifact identities fixes, and the
+oils live in it. Landing all five moves real coverage under one point. See
+§3a.2 for the full breakdown and the instrument's honest limits.
+
+### 1 — INTERPRETATION-DERIVED IDENTITY *(the next P0)*
+
+> **THE INVARIANT: surface language is for DISPLAY and AUDIT. Canonical
+> identity comes from INTERPRETED FOOD MEANING.**
+
+Target cases: non-English foods · modifiers like `white rice` · cooked/steamed
+wording · synonymous forms · **foods where a literal translation would be
+wrong**.
+
+```text
+EXIT  rerun the 691-entry coverage instrument
+      materially reduce the 30.4% non-English / modifier miss bucket
+      NO evidence that normalization collapses distinct foods incorrectly
+```
+
+⚠ That third line is the one that can fail silently, and it is the reason this
+cannot be a translation table: `творог` is not "cottage cheese", and the
+interpreter prompt ALREADY warns that renaming a food can change which grade is
+the default. The prompt is right. The defect is that identity is built from the
+surface string at all.
+
+### 2 — GENERAL CANONICAL SETTLEMENT OWNER
+
+```text
+ordinary food turn  ->  ResolvedMeal -> canonical pricing inputs -> assemble()
+                        -> price() -> commit_or_load_existing()
+                        -> write_canonical_meal()
+
+NOT                 ->  ordinary turn -> legacy _analyze_food -> legacy settlement
+```
+
+Acceptance stays **A1–A10** (§3a.2). **EXIT: a normal food turn is canonically
+owned end to end** — ⭐ *the true promotion boundary B-1 never claimed to have
+completed.*
+
+### 3 — RE-MEASURE, AND DO NOT JUMP BACK INTO FEATURE WORK
+
+Rerun the same historical analysis after 1–2, broken down by MEMORY · ARTIFACT ·
+PRODUCT · uncovered · refusal/estimate · language/modifier miss. **That
+measurement decides what comes next** — not this document.
+
+### 4 — THE NEXT LARGEST MEASURED GAP *(expected: PRODUCT)*
+
+`Rung.PRODUCT` exists and ranks second; `assemble()` hard-codes
+`"product": None`. Expected sequence: product evidence producer → branded-food
+fixtures → consumer-side proof → coverage rerun. **Only after this is raw
+artifact expansion likely to become the highest-value move again.**
+
+### 5–7 — B-1.7a / b / c
+
+**a** oils: regenerate → prior-identity diff → deterministic pricing →
+added-fat identity clarification. **b** materiality: outputs `ASK` ·
+`SAFE_TO_ESTIMATE` · `ACCEPT` · `REFUSE`; permanent fixtures bare egg · bare
+mackerel · added oil · cooking method · unknown preparation. ⭐ **THE EXISTENCE
+OF A RANKER WINNER NEVER PROVES CLARIFICATION IS UNNECESSARY.** **c**
+composition: `chicken + olive oil → one meal from two canonical foods`.
+
+### 8–10 — repair, messy food, promotion
+
+**8** every canonical write must be repairable: "actually 8 oz" · "fried, not
+grilled" · "no oil" · delete · undo · stale correction · correction after
+settlement. **9** stop testing neat examples — mixed meals, restaurant food,
+multiple foods per message, sauces, leftovers, partial portions, vague amounts,
+photo-then-text. **10** canary → rollback proof → promote → delete the legacy
+writer, pricer and duplicate semantic owners. **Then there is ONE food system,
+and that is the real completion of B.**
+
+---
+
+## ⏭ THE PRIOR ROADMAP *(Danny, 2026-08-11; revised 2026-08-14 — SUPERSEDED ABOVE for sequencing; the Phase 0 detail below remains accurate)*
 
 **THE NEXT SESSION STARTS AT THE AUTHORITATIVE REBUILD — PHASE 0 STEP 1.**
 Not at B-1.7a, and not at any B slice. Phase 0.9 is applied, G1/G2/G3 are

@@ -1,0 +1,97 @@
+{
+ "entries": 691,
+ "window_days": 30,
+ "rungs": {
+  "MEMORY": 308,
+  "ARTIFACT": 13,
+  "ESTIMATE_OR_REFUSE": 370
+ },
+ "evidence_backed": 321,
+ "evidence_backed_pct": 46.5,
+ "artifact_decides": 13,
+ "artifact_decides_pct": 1.9,
+ "artifact_outranked_by_memory": 15,
+ "artifact_identities": {
+  "chicken|grilled": 2,
+  "potato|fried": 1,
+  "beef|grilled": 1,
+  "oats|": 1,
+  "chicken|fried": 1,
+  "beef|": 1,
+  "salmon|": 3,
+  "asparagus|": 1,
+  "cauliflower|": 2
+ },
+ "uncovered_buckets": {
+  "NON-ENGLISH  (interpretation boundary)": {
+   "count": 210,
+   "pct": 30.4,
+   "samples": [
+    "Пицца сырная",
+    "Карбонара",
+    "Листья салата",
+    "Помидор",
+    "Котлеты куриные",
+    "Макароны с томатом",
+    "Шоколад",
+    "Капучино на обычном молоке",
+    "Помидор",
+    "Хамон"
+   ]
+  },
+  "BRANDED      (PRODUCT rung, no producer)": {
+   "count": 68,
+   "pct": 9.8,
+   "samples": [
+    "Barebells Caramel Cashew Protein Bar",
+    "Barebells Salty Peanut Protein Bar",
+    "Royo Everything Bagel",
+    "Barebells Salty Peanut Protein Bar",
+    "Barebells Salty Peanut Protein Bar",
+    "Archer's Jersey",
+    "Quest Protein Chips Sour Cream & Onion",
+    "Royo Everything Bagel",
+    "Quest Protein Chips Salsa Verde",
+    "Barebells Salty Peanut Protein Bar"
+   ]
+  },
+  "QUALIFIED    (identity boundary — modifiers)": {
+   "count": 53,
+   "pct": 7.7,
+   "samples": [
+    "Salmon, pan-cooked with oil",
+    "Spicy White Tuna Poke Bowl, heavy sauce",
+    "Poke rice bowl with crab mix",
+    "Home fries with peppers and onions",
+    "Scrambled eggs with peppers, onions, and cheese",
+    "Grilled kielbasa sausage",
+    "Ground turkey, 96% lean",
+    "Ground turkey, 94% lean, pan-cooked",
+    "Smoke test chicken",
+    "Cheat day burger platter"
+   ]
+  },
+  "BARE + UNCOVERED (a real artifact gap)": {
+   "count": 39,
+   "pct": 5.6,
+   "samples": [
+    "Eggplant",
+    "French fries",
+    "Chicken wings",
+    "Almonds",
+    "Black coffee",
+    "White rice",
+    "White rice",
+    "Chicken breast",
+    "Coffee",
+    "Parmesan cheese"
+   ]
+  }
+ },
+ "instrument_limits": [
+  "counts ENTRIES, not turns",
+  "reads parsed_food_name; settle time passes `identity`",
+  "the BRANDED bucket uses the _looks_branded HEURISTIC",
+  "reports which rung is REACHED, never whether it would be RIGHT"
+ ]
+}
