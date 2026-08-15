@@ -36,7 +36,22 @@
     "hours or days later; here it is seconds. So the repeats carry the add-intent",
     "a real user supplies at that moment — 'another', 'again', 'more', a changed",
     "portion. Reverting them would silently delete the entire MEMORY population",
-    "and report it as a coverage finding."
+    "and report it as a coverage finding.",
+    "",
+    "⛔⛔⛔ EVERY BODY UTTERANCE CARRIES A PORTION, AND THAT IS THE THIRD THING THE",
+    "RUNS TAUGHT. A bare mention does not log — it ASKS. 'How much ground turkey,",
+    "roughly?' · 'Один кусок взяла или два?' — conversationally, NOT through the",
+    "structured pending-question path, which is why grepping the log for",
+    "clarification signals found nothing at all.",
+    "",
+    "⭐ AND THE ASKS ACCUMULATE: 'We've got quite a stack now, salmon, turkey, eggs,",
+    "and home fries all waiting on details.' One unanswered ask blocks every later",
+    "turn for that user, so a single bare mention silently truncates the run.",
+    "",
+    "⭐⭐ SO THE ASK/ANSWER LOOP MOVED TO THE PROBES, WHERE IT IS THE SUBJECT",
+    "RATHER THAN A CONFOUND. The body exists to measure the RUNG MIX; letting an",
+    "unanswered question decide which entries exist would measure the",
+    "conversation instead. P8 exercises the loop deliberately."
   ],
   "weighted_by": {
     "source": "data/coverage/coverage_last_30_days_through_the_rung.json",
@@ -93,700 +108,700 @@
   "body": [
     {
       "user": "en-staples",
-      "text": "200g chicken breast",
+      "text": "200g of Chicken breast",
       "food": "Chicken breast",
       "declared": "BARE+UNCOVERED",
       "role": "establish"
     },
     {
       "user": "qualified",
-      "text": "salmon, pan-cooked with oil",
+      "text": "180g of Salmon, pan-cooked with oil",
       "food": "Salmon, pan-cooked with oil",
       "declared": "QUALIFIED",
       "role": "establish"
     },
     {
       "user": "ru",
-      "text": "Помидор",
+      "text": "один Помидор",
       "food": "Помидор",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "branded",
-      "text": "Barebells Salty Peanut Protein Bar",
+      "text": "one Barebells Salty Peanut Protein Bar",
       "food": "Barebells Salty Peanut Protein Bar",
       "declared": "BRANDED",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "a cup of white rice",
+      "text": "a cup of White rice",
       "food": "White rice",
       "declared": "BARE+UNCOVERED",
       "role": "establish"
     },
     {
       "user": "qualified",
-      "text": "ground turkey, 96% lean",
+      "text": "150g of Ground turkey, 96% lean",
       "food": "Ground turkey, 96% lean",
       "declared": "QUALIFIED",
       "role": "establish"
     },
     {
       "user": "ru",
-      "text": "ещё один помидор",
+      "text": "ещё один Помидор",
       "food": "Помидор",
       "declared": "NON-ENGLISH",
       "role": "repeat-that-cannot-hit"
     },
     {
       "user": "branded",
-      "text": "another Barebells Salty Peanut Protein Bar",
+      "text": "another one Barebells Salty Peanut Protein Bar",
       "food": "Barebells Salty Peanut Protein Bar",
       "declared": "BRANDED",
       "role": "repeat"
     },
     {
       "user": "en-staples",
-      "text": "a handful of almonds",
+      "text": "30g of Almonds",
       "food": "Almonds",
       "declared": "BARE+UNCOVERED",
       "role": "establish"
     },
     {
       "user": "qualified",
-      "text": "scrambled eggs with peppers, onions, and cheese",
+      "text": "a 3-egg plate of Scrambled eggs with peppers, onions, and cheese",
       "food": "Scrambled eggs with peppers, onions, and cheese",
       "declared": "QUALIFIED",
       "role": "establish"
     },
     {
       "user": "ru",
-      "text": "Пицца сырная",
+      "text": "один кусок Пицца сырная",
       "food": "Пицца сырная",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "branded",
-      "text": "Barebells Caramel Cashew Protein Bar",
+      "text": "one Barebells Caramel Cashew Protein Bar",
       "food": "Barebells Caramel Cashew Protein Bar",
       "declared": "BRANDED",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "black coffee",
+      "text": "a large Black coffee",
       "food": "Black coffee",
       "declared": "BARE+UNCOVERED",
       "role": "establish"
     },
     {
       "user": "qualified",
-      "text": "home fries with peppers and onions",
+      "text": "a cup of Home fries with peppers and onions",
       "food": "Home fries with peppers and onions",
       "declared": "QUALIFIED",
       "role": "establish"
     },
     {
       "user": "ru",
-      "text": "ещё кусок пиццы сырной",
+      "text": "ещё один кусок Пицца сырная",
       "food": "Пицца сырная",
       "declared": "NON-ENGLISH",
       "role": "repeat-that-cannot-hit"
     },
     {
       "user": "branded",
-      "text": "Quest Protein Chips Sour Cream & Onion",
+      "text": "a bag of Quest Protein Chips Sour Cream & Onion",
       "food": "Quest Protein Chips Sour Cream & Onion",
       "declared": "BRANDED",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "french fries",
+      "text": "a medium portion of French fries",
       "food": "French fries",
       "declared": "BARE+UNCOVERED",
       "role": "establish"
     },
     {
       "user": "qualified",
-      "text": "grilled kielbasa sausage",
+      "text": "100g of Grilled kielbasa sausage",
       "food": "Grilled kielbasa sausage",
       "declared": "QUALIFIED",
       "role": "establish"
     },
     {
       "user": "ru",
-      "text": "Карбонара",
+      "text": "порция Карбонара",
       "food": "Карбонара",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "branded",
-      "text": "Quest Protein Chips Salsa Verde",
+      "text": "a bag of Quest Protein Chips Salsa Verde",
       "food": "Quest Protein Chips Salsa Verde",
       "declared": "BRANDED",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "grilled eggplant",
+      "text": "150g of Eggplant",
       "food": "Eggplant",
       "declared": "BARE+UNCOVERED",
       "role": "establish"
     },
     {
       "user": "qualified",
-      "text": "poke rice bowl with crab mix",
+      "text": "a regular Poke rice bowl with crab mix",
       "food": "Poke rice bowl with crab mix",
       "declared": "QUALIFIED",
       "role": "establish"
     },
     {
       "user": "ru",
-      "text": "ещё порция карбонары",
+      "text": "ещё порция Карбонара",
       "food": "Карбонара",
       "declared": "NON-ENGLISH",
       "role": "repeat-that-cannot-hit"
     },
     {
       "user": "branded",
-      "text": "Royo Everything Bagel",
+      "text": "one Royo Everything Bagel",
       "food": "Royo Everything Bagel",
       "declared": "BRANDED",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "another 180g of chicken breast",
+      "text": "another 200g of Chicken breast",
       "food": "Chicken breast",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "ground turkey, 94% lean, pan-cooked",
+      "text": "150g of Ground turkey, 94% lean, pan-cooked",
       "food": "Ground turkey, 94% lean, pan-cooked",
       "declared": "QUALIFIED",
       "role": "establish"
     },
     {
       "user": "ru",
-      "text": "Листья салата",
+      "text": "50 г Листья салата",
       "food": "Листья салата",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "branded",
-      "text": "another Royo Everything Bagel",
+      "text": "another one Royo Everything Bagel",
       "food": "Royo Everything Bagel",
       "declared": "BRANDED",
       "role": "repeat"
     },
     {
       "user": "en-staples",
-      "text": "another cup of white rice",
+      "text": "another a cup of White rice",
       "food": "White rice",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "spicy white tuna poke bowl, heavy sauce",
+      "text": "a regular Spicy White Tuna Poke Bowl, heavy sauce",
       "food": "Spicy White Tuna Poke Bowl, heavy sauce",
       "declared": "QUALIFIED",
       "role": "establish"
     },
     {
       "user": "ru",
-      "text": "ещё листья салата",
+      "text": "ещё 50 г Листья салата",
       "food": "Листья салата",
       "declared": "NON-ENGLISH",
       "role": "repeat-that-cannot-hit"
     },
     {
       "user": "branded",
-      "text": "Archer's Jersey",
+      "text": "a serving of Archer's Jersey",
       "food": "Archer's Jersey",
       "declared": "BRANDED",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "another handful of almonds",
+      "text": "another 30g of Almonds",
       "food": "Almonds",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "more salmon, pan-cooked with oil",
+      "text": "another 180g of Salmon, pan-cooked with oil",
       "food": "Salmon, pan-cooked with oil",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Котлеты куриные",
+      "text": "две Котлеты куриные",
       "food": "Котлеты куриные",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "branded",
-      "text": "one more Barebells Salty Peanut Protein Bar",
+      "text": "one more one Barebells Salty Peanut Protein Bar",
       "food": "Barebells Salty Peanut Protein Bar",
       "declared": "BRANDED",
       "role": "repeat"
     },
     {
       "user": "en-staples",
-      "text": "another black coffee",
+      "text": "another a large Black coffee",
       "food": "Black coffee",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "another serving of ground turkey, 96% lean",
+      "text": "another 150g of Ground turkey, 96% lean",
       "food": "Ground turkey, 96% lean",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "ещё котлеты куриные",
+      "text": "ещё две Котлеты куриные",
       "food": "Котлеты куриные",
       "declared": "NON-ENGLISH",
       "role": "repeat-that-cannot-hit"
     },
     {
       "user": "branded",
-      "text": "another bag of Quest Protein Chips Sour Cream & Onion",
+      "text": "another a bag of Quest Protein Chips Sour Cream & Onion",
       "food": "Quest Protein Chips Sour Cream & Onion",
       "declared": "BRANDED",
       "role": "repeat"
     },
     {
       "user": "en-staples",
-      "text": "another portion of french fries",
+      "text": "another a medium portion of French fries",
       "food": "French fries",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "another plate of scrambled eggs with peppers, onions, and cheese",
+      "text": "another a 3-egg plate of Scrambled eggs with peppers, onions, and cheese",
       "food": "Scrambled eggs with peppers, onions, and cheese",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Макароны с томатом",
+      "text": "200 г Макароны с томатом",
       "food": "Макароны с томатом",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "more grilled eggplant",
+      "text": "another 150g of Eggplant",
       "food": "Eggplant",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "more home fries with peppers and onions",
+      "text": "another a cup of Home fries with peppers and onions",
       "food": "Home fries with peppers and onions",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "ещё макароны с томатом",
+      "text": "ещё 200 г Макароны с томатом",
       "food": "Макароны с томатом",
       "declared": "NON-ENGLISH",
       "role": "repeat-that-cannot-hit"
     },
     {
       "user": "en-staples",
-      "text": "had chicken breast again, 150g",
+      "text": "one more 200g of Chicken breast",
       "food": "Chicken breast",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "another grilled kielbasa sausage",
+      "text": "another 100g of Grilled kielbasa sausage",
       "food": "Grilled kielbasa sausage",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Шоколад",
+      "text": "30 г Шоколад",
       "food": "Шоколад",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "more white rice, half a cup",
+      "text": "one more a cup of White rice",
       "food": "White rice",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "another poke rice bowl with crab mix",
+      "text": "another a regular Poke rice bowl with crab mix",
       "food": "Poke rice bowl with crab mix",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "ещё шоколад",
+      "text": "ещё 30 г Шоколад",
       "food": "Шоколад",
       "declared": "NON-ENGLISH",
       "role": "repeat-that-cannot-hit"
     },
     {
       "user": "en-staples",
-      "text": "more almonds, about 20g",
+      "text": "one more 30g of Almonds",
       "food": "Almonds",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "more ground turkey, 94% lean, pan-cooked",
+      "text": "another 150g of Ground turkey, 94% lean, pan-cooked",
       "food": "Ground turkey, 94% lean, pan-cooked",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Капучино на обычном молоке",
+      "text": "средний Капучино на обычном молоке",
       "food": "Капучино на обычном молоке",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "second black coffee of the day",
+      "text": "one more a large Black coffee",
       "food": "Black coffee",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "another spicy white tuna poke bowl, heavy sauce",
+      "text": "another a regular Spicy White Tuna Poke Bowl, heavy sauce",
       "food": "Spicy White Tuna Poke Bowl, heavy sauce",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "ещё капучино на обычном молоке",
+      "text": "ещё средний Капучино на обычном молоке",
       "food": "Капучино на обычном молоке",
       "declared": "NON-ENGLISH",
       "role": "repeat-that-cannot-hit"
     },
     {
       "user": "en-staples",
-      "text": "more french fries",
+      "text": "one more a medium portion of French fries",
       "food": "French fries",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "another portion of salmon, pan-cooked with oil",
+      "text": "one more 180g of Salmon, pan-cooked with oil",
       "food": "Salmon, pan-cooked with oil",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Хамон",
+      "text": "50 г Хамон",
       "food": "Хамон",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "another serving of grilled eggplant",
+      "text": "one more 150g of Eggplant",
       "food": "Eggplant",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "more ground turkey, 96% lean",
+      "text": "one more 150g of Ground turkey, 96% lean",
       "food": "Ground turkey, 96% lean",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "ещё хамон",
+      "text": "ещё 50 г Хамон",
       "food": "Хамон",
       "declared": "NON-ENGLISH",
       "role": "repeat-that-cannot-hit"
     },
     {
       "user": "en-staples",
-      "text": "more chicken breast, about 200g",
+      "text": "200g of Chicken breast again",
       "food": "Chicken breast",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "more scrambled eggs with peppers, onions, and cheese",
+      "text": "one more a 3-egg plate of Scrambled eggs with peppers, onions, and cheese",
       "food": "Scrambled eggs with peppers, onions, and cheese",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Гречка",
+      "text": "150 г Гречка",
       "food": "Гречка",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "white rice again, one cup",
+      "text": "a cup of White rice again",
       "food": "White rice",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "another serving of home fries with peppers and onions",
+      "text": "one more a cup of Home fries with peppers and onions",
       "food": "Home fries with peppers and onions",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "ещё гречка",
+      "text": "ещё 150 г Гречка",
       "food": "Гречка",
       "declared": "NON-ENGLISH",
       "role": "repeat-that-cannot-hit"
     },
     {
       "user": "en-staples",
-      "text": "almonds again, small handful",
+      "text": "30g of Almonds again",
       "food": "Almonds",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "more grilled kielbasa sausage",
+      "text": "one more 100g of Grilled kielbasa sausage",
       "food": "Grilled kielbasa sausage",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Куриная грудка",
+      "text": "200 г Куриная грудка",
       "food": "Куриная грудка",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "one more black coffee",
+      "text": "a large Black coffee again",
       "food": "Black coffee",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "poke rice bowl with crab mix again",
+      "text": "one more a regular Poke rice bowl with crab mix",
       "food": "Poke rice bowl with crab mix",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "ещё куриная грудка",
+      "text": "ещё 200 г Куриная грудка",
       "food": "Куриная грудка",
       "declared": "NON-ENGLISH",
       "role": "repeat-that-cannot-hit"
     },
     {
       "user": "en-staples",
-      "text": "french fries again, small",
+      "text": "a medium portion of French fries again",
       "food": "French fries",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "another serving of ground turkey, 94% lean, pan-cooked",
+      "text": "one more 150g of Ground turkey, 94% lean, pan-cooked",
       "food": "Ground turkey, 94% lean, pan-cooked",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Сырники",
+      "text": "три Сырники",
       "food": "Сырники",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "grilled eggplant again",
+      "text": "150g of Eggplant again",
       "food": "Eggplant",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "spicy white tuna poke bowl again, heavy sauce",
+      "text": "one more a regular Spicy White Tuna Poke Bowl, heavy sauce",
       "food": "Spicy White Tuna Poke Bowl, heavy sauce",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Борщ",
+      "text": "тарелка Борщ",
       "food": "Борщ",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "one more chicken breast, 170g",
+      "text": "a further 200g of Chicken breast",
       "food": "Chicken breast",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "salmon again, pan-cooked with oil",
+      "text": "180g of Salmon, pan-cooked with oil again",
       "food": "Salmon, pan-cooked with oil",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Оливье",
+      "text": "150 г Оливье",
       "food": "Оливье",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "a second helping of white rice",
+      "text": "a further a cup of White rice",
       "food": "White rice",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "ground turkey again, 96% lean",
+      "text": "150g of Ground turkey, 96% lean again",
       "food": "Ground turkey, 96% lean",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Селёдка под шубой",
+      "text": "150 г Селёдка под шубой",
       "food": "Селёдка под шубой",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "one more handful of almonds",
+      "text": "a further 30g of Almonds",
       "food": "Almonds",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "scrambled eggs with peppers, onions, and cheese again",
+      "text": "a 3-egg plate of Scrambled eggs with peppers, onions, and cheese again",
       "food": "Scrambled eggs with peppers, onions, and cheese",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Сёмга слабосолёная",
+      "text": "80 г Сёмга слабосолёная",
       "food": "Сёмга слабосолёная",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "black coffee again",
+      "text": "a further a large Black coffee",
       "food": "Black coffee",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "qualified",
-      "text": "grilled kielbasa sausage again",
+      "text": "100g of Grilled kielbasa sausage again",
       "food": "Grilled kielbasa sausage",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Овсянка на воде",
+      "text": "200 г Овсянка на воде",
       "food": "Овсянка на воде",
       "declared": "NON-ENGLISH",
       "role": "establish"
     },
     {
       "user": "en-staples",
-      "text": "grilled mackerel",
+      "text": "150g of Mackerel",
       "food": "Mackerel",
       "declared": "ARTIFACT",
       "role": "artifact-only"
     },
     {
       "user": "qualified",
-      "text": "one more poke rice bowl with crab mix",
+      "text": "a regular Poke rice bowl with crab mix again",
       "food": "Poke rice bowl with crab mix",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Кефир 1%",
+      "text": "стакан Кефир 1%",
       "food": "Кефир 1%",
       "declared": "NON-ENGLISH",
       "role": "digit-residue-key"
     },
     {
       "user": "en-staples",
-      "text": "asparagus",
+      "text": "100g of Asparagus",
       "food": "Asparagus",
       "declared": "ARTIFACT",
       "role": "artifact-only"
     },
     {
       "user": "qualified",
-      "text": "home fries with peppers and onions again",
+      "text": "a cup of Home fries with peppers and onions again",
       "food": "Home fries with peppers and onions",
       "declared": "MEMORY",
       "role": "repeat"
     },
     {
       "user": "ru",
-      "text": "Молоко (2.5%)",
+      "text": "стакан Молоко (2.5%)",
       "food": "Молоко (2.5%)",
       "declared": "NON-ENGLISH",
       "role": "digit-residue-key"
@@ -894,6 +909,20 @@
       "expect_off": "no resolution row at all",
       "expect_shadow": "state=PRODUCT, canonical_entity_id EMPTY, and it enters no distinct set",
       "kills": "a label being mistaken for a food identity — the PRODUCT rung has no producer and must not acquire one by accident"
+    },
+    {
+      "id": "P8",
+      "invariant": "a bare mention ASKS, and the answer completes the log",
+      "user": "probe-ask-answer",
+      "turns": [
+        "chicken breast",
+        "about 200g",
+        "black coffee",
+        "a large one"
+      ],
+      "expect_off": "turn 1 writes NO row and asks for a portion; turn 2 answers it and the row appears carrying 200 g",
+      "expect_shadow": "unchanged — the ask/answer loop is not what the boundary changes",
+      "kills": "the assumption that a logged food and a mentioned food are the same event; unanswered asks accumulate and block every later turn"
     }
   ],
   "honest_limits": [

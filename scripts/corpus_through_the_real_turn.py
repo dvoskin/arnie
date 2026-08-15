@@ -127,6 +127,52 @@ async def _fresh_user(session, handle: str, mode: str, run_id: str):
     return uid
 
 
+async def _roll_the_day(session, user_id: int, days_back: int) -> None:
+    """Move this user's finished day into the past, so the next turn opens a new one.
+
+    ⛔⛔ WITHOUT THIS THE CORPUS CANNOT REACH PRODUCTION'S MEMORY RATE, AND THE
+    FIRST FULL RUN PROVED IT: 100 turns wrote 45 rows, and 39 of the 44
+    memory-declared entries never produced one. Every missing row was a REPEAT.
+    Nothing was mis-parsed — `rows_the_corpus_did_not_predict` was empty — the
+    rows simply do not exist.
+
+    ⭐ AND THE DEDUP GUARD IS RIGHT. Production's 43.7% is earned ACROSS THIRTY
+    DAYS: a user logs their staple again TOMORROW. The guard is scoped to
+    TODAY's log, and it exists precisely to stop the shape a compressed corpus
+    creates — the same food, the same user, minutes apart. So the corpus was
+    wrong on an axis no amount of rephrasing fixes. A one-day corpus cannot
+    reproduce a thirty-day memory rate, by construction.
+
+    ⭐⭐ THE MECHANISM IS THE DAY, NOT THE CLOCK. `core.clock` is process-wide
+    and the one-clock migration exists to stop code inventing its own time, so
+    moving it here would be the exact habit that document forbids. Instead the
+    COMPLETED day is re-dated into the past. What that changes is precisely what
+    a real next day changes:
+
+        dedup snapshot   scoped to today's log   -> resets, as it would tomorrow
+        user_food_matches   NOT day-scoped       -> persists, as it does tomorrow
+
+    ⚠ AND IT IS STATED AS A LIMIT, NOT HIDDEN. Days are SIMULATED by re-dating a
+    finished day, not by waiting. What that faithfully models is dedup scope and
+    memory persistence. What it does NOT model is anything keyed to real elapsed
+    time — a staleness window, a streak, a rollover job.
+    """
+    from datetime import timedelta
+
+    from sqlalchemy import select
+
+    from db.models import DailyLog
+
+    async with session() as db:
+        log = (await db.execute(
+            select(DailyLog).where(DailyLog.user_id == user_id)
+            .order_by(DailyLog.date.desc()).limit(1))).scalar_one_or_none()
+        if log is None:
+            return
+        log.date = log.date - timedelta(days=days_back)
+        await db.commit()
+
+
 def _is_recovery(result) -> bool:
     """Did this turn come back as the canned apology rather than as a turn?
 
@@ -264,112 +310,134 @@ async def run_body(*, mode: str, limit: int, url: str) -> dict:
     for handle in dict.fromkeys(e["user"] for e in body):
         users[handle] = await _fresh_user(session, handle, mode, run_id)
 
+    # ⭐ THE DAY IS DERIVED, NOT DECLARED: an item's day is how many times that
+    # user has already logged that food. Establishers land on day 0, first
+    # repeats on day 1, and so on — which is the shape production has, where a
+    # staple recurs across days rather than within one.
+    occurrences: collections.Counter = collections.Counter()
+    for item in body:
+        signature = (item["user"], item["food"])
+        item["_day"] = occurrences[signature]
+        occurrences[signature] += 1
+    total_days = max((i["_day"] for i in body), default=0) + 1
+
     entries_seen, latencies, failures, recovered = [], [], [], []
     try:
-        for index, item in enumerate(body):
-            uid = users[item["user"]]
-            async with session() as db:
-                pre_keys = await _addressable_memory_keys(db, uid)
-                watermark = await _max_entry_id(db, uid)
+        for day in range(total_days):
+            todays_items = [(i, item) for i, item in enumerate(body)
+                            if item["_day"] == day]
+            for index, item in todays_items:
+                uid = users[item["user"]]
+                async with session() as db:
+                    pre_keys = await _addressable_memory_keys(db, uid)
+                    watermark = await _max_entry_id(db, uid)
 
-            async with session() as db:
-                user = await reload_user(db, uid)
-                started = time.monotonic()
-                try:
-                    result = await run_chat_turn(db, user, item["text"],
-                                                 platform="ios",
-                                                 schedule_background=False)
-                    await db.commit()
-                    error = None
-                    # ⛔⛔ A TURN THAT NEVER REACHED THE MODEL DOES NOT RAISE.
-                    # It returns a recovery bubble, so `except` sees nothing and
-                    # the run reports "0 turn failures" over an empty mix — a
-                    # provider outage wearing the shape of a coverage finding.
-                    # This is how the run knows the difference between "no
-                    # coverage" and "no run", and it cost a 16-turn run to learn:
-                    # the API key's credit balance was exhausted and every
-                    # number came back a clean, confident zero.
-                    if _is_recovery(result):
-                        recovered.append({"index": index, "text": item["text"]})
-                except Exception as exc:          # noqa: BLE001 — recorded, not swallowed
-                    await db.rollback()
-                    error = repr(exc)[:200]
-                elapsed_ms = (time.monotonic() - started) * 1000
-            latencies.append(elapsed_ms)
-            if error:
-                failures.append({"index": index, "text": item["text"],
-                                 "error": error})
+                async with session() as db:
+                    user = await reload_user(db, uid)
+                    started = time.monotonic()
+                    try:
+                        result = await run_chat_turn(db, user, item["text"],
+                                                     platform="ios",
+                                                     schedule_background=False)
+                        await db.commit()
+                        error = None
+                        # ⛔⛔ A TURN THAT NEVER REACHED THE MODEL DOES NOT RAISE.
+                        # It returns a recovery bubble, so `except` sees nothing and
+                        # the run reports "0 turn failures" over an empty mix — a
+                        # provider outage wearing the shape of a coverage finding.
+                        # This is how the run knows the difference between "no
+                        # coverage" and "no run", and it cost a 16-turn run to learn:
+                        # the API key's credit balance was exhausted and every
+                        # number came back a clean, confident zero.
+                        if _is_recovery(result):
+                            recovered.append({"index": index, "text": item["text"]})
+                    except Exception as exc:          # noqa: BLE001 — recorded, not swallowed
+                        await db.rollback()
+                        error = repr(exc)[:200]
+                    elapsed_ms = (time.monotonic() - started) * 1000
+                latencies.append(elapsed_ms)
+                if error:
+                    failures.append({"index": index, "text": item["text"],
+                                     "error": error})
 
-            # ⛔⛔ ROWS ARE NOT ATTRIBUTED TO THE TURN THAT WAS RUNNING WHEN THEY
-            # APPEARED. Measured on the first 14 turns: turn 0 ('200g chicken
-            # breast') produced no row of its own, and turn 1 ('a cup of white
-            # rice') produced TWO — 'Chicken breast' 200 g and 'White rice' 1
-            # cup. Held food rides `deferred_calls` and commits on the FOLLOWING
-            # turn, so a watermark taken around a single turn mis-attributes it,
-            # and an instrument that drove one turn per user would never see the
-            # row at all.
+                # ⛔⛔ ROWS ARE NOT ATTRIBUTED TO THE TURN THAT WAS RUNNING WHEN THEY
+                # APPEARED. Measured on the first 14 turns: turn 0 ('200g chicken
+                # breast') produced no row of its own, and turn 1 ('a cup of white
+                # rice') produced TWO — 'Chicken breast' 200 g and 'White rice' 1
+                # cup. Held food rides `deferred_calls` and commits on the FOLLOWING
+                # turn, so a watermark taken around a single turn mis-attributes it,
+                # and an instrument that drove one turn per user would never see the
+                # row at all.
+                #
+                # ⭐ WHAT IS TIME-SENSITIVE IS THE RUNG, NOT THE LABEL. `pre_keys`
+                # must be the snapshot from the turn the row actually landed in, or
+                # the memory guard is meaningless — so the rung is computed HERE,
+                # now, and only the corpus label is deferred to the reconciliation
+                # pass below.
+                async with session() as db:
+                    rows = await _entries_after(db, uid, watermark)
+                    for row in rows:
+                        name = str(row.parsed_food_name or "")
+                        entity_id = await _identity_for(db, name)
+                        rung = await _rung_for(db, uid, name, entity_id, pre_keys)
+                        entries_seen.append({
+                            "landed_on_turn": index, "user": item["user"],
+                            "parsed_food_name": name,
+                            "canonical_entity_id": entity_id, "rung": rung,
+                            # The bucket is only meaningful for an entry that
+                            # reached no evidence — exactly as the production
+                            # instrument counts it.
+                            "bucket": (classify(name)
+                                       if rung == "ESTIMATE_OR_REFUSE" else None),
+                            "calories": row.calories, "quantity": row.quantity,
+                            "latency_ms": round(elapsed_ms)})
+
+            # ⛔ THE LAST TURN'S FOOD IS STILL HELD WHEN THE CORPUS ENDS. Held food
+            # rides `deferred_calls` and commits on the FOLLOWING turn, so without
+            # this every user's final entry would be missing and would be reported
+            # as a coverage gap. One neutral turn per user flushes it — the same way
+            # production flushes it, by there being a next turn.
             #
-            # ⭐ WHAT IS TIME-SENSITIVE IS THE RUNG, NOT THE LABEL. `pre_keys`
-            # must be the snapshot from the turn the row actually landed in, or
-            # the memory guard is meaningless — so the rung is computed HERE,
-            # now, and only the corpus label is deferred to the reconciliation
-            # pass below.
-            async with session() as db:
-                rows = await _entries_after(db, uid, watermark)
-                for row in rows:
-                    name = str(row.parsed_food_name or "")
-                    entity_id = await _identity_for(db, name)
-                    rung = await _rung_for(db, uid, name, entity_id, pre_keys)
-                    entries_seen.append({
-                        "landed_on_turn": index, "user": item["user"],
-                        "parsed_food_name": name,
-                        "canonical_entity_id": entity_id, "rung": rung,
-                        # The bucket is only meaningful for an entry that
-                        # reached no evidence — exactly as the production
-                        # instrument counts it.
-                        "bucket": (classify(name)
-                                   if rung == "ESTIMATE_OR_REFUSE" else None),
-                        "calories": row.calories, "quantity": row.quantity,
-                        "latency_ms": round(elapsed_ms)})
+            # ⚠ IT IS NEUTRAL ON PURPOSE: it must commit what is held and log
+            # nothing of its own, so any row it produces shows up in
+            # `rows_the_corpus_did_not_predict` rather than quietly joining the mix.
+            for handle, uid in users.items():
+                async with session() as db:
+                    pre_keys = await _addressable_memory_keys(db, uid)
+                    watermark = await _max_entry_id(db, uid)
+                async with session() as db:
+                    user = await reload_user(db, uid)
+                    try:
+                        await run_chat_turn(db, user, "thanks", platform="ios",
+                                            schedule_background=False)
+                        await db.commit()
+                    except Exception:                # noqa: BLE001
+                        await db.rollback()
+                async with session() as db:
+                    for row in await _entries_after(db, uid, watermark):
+                        name = str(row.parsed_food_name or "")
+                        entity_id = await _identity_for(db, name)
+                        entries_seen.append({
+                            "landed_on_turn": -1, "user": handle,
+                            "parsed_food_name": name,
+                            "canonical_entity_id": entity_id,
+                            "rung": await _rung_for(db, uid, name, entity_id, pre_keys),
+                            "bucket": None, "calories": row.calories,
+                            "quantity": row.quantity, "latency_ms": None,
+                            "flushed": True})
+            # The bucket for a flushed row is filled in during reconciliation, once
+            # it is known which corpus item it belongs to.
+            for entry in entries_seen:
+                if entry.get("flushed") and entry["rung"] == "ESTIMATE_OR_REFUSE":
+                    entry["bucket"] = classify(entry["parsed_food_name"])
 
-        # ⛔ THE LAST TURN'S FOOD IS STILL HELD WHEN THE CORPUS ENDS. Held food
-        # rides `deferred_calls` and commits on the FOLLOWING turn, so without
-        # this every user's final entry would be missing and would be reported
-        # as a coverage gap. One neutral turn per user flushes it — the same way
-        # production flushes it, by there being a next turn.
-        #
-        # ⚠ IT IS NEUTRAL ON PURPOSE: it must commit what is held and log
-        # nothing of its own, so any row it produces shows up in
-        # `rows_the_corpus_did_not_predict` rather than quietly joining the mix.
-        for handle, uid in users.items():
-            async with session() as db:
-                pre_keys = await _addressable_memory_keys(db, uid)
-                watermark = await _max_entry_id(db, uid)
-            async with session() as db:
-                user = await reload_user(db, uid)
-                try:
-                    await run_chat_turn(db, user, "thanks", platform="ios",
-                                        schedule_background=False)
-                    await db.commit()
-                except Exception:                # noqa: BLE001
-                    await db.rollback()
-            async with session() as db:
-                for row in await _entries_after(db, uid, watermark):
-                    name = str(row.parsed_food_name or "")
-                    entity_id = await _identity_for(db, name)
-                    entries_seen.append({
-                        "landed_on_turn": -1, "user": handle,
-                        "parsed_food_name": name,
-                        "canonical_entity_id": entity_id,
-                        "rung": await _rung_for(db, uid, name, entity_id, pre_keys),
-                        "bucket": None, "calories": row.calories,
-                        "quantity": row.quantity, "latency_ms": None,
-                        "flushed": True})
-        # The bucket for a flushed row is filled in during reconciliation, once
-        # it is known which corpus item it belongs to.
-        for entry in entries_seen:
-            if entry.get("flushed") and entry["rung"] == "ESTIMATE_OR_REFUSE":
-                entry["bucket"] = classify(entry["parsed_food_name"])
+            # ⭐ THE DAY ENDS HERE. Re-date the finished log into the past so the
+            # next day opens a fresh one — dedup resets, memory persists. The
+            # offset counts DOWN so days stay in chronological order and no two
+            # logs collide on `uq_daily_log_user_date`.
+            if day < total_days - 1:
+                for uid in users.values():
+                    await _roll_the_day(session, uid, total_days - day)
 
         async with session() as db:
             resolutions = await _resolution_rows(db)
@@ -666,6 +734,215 @@ def render(report: dict) -> str:
     return "\n".join(out) + "\n"
 
 
+async def run_probes(*, mode: str, url: str) -> dict:
+    """The named invariants, driven through the same real turn path.
+
+    ⭐ THE PROSE IN THE CORPUS IS THE PREREGISTRATION; THIS IS ITS EXECUTABLE
+    FORM. Each probe states an expectation for BOTH modes, written down before
+    the run, so neither outcome can be read afterwards as the one that was
+    predicted. The checks below are deliberately per-probe and explicit rather
+    than parsed out of that prose — a check derived from the text it is meant to
+    verify is not a check.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from core.canonical_pricing_inputs import _memory
+    from core.chat_service import run_chat_turn
+    from db.database import make_engine
+    from db.queries import reload_user
+    from skills.nutrition.entity_resolution import (ResolutionState, resolve,
+                                                    entity_id_for_surface)
+    from skills.nutrition.pricing_artifact import evidence_for, split_identity
+
+    corpus = json.loads(CORPUS_PATH.read_text())
+    os.environ["ENTITY_RESOLUTION_MODE"] = mode
+    engine = make_engine(url)
+    session = async_sessionmaker(engine, expire_on_commit=False)
+    run_id = time.strftime("%Y%m%dT%H%M%S")
+
+    async with session() as db:
+        from sqlalchemy import delete
+
+        from db.models import FoodEntityResolution
+        await db.execute(delete(FoodEntityResolution))
+        await db.commit()
+
+    results = []
+    try:
+        for probe in corpus["probes"]:
+            uid = await _fresh_user(session, probe["user"], mode, run_id)
+            for text in probe["turns"]:
+                async with session() as db:
+                    user = await reload_user(db, uid)
+                    try:
+                        await run_chat_turn(db, user, text, platform="ios",
+                                            schedule_background=False)
+                        await db.commit()
+                    except Exception:            # noqa: BLE001
+                        await db.rollback()
+            # One flush turn, for the same reason the body run needs one.
+            async with session() as db:
+                user = await reload_user(db, uid)
+                try:
+                    await run_chat_turn(db, user, "thanks", platform="ios",
+                                        schedule_background=False)
+                    await db.commit()
+                except Exception:                # noqa: BLE001
+                    await db.rollback()
+
+            async with session() as db:
+                observed = await _probe_observations(
+                    db, uid, probe, _memory, resolve, entity_id_for_surface,
+                    ResolutionState, evidence_for, split_identity)
+            results.append({"id": probe["id"], "invariant": probe["invariant"],
+                            "expected": probe[f"expect_{mode}"],
+                            "kills": probe["kills"], **observed})
+    finally:
+        await engine.dispose()
+
+    return {"corpus_version": corpus["corpus_version"], "mode": mode,
+            "driven_through": "core.chat_service.run_chat_turn",
+            "probes": results,
+            "limits": [
+                "each probe is a handful of turns — it demonstrates the "
+                "invariant, it does not measure a rate",
+                "a probe that writes no row proves nothing either way, and says "
+                "so rather than passing quietly",
+            ]}
+
+
+async def _probe_observations(db, uid, probe, _memory, resolve,
+                              entity_id_for_surface, ResolutionState,
+                              evidence_for, split_identity) -> dict:
+    """What the database says after a probe's turns — never the reply text."""
+    from sqlalchemy import select
+
+    from core.food_intelligence import memory_key
+    from db.models import DailyLog, FoodEntry, UserFoodMatch
+
+    rows = (await db.execute(
+        select(FoodEntry.parsed_food_name, FoodEntry.quantity,
+               FoodEntry.calories)
+        .join(DailyLog, DailyLog.id == FoodEntry.daily_log_id)
+        .where(DailyLog.user_id == uid).order_by(FoodEntry.id))).all()
+    memory_rows = (await db.execute(
+        select(UserFoodMatch.name_norm, UserFoodMatch.display_name,
+               UserFoodMatch.cal_100)
+        .where(UserFoodMatch.user_id == uid))).all()
+
+    surfaces = {}
+    for surface in probe["turns"]:
+        entity = await entity_id_for_surface(db, surface)
+        resolution = await resolve(db, surface)
+        evidence = await _memory(db, uid, surface, entity)
+        base, preparation = split_identity(surface)
+        surfaces[surface] = {
+            "canonical_entity_id": entity,
+            "resolution_state": (getattr(resolution.state, "value",
+                                         str(resolution.state))
+                                 if resolution is not None else None),
+            "memory_key": memory_key(surface, entity),
+            "memory_reached_kcal_100g": (
+                None if evidence is None
+                else evidence.per100g.get("calories")),
+            "artifact_key": f"{base}|{preparation}",
+            "artifact_has_evidence": evidence_for(base, preparation) is not None,
+        }
+    return {
+        "rows_written": [{"food": r[0], "quantity": r[1], "calories": r[2]}
+                         for r in rows],
+        "memory_rows": [{"key": m[0], "display": m[1], "cal_100": m[2]}
+                        for m in memory_rows],
+        "surfaces": surfaces,
+        "wrote_nothing": not rows,
+    }
+
+
+def render_probes(report: dict) -> str:
+    out = [f"\n  PROBES · mode={report['mode']} · through "
+           f"{report['driven_through']}\n"]
+    for probe in report["probes"]:
+        out.append(f"    {probe['id']}  {probe['invariant']}")
+        out.append(f"        expected: {probe['expected']}")
+        if probe["wrote_nothing"]:
+            out.append("        ⛔ NO ROW WAS WRITTEN — this probe proves "
+                       "nothing either way")
+        for surface, seen in probe["surfaces"].items():
+            out.append(
+                f"        {surface[:38]:40} entity={seen['canonical_entity_id'] or '—'!s:14}"
+                f" state={seen['resolution_state'] or '—'!s:12}")
+            out.append(
+                f"        {'':40} key={seen['memory_key'] or '(non-addressable)'!r:26}"
+                f" memory={seen['memory_reached_kcal_100g']} kcal"
+                f"  artifact={seen['artifact_key']}"
+                f"{' HIT' if seen['artifact_has_evidence'] else ' miss'}")
+        out.append(f"        rows: {[r['food'] for r in probe['rows_written']]}")
+        out.append("")
+    for limit in report["limits"]:
+        out.append(f"      · {limit}")
+    return "\n".join(out) + "\n"
+
+
+def compare_runs() -> int:
+    """off vs shadow, on the ONE question the interpretation boundary exists for.
+
+    ⭐ THE HEADLINE IS NOT THE OVERALL MIX — it is what happens to the
+    NON-ENGLISH population specifically. Under `off`, a non-Latin food's memory
+    key loses its letters and the containment refuses it, so those entries can
+    never reach the rung however often the user logs them. Under `shadow`, the
+    key is the resolved identity. Everything else in the corpus is a control:
+    if the English buckets move too, something other than the boundary changed.
+
+    ⚠ AND A ZERO ON EITHER SIDE IS REPORTED, NEVER DIVIDED THROUGH. A shadow run
+    that wrote no resolutions has not shown "no behaviour change"; it has shown
+    that the feature did not run, and those two readings differ by everything.
+    """
+    off_path, shadow_path = RECORD_DIR / "run_off.json", RECORD_DIR / "run_shadow.json"
+    for path in (off_path, shadow_path):
+        if not path.exists():
+            raise SystemExit(f"missing {path} — run both modes with --write first")
+    off = json.loads(off_path.read_text())
+    shadow = json.loads(shadow_path.read_text())
+
+    def non_english_reaching_memory(report):
+        from scripts.measure_identity_coverage import NON_ASCII
+
+        rows = [o for o in report["observations"]
+                if o.get("parsed_food_name")
+                and NON_ASCII.search(o["parsed_food_name"])]
+        reached = [o for o in rows if o["rung"] in ("MEMORY", "CACHED_BY_THIS_TURN")]
+        return len(reached), len(rows)
+
+    off_hits, off_total = non_english_reaching_memory(off)
+    shadow_hits, shadow_total = non_english_reaching_memory(shadow)
+
+    out = ["\n  off vs shadow — the interpretation boundary, measured\n"]
+    out.append(f"    resolutions written      {off['resolution_rows']:5d}"
+               f"  ->  {shadow['resolution_rows']:5d}")
+    out.append(f"    MEMORY at settle         "
+               f"{off['memory_at_settle_pct']:5.1f}%  ->  "
+               f"{shadow['memory_at_settle_pct']:5.1f}%")
+    out.append(f"    evidence-backed          "
+               f"{off['realized_mix_pct'].get('MEMORY', 0) + off['realized_mix_pct'].get('ARTIFACT', 0):5.1f}%"
+               f"  ->  "
+               f"{shadow['realized_mix_pct'].get('MEMORY', 0) + shadow['realized_mix_pct'].get('ARTIFACT', 0):5.1f}%")
+    out.append(f"\n    ⭐ NON-ENGLISH entries reaching the memory rung")
+    out.append(f"       off     {off_hits:3d} of {off_total:3d}")
+    out.append(f"       shadow  {shadow_hits:3d} of {shadow_total:3d}")
+    out.append(f"\n    latency p50   {off['latency_ms']['p50']} ms  ->  "
+               f"{shadow['latency_ms']['p50']} ms")
+    out.append(f"    latency p95   {off['latency_ms']['p95']} ms  ->  "
+               f"{shadow['latency_ms']['p95']} ms")
+
+    if shadow["resolution_rows"] == 0:
+        out.append("\n    ⛔⛔ THE SHADOW RUN WROTE NO RESOLUTIONS. This is NOT "
+                   "'no behaviour change' —\n        the producer did not run. "
+                   "Nothing below it can be read as evidence\n        about the "
+                   "boundary, in either direction.")
+    print("\n".join(out) + "\n")
+    return 0 if shadow["resolution_rows"] > 0 else 1
+
+
 def validate_corpus() -> int:
     """⭐ THE PREREGISTRATION CHECK — no model, no database, no network.
 
@@ -745,6 +1022,10 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--validate", action="store_true",
                         help="check the corpus without running it (no model, no DB)")
+    parser.add_argument("--compare", action="store_true",
+                        help="compare the recorded off and shadow runs")
+    parser.add_argument("--probes", action="store_true",
+                        help="run the named-invariant probes instead of the body")
     parser.add_argument("--mode", choices=("off", "shadow"), default="off")
     parser.add_argument("--limit", type=int, default=0,
                         help="drive only the first N body entries (smoke)")
@@ -754,6 +1035,8 @@ def main() -> int:
 
     if args.validate:
         return validate_corpus()
+    if args.compare:
+        return compare_runs()
 
     url = os.getenv("ARNIE_CORPUS_DB")
     if not url:
@@ -771,6 +1054,16 @@ def main() -> int:
     # import time — which is why this lives in main() and not in run_body().
     os.environ.setdefault("DATABASE_URL", url)
     _load_key()
+
+    if args.probes:
+        probe_report = asyncio.run(run_probes(mode=args.mode, url=url))
+        print(render_probes(probe_report))
+        if args.write:
+            path = RECORD_DIR / f"probes_{args.mode}.json"
+            path.write_text(json.dumps(probe_report, indent=1,
+                                       ensure_ascii=False))
+            print(f"  recorded -> {path}\n")
+        return 0
 
     report = asyncio.run(run_body(mode=args.mode, limit=args.limit, url=url))
     print(render(report))
