@@ -113,6 +113,23 @@ def _food_pipeline(user_id: Optional[int] = None) -> dict:
     except Exception as e:                           # pragma: no cover
         out["TURN_COORDINATOR_MODE"] = {"error": str(e)}
 
+    # ⛔ THE MODE ALONE CANNOT ANSWER "IS ANYTHING BEING CONSUMED", and that is
+    # the question a shadow canary has to answer before consumption is turned
+    # on. `shadow` used to mean persist-only on legacy traffic and CONSUME on
+    # `new_execute` traffic, so a reader who saw `shadow` learned nothing about
+    # whether prices could move. `consumes_identity` reports the PREDICATE
+    # itself — the same function `stamp_canonical_identity` asks — rather than
+    # re-deriving it from the mode string here, because a diagnostic that
+    # recomputes what it reports can disagree with it.
+    try:
+        from core.turns.stages.food import (entity_resolution_mode,
+                                            identity_is_consumable)
+        out["ENTITY_RESOLUTION_MODE"] = _flag(
+            "ENTITY_RESOLUTION_MODE", entity_resolution_mode())
+        out["consumes_identity"] = {"effective": identity_is_consumable()}
+    except Exception as e:                           # pragma: no cover
+        out["ENTITY_RESOLUTION_MODE"] = {"error": str(e)}
+
     # ⛔ THE MODE ALONE IS NOT THE ANSWER, AND READING IT AS ONE COST A
     # DIAGNOSIS ON 2026-08-14. `lane_executes_natively` is an AND of three
     # conditions — mode, lane enrolled, user allowlisted — so
@@ -357,6 +374,89 @@ def _expected_head() -> Optional[str]:
         except Exception:
             _EXPECTED_HEAD = ""
     return _EXPECTED_HEAD or None
+
+
+async def identity_adoption_summary() -> dict:
+    """⭐ IS THE PRODUCER RUNNING, AND IS ANYTHING BEING CONSUMED — from outside.
+
+    The two questions a shadow canary must answer, and neither was answerable
+    without reading container logs:
+
+        step 7  non-zero resolution ACTIVITY      -> `recorded`, by state
+        step 8  ZERO consumption / zero price movement
+                -> `memory_rows_not_keyed_by_their_own_name`
+
+    ⛔⛔ `memory_rows_not_keyed_by_their_own_name` IS THE DETERMINISTIC FORM OF
+    "NO PRICE MOVED", and it is the only one that does not depend on sampling a
+    nondeterministic model. `memory_key(food, entity)` returns
+    `normalize_name(entity)` when an identity is present and
+    `normalize_name(food)` otherwise, with NOTHING marking which — so the only
+    available detector is the inequality: a row whose key is not its own
+    normalized display name was keyed by something else, and the only something
+    else is an identity. Under `shadow` this must be **0**.
+
+    ⭐ AND COINCIDENTAL EQUALITY IS NOT A MISS. If the identity key happens to
+    equal the surface key, consumption addressed the same row and no price
+    could have moved — the case this cannot see is by definition a non-event.
+
+    ⚠ ITS ONE FALSE POSITIVE, NAMED. The check assumes the display name IS the
+    string the key was derived from. Every production writer satisfies that —
+    all three `upsert_user_food_match` call sites pass one string as both — but
+    a HAND-SEEDED row does not: `prove_memory_addressing` writes
+    `display_name='Tomato, raw'` under the key `'tomato'` deliberately, and a
+    scratch database therefore reports 2 where production reports 0. Read this
+    number on production, not on a scratch DB you have been proving things in.
+
+    ⚠ ZERO IS ONLY MEANINGFUL BESIDE `recorded`. A store with no rows at all
+    also reports zero identity-keyed rows, and that is the ambiguous zero this
+    project keeps paying for — "nothing consumed" and "nothing ran" have one
+    spelling unless both numbers are read together. They are returned together
+    for exactly that reason.
+
+    ⚠ COUNTS AND STATES ONLY — no food names, no user ids, no env content. This
+    endpoint sits beside ones that already refuse to echo `env_raw`.
+
+    Never raises: a diagnostic that 500s has turned an observability gap into
+    an outage.
+    """
+    out: dict = {"resolutions": {}, "memory_rows_not_keyed_by_their_own_name": None}
+    try:
+        from sqlalchemy import func, select
+
+        from core.food_intelligence import normalize_name
+        from core.turns.stages.food import (entity_resolution_mode,
+                                            identity_is_consumable)
+        from db.models import FoodEntityResolution, UserFoodMatch
+
+        out["mode"] = entity_resolution_mode()
+        out["consumes_identity"] = identity_is_consumable()
+
+        async with AsyncSessionLocal() as db:
+            rows = (await db.execute(
+                select(FoodEntityResolution.state,
+                       func.count(FoodEntityResolution.id))
+                .group_by(FoodEntityResolution.state))).all()
+            by_state = {getattr(state, "value", str(state)): int(count)
+                        for state, count in rows}
+            out["resolutions"] = by_state
+            out["recorded"] = sum(by_state.values())
+
+            # ⚠ COMPARED IN PYTHON, NOT IN SQL. `normalize_name` is the
+            # production normalizer and it has no SQL equivalent; reimplementing
+            # it in a query would be a second definition of the predicate, which
+            # is how an instrument comes to disagree with the runtime it
+            # measures. Bounded so a diagnostic can never become a table scan
+            # that matters.
+            matches = (await db.execute(
+                select(UserFoodMatch.name_norm, UserFoodMatch.display_name)
+                .limit(5000))).all()
+            stamped = [1 for key, display in matches
+                       if key and display and key != normalize_name(display)]
+            out["memory_rows_not_keyed_by_their_own_name"] = len(stamped)
+            out["memory_rows_examined"] = len(matches)
+    except Exception as e:
+        out["error"] = type(e).__name__
+    return out
 
 
 async def schema_summary() -> dict:

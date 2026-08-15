@@ -44,6 +44,11 @@ ENUM_FLAGS: dict[str, EnumFlag] = {
     "NUTRITION_RESOLVER_MODE": EnumFlag(("off", "shadow", "live"), "shadow"),
     "TURN_COORDINATOR_MODE": EnumFlag(
         ("legacy_only", "new_observe", "new_execute"), "legacy_only"),
+    # Added 2026-08-15 when the parser grew a THIRD state. `consume` is the one
+    # that moves prices, so a typo there is silently `off` and the symptom is
+    # an improvement that never arrives — the NUTRITION_RESOLVER_MODE failure
+    # exactly, one flag over.
+    "ENTITY_RESOLUTION_MODE": EnumFlag(("off", "shadow", "consume"), "off"),
 }
 
 

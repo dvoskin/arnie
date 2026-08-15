@@ -81,7 +81,38 @@ async def test_nothing_is_resolved_while_the_flag_is_off(monkeypatch):
 # ── shadow ────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_shadow_stamps_the_identity_on_every_item(resolver):
+async def test_shadow_RESOLVES_every_item_and_stamps_NONE_of_them(resolver):
+    """⛔⛔ THE CONTRACT CHANGED ON 2026-08-15, AND THIS TEST IS WHERE IT SHOWS
+    *(Danny)*. It used to assert that `shadow` STAMPS, which was safe only while
+    the stamp was inert metadata. After `1f13347` it is not: the stamp rides
+    `_log_call` into `_analyze_food`, where `memory_key(food, entity)` addresses
+    a DIFFERENT durable memory row — so stamping moves a PRICE.
+
+    ⭐ AND THE OLD MEANING WAS COORDINATOR-DEPENDENT, WHICH IS THE REAL DEFECT.
+    The legacy seams record without stamping; `FoodPlanStage.run` (only under
+    `new_execute`) stamps. One flag called `shadow` therefore meant "record" on
+    ordinary traffic and "consume" on coordinator traffic, with the difference
+    invisible in its name.
+
+    So `shadow` resolves and persists — `resolver` below proves the producer
+    RAN — and annotates nothing. `consume` is the state that annotates.
+    """
+    out = _interpretation()
+
+    await stamp_canonical_identity(out, _DB())
+
+    # THE PRODUCER RAN: without this the assertion under it passes vacuously on
+    # a turn where nothing was resolved at all.
+    assert resolver == [["Помидор", "Творог 2%"]]
+    assert all("canonical_entity_id" not in item for item in out["items"]), (
+        "shadow stamped an item — that reaches memory_key and moves the price")
+
+
+@pytest.mark.asyncio
+async def test_consume_is_the_state_that_stamps(resolver, monkeypatch):
+    """The other half: `consume` must still annotate, or the split has quietly
+    deleted consumption's doorway while every recording gate stays green."""
+    monkeypatch.setenv("ENTITY_RESOLUTION_MODE", "consume")
     out = _interpretation()
 
     await stamp_canonical_identity(out, _DB())

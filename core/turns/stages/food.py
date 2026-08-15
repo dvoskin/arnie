@@ -56,20 +56,48 @@ class FoodPlanStage:
         return plan_from_interpretation(out)
 
 
-def entity_resolution_mode() -> str:
-    """`off` | `shadow`. DEFAULT OFF, and off is the whole safety story.
+#: The three states, and the middle one is the whole safety story.
+#:
+#:     off      resolve nothing, persist nothing — today's behaviour exactly
+#:     shadow   resolve + PERSIST, never annotate — no price can move
+#:     consume  resolve + persist + ANNOTATE — the identity reaches settlement
+#:
+#: ⛔⛔ `shadow` USED TO MEAN TWO DIFFERENT THINGS DEPENDING ON THE COORDINATOR
+#: *(Danny, 2026-08-15)*. The legacy seams call `record_identities` (persist
+#: only) while `FoodPlanStage.run` calls `stamp_canonical_identity` (annotate),
+#: so `shadow` was record-only on legacy traffic and CONSUMING on
+#: `new_execute` traffic. After `1f13347` the stamp is not harmless metadata:
+#: it changes durable memory ADDRESSING via `memory_key`, and therefore the
+#: price. A mode named `shadow` cannot mean "consume, on some paths".
+#:
+#: ⭐ SO ANNOTATION IS ITS OWN STATE, and the contract is stated once, here:
+#: **`shadow` may persist resolutions but may NEVER put `canonical_entity_id`
+#: on a settlement-bound item, whatever `TURN_COORDINATOR_MODE` says.**
+_MODES = ("off", "shadow", "consume")
 
-    ⭐ SHADOW IS NOT A HALF-MEASURE HERE, IT IS THE POINT. Resolution POPULATES
-    a durable store; CONSUMPTION is a separate change that nothing has made yet.
-    So a shadow turn writes what a food means and alters no price, no card and
-    no row — the store fills from real traffic while the blast radius stays
-    exactly zero, and the 691-entry instrument can be re-run against a store
-    built by users rather than by a backfill script.
+
+def entity_resolution_mode() -> str:
+    """`off` | `shadow` | `consume`. DEFAULT OFF.
+
+    ⭐ REGISTERED IN `core.config_guard`, because this parser has exactly the
+    `else <default>` shape that let `NUTRITION_RESOLVER_MODE=true` run production
+    in shadow for six days while a comment recorded it as live. A third state
+    makes that worse, not better: a typo'd `consume` is silently `off`, and the
+    symptom is an improvement that never arrives.
     """
     import os
 
     mode = (os.getenv("ENTITY_RESOLUTION_MODE", "off") or "").strip().lower()
-    return mode if mode in ("off", "shadow") else "off"
+    return mode if mode in _MODES else "off"
+
+
+def identity_is_consumable() -> bool:
+    """May an identity be stamped onto an item this turn?
+
+    ⭐ ONE PREDICATE, ASKED BY THE ONE FUNCTION THAT ANNOTATES. A second caller
+    deciding this for itself is how `shadow` came to mean two things.
+    """
+    return entity_resolution_mode() == "consume"
 
 
 async def record_identities(out, db) -> dict:
@@ -115,10 +143,87 @@ async def record_identities(out, db) -> dict:
     # "the producer ran and this turn's foods were unresolvable" from "the
     # producer never ran" — and telling those apart is the entire reason this
     # function exists.
-    logger.info("event=entity_identity_recorded attempted=%d resolved=%d",
-                len([s for s in surfaces if s]),
-                sum(1 for s in surfaces if resolved.get(s)))
+    await _log_identity_states([s for s in surfaces if s], resolved, db)
     return resolved
+
+
+async def _log_identity_states(surfaces, resolved, db) -> None:
+    """⭐ COUNT THE STATES, NOT JUST THE WINS *(Danny, 2026-08-15)*.
+
+    ⛔ `resolved=%d` MEANT "RETURNED A BINDING ENTITY", so four legitimate
+    PRODUCT turns logged `resolved=0` — which is the ambiguous zero this whole
+    session keeps paying for. A canary carrying PRODUCT and UNRESOLVED traffic
+    could not distinguish "the producer ran and these foods are labels" from
+    "the producer never ran", and those two readings differ by everything.
+
+    So every outcome is named and counted:
+
+        attempted   surfaces the producer was asked about
+        recorded    surfaces that HAVE a row afterwards
+        resolved / distinct / product / unresolved   the row's own verdict
+        binding     rows a CONSUMER would actually bind to
+        absent      asked about, and no row exists — the honest failure count
+
+    ⚠ AND COUNTING MUST NOT BE ABLE TO FAIL THE TURN, so the whole thing is
+    guarded. Telemetry that can break a food log is worse than no telemetry.
+    """
+    import collections
+
+    counts = collections.Counter({"attempted": len(surfaces)})
+    try:
+        from skills.nutrition.entity_resolution import resolve
+
+        for surface in surfaces:
+            row = await resolve(db, surface)
+            if row is None:
+                counts["absent"] += 1
+                continue
+            counts["recorded"] += 1
+            counts[getattr(row.state, "value", str(row.state))] += 1
+            if resolved.get(surface):
+                counts["binding"] += 1
+    except Exception as e:                       # noqa: BLE001
+        logger.warning(f"identity state telemetry unavailable: {e}")
+
+    logger.info(
+        "event=entity_identity_recorded " + " ".join(
+            f"{name}={counts[name]}" for name in
+            ("attempted", "recorded", "binding", "resolved", "distinct",
+             "product", "unresolved", "absent")))
+
+
+async def record_turn_identities(out, db) -> None:
+    """⭐ THE SHARED SEAM OPERATION — both entrances call THIS, and it lives here.
+
+    ⛔ OWNERSHIP DIRECTION *(Danny, 2026-08-15)*. The first version of the seam
+    put this wrapper in `core.conversation` and had `handlers.tool_executor`
+    import it. That works mechanically and points the wrong way: `conversation`
+    is an ORCHESTRATION layer, `tool_executor` is enormous and deeply depended
+    upon, and an executor reaching back up into the orchestrator is a
+    dependency cycle waiting to become real.
+
+        conversation  ─┐
+                       ├──>  core.turns.stages.food  (identity recorder)
+        tool_executor ─┘
+
+    rather than `tool_executor -> conversation -> recorder`. No new
+    architecture; the shared operation simply sits at the layer that owns it.
+
+    ⚠ A FOOD TURN MUST NOT BREAK OVER AN IDENTITY ANNOTATION NOTHING YET
+    CONSUMES. The producer guards resolution failing; this guards everything
+    else — the difference between a resolver that answers badly and one that is
+    not importable at all.
+    """
+    try:
+        # ⭐ "THE INTERPRETER DECLINED" AND "THE SEAM NEVER RAN" ARE DIFFERENT
+        # FACTS WITH ONE SPELLING. An eight-turn proof that logged four foods
+        # and recorded ONE read as "not wired" when it was wired and three
+        # turns had nothing to hand it.
+        if not (out or {}).get("items") and entity_resolution_mode() != "off":
+            logger.info("event=entity_identity_skipped reason=no_interpretation")
+        await record_identities(out, db)
+    except Exception as e:                       # noqa: BLE001
+        logger.warning(f"identity recording unavailable, turn unchanged: {e}")
 
 
 async def stamp_canonical_identity(out, db) -> None:
@@ -148,6 +253,16 @@ async def stamp_canonical_identity(out, db) -> None:
     """
     resolved = await record_identities(out, db)
     if not resolved:
+        return
+    # ⛔⛔ THE CROSS-PRODUCT GUARD. This function is reached from
+    # `FoodPlanStage.run`, which runs under `new_execute` — so without this
+    # line `ENTITY_RESOLUTION_MODE=shadow` would PERSIST on legacy traffic and
+    # CONSUME on coordinator traffic, from one flag, with the difference
+    # invisible in the flag's name. The stamp changes `memory_key` and so the
+    # price; shadow must never reach it, whatever the coordinator mode.
+    if not identity_is_consumable():
+        logger.info("event=entity_identity_not_consumed mode=%s resolved=%d",
+                    entity_resolution_mode(), len(resolved))
         return
     items = [item for item in (out.get("items") or ()) if isinstance(item, dict)]
     for item in items:

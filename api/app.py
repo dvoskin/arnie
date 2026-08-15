@@ -354,6 +354,19 @@ async def healthcheck():
         _schema = {"schema": await schema_summary()}
     except Exception:
         _schema = {}
+    # And the fourth: is the identity producer RUNNING, and is anything being
+    # CONSUMED. A shadow canary has to prove non-zero resolution activity AND
+    # zero price movement, and neither was answerable without container logs.
+    # `memory_rows_not_keyed_by_their_own_name` is the deterministic form of "no price
+    # moved" — consumption works by stamping an identity into `memory_key`, so
+    # a memory row keyed by anything but its plain normalized surface is a row
+    # consumption created. It is only meaningful beside `recorded`: a store
+    # with nothing in it also reports zero.
+    try:
+        from api.diagnostics import identity_adoption_summary
+        _identity = {"identity_adoption": await identity_adoption_summary()}
+    except Exception:
+        _identity = {}
     return {
         "status": "ok",
         "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
@@ -361,6 +374,7 @@ async def healthcheck():
         **_fast_voice,
         **_pipeline,
         **_schema,
+        **_identity,
     }
 
 

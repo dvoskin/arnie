@@ -185,30 +185,97 @@ async def test_recording_persists_without_annotating_the_items():
             f"behaviour change rather than annotation-only")
 
 
+@pytest.mark.parametrize("coordinator_mode",
+                         ["legacy_only", "new_observe", "new_execute"])
 @pytest.mark.asyncio
-async def test_the_annotating_producer_still_stamps():
-    """The native lane's contract is unchanged by the split — otherwise this
-    refactor would have quietly removed consumption's doorway while every gate
-    about recording stayed green."""
+async def test_shadow_never_annotates_under_any_coordinator_mode(
+        coordinator_mode, monkeypatch):
+    """⛔⛔ THE CROSS-PRODUCT GATE — the one that was missing *(Danny, 2026-08-15)*.
+
+    `shadow` used to mean two different things depending on
+    `TURN_COORDINATOR_MODE`: the legacy seams call `record_identities` (persist
+    only), while `FoodPlanStage.run` calls `stamp_canonical_identity`
+    (annotate). So one flag named `shadow` was record-only on legacy traffic
+    and CONSUMING on `new_execute` traffic.
+
+    ⭐ AND AFTER `1f13347` THAT IS NOT COSMETIC. The stamp rides `_log_call`
+    into `_analyze_food`, where `memory_key(food, entity)` addresses a
+    DIFFERENT durable memory row — so `shadow` could move a PRICE on one
+    coordinator path and not the other, invisibly, from a flag whose name
+    promises neither.
+
+    The property, across the whole cross product: **shadow leaves the item and
+    therefore `memory_key` byte-identical to off.**
+    """
     import core.turns.stages.food as food_stage
     import skills.nutrition.entity_resolver as resolver
+    from core.food_intelligence import memory_key
+
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", coordinator_mode)
+    monkeypatch.setenv("ENTITY_RESOLUTION_MODE", "shadow")
+
+    async def _fake_ensure_resolved(db, surfaces):
+        # A VALID, BINDING resolution — anything weaker and the gate passes
+        # because there was nothing to stamp, which proves nothing at all.
+        return {"Помидор": "tomato"}
+
+    monkeypatch.setattr(resolver, "ensure_resolved", _fake_ensure_resolved)
+    monkeypatch.setattr(food_stage, "_log_identity_states",
+                        lambda *a, **k: _noop())
 
     out = {"action": "log", "items": [{"food": "Помидор", "amount": 1}]}
+    await food_stage.stamp_canonical_identity(out, db=object())
+
+    item = out["items"][0]
+    assert "canonical_entity_id" not in item, (
+        f"under TURN_COORDINATOR_MODE={coordinator_mode}, shadow STAMPED "
+        f"{item.get('canonical_entity_id')!r} onto a settlement-bound item. "
+        f"That reaches memory_key and moves the price — shadow would mean "
+        f"'consume' on this coordinator path and 'record' on the others.")
+    assert memory_key("Помидор", item.get("canonical_entity_id", "")) == \
+        memory_key("Помидор", ""), (
+        "the memory key under shadow differs from the key under off — the "
+        "identity reached durable addressing")
+
+
+async def _noop():
+    return None
+
+
+@pytest.mark.asyncio
+async def test_consume_is_the_state_that_annotates(monkeypatch):
+    """The other half of the contract: `consume` MUST stamp, or the split has
+    quietly deleted consumption's doorway while every recording gate stays
+    green."""
+    import core.turns.stages.food as food_stage
+    import skills.nutrition.entity_resolver as resolver
 
     async def _fake_ensure_resolved(db, surfaces):
         return {"Помидор": "tomato"}
 
-    original_mode = food_stage.entity_resolution_mode
-    original_ensure = resolver.ensure_resolved
-    food_stage.entity_resolution_mode = lambda: "shadow"
-    resolver.ensure_resolved = _fake_ensure_resolved
-    try:
-        await food_stage.stamp_canonical_identity(out, db=object())
-    finally:
-        food_stage.entity_resolution_mode = original_mode
-        resolver.ensure_resolved = original_ensure
+    monkeypatch.setenv("ENTITY_RESOLUTION_MODE", "consume")
+    monkeypatch.setattr(resolver, "ensure_resolved", _fake_ensure_resolved)
+    monkeypatch.setattr(food_stage, "_log_identity_states",
+                        lambda *a, **k: _noop())
 
+    out = {"action": "log", "items": [{"food": "Помидор", "amount": 1}]}
+    await food_stage.stamp_canonical_identity(out, db=object())
     assert out["items"][0].get("canonical_entity_id") == "tomato"
+
+
+def test_the_mode_is_registered_with_the_config_guard():
+    """⚠ THE PARSER HAS AN `else <default>` BRANCH, AND THAT BRANCH IS THE
+    SILENT FAILURE. `NUTRITION_RESOLVER_MODE=true` ran production in shadow for
+    six days while a comment recorded it as live. A third state makes it worse:
+    a typo'd `consume` is silently `off`, and the symptom is an improvement
+    that never arrives."""
+    from core.config_guard import ENUM_FLAGS
+
+    flag = ENUM_FLAGS.get("ENTITY_RESOLUTION_MODE")
+    assert flag is not None, (
+        "ENTITY_RESOLUTION_MODE is not registered — its typos are invisible")
+    assert set(flag.allowed) == {"off", "shadow", "consume"}
+    assert flag.falls_back_to == "off"
 
 
 @pytest.mark.asyncio
@@ -263,15 +330,20 @@ async def test_a_resolver_failure_cannot_fail_the_food_turn():
 
 
 @pytest.mark.asyncio
-async def test_the_conversation_wrapper_survives_a_missing_producer():
+async def test_the_shared_wrapper_survives_a_missing_producer():
     """The wrapper's own guard, which the producer's internal one cannot give:
     an ImportError is the difference between a resolver that answers badly and
-    one that is not there."""
-    import core.conversation as conversation
+    one that is not there.
+
+    ⚠ IT LIVES IN `core.turns.stages.food`, NOT IN `core.conversation`. Both
+    seams import it from the layer that OWNS it, so `handlers.tool_executor`
+    never reaches upward into the orchestration layer — a cycle waiting to
+    become real."""
+    import core.turns.stages.food as food_stage
 
     # A `db` of None makes the real producer return immediately, so this
     # exercises the wrapper without a database.
-    await conversation._record_turn_identities({"items": [{"food": "x"}]}, None)
+    await food_stage.record_turn_identities({"items": [{"food": "x"}]}, None)
 
 
 def test_the_legacy_tool_path_records_identities_too():
@@ -308,7 +380,7 @@ def test_the_legacy_tool_path_records_identities_too():
                  if isinstance(n, ast.Call)
                  and (getattr(n.func, "id", None)
                       or getattr(n.func, "attr", None))
-                 == "_record_turn_identities"]
+                 in ("record_turn_identities", "_record_turn_identities")]
     assert recorders, (
         "`execute_tool_calls` never records identities. Every food logged by "
         "the legacy tool path — three of four ordinary food turns, measured — "
@@ -337,3 +409,45 @@ def test_the_recorder_does_not_import_the_settlement_layer():
         assert forbidden not in source, (
             f"`record_identities` reaches into {forbidden!r} — that is the "
             f"general settlement migration, not the adoption seam")
+
+
+@pytest.mark.asyncio
+async def test_the_adoption_diagnostic_answers_both_canary_questions():
+    """⭐ STEP 7 AND STEP 8, ANSWERABLE FROM OUTSIDE THE CONTAINER.
+
+    A shadow canary must prove non-zero resolution ACTIVITY and ZERO
+    consumption, and until this endpoint both required reading container logs.
+
+    ⚠ THE TWO NUMBERS ONLY MEAN ANYTHING TOGETHER. A store with nothing in it
+    reports zero identity-keyed rows too, so `recorded` and
+    `memory_rows_not_keyed_by_their_own_name` are returned side by side — "no
+    price moved" and "nothing ran" have one spelling otherwise, which is the
+    ambiguous zero this whole tranche kept paying for.
+
+    ⚠⚠ AND IT MUST NEVER RAISE. A diagnostic that 500s has turned an
+    observability gap into an outage, so a failure is reported as an `error`
+    KEY rather than an exception — asserted here against a database this test
+    does not configure.
+    """
+    from api.diagnostics import identity_adoption_summary
+
+    summary = await identity_adoption_summary()
+    assert isinstance(summary, dict)
+    for field in ("resolutions", "memory_rows_not_keyed_by_their_own_name"):
+        assert field in summary, f"{field} missing — the canary cannot ask its question"
+    # Either it answered, or it said why. Never both absent, never an exception.
+    assert "error" in summary or "mode" in summary
+
+
+def test_the_diagnostic_never_echoes_food_names_or_user_ids():
+    """⚠ COUNTS AND STATES ONLY. This sits beside endpoints that already refuse
+    to echo `env_raw`; a debug surface that leaks what a user ate is a
+    different kind of bug from the one it was added to catch."""
+    import inspect
+
+    from api import diagnostics
+
+    source = inspect.getsource(diagnostics.identity_adoption_summary)
+    for leak in ("surface_form", "parsed_food_name", "display_name)",
+                 "user_id"):
+        assert f'out["{leak}' not in source, f"{leak} is being returned"

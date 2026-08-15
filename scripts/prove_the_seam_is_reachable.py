@@ -19,9 +19,15 @@ WHAT IS PROVEN, in Danny's own order:
     1  run_chat_turn('Помидор') in shadow produces a resolution for `tomato`
     2  Творог 2% and boiled corn resolve to DIFFERENT identities
     3  a branded product resolves PRODUCT and binds no generic entity
-    4  the same four turns with resolution OFF log the same foods
+    4  THE SHADOW INVARIANT, in four parts (Danny, 2026-08-15):
+         a same mutation count                      reported, sampling-sensitive
+         b no stamped identity reaches settlement   DETERMINISTIC
+         c no identity-derived memory key is used   DETERMINISTIC
+         d no price/provenance change attributable to resolution   reported
     5  attempts > 0 AND rows > 0, or the run is INVALID — never PASS
     6  annotation-only: no memory row is written under an IDENTITY key
+       — this single observable IS (b) and (c), which is why it carries the
+         invariant and the other two are read beside it rather than trusted
 
 ⭐ 6 IS THE ONE THAT KEEPS SHADOW HONEST. `memory_key(food, entity)` is what
 turns an identity into a PRICE, so if shadow ever stamped, a
@@ -64,7 +70,7 @@ def _load_key() -> None:
 
 async def _drive(session, mode: str, run_id: str) -> dict:
     """Drive the four turns through the REAL entry point and read the DB."""
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
     from core.chat_service import run_chat_turn
     from core.recovery import is_recovery_text
@@ -113,6 +119,23 @@ async def _drive(session, mode: str, run_id: str) -> dict:
         memory = (await db.execute(
             select(UserFoodMatch.name_norm, UserFoodMatch.display_name)
             .where(UserFoodMatch.user_id == uid))).all()
+
+        # ⭐ THE MUTATION SURFACE, COUNTED — every durable thing a food turn
+        # writes, so "shadow changed nothing" is a comparison of WRITES rather
+        # than of the one table that happened to be inspected.
+        from db.models import LedgerEvent
+        ledger = (await db.execute(
+            select(LedgerEvent.event_type, func.count(LedgerEvent.id))
+            .where(LedgerEvent.user_id == uid)
+            .group_by(LedgerEvent.event_type))).all()
+        provenance = sorted(
+            (str(r[0] or ""), r[2], r[3], bool(r[4]))
+            for r in (await db.execute(
+                select(FoodEntry.parsed_food_name, FoodEntry.calories,
+                       FoodEntry.confidence_score, FoodEntry.source_type,
+                       FoodEntry.estimated_flag)
+                .join(DailyLog, DailyLog.id == FoodEntry.daily_log_id)
+                .where(DailyLog.user_id == uid))).all())
         resolutions = (await db.execute(select(FoodEntityResolution))).scalars().all()
 
         # ⭐ WHAT A CONSUMER WOULD ACTUALLY GET, read HERE — inside the arm,
@@ -137,6 +160,9 @@ async def _drive(session, mode: str, run_id: str) -> dict:
         "foods": [str(r[0] or "") for r in rows],
         "memory_keys": [(str(m[0] or ""), str(m[1] or "")) for m in memory],
         "consumer_binds": consumer,
+        "mutations": {"food_entries": len(rows), "memory_rows": len(memory),
+                      "ledger_events": {k: int(v) for k, v in ledger}},
+        "provenance": provenance,
         "resolutions": [
             {"surface": r.surface_form, "entity": str(r.canonical_entity_id or ""),
              "state": getattr(r.state, "value", str(r.state))}
@@ -267,10 +293,71 @@ async def prove() -> int:
     if off["resolutions"]:
         failures.append(f"the OFF run wrote {len(off['resolutions'])} "
                         f"resolution(s) — off must reproduce today exactly")
-    if len(off["foods"]) != len(shadow["foods"]):
+    # ⚠ ASYMMETRIC ON PURPOSE, AND THE REASON IS A LIMIT WORTH STATING. These
+    # are two separate runs against a nondeterministic model, so requiring the
+    # two food lists to be EQUAL fails on a turn the `off` arm happened not to
+    # log — which is exactly what it did: off logged 3, shadow logged 4, and
+    # the missing one was corn. That is a sample difference, not a mode
+    # difference, and one sample cannot tell them apart.
+    #
+    # ⭐ WHAT THE MODE COULD ACTUALLY BREAK IS SUPPRESSION: shadow doing LESS
+    # than off. So that is what fails the run, and the other direction is
+    # reported. The deterministic half of "same behaviour" is check 6 — no
+    # memory row keyed by an identity — which no sampling can wobble.
+    missing_under_shadow = sorted(set(off["foods"]) - set(shadow["foods"]))
+    extra_under_shadow = sorted(set(shadow["foods"]) - set(off["foods"]))
+    if extra_under_shadow or missing_under_shadow:
+        notes.append(f"   ⚠ naming differs by sample — only in shadow: "
+                     f"{extra_under_shadow}; only in off: {missing_under_shadow}")
+
+    # ⛔ THE SHADOW INVARIANT, STATED PROPERLY *(Danny, 2026-08-15)*. "Shadow
+    # logs no fewer foods" is NOT it — that was a weak stand-in for four
+    # separate claims, and only some of them are provable from two samples:
+    #
+    #   a  same MUTATION COUNT                    reported; sampling-sensitive
+    #   b  no stamped identity reaches settlement  DETERMINISTIC (check 6 + gates)
+    #   c  no identity-derived memory key is used  DETERMINISTIC (check 6)
+    #   d  no price/provenance change attributable to resolution
+    #                                              reported per common food
+    #
+    # ⭐ (b) AND (c) ARE THE SAME OBSERVABLE AND THEY ARE THE LOAD-BEARING ONES.
+    # An identity can only reach settlement by becoming a memory key; if no key
+    # differs from its own normalized surface, nothing was stamped and the same
+    # memory row was addressed — so the same evidence was available and no price
+    # could have moved BECAUSE OF RESOLUTION.
+    #
+    # ⚠ (a) AND (d) ARE REPORTED, NOT ASSERTED, AND THAT IS AN HONEST LIMIT. Two
+    # arms, one sample each, against a nondeterministic interpreter: it named
+    # one food 'Кукуруза варёная' and 'Кукуруза варёная (corn on the cob)' in
+    # the two runs. Requiring equality flags that as a behaviour change; one
+    # sample cannot separate it from a real one. Suppression is still a hard
+    # failure, because that direction is not something sampling excuses.
+    mut_off, mut_shadow = off["mutations"], shadow["mutations"]
+    notes.append(f"   mutations off    {mut_off}")
+    notes.append(f"   mutations shadow {mut_shadow}")
+    if mut_shadow["food_entries"] < mut_off["food_entries"]:
         failures.append(
-            f"off logged {len(off['foods'])} foods and shadow logged "
-            f"{len(shadow['foods'])} — shadow changed what gets logged")
+            f"shadow wrote {mut_shadow['food_entries']} food rows and off wrote "
+            f"{mut_off['food_entries']} — shadow must never suppress a write")
+    if mut_shadow["ledger_events"] != mut_off["ledger_events"]:
+        notes.append(f"   ⚠ ledger event mix differs — off {mut_off['ledger_events']} "
+                     f"vs shadow {mut_shadow['ledger_events']} (sampling, unless "
+                     f"a NEW event type appears only under shadow)")
+        new_types = set(mut_shadow["ledger_events"]) - set(mut_off["ledger_events"])
+        if new_types:
+            failures.append(
+                f"shadow emitted ledger event type(s) {sorted(new_types)} that "
+                f"off did not — a new KIND of write is not sampling noise")
+
+    # (d) provenance, for the foods BOTH arms logged under the same name. A
+    # difference here is reported rather than failed for the sampling reason
+    # above, but it is the line to read first if a canary shows drift.
+    off_prov = {name: rest for name, *rest in off["provenance"]}
+    shadow_prov = {name: rest for name, *rest in shadow["provenance"]}
+    for name in sorted(set(off_prov) & set(shadow_prov)):
+        if off_prov[name] != shadow_prov[name]:
+            notes.append(f"   ⚠ provenance differs for {name!r}: "
+                         f"off {off_prov[name]} vs shadow {shadow_prov[name]}")
 
     # ── 6. ANNOTATION-ONLY, read off the memory KEYS ─────────────────────────
     # `memory_key(food, entity)` is what turns an identity into a price. If
