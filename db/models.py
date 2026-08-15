@@ -1808,3 +1808,64 @@ class PresentedOptionRow(Base):
     selected_position = Column(Integer, nullable=False)
     rendered_label = Column(String, nullable=False)
     renderer_contract_version = Column(String, nullable=False, default="")
+
+
+class FoodEntityResolution(Base):
+    """WHAT A SURFACE FOOD NAME MEANS — the interpretation boundary, durable.
+
+    ⛔ GLOBAL, NOT PER-USER, AND THE CONTRAST IS DELIBERATE. `user_food_matches`
+    is per-user because it stores THAT USER'S trusted nutrition profile. "Помидор
+    denotes a tomato" is a fact about language, not about a person, and keying it
+    per user would fragment the exact thing this table exists to unify — one
+    Russian-speaking user's resolution would be invisible to the next.
+
+    ⭐ THE STATE IS THE DECISION; `confidence` AND `reason` ARE ADVISORY.
+    Nothing that decides what a food IS may read them. A confidence threshold is
+    how a stochastic judgement becomes a silent policy, so a producer that is
+    unsure writes `unresolved` rather than `resolved` with a low number attached
+    — see `skills.nutrition.entity_resolution`.
+
+    ⭐⭐ `contract_fingerprint` MAKES A STORED ANSWER EXPIRE HONESTLY. A
+    resolution recorded when `resolved` targeted one entity namespace is not
+    evidence about a different one; when the contract moves, the row becomes
+    UNVERIFIED rather than wrong, and the reader falls back to today's behaviour.
+    """
+    __tablename__ = "food_entity_resolutions"
+    __table_args__ = (
+        # ONE ROW PER SURFACE FORM. Enforced in the schema rather than by the
+        # writer: two resolutions of one string are two answers to one question,
+        # and `scalar_one_or_none` raises on them — a defect that surfaces as a
+        # 500 at settle time rather than as the data problem it is.
+        UniqueConstraint("surface_key", name="uq_food_entity_surface_key"),
+        Index("ix_food_entity_resolution_entity", "canonical_entity_id"),
+        Index("ix_food_entity_resolution_state", "state"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    #: The user's own words, kept verbatim for display and audit. Surface
+    #: language is never the identity — it is the evidence for one.
+    surface_form = Column(String, nullable=False, default="")
+    #: `entity_resolution.surface_key` — script-preserving, unlike
+    #: `normalize_name`, which deletes every non-Latin character and once
+    #: reduced three different foods to the digit '2'.
+    surface_key = Column(String, nullable=False, index=True)
+    #: resolved | distinct | unresolved
+    state = Column(String, nullable=False)
+    #: Empty unless the state binds. An `unresolved` row carrying an entity
+    #: would be a decision wearing a non-decision's label.
+    canonical_entity_id = Column(String, nullable=False, default="")
+    #: WHY, not just what — the entity id alone cannot be audited.
+    interpreted_meaning = Column(Text, nullable=False, default="")
+    #: Empty when the producer could not tell. NEVER inferred from the script:
+    #: a script is not a language, and guessing would bury a second unreviewed
+    #: judgement inside a durable record.
+    source_language = Column(String, nullable=False, default="")
+    resolver_version = Column(String, nullable=False, default="")
+    #: Empty for a deterministic or human resolution — different things from an
+    #: unknown one, which is why it is not defaulted to a model name.
+    model_id = Column(String, nullable=False, default="")
+    contract_fingerprint = Column(String, nullable=False, default="")
+    confidence = Column(Float)            # ⚠ ADVISORY
+    reason = Column(Text, nullable=False, default="")   # ⚠ ADVISORY
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
