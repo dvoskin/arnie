@@ -640,6 +640,33 @@ _CONF_NUM = {
 }
 
 
+def confidence_score(word) -> Optional[float]:
+    """The number a word-grade confidence stands for, or None if it stands for
+    nothing we have declared.
+
+    ⛔ PROMOTED FROM `_CONF_NUM` ON 2026-08-14 BECAUSE A CONSUMER GUESSED
+    INSTEAD. `canonical_pricing_inputs._memory` did `float(m.confidence)` on a
+    column that holds `'likely'`, `'exact'`, `'estimated'` and
+    `'user-confirmed'` — every one of which raises — and a bare `except`
+    converted the raise into "this user has no memory of this food". Measured
+    against production: 836 of 836 rows, so the canonical ladder's TOP RUNG has
+    never returned a row since it was written.
+
+    ⭐ THIS IS NOT A NEW MAPPING AND MUST NEVER BECOME ONE. The four grades and
+    their numbers were already declared here; what was missing was a NAMED
+    BOUNDARY for crossing between the persisted vocabulary and a numeric
+    contract. Inventing a convenient mapping at the call site is how policy gets
+    smuggled into a type conversion.
+
+    ⚠ AN UNRECOGNISED WORD RETURNS None, NOT A DEFAULT. Absence is not an
+    answer: a grade nobody declared is a fact about our vocabulary, and the
+    caller decides what to do about it — visibly.
+    """
+    if isinstance(word, (int, float)) and not isinstance(word, bool):
+        return float(word)
+    return _CONF_NUM.get(str(word or "").strip().lower())
+
+
 def _derive(cal, protein, carbs, fat, fiber, sugar) -> tuple:
     """protein density, satiety tier, quality tier — simple, explainable heuristics."""
     pd = round((protein * 4 / cal) * 100, 0) if cal else None  # % of cal from protein

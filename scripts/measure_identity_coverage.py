@@ -86,7 +86,11 @@ def _database_url() -> str:
 
 def _entries(url: str, days: int, limit: int) -> tuple:
     """(rows, memory keys). Two reads, no writes, no model, no network beyond
-    the database."""
+    the database.
+
+    ⚠ THE MEMORY SET HERE IS ADDRESSABILITY, NOT CONTRIBUTION — see
+    `measure_through_the_rung` below, which is what the roadmap now requires.
+    """
     import psycopg
 
     with psycopg.connect(url) as conn, conn.cursor() as cur:
@@ -229,3 +233,75 @@ if __name__ == "__main__":
                 ("entries", "evidence_backed_pct", "artifact_decides_pct")}
         path.write_text(json.dumps(report, indent=1, ensure_ascii=False) + "\n")
         print(f"\n  written → {path}")
+
+
+# ══ MEASURED THROUGH THE ACTUAL RUNG ════════════════════════════════════════
+#
+# ⛔ WHY THIS EXISTS AND WHY THE FUNCTION ABOVE IS NOT ENOUGH. On 2026-08-14 the
+# `measure()` above reported MEMORY at 44.6% of production. That number was
+# ADDRESSABILITY — a row exists under the key — computed directly against the
+# table, and it was reported as though it were the canonical ladder's memory
+# CONTRIBUTION. It was not. `_memory()` was raising `ValueError` on every row's
+# string confidence and returning None, so the true contribution was 0%.
+#
+# ⭐ AN INSTRUMENT THAT APPROXIMATES ITS SUBJECT CANNOT DISCOVER THAT ITS
+# SUBJECT IS BROKEN. This one calls `_memory()` itself, so what it reports is
+# what a turn would get — and if the rung dies again, the number goes to zero
+# instead of staying comfortably plausible.
+
+
+async def measure_through_the_rung(*, days: int = 30, limit: int = 1000) -> dict:
+    """Which rung a real entry would ACTUALLY reach, by executing the rung."""
+    import collections
+
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from core.canonical_pricing_inputs import _memory
+    from db.database import make_engine
+    from db.models import DailyLog, FoodEntry
+    from skills.nutrition.pricing_artifact import evidence_for, split_identity
+
+    engine = make_engine(_database_url().replace("postgresql://",
+                                                 "postgresql+psycopg://"))
+    rungs, unpriced = collections.Counter(), []
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+            rows = (await db.execute(
+                select(FoodEntry.parsed_food_name, DailyLog.user_id)
+                .join(DailyLog, DailyLog.id == FoodEntry.daily_log_id)
+                .order_by(FoodEntry.timestamp.desc()).limit(limit))).all()
+            for name, user_id in rows:
+                name = str(name or "")
+                # ⭐ THE LADDER'S OWN ORDER, and executed rather than modelled:
+                # memory first, because that is what `price()` does.
+                if await _memory(db, user_id, name) is not None:
+                    rungs["MEMORY"] += 1
+                    continue
+                entity, preparation = split_identity(name)
+                if evidence_for(entity, preparation) is not None:
+                    rungs["ARTIFACT"] += 1
+                else:
+                    rungs["ESTIMATE_OR_REFUSE"] += 1
+                    unpriced.append(name)
+    finally:
+        await engine.dispose()
+
+    total = max(len(rows), 1)
+    evidence = rungs["MEMORY"] + rungs["ARTIFACT"]
+    return {
+        "entries": len(rows), "measured_through": "canonical _memory() rung",
+        "rungs": dict(rungs),
+        "evidence_backed_pct": round(100 * evidence / total, 1),
+        "memory_pct": round(100 * rungs["MEMORY"] / total, 1),
+        "artifact_pct": round(100 * rungs["ARTIFACT"] / total, 1),
+        "uncovered_buckets": {
+            b: c for b, c in collections.Counter(
+                classify(n) for n in unpriced).most_common()},
+        "instrument_limits": [
+            "the rung is EXECUTED, so this is contribution, not addressability",
+            "no canonical_entity_id is passed — the store is not populated yet, "
+            "so this measures the repaired rung on TODAY's keys",
+            "counts ENTRIES, not turns",
+        ],
+    }

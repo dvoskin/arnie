@@ -88,7 +88,13 @@ def test_no_runtime_module_carries_a_credential_literal():
 #: MEASURED, NEVER GUESSED (2026-08-14). Operator scripts have read `.env`
 #: since long before this gate, and enumerating twenty-nine of them would be
 #: churn that relitigates history instead of protecting the future.
-SCRIPTS_READING_ENV_BASELINE = 29
+#: RAISED 29 -> 30 on 2026-08-14 for `scripts/prove_memory_addressing.py`, a
+#: consumer-side proof a person runs by hand against a scratch database.
+#:
+#: ⭐ THE RATCHET FIRED ON THE COMMIT THAT ADDED IT, which is the whole design:
+#: the number moved because someone decided it should, in the same commit,
+#: rather than drifting while nobody was looking.
+SCRIPTS_READING_ENV_BASELINE = 30
 
 
 def test_the_env_reading_habit_does_not_spread_beyond_scripts():

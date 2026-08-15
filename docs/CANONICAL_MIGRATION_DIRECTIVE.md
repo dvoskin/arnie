@@ -194,6 +194,93 @@ stubs `_get_client`, so the single line they could not exercise was the single
 line that was broken. **A stub is a statement about the CONTRACT; it is never
 evidence that the thing being stubbed exists.**
 
+### 1c — ⛔⛔ P0: THE CANONICAL MEMORY RUNG WAS DEAD FOR EVERY ROW *(2026-08-14)*
+
+> **CORRECTED CLAIM, PERMANENT** *(Danny)*
+>
+> ~~memory carries 44.6% of production~~
+>
+> **44.6% of production had an ADDRESSABLE memory row under a SIMULATED key
+> lookup. Actual canonical MEMORY contribution was 0% until this boundary
+> repair.** Do not carry the old interpretation forward, and do not trust the
+> number again until it is recomputed from REAL RUNG EXECUTION.
+
+`_memory()` did `float(m.confidence)` on a column holding the WORDS
+`'likely'` · `'exact'` · `'estimated'` · `'user-confirmed'` — each of which
+raises — inside a bare `except Exception` that logged at DEBUG and returned
+None. Measured against production:
+
+```text
+494 'likely' · 298 'exact' · 41 'estimated' · 3 'user-confirmed'
+────────────────────────────────────────────────────────────────
+  0 of 836 rows the canonical _memory() rung could return
+```
+
+`Rung.MEMORY` is the **TOP** of the canonical ladder, so the canonical lane has
+priced from artifact and estimate alone since it was written.
+
+⭐ **FOUND BY A CONSUMER-SIDE PROOF, NOT BY A GATE.** Eleven source gates on
+`1f13347` passed; every one asserted `memory_key` was CALLED and none asserted
+evidence came BACK. The first proof that read a row off its MACROS found a
+permanent failure sitting under all of them. **Third time this session: a
+function that is called is not a function whose result is used.**
+
+⭐⭐ **THE REPAIR IS A NAMED BOUNDARY, NOT A GUESSED MAPPING.**
+`food_intelligence._CONF_NUM` ALREADY declared the four grades and their
+numbers, with its own comment refusing to invent precision. What was missing was
+a named crossing between the persisted vocabulary and the numeric contract:
+`confidence_score()`. An undeclared grade returns **None, not a default**.
+
+⭐⭐⭐ **AND SILENT FAILURE IS GONE — ONE OUTCOME BECAME FOUR:**
+
+```text
+row absent           -> None, silent            EXPECTED
+lookup raised        -> None, WARNING           a defect, not an absence
+row has no per-100g  -> None, INFO + reason
+grade unmapped       -> EVIDENCE RETURNED, WARNING naming the word
+```
+
+The row is never discarded over its METADATA — the macros are still evidence.
+What is refused is silently substituting a number, which is exactly what broke
+it.
+
+**GATES:** one per production grade, verbatim with their real counts, each
+asserting a returned `MemoryEvidence` and its macros. **MUTATION: restoring
+`float(m.confidence)` turns SIX red**, including all four grades.
+
+⚠ A FIXTURE DEFECT THE GATE ALSO CAUGHT: keying a row on `user-confirmed`
+verbatim fails because `normalize_name` strips the hyphen, so the seeded and
+looked-up keys differed. A fixture that cannot address its own row proves
+nothing — visible only because the failure named a GRADE rather than a
+mechanism.
+
+### 1d — ✅ REMEASURED THROUGH THE ACTUAL RUNG *(2026-08-14)*
+
+The instrument now **EXECUTES** `_memory()` instead of approximating it from the
+table, because an instrument that approximates its subject cannot discover that
+its subject is broken:
+
+```text
+    446   44.6%   MEMORY               <- 0% before the repair
+     13    1.3%   ARTIFACT
+    541   54.1%   estimate / refuse
+   ─────────────────────────────────
+    459   45.9%   EVIDENCE-BACKED
+
+  uncovered   NON-ENGLISH 307 · BRANDED 96 · QUALIFIED 87 · BARE 51
+```
+
+⭐ **THE REPAIR TAKES CANONICAL MEMORY FROM 0% TO 44.6% OF REAL PRODUCTION.**
+
+⚠ **THE NUMBER LANDING ON 44.6% AGAIN IS A COINCIDENCE WORTH NAMING.** The old
+addressability estimate was accurate AS AN ESTIMATE; what was false was the
+claim that the rung delivered it. Same number, different meaning — exactly the
+banana-210 shape, and the reason the corrected claim in §1c stays permanent.
+
+⚠ Population differs slightly from the 691 run (last 1000 entries, no 30-day
+window), so ARTIFACT reads 1.3% here against 1.9% there. Not a change — a
+different sample.
+
 ### 1a — ⛔ P0 CONTAINMENT: A MEMORY KEY MUST NAME A FOOD *(landed 2026-08-14)*
 
 **FOUND WHILE DESIGNING STEP 1, AND IT WAS NOT COVERAGE DEBT — IT WAS A LIVE
