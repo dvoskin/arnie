@@ -52,7 +52,66 @@ class FoodPlanStage:
         except Exception as e:
             logger.warning(f"food plan stage failed: {e}")
             out = None
+        await stamp_canonical_identity(out, meta.get("db"))
         return plan_from_interpretation(out)
+
+
+def entity_resolution_mode() -> str:
+    """`off` | `shadow`. DEFAULT OFF, and off is the whole safety story.
+
+    ⭐ SHADOW IS NOT A HALF-MEASURE HERE, IT IS THE POINT. Resolution POPULATES
+    a durable store; CONSUMPTION is a separate change that nothing has made yet.
+    So a shadow turn writes what a food means and alters no price, no card and
+    no row — the store fills from real traffic while the blast radius stays
+    exactly zero, and the 691-entry instrument can be re-run against a store
+    built by users rather than by a backfill script.
+    """
+    import os
+
+    mode = (os.getenv("ENTITY_RESOLUTION_MODE", "off") or "").strip().lower()
+    return mode if mode in ("off", "shadow") else "off"
+
+
+async def stamp_canonical_identity(out, db) -> None:
+    """Resolve this turn's foods and hang the canonical entity on each item.
+
+    ⛔ INTERPRETATION TIME, NOT SETTLE TIME. A model call belongs where one is
+    already being made and its latency already paid; `price()` is synchronous by
+    design and must stay reachable with every provider poisoned (Gate B). This
+    also runs BEFORE the plan is lifted, so the identity travels with the item
+    rather than being recovered later from a surface string — which is the whole
+    defect being closed.
+
+    ⚠ MOST TURNS COST NOTHING. `ensure_resolved` consults the durable store
+    first and only asks about foods it has never seen, so a user's regular meals
+    are interpreted once ever and every later turn is a lookup.
+
+    ⚠⚠ AND IT CANNOT FAIL A TURN. Every error path inside the producer already
+    returns no resolution; this adds the outer guard for everything else,
+    because a food turn must not break over an identity annotation that nothing
+    yet consumes.
+    """
+    if entity_resolution_mode() == "off" or db is None or not out:
+        return
+    items = [item for item in (out.get("items") or ()) if isinstance(item, dict)]
+    surfaces = [str(item.get("food") or "").strip() for item in items]
+    if not any(surfaces):
+        return
+    try:
+        from skills.nutrition.entity_resolver import ensure_resolved
+
+        resolved = await ensure_resolved(db, [s for s in surfaces if s])
+    except Exception as e:
+        logger.warning(f"entity resolution unavailable, identity unchanged: {e}")
+        return
+    for item, surface in zip(items, surfaces):
+        entity = resolved.get(surface)
+        if entity:
+            # ⚠ NOTHING READS THIS YET. Consumption is a separate change, so
+            # stamping it is observable only in the store and in this log line.
+            item["canonical_entity_id"] = entity
+    logger.info("event=entity_identity_stamped foods=%d resolved=%d",
+                len(surfaces), sum(1 for s in surfaces if resolved.get(s)))
 
 
 def plan_from_interpretation(out) -> TurnPlan:
