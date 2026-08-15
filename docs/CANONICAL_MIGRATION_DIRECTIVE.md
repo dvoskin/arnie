@@ -99,6 +99,45 @@ these foods ADDRESSABLE AT ALL — which principally means the MEMORY rung, wher
 every one of them non-addressable. A unit-gates-only reading would have reported
 this backwards.
 
+✅ **CLOSED 1 — DISTINCT ID STABILITY** *(2026-08-14, split into two halves
+because they are different kinds of problem)*. **Typography** is settled
+deterministically by `normalize_entity_id`, run inside `record()` rather than by
+the producer, so every writer — model, human, backfill — lands on one spelling
+and two rows cannot disagree purely typographically (`%` survives as the word it
+means; dropping it would merge 2% and 5% curd). **Semantics** is settled by
+asking whether a new DISTINCT food IS one of the already-stored distinct
+identities — ⭐ a GROWING STORE, NOT A CATALOGUE: every candidate got there by
+being resolved once, so the question is "is this one of the identities we have
+met" rather than "pick from these blessed foods". The prompt is biased AGAINST
+merging, because a wrong merge is permanent and prices one food from another
+while a redundant identity is merely untidy. Reuse may only name an id that
+already exists. Cost: one extra call per genuinely-new distinct food, none
+thereafter, none for the first ever.
+
+✅ **CLOSED 2 — PRODUCT SEPARATED FROM DISTINCT.** `ResolutionState.PRODUCT` is
+in `MAY_NAME_AN_ENTITY` but **not** in `BINDING`, so a branded product is
+RECORDED — step 4 can find the population — and BINDS NOTHING. Products also
+never enter the DISTINCT reuse step, which would pollute the growing store with
+things that are not food identities. **VERIFIED LIVE, 12/12:**
+
+```text
+PRODUCT   Simple Wolf Wrap · Barebells · Royo Everything Bagel
+          Quest Protein Chips · Coca-Cola · McDonald's Big Mac
+DISTINCT  Творог -> tvorog          Сметана -> smetana
+RESOLVED  Помидор -> tomato   White rice   Chicken breast   Eggplant
+```
+
+⚠ AND WHAT THE LIVE PROBE DID NOT SHOW. The smoke harness calls `interpret()`
+directly, so the reuse step — which lives in `ensure_resolved` — never ran in
+it. The `tvorog 5% fat` / `tvorog 5%` variance visible there is RAW PRODUCER
+OUTPUT BEFORE REUSE, not evidence that reuse failed, and equally not evidence
+that it works. Reuse is proven by gate and mutation only; a live proof of it is
+owed at wiring time.
+
+---
+
+**THE ORIGINAL FINDINGS, KEPT:**
+
 ⚠ **OPEN 1 — DISTINCT IDS ARE NOT STABLE.** Three ids for one food family, and
 they differ in punctuation AND in semantics:
 

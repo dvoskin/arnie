@@ -75,11 +75,29 @@ ENTITY_NAMESPACE = "artifact_entity_v1"
 class ResolutionState(str, Enum):
     RESOLVED = "resolved"
     DISTINCT = "distinct"
+    #: ⛔ A BRANDED PRODUCT, WHICH THIS LAYER DOES NOT OWN. Added 2026-08-14
+    #: after a live probe returned `Simple Wolf Wrap (Original Dough)` as a
+    #: DISTINCT FOOD. It is not a food identity — it is a product, and products
+    #: belong to `Rung.PRODUCT`, whose producer is a later tranche.
+    #:
+    #: ⭐ THE STATE EXISTS SO THE POPULATION IS PRESERVED RATHER THAN
+    #: MISFILED. Without it, PRODUCT-shaped traffic silently becomes DISTINCT
+    #: merely because the resolver had three semantic states and none of them
+    #: fitted — the same shape as `matched: 0` from an unmatched regex, where
+    #: an unaskable question gets answered anyway.
+    PRODUCT = "product"
     UNRESOLVED = "unresolved"
 
 
-#: The states that carry a usable canonical entity. `UNRESOLVED` never does.
+#: The states this layer may bind an identity from. PRODUCT is deliberately NOT
+#: here: it names something real and records it durably, but the entity space it
+#: belongs to does not exist yet, so binding it would let a product masquerade
+#: as a generic food identity — precisely the ownership error being fixed.
 BINDING = frozenset({ResolutionState.RESOLVED, ResolutionState.DISTINCT})
+
+#: States that MAY carry an id. PRODUCT carries the product identity forward for
+#: the tranche that will own it; UNRESOLVED must never carry anything.
+MAY_NAME_AN_ENTITY = BINDING | {ResolutionState.PRODUCT}
 
 
 def contract_fingerprint() -> str:
@@ -114,6 +132,25 @@ def surface_key(surface: str) -> str:
     `steakroast` once already.
     """
     text = unicodedata.normalize("NFKC", surface or "").casefold().strip()
+    text = "".join(ch if (ch.isalnum() or ch.isspace()) else " " for ch in text)
+    return " ".join(text.split())
+
+
+def normalize_entity_id(entity_id: str) -> str:
+    """One spelling per identity, before anything else compares them.
+
+    ⛔ MEASURED 2026-08-14: one live batch produced `tvorog`, `tvorog_5%` and
+    `tvorog 5% fat` for one food family — three ids differing in PUNCTUATION and
+    in SEMANTICS. This closes the punctuation half deterministically so the
+    semantic half is the only thing the reuse step has to judge; without it the
+    reuse step would spend a model call deciding that `tvorog_5%` and
+    `tvorog 5%` are the same food, which is a question about typography.
+
+    Percent signs survive as the word they mean, because a fat percentage is
+    part of what the food IS and dropping it would merge 2% and 5% curd.
+    """
+    text = unicodedata.normalize("NFKC", entity_id or "").casefold().strip()
+    text = text.replace("%", " percent ")
     text = "".join(ch if (ch.isalnum() or ch.isspace()) else " " for ch in text)
     return " ".join(text.split())
 
@@ -163,7 +200,8 @@ class EntityResolution:
             raise ValueError(
                 f"{self.state.value} without a canonical_entity_id: a binding "
                 f"state must name the entity it binds to")
-        if self.state is ResolutionState.UNRESOLVED and self.canonical_entity_id:
+        if (self.state not in MAY_NAME_AN_ENTITY
+                and self.canonical_entity_id):
             raise ValueError(
                 "UNRESOLVED carrying a canonical_entity_id — an absent answer "
                 "must never be representable as a present one")
@@ -273,6 +311,13 @@ async def record(db, resolution: EntityResolution) -> EntityResolution:
 
     stamped = EntityResolution(**{**resolution.__dict__,
                                   "contract_fingerprint": contract_fingerprint(),
+                                  # ⭐ NORMALIZED AT THE DOOR, not by the
+                                  # producer. Every writer — model, human,
+                                  # backfill — lands on one spelling, so two
+                                  # rows can never disagree about an identity
+                                  # purely typographically.
+                                  "canonical_entity_id": normalize_entity_id(
+                                      resolution.canonical_entity_id),
                                   "surface_key": surface_key(
                                       resolution.surface_form
                                       or resolution.surface_key)})
@@ -295,3 +340,27 @@ async def record(db, resolution: EntityResolution) -> EntityResolution:
     row.reason = stamped.reason
     await db.commit()
     return stamped
+
+
+async def distinct_entities(db) -> dict:
+    """`{canonical_entity_id: interpreted_meaning}` for every stored DISTINCT.
+
+    ⭐ THE GROWING STORE THAT MAKES REUSE POSSIBLE WITHOUT A CATALOGUE. This is
+    not a curated table: every entry got here by being resolved once, so the
+    only foods it can offer are ones the system has already met. That is the
+    difference between "which of the identities we have already established is
+    this" — a legitimate question — and handing a model a list of 27 blessed
+    entities, which would make everything outside the list DISTINCT by
+    construction.
+    """
+    from sqlalchemy import select
+
+    from db.models import FoodEntityResolution
+
+    rows = (await db.execute(
+        select(FoodEntityResolution.canonical_entity_id,
+               FoodEntityResolution.interpreted_meaning)
+        .where(FoodEntityResolution.state == ResolutionState.DISTINCT.value)
+    )).all()
+    # Last meaning wins per id; they describe the same food by construction.
+    return {entity: meaning for entity, meaning in rows if entity}

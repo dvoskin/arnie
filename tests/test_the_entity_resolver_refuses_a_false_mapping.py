@@ -117,7 +117,10 @@ async def test_tvorog_is_not_forced_into_cottage_cheese(store, model):
 
     got = await producer.ensure_resolved(store, ["Творог 2%"])
 
-    assert got["Творог 2%"] == "tvorog 2%"
+    # ⭐ `tvorog 2 percent`, not `tvorog 2%`: `normalize_entity_id` runs at the
+    # store door, so the identity has ONE spelling however the producer wrote
+    # it. That is the deterministic half of the stability fix.
+    assert got["Творог 2%"] == "tvorog 2 percent"
     stored = await er.resolve(store, "Творог 2%")
     assert stored.state is ResolutionState.DISTINCT
     assert "cottage cheese" not in stored.canonical_entity_id
@@ -260,7 +263,7 @@ async def test_a_stale_contract_is_re_asked_rather_than_trusted(store, model):
         got = await producer.ensure_resolved(store, ["Помидор"])
 
     assert len(again.asked) == 1, "a resolution from a dead contract was reused"
-    assert got["Помидор"] == "ent_tomato"
+    assert got["Помидор"] == "ent tomato"      # normalized at the door
 
 
 @pytest.mark.asyncio
@@ -290,3 +293,178 @@ def test_the_client_factory_actually_resolves():
     """
     client = producer._get_client()
     assert hasattr(client, "messages") and hasattr(client.messages, "create")
+
+
+# ══ 1 — DISTINCT IDENTITY REUSE ══════════════════════════════════════════════
+#
+# ⛔ Measured live: one batch produced `tvorog`, `tvorog_5%` and `tvorog 5% fat`
+# for one food family. A canonical identity that is per-surface is not
+# canonical — it fixes fragmentation at the surface and reintroduces it one
+# layer down.
+
+
+def test_typography_alone_never_makes_two_identities():
+    """The deterministic half. `%` survives as the word it means, because a fat
+    percentage is part of what the food IS and dropping it would merge 2% and
+    5% curd."""
+    from skills.nutrition.entity_resolution import normalize_entity_id as n
+
+    assert n("tvorog_5%") == n("Tvorog  5 %") == "tvorog 5 percent"
+    assert n("tvorog 5%") != n("tvorog 2%")
+
+
+@pytest.mark.asyncio
+async def test_a_new_distinct_food_reuses_an_established_identity(store, model):
+    """⭐ THE SEMANTIC HALF. `normalize_entity_id` cannot decide that
+    `tvorog 5 percent fat` and `tvorog 5 percent` are one food; only a
+    judgement can, and it is asked against identities we have ALREADY met."""
+    model({"foods": [_said("Творог 5%", "distinct", "tvorog 5%", "5% curd")]})
+    await producer.ensure_resolved(store, ["Творог 5%"])
+
+    class _TwoStep(_Client):
+        async def create(self, **kw):
+            self.asked.append(kw)
+            first = "foods" in json.dumps(kw["messages"], ensure_ascii=False)
+            return _Reply({"foods": [_said("Творог 5% жирности", "distinct",
+                                           "tvorog 5% fat", "5% curd")]}
+                          if first else {"match": "tvorog 5 percent"})
+
+    client = _TwoStep(None)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(producer, "_get_client", lambda: client)
+        got = await producer.ensure_resolved(store, ["Творог 5% жирности"])
+
+    assert got["Творог 5% жирности"] == "tvorog 5 percent", (
+        "a second wording of one food minted a second identity — the "
+        "fragmentation this boundary exists to remove, one layer down")
+
+
+@pytest.mark.asyncio
+async def test_a_genuinely_different_food_keeps_its_own_identity(store, model):
+    """⭐⭐ ANTI-VACUITY, AND THE DANGEROUS DIRECTION. A step that merged
+    everything would satisfy the test above and quietly price 2% curd from 5%.
+    A wrong merge is permanent; a redundant identity is merely untidy."""
+    model({"foods": [_said("Творог 5%", "distinct", "tvorog 5%", "5% curd")]})
+    await producer.ensure_resolved(store, ["Творог 5%"])
+
+    class _NoMatch(_Client):
+        async def create(self, **kw):
+            self.asked.append(kw)
+            first = "foods" in json.dumps(kw["messages"], ensure_ascii=False)
+            return _Reply({"foods": [_said("Творог 2%", "distinct", "tvorog 2%",
+                                           "2% curd")]}
+                          if first else {"match": ""})
+
+    client = _NoMatch(None)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(producer, "_get_client", lambda: client)
+        got = await producer.ensure_resolved(store, ["Творог 2%"])
+
+    assert got["Творог 2%"] == "tvorog 2 percent"
+
+
+@pytest.mark.asyncio
+async def test_reuse_may_only_name_an_identity_that_already_exists(store, model):
+    """A model naming something outside the list is proposing a NEW id under
+    the guise of reuse, bypassing the judgement this step exists to make."""
+    model({"foods": [_said("Творог 5%", "distinct", "tvorog 5%", "5% curd")]})
+    await producer.ensure_resolved(store, ["Творог 5%"])
+
+    class _Invents(_Client):
+        async def create(self, **kw):
+            self.asked.append(kw)
+            first = "foods" in json.dumps(kw["messages"], ensure_ascii=False)
+            return _Reply({"foods": [_said("Сметана", "distinct", "smetana",
+                                           "cultured cream")]}
+                          if first else {"match": "dairy products generally"})
+
+    client = _Invents(None)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(producer, "_get_client", lambda: client)
+        got = await producer.ensure_resolved(store, ["Сметана"])
+
+    assert got["Сметана"] == "smetana"
+
+
+@pytest.mark.asyncio
+async def test_reuse_failure_keeps_the_producers_own_id(store, model):
+    """Reuse is an improvement, never a precondition."""
+    model({"foods": [_said("Творог 5%", "distinct", "tvorog 5%", "5% curd")]})
+    await producer.ensure_resolved(store, ["Творог 5%"])
+
+    class _Breaks(_Client):
+        async def create(self, **kw):
+            self.asked.append(kw)
+            if "foods" in json.dumps(kw["messages"], ensure_ascii=False):
+                return _Reply({"foods": [_said("Сметана", "distinct", "smetana",
+                                               "cultured cream")]})
+            raise RuntimeError("reuse call failed")
+
+    client = _Breaks(None)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(producer, "_get_client", lambda: client)
+        got = await producer.ensure_resolved(store, ["Сметана"])
+
+    assert got["Сметана"] == "smetana"
+
+
+@pytest.mark.asyncio
+async def test_the_first_distinct_food_costs_no_reuse_call(store, model):
+    """Nothing established means nothing to reuse — and no call to discover it."""
+    client = model({"foods": [_said("Творог", "distinct", "tvorog", "curd")]})
+
+    await producer.ensure_resolved(store, ["Творог"])
+
+    assert len(client.asked) == 1
+
+
+# ══ 2 — PRODUCT IS NOT A DISTINCT FOOD ═══════════════════════════════════════
+#
+# ⛔ Measured live: `Simple Wolf Wrap (Original Dough)` came back as a DISTINCT
+# FOOD. It is a product, and products belong to `Rung.PRODUCT` — a rung whose
+# producer is a later tranche.
+
+
+@pytest.mark.asyncio
+async def test_a_branded_product_is_recorded_but_binds_nothing(store, model):
+    """⭐ THE POPULATION IS PRESERVED RATHER THAN MISFILED. The row exists — so
+    step 4 can find it — and it binds no food identity, so nothing prices a
+    labelled product as though it were a generic food."""
+    model({"foods": [_said("Simple Wolf Wrap (Original Dough)", "product",
+                           "wolfnights simple wolf wrap", "branded wrap")]})
+
+    got = await producer.ensure_resolved(store,
+                                         ["Simple Wolf Wrap (Original Dough)"])
+
+    assert got == {}, "a branded product bound a food identity"
+    stored = await er.resolve(store, "Simple Wolf Wrap (Original Dough)")
+    assert stored is not None and stored.state is ResolutionState.PRODUCT
+    assert stored.canonical_entity_id == "wolfnights simple wolf wrap"
+    assert await er.entity_id_for_surface(
+        store, "Simple Wolf Wrap (Original Dough)") == ""
+
+
+def test_product_is_not_in_the_binding_set():
+    """Asserted on the SET, not on one example: a state added to BINDING later
+    would silently start binding every product ever recorded."""
+    from skills.nutrition.entity_resolution import BINDING, MAY_NAME_AN_ENTITY
+
+    assert ResolutionState.PRODUCT not in BINDING
+    assert ResolutionState.PRODUCT in MAY_NAME_AN_ENTITY
+    assert ResolutionState.UNRESOLVED not in MAY_NAME_AN_ENTITY
+
+
+@pytest.mark.asyncio
+async def test_a_product_never_reaches_the_distinct_reuse_step(store, model):
+    """Reuse asks "is this one of the FOODS we have met". A product is not a
+    food identity, so offering it there would pollute the growing store."""
+    model({"foods": [_said("Творог", "distinct", "tvorog", "curd")]})
+    await producer.ensure_resolved(store, ["Творог"])
+
+    client = model({"foods": [_said("Quest Protein Chips", "product",
+                                    "quest protein chips", "branded chips")]})
+    await producer.ensure_resolved(store, ["Quest Protein Chips"])
+
+    assert len(client.asked) == 1, "a product was put through DISTINCT reuse"
+    from skills.nutrition.entity_resolution import distinct_entities
+    assert "quest protein chips" not in await distinct_entities(store)

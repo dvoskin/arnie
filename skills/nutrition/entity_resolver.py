@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from typing import Iterable, Optional
 
 from skills.nutrition.entity_resolution import (EntityResolution,
@@ -69,6 +70,10 @@ _SYSTEM = (
     "food is, how it is made, or what grade of it is standard — even slightly. "
     "Choosing this is never a failure; it is the correct answer for most "
     "regional and traditional foods.\n\n"
+    '"product" — this names a BRANDED or packaged product rather than a food: '
+    "a manufacturer's item, a restaurant menu item, a labelled package. Give the "
+    "product identity as the entity. Do not describe it as a distinct food — a "
+    "product is identified by its label, not by what kind of food it is.\n\n"
     '"unresolved" — you cannot tell what food this is, or you are not '
     "confident. Prefer this over a guess. An absent answer costs us nothing; a "
     "wrong one prices somebody's meal from the wrong food.\n\n"
@@ -76,7 +81,8 @@ _SYSTEM = (
     "cooking method is part of what the food IS, so keep it in the entity when "
     "it changes the food.\n\n"
     'Return JSON only: {"foods": [{"surface": "<the name given>", '
-    '"state": "resolved|distinct|unresolved", "entity": "<term or id or empty>", '
+    '"state": "resolved|distinct|product|unresolved", '
+    '"entity": "<term or id or empty>", '
     '"meaning": "<one short clause: what this food is>", '
     '"language": "<BCP-47 tag or empty>"}]}'
 )
@@ -183,6 +189,74 @@ async def interpret(surfaces: Iterable[str]) -> list:
         return []
 
 
+_REUSE_SYSTEM = (
+    "You are given one food and a list of canonical food identities already "
+    "established. Decide whether the food IS one of them.\n\n"
+    "Answer with the existing identity ONLY when they are the same food — the "
+    "same thing, prepared and sold the same way, with the same nutrition. A "
+    "difference in fat percentage, cut, grade or preparation makes it a "
+    "DIFFERENT identity, not the same one described loosely.\n\n"
+    "If none is the same food, say so. Creating a new identity is cheap and "
+    "correct; merging two foods that differ is a permanent error that prices "
+    "one of them from the other.\n\n"
+    'Return JSON only: {"match": "<an identity from the list, or empty>"}')
+
+
+async def _reuse_existing_distinct(db, resolution):
+    """A DISTINCT food re-uses an established identity when it IS that food.
+
+    ⛔ WHY THIS EXISTS. Measured 2026-08-14: one live batch produced `tvorog`,
+    `tvorog_5%` and `tvorog 5% fat` for one family. `normalize_entity_id`
+    settles the typography; only a semantic judgement can settle the rest, and
+    without it the boundary would fix fragmentation at the surface layer and
+    reintroduce it one layer down — a canonical identity that is per-surface is
+    not canonical.
+
+    ⭐ THE LIST IS A GROWING STORE, NOT A CATALOGUE. Every candidate offered
+    here was resolved once already, so this asks "is this one of the identities
+    we have met" rather than "pick from these blessed foods". The prompt is
+    biased AGAINST merging, because a wrong merge is permanent and prices one
+    food from another, while a redundant identity is merely untidy.
+
+    ⚠ ANY FAILURE KEEPS THE PRODUCER'S OWN ID. Reuse is an improvement, never a
+    precondition.
+    """
+    from skills.nutrition.entity_resolution import (distinct_entities,
+                                                    normalize_entity_id)
+
+    known = await distinct_entities(db)
+    proposed = normalize_entity_id(resolution.canonical_entity_id)
+    if not known or proposed in known:
+        return resolution
+    try:
+        reply = await _get_client().messages.create(
+            model=RESOLVER_MODEL, max_tokens=200, system=_REUSE_SYSTEM,
+            messages=[{"role": "user", "content": json.dumps(
+                {"food": {"name": resolution.surface_form,
+                          "meaning": resolution.interpreted_meaning},
+                 "established": [{"identity": k, "meaning": v}
+                                 for k, v in sorted(known.items())][:60]},
+                ensure_ascii=False)}])
+        if getattr(reply, "stop_reason", None) == "max_tokens":
+            return resolution
+        text = "".join(b.text for b in (getattr(reply, "content", []) or ())
+                       if getattr(b, "type", None) == "text")
+        start, end = text.find("{"), text.rfind("}")
+        match = normalize_entity_id(
+            str(json.loads(text[start:end + 1]).get("match") or ""))
+    except Exception as exc:
+        logger.info("event=distinct_reuse_unavailable err=%s", exc)
+        return resolution
+    # ⚠ ONLY AN IDENTITY THAT ALREADY EXISTS. A model naming something outside
+    # the list is proposing a NEW id under the guise of reuse, which would
+    # bypass the very judgement this step exists to make.
+    if match and match in known:
+        logger.info("event=distinct_reused surface=%r proposed=%r reused=%r",
+                    resolution.surface_form, proposed, match)
+        return replace(resolution, canonical_entity_id=match)
+    return resolution
+
+
 async def ensure_resolved(db, surfaces: Iterable[str]) -> dict:
     """`{surface: canonical_entity_id}` for these foods, resolving what is new.
 
@@ -207,6 +281,8 @@ async def ensure_resolved(db, surfaces: Iterable[str]) -> dict:
             missing.append(surface)
 
     for resolution in await interpret(missing):
+        if resolution.state is ResolutionState.DISTINCT:
+            resolution = await _reuse_existing_distinct(db, resolution)
         stored = await record(db, resolution)
         known[resolution.surface_form] = canonical_entity_id_for(stored)
     return {k: v for k, v in known.items() if v}
