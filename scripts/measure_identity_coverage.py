@@ -253,6 +253,7 @@ if __name__ == "__main__":
 async def measure_through_the_rung(*, days: int = 30, limit: int = 1000) -> dict:
     """Which rung a real entry would ACTUALLY reach, by executing the rung."""
     import collections
+    from datetime import datetime, timedelta
 
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -267,9 +268,16 @@ async def measure_through_the_rung(*, days: int = 30, limit: int = 1000) -> dict
     rungs, unpriced = collections.Counter(), []
     try:
         async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+            # ⚠ THE SAME WINDOW AS `measure()`, AND THAT IS THE POINT. The
+            # first rung-executing run dropped the date filter and reported
+            # against the last 1000 entries while the baseline was 691 over 30
+            # days. Two populations read as one longitudinal result — which is
+            # how a coverage number quietly becomes a trend it never was.
+            since = datetime.utcnow() - timedelta(days=days)
             rows = (await db.execute(
                 select(FoodEntry.parsed_food_name, DailyLog.user_id)
                 .join(DailyLog, DailyLog.id == FoodEntry.daily_log_id)
+                .where(FoodEntry.timestamp > since)
                 .order_by(FoodEntry.timestamp.desc()).limit(limit))).all()
             for name, user_id in rows:
                 name = str(name or "")
@@ -290,7 +298,8 @@ async def measure_through_the_rung(*, days: int = 30, limit: int = 1000) -> dict
     total = max(len(rows), 1)
     evidence = rungs["MEMORY"] + rungs["ARTIFACT"]
     return {
-        "entries": len(rows), "measured_through": "canonical _memory() rung",
+        "entries": len(rows), "window_days": days,
+        "measured_through": "canonical _memory() rung",
         "rungs": dict(rungs),
         "evidence_backed_pct": round(100 * evidence / total, 1),
         "memory_pct": round(100 * rungs["MEMORY"] / total, 1),

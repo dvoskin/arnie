@@ -1,0 +1,24 @@
+{
+ "entries": 687,
+ "window_days": 30,
+ "measured_through": "canonical _memory() rung",
+ "rungs": {
+  "MEMORY": 300,
+  "ARTIFACT": 13,
+  "ESTIMATE_OR_REFUSE": 374
+ },
+ "evidence_backed_pct": 45.6,
+ "memory_pct": 43.7,
+ "artifact_pct": 1.9,
+ "uncovered_buckets": {
+  "NON-ENGLISH  (interpretation boundary)": 215,
+  "BRANDED      (PRODUCT rung, no producer)": 68,
+  "QUALIFIED    (identity boundary — modifiers)": 52,
+  "BARE + UNCOVERED (a real artifact gap)": 39
+ },
+ "instrument_limits": [
+  "the rung is EXECUTED, so this is contribution, not addressability",
+  "no canonical_entity_id is passed — the store is not populated yet, so this measures the repaired rung on TODAY's keys",
+  "counts ENTRIES, not turns"
+ ]
+}

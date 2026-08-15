@@ -281,6 +281,39 @@ banana-210 shape, and the reason the corrected claim in §1c stays permanent.
 window), so ARTIFACT reads 1.3% here against 1.9% there. Not a change — a
 different sample.
 
+### 1e — ✅ THE MEASUREMENT LOOP, CLOSED APPLES-TO-APPLES *(Danny, 2026-08-15)*
+
+The first rung-executing run dropped the date filter and reported against the
+last 1000 entries while the baseline was 691 over 30 days. **Two populations
+read as one longitudinal result** — which is how a coverage number quietly
+becomes a trend it never was. Rerun on the SAME window and query shape:
+
+```text
+rung                  SIMULATED        EXECUTED
+MEMORY              308   44.6%      300   43.7%
+ARTIFACT             13    1.9%       13    1.9%
+ESTIMATE_OR_REFUSE  370   53.5%      374   54.4%
+EVIDENCE-BACKED           46.5%            45.6%
+
+uncovered (executed)  NON-ENGLISH 215 · BRANDED 68 · QUALIFIED 52 · BARE 39
+```
+
+⚠ **691 vs 687 ENTRIES: THE WINDOW MOVED.** A rolling 30 days is not the same
+30 days a day later, so this is *comparable*, not identical, and about 4 of the
+8-entry memory gap is population rather than estimate.
+
+⭐ **WHAT THE COMPARISON ACTUALLY SHOWS.** The simulated estimate was a GOOD
+estimate of what the rung COULD deliver — 44.6% against an executed 43.7%, and
+the ARTIFACT half matched EXACTLY at 13 / 1.9%. It was a completely FALSE
+statement of what the rung DID deliver, which was **0%**. The estimate was never
+wrong about the data; it was wrong about the code, and it could not have been
+otherwise, because it never ran the code.
+
+**Both records are kept side by side** —
+`coverage_last_30_days.json` (simulated) and
+`coverage_last_30_days_through_the_rung.json` (executed) — so nobody later reads
+one as a continuation of the other.
+
 ### 1a — ⛔ P0 CONTAINMENT: A MEMORY KEY MUST NAME A FOOD *(landed 2026-08-14)*
 
 **FOUND WHILE DESIGNING STEP 1, AND IT WAS NOT COVERAGE DEBT — IT WAS A LIVE
