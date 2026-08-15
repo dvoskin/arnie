@@ -493,3 +493,82 @@ def test_every_seam_import_actually_resolves():
                     f"{node.module!r}, which does not define it. The seam's "
                     f"guard swallows the ImportError, so this fails SILENTLY "
                     f"and every affected food turn stops recording.")
+
+
+# ── stage-time recording: the ask path ────────────────────────────────────────
+
+def test_a_pending_canonical_operation_records_before_it_asks():
+    """⛔⛔ ANY FOOD ENTERING A PENDING CANONICAL OPERATION MUST HAVE HAD
+    IDENTITY RECORDING ATTEMPTED BEFORE THE TURN RETURNS ASK *(Danny,
+    2026-08-15)*.
+
+    An ask return carries `text`/`questions`/`options`/`points` and NO `items`
+    (core/food_turn.py:5468, :5547), so the post-interpreter seam sees nothing
+    and logs `no_interpretation`. The food is then staged into a pending
+    operation and settled by B-1 WITHOUT re-interpretation — through neither
+    seam, ever. Measured live on `chat_quantity:26:telegram:9340`: the
+    interpreter named "Chicken breast", the row committed at 287 kcal from
+    `rung=memory`, and no resolution existed for it.
+
+    ⭐ THE INVARIANT IS *ATTEMPTED*, NOT *RESOLVED*. Truncation and abstention
+    may legitimately leave no row; never asking is the defect.
+
+    ⚠ STRUCTURAL, because the behavioural version would need a full B-1 turn.
+    The recording call must sit inside the block that takes B-1 ownership and
+    BEFORE `b1_material` is popped — the pop is what destroys the surface, so
+    ordering is the whole property.
+    """
+    import ast
+
+    source = _conversation_source()
+    tree = ast.parse(source)
+
+    recorders, pops = [], []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            name = (getattr(node.func, "id", None)
+                    or getattr(node.func, "attr", None))
+            if name in ("record_turn_identities", "_record_turn_identities"):
+                recorders.append(node.lineno)
+            elif name == "pop":
+                segment = ast.get_source_segment(source, node) or ""
+                if "b1_material" in segment:
+                    pops.append(node.lineno)
+
+    assert pops, ("the `b1_material` pop is gone — this gate has stopped "
+                  "measuring its subject")
+    for pop_line in pops:
+        before = [r for r in recorders if r < pop_line and pop_line - r < 25]
+        assert before, (
+            f"`b1_material` is popped at line {pop_line} with no identity "
+            f"recording in the 25 lines before it. That pop destroys the only "
+            f"copy of the staged food surface, so every food that enters a "
+            f"pending canonical operation would reach settlement with no "
+            f"identity ever attempted.")
+
+
+def test_the_stage_time_recorder_reads_the_interpreter_items():
+    """It must record the food the interpreter actually named, not a label
+    reconstructed from the question text. `_b1_material` carries
+    `data.get("items")` verbatim, which is why option 2 needed no interpreter
+    contract change — the surface is already at the staging site."""
+    source = _conversation_source()
+    assert 'b1_material") or {}).get("items")' in source, (
+        "the stage-time recorder is not reading `b1_material['items']`; a food "
+        "surface recovered from question copy is a different string from the "
+        "one settlement will use")
+
+
+def test_stage_time_recording_adds_no_pricing_or_settlement_dependency():
+    """⭐ SCOPE, ENFORCED. Option 2 was chosen over option 3 precisely because
+    semantic resolution must not move into settlement — Gate B. If this block
+    ever grows a pricing or commit call, that choice has been undone."""
+    source = _conversation_source()
+    start = source.index("STAGE-TIME RECORDING")
+    block = source[start:start + 2200]
+    for forbidden in ("assemble(", "price(", "commit_or_load_existing",
+                      "write_canonical_meal"):
+        assert forbidden not in block, (
+            f"the stage-time recording block reaches {forbidden!r} — that is "
+            f"settlement, and moving model-dependent work there is what Gate B "
+            f"forbids")

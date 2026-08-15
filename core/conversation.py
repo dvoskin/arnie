@@ -1863,6 +1863,34 @@ async def _run_turn(
                     # (chat_quantity:26:telegram:9241 — recorded id_addressed,
                     # shown as label text).
                     _sft["text"] = _b1_ask.ask_copy()
+                    # ⛔⛔ STAGE-TIME RECORDING — THE ASK IS WHERE THE FOOD IS
+                    # LAST VISIBLE *(Danny, 2026-08-15)*. An ask return carries
+                    # `text`/`questions`/`options`/`points` and NO `items`, so
+                    # the seam after the interpreter sees nothing and logs
+                    # `no_interpretation`. The food is then staged into a
+                    # pending operation and settled by B-1 WITHOUT
+                    # re-interpretation — so it passed through neither seam,
+                    # ever. Measured live on `chat_quantity:26:telegram:9340`:
+                    # the interpreter named "Chicken breast", the row committed
+                    # at 287 kcal from `rung=memory`, and no resolution existed.
+                    #
+                    # ⭐ THE INVARIANT IS ATTEMPTED, NOT RESOLVED: any food
+                    # entering a pending canonical operation must have had
+                    # identity recording ATTEMPTED before the turn returns ask.
+                    # Truncation and abstention may legitimately leave no row —
+                    # what may not happen is never asking.
+                    #
+                    # ⭐⭐ AND THE SURFACE IS ALREADY HERE. `_b1_material`
+                    # carries the interpreter's own `items`, so this needs no
+                    # interpreter contract change, no pricing call and no
+                    # settlement dependency — the three things option 2 was
+                    # chosen to avoid. `ensure_resolved` consults the durable
+                    # store first, so answering the question later re-resolves
+                    # nothing.
+                    from core.turns.stages.food import record_turn_identities
+                    await record_turn_identities(
+                        {"items": (_sft.get("b1_material") or {}).get("items")
+                         or []}, db)
                     _sft.pop("b1_material", None)
                     await db.commit()
                     logger.info(
