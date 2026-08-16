@@ -724,3 +724,165 @@ def test_the_application_engine_gets_the_sqlite_savepoint_fix():
         "fix_sqlite_savepoints — on SQLite a released savepoint commits as its "
         "own transaction, so a rolled-back settlement leaves a durable "
         "MealCommit beside food that vanished")
+
+
+# ══ THE CROSS-USER CLAIM COLLISION ══════════════════════════════════════════
+
+@pytest.mark.asyncio
+async def test_two_users_sharing_a_client_id_get_two_operations(app_db, seeded):  # noqa: F811
+    """⛔⛔ THE WORST DEFECT THIS SLICE HAD, AND THE REPOSITORY HAD ALREADY
+    WRITTEN IT DOWN.
+
+    `make_turn_id` returns `f"{channel}:{cid}"` when the client supplies an
+    Idempotency-Key — NO user in it. `meal_commits` is unique on
+    (operation_id, revision) and deliberately excludes user_id, and the
+    duplicate loader looks up by id alone. So with `operation_id = turn:{id}`:
+
+        user A, ios:X, Mackerel 100 g  -> commits
+        user B, ios:X, Mackerel 100 g  -> hits A's claim, is handed A's stored
+                                          result, and writes NO ROW OF ITS OWN
+
+    The content guard cannot save this: the two commands AGREE on name and
+    quantity. `operation_id_for` exists precisely for it, and its docstring
+    says so in as many words.
+    """
+    import db.database as D
+    from sqlalchemy import select
+
+    from core.canonical_writer import operation_id_for
+    from core.general_settlement import GeneralSettlementOwner
+    from db.models import DailyLog, FoodEntry, MealCommit, User, UserPreferences
+    from db.queries import get_or_create_today_log, reload_user
+    from skills.nutrition.pricing_artifact import _artifact, evidence_for
+
+    entity = next((str(i).split("|")[0]
+                   for i in (getattr(_artifact(), "entries", None) or {})
+                   if evidence_for(str(i).split("|")[0], "") is not None), None)
+    assert entity, "the artifact is empty — this gate cannot settle anything"
+
+    async with D.AsyncSessionLocal() as s:
+        other = User(telegram_id="collision:b", name="B", timezone="UTC")
+        s.add(other)
+        await s.flush()
+        b_id = other.id
+        s.add(UserPreferences(user_id=b_id, calorie_target=2000,
+                              protein_target=150))
+        await get_or_create_today_log(s, b_id, "UTC")
+        await s.commit()
+
+    shared_turn = "ios:SAME-CLIENT-KEY"
+    item = {"food_name": entity, "quantity": "100 g"}
+
+    for uid in (seeded, b_id):
+        async with D.AsyncSessionLocal() as s:
+            user = await reload_user(s, uid)
+            await GeneralSettlementOwner().settle(
+                s, user=user, items=[dict(item)], source_turn_id=shared_turn)
+            await s.commit()
+
+    async with D.AsyncSessionLocal() as s:
+        ops = sorted((await s.execute(
+            select(MealCommit.operation_id))).scalars().all())
+        rows = (await s.execute(
+            select(FoodEntry.id, DailyLog.user_id)
+            .join(DailyLog, DailyLog.id == FoodEntry.daily_log_id))).all()
+
+    assert ops == sorted([operation_id_for("general", seeded, shared_turn),
+                          operation_id_for("general", b_id, shared_turn)]), (
+        f"the two users did not get two operations: {ops} — one of them was "
+        f"handed the other's claim")
+    owners = {user_id for _, user_id in rows}
+    assert owners == {seeded, b_id}, (
+        f"only {owners} got a food row; the second user's meal vanished into "
+        f"the first user's claim")
+
+
+@pytest.mark.asyncio
+async def test_a_failed_view_leaves_nothing_without_an_explicit_rollback(
+        app_db, seeded):  # noqa: F811
+    """⛔ THE PREVIOUS GATE CALLED `s.rollback()` ITSELF, so it proved that an
+    explicit rollback works — never that the real failure path performs one.
+    Here NOTHING calls rollback: the stage raises, the session context exits
+    WITHOUT a commit, and a FRESH session must see no delta at all.
+
+    ⚠ ITS HONEST LIMIT, STATED RATHER THAN IMPLIED: this drives the execution
+    STAGE, not `run_chat_turn`, because a real turn calls the model and this
+    suite may not. What it proves is that no commit happens on the failure
+    path and nothing durable survives it. What it does NOT prove is that every
+    outer consumer re-raises rather than swallowing — the seam proof script
+    covers the live path.
+    """
+    import db.database as D
+    from sqlalchemy import func, select
+
+    import core.general_settlement as gs
+    from core.general_settlement import ExecutionViewMismatch
+    from core.turns.stages import execute_native as stage_module
+    from db.models import FoodEntry, LedgerEvent, MealCommit
+    from db.queries import reload_user
+    from skills.nutrition.pricing_artifact import _artifact, evidence_for
+
+    entity = next((str(i).split("|")[0]
+                   for i in (getattr(_artifact(), "entries", None) or {})
+                   if evidence_for(str(i).split("|")[0], "") is not None), None)
+    assert entity
+
+    async def durable():
+        # A plain loop: a genexp containing `await` is an ASYNC GENERATOR, not a
+        # tuple — it returns something truthy that never runs a query, which is
+        # how this same gate once counted nothing and passed.
+        out = []
+        async with D.AsyncSessionLocal() as s:
+            for table in (FoodEntry, LedgerEvent, MealCommit):
+                got = await s.execute(select(func.count()).select_from(table))
+                out.append(int(got.scalar() or 0))
+        return tuple(out)
+
+    before = await durable()
+
+    real_view = gs.execution_view
+
+    def exploding(result, items):
+        # Anti-vacuity: the writer really ran and really produced rows before
+        # this fires, so the failure is AFTER the flush, not instead of it.
+        assert getattr(result, "committed_items", None), (
+            "settlement wrote nothing — this gate would then prove nothing")
+        raise ExecutionViewMismatch("forced at the real failure point")
+
+    gs.execution_view = exploding
+    try:
+        stage = stage_module.NativeExecutionStage(executor=None)
+        ops = [{"name": "log_food",
+                "input": {"food_name": entity, "quantity": "100 g"}}]
+        async with D.AsyncSessionLocal() as s:
+            user = await reload_user(s, seeded)
+            stage._claim = lambda *a, **k: _true()
+            import os
+            os.environ["GENERAL_SETTLEMENT_ALLOWLIST"] = str(seeded)
+            with pytest.raises(ExecutionViewMismatch):
+                await stage.run(
+                    _request(turn_id="rollback:real", db=s, user=user,
+                             today_log=None),
+                    validation=SimpleNamespace(approved_operations=ops))
+            # NO rollback() here. The context exits without a commit.
+    finally:
+        gs.execution_view = real_view
+        os.environ.pop("GENERAL_SETTLEMENT_ALLOWLIST", None)
+
+    after = await durable()
+    # FOOD AND LEDGER ON EVERY ENGINE — the user-visible halves.
+    assert after[:2] == before[:2], (
+        "a failed execution view left a durable food row or ledger event "
+        "behind WITHOUT anyone calling rollback — the failure path must not "
+        "commit")
+    # ⚠ THE CLAIM ROW WHERE THE HARNESS CAN EXPRESS IT, for the reason given in
+    # `test_a_view_mismatch_leaves_nothing_durable`: this fixture binds SQLite
+    # through a StaticPool and so cannot take `fix_sqlite_savepoints` without
+    # breaking concurrent-session tests. The APPLICATION engine has the fix and
+    # is gated; on Postgres the whole tuple matches. Filed, not waived.
+    async with D.AsyncSessionLocal() as probe:
+        dialect = probe.bind.dialect.name if probe.bind is not None else ""
+    if dialect == "postgresql":
+        assert after == before, (
+            "the exactly-once claim survived a failure path that never "
+            "committed")

@@ -268,7 +268,8 @@ class GeneralSettlementOwner:
         back to legacy is the dual-authority failure being prevented.
         """
         from core.canonical_writer import (MealIntent, ResolvedFood,
-                                           ResolvedMeal, write_canonical_meal)
+                                           ResolvedMeal, operation_id_for,
+                                           write_canonical_meal)
         from core.commit_coordinator import commit_or_load_existing
         from core.semantics import (CanonicalEvent, Confidence,
                                     NutritionProvenance, ResolutionStatus)
@@ -276,8 +277,24 @@ class GeneralSettlementOwner:
         resolved = [await self._price(db, user=user, item=item)
                     for item in items]
 
+        # ⛔⛔ USER-SCOPED, AND THE REPOSITORY ALREADY SAID SO. This was
+        # `f"turn:{source_turn_id}"`, and `operation_id_for`'s docstring
+        # describes that exact bug verbatim: `make_turn_id` returns
+        # `f"{channel}:{cid}"` when the client supplies an Idempotency-Key,
+        # with NO user in it — "so two users sending the same key would share
+        # an operation, and the second would be handed the first's committed
+        # result". `meal_commits` is unique on (operation_id, revision) and
+        # deliberately excludes user_id, and `_load` looks up by id alone, so
+        # THE ID ITSELF HAS TO CARRY THE SCOPE.
+        #
+        # The content guard does not save this: two users logging the same food
+        # at the same portion agree on name and quantity, so B silently
+        # receives A's stored result — A's entry_id, A's macros — and writes no
+        # row of its own.
         meal = ResolvedMeal(
-            operation_id=f"turn:{source_turn_id}", revision=0,
+            operation_id=operation_id_for("general", int(user.id),
+                                          source_turn_id),
+            revision=0,
             user_id=int(user.id),
             logging_day=_logging_day(user),
             user_timezone=_zone(user),
@@ -459,8 +476,26 @@ def execution_view(result, items) -> object:
         got_name = str(row.get("name") or "").strip()
         want_qty = str(item.get("quantity") or "").strip()
         got_qty = str(row.get("quantity") or "").strip()
+        # ⚠ CANONICAL IDENTITY TOO, NOT ONLY THE VISIBLE TEXT. Name and
+        # quantity are free-text and are the WRONG long-term authority: a
+        # genuine retry can arrive as equivalent text formatted differently,
+        # and a changed canonical identity could in principle keep the same
+        # visible name. `entity_id` is the settlement-defining half that the
+        # renderer's two strings cannot see.
+        #
+        # ⛔ AND THE REAL FIX IS UPSTREAM, STATED SO IT IS NOT FORGOTTEN: bind
+        # the CLAIM to a fingerprint of the normalized settlement input and
+        # compare it AT THE CLAIM BOUNDARY, so a result is known to belong to
+        # this command before anything downstream sees it. This check is a net
+        # under that, not a substitute for it — a presentation adapter should
+        # not be the idempotency authority.
+        want_entity = str(item.get("canonical_entity_id")
+                          or item.get("entity_id") or "").strip()
+        got_entity = str(row.get("entity_id") or "").strip()
         if (want_name.casefold() != got_name.casefold()
-                or want_qty.casefold() != got_qty.casefold()):
+                or want_qty.casefold() != got_qty.casefold()
+                or (want_entity and got_entity
+                    and want_entity.casefold() != got_entity.casefold())):
             logger.error(
                 "event=settlement_idempotency_conflict index=%d command=%r/%r "
                 "written=%r/%r — this operation id already settled DIFFERENT "
