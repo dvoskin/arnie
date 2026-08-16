@@ -818,7 +818,7 @@ async def test_a_failed_view_leaves_nothing_without_an_explicit_rollback(
     import core.general_settlement as gs
     from core.general_settlement import ExecutionViewMismatch
     from core.turns.stages import execute_native as stage_module
-    from db.models import FoodEntry, LedgerEvent, MealCommit
+    from db.models import (FoodEntry, LedgerEvent, MealCommit, ProcessedTurn)
     from db.queries import reload_user
     from skills.nutrition.pricing_artifact import _artifact, evidence_for
 
@@ -833,7 +833,10 @@ async def test_a_failed_view_leaves_nothing_without_an_explicit_rollback(
         # how this same gate once counted nothing and passed.
         out = []
         async with D.AsyncSessionLocal() as s:
-            for table in (FoodEntry, LedgerEvent, MealCommit):
+            # ⛔ ProcessedTurn IS IN THE SET. It is the durable legacy claim,
+            # and leaving it out is precisely how the previous version of this
+            # gate passed over a leaked one.
+            for table in (FoodEntry, LedgerEvent, MealCommit, ProcessedTurn):
                 got = await s.execute(select(func.count()).select_from(table))
                 out.append(int(got.scalar() or 0))
         return tuple(out)
@@ -856,7 +859,9 @@ async def test_a_failed_view_leaves_nothing_without_an_explicit_rollback(
                 "input": {"food_name": entity, "quantity": "100 g"}}]
         async with D.AsyncSessionLocal() as s:
             user = await reload_user(s, seeded)
-            stage._claim = lambda *a, **k: _true()
+            # ⛔ `_claim` IS NOT STUBBED. Stubbing it removed the one durable
+            # write from the path this gate exists to prove — the canonical
+            # branch must not take it at all.
             import os
             os.environ["GENERAL_SETTLEMENT_ALLOWLIST"] = str(seeded)
             with pytest.raises(ExecutionViewMismatch):
@@ -886,3 +891,36 @@ async def test_a_failed_view_leaves_nothing_without_an_explicit_rollback(
         assert after == before, (
             "the exactly-once claim survived a failure path that never "
             "committed")
+
+    # ⭐⭐ AND THE RETRY MUST SUCCEED, EXACTLY ONCE. This is the assertion no
+    # leaked claim can survive — legacy OR canonical: the same turn, run again
+    # for real, has to settle. Before the claim moved, the first attempt's
+    # durable ProcessedTurn refused every retry with ExactlyOnceRefusal, so one
+    # failed PRESENTATION made the meal unloggable until the window expired.
+    #
+    # ⚠ POSTGRES, for the harness reason given above and no other: under the
+    # StaticPool SQLite engine the first attempt's MealCommit leaks, and the
+    # retry then fails with CommitInProgress — the same savepoint limitation,
+    # observed through a different door. That the retry assertion catches a
+    # LEAKED CANONICAL claim too is the point of it.
+    if dialect != "postgresql":
+        return
+    async with D.AsyncSessionLocal() as s:
+        user = await reload_user(s, seeded)
+        os.environ["GENERAL_SETTLEMENT_ALLOWLIST"] = str(seeded)
+        try:
+            view = await stage.run(
+                _request(turn_id="rollback:real", db=s, user=user,
+                         today_log=None),
+                validation=SimpleNamespace(approved_operations=ops))
+            await s.commit()
+        finally:
+            os.environ.pop("GENERAL_SETTLEMENT_ALLOWLIST", None)
+
+    assert view is not None and len(view.calls) == 1, (
+        "the retry of a turn whose presentation failed did not settle — a "
+        "leaked legacy claim refused it before canonical idempotency was "
+        "consulted")
+    retried = await durable()
+    assert retried[0] == before[0] + 1, (
+        f"the retry wrote {retried[0] - before[0]} food rows, not exactly one")

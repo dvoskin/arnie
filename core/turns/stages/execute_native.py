@@ -75,9 +75,28 @@ class NativeExecutionStage:
         # So the decision is made here, before anything mutates.
         settlement = await self._canonical_route(db, user, ops)
 
-        if not await self._claim(db, user, request, ops):
-            raise ExactlyOnceRefusal(request.turn_id)
-
+        # ⛔⛔ THE CANONICAL BRANCH TAKES NO LEGACY CLAIM. `_claim` calls
+        # `claim_processed_turn`, which COMMITS — a durable ProcessedTurn row —
+        # and it used to run BEFORE settlement. The sequence that produced:
+        #
+        #     route canonical -> ProcessedTurn COMMITS (durable)
+        #                     -> meal + result merely STAGED
+        #                     -> execution_view raises
+        #                     -> the meal transaction disappears
+        #                     -> the ProcessedTurn SURVIVES
+        #
+        # and a retry then met that stale claim and was refused before it could
+        # ever reach `commit_or_load_existing`. One failed presentation, and the
+        # meal becomes unloggable until the window expires.
+        #
+        # It also contradicted this slice's own A2 contract, in the settlement
+        # owner's docstring: "canonical idempotency REPLACES legacy dedup here
+        # — one turn, one claim, one writer. `commit_or_load_existing` is that
+        # claim." Two claims is exactly the hidden second owner A2 forbids.
+        #
+        # ⚠ AND MY OWN ROLLBACK GATE HID IT by stubbing `_claim` — removing the
+        # single durable write from the path it was written to prove. A test
+        # that patches out the thing under test proves the patch.
         if settlement is not None:
             # ⛔⛔ NO FALLBACK PAST THIS LINE (A8). Once canonical settlement
             # owns the turn, `PricingRefused` PROPAGATES — catching it here to
@@ -99,6 +118,11 @@ class NativeExecutionStage:
             view = execution_view(result, items)
             LAST_EXECUTION.set(view)
             return view
+
+        # LEGACY ONLY FROM HERE. The ProcessedTurn claim belongs to the lane
+        # that has no claim of its own.
+        if not await self._claim(db, user, request, ops):
+            raise ExactlyOnceRefusal(request.turn_id)
 
         executor = self._executor
         if executor is None:
