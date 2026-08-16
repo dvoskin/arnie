@@ -49,9 +49,17 @@ class _RecordingOwner:
         # that cannot occur in production tests nothing.
         self.calls.append(kwargs)
         items = list(kwargs.get("items") or ())
+        # ⚠ name and quantity INCLUDED — `_read_back` always writes them, and
+        # the idempotency-conflict check compares the command against them. A
+        # double that omits fields the real writer always sets will fail gates
+        # the real writer passes, which is the second time in this file a
+        # too-thin double has done that.
         return SimpleNamespace(
-            committed_items=[{"entry_id": 100 + i, "calories": 1.0,
-                              "protein": 0.1} for i, _ in enumerate(items)],
+            committed_items=[{"entry_id": 100 + i,
+                              "name": str(it.get("food_name") or ""),
+                              "quantity": str(it.get("quantity") or ""),
+                              "calories": 1.0, "protein": 0.1}
+                             for i, it in enumerate(items)],
             meal_totals={"calories": float(len(items)), "protein": 0.1})
 
 
@@ -396,8 +404,10 @@ def test_a_positional_mismatch_raises_rather_than_reporting_nothing_committed():
     from core.general_settlement import ExecutionViewMismatch, execution_view
 
     result = SimpleNamespace(
-        committed_items=[{"entry_id": 1, "calories": 10.0, "protein": 1.0},
-                         {"entry_id": 3, "calories": 30.0, "protein": 3.0}],
+        committed_items=[{"entry_id": 1, "name": "A", "quantity": "1 g",
+                          "calories": 10.0, "protein": 1.0},
+                         {"entry_id": 3, "name": "C", "quantity": "3 g",
+                          "calories": 30.0, "protein": 3.0}],
         meal_totals={"calories": 40.0, "protein": 4.0})
     items = [{"food_name": "A"}, {"food_name": "B"}, {"food_name": "C"}]
 
@@ -425,7 +435,8 @@ def test_the_committed_totals_flow_from_the_producer_into_the_renderer():
     # writer result schema -> execution_view -> renderer, and a SimpleNamespace
     # would keep passing if the writer's own field names moved.
     result = MealCommitResult(
-        committed_items=({"entry_id": 7, "calories": 305.0,
+        committed_items=({"entry_id": 7, "name": "Mackerel",
+                          "quantity": "100 g", "calories": 305.0,
                           "protein": 33.0},),
         meal_totals={"calories": 305.0, "protein": 33.0})   # what COMMITTED
 
@@ -562,15 +573,154 @@ async def test_a_view_mismatch_leaves_nothing_durable(app_db, seeded):  # noqa: 
         "a turn whose execution view could not be built left a durable food "
         "row — the mapping failure must take the meal down with it")
 
-    # ⚠ THE CLAIM ROW ONLY WHERE ISOLATION EXISTS, AND THE CARVE-OUT IS NARROW
-    # AND NAMED. Under SQLite the suite binds a StaticPool — ONE shared
-    # connection — and the released SAVEPOINT `claim_commit` uses does not
-    # unwind the same way, so the count observed there describes the harness,
-    # not the system. Measured 2026-08-16: this assertion FAILS on SQLite and
-    # PASSES on Postgres, which is production's engine. Asserting it on SQLite
-    # would be asserting the artifact.
+    # ⛔ THE CLAIM ROW: ASSERTED WHERE THE HARNESS CAN EXPRESS IT.
+    #
+    # An earlier version waived this as a "StaticPool observation artifact".
+    # That was wrong: `fix_sqlite_savepoints` exists for exactly this failure —
+    # pysqlite releases the OUTERMOST savepoint as its own transaction, so
+    # `claim_commit`'s `begin_nested()` leaves a durable MealCommit while the
+    # food that follows rolls back — and the APPLICATION ENGINE was skipping
+    # it. That is now fixed in db/database.py and gated structurally by
+    # `test_the_application_engine_gets_the_sqlite_savepoint_fix`.
+    #
+    # ⚠ WHAT REMAINS IS A HARNESS LIMIT, NOT A PRODUCT ONE. This fixture binds
+    # SQLite through a StaticPool — one shared connection — and the savepoint
+    # fix emits its own BEGIN, which two concurrent sessions on one connection
+    # cannot both do (`test_two_concurrent_taps_write_one_meal` dies on it). So
+    # the harness cannot both apply the fix and stay concurrent, and the claim
+    # half is asserted on POSTGRES, production's engine, where isolation is
+    # real. The FOOD ROW is asserted on every engine, above.
     if dialect == "postgresql":
         assert after == before, (
             "the exactly-once claim survived a rolled-back settlement — a "
             "retry would then be answered as a duplicate of a meal that never "
             "landed")
+    assert dialect, "the engine under test could not be identified"
+
+
+# ══ THE REPLAY PATH — same operation id, different content ══════════════════
+
+def test_a_reused_operation_id_with_a_different_item_count_is_refused():
+    """The length check, which was the only guard here."""
+    from core.general_settlement import ExecutionViewMismatch, execution_view
+    from core.meal_commit import MealCommitResult
+
+    stored = MealCommitResult(
+        committed_items=({"entry_id": 7, "name": "Mackerel",
+                          "quantity": "100 g", "calories": 305.0,
+                          "protein": 33.0},),
+        meal_totals={"calories": 305.0, "protein": 33.0})
+
+    with pytest.raises(ExecutionViewMismatch):
+        execution_view(stored, [{"food_name": "Asparagus", "quantity": "100 g"},
+                                {"food_name": "Rice", "quantity": "1 cup"}])
+
+
+def test_a_reused_operation_id_with_the_same_count_but_different_food_is_refused():
+    """⛔⛔ THE ONE A LENGTH CHECK WAVES THROUGH, AND THE WORSE OF THE TWO.
+
+        first   ios:X = mackerel    -> durable, one row
+        later   ios:X = asparagus   -> the replay returns MACKEREL's result
+                                       1 == 1 passes, and asparagus would take
+                                       mackerel's entry_id and macros
+
+    `make_turn_id` prefers the client message id over the text, so the same id
+    resent with different content produces the same turn_id and claims the same
+    operation. Confident wrong attribution, rebuilt through the one door the
+    positional guard did not watch.
+    """
+    from core.general_settlement import (SettlementIdempotencyConflict,
+                                         execution_view)
+    from core.meal_commit import MealCommitResult
+
+    stored = MealCommitResult(
+        committed_items=({"entry_id": 7, "name": "Mackerel",
+                          "quantity": "100 g", "calories": 305.0,
+                          "protein": 33.0},),
+        meal_totals={"calories": 305.0, "protein": 33.0})
+
+    with pytest.raises(SettlementIdempotencyConflict):
+        execution_view(stored, [{"food_name": "Asparagus",
+                                 "quantity": "100 g"}])
+
+
+def test_the_same_quantity_change_under_one_operation_id_is_refused_too():
+    """Same food, different portion — the macros in the stored result describe
+    the OLD portion, so attributing them to this command is the same lie in a
+    quieter costume."""
+    from core.general_settlement import (SettlementIdempotencyConflict,
+                                         execution_view)
+    from core.meal_commit import MealCommitResult
+
+    stored = MealCommitResult(
+        committed_items=({"entry_id": 7, "name": "Mackerel",
+                          "quantity": "100 g", "calories": 305.0,
+                          "protein": 33.0},),
+        meal_totals={"calories": 305.0, "protein": 33.0})
+
+    with pytest.raises(SettlementIdempotencyConflict):
+        execution_view(stored, [{"food_name": "Mackerel",
+                                 "quantity": "250 g"}])
+
+
+def test_a_genuine_winner_is_not_mistaken_for_a_conflict():
+    """⚠ THE NEGATIVE TWIN OF THE CONFLICT GATE. The writer title-cases what it
+    stores (`asparagus` in, `Asparagus` written), so a strict comparison would
+    refuse every legitimate turn — a guard that fires on the normal path gets
+    removed, and then it is not a guard."""
+    from core.general_settlement import execution_view
+    from core.meal_commit import MealCommitResult
+
+    written = MealCommitResult(
+        committed_items=({"entry_id": 7, "name": "Asparagus",
+                          "quantity": "100 g", "calories": 20.0,
+                          "protein": 2.2},),
+        meal_totals={"calories": 20.0, "protein": 2.2})
+
+    view = execution_view(written, [{"food_name": "asparagus",
+                                     "quantity": "100 g"}])
+    assert len(view.calls) == 1
+    assert view.calls[0].entry_id == 7
+
+
+def test_the_application_engine_gets_the_sqlite_savepoint_fix():
+    """⛔⛔ THE APP ENGINE MUST GO THROUGH THE SAME CORRECTION AS EVERY OTHER.
+
+    `make_engine` applies BOTH `pin_session_utc` and `fix_sqlite_savepoints`;
+    the module-level engine applied the pin ALONE, so the application's own
+    engine was the one place the savepoint fix did not reach. That is the
+    failure `fix_sqlite_savepoints` documents in its own docstring —
+    `claim_commit`'s `begin_nested()` releasing as its own transaction, leaving
+    a DURABLE MealCommit while the food that follows rolls back.
+
+    ⚠ ASSERTED STRUCTURALLY, AND HERE IS THE HONEST LIMIT. The behavioural
+    rollback gate above binds the HARNESS engine, so it cannot see how the
+    application's engine is built — mutating this line back left that gate
+    green. This reads the construction itself, over the tree rather than the
+    text, because that is the only thing that can fail when the wiring regresses.
+    """
+    import ast
+    import pathlib
+
+    source = pathlib.Path("db/database.py").read_text()
+    tree = ast.parse(source)
+
+    fixed = False
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call)
+                and getattr(node.func, "id", None) == "fix_sqlite_savepoints"):
+            continue
+        # `fix_sqlite_savepoints(pin_session_utc(engine))` — the module engine
+        # reaches it either directly or through the pin.
+        for arg in node.args:
+            if getattr(arg, "id", None) == "engine":
+                fixed = True
+            if (isinstance(arg, ast.Call)
+                    and any(getattr(a, "id", None) == "engine"
+                            for a in arg.args)):
+                fixed = True
+    assert fixed, (
+        "db.database's module-level engine is not passed through "
+        "fix_sqlite_savepoints — on SQLite a released savepoint commits as its "
+        "own transaction, so a rolled-back settlement leaves a durable "
+        "MealCommit beside food that vanished")

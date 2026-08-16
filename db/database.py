@@ -306,7 +306,20 @@ def _refuse_unpinned_postgres(conn):
 # The application's own engine goes through the same gate as everything
 # else — without this the guard above would refuse it, which is exactly the
 # behaviour intended for an unpinned Postgres engine.
-pin_session_utc(engine)
+#
+# ⛔⛔ AND THE SAVEPOINT FIX TOO. This line applied `pin_session_utc` ALONE,
+# while `make_engine` applies BOTH — so the application's own engine was the
+# one place `fix_sqlite_savepoints` did not reach. On SQLite that is not
+# cosmetic: it is the documented failure in that function's own docstring —
+# `claim_commit`'s `begin_nested()` releases as its OWN transaction, leaving a
+# DURABLE MealCommit while the food that follows rolls back. Food without an
+# authoritative claim-to-rows pairing, manufactured by the engine construction.
+#
+# Measured 2026-08-16: a settlement whose execution view could not be built
+# rolled back its FoodEntry and left its MealCommit behind — on this engine,
+# and not on one built through `make_engine`. The fix already existed; only
+# this construction path was skipping it.
+fix_sqlite_savepoints(pin_session_utc(engine))
 
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

@@ -63,6 +63,23 @@ class ExecutionViewMismatch(RuntimeError):
     half-state to reconcile — which is exactly why raising beats returning an
     empty view that would report "nothing was written" while the rows sat
     flushed in an open transaction.
+
+    ⚠ AND THE SCOPE IS *THIS TURN'S* WRITE. On the REPLAY path
+    `commit_or_load_existing` returns a result loaded from storage, describing
+    a meal that committed in an EARLIER transaction and is durable. Rolling
+    this turn back does not and must not undo that one. What rolls back is
+    whatever this transaction staged; what an earlier turn made durable stays.
+    """
+
+
+class SettlementIdempotencyConflict(RuntimeError):
+    """This operation id already settled DIFFERENT content.
+
+    Separate from `ExecutionViewMismatch` because the remedy is different: a
+    mismatch means "cannot map, fail this turn", while this means "the id you
+    claimed is already spoken for by another meal". Same count, different
+    food — the case a length check waves through and a positional pairing then
+    attributes confidently.
     """
 
 
@@ -417,6 +434,42 @@ def execution_view(result, items) -> object:
             f"{len(items)} items settled into {len(committed)} written rows; "
             f"the execution view cannot be built, so this turn must fail "
             f"before the transaction commits")
+    # ⛔⛔ LENGTH IS NOT IDENTITY, AND THE REPLAY PATH IS WHY.
+    #
+    # `commit_or_load_existing` returns a STORED result when the claim is a
+    # duplicate — a result from a PREVIOUS, already durable transaction — and
+    # the caller cannot tell a winner from a replay. Meanwhile `make_turn_id`
+    # prefers the CLIENT MESSAGE ID over the text, so the same client id sent
+    # with different content produces the same turn_id, and
+    # `GeneralTurnOperation` claims `turn:{id}` again.
+    #
+    #     first   ios:X = mackerel      -> durable, one row
+    #     later   ios:X = asparagus     -> replay returns mackerel's row
+    #                                      1 == 1, so a length check passes
+    #                                      and asparagus takes mackerel's
+    #                                      entry_id and macros
+    #
+    # That is confident wrong attribution rebuilt through the one door the
+    # positional guard does not watch. So the COMMAND is checked against what
+    # was actually written, and a disagreement is its own typed failure —
+    # never a view.
+    for index, item in enumerate(items):
+        row = committed[index] or {}
+        want_name = str(item.get("food_name") or item.get("food") or "").strip()
+        got_name = str(row.get("name") or "").strip()
+        want_qty = str(item.get("quantity") or "").strip()
+        got_qty = str(row.get("quantity") or "").strip()
+        if (want_name.casefold() != got_name.casefold()
+                or want_qty.casefold() != got_qty.casefold()):
+            logger.error(
+                "event=settlement_idempotency_conflict index=%d command=%r/%r "
+                "written=%r/%r — this operation id already settled DIFFERENT "
+                "content", index, want_name, want_qty, got_name, got_qty)
+            raise SettlementIdempotencyConflict(
+                f"item {index} is {want_name!r} ({want_qty}) but the operation "
+                f"already settled {got_name!r} ({got_qty}); the same operation "
+                f"id was reused for different content")
+
     calls = []
     for index, item in enumerate(items):
         row = committed[index] or {}

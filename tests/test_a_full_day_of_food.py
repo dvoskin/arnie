@@ -307,6 +307,19 @@ async def app_db():
         async with eng.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
     else:
+        # ⚠ create_async_engine HERE, DELIBERATELY, AND IT IS A HARNESS LIMIT
+        # RATHER THAN A PREFERENCE. `make_engine` would apply
+        # `fix_sqlite_savepoints`, which takes transaction control from the
+        # driver and emits BEGIN itself — correct, and incompatible with a
+        # StaticPool that hands every session THE SAME connection: two
+        # concurrent sessions then race to BEGIN and the second dies with
+        # "cannot start a transaction within a transaction". Measured
+        # 2026-08-16 — it breaks `test_two_concurrent_taps_write_one_meal`.
+        #
+        # The APPLICATION engine is fixed (db/database.py) and gated. Closing
+        # this gap needs an in-memory SQLite that can serve more than one
+        # connection (a shared-cache URI rather than StaticPool); filed, not
+        # bodged here.
         eng = create_async_engine(
             "sqlite+aiosqlite:///:memory:", poolclass=StaticPool,
             connect_args={"check_same_thread": False})
