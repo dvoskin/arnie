@@ -1082,3 +1082,47 @@ async def test_a_native_ask_is_not_delegated():
 
     assert not ran, "a clarification was delegated to legacy — the user would "\
                     "be asked the same question twice"
+
+
+# ══ P14/3 — the undo token must reach affected_entities ════════════════════
+
+def test_the_execution_view_carries_the_ledger_event_id():
+    """⛔⛔ A CANONICALLY SETTLED TURN COULD NOT BE UNDONE. `add_food_entry`
+    writes the created ledger event internally and returns only the entry, so
+    `ledger_event_ids` was EMPTY all the way out to the client — and that tuple
+    IS the undo token. `_read_back` now reads the event id beside the row.
+
+    ⚠ OMITTED, NEVER DEFAULTED: "no event was recorded" and "event 0" are
+    different facts, and only one of them can be undone."""
+    from types import SimpleNamespace
+
+    from core.general_settlement import execution_view
+    from core.turns.stages.snapshot_builder import affected_entities
+
+    result = SimpleNamespace(
+        committed_items=[{"entry_id": 7, "event_id": 42, "name": "Asparagus",
+                          "quantity": "100 g", "calories": 20.0,
+                          "protein": 2.2}],
+        meal_totals={"calories": 20.0, "protein": 2.2})
+
+    view = execution_view(result, [{"food_name": "Asparagus",
+                                    "quantity": "100 g"}])
+    assert view.calls[0].event_id == 42
+
+    entities = affected_entities(view)
+    assert entities and entities[0]["event_id"] == 42, (
+        "affected_entities dropped the event id — ledger_event_ids stays empty "
+        "and no undo can be offered on a canonical row")
+
+
+def test_a_row_with_no_recorded_event_carries_no_token():
+    from types import SimpleNamespace
+
+    from core.general_settlement import execution_view
+
+    result = SimpleNamespace(
+        committed_items=[{"entry_id": 7, "name": "X", "quantity": "1 g",
+                          "calories": 1.0, "protein": 0.0}],
+        meal_totals=None)
+    view = execution_view(result, [{"food_name": "X", "quantity": "1 g"}])
+    assert view.calls[0].event_id is None

@@ -420,6 +420,24 @@ async def _read_back(db, written) -> tuple:
     rows = {r.id: r for r in (await db.execute(
         select(FoodEntry).where(FoodEntry.id.in_(ids)))).scalars().all()}
 
+    # ⭐ THE LEDGER EVENT ID, WHICH IS THE UNDO TOKEN. `add_food_entry` writes
+    # the created event internally and returns only the entry, so a canonically
+    # settled turn had `ledger_event_ids` EMPTY all the way out to the client —
+    # and an undo token is exactly what that tuple carries. Read back here,
+    # beside the rows themselves, rather than threaded through the writer:
+    # `_read_back` already exists to report what is ON THE BOARD.
+    #
+    # ⚠ ONE QUERY, NOT ONE PER ITEM, and keyed by entry so a multi-item meal
+    # cannot pair a row with another row's event.
+    from db.models import LedgerEvent
+
+    events = {}
+    for event_id, entry_id in (await db.execute(
+            select(LedgerEvent.id, LedgerEvent.entry_id)
+            .where(LedgerEvent.entry_id.in_(ids),
+                   LedgerEvent.event_type == "created"))).all():
+        events.setdefault(int(entry_id), int(event_id))
+
     committed, totals = [], {"calories": 0.0,
                              **{m: 0.0 for m in _MACROS}}
     for item, entry in written:
@@ -460,6 +478,9 @@ async def _read_back(db, written) -> tuple:
             # a row the artifact priced at 305.
             "protein": float(row.protein or 0.0),
             "estimated": bool(row.estimated_flag),
+            # The undo token. Omitted rather than defaulted when the event is
+            # absent: "no event was recorded" and "event 0" are different facts.
+            **({"event_id": events[row.id]} if row.id in events else {}),
         })
         totals["calories"] += float(row.calories or 0.0)
         for m in _MACROS:

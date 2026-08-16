@@ -559,12 +559,12 @@ def execution_view(result, items) -> object:
             receipt={"calories": float(row.get("calories") or 0.0),
                      "protein": float(row.get("protein") or 0.0),
                      "entry_id": row.get("entry_id")},
-            # ⚠ NO event_id. `write_canonical_meal` records the ledger event
-            # but does not return its id, so `ledger_event_ids` is empty for a
-            # canonically settled turn and an UNDO TOKEN cannot be surfaced
-            # from it. Named here rather than left as a surprise: it is a
-            # separate gap, and it belongs with B-1.8's correction work.
-            event_id=None))
+            # ⭐ THE UNDO TOKEN, now carried. `_read_back` reads the created
+            # ledger event id beside the row, so `affected_entities` — which
+            # already looks for `event_id` — can populate `ledger_event_ids`
+            # for a canonically settled turn. It was empty before, which meant
+            # no undo could be offered on anything canonical settled.
+            event_id=row.get("event_id")))
     # ⭐ THE TOTALS TRAVEL WHOLE, from the writer that read them back off the
     # committed rows. Nothing here adds anything up (C3).
     return ExecutionResult(
