@@ -367,6 +367,14 @@ async def healthcheck():
         _identity = {"identity_adoption": await identity_adoption_summary()}
     except Exception:
         _identity = {}
+    # And the fifth: WHICH GATES ARE OPEN. A canary that does not fire is
+    # indistinguishable from one that fired and declined, unless the flags are
+    # readable from outside — 2026-08-16 cost a live diagnosis to exactly that.
+    try:
+        from api.diagnostics import settlement_gates_summary
+        _gates = {"settlement_gates": settlement_gates_summary()}
+    except Exception:
+        _gates = {}
     return {
         "status": "ok",
         "commit": os.getenv("RENDER_GIT_COMMIT", "unknown")[:12],
@@ -375,6 +383,7 @@ async def healthcheck():
         **_pipeline,
         **_schema,
         **_identity,
+        **_gates,
     }
 
 

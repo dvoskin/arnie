@@ -524,3 +524,64 @@ def _default_model() -> str:
         return DEFAULT_MODEL()
     except Exception:
         return os.getenv("DEFAULT_MODEL", "unknown")
+
+
+def settlement_gates_summary() -> dict:
+    """⭐ WHICH GATES ARE ACTUALLY OPEN, AS THE PROCESS SEES THEM.
+
+    ⛔⛔ THIS EXISTS BECAUSE A CANARY FAILED SILENTLY AND NEITHER OF US COULD
+    SAY WHY *(2026-08-16)*. The general settlement canary was enabled, the code
+    was confirmed deployed, and a fully-supported meal was still settled by
+    legacy. Four gates decide that turn, and NOT ONE of them was readable from
+    outside the container — so the diagnosis came from archaeology on
+    `turn_metrics.stages_json` (legacy `pricing.qualification` timings prove
+    legacy settled it) instead of from a single question with an answer.
+
+    ⭐ AND EACH VALUE IS REPORTED AS THE CODE READS IT, not as the environment
+    spells it. `TURN_COORDINATOR_LANES` unset is an EMPTY SET that enables
+    NOTHING — a fact invisible in a list of raw strings, and the exact gate that
+    cost a live diagnosis. So the effective predicate is reported beside the
+    raw value, because the raw value is not the behaviour.
+
+    ⚠ NO SECRETS, AND NO USER DATA. Cohorts are reported as SIZES and as
+    whether they are empty, never as ids — an operator needs "is anyone
+    enrolled", not who.
+    """
+    import os
+
+    def _cohort(name: str) -> dict:
+        raw = os.getenv(name, "") or ""
+        ids = [p for p in raw.replace(",", " ").split() if p.strip().isdigit()]
+        return {"set": bool(raw.strip()), "size": len(ids)}
+
+    try:
+        from core.turns.coordinator import coordinator_mode
+        mode = coordinator_mode()
+    except Exception:                                   # pragma: no cover
+        mode = "unreadable"
+
+    lanes = [p.strip() for p in
+             (os.getenv("TURN_COORDINATOR_LANES", "") or "").split(",")
+             if p.strip()]
+
+    # THE ONE LINE THAT ANSWERS THE QUESTION. Every gate must be open for an
+    # ordinary food turn to reach the general settlement owner; this says
+    # whether they are, without the reader having to know the conjunction.
+    reachable = bool(mode == "new_execute"
+                     and "structured_food" in lanes
+                     and _cohort("GENERAL_SETTLEMENT_ALLOWLIST")["set"])
+
+    return {
+        "coordinator_mode": mode,
+        "coordinator_mode_executes": mode == "new_execute",
+        "coordinator_lanes": lanes,
+        "structured_food_lane_enabled": "structured_food" in lanes,
+        "coordinator_cohort": _cohort("TURN_COORDINATOR_ALLOWLIST"),
+        "general_settlement_cohort": _cohort("GENERAL_SETTLEMENT_ALLOWLIST"),
+        "general_settlement_reachable": reachable,
+        "why": ("every gate must be open: mode=new_execute AND "
+                "structured_food in TURN_COORDINATOR_LANES AND a non-empty "
+                "GENERAL_SETTLEMENT_ALLOWLIST (which fails closed when unset). "
+                "An unset TURN_COORDINATOR_LANES is an EMPTY SET and enables "
+                "nothing."),
+    }
