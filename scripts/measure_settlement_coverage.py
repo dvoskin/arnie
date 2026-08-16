@@ -92,7 +92,8 @@ async def measure(*, days: int, limit: int) -> dict:
     engine = make_engine(_database_url().replace("postgresql://",
                                                  "postgresql+psycopg://"))
     meals: dict = collections.defaultdict(
-        lambda: {"items": [], "sources": set(), "user_id": None})
+        lambda: {"items": [], "sources": set(), "user_id": None,
+                 "operations": set()})
     try:
         session = async_sessionmaker(engine, expire_on_commit=False)
         async with session() as db:
@@ -131,7 +132,7 @@ async def measure(*, days: int, limit: int) -> dict:
             # routing come from the same authoritative record rather than from
             # two guesses.
             rows = (await db.execute(text(
-                "SELECT le.turn_id, le.source, fe.parsed_food_name, "
+                "SELECT fe.id, le.turn_id, le.source, fe.parsed_food_name, "
                 "       fe.quantity, dl.user_id "
                 "FROM food_entries fe "
                 "JOIN daily_logs dl ON dl.id = fe.daily_log_id "
@@ -141,8 +142,33 @@ async def measure(*, days: int, limit: int) -> dict:
                 "ORDER BY fe.timestamp DESC LIMIT :limit"
             ), {"days": days, "limit": limit})).all()
 
+            # ⭐ WHICH CANONICAL OWNER SETTLED IT. Every canonical lane emits
+            # `canonical:create` — B-1, quick_log and the general settlement
+            # owner alike — so the SOURCE cannot tell them apart and the moment
+            # P12 ships, the canary would be invisible to this instrument.
+            # `meal_commits.operation_id` carries the lane: `chat_quantity:*`
+            # is the B-1 answer path, `general:*` is the settlement owner
+            # (`operation_id_for("general", user, turn)`). Mapped through the
+            # committed entry ids the result payload already records.
+            operation_of: dict = {}
+            commits = (await db.execute(text(
+                "SELECT operation_id, result_payload FROM meal_commits "
+                "WHERE created_at > now() - make_interval(days => :days)"
+            ), {"days": days})).all()
+            for operation_id, payload in commits:
+                try:
+                    body = json.loads(payload or "{}")
+                except (TypeError, ValueError):
+                    continue
+                body = body.get("result") if isinstance(
+                    body.get("result"), dict) else body
+                for entry in (body or {}).get("committed_items") or []:
+                    if entry.get("entry_id") is not None:
+                        operation_of[int(entry["entry_id"])] = str(
+                            operation_id or "")
+
             turnless: list = []
-            for turn_id, source, name, quantity, user_id in rows:
+            for entry_id, turn_id, source, name, quantity, user_id in rows:
                 # ⛔ A TURNLESS ROW GETS ITS OWN KEY, NEVER A SHARED ONE.
                 # `__no_turn__:{user_id}` collapsed every turnless row for one
                 # user across the whole window into ONE giant meal — which the
@@ -159,6 +185,10 @@ async def measure(*, days: int, limit: int) -> dict:
                 meal["sources"].add(str(source or ""))
                 meal["items"].append({"food_name": str(name or ""),
                                       "quantity": str(quantity or "")})
+                operation = operation_of.get(int(entry_id), "")
+                if operation:
+                    meal.setdefault("operations", set()).add(
+                        operation.split(":")[0])
 
             verdicts = {}
             for key, meal in meals.items():
@@ -181,6 +211,20 @@ async def measure(*, days: int, limit: int) -> dict:
             # binary this replaced would have called it legacy and reported a
             # routing failure that may not exist.
             unknown.append(key)
+
+    # WHO SETTLED EACH MEAL, named rather than collapsed. `general` appearing
+    # here at all is the canary's first visible sign.
+    settled_by = collections.Counter()
+    for key, meal in meals.items():
+        ops = meal.get("operations") or set()
+        if "general" in ops:
+            settled_by["general_settlement_owner"] += 1
+        elif "chat_quantity" in ops:
+            settled_by["b1_answer_path"] += 1
+        elif ops:
+            settled_by[f"canonical:{sorted(ops)[0]}"] += 1
+        else:
+            settled_by["legacy_executor"] += 1
 
     supported_structured = [k for k in structured
                             if isinstance(verdicts[k], Supported)]
@@ -233,6 +277,7 @@ async def measure(*, days: int, limit: int) -> dict:
         "supported_structured_meals": len(supported_structured),
         "supported_legacy_meals_NOT_COVERAGE": len(supported_legacy),
         "expected_rung_of_supported": dict(expected),
+        "settled_by": dict(settled_by),
         "why_structured_meals_decline": dict(declines.most_common()),
         "limits": [
             "meals are grouped by ledger_events.turn_id; a row with no created "

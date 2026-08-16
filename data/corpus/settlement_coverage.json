@@ -1,13 +1,13 @@
 {
  "window_days": 21,
- "rows": 406,
- "meals": 252,
+ "rows": 405,
+ "meals": 251,
  "rows_without_a_turn_id": 0,
- "A_routing_rate_pct": 81.0,
- "B_support_rate_within_structured_pct": 45.6,
- "C_ownership_rate_pct": 36.9,
+ "A_routing_rate_pct": 80.9,
+ "B_support_rate_within_structured_pct": 45.8,
+ "C_ownership_rate_pct": 37.1,
  "identity": "C = A x B, and C is the only one that describes the product. B alone flatters this slice by the size of the routing ceiling.",
- "structured_meals": 204,
+ "structured_meals": 203,
  "legacy_meals": 48,
  "not_a_chat_turn_meals_EXCLUDED": 0,
  "unrecognised_writer_meals": 0,
@@ -18,8 +18,12 @@
   "memory": 81,
   "artifact": 12
  },
+ "settled_by": {
+  "legacy_executor": 227,
+  "b1_answer_path": 24
+ },
  "why_structured_meals_decline": {
-  "no local evidence — estimate would be worse than legacy": 108,
+  "no local evidence — estimate would be worse than legacy": 107,
   "no stated quantity": 3
  },
  "limits": [
