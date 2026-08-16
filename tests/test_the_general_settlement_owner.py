@@ -37,8 +37,8 @@ PER100 = {"calories": 165.0, "protein": 31.0, "carbs": 0.0, "fat": 3.6}
 
 def _facts(**over):
     base = dict(identity="Chicken breast", entity="chicken", preparation="",
-                has_identity=True, has_quantity=True, has_memory=False,
-                has_artifact=False)
+                has_identity=True, has_quantity=True, has_mass=True,
+                has_memory=False, has_artifact=False)
     base.update(over)
     return ItemFacts(**base)
 
@@ -407,3 +407,47 @@ def test_a5_a_stated_preparation_produces_the_composed_key():
     assert entity == "chicken" and preparation == "fried"
     # BOTH ROUTES REACH ONE KEY — the identity-boundary contract.
     assert split_identity("chicken, fried") == (entity, preparation)
+
+
+# ══ C1 — PRICEABILITY: evidence existing is not evidence usable ═════════════
+
+def test_a11_a_count_only_quantity_is_unsupported_even_with_evidence():
+    """⛔⛔ THE CORN CASE, FROM PRODUCTION 2026-08-16. "I had a corn on the cob"
+    has BOTH a memory row and an estimate, and canonical settlement REFUSED it:
+    `1 medium` carries no gram mass, every canonical rung is per-100g,
+    `scale_profile` declines each in turn and `refuse_or_return` raises.
+    `PricingRefused` propagates by design (A8), the turn died, and the user got
+    "Lost the thread there" instead of a logged meal — while LEGACY had logged
+    the identical message hours earlier.
+
+    So the predicate must answer "can this meal be PRICED", not "does evidence
+    exist". A count-only quantity is exactly where those two questions differ.
+    """
+    verdict = decide(_facts(has_memory=True, has_artifact=True, has_mass=False))
+    assert isinstance(verdict, Unsupported)
+    assert "per-100g" in verdict.reason
+
+
+def test_a11_a_mass_bearing_quantity_is_still_supported():
+    """The twin: the fix must not decline the food it should own."""
+    assert isinstance(decide(_facts(has_memory=True, has_mass=True)), Supported)
+
+
+@pytest.mark.parametrize("food,quantity,scalable", [
+    # ⚠ THE FOOD NAME IS PART OF THE ANSWER. "1 banana" resolves to 118 g only
+    # because the food IS a banana — the first version of this test asked about
+    # every quantity under one name and failed on its own fixture.
+    ("Banana", "1 banana", True), ("Eggs", "2 egg", True),
+    ("White rice", "1 cup", True), ("Chicken breast", "200 g", True),
+    ("Corn on the cob", "1 medium", False), ("Corn on the cob", "1 ear", False),
+])
+def test_the_mass_discriminator_is_the_normalizer_settlement_uses(food, quantity,
+                                                                  scalable):
+    """⭐ ONE DEFINITION OF "HOW HEAVY IS THIS". `look()` calls the same
+    `normalize_quantity` that `_price` does, so the predicate and settlement
+    cannot disagree — the divergence that made the cucumber predict `memory`
+    and settle `estimate`."""
+    from skills.nutrition.normalize import normalize_quantity
+
+    grams = normalize_quantity(quantity, food).grams
+    assert bool(grams and grams > 0) is scalable

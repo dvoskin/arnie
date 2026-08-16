@@ -29,8 +29,8 @@ from tests.test_a_full_day_of_food import app_db, seeded  # noqa: F401
 
 def _facts(**over):
     base = dict(identity="Chicken breast", entity="chicken", preparation="",
-                has_identity=True, has_quantity=True, has_memory=True,
-                has_artifact=False)
+                has_identity=True, has_quantity=True, has_mass=True,
+                has_memory=True, has_artifact=False)
     base.update(over)
     return ItemFacts(**base)
 
@@ -924,3 +924,56 @@ async def test_a_failed_view_leaves_nothing_without_an_explicit_rollback(
     retried = await durable()
     assert retried[0] == before[0] + 1, (
         f"the retry wrote {retried[0] - before[0]} food rows, not exactly one")
+
+
+# ══ C3 — the canonical write must carry its turn id ═════════════════════════
+
+@pytest.mark.asyncio
+async def test_the_coordinator_path_binds_the_turn_id():
+    """⛔⛔ EVERY CANONICAL WRITE LANDED WITH turn_id = NULL. `record_ledger_event`
+    stamps `current_turn_id()`, and `core/conversation.py:927` sets it for the
+    LEGACY path only — the coordinator path never did. Measured in production
+    2026-08-16 on the general settlement owner's own rows.
+
+    That loses the correlation key the corpus attribution repair (P1) and the
+    coverage instrument are both built on: a canonical meal cannot be grouped
+    to its turn, so it falls into the turnless branch of every measurement.
+    """
+    from types import SimpleNamespace
+
+    from core.turn_identity import CURRENT_TURN_ID, current_turn_id
+    from core.turns import entrypoint
+
+    seen = {}
+
+    class _Coordinator:
+        route_stage = SimpleNamespace(decision=None)
+
+        async def run(self, request):
+            # WHAT A WRITER WOULD SEE, at the moment it would write.
+            seen["turn_id"] = current_turn_id()
+            return SimpleNamespace(execution=SimpleNamespace(response="x"),
+                                   error=None)
+
+    async def _build(request, **kw):
+        return _Coordinator()
+
+    original = entrypoint.build_coordinator if hasattr(
+        entrypoint, "build_coordinator") else None
+    import core.turns.factory as factory
+    real = factory.build_coordinator
+    factory.build_coordinator = _build
+    CURRENT_TURN_ID.set(None)
+    try:
+        await entrypoint.run_turn(
+            request=SimpleNamespace(turn_id="ios:BOUND", user_id=26,
+                                    text="x", metadata={}))
+    finally:
+        factory.build_coordinator = real
+
+    assert seen["turn_id"] == "ios:BOUND", (
+        "the coordinator path did not bind CURRENT_TURN_ID — canonical writes "
+        "would land with turn_id = NULL")
+    assert current_turn_id() is None, (
+        "the turn id leaked past the turn; on a shared worker task it would "
+        "stamp the NEXT turn's writes with this one's id")

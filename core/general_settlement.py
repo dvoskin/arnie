@@ -119,6 +119,9 @@ class ItemFacts:
     preparation: str
     has_identity: bool
     has_quantity: bool
+    #: A GRAM MASS, not merely a quantity string. Canonical evidence is
+    #: per-100g, so without one no rung can scale — see `decide`.
+    has_mass: bool
     has_memory: bool
     has_artifact: bool
 
@@ -136,6 +139,7 @@ async def look(db, *, user_id: int, item: dict) -> ItemFacts:
     their EXISTENCE and not for their numbers — nothing below returns a macro.
     """
     from core.canonical_pricing_inputs import _memory
+    from skills.nutrition.normalize import normalize_quantity
     from skills.nutrition.pricing_artifact import evidence_for, split_identity
 
     identity = str(item.get("food_name") or item.get("food") or "").strip()
@@ -154,10 +158,25 @@ async def look(db, *, user_id: int, item: dict) -> ItemFacts:
             logger.warning("coverage: memory lookup failed for user=%s",
                            user_id, exc_info=True)
 
+    # ⭐ THE MASS, COMPUTED THE WAY SETTLEMENT COMPUTES IT — `normalize_quantity`
+    # is the same call `_price` makes, and it is pure: no database, no network.
+    # Asking anything else here would be a second definition of "how heavy is
+    # this", which is how the predicate and settlement come to disagree.
+    quantity_text = str(item.get("quantity") or "").strip()
+    grams = None
+    if quantity_text:
+        try:
+            grams = getattr(normalize_quantity(quantity_text, identity),
+                            "grams", None)
+        except Exception:                              # noqa: BLE001
+            logger.warning("coverage: could not normalize %r", quantity_text,
+                           exc_info=True)
+
     return ItemFacts(
         identity=identity, entity=entity, preparation=preparation,
         has_identity=bool(entity),
-        has_quantity=bool(str(item.get("quantity") or "").strip()),
+        has_quantity=bool(quantity_text),
+        has_mass=bool(grams and float(grams) > 0),
         has_memory=memory is not None,
         has_artifact=(bool(entity)
                       and evidence_for(entity, preparation) is not None),
@@ -176,6 +195,27 @@ def decide(facts: ItemFacts) -> Coverage:
         return Unsupported("no canonical identity")
     if not facts.has_quantity:
         return Unsupported("no stated quantity")
+    # ⛔⛔ EVIDENCE IS NOT PRICEABILITY, AND PRODUCTION TAUGHT THIS THE HARD WAY
+    # *(2026-08-16)*. "I had a corn on the cob" has a memory row AND an
+    # estimate, and canonical settlement REFUSED it: `1 medium` carries no gram
+    # mass, every canonical rung is per-100g, `scale_profile` declines each in
+    # turn and `refuse_or_return` raises. `PricingRefused` propagates by design
+    # (A8), the turn died, and the user got "Lost the thread there" instead of
+    # a logged meal — while LEGACY had logged the identical message hours
+    # earlier, because its retrieval resolves a serving size and canonical
+    # retrieves nothing.
+    #
+    # So the predicate must answer "can this meal be PRICED", not "does
+    # evidence exist". A count-only quantity is exactly the case where those
+    # two questions differ.
+    #
+    # ⚠ `PRODUCT` is the one rung that could scale a count, and `assemble()`
+    # hard-codes it to None — so today there is no per-serving basis at all.
+    # When PRODUCT gains a producer, this branch is where it earns its place.
+    if not facts.has_mass:
+        return Unsupported(
+            "count-only quantity — every canonical rung is per-100g and "
+            "cannot be scaled without a mass")
     if facts.has_memory:
         return Supported("memory", "this user has priced this food before")
     if facts.has_artifact:

@@ -24,6 +24,31 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+async def _address_has_one_authority(db, name_norm: str) -> bool:
+    """Can this normalized address establish a single source authority?
+
+    FLEET-WIDE ON PURPOSE. The collision is a property of the ADDRESS, not of
+    who happened to log it: `banana` -> fdc 2012128 sits on four accounts, and
+    a per-user test would clear the three whose own row is the bad one.
+
+    ⭐ AGREEMENT, NOT PLAUSIBILITY. Bindings that assert the same per-100g
+    numbers are the same authority re-cached; bindings that assert different
+    numbers are competing ones, and a competing address cannot be authoritative
+    for anybody. Exact agreement, deliberately — a tolerance would be a
+    threshold, and a threshold is where nutrition judgement gets smuggled in.
+    """
+    from sqlalchemy import select
+
+    from db.models import UserFoodMatch
+
+    rows = (await db.execute(
+        select(UserFoodMatch.cal_100, UserFoodMatch.protein_100,
+               UserFoodMatch.carbs_100, UserFoodMatch.fat_100)
+        .where(UserFoodMatch.name_norm == name_norm,
+               UserFoodMatch.cal_100.isnot(None)))).all()
+    return len({tuple(r) for r in rows}) <= 1
+
+
 async def _memory(db, user_id: int, identity: str,
                   canonical_entity_id: str = ""):
     """This user's trusted match for the identity, as `MemoryEvidence`.
@@ -72,6 +97,39 @@ async def _memory(db, user_id: int, identity: str,
         return None                       # EXPECTED ABSENCE. Silent, correct.
     if not getattr(row, "cal_100", None):
         logger.info("event=memory_row_unusable key=%r reason=no_per100g_calories",
+                    name_norm)
+        return None
+
+    # ⛔⛔ ADMISSIBILITY: A LEGACY SURFACE KEY MAY NOT IMPERSONATE CANONICAL
+    # EVIDENCE *(Danny, 2026-08-16, after the canary)*.
+    #
+    # `user_food_matches` records NO canonical identity — a row is keyed by a
+    # lossy surface normalization, so it is evidence about a STRING, not about
+    # the identity being priced. Measured fleet-wide: 19 normalized addresses
+    # are bound to more than one source record, and `banana` is one of them —
+    # fdc 2012128 at 312 kcal/100g for FOUR users, beside fdc 173944 at 89.
+    # Canonical settlement addressed the first and committed 368 kcal where
+    # legacy priced 105.
+    #
+    # ⭐ THE TEST IS DISAGREEMENT BETWEEN AUTHORITIES, NOT PLAUSIBILITY. No
+    # calorie ranges, no food names, no per-user exceptions: an address whose
+    # bindings assert DIFFERENT numbers cannot establish authority, and one
+    # whose bindings agree (the same record re-cached, or two ids carrying
+    # identical values) still can. Characterized before it was written —
+    # `<oil>` 800.0/800.0 is a history duplicate; `tomato` 71/302 is not.
+    #
+    # ⭐⭐ AND THE RUNG ABSTAINS RATHER THAN GUESSING. It does not pick a
+    # binding, average them, or fail the meal: it returns None and THE LADDER
+    # CONTINUES — for `banana` that is ARTIFACT at usda:173944, 89 kcal/100g,
+    # which is the correct 105. Nothing about pricing is redesigned.
+    #
+    # ⚠ READ-TIME QUARANTINE, NOT A DELETION. The rows stay exactly as they
+    # are; this refuses to treat them as canonical evidence. They remain
+    # available to legacy and to a later migration onto canonical identity.
+    if not await _address_has_one_authority(db, name_norm):
+        logger.info("event=memory_inadmissible key=%r reason=ambiguous_address "
+                    "— this surface key resolves to more than one source "
+                    "record; MEMORY abstains and the ladder continues",
                     name_norm)
         return None
 

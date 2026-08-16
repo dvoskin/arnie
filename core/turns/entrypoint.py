@@ -126,6 +126,7 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     already has its own recovery and swallowing an exception here would hide a
     failure the legacy path was prepared to report honestly.
     """
+    from core.turn_identity import CURRENT_TURN_ID
     from core.turns.factory import build_coordinator
     from core.turns.observe import CURRENT_ROUTE
 
@@ -134,10 +135,23 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     # otherwise compute its own. Set unconditionally — including back to None
     # on the way out — so a prior turn's route cannot leak into this one on a
     # reused task, and so nothing can mistake a stale decision for a fresh one.
+    # ⛔⛔ AND THE TURN ID, WHICH THIS PATH NEVER BOUND. `record_ledger_event`
+    # stamps `current_turn_id()`, and `core/conversation.py` sets it for the
+    # LEGACY path only — so every canonical write made through the coordinator
+    # landed with `turn_id = NULL`. Measured in production 2026-08-16: the
+    # general settlement owner's rows carry no turn id at all, which loses the
+    # correlation key the corpus attribution repair and the coverage instrument
+    # are both built on, and leaves canonical rows unlinkable to their turn.
+    #
+    # Set unconditionally and reset in `finally`, exactly as CURRENT_ROUTE above
+    # and `mutation_contract` do: the endpoint runs on a shared worker task, and
+    # a leaked contextvar stamps the NEXT turn's writes with this one's id.
     _token = CURRENT_ROUTE.set(getattr(coordinator.route_stage, "decision", None))
+    _tid_token = CURRENT_TURN_ID.set(getattr(request, "turn_id", None))
     try:
         state = await coordinator.run(request)
     finally:
+        CURRENT_TURN_ID.reset(_tid_token)
         CURRENT_ROUTE.reset(_token)
 
     # DELEGATED: `state.execution` IS the legacy TurnResult, unchanged.

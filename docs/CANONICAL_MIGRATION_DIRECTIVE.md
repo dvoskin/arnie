@@ -2529,6 +2529,95 @@ those operation ids. **If quick_log or the general settlement owner later emit
 `canonical:create` too, this proxy needs the operation id to disambiguate them**
 — and it will, the moment P12 ships.
 
+### 3a.5  ⛔⛔ WHAT THE CANARY FOUND — FIVE GATES, AND TWO BROKEN CONTRACTS *(2026-08-16)*
+
+**Four iOS turns. The settlement owner worked; the eligibility contract did
+not.** A useful late-stage canary result, and exactly what one test user is for.
+
+#### THE FIFTH GATE: THE ENTRYPOINT, AND IT IS CHANNEL-DEPENDENT
+
+```text
+iOS       api/chat.py -> chat_service.run_chat_turn -> the coordinator   ✅
+Telegram  bot/telegram_handler.py:445 -> core.conversation.run_turn      ⛔ never
+```
+
+The first two canary turns were Telegram and looked like silent failure with
+every flag correct. **The four gates in §3a.3 are not sufficient; the entrypoint
+comes first.** A canary on a channel that cannot reach the coordinator proves
+nothing, and reads exactly like a canary that fired and declined.
+
+#### C1 — PRICEABILITY: A11 ASKED THE WRONG QUESTION
+
+`"I had a corn on the cob"` had BOTH a memory row and an estimate, and canonical
+settlement REFUSED it: `1 medium` carries no gram mass, every canonical rung is
+per-100g, `scale_profile` declines each and `refuse_or_return` raises.
+`PricingRefused` propagated (A8), the turn died, and the user got *"Lost the
+thread there"* — **while legacy had logged the identical message hours
+earlier.** A regression.
+
+**A11 is amended: the predicate answers "can this meal be PRICED", not "does
+evidence exist".** `look()` computes mass with the same `normalize_quantity`
+settlement uses, so the two cannot disagree.
+
+#### C2 — ADMISSIBILITY: LEGACY SURFACE MEMORY IMPERSONATING CANONICAL EVIDENCE
+
+⚠ **AND THE MASS FIX DOES NOT TOUCH THIS.** `"1 banana"` -> 118 g IS scalable.
+Canonical addressed a memory row of 312 kcal/100g and committed **368 kcal
+where legacy priced 105**. Two independent defects.
+
+```text
+'banana' -> fdc 2012128  312 kcal/100g   on FOUR accounts (2, 26, 78, 108)
+'bananas'-> fdc 173944    89 kcal/100g   the real USDA banana
+both: confidence=exact · origin_tier=generic_exact · user_confirmed=false
+```
+
+⛔ **CONFIDENCE AND TIER CANNOT DISCRIMINATE** — both rows claim `exact`.
+`user_food_matches` records NO canonical identity: a row is keyed by a lossy
+surface normalization, so it is evidence about a STRING, not about the identity
+being priced.
+
+**THE INVARIANT — agreement between authorities, never plausibility:**
+
+> A legacy surface-key row may participate in canonical pricing only when its
+> authority is structurally unambiguous. Bindings that assert the SAME per-100g
+> numbers are one authority re-cached; bindings that assert DIFFERENT numbers
+> are competing, and a competing address cannot be authoritative for anybody.
+
+⭐ **CHARACTERIZED BEFORE IT WAS WRITTEN**, as Danny required: `<oil>` 800.0 vs
+800.0 is a history duplicate; `tomato` 71 vs 302 and `white rice` 97 vs 333 are
+competing authorities. Exact agreement, no tolerance — **a threshold is where
+nutrition judgement gets smuggled in.**
+
+⭐⭐ **FLEET-WIDE, NOT PER-USER.** The collision is a property of the ADDRESS.
+A per-user test would clear the three accounts whose only banana row is the bad
+one.
+
+⭐⭐⭐ **THE RUNG ABSTAINS; THE LADDER DOES THE REST.** It does not pick a
+binding, average them, or fail the meal. For `banana`: memory abstains ->
+ARTIFACT `usda:173944` -> **105 kcal, verified against production data.**
+Nothing about pricing was redesigned.
+
+⚠ **READ-TIME QUARANTINE, NOT DELETION.** No historical memory is rewritten in
+this slice; the rows stay as evidence for a later migration onto canonical
+identity.
+
+**MEASURED DELTA:** 28 ambiguous keys · 78 of 836 rows (9.3%) · 28 recent turns
+(21d) sit on one. Query cost is an indexed bitmap scan — the 116 ms first
+measured was this laptop's network round-trip (`SELECT 1` costs 232 ms on the
+same link), not the query.
+
+#### C3 — THE NATIVE PATH NEVER BOUND `CURRENT_TURN_ID`
+
+`core/conversation.py:927` binds it for legacy; the coordinator path did not, so
+every canonical write landed with `turn_id = NULL` — losing the correlation key
+the corpus repair and the coverage instrument are both built on. Bound in
+`core/turns/entrypoint.run_turn`, reset in `finally`.
+
+#### THE PREREG'S STOP CONDITIONS WERE INCOMPLETE
+
+Neither **a mispricing** nor **a turn that logs nothing** was on the list, and
+both happened. Both are now stop conditions.
+
 ### 3b  THE TRANCHE CANARY — A RELEASE GATE, NOT A SMOKE TEST  *(Danny, 2026-08-14)*
 
 Production is **32 commits behind** and this tranche changed the ARTIFACT, the
