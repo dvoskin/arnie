@@ -453,6 +453,12 @@ async def _read_back(db, written) -> tuple:
             "entity_id": item.event.entity_id or "",
             "quantity": row.quantity or "",
             "calories": float(row.calories or 0.0),
+            # ⭐ READ BACK FROM THE ROW, like `calories` beside it. The renderer
+            # narrates committed state, and it cannot do that for protein while
+            # the only protein figure crossing this seam is the model's
+            # proposal — which is how "Mackerel logged, 180 cal" gets said over
+            # a row the artifact priced at 305.
+            "protein": float(row.protein or 0.0),
             "estimated": bool(row.estimated_flag),
         })
         totals["calories"] += float(row.calories or 0.0)

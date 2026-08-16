@@ -360,25 +360,43 @@ def execution_view(result, items) -> object:
 
     committed = list(getattr(result, "committed_items", None) or ())
     if len(committed) != len(items):
-        logger.warning(
-            "event=execution_view_mismatch items=%d committed=%d — the "
-            "position pairing this view relies on no longer holds",
+        # ⛔⛔ REFUSE, DO NOT CONTINUE. The first version logged this and then
+        # paired items[i] to committed[i] up to the shorter length — so with
+        # items [A,B,C] and committed [A,C] it would announce that positional
+        # pairing is unsafe and then produce B -> C's entry_id anyway. A
+        # warning that is followed by the behaviour it warns about is not a
+        # guard; it is a comment. An empty view narrates nothing, which is
+        # recoverable. A confident wrong attribution is not.
+        logger.error(
+            "event=execution_view_refused items=%d committed=%d — positional "
+            "pairing is unsafe and this view is EMPTY rather than wrong",
             len(items), len(committed))
+        return ExecutionResult(calls=())
     calls = []
     for index, item in enumerate(items):
-        if index >= len(committed):
-            break
         row = committed[index] or {}
         calls.append(CallResult(
             name="log_food", raw_input=dict(item), status="committed",
             entry_id=row.get("entry_id"),
+            # ⭐ THE COMMITTED OUTCOME, CARRIED SEPARATELY FROM THE COMMAND.
+            # `raw_input` is the command as executed and stays untouched —
+            # mutating it to hold outcome numbers is the command/outcome
+            # collapse this migration exists to undo. `receipt` is the field
+            # that already means "what actually happened".
+            receipt={"calories": float(row.get("calories") or 0.0),
+                     "protein": float(row.get("protein") or 0.0),
+                     "entry_id": row.get("entry_id")},
             # ⚠ NO event_id. `write_canonical_meal` records the ledger event
             # but does not return its id, so `ledger_event_ids` is empty for a
             # canonically settled turn and an UNDO TOKEN cannot be surfaced
             # from it. Named here rather than left as a surprise: it is a
             # separate gap, and it belongs with B-1.8's correction work.
             event_id=None))
-    return ExecutionResult(calls=tuple(calls))
+    # ⭐ THE TOTALS TRAVEL WHOLE, from the writer that read them back off the
+    # committed rows. Nothing here adds anything up (C3).
+    return ExecutionResult(
+        calls=tuple(calls),
+        meal_totals=dict(getattr(result, "meal_totals", None) or {}) or None)
 
 
 @dataclass(frozen=True)

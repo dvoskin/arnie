@@ -46,7 +46,38 @@ def _transaction_snapshot(snapshot, operations):
     protein_target = day_protein + int(remaining.get("protein") or 0)
 
     committed = _committed_operations(operations, snapshot)
-    batch_cal, batch_protein = compute_batch("commit", committed, 0, 0)
+
+    # ⛔⛔ THE COMMITTED NUMBERS WIN OVER THE PROPOSED ONES.
+    #
+    # `compute_batch("commit", ...)` sums `op["input"]["calories"]` — the
+    # MODEL'S proposal. That was survivable while the only writer was the
+    # legacy executor, which syncs committed macros back onto the input. It is
+    # not survivable now: canonical settlement prices from the artifact and
+    # never touches the input, so the exact failure available was
+    #
+    #     operation says   mackerel 180 cal
+    #     artifact settles row at   305 cal
+    #     day total shows           305
+    #     the reply says   "Mackerel logged, 180 cal"
+    #
+    # — the renderer narrating the proposal over the committed row, which is
+    # the one thing this whole migration says it must never do.
+    #
+    # ⚠ AND THE FALLBACK IS UNCHANGED. A receipt is present only when the
+    # writer recorded one, so the legacy path takes exactly the branch it
+    # always took. `build_snapshot` reads only LABELS from `committed`; every
+    # number it renders comes from these two scalars.
+    # ⛔ READ, NEVER RE-DERIVE. The first version of this branch SUMMED the
+    # per-call receipts and C3 failed it correctly: "a fourth owner is how the
+    # prose and the card came to disagree by one". `MealCommitResult.meal_totals`
+    # is already the committed truth — `_read_back` computes it from the rows —
+    # so the renderer takes it whole.
+    settled = getattr(getattr(snapshot, "execution", None), "meal_totals", None)
+    if settled:
+        batch_cal = int(round(float(settled.get("calories") or 0.0)))
+        batch_protein = int(round(float(settled.get("protein") or 0.0)))
+    else:
+        batch_cal, batch_protein = compute_batch("commit", committed, 0, 0)
     return build_snapshot(committed, batch_cal, batch_protein,
                           day_cal, day_protein, cal_target, protein_target)
 

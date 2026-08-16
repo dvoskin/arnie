@@ -86,6 +86,20 @@ class CallResult:
 @dataclass(frozen=True)
 class ExecutionResult:
     calls: tuple = ()
+    #: The meal's committed totals, when the writer already computed them from
+    #: the rows it wrote — `MealCommitResult.meal_totals`, read back from the
+    #: database by `_read_back`.
+    #:
+    #: ⛔⛔ CARRIED, NEVER RECOMPUTED. C3 forbids a new module summing macros,
+    #: and it is right: the first version of the canonical render seam summed
+    #: per-call receipts here and became a FOURTH totals owner — the exact
+    #: shape that once made the prose and the card disagree by one. Totals have
+    #: one owner; this field is how the renderer READS it instead of deriving
+    #: its own.
+    #:
+    #: `None` means "this writer recorded no totals", which is not zero — the
+    #: legacy path leaves it unset and keeps its existing behaviour.
+    meal_totals: Optional[dict] = None
 
     @property
     def successful(self) -> tuple:

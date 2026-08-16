@@ -306,19 +306,26 @@ def test_a1_the_owner_is_the_only_settlement_the_stage_invokes_when_supported():
     so a Supported turn cannot reach it at all."""
     from core.turns.stages.execute_native import NativeExecutionStage
 
-    source = inspect.getsource(NativeExecutionStage.run)
-    canonical = source.index("owner.settle")
-    legacy = source.index("execute_tool_calls")
+    # ⛔⛔ AST, BECAUSE THIS GATE HAS NOW BEEN FOOLED BY PROSE TWICE. It indexed
+    # the literal strings `owner.settle` and `execute_tool_calls` in the source
+    # — and a COMMENT explaining why the legacy executor clears LAST_EXECUTION
+    # put the word `execute_tool_calls` above the canonical branch, so the gate
+    # reported the legacy path as reachable first. Third time this session that
+    # a string-matching assertion has failed on documentation: **assert over
+    # the tree, always.**
+    tree = ast.parse(inspect.getsource(NativeExecutionStage.run).lstrip())
+    settle_lines = [n.lineno for n in ast.walk(tree)
+                    if isinstance(n, ast.Call)
+                    and getattr(n.func, "attr", None) == "settle"]
+    legacy_lines = [n.lineno for n in ast.walk(tree)
+                    if isinstance(n, ast.ImportFrom)
+                    and any(a.name == "execute_tool_calls" for a in n.names)]
+    assert settle_lines and legacy_lines, "the two settlement paths are not both present"
+    canonical, legacy = min(settle_lines), min(legacy_lines)
     assert canonical < legacy, (
         "the legacy executor is reachable before canonical settlement returns")
-    # ⚠ THE PROPERTY, NOT THE STATEMENT. This pinned the literal
-    # `return self._published()` and broke the moment the canonical branch
-    # started returning its own execution view — a true change failing a gate
-    # for a reason that had nothing to do with the contract. What A1 requires
-    # is that the branch RETURNS before legacy is reachable, whatever it
-    # returns.
-    between = source[canonical:legacy]
-    assert re.search(r"^\s+return\s+\S", between, re.M), (
+    returns = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Return)]
+    assert any(canonical < line < legacy for line in returns), (
         "canonical settlement does not return before the legacy executor — a "
         "supported turn could be settled twice")
 

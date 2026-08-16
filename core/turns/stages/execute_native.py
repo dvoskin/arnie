@@ -58,6 +58,17 @@ class NativeExecutionStage:
         if db is None or user is None:
             raise RuntimeError("native execution requires db and user")
 
+        # ⛔⛔ CLEAR THE AMBIENT EXECUTION FIRST, WHATEVER SETTLES THIS TURN.
+        # `execute_tool_calls` documents and honours this: a new batch sets
+        # LAST_EXECUTION to None up front, so a batch that dies mid-flight
+        # cannot leave the PREVIOUS turn's execution ambient for a renderer to
+        # narrate. The canonical branch only ever `set()` a value on success,
+        # so a settlement that raised in a reused context left the prior
+        # execution standing — the same stale-read class, arriving through the
+        # door this slice opened.
+        from core.execution_result import LAST_EXECUTION
+        LAST_EXECUTION.set(None)
+
         # ⭐ A1/A11 — ROUTING HAPPENS BEFORE THE CLAIM, AND IT IS PURE.
         # `Unsupported` must reach the UNTOUCHED legacy path: not a canonical
         # attempt that falls back, not a claim taken and released — untouched.
@@ -83,7 +94,6 @@ class NativeExecutionStage:
             # renderer read the execution view; the legacy executor is the only
             # thing that has ever published one. Measured on a real turn before
             # this line existed: row written, totals correct, CARDS = 0.
-            from core.execution_result import LAST_EXECUTION
             from core.general_settlement import execution_view
 
             view = execution_view(result, items)

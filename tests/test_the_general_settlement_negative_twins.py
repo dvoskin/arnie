@@ -304,3 +304,128 @@ async def test_a11_looking_twice_writes_nothing(app_db, seeded):  # noqa: F811
     assert getattr(first, "expected_source", None) == getattr(
         second, "expected_source", None)
     assert await counts() == before, "the coverage predicate wrote state"
+
+
+# ══ THE COMMITTED NUMBERS, NOT THE PROPOSED ONES ════════════════════════════
+
+def test_the_rendered_batch_is_the_committed_number_not_the_models():
+    """⛔⛔ THE FAILURE THIS CLOSES, STATED AS THE CASE THAT PRODUCES IT.
+
+        operation says   mackerel 180 cal / 20 g protein
+        canonical writes                  305 cal / 33 g
+        the reply must say                305, never 180
+
+    `compute_batch("commit", ...)` sums the OPERATION INPUTS, which are the
+    model's proposal. That was survivable while only the legacy executor wrote
+    (it syncs committed macros back onto the input); canonical settlement
+    prices from the artifact and never touches the input. Publishing an
+    ExecutionResult made the native renderer reachable — this makes it
+    truthful.
+    """
+    from types import SimpleNamespace
+
+    from core.turns.stages.render_native import _transaction_snapshot
+
+    operations = [{"name": "log_food",
+                   "input": {"food_name": "Mackerel", "quantity": "100 g",
+                             "calories": 180, "protein": 20}}]
+    call = SimpleNamespace(name="log_food", committed=True,
+                           raw_input=dict(operations[0]["input"]),
+                           receipt={"calories": 305.0, "protein": 33.0,
+                                    "entry_id": 7})
+    # ⛔ THE TOTALS ARE CARRIED, NOT SUMMED HERE. C3 failed the first version of
+    # this seam for computing them in the renderer; `MealCommitResult` owns them.
+    snapshot = SimpleNamespace(
+        execution=SimpleNamespace(calls=(call,),
+                                  meal_totals={"calories": 305.0,
+                                               "protein": 33.0}),
+        day_totals={"calories": 305, "protein": 33},
+        remaining_targets={"calories": 1695, "protein": 147})
+
+    rendered = _transaction_snapshot(snapshot, operations)
+
+    assert rendered.batch_cal == 305, (
+        f"the reply would narrate {rendered.batch_cal} cal over a row "
+        f"committed at 305 — the proposal beat the committed state")
+    assert rendered.batch_protein == 33
+    assert rendered.logged == ("Mackerel",)
+
+
+def test_a_legacy_execution_without_receipts_still_uses_compute_batch():
+    """⚠ THE FALLBACK IS UNCHANGED. A receipt exists only where a writer
+    recorded one, so the legacy path must take exactly the branch it always
+    took — this fix may not quietly re-price legacy turns."""
+    from types import SimpleNamespace
+
+    from core.turns.stages.render_native import _transaction_snapshot
+
+    operations = [{"name": "log_food",
+                   "input": {"food_name": "Toast", "calories": 90,
+                             "protein": 3}}]
+    call = SimpleNamespace(name="log_food", committed=True,
+                           raw_input=dict(operations[0]["input"]),
+                           receipt=None)
+    snapshot = SimpleNamespace(
+        execution=SimpleNamespace(calls=(call,), meal_totals=None),
+        day_totals={"calories": 90, "protein": 3},
+        remaining_targets={"calories": 1910, "protein": 177})
+
+    assert _transaction_snapshot(snapshot, operations).batch_cal == 90
+
+
+def test_a_positional_mismatch_refuses_the_view_rather_than_mispairing():
+    """⛔ [A,B,C] with [A,C] committed must not produce B -> C's entry_id. The
+    guard used to log and then do exactly that."""
+    from core.general_settlement import execution_view
+
+    result = SimpleNamespace(committed_items=[
+        {"entry_id": 1, "calories": 10.0, "protein": 1.0},
+        {"entry_id": 3, "calories": 30.0, "protein": 3.0}])
+    items = [{"food_name": "A"}, {"food_name": "B"}, {"food_name": "C"}]
+
+    view = execution_view(result, items)
+
+    assert view.calls == (), (
+        "a mismatched view was built anyway — an empty view narrates nothing, "
+        "a mispaired one narrates a lie")
+
+
+@pytest.mark.asyncio
+async def test_a_failed_settlement_does_not_leave_a_stale_execution(monkeypatch):
+    """⛔⛔ THE ANTI-STALE RULE THE LEGACY EXECUTOR ALREADY HONOURS. It sets
+    LAST_EXECUTION to None up front so a batch that dies cannot leave the
+    PREVIOUS turn's execution ambient. Seed a sentinel, force settlement to
+    raise, and require the ambient value to be gone."""
+    from types import SimpleNamespace
+
+    import core.general_settlement as gs
+    from core.execution_result import LAST_EXECUTION
+    from core.turns.stages import execute_native as stage_module
+
+    sentinel = SimpleNamespace(calls=("A PREVIOUS TURN",))
+    LAST_EXECUTION.set(sentinel)
+
+    class _Exploding:
+        async def settle(self, db, **kwargs):
+            raise PricingRefused("refused after entry")
+
+    monkeypatch.setattr(gs, "settlement_cohort", lambda user_id=None: True)
+
+    async def supported(db, *, user_id, items):
+        return Supported("artifact", "covered")
+
+    monkeypatch.setattr(gs, "coverage_for", supported)
+    monkeypatch.setattr(gs, "GeneralSettlementOwner", lambda: _Exploding())
+
+    stage = stage_module.NativeExecutionStage(executor=None)
+    monkeypatch.setattr(stage, "_claim", lambda *a, **k: _true())
+
+    ops = [{"name": "log_food", "input": {"food_name": "X", "quantity": "1 g"}}]
+    with pytest.raises(PricingRefused):
+        await stage.run(_request(db=object(), user=SimpleNamespace(id=26),
+                                 today_log=object()),
+                        validation=SimpleNamespace(approved_operations=ops))
+
+    assert LAST_EXECUTION.get() is None, (
+        "a failed settlement left the previous turn's execution ambient — the "
+        "renderer would narrate a turn that did not happen")
