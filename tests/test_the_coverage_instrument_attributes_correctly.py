@@ -142,3 +142,34 @@ def test_the_commit_lookup_is_not_windowed_by_a_different_clock():
         "the meal_commits lookup is time-windowed again — it is filtered by "
         "created_at while the entries are filtered by timestamp, so commits "
         "fall outside the window and their rows become unattributable")
+
+
+def test_an_unrecognised_writer_withholds_the_canary_verdict_too():
+    """⛔⛔ THE SAME CLASS OF IGNORANCE AS AN UNATTRIBUTABLE CANONICAL ROW.
+    A ledger source nobody recognises means the instrument cannot say which
+    lane wrote the meal — and a NEW WRITER APPEARING is precisely the event
+    that would invalidate these numbers. Publishing around it would let a
+    fourth settlement path arrive unnoticed, which is what this measurement
+    exists to catch.
+
+    Asserted on the predicate itself, since building a full report needs a
+    database: an unrecognised source must land in the bucket the withhold
+    condition reads.
+    """
+    assert classify_meal({"brand_new_lane:v1"}, set()) == "unknown_writer"
+
+    import ast
+    import inspect
+
+    from scripts import measure_settlement_coverage as m
+
+    tree = ast.parse(inspect.getsource(m.measure).lstrip())
+    withheld = [n for n in ast.walk(tree)
+                if isinstance(n, ast.Constant)
+                and n.value == "canary_verdict_publishable"]
+    assert withheld, "the withhold flag is gone"
+    source = inspect.getsource(m.measure)
+    clause = source.split('"canary_verdict_publishable"')[1].split("),")[0]
+    assert "unclassified" in clause and "unknown" in clause, (
+        "the canary verdict publishes without accounting for BOTH "
+        "unattributable canonical rows and unrecognised writers")

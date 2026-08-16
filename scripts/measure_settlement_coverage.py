@@ -346,7 +346,15 @@ async def measure(*, days: int, limit: int) -> dict:
         # row nobody can attribute is unknown ownership, and the general
         # bucket is the thing this measurement exists to watch.
         "unclassified_canonical_meals": len(unclassified),
-        "canary_verdict_publishable": len(unclassified) == 0,
+        # ⛔⛔ UNKNOWN_WRITER WITHHOLDS TOO *(Danny, 2026-08-16)*. An
+        # unrecognised ledger source is the same class of ignorance as an
+        # unattributable canonical row: the instrument cannot say which lane
+        # wrote it, and a new writer appearing is exactly the event that would
+        # make these numbers wrong. Publishing around it would let a fourth
+        # settlement path arrive unnoticed — which is the thing this
+        # measurement exists to catch.
+        "canary_verdict_publishable": (len(unclassified) == 0
+                                       and len(unknown) == 0),
         "writer_note": "A is derived from the WRITER (ledger_events.source) as "
                        "a proxy for the route, because no per-meal routing "
                        "record is persisted. `canonical:*` counts as "
@@ -391,10 +399,12 @@ def render(report: dict) -> str:
                f"supported / STRUCTURED   <- flattering")
     out.append(f"    C  OWNERSHIP RATE  {report['C_ownership_rate_pct']:5.1f}%"
                f"   supported / ORDINARY FOOD-CHAT meals  =  A x B")
-    if report.get("unclassified_canonical_meals"):
+    if not report.get("canary_verdict_publishable", True):
         out.append(f"\n    ⛔⛔ CANARY VERDICT WITHHELD — "
-                   f"{report['unclassified_canonical_meals']} canonical meal(s) "
-                   f"could not be attributed to an owner")
+                   f"{report['unclassified_canonical_meals']} unattributable "
+                   f"canonical meal(s), "
+                   f"{report['unrecognised_writer_meals']} unrecognised "
+                   f"writer(s)")
     out.append(f"\n    {report['supported_structured_meals']} of "
                f"{report['structured_meals']} structured-route meals "
                f"supported; {report['legacy_meals']} legacy-written; "
