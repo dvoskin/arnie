@@ -3,9 +3,9 @@
 Three numbers, published together, and the third is the only one that describes
 the product:
 
-    A  routing rate     structured food turns / ALL food turns
-    B  support rate     supported meals / STRUCTURED meals        <- flattering
-    C  ownership rate   supported meals / ALL food meals  =  A x B
+    A  routing rate     structured-route / ORDINARY FOOD-CHAT meals
+    B  support rate     supported meals / STRUCTURED-ROUTE meals  <- flattering
+    C  ownership rate   supported / ORDINARY FOOD-CHAT meals  =  A x B
 
 ⛔⛔ NO SUPPORT RATE PUBLISHES WITHOUT ITS ROUTING RATE *(Danny, 2026-08-16)*.
 The owner only ever sees turns routed as STRUCTURED_FOOD, and on 2026-08-15
@@ -45,10 +45,26 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-#: The ledger stamps who wrote each row. The structured lane names itself; the
-#: legacy executor names the channel. Routing is read from the WRITE, not
-#: inferred from the text of the turn.
-STRUCTURED_PREFIX = "structured_food"
+# ⛔⛔ `ledger_events.source` NAMES THE WRITER, NOT THE ROUTE, and the first
+# version of this instrument treated the two as one. `canonical_writer` says it
+# outright: *"`ledger_source` names the mutation LANE and its owner
+# (`canonical:create`, matching the existing `structured_food:*` / `legacy:ios`
+# / `quick_log:ios` convention)"*.
+#
+# So `source.startswith("structured_food")` else "legacy" was an INVERSION
+# waiting to happen: `write_canonical_meal` emits `canonical:create`, so a
+# structured-ROUTED turn settled canonically would be filed as a routing
+# failure — and ADOPTION WOULD DRIVE THE MEASURED ROUTING RATE DOWN. Not
+# hypothetical: 36 rows in the 21-day window are already `canonical:create`
+# (the B-1 answer path), and all 36 were counted as legacy.
+#
+# ⚠ AND THE DENOMINATOR HAS TO BE ORDINARY FOOD-CHAT TURNS. `quick_log:*` and
+# `dashboard:*` are not chat turns at all; counting them as turns that failed
+# to reach the structured lane would blame the lane for traffic that never went
+# near it.
+CANONICAL_ROUTE_PREFIXES = ("structured_food", "canonical")
+NOT_A_CHAT_TURN_PREFIXES = ("quick_log", "dashboard")
+LEGACY_PREFIXES = ("legacy",)
 
 
 def _database_url() -> str:
@@ -125,8 +141,19 @@ async def measure(*, days: int, limit: int) -> dict:
                 "ORDER BY fe.timestamp DESC LIMIT :limit"
             ), {"days": days, "limit": limit})).all()
 
+            turnless: list = []
             for turn_id, source, name, quantity, user_id in rows:
-                key = str(turn_id or f"__no_turn__:{user_id}")
+                # ⛔ A TURNLESS ROW GETS ITS OWN KEY, NEVER A SHARED ONE.
+                # `__no_turn__:{user_id}` collapsed every turnless row for one
+                # user across the whole window into ONE giant meal — which the
+                # predicate would then decline wholesale on a single missing
+                # item. Measured here at 0 rows (406 of 406 carry a turn id),
+                # and reported rather than assumed.
+                if turn_id:
+                    key = str(turn_id)
+                else:
+                    turnless.append(int(user_id))
+                    key = f"__no_turn__:{user_id}:{len(turnless)}"
                 meal = meals[key]
                 meal["user_id"] = user_id
                 meal["sources"].add(str(source or ""))
@@ -140,13 +167,20 @@ async def measure(*, days: int, limit: int) -> dict:
     finally:
         await engine.dispose()
 
-    structured, legacy = [], []
+    structured, legacy, not_chat, unknown = [], [], [], []
     for key, meal in meals.items():
-        target = (structured
-                  if any(s.startswith(STRUCTURED_PREFIX)
-                         for s in meal["sources"])
-                  else legacy)
-        target.append(key)
+        sources = {s for s in meal["sources"] if s}
+        if any(s.startswith(NOT_A_CHAT_TURN_PREFIXES) for s in sources):
+            not_chat.append(key)
+        elif any(s.startswith(CANONICAL_ROUTE_PREFIXES) for s in sources):
+            structured.append(key)
+        elif any(s.startswith(LEGACY_PREFIXES) for s in sources):
+            legacy.append(key)
+        else:
+            # ⛔ NOT SILENTLY BINNED. An unrecognised writer is a finding — the
+            # binary this replaced would have called it legacy and reported a
+            # routing failure that may not exist.
+            unknown.append(key)
 
     supported_structured = [k for k in structured
                             if isinstance(verdicts[k], Supported)]
@@ -156,7 +190,9 @@ async def measure(*, days: int, limit: int) -> dict:
     # a path that does not exist.
     supported_legacy = [k for k in legacy if isinstance(verdicts[k], Supported)]
 
-    all_meals = max(len(meals), 1)
+    # ⭐ THE DENOMINATOR IS ORDINARY FOOD-CHAT MEALS — not every food row.
+    chat_meals = len(structured) + len(legacy)
+    all_meals = max(chat_meals, 1)
     routing = 100.0 * len(structured) / all_meals
     support = (100.0 * len(supported_structured) / len(structured)
                if structured else None)
@@ -173,6 +209,7 @@ async def measure(*, days: int, limit: int) -> dict:
         "window_days": days,
         "rows": len(rows),
         "meals": len(meals),
+        "rows_without_a_turn_id": len(turnless),
         "A_routing_rate_pct": round(routing, 1),
         "B_support_rate_within_structured_pct": (round(support, 1)
                                                  if support is not None
@@ -183,6 +220,16 @@ async def measure(*, days: int, limit: int) -> dict:
                     "routing ceiling.",
         "structured_meals": len(structured),
         "legacy_meals": len(legacy),
+        "not_a_chat_turn_meals_EXCLUDED": len(not_chat),
+        "unrecognised_writer_meals": len(unknown),
+        "writer_note": "A is derived from the WRITER (ledger_events.source) as "
+                       "a proxy for the route, because no per-meal routing "
+                       "record is persisted. `canonical:*` counts as "
+                       "structured-route: in this window every canonical write "
+                       "carries a `chat_quantity` operation id (the B-1 answer "
+                       "path). If quick_log or general settlement later emit "
+                       "`canonical:create` too, this proxy needs the operation "
+                       "id to disambiguate them.",
         "supported_structured_meals": len(supported_structured),
         "supported_legacy_meals_NOT_COVERAGE": len(supported_legacy),
         "expected_rung_of_supported": dict(expected),
@@ -212,15 +259,18 @@ def render(report: dict) -> str:
            f"{report['window_days']} days\n"]
     b = report["B_support_rate_within_structured_pct"]
     out.append(f"    A  routing rate    {report['A_routing_rate_pct']:5.1f}%   "
-               f"structured meals / ALL food meals")
+               f"structured-route / ORDINARY FOOD-CHAT meals")
     out.append(f"    B  support rate    "
                f"{(f'{b:5.1f}%' if b is not None else '    — ')}   "
                f"supported / STRUCTURED   <- flattering")
     out.append(f"    C  OWNERSHIP RATE  {report['C_ownership_rate_pct']:5.1f}%"
-               f"   supported / ALL food meals  =  A x B")
+               f"   supported / ORDINARY FOOD-CHAT meals  =  A x B")
     out.append(f"\n    {report['supported_structured_meals']} of "
-               f"{report['structured_meals']} structured meals supported; "
-               f"{report['legacy_meals']} meals never reached the lane")
+               f"{report['structured_meals']} structured-route meals "
+               f"supported; {report['legacy_meals']} legacy-written; "
+               f"{report['not_a_chat_turn_meals_EXCLUDED']} excluded as "
+               f"not-a-chat-turn; {report['unrecognised_writer_meals']} "
+               f"unrecognised writer")
     if report["expected_rung_of_supported"]:
         out.append(f"    expected rung: {report['expected_rung_of_supported']}")
     out.append("\n    WHY STRUCTURED MEALS DECLINE")

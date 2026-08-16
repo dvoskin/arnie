@@ -75,7 +75,34 @@ hardening rounds**:
 (this)          -> P10e  transaction semantics corrected · rollback gate
 ```
 
-**P11 REMAINS COVERAGE. P12 REMAINS THE CANARY.** Neither has started.
+**P10 IS CLOSED** *(Danny, 2026-08-16, at `ecacd76`)* — the canonical branch no
+longer takes the durable legacy `ProcessedTurn` claim, the failure gate counts
+it in the zero-delta set, and the retry must succeed exactly once.
+
+**P11 — COVERAGE — MEASURED, from production, no credits spent:**
+
+```text
+21-day window where the ledger population is COMPLETE · 406 rows · 252 meals
+
+A  routing rate    81.0%   structured-route / ORDINARY FOOD-CHAT meals
+B  support rate    45.6%   supported / STRUCTURED-ROUTE      <- flattering
+C  OWNERSHIP RATE  36.9%   supported / ORDINARY FOOD-CHAT    =  A x B
+
+expected rung of the supported:  memory 81 · artifact 12
+declines: 108 "no local evidence" · 3 "no stated quantity"
+```
+
+⛔ **THE FIRST PUBLICATION OF THESE NUMBERS WAS WRONG AND IS SUPERSEDED**
+(66.7 / 42.3 / 28.2). It read `ledger_events.source` as the ROUTE when it names
+the WRITER, so all 36 `canonical:create` meals — the B-1 answer path — were
+filed as routing failures. Adoption would have driven the measured routing rate
+DOWN. See §3a.4.
+
+⚠ **AND THE "~25% ROUTING" FIGURE QUOTED EARLIER IN THIS SESSION WAS NEVER A
+ROUTING RATE** — it came from the 08-15 identity-SEAM measurement
+(`entity_identity_skipped reason=no_interpretation`), a different population.
+
+**P12 REMAINS THE CANARY, and has not started.**
 P11  P2 coverage AT MEAL LEVEL, with its routing rate
 P12  one-user canary — ONLY once the coordinator actually
      routes that user through the branch
@@ -109,9 +136,15 @@ COVERAGE number, and coverage is what the settlement slice's own risk turns on:
 whole of that slice's exposure. **P2 is now a design input to P6, not a
 permission slip for P3.**
 
-⛔ **THE IMMEDIATE NEXT MOVE IS P4 — the A–D decisions.** A1–A10 implementation
-stays BLOCKED until they land, and the coverage predicate additionally waits on
-P2. ⛔ **Cohort expansion stays prohibited until P2 publishes a miss rate.**
+⛔ **THE IMMEDIATE NEXT MOVE IS P12 — THE CANARY** *(2026-08-16)*. P4 ✅, P5 ✅,
+P6–P10 ✅ (`ecacd76`), P11 ✅ measured (`beac35a`, corrected in §3a.4).
+⛔ **Cohort expansion still prohibited** — the canary comes first, and it is
+gated on the coordinator rollout, not on this slice.
+
+⭐ **AND P2 IS NO LONGER ON THE CRITICAL PATH.** Its purpose was the coverage
+number; P11 produced one from HISTORICAL production data with no credits and
+no model, exactly as the frozen "no phase waits for traffic" rule predicted.
+What P2 still uniquely offers is the shadow-vs-off COMPARISON.
 
 ⛔ **ROLLOUT IS FROZEN.**
 
@@ -2456,6 +2489,45 @@ B-1.8's correction work.
 **The card is a COORDINATOR-MIGRATION blocker, not a settlement blocker.** It
 gates the canary either way: a turn that logs correctly and shows the user
 nothing is worse than no canary.
+
+### 3a.4  ⛔ THE ROUTE IS NOT THE WRITER *(P11b, 2026-08-16)*
+
+`ledger_events.source` names the **mutation lane and its owner** —
+`canonical_writer` says so in as many words: *"`ledger_source` names the mutation
+LANE and its owner (`canonical:create`, matching the existing
+`structured_food:*` / `legacy:ios` / `quick_log:ios` convention)"*.
+
+The first coverage instrument read it as the ROUTE: `startswith("structured_
+food")` else legacy. That is an inversion with a fuse in it — `write_canonical_
+meal` emits `canonical:create`, so **a structured-routed turn settled
+canonically counts as a routing failure, and ADOPTION DRIVES THE MEASURED
+ROUTING RATE DOWN.**
+
+⛔ **AND IT WAS ALREADY FIRING.** 36 of 406 rows in the window are
+`canonical:create` (the B-1 answer path, every one carrying a `chat_quantity`
+operation id). Corrected:
+
+```text
+                 first published    corrected
+A  routing              66.7%         81.0%
+B  support              42.3%         45.6%
+C  ownership            28.2%         36.9%
+artifact as expected rung   1            12
+```
+
+The artifact moved most, because the misfiled meals were exactly the answered
+ones that reach it.
+
+⭐ **THE DENOMINATOR IS ORDINARY FOOD-CHAT MEALS.** `quick_log:*` and
+`dashboard:*` are not chat turns; counting them as turns that failed to reach
+the lane blames the lane for traffic that never went near it. An unrecognised
+writer is reported as its own bucket rather than binned as legacy.
+
+⚠ **THE HONEST LIMIT: A IS STILL WRITER-DERIVED**, because no per-meal routing
+record is persisted. `canonical:*` counts as structured-route on the strength of
+those operation ids. **If quick_log or the general settlement owner later emit
+`canonical:create` too, this proxy needs the operation id to disambiguate them**
+— and it will, the moment P12 ships.
 
 ### 3b  THE TRANCHE CANARY — A RELEASE GATE, NOT A SMOKE TEST  *(Danny, 2026-08-14)*
 
