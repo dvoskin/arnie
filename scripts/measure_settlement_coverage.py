@@ -230,10 +230,22 @@ async def measure(*, days: int, limit: int) -> dict:
             # is the B-1 answer path, `general:*` is the settlement owner
             # (`operation_id_for("general", user, turn)`). Mapped through the
             # committed entry ids the result payload already records.
+            # ⛔⛔ NO TIME WINDOW HERE, AND THAT IS THE FIX RATHER THAN AN
+            # OVERSIGHT. This filtered `meal_commits.created_at` by the SAME
+            # number of days as the entries — but the entries are selected by
+            # `fe.timestamp`, which is the MEAL time and which a user can
+            # backdate ("that was dinner last night"), while `created_at` is
+            # the WRITE time. Two different clocks on one window, so 12 of the
+            # 36 canonical entries had their commit fall outside it and became
+            # `unclassified_canonical` — an instrument reporting "I cannot
+            # attribute this" about rows it had simply declined to look up.
+            #
+            # Verified: with the window removed, 36 of 36 map. The table holds
+            # 92 rows all-time; when that stops being cheap, filter by the
+            # entry ids in play rather than by a clock that does not match.
             commits = (await db.execute(text(
-                "SELECT operation_id, result_payload FROM meal_commits "
-                "WHERE created_at > now() - make_interval(days => :days)"
-            ), {"days": days})).all()
+                "SELECT operation_id, result_payload FROM meal_commits"
+            ))).all()
             operation_of = operations_by_entry(commits)
 
             turnless: list = []

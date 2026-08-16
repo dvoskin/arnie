@@ -126,13 +126,14 @@ invisible to the very measurement meant to watch it.
 ```text
 21 days to 2026-08-16 · 405 rows · 251 meals · ordinary food-chat denominator
 
-A  routing rate    79.9%
-B  support rate    47.6%
-C  ownership rate  38.1%
-settled_by         legacy_executor · b1_answer_path · general 0
-expected rung      memory 80 · artifact 11
-declines           "no local evidence" · "no stated quantity"
-unclassified       12 canonical meals -> CANARY VERDICT WITHHELD today
+A  routing rate    80.1%
+B  support rate    48.2%
+C  ownership rate  38.6%
+settled_by         legacy_executor 215 · b1_answer_path 26
+                   canonical:quick_log 10 (EXCLUDED, not a chat turn)
+                   general_settlement_owner 0   <- the canary's first mover
+expected rung      memory 81 · artifact 12
+unclassified       0 -> CANARY VERDICT PUBLISHABLE
 ```
 
 ⚠ **THESE SUPERSEDE THE FIRST DRAFT'S 80.9 / 45.8 / 37.1**, which classified

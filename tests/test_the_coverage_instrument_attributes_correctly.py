@@ -114,3 +114,31 @@ def test_the_mapping_reads_the_payload_shape_the_writer_actually_writes():
 def test_an_unparseable_payload_yields_no_attribution_rather_than_a_wrong_one():
     assert operations_by_entry([("general:1:t", "{not json")]) == {}
     assert operations_by_entry([("general:1:t", None)]) == {}
+
+
+def test_the_commit_lookup_is_not_windowed_by_a_different_clock():
+    """⛔⛔ TWO CLOCKS ON ONE WINDOW. Entries are selected by `fe.timestamp` —
+    the MEAL time, which a user can backdate — while `meal_commits.created_at`
+    is the WRITE time. Filtering both by the same number of days dropped 12 of
+    36 canonical commits out of the lookup, and the instrument then reported "I
+    cannot attribute this" about rows it had simply declined to fetch. Ten of
+    those twelve were canonical QUICK-LOGS that then sat in the ordinary-chat
+    numerator.
+
+    ⚠ Asserted against the query TEXT, which is the artefact in question: this
+    is SQL in a string, not prose about SQL. The `meal_commits` SELECT must
+    carry no interval filter.
+    """
+    import inspect
+
+    from scripts import measure_settlement_coverage as m
+
+    source = inspect.getsource(m.measure)
+    head, _, tail = source.partition("FROM meal_commits")
+    assert tail, "the meal_commits lookup moved; this gate needs updating"
+    # Everything up to the next closing quote is the rest of that statement.
+    statement_tail = tail.split('"')[0]
+    assert "make_interval" not in statement_tail, (
+        "the meal_commits lookup is time-windowed again — it is filtered by "
+        "created_at while the entries are filtered by timestamp, so commits "
+        "fall outside the window and their rows become unattributable")
