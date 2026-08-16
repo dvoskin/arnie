@@ -105,12 +105,17 @@ def test_no_runtime_module_carries_a_credential_literal():
 #: the number moved because someone decided it should, in the same commit,
 #: rather than drifting while nobody was looking. It has now done that four
 #: times in one day, and each time the number moved WITH ITS REASON.
+#: 2026-08-16, P11: +1 for `scripts/measure_settlement_coverage.py` — it
+#: reads ARNIE_PROD_DATABASE_URL, falling back to DATABASE_URL in
+#: ../arnie/.env through the same helper `measure_identity_coverage`
+#: already uses. READ-ONLY: no writes, no model, no network beyond the
+#: database.
 #: 2026-08-16, P6/A7: +1 for `scripts/prove_settlement_survives_poison.py`.
 #: It reads `../arnie/.env` for ANTHROPIC_API_KEY through the same `_load_key`
 #: every proof script uses — never a literal — and `ARNIE_PROVE_DB` for its
 #: scratch database. Raised WITH ITS REASON in the commit that adds the script,
 #: which is the whole point of the ratchet.
-SCRIPTS_READING_ENV_BASELINE = 34
+SCRIPTS_READING_ENV_BASELINE = 35
 
 
 def test_the_env_reading_habit_does_not_spread_beyond_scripts():

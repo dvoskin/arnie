@@ -1,0 +1,26 @@
+{
+ "window_days": 21,
+ "rows": 406,
+ "meals": 252,
+ "A_routing_rate_pct": 66.7,
+ "B_support_rate_within_structured_pct": 42.3,
+ "C_ownership_rate_pct": 28.2,
+ "identity": "C = A x B, and C is the only one that describes the product. B alone flatters this slice by the size of the routing ceiling.",
+ "structured_meals": 168,
+ "legacy_meals": 84,
+ "supported_structured_meals": 71,
+ "supported_legacy_meals_NOT_COVERAGE": 47,
+ "expected_rung_of_supported": {
+  "memory": 70,
+  "artifact": 1
+ },
+ "why_structured_meals_decline": {
+  "no local evidence — estimate would be worse than legacy": 97
+ },
+ "limits": [
+  "meals are grouped by ledger_events.turn_id; a row with no created event cannot be grouped and is counted as its own meal",
+  "food_entries carries NO canonical_entity_id, so the predicate is asked with an empty identity — this is coverage WITHOUT identity stamping, which is what the fleet has today",
+  "the predicate is EXECUTED, not modelled; memory is read per item at measurement time, which is later than settle time and can only OVERSTATE memory",
+  "read-only: no writes, no model, no network beyond the database"
+ ]
+}
