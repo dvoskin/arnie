@@ -977,3 +977,108 @@ async def test_the_coordinator_path_binds_the_turn_id():
     assert current_turn_id() is None, (
         "the turn id leaked past the turn; on a shared worker task it would "
         "stamp the NEXT turn's writes with this one's id")
+
+
+# ══ P14/1 — a turn the native lane cannot execute must not be swallowed ═════
+
+@pytest.mark.asyncio
+async def test_a_native_turn_with_no_plan_delegates_to_legacy():
+    """⛔⛔ THE CORN CASE, FROM PRODUCTION 2026-08-16. The interpreter produced
+    NO log operation, `NativeExecutionStage` returned None, the renderer had
+    nothing to narrate, and `_result_from_state` built an EMPTY response —
+    delivery turned that into "Lost the thread there" and NO ROW WAS WRITTEN,
+    while legacy had logged the identical message hours earlier."""
+    from types import SimpleNamespace
+
+    from core.turns import entrypoint
+    import core.turns.factory as factory
+    import core.turns.stages.execute as execute_mod
+
+    class _Coordinator:
+        route_stage = SimpleNamespace(decision=None)
+
+        async def run(self, request):
+            # No execution, no response: the native lane produced nothing.
+            return SimpleNamespace(execution=None, response=None, error=None)
+
+    ran = []
+
+    class _Legacy:
+        def __init__(self, **kw):
+            pass
+
+        async def run(self, request, **kw):
+            ran.append(request)
+            return SimpleNamespace(response=SimpleNamespace(bubbles=["logged"]))
+
+    real_build, real_legacy = factory.build_coordinator, execute_mod.LegacyExecutionStage
+
+    async def _build(request, **kw):
+        return _Coordinator()
+
+    factory.build_coordinator = _build
+    execute_mod.LegacyExecutionStage = _Legacy
+    try:
+        result = await entrypoint.run_turn(
+            request=SimpleNamespace(turn_id="ios:NOPLAN", user_id=26,
+                                    text="I had a corn on the cob", metadata={}))
+    finally:
+        factory.build_coordinator = real_build
+        execute_mod.LegacyExecutionStage = real_legacy
+
+    assert ran, "the turn was swallowed — legacy never ran and the user would "\
+                "have received an empty reply over an unlogged meal"
+    assert result.response.bubbles == ["logged"]
+
+
+@pytest.mark.asyncio
+async def test_a_native_ask_is_not_delegated():
+    """⚠ AN ASK IS NOT AN EMPTY TURN. A clarification legitimately has a
+    response and no execution; delegating one would ask the question twice."""
+    from types import SimpleNamespace
+
+    from core.turns import entrypoint
+    import core.turns.factory as factory
+    import core.turns.stages.execute as execute_mod
+
+    class _Coordinator:
+        route_stage = SimpleNamespace(decision=None)
+
+        async def run(self, request):
+            return SimpleNamespace(
+                execution=None,
+                response=SimpleNamespace(bubbles=["How much?"]), error=None)
+
+    ran = []
+
+    class _Legacy:
+        def __init__(self, **kw):
+            pass
+
+        async def run(self, request, **kw):
+            ran.append(request)
+            return None
+
+    real_build, real_legacy = factory.build_coordinator, execute_mod.LegacyExecutionStage
+
+    async def _build(request, **kw):
+        return _Coordinator()
+
+    factory.build_coordinator = _build
+    execute_mod.LegacyExecutionStage = _Legacy
+    try:
+        # ⚠ `_result_from_state` needs a fuller state than this double
+        # provides; what is under test is whether LEGACY WAS CALLED, so its
+        # failure afterwards is irrelevant and deliberately swallowed.
+        try:
+            await entrypoint.run_turn(
+                request=SimpleNamespace(turn_id="ios:ASK", user_id=26,
+                                        text="I had chicken", metadata={}))
+        except Exception:                              # noqa: BLE001
+            pass
+    finally:
+        factory.build_coordinator = real_build
+        execute_mod.LegacyExecutionStage = real_legacy
+
+    assert not ran, "a clarification was delegated to legacy — the user would "\
+                    "be asked the same question twice"

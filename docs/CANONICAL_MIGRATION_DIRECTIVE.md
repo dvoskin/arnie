@@ -2618,6 +2618,43 @@ the corpus repair and the coverage instrument are both built on. Bound in
 Neither **a mispricing** nor **a turn that logs nothing** was on the list, and
 both happened. Both are now stop conditions.
 
+### 3a.6  ⛔⛔ A TURN THE NATIVE LANE CANNOT EXECUTE MUST NOT BE SWALLOWED *(P14/1, 2026-08-16)*
+
+**Measured in production.** `"I had a corn on the cob"` reached the native lane,
+the interpreter produced NO log operation, and the turn was lost:
+
+```text
+NativeExecutionStage.run   ops empty  -> return None
+NativeRenderStage          nothing committed -> returns None
+_result_from_state         response is None -> Response.from_text("")
+delivery                   empty reply -> "Lost the thread there."  NO ROW
+```
+
+Legacy had logged the identical message hours earlier. Ground turkey took the
+same DECLINE path the same minute and succeeded, because the interpreter
+produced an operation for it — so this is not the coverage predicate and not
+settlement. **The native lane simply has no path back when it produces no plan.**
+
+⭐⭐ **AND THIS IS NOT THE A8 FALLBACK.** A8 forbids reaching legacy AFTER
+canonical settlement has begun, because that is two settlement owners for one
+meal. Here `state.execution is None` means the execution stage returned before
+taking any claim and before any canonical write — **nothing was settled and no
+ownership transferred.** The line A8 actually draws:
+
+```text
+no plan, nothing settled         -> legacy runs the turn        ALLOWED
+canonical settled then refused   -> propagate, never legacy     FORBIDDEN
+an empty response reaching delivery                             IMPOSSIBLE
+```
+
+⚠ **AN ASK IS NOT AN EMPTY TURN.** A clarification legitimately has a response
+and no execution, so the response is checked too — delegating one would ask the
+user the same question twice. Both directions are gated.
+
+⛔ **THIS IS THE CURRENT STOP CONDITION FOR WIDENING**, together with the card
+(§3a.3). A settlement that is correct and a turn that silently loses food are
+not offset by each other.
+
 ### 3b  THE TRANCHE CANARY — A RELEASE GATE, NOT A SMOKE TEST  *(Danny, 2026-08-14)*
 
 Production is **32 commits behind** and this tranche changed the ARTIFACT, the

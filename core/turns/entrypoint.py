@@ -162,6 +162,42 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     if state.error is not None:
         raise state.error
 
+    # ⛔⛔ A TURN THE NATIVE LANE CANNOT EXECUTE MUST NOT BE SWALLOWED.
+    #
+    # Measured in production 2026-08-16: "I had a corn on the cob" reached the
+    # native lane, the interpreter produced NO log operation,
+    # `NativeExecutionStage` returned None, the renderer had nothing committed
+    # to narrate, and `_result_from_state` built `Response.from_text("")` — an
+    # EMPTY reply. Delivery substituted the recovery bubble and the user was
+    # told "Lost the thread there. Try one more time and I'll catch it." NO ROW
+    # WAS WRITTEN. Legacy had logged the identical message hours earlier.
+    #
+    # ⭐ AND THIS IS NOT THE A8 FALLBACK, WHICH IS FORBIDDEN. A8 forbids
+    # reaching legacy AFTER canonical settlement has begun, because that is two
+    # settlement owners for one meal. Here `state.execution is None` means the
+    # execution stage returned before taking any claim and before any canonical
+    # write — NOTHING WAS SETTLED and no ownership was transferred. Handing
+    # such a turn to the legacy pipeline is the correct behaviour, and the
+    # distinction is the line A8 actually draws:
+    #
+    #     no plan, nothing settled        -> legacy runs the turn      ALLOWED
+    #     canonical settled then refused  -> propagate, never legacy   FORBIDDEN
+    #
+    # ⚠ AND AN ASK IS NOT AN EMPTY TURN. A clarification legitimately produces
+    # a response with no execution, so the response is checked too — delegating
+    # one would ask the question twice.
+    _bubbles = getattr(state.response, "bubbles", None)
+    if state.execution is None and not _bubbles:
+        logger.info(
+            "event=native_no_plan turn=%s — the native lane produced nothing "
+            "executable and nothing to say; delegating to legacy BEFORE any "
+            "settlement rather than returning an empty reply",
+            getattr(request, "turn_id", "-"))
+        from core.turns.stages.execute import LegacyExecutionStage
+        delegated = await LegacyExecutionStage(**legacy_kwargs).run(request)
+        if delegated is not None:
+            return delegated
+
     return _result_from_state(state, legacy_kwargs)
 
 
