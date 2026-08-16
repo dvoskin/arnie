@@ -2486,9 +2486,14 @@ does not return its id, so `ledger_event_ids` is empty for a canonically
 settled turn and **no undo token can be surfaced from it**. That belongs with
 B-1.8's correction work.
 
-**The card is a COORDINATOR-MIGRATION blocker, not a settlement blocker.** It
-gates the canary either way: a turn that logs correctly and shows the user
-nothing is worse than no canary.
+**The card is a COORDINATOR-MIGRATION blocker, not a settlement blocker.**
+
+⭐ **DEFERRED TO A LATER PHASE BY DECISION** *(Danny, 2026-08-16)*. It was
+previously written here as gating the canary. It does not: the canary runs on a
+single test account that knows the card is missing, and the turn still logs
+correctly with a real text reply. **It returns as a blocker before the cohort
+widens beyond one informed user** — a correct settlement that renders no usable
+card is still a product failure for anyone who did not opt into watching for it.
 
 ### 3a.4  ⛔ THE ROUTE IS NOT THE WRITER *(P11b, 2026-08-16)*
 
