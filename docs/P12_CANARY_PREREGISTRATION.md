@@ -84,14 +84,25 @@ a turn that reports success with no food row
 latency regression on settle       assemble() + price() must not retrieve
 ```
 
-**ROLLBACK IS ONE VARIABLE:**
+**ROLLBACK IS TWO VARIABLES, AND CONFLATING THEM WAS AN ERROR IN THIS
+DOCUMENT'S FIRST DRAFT.**
 
 ```bash
-GENERAL_SETTLEMENT_ALLOWLIST=      # empty -> settlement_cohort() False
+# 1. SETTLEMENT rollback — stops canonical settlement, next turn
+GENERAL_SETTLEMENT_ALLOWLIST=
+
+# 2. CANARY rollback — also returns the user to the LEGACY EXECUTION PATH
+TURN_COORDINATOR_ALLOWLIST=
 ```
 
-Consumption stops on the next turn. Rows already written stay — they are
-canonical rows, correctly priced, and nothing about them depends on the flag.
+⛔ **CLEARING ONLY THE FIRST LEAVES THE USER ON NATIVE + LEGACY, AND THE CARD
+STAYS MISSING.** The card gap belongs to `NativeRenderStage`, not to settlement
+(§3a.3) — proven by a control arm — so a settlement-only rollback fixes the
+settlement half and leaves the visible symptom in place. If the canary is being
+rolled back BECAUSE of the card, only the second variable ends it.
+
+Rows already written stay under either. They are canonical rows, correctly
+priced, and nothing about them depends on a flag.
 
 ## THE WATCH
 
@@ -99,7 +110,11 @@ canonical rows, correctly priced, and nothing about them depends on the flag.
 ../arnie/.venv/bin/python -m scripts.measure_settlement_coverage --days 21
 ```
 
-`settled_by` is the adoption signal. ⭐ **AND IT ONLY WORKS BECAUSE THE
+`settled_by` is the adoption signal, and **the run WITHHOLDS its canary
+verdict while `unclassified_canonical_meals` is non-zero** — a canonical meal
+nobody can attribute is unknown ownership, never evidence that legacy settled
+it. Measured at the baseline: **12 such meals**, so the verdict is withheld
+TODAY and that gap must be understood before the canary's own number is read. ⭐ **AND IT ONLY WORKS BECAUSE THE
 INSTRUMENT WAS TAUGHT TO DISAMBIGUATE FIRST**: every canonical lane emits
 `canonical:create`, so B-1 and the general owner are indistinguishable by ledger
 source. The split comes from `meal_commits.operation_id` —
@@ -111,14 +126,22 @@ invisible to the very measurement meant to watch it.
 ```text
 21 days to 2026-08-16 · 405 rows · 251 meals · ordinary food-chat denominator
 
-A  routing rate    80.9%
-B  support rate    45.8%
-C  ownership rate  37.1%
-settled_by         legacy_executor 227 · b1_answer_path 24 · general 0
-expected rung      memory 81 · artifact 12
-declines           "no local evidence" 108 · "no stated quantity" 3
+A  routing rate    79.9%
+B  support rate    47.6%
+C  ownership rate  38.1%
+settled_by         legacy_executor · b1_answer_path · general 0
+expected rung      memory 80 · artifact 11
+declines           "no local evidence" · "no stated quantity"
+unclassified       12 canonical meals -> CANARY VERDICT WITHHELD today
 ```
 
-⚠ **A IS WRITER-DERIVED** — no per-meal routing record is persisted, so
-`canonical:*` counts as structured-route on the strength of its operation id.
-This is the number most likely to need revisiting once the canary is live.
+⚠ **THESE SUPERSEDE THE FIRST DRAFT'S 80.9 / 45.8 / 37.1**, which classified
+canonical meals by SOURCE and so counted unattributable ones as structured.
+Twelve of them are now honestly unknown, and the verdict is withheld until they
+are understood — the baseline the canary is compared against must not be built
+on a bucket the instrument cannot justify.
+
+⚠ **A IS WRITER-DERIVED** — no per-meal routing record is persisted, so a
+canonical meal counts as structured-route on the strength of its OPERATION
+FAMILY (`general:*` / `chat_quantity:*`), not its source. This is the number
+most likely to need revisiting once the canary is live.

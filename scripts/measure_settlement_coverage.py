@@ -62,9 +62,89 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 # `dashboard:*` are not chat turns at all; counting them as turns that failed
 # to reach the structured lane would blame the lane for traffic that never went
 # near it.
-CANONICAL_ROUTE_PREFIXES = ("structured_food", "canonical")
+CANONICAL_ROUTE_PREFIXES = ("structured_food",)
 NOT_A_CHAT_TURN_PREFIXES = ("quick_log", "dashboard")
 LEGACY_PREFIXES = ("legacy",)
+
+#: Which canonical OWNER an operation id names. `canonical:create` is emitted by
+#: every canonical lane, so the source cannot say — only the operation can.
+CHAT_OPERATION_FAMILIES = ("general", "chat_quantity")
+NOT_CHAT_OPERATION_FAMILIES = ("quick_log", "dashboard", "direct")
+
+
+def meal_key(user_id, turn_id) -> str:
+    """⛔⛔ USER-SCOPED, AND THIS IS THE SECOND TIME.
+
+    A client turn id is NOT globally unique — `make_turn_id` returns
+    `f"{channel}:{cid}"` verbatim, with no user in it. P10g fixed exactly this
+    in SETTLEMENT (`operation_id_for`) and the measurement then made the same
+    mistake one file over, keying meals on the turn id alone.
+
+    Its effect here is worse than a miscount: two users sharing `ios:X` merge
+    into ONE synthetic meal, `user_id` is overwritten by whichever row lands
+    last, `coverage_for` evaluates BOTH users' foods against ONE user's memory,
+    and the merged meal inherits BOTH users' operations — so a single
+    general-settled row would paint the whole thing as general settlement and
+    the canary would over-report itself.
+    """
+    return f"{int(user_id)}:{turn_id}"
+
+
+def operations_by_entry(commits) -> dict:
+    """`entry_id -> operation_id`, read from what each commit actually wrote.
+
+    ⭐ THIS IS THE CANARY'S ONLY EYE. Every canonical lane emits
+    `canonical:create`, so the ledger source cannot distinguish the general
+    settlement owner from the B-1 answer path; `meal_commits.operation_id` can,
+    and this is the join that reaches it. The payload nests under `result` —
+    read defensively, because a reader that silently finds nothing here reports
+    "legacy settled it" about canonical writes.
+    """
+    out: dict = {}
+    for operation_id, payload in commits or ():
+        try:
+            body = json.loads(payload or "{}") if isinstance(
+                payload, str) else (payload or {})
+        except (TypeError, ValueError):
+            continue
+        body = body.get("result") if isinstance(
+            body.get("result"), dict) else body
+        for entry in (body or {}).get("committed_items") or []:
+            if entry.get("entry_id") is not None:
+                out[int(entry["entry_id"])] = str(operation_id or "")
+    return out
+
+
+def classify_meal(sources, operations) -> str:
+    """Which bucket this meal belongs to. PURE, so it can be gated.
+
+    ⛔ THE OPERATION DECIDES A CANONICAL ROW, NOT THE SOURCE. Every canonical
+    lane emits `canonical:create`, so treating any `canonical:*` as
+    structured-chat put a canonical QUICK-LOG into the ordinary-chat numerator.
+    The operation family is the only thing that can tell them apart, and it is
+    now consulted first for canonical rows.
+
+    ⛔⛔ AND "I COULD NOT TELL" IS ITS OWN ANSWER. A canonical row whose
+    MealCommit payload could not be mapped is UNKNOWN ownership — never
+    evidence that legacy settled it. Calling it legacy is how the canary would
+    go invisible again, in the one branch this whole measurement depends on.
+    """
+    sources = {s for s in (sources or ()) if s}
+    operations = {o for o in (operations or ()) if o}
+
+    if any(s.startswith(NOT_A_CHAT_TURN_PREFIXES) for s in sources):
+        return "not_a_chat_turn"
+    if any(s.startswith("canonical") for s in sources):
+        if operations & set(CHAT_OPERATION_FAMILIES):
+            return "structured"
+        if operations & set(NOT_CHAT_OPERATION_FAMILIES):
+            return "not_a_chat_turn"
+        return "unclassified_canonical"
+    if any(s.startswith(CANONICAL_ROUTE_PREFIXES) for s in sources):
+        return "structured"
+    if any(s.startswith(LEGACY_PREFIXES) for s in sources):
+        return "legacy"
+    return "unknown_writer"
 
 
 def _database_url() -> str:
@@ -150,22 +230,11 @@ async def measure(*, days: int, limit: int) -> dict:
             # is the B-1 answer path, `general:*` is the settlement owner
             # (`operation_id_for("general", user, turn)`). Mapped through the
             # committed entry ids the result payload already records.
-            operation_of: dict = {}
             commits = (await db.execute(text(
                 "SELECT operation_id, result_payload FROM meal_commits "
                 "WHERE created_at > now() - make_interval(days => :days)"
             ), {"days": days})).all()
-            for operation_id, payload in commits:
-                try:
-                    body = json.loads(payload or "{}")
-                except (TypeError, ValueError):
-                    continue
-                body = body.get("result") if isinstance(
-                    body.get("result"), dict) else body
-                for entry in (body or {}).get("committed_items") or []:
-                    if entry.get("entry_id") is not None:
-                        operation_of[int(entry["entry_id"])] = str(
-                            operation_id or "")
+            operation_of = operations_by_entry(commits)
 
             turnless: list = []
             for entry_id, turn_id, source, name, quantity, user_id in rows:
@@ -176,10 +245,10 @@ async def measure(*, days: int, limit: int) -> dict:
                 # item. Measured here at 0 rows (406 of 406 carry a turn id),
                 # and reported rather than assumed.
                 if turn_id:
-                    key = str(turn_id)
+                    key = meal_key(user_id, turn_id)
                 else:
                     turnless.append(int(user_id))
-                    key = f"__no_turn__:{user_id}:{len(turnless)}"
+                    key = meal_key(user_id, f"__no_turn__:{len(turnless)}")
                 meal = meals[key]
                 meal["user_id"] = user_id
                 meal["sources"].add(str(source or ""))
@@ -197,20 +266,15 @@ async def measure(*, days: int, limit: int) -> dict:
     finally:
         await engine.dispose()
 
-    structured, legacy, not_chat, unknown = [], [], [], []
+    buckets: dict = collections.defaultdict(list)
     for key, meal in meals.items():
-        sources = {s for s in meal["sources"] if s}
-        if any(s.startswith(NOT_A_CHAT_TURN_PREFIXES) for s in sources):
-            not_chat.append(key)
-        elif any(s.startswith(CANONICAL_ROUTE_PREFIXES) for s in sources):
-            structured.append(key)
-        elif any(s.startswith(LEGACY_PREFIXES) for s in sources):
-            legacy.append(key)
-        else:
-            # ⛔ NOT SILENTLY BINNED. An unrecognised writer is a finding — the
-            # binary this replaced would have called it legacy and reported a
-            # routing failure that may not exist.
-            unknown.append(key)
+        buckets[classify_meal(meal["sources"],
+                              meal.get("operations"))].append(key)
+    structured = buckets["structured"]
+    legacy = buckets["legacy"]
+    not_chat = buckets["not_a_chat_turn"]
+    unknown = buckets["unknown_writer"]
+    unclassified = buckets["unclassified_canonical"]
 
     # WHO SETTLED EACH MEAL, named rather than collapsed. `general` appearing
     # here at all is the canary's first visible sign.
@@ -266,6 +330,11 @@ async def measure(*, days: int, limit: int) -> dict:
         "legacy_meals": len(legacy),
         "not_a_chat_turn_meals_EXCLUDED": len(not_chat),
         "unrecognised_writer_meals": len(unknown),
+        # ⛔ THE CANARY VERDICT IS WITHHELD WHILE THIS IS NON-ZERO. A canonical
+        # row nobody can attribute is unknown ownership, and the general
+        # bucket is the thing this measurement exists to watch.
+        "unclassified_canonical_meals": len(unclassified),
+        "canary_verdict_publishable": len(unclassified) == 0,
         "writer_note": "A is derived from the WRITER (ledger_events.source) as "
                        "a proxy for the route, because no per-meal routing "
                        "record is persisted. `canonical:*` counts as "
@@ -310,6 +379,10 @@ def render(report: dict) -> str:
                f"supported / STRUCTURED   <- flattering")
     out.append(f"    C  OWNERSHIP RATE  {report['C_ownership_rate_pct']:5.1f}%"
                f"   supported / ORDINARY FOOD-CHAT meals  =  A x B")
+    if report.get("unclassified_canonical_meals"):
+        out.append(f"\n    ⛔⛔ CANARY VERDICT WITHHELD — "
+                   f"{report['unclassified_canonical_meals']} canonical meal(s) "
+                   f"could not be attributed to an owner")
     out.append(f"\n    {report['supported_structured_meals']} of "
                f"{report['structured_meals']} structured-route meals "
                f"supported; {report['legacy_meals']} legacy-written; "
