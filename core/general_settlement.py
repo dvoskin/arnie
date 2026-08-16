@@ -45,12 +45,24 @@ LOCALLY_EVIDENCED = ("memory", "artifact")
 
 
 class ExecutionViewMismatch(RuntimeError):
-    """The meal committed, but its committed rows cannot be mapped back to the
-    items that produced them.
+    """The meal SETTLED, but its written rows cannot be mapped back to the
+    items that produced them — so the turn must fail BEFORE durability.
 
-    A distinct type because the two facts it separates are the ones that keep
-    getting collapsed: THE WRITE HAPPENED, and THE PRESENTATION MAPPING FAILED.
-    Returning an empty view instead would state the first as its opposite.
+    ⛔⛔ AND "SETTLED" IS NOT "COMMITTED". An earlier draft of this docstring
+    said the meal was already committed and that retry safety came from the
+    durable idempotency claim. **Neither is true on this path.**
+    `commit_or_load_existing` states it plainly — *"Nothing here commits or
+    rolls it back"* — and the coordinator adds that after the writer flushes,
+    *"the rows are flushed, not durable"*. The CALLER owns the transaction, and
+    `execution_view` runs inside it.
+
+    ⭐ WHICH MAKES THE INVARIANT STRONGER, NOT WEAKER. The mapping is still part
+    of the MUTATION transaction, so a view that cannot be built safely takes
+    the meal, the claim and the result down with it: the exception escapes
+    before any commit and everything rolls back together. There is no durable
+    half-state to reconcile — which is exactly why raising beats returning an
+    empty view that would report "nothing was written" while the rows sat
+    flushed in an open transaction.
     """
 
 
@@ -390,18 +402,21 @@ def execution_view(result, items) -> object:
         # "unknown" state to return, so the honest signal is a typed raise the
         # caller cannot mistake for "nothing committed".
         #
-        # ⚠ THE ROW IS ALREADY COMMITTED WHEN THIS FIRES, and that is the
-        # point: the write happened, the PRESENTATION MAPPING failed, and those
-        # are different facts. A turn that errors after a durable write is
-        # recoverable — the idempotency claim makes the retry safe. A turn that
-        # says "nothing was logged" over a logged meal is not.
+        # ⚠ THE ROWS ARE FLUSHED, NOT DURABLE, WHEN THIS FIRES — the caller
+        # owns the transaction and `commit_or_load_existing` never commits it.
+        # So this raise happens INSIDE the mutation transaction, and the meal,
+        # the exactly-once claim and the persisted result all roll back
+        # together. Failing before durability is the strong outcome; an empty
+        # view would have reported "nothing was written" while the rows sat
+        # flushed in an open transaction, which is the worst of both.
         logger.error(
-            "event=execution_view_mismatch items=%d committed=%d — the meal IS "
-            "committed; the view cannot be built safely", len(items),
-            len(committed))
+            "event=execution_view_mismatch items=%d written=%d — the meal is "
+            "SETTLED BUT NOT DURABLE; failing before commit so it rolls back",
+            len(items), len(committed))
         raise ExecutionViewMismatch(
-            f"{len(items)} items settled into {len(committed)} committed rows; "
-            f"the meal is durable but its execution view cannot be built")
+            f"{len(items)} items settled into {len(committed)} written rows; "
+            f"the execution view cannot be built, so this turn must fail "
+            f"before the transaction commits")
     calls = []
     for index, item in enumerate(items):
         row = committed[index] or {}

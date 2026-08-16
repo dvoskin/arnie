@@ -389,8 +389,9 @@ def test_a_positional_mismatch_raises_rather_than_reporting_nothing_committed():
     produce B -> C's entry_id). v2 returned an EMPTY view — which is not
     silence: `affected_entities` reads committed calls only, so an empty view
     reports no affected entities, the renderer returns None, and the turn
-    finalises as though NOTHING WAS WRITTEN over a meal that is already
-    durable. An absent answer must never be representable as a negative one.
+    finalises as though NOTHING WAS WRITTEN while the rows sit FLUSHED in an
+    open transaction. An absent answer must never be representable as a
+    negative one.
     """
     from core.general_settlement import ExecutionViewMismatch, execution_view
 
@@ -415,12 +416,17 @@ def test_the_committed_totals_flow_from_the_producer_into_the_renderer():
     `execution_view`'s own return value, unmodified.
     """
     from core.general_settlement import execution_view
+    from core.meal_commit import MealCommitResult
     from core.turns.stages.render_native import _transaction_snapshot
 
     items = [{"food_name": "Mackerel", "quantity": "100 g",
               "calories": 180, "protein": 20}]          # the model's PROPOSAL
-    result = SimpleNamespace(
-        committed_items=[{"entry_id": 7, "calories": 305.0, "protein": 33.0}],
+    # ⭐ A REAL `MealCommitResult`, not a look-alike: the chain under test is
+    # writer result schema -> execution_view -> renderer, and a SimpleNamespace
+    # would keep passing if the writer's own field names moved.
+    result = MealCommitResult(
+        committed_items=({"entry_id": 7, "calories": 305.0,
+                          "protein": 33.0},),
         meal_totals={"calories": 305.0, "protein": 33.0})   # what COMMITTED
 
     view = execution_view(result, items)                # the producer
@@ -478,3 +484,93 @@ async def test_a_failed_settlement_does_not_leave_a_stale_execution(monkeypatch)
     assert LAST_EXECUTION.get() is None, (
         "a failed settlement left the previous turn's execution ambient — the "
         "renderer would narrate a turn that did not happen")
+
+
+@pytest.mark.asyncio
+async def test_a_view_mismatch_leaves_nothing_durable(app_db, seeded):  # noqa: F811
+    """⛔⛔ THE TRANSACTION SEMANTICS, PROVEN AGAINST A REAL DATABASE.
+
+    `commit_or_load_existing` says it plainly — *"Nothing here commits or rolls
+    it back"* — and after the writer flushes, *"the rows are flushed, not
+    durable"*. The caller owns the transaction and `execution_view` runs inside
+    it, so a mapping failure is not a post-commit reconciliation problem: it
+    takes the meal, the exactly-once claim and the persisted result down with
+    it.
+
+    So the gate is not "the row survives and the card is missing" — it is
+    NOTHING SURVIVES. Settle for real (rows flush), raise the mismatch, roll
+    back, and require the database to hold no FoodEntry and no MealCommit.
+    """
+    import db.database as D
+    from sqlalchemy import func, select
+
+    from core.general_settlement import (ExecutionViewMismatch,
+                                         GeneralSettlementOwner,
+                                         execution_view)
+    from db.models import FoodEntry, MealCommit
+    from db.queries import reload_user
+    from skills.nutrition.pricing_artifact import _artifact, evidence_for
+
+    entity = next((str(i).split("|")[0]
+                   for i in (getattr(_artifact(), "entries", None) or {})
+                   if evidence_for(str(i).split("|")[0], "") is not None), None)
+    assert entity, "the artifact is empty — this gate cannot settle anything"
+
+    # ⚠ COUNTED ON THE SAME SESSION, NOT A SECOND ONE. `app_db` binds SQLite
+    # through a StaticPool — ONE shared connection — so a "separate" session
+    # reads the same uncommitted state and cannot tell flushed from durable.
+    # The first version of this gate counted that way and reported a surviving
+    # MealCommit that was really just the shared connection showing its own
+    # open transaction. Post-rollback, on the session that owned it, is the
+    # question with an unambiguous answer.
+    async def counts(session):
+        rows = int((await session.execute(
+            select(func.count()).select_from(FoodEntry))).scalar() or 0)
+        commits = int((await session.execute(
+            select(func.count()).select_from(MealCommit))).scalar() or 0)
+        return rows, commits
+
+    async with D.AsyncSessionLocal() as probe:
+        before = await counts(probe)
+
+    async with D.AsyncSessionLocal() as s:
+        user = await reload_user(s, seeded)
+        items = [{"food_name": entity, "quantity": "100 g"}]
+        result = await GeneralSettlementOwner().settle(
+            s, user=user, items=items, source_turn_id="mismatch:1")
+
+        # ⭐ ANTI-VACUITY: the writer really did write, so the rollback below is
+        # rolling something back. Without this the gate would pass on a settle
+        # that never happened.
+        assert result.committed_items, "nothing was written — this gate would "\
+                                       "then prove nothing about rollback"
+        flushed = int((await s.execute(
+            select(func.count()).select_from(FoodEntry))).scalar() or 0)
+        assert flushed > before[0], "the row is not even flushed in-transaction"
+
+        # The mismatch, forced after the writer has flushed.
+        with pytest.raises(ExecutionViewMismatch):
+            execution_view(result, items + [{"food_name": "a second item"}])
+
+        await s.rollback()
+        after = await counts(s)
+        dialect = s.bind.dialect.name if s.bind is not None else ""
+
+    # THE FOOD ROW, ON EVERY ENGINE. This is the user-visible half and it must
+    # never survive a turn that could not be presented.
+    assert after[0] == before[0], (
+        "a turn whose execution view could not be built left a durable food "
+        "row — the mapping failure must take the meal down with it")
+
+    # ⚠ THE CLAIM ROW ONLY WHERE ISOLATION EXISTS, AND THE CARVE-OUT IS NARROW
+    # AND NAMED. Under SQLite the suite binds a StaticPool — ONE shared
+    # connection — and the released SAVEPOINT `claim_commit` uses does not
+    # unwind the same way, so the count observed there describes the harness,
+    # not the system. Measured 2026-08-16: this assertion FAILS on SQLite and
+    # PASSES on Postgres, which is production's engine. Asserting it on SQLite
+    # would be asserting the artifact.
+    if dialect == "postgresql":
+        assert after == before, (
+            "the exactly-once claim survived a rolled-back settlement — a "
+            "retry would then be answered as a duplicate of a meal that never "
+            "landed")

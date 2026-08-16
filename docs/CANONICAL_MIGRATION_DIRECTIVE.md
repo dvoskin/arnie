@@ -54,11 +54,28 @@ P9   one REAL turn through the routing seam (scratch DB)   ✅ PASS — rung=
                                                               ⛔ AND IT TOOK
                                                               FIVE GATES, NOT
                                                               FOUR
-P10  presentation from the canonical branch                ⚠ CORRECTED — the
-                                                              card gap is the
-                                                              NATIVE RENDERER's,
-                                                              not this slice's.
-                                                              See §3a.3
+P10  presentation from the canonical branch                ⚠ the card gap is
+                                                              the NATIVE
+                                                              RENDERER's, not
+                                                              this slice's —
+                                                              §3a.3. Hardened
+                                                              by three review
+                                                              rounds, below
+
+⛔ **COMMIT-MESSAGE NUMBERING DOES NOT MATCH THIS BOARD, AND THE BOARD WINS.**
+Three commits are titled `P9` / `P11` / `P12` in git while directive-P11 is the
+COVERAGE measurement and directive-P12 is the CANARY. Read them as **P10
+hardening rounds**:
+
+```text
+9b06bd4  "P9"   -> P10a  the routing seam, driven through a real turn
+135ef78  "P10"  -> P10b  the card gap diagnosed to the native renderer
+6240058  "P11"  -> P10c  committed totals cross the seam · mismatch · anti-stale
+0922882  "P12"  -> P10d  unknown is not zero · the dataflow gate
+(this)          -> P10e  transaction semantics corrected · rollback gate
+```
+
+**P11 REMAINS COVERAGE. P12 REMAINS THE CANARY.** Neither has started.
 P11  P2 coverage AT MEAL LEVEL, with its routing rate
 P12  one-user canary — ONLY once the coordinator actually
      routes that user through the branch
