@@ -42,8 +42,17 @@ class _RecordingOwner:
         self.calls = []
 
     async def settle(self, db, **kwargs):
+        # ⚠ ONE COMMITTED ROW PER ITEM. The first version returned NO committed
+        # items for a meal it had just "settled", which is not a shape the real
+        # owner can produce — and once mismatch became a typed raise, this
+        # double started failing the test it was written to support. A double
+        # that cannot occur in production tests nothing.
         self.calls.append(kwargs)
-        return SimpleNamespace(committed_items=())
+        items = list(kwargs.get("items") or ())
+        return SimpleNamespace(
+            committed_items=[{"entry_id": 100 + i, "calories": 1.0,
+                              "protein": 0.1} for i, _ in enumerate(items)],
+            meal_totals={"calories": float(len(items)), "protein": 0.1})
 
 
 def _request(turn_id="t:1", **meta):
@@ -373,21 +382,61 @@ def test_a_legacy_execution_without_receipts_still_uses_compute_batch():
     assert _transaction_snapshot(snapshot, operations).batch_cal == 90
 
 
-def test_a_positional_mismatch_refuses_the_view_rather_than_mispairing():
-    """⛔ [A,B,C] with [A,C] committed must not produce B -> C's entry_id. The
-    guard used to log and then do exactly that."""
-    from core.general_settlement import execution_view
+def test_a_positional_mismatch_raises_rather_than_reporting_nothing_committed():
+    """⛔⛔ UNKNOWN IS NOT ZERO, AND THIS HAS BEEN WRONG IN BOTH DIRECTIONS.
 
-    result = SimpleNamespace(committed_items=[
-        {"entry_id": 1, "calories": 10.0, "protein": 1.0},
-        {"entry_id": 3, "calories": 30.0, "protein": 3.0}])
+    v1 logged "pairing is unsafe" and paired anyway ([A,B,C] vs [A,C] could
+    produce B -> C's entry_id). v2 returned an EMPTY view — which is not
+    silence: `affected_entities` reads committed calls only, so an empty view
+    reports no affected entities, the renderer returns None, and the turn
+    finalises as though NOTHING WAS WRITTEN over a meal that is already
+    durable. An absent answer must never be representable as a negative one.
+    """
+    from core.general_settlement import ExecutionViewMismatch, execution_view
+
+    result = SimpleNamespace(
+        committed_items=[{"entry_id": 1, "calories": 10.0, "protein": 1.0},
+                         {"entry_id": 3, "calories": 30.0, "protein": 3.0}],
+        meal_totals={"calories": 40.0, "protein": 4.0})
     items = [{"food_name": "A"}, {"food_name": "B"}, {"food_name": "C"}]
 
-    view = execution_view(result, items)
+    with pytest.raises(ExecutionViewMismatch):
+        execution_view(result, items)
 
-    assert view.calls == (), (
-        "a mismatched view was built anyway — an empty view narrates nothing, "
-        "a mispaired one narrates a lie")
+
+def test_the_committed_totals_flow_from_the_producer_into_the_renderer():
+    """⛔⛔ THE DATAFLOW, NOT THE FIELD NAME. The mackerel test above builds a
+    snapshot BY HAND, so it proves the renderer READS `meal_totals` — never
+    that `execution_view` WRITES one. Rename the producer's field and that test
+    stays green while the reply silently reverts to narrating the model's
+    proposal.
+
+    This one consumes exactly what the producer emits: the object under test is
+    `execution_view`'s own return value, unmodified.
+    """
+    from core.general_settlement import execution_view
+    from core.turns.stages.render_native import _transaction_snapshot
+
+    items = [{"food_name": "Mackerel", "quantity": "100 g",
+              "calories": 180, "protein": 20}]          # the model's PROPOSAL
+    result = SimpleNamespace(
+        committed_items=[{"entry_id": 7, "calories": 305.0, "protein": 33.0}],
+        meal_totals={"calories": 305.0, "protein": 33.0})   # what COMMITTED
+
+    view = execution_view(result, items)                # the producer
+
+    operations = [{"name": "log_food", "input": dict(items[0])}]
+    snapshot = SimpleNamespace(execution=view,          # <- no stand-in
+                               day_totals={"calories": 305, "protein": 33},
+                               remaining_targets={"calories": 1695,
+                                                  "protein": 147})
+    rendered = _transaction_snapshot(snapshot, operations)   # the consumer
+
+    assert rendered.batch_cal == 305, (
+        f"the producer's totals did not reach the renderer: narrated "
+        f"{rendered.batch_cal} over a row committed at 305")
+    assert rendered.batch_protein == 33
+    assert rendered.logged == ("Mackerel",)
 
 
 @pytest.mark.asyncio

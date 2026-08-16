@@ -44,6 +44,16 @@ logger = logging.getLogger(__name__)
 LOCALLY_EVIDENCED = ("memory", "artifact")
 
 
+class ExecutionViewMismatch(RuntimeError):
+    """The meal committed, but its committed rows cannot be mapped back to the
+    items that produced them.
+
+    A distinct type because the two facts it separates are the ones that keep
+    getting collapsed: THE WRITE HAPPENED, and THE PRESENTATION MAPPING FAILED.
+    Returning an empty view instead would state the first as its opposite.
+    """
+
+
 # ══ A11 — THE COVERAGE PREDICATE ════════════════════════════════════════════
 #
 # Split the way `assemble`/`price` is split, and for the same reason: `look()`
@@ -360,18 +370,38 @@ def execution_view(result, items) -> object:
 
     committed = list(getattr(result, "committed_items", None) or ())
     if len(committed) != len(items):
-        # ⛔⛔ REFUSE, DO NOT CONTINUE. The first version logged this and then
-        # paired items[i] to committed[i] up to the shorter length — so with
-        # items [A,B,C] and committed [A,C] it would announce that positional
-        # pairing is unsafe and then produce B -> C's entry_id anyway. A
-        # warning that is followed by the behaviour it warns about is not a
-        # guard; it is a comment. An empty view narrates nothing, which is
-        # recoverable. A confident wrong attribution is not.
+        # ⛔⛔ RAISE. UNKNOWN IS NOT ZERO.
+        #
+        # This has now been wrong TWICE, in opposite directions:
+        #
+        #   v1  logged "positional pairing is unsafe" and then paired anyway,
+        #       so [A,B,C] against [A,C] could produce B -> C's entry_id.
+        #   v2  returned `ExecutionResult(calls=())` and called it "an empty
+        #       view narrates nothing, which is recoverable". It is not
+        #       recoverable and it does not narrate nothing: `affected_entities`
+        #       derives changes from COMMITTED CALLS ONLY, so an empty view
+        #       reports no affected entities, the renderer finds no committed
+        #       operations and returns None, and the entrypoint finalises an
+        #       empty response — the turn reports that NOTHING WAS WRITTEN over
+        #       a meal that is already durable in the database.
+        #
+        # That is the standing rule broken exactly: AN ABSENT ANSWER MUST NEVER
+        # BE REPRESENTABLE AS A NEGATIVE ANSWER. `ExecutionResult` has no
+        # "unknown" state to return, so the honest signal is a typed raise the
+        # caller cannot mistake for "nothing committed".
+        #
+        # ⚠ THE ROW IS ALREADY COMMITTED WHEN THIS FIRES, and that is the
+        # point: the write happened, the PRESENTATION MAPPING failed, and those
+        # are different facts. A turn that errors after a durable write is
+        # recoverable — the idempotency claim makes the retry safe. A turn that
+        # says "nothing was logged" over a logged meal is not.
         logger.error(
-            "event=execution_view_refused items=%d committed=%d — positional "
-            "pairing is unsafe and this view is EMPTY rather than wrong",
-            len(items), len(committed))
-        return ExecutionResult(calls=())
+            "event=execution_view_mismatch items=%d committed=%d — the meal IS "
+            "committed; the view cannot be built safely", len(items),
+            len(committed))
+        raise ExecutionViewMismatch(
+            f"{len(items)} items settled into {len(committed)} committed rows; "
+            f"the meal is durable but its execution view cannot be built")
     calls = []
     for index, item in enumerate(items):
         row = committed[index] or {}
