@@ -115,7 +115,12 @@ def test_no_runtime_module_carries_a_credential_literal():
 #: every proof script uses — never a literal — and `ARNIE_PROVE_DB` for its
 #: scratch database. Raised WITH ITS REASON in the commit that adds the script,
 #: which is the whole point of the ratchet.
-SCRIPTS_READING_ENV_BASELINE = 35
+#: 2026-08-17, P17c: +1 for `scripts/enrich_artifact_measures.py`. It reads
+#: `../arnie/.env` for USDA_API_KEY through the same `load_dotenv` every build
+#: script uses — never a literal — to add USDA's own `foodPortions` measures to
+#: the committed pricing artifact. BUILD TIME ONLY: nothing at settle time reads
+#: it, and `assemble()` stays LOAD-NEVER-BUILD, so Gate B is untouched.
+SCRIPTS_READING_ENV_BASELINE = 36
 
 
 def test_the_env_reading_habit_does_not_spread_beyond_scripts():

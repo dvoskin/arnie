@@ -92,6 +92,29 @@ class PerUnit:
     basis = "per_unit"
 
 
+@dataclass(frozen=True)
+class SourcedMeasure:
+    """"One <unit> weighs N grams", ACCORDING TO THE RECORD THAT IS PRICING.
+
+    ⛔⛔ IT LIVES HERE, NOT IN `canonical_pricing`, AND THAT IS THE POINT
+    *(moved on review, 2026-08-17)*. The first version put this shape and its
+    matching logic beside the pricer, which grew a SECOND conversion engine next
+    to the scaling one — with its own regex for "is this the same unit". Two
+    definitions of unit compatibility eventually disagree, and the one that
+    matters most is the one P17g will ask: `decide()` has to be able to pose the
+    same question the pricer answers, or coverage and pricing drift apart. That
+    drift is the entire defect `has_mass` was written to prevent.
+
+    ⛔ A CONVERSION ON THE CONSUMED QUANTITY, NEVER A BASIS ON THE EVIDENCE.
+    Per-100 g numbers plus "1 large egg = 50 g" means `2 eggs -> 100 g -> the
+    per-100 g rung scales normally`. Declaring `PerUnit(unit_mass_g=50)` over
+    those numbers would instead claim they DESCRIBE one egg.
+    """
+    unit_text: str
+    grams_per_unit: float
+    source_id: str = ""
+
+
 def unit_matches(consumed, unit_id: str) -> bool:
     """Does the user's counted unit name the SAME thing the source counts?
 
@@ -113,6 +136,61 @@ def unit_matches(consumed, unit_id: str) -> bool:
                 or re.search(rf"\b{re.escape(target)}s?\b", want))
 
 
+#: A serving panel states a COUNT and a unit: "2 cookies", "1 bar", "1 large
+#: egg". The count matters — 30 g for "2 cookies" is 15 g per cookie.
+_PANEL = re.compile(r"^\s*(\d+(?:\.\d+)?)?\s*(.+?)\s*$")
+
+
+def measure_from_panel(serving_text, serving_mass_g, source_id=""):
+    """A `SourcedMeasure` from a provider's own serving panel, or None."""
+    try:
+        grams = float(serving_mass_g)
+    except (TypeError, ValueError):
+        return None
+    if grams <= 0:
+        return None
+    match = _PANEL.match(str(serving_text or "").strip().lower())
+    if not match or not match.group(2):
+        return None
+    count = float(match.group(1)) if match.group(1) else 1.0
+    if count <= 0:
+        return None
+    return SourcedMeasure(unit_text=match.group(2),
+                          grams_per_unit=grams / count, source_id=source_id)
+
+
+def mass_from_measures(consumed, measures) -> Optional[float]:
+    """The mass a BARE COUNT implies, per a sourced measure that counts the
+    SAME unit — or None, which leaves the portion exactly as unpriceable.
+
+    ⭐ IT ASKS `unit_matches`, THE SAME FUNCTION THE COUNT PATHS ASK. This used
+    to carry its own regex, which is how a codebase ends up with two answers to
+    one question.
+
+    ⛔ NEVER A FALLBACK GUESS. If no measure names the unit the user counted,
+    this returns None and the rung declines. Inventing a mass here is exactly
+    the "a model guesses 1 serving ~ X grams, therefore canonical owns it" the
+    directive forbids — the conversion is evidence or it is nothing.
+    """
+    if consumed is None or getattr(consumed, "grams", None) is not None:
+        return None
+    count = getattr(consumed, "count", None)
+    if not count:
+        return None
+    # ⚠ A PART OF A UNIT IS NOT ONE OF IT. "half a bar" may not take the whole
+    # bar's mass, for the same reason the PerServing path refuses it.
+    if getattr(consumed, "unit_is_fraction", False):
+        return None
+    want = str(getattr(consumed, "unit_label", "")
+               or getattr(consumed, "unit", "")).strip().lower()
+    if not want or want in ("g", "gram", "grams", "ml"):
+        return None
+    for measure in measures or ():
+        if unit_matches(consumed, measure.unit_text):
+            return float(count) * measure.grams_per_unit
+    return None
+
+
 SourceBasis = Union[Per100g, Per100ml, PerServing, PerUnit]
 
 _SPEC_BASES = {"per_100g": Per100g, "per_100ml": Per100ml}
@@ -121,19 +199,28 @@ _SPEC_BASES = {"per_100g": Per100g, "per_100ml": Per100ml}
 def basis_from_spec(kind: str, *, as_served: bool = False,
                     serving_mass_g: Optional[float] = None,
                     serving_ml: Optional[float] = None,
-                    servings_per_package: Optional[float] = None
-                    ) -> SourceBasis:
+                    servings_per_package: Optional[float] = None,
+                    unit_id: str = "") -> SourceBasis:
     """Build a basis from a declared kind. One factory, because the same four
     lines had been rewritten in the readiness report (twice) and the gold
     harness, and a basis field added in one place stayed missing in the others.
+
+    ⛔⛔ AND THAT IS EXACTLY WHAT HAPPENED TO `unit_id` *(caught on review,
+    2026-08-17)*. It was added to `PerServing` and `PerUnit` as the field that
+    proves a count counts the right thing, and this factory — whose entire
+    reason for existing is the sentence above — kept building bases WITHOUT it.
+    Every basis it produced would have silently lost its identity gate, which is
+    the same dead-field defect P17c found one layer upstream in the artifact
+    builder. A canonical factory must round-trip every load-bearing field.
     """
     if kind in _SPEC_BASES:
         return _SPEC_BASES[kind]()
     if kind == "per_serving":
         return PerServing(serving_mass_g=serving_mass_g, serving_ml=serving_ml,
                           servings_per_package=servings_per_package,
-                          as_served=as_served)
-    return PerUnit(unit_mass_g=serving_mass_g, as_served=as_served)
+                          as_served=as_served, unit_id=unit_id)
+    return PerUnit(unit_mass_g=serving_mass_g, as_served=as_served,
+                   unit_id=unit_id)
 
 
 def _factor(basis: SourceBasis, consumed: NormalizedQuantity) -> float:
@@ -216,6 +303,22 @@ def _factor(basis: SourceBasis, consumed: NormalizedQuantity) -> float:
             "per-serving values need a serving mass or a serving count")
 
     if isinstance(basis, PerUnit):
+        # ⛔⛔ THE SAME IDENTITY GATE AS PerServing, AND ITS ABSENCE HERE WAS A
+        # REAL HOLE *(found on review, 2026-08-17)*. `unit_id` was added to this
+        # class and then never consulted, so "every count multiplication proves
+        # the count is of the unit the evidence describes" was true of one path
+        # and false of the other — which is worse than not having the field,
+        # because the field made it look handled.
+        if basis.unit_id and count is not None:
+            if not unit_matches(consumed, basis.unit_id):
+                raise ScalingRefused(
+                    f"this source states its unit as {basis.unit_id!r}, and "
+                    f"{consumed.unit_label or consumed.unit!r} is not that — a "
+                    f"count may only multiply the unit the evidence describes")
+            if consumed.unit_is_fraction:
+                raise ScalingRefused(
+                    f"one {consumed.unit} of a {basis.unit_id} is a PART of the "
+                    f"unit this source describes, and its size is not stated")
         if countable:
             return float(count)
         if grams is not None and basis.unit_mass_g:

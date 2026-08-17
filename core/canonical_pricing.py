@@ -222,18 +222,38 @@ class ProductEvidence:
         reaches a meal. Tolerance is 10% — panels round, and rounding is not a
         contradiction.
         """
-        per100 = (self.per100g or {}).get("calories")
-        per_serv = (self.per_serving or {}).get("calories")
-        if not (per100 and per_serv and self.serving_grams):
+        if not (self.per100g and self.per_serving and self.serving_grams):
             return
-        implied = float(per100) * float(self.serving_grams) / 100.0
-        if implied <= 0:
+        try:
+            grams = float(self.serving_grams)
+        except (TypeError, ValueError):
             return
-        if abs(implied - float(per_serv)) / implied > 0.10:
+        if grams <= 0:
+            return
+        # ⛔⛔ EVERY OVERLAPPING FIELD, NOT JUST CALORIES *(review, 2026-08-17)*.
+        # The first version compared calories alone, so a record whose calories
+        # reconciled and whose PROTEIN said 10 on one basis and 40 on the other
+        # was accepted as "internally consistent" — and whichever basis a future
+        # reader happened to consult would decide the macros. A reconciliation
+        # that checks one field licenses the rest.
+        #
+        # ⚠ `is not None`, NEVER TRUTHINESS: a legitimate 0.0 g of fat must
+        # participate in the check rather than skip it.
+        for field_name in ("calories", "protein", "carbs", "fat", "fiber",
+                           "sugar", "sodium"):
+            per100 = self.per100g.get(field_name)
+            per_serv = self.per_serving.get(field_name)
+            if per100 is None or per_serv is None:
+                continue
+            implied = float(per100) * grams / 100.0
+            # An absolute floor keeps a rounding-scale field (0.4 vs 0.5 g) from
+            # failing a 10% relative test it can never pass.
+            if abs(implied - float(per_serv)) <= max(0.10 * abs(implied), 0.5):
+                continue
             raise ValueError(
-                f"{self.identifier}: per-serving says {per_serv} kcal but "
-                f"per-100 g implies {implied:.0f} for {self.serving_grams} g — "
-                f"one record cannot hold two different claims about one food")
+                f"{self.identifier}: per-serving says {per_serv} {field_name} "
+                f"but per-100 g implies {implied:.1f} for {grams} g — one "
+                f"record cannot hold two different claims about one food")
 
 
 @dataclass(frozen=True)
@@ -325,80 +345,56 @@ def _profile(values: dict, *, source: str, source_id: str,
 
 
 
-@dataclass(frozen=True)
-class SourcedMeasure:
-    """"One <unit> weighs N grams", ACCORDING TO THE RECORD THAT IS PRICING.
+# ⛔⛔ THE CONVERSION ENGINE IS NOT HERE, AND MUST NOT COME BACK *(review,
+# 2026-08-17)*. `SourcedMeasure`, `measure_from_panel` and `mass_from_measures`
+# were defined in this module beside the pricer, each with its own notion of
+# whether two units matched. That is a SECOND conversion architecture next to
+# the scaling one — and the question "can this portion be scaled against this
+# evidence" has to have exactly ONE answer, because P17g's predicate must ask
+# the very question the pricer answers. Two engines are how coverage and pricing
+# come to disagree, which is the defect `has_mass` exists to prevent.
+#
+# They now live in `skills.nutrition.scaling`, which already owned `_factor` and
+# `unit_matches`. This module consumes them and defines none of them.
+from skills.nutrition.scaling import (  # noqa: E402
+    SourcedMeasure, mass_from_measures, measure_from_panel)
 
-    ⛔⛔ THIS IS A CONVERSION ON THE CONSUMED QUANTITY, NOT A BASIS ON THE
-    EVIDENCE, and the distinction is the whole architecture. Per-100 g numbers
-    plus "1 large egg = 50 g" means `2 eggs -> 100 g -> per-100 g scales
-    normally`. Declaring `PerUnit(unit_mass_g=50)` over those same numbers would
-    instead claim they DESCRIBE one egg, and two eggs would price at 2 x the
-    per-100 g figure — the 728-kcal defect P17b pinned.
 
-    ⚠ AND IT CARRIES ITS UNIT SO IDENTITY CAN BE PROVEN. A measure for one whole
-    roll may not price one PIECE of that roll (prod fe#2719, 460 cal committed
-    over the interpreter's correct 130-190). The unit text is what lets the
-    conversion refuse rather than multiply.
+def _candidate_measures(winner: dict) -> tuple:
+    """Every sourced measure the WINNING record states about itself.
+
+    Two shapes, because USDA states them two ways and both are the record's own
+    claim:
+
+      * a BRANDED serving panel — `serving_text` + `serving_mass_g`
+      * `foodPortions` — "1 large" = 50 g, "1 fillet" = 154 g, "1 cup" = 134 g,
+        which is the only place generic foods carry a measure at all
+
+    ⛔ THE WINNER'S, AND ONLY THE WINNER'S. A measure taken from a record that
+    did not price this food would be a second source's claim wearing the first
+    one's authority — the same defect class as a fuzzy name match building
+    PRODUCT.
     """
-    unit_text: str
-    grams_per_unit: float
-    source_id: str = ""
-
-
-#: A serving panel states a COUNT and a unit: "2 cookies", "1 bar", "1 large
-#: egg". The count matters — 30 g for "2 cookies" is 15 g per cookie.
-_PANEL = re.compile(r"^\s*(\d+(?:\.\d+)?)?\s*(.+?)\s*$")
-
-
-def measure_from_panel(serving_text, serving_mass_g, source_id=""):
-    """A `SourcedMeasure` from a provider's own serving panel, or None.
-
-    ⚠ NONE IS THE COMMON ANSWER AND MUST STAY CHEAP. A record with no panel, a
-    zero mass, or a panel that names no unit yields nothing — the portion then
-    stays unconvertible and the rung declines, which is the honest outcome.
-    """
-    try:
-        grams = float(serving_mass_g)
-    except (TypeError, ValueError):
-        return None
-    if grams <= 0:
-        return None
-    match = _PANEL.match(str(serving_text or "").strip().lower())
-    if not match or not match.group(2):
-        return None
-    count = float(match.group(1)) if match.group(1) else 1.0
-    if count <= 0:
-        return None
-    return SourcedMeasure(unit_text=match.group(2),
-                          grams_per_unit=grams / count, source_id=source_id)
-
-
-def mass_from_measures(consumed, measures) -> Optional[float]:
-    """The mass a BARE COUNT implies, per a sourced measure that counts the
-    SAME unit — or None, which leaves the portion exactly as unpriceable as it
-    was.
-
-    ⛔ NEVER A FALLBACK GUESS. If no measure names the unit the user counted,
-    this returns None and the rung declines. Inventing a mass here is precisely
-    the "model guesses 1 serving ~ X grams, therefore canonical owns it" that
-    the directive forbids — the conversion has to be evidence or it is nothing.
-    """
-    if consumed is None or getattr(consumed, "grams", None) is not None:
-        return None
-    count = getattr(consumed, "count", None)
-    if not count:
-        return None
-    want = str(getattr(consumed, "unit_label", "")
-               or getattr(consumed, "unit", "")).strip().lower()
-    if not want or want in ("g", "gram", "grams", "ml"):
-        return None
-    for measure in measures or ():
-        # Word-boundary, singular-or-plural. Narrow ON PURPOSE: "piece" must not
-        # match "1 roll", which is the whole point of carrying the unit.
-        if re.search(rf"\b{re.escape(want)}s?\b", measure.unit_text):
-            return float(count) * measure.grams_per_unit
-    return None
+    out = []
+    panel = measure_from_panel(winner.get("serving_text"),
+                               winner.get("serving_mass_g"),
+                               source_id=str(winner.get("fdc_id") or ""))
+    if panel:
+        out.append(panel)
+    for measure in (winner.get("measures") or ()):
+        try:
+            grams = float(measure.get("grams"))
+            amount = float(measure.get("amount") or 1.0)
+        except (TypeError, ValueError):
+            continue
+        unit_text = str(measure.get("unit_text") or "").strip().lower()
+        # ⚠ THE AMOUNT IS READ, NOT ASSUMED. USDA states "2 tbsp = 30 g" as
+        # amount=2; treating the gram weight as per-unit would double it.
+        if grams > 0 and amount > 0 and unit_text:
+            out.append(SourcedMeasure(unit_text=unit_text,
+                                      grams_per_unit=grams / amount,
+                                      source_id=str(winner.get("fdc_id") or "")))
+    return tuple(out)
 
 
 def _product_measures(ev: "ProductEvidence") -> tuple:
@@ -594,13 +590,7 @@ def _from_artifact(ev: ArtifactEvidence, *, query: str):
     return (_profile(per100g, source="usda", source_id=fdc,
                      confidence=0.85, estimated=False),
             Rung.ARTIFACT, f"usda:{fdc}" if fdc else "usda", dict(per100g),
-            Per100g(),
-            # ⭐ P17c — THE WINNER'S OWN SERVING PANEL, and only the winner's.
-            # A measure from a record that did not price this food would be a
-            # second source's claim wearing the first one's authority.
-            tuple(m for m in (measure_from_panel(
-                winner.get("serving_text"), winner.get("serving_mass_g"),
-                source_id=f"usda:{fdc}"),) if m))
+            Per100g(), _candidate_measures(winner))
 
 
 def _from_estimate(ev: EstimateEvidence):

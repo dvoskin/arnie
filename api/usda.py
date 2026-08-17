@@ -87,6 +87,68 @@ def _client() -> httpx.AsyncClient:
     return _http
 
 
+async def food_portions(fdc_id) -> list[dict]:
+    """USDA's OWN measures for one record: "1 large" = 50 g, "1 cup" = 244 g.
+
+    ⛔⛔ THIS IS THE HALF `/foods/search` DOES NOT RETURN, and its absence is why
+    a generic count was unpriceable. The search response carries a BRANDED
+    serving panel (`servingSize` + `householdServingFullText`) and nothing at
+    all for Foundation / SR Legacy rows — which is where eggs, bananas and
+    potatoes live, and where 142 of 207 declining items were. `foodPortions` is
+    on the DETAIL endpoint only.
+
+    ⭐ BUILD TIME ONLY. This is called by the artifact enrichment script, never
+    by a settle. `assemble()` stays LOAD-NEVER-BUILD and Gate B is untouched:
+    the measure has to be committed evidence before pricing can see it.
+
+    ⚠ AND THE MODIFIER IS THE UNIT, NOT PROSE. USDA states portions as
+    `amount` + `measureUnit.name` + `modifier` — "1", "undetermined", "large" —
+    so a portion is only usable when SOMETHING names the unit. A row that says
+    only "1 undetermined = 50 g" names nothing a user could have counted, and is
+    dropped rather than matched against everything.
+    """
+    if not _key():
+        return []
+    try:
+        # ⛔⛔ `format=full`, AND THE ABRIDGED FORM IS WHY THIS FIRST READ ZERO.
+        # `abridged` returns 6 keys and NO `foodPortions` at all; `full` returns
+        # 15 keys and the portions. The enrichment reported "0 of 124 candidates
+        # gained a measure" — a silence that looked exactly like "USDA has no
+        # portion data for generic foods", which would have been a wrong and
+        # very expensive conclusion about the whole tranche.
+        resp = await _client().get(
+            f"{_BASE}/food/{fdc_id}",
+            params={"api_key": _key(), "format": "full"})
+        resp.raise_for_status()
+        out = []
+        for portion in (resp.json().get("foodPortions") or []):
+            grams = portion.get("gramWeight")
+            if not isinstance(grams, (int, float)) or grams <= 0:
+                continue
+            amount = portion.get("amount")
+            amount = float(amount) if isinstance(amount, (int, float)) and \
+                amount else 1.0
+            unit = str((portion.get("measureUnit") or {}).get("name")
+                       or "").strip()
+            if unit.lower() in ("undetermined", "", "none"):
+                unit = ""
+            modifier = str(portion.get("modifier") or "").strip()
+            description = str(portion.get("portionDescription") or "").strip()
+            # The unit words, best available: an explicit measure unit, else the
+            # modifier ("large", "medium"), else the portion description.
+            unit_text = " ".join(w for w in (modifier, unit) if w).strip() \
+                or description
+            if not unit_text:
+                continue
+            out.append({"unit_text": unit_text.lower(),
+                        "amount": amount,
+                        "grams": float(grams)})
+        return out
+    except Exception as e:
+        logger.warning(f"USDA foodPortions failed for {fdc_id}: {e}")
+        return []
+
+
 def _extract_nutrients(food: dict) -> dict:
     """Pull our nutrient set out of an FDC food record (per 100g)."""
     out = {}
