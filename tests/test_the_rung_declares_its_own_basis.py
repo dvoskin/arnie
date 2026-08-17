@@ -359,14 +359,86 @@ def test_the_measure_is_a_last_resort_and_cannot_change_a_priced_meal():
     assert with_panel.calories == without.calories == pytest.approx(155.0)
 
 
+# ── P17c.1 — ONE RESOLVER, AND A CANONICAL CONVERSION ───────────────────────
+
+def test_a_sourced_measure_becomes_a_canonical_basis_conversion():
+    """⭐ THE ADAPTER SHAPE TRANSLATES INTO THE CONTRACT THAT ALREADY EXISTS.
+    `SourcedMeasure` is what a provider hands over; `BasisConversion` is what
+    the repository already defines for "this basis became that one, and here is
+    what licensed it". P17 must not grow a second conversion vocabulary."""
+    from skills.nutrition.scaling import SourcedMeasure
+
+    measure = SourcedMeasure(
+        unit_text="large egg", grams_per_unit=50.0, source_id="usda:173423",
+        dataset_id="usda_fdc", dataset_version="2025-04", record_key="173423",
+        record_version="sr-legacy-1", immutable_within_version=True)
+    conversion = measure.as_basis_conversion()
+
+    assert conversion is not None
+    assert float(conversion.factor) == 50.0
+    assert conversion.source.record_key == "173423"
+    assert conversion.from_basis.value == "count"
+    assert conversion.to_basis.value == "mass"
+
+
+def test_a_measure_without_provenance_licenses_no_conversion():
+    """⛔ AND IT MUST NOT FABRICATE ONE. `BasisConversion` refuses a cross-basis
+    factor with no source — "an unsourced factor is an invented density" — so a
+    measure lacking provenance yields None rather than a conversion that cites
+    nothing."""
+    from skills.nutrition.scaling import SourcedMeasure
+
+    assert SourcedMeasure(unit_text="bar",
+                          grams_per_unit=55.0).as_basis_conversion() is None
+
+
+def test_can_scale_never_disagrees_with_what_pricing_does():
+    """⛔⛔ THE P17g GUARANTEE, ASSERTED BEFORE P17g EXISTS.
+
+    The predicate will ask `can_scale`; the pricer acts on `resolve_scaling`.
+    If those two could ever differ, coverage would promise a meal that pricing
+    then refuses — the exact drift the blunt `has_mass` rule was written to
+    prevent. They are the same call, and this is what keeps them so.
+    """
+    from skills.nutrition.scaling import Per100g, can_scale
+
+    egg = _egg()
+    measures_present = ({"fdc_id": "1", "serving_text": "1 large egg",
+                         "serving_mass_g": 50.0},)
+    from core.canonical_pricing import _candidate_measures
+    measures = _candidate_measures(measures_present[0])
+
+    for portion, expected in ((_count(2, "egg"), True),
+                              (_count(2, "bottle"), False),
+                              (_g(100.0), True),
+                              (_count(1, "piece", fraction=True), False)):
+        agrees = can_scale(Per100g(), portion, measures)
+        try:
+            price(entity="Egg", consumed=portion, artifact=egg)
+            priced = True
+        except PricingRefused:
+            priced = False
+        assert agrees == priced == expected, (
+            f"can_scale said {agrees} and pricing said {priced} for "
+            f"{portion.unit_label!r} — the predicate and the pricer must not "
+            f"be able to hold different views of scalability")
+
+
 def test_the_sourced_measure_is_load_bearing(monkeypatch):
     """⚠ ANTI-VACUITY for P17c: disable the conversion and "2 eggs" must go
     back to being unpriceable. Otherwise the assertions above would pass on a
-    build where the panel was still being dropped."""
-    import core.canonical_pricing as cp
+    build where the panel was still being dropped.
+
+    ⚠ AND THE SEAM MOVED ONCE ALREADY. This patched
+    `canonical_pricing.mass_from_measures` until P17c.1 put the single resolver
+    in `scaling`, at which point the mutation stopped biting and this test went
+    RED — which is the anti-vacuity check doing precisely its job. It now
+    patches the function the resolver actually calls.
+    """
+    import skills.nutrition.scaling as sc
 
     assert price(entity="Egg", consumed=_count(2, "egg"),
                  artifact=_egg()).calories > 0
-    monkeypatch.setattr(cp, "mass_from_measures", lambda *a, **k: None)
+    monkeypatch.setattr(sc, "mass_from_measures", lambda *a, **k: None)
     with pytest.raises(PricingRefused):
         price(entity="Egg", consumed=_count(2, "egg"), artifact=_egg())

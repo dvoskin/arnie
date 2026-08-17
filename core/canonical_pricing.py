@@ -409,6 +409,24 @@ def _product_measures(ev: "ProductEvidence") -> tuple:
     return (measure,) if measure else ()
 
 
+def _apply(profile, factor: float):
+    """Scale every field by ONE factor and stamp the result `per_portion`.
+
+    Mirrors `scale_profile`'s body deliberately: that function takes a basis and
+    re-derives the factor, and by this point the resolver has already
+    established one — possibly via a conversion the original portion could not
+    reach. Asking for the factor twice is how the second ask refuses what the
+    first allowed.
+    """
+    from skills.nutrition.models import NutrientProfile
+    from skills.nutrition.scaling import _round
+
+    return NutrientProfile(values={
+        name: value.with_value(_round(value.value * factor, name),
+                               basis="per_portion")
+        for name, value in (profile.values or {}).items()})
+
+
 def _basis_name(source_basis) -> str:
     """What the row will say it scaled FROM, ASKED OF THE BASIS ITSELF.
 
@@ -638,8 +656,9 @@ def price(*, entity: str, preparation: str = "", consumed=None,
     from skills.nutrition.models import MACRO_FIELDS
     # ⭐ NO BASIS TYPES IMPORTED HERE ANY MORE, AND THAT IS THE POINT OF P17a.
     # `price()` cannot name a basis, so it cannot pick one — the rung builders
-    # do, and this function only applies what they declared.
-    from skills.nutrition.scaling import ScalingRefused, scale_profile
+    # do, and this function only applies what they declared. Nor does it own
+    # conversion: `resolve_scaling` is the single resolver (P17c.1).
+    from skills.nutrition.scaling import ScalingRefused, resolve_scaling
 
     # A NON-POSITIVE PORTION IS NOT A MEAL. Scaling 165 kcal/100 g by zero
     # grams yields a legitimate-looking zero from an EVIDENCE-backed rung, so
@@ -697,41 +716,34 @@ def price(*, entity: str, preparation: str = "", consumed=None,
         # while claiming to be a no-op refactor.
         basis_name = "per_portion"
         if consumed is not None and source_basis is not None:
+            # ⭐⭐ P17c.1 — ONE RESOLVER ANSWERS "CAN THIS PORTION MEET THIS
+            # BASIS", and the pricer no longer orchestrates a fallback of its
+            # own. `resolve_scaling` tries the basis, and only on a refusal
+            # consults the sourced measures — so a portion that priced before
+            # prices identically now, and P17g's predicate can ask the SAME
+            # function rather than re-deriving scalability a second time.
             try:
-                profile = scale_profile(profile, source_basis, consumed)
-                basis_name = _basis_name(source_basis)
+                resolution = resolve_scaling(source_basis, consumed, measures)
             except ScalingRefused as exc:
-                # ⭐⭐ P17c — THE SOURCED MEASURE IS A LAST RESORT, AND THAT
-                # ORDERING IS THE SAFETY PROPERTY. It is only ever consulted on
-                # a portion the scaler ALREADY REFUSED, so no currently-priced
-                # meal can change value: this branch can turn a refusal into a
-                # price, never one price into another.
-                #
-                # "2 eggs" + "1 large egg = 50 g" -> 100 g -> the per-100 g rung
-                # scales normally. The conversion moves the QUANTITY; the
-                # evidence's basis is untouched.
-                grams = mass_from_measures(consumed, measures)
-                if grams is None:
-                    logger.info(
-                        "event=rung_unscalable food=%s rung=%s basis=%s — %s",
-                        entity, rung.value, _basis_name(source_basis), exc)
-                    continue
-                try:
-                    profile = scale_profile(
-                        profile, source_basis,
-                        dataclasses.replace(consumed, grams=grams))
-                except ScalingRefused as retry:
-                    logger.info(
-                        "event=rung_unscalable food=%s rung=%s measure=%.1fg "
-                        "— %s", entity, rung.value, grams, retry)
-                    continue
-                basis_name = _basis_name(source_basis)
+                logger.info(
+                    "event=rung_unscalable food=%s rung=%s basis=%s — %s",
+                    entity, rung.value, _basis_name(source_basis), exc)
+                continue
+            # ⛔ SCALED THROUGH THE RESOLVER'S OWN FACTOR, not by re-deriving
+            # one. Calling `scale_profile` again here would ask `_factor` a
+            # second time with the ORIGINAL portion — which is exactly the
+            # refusal the resolver just worked around.
+            profile = _apply(profile, resolution.factor)
+            basis_name = resolution.basis_name or _basis_name(source_basis)
+            if resolution.resolved_grams is not None:
                 logger.info(
                     "event=sourced_measure_resolved food=%s rung=%s count=%s "
-                    "unit=%r grams=%.1f", entity, rung.value,
+                    "unit=%r grams=%.1f conversion=%s", entity, rung.value,
                     getattr(consumed, "count", None),
-                    getattr(consumed, "unit_label", "") or
-                    getattr(consumed, "unit", ""), grams)
+                    getattr(consumed, "unit_label", "")
+                    or getattr(consumed, "unit", ""),
+                    resolution.resolved_grams,
+                    "yes" if resolution.conversion is not None else "unsourced")
 
         # ⭐ THE FULL MICRONUTRIENT SET SURVIVES, scaled by the same factor.
         #

@@ -113,6 +113,48 @@ class SourcedMeasure:
     unit_text: str
     grams_per_unit: float
     source_id: str = ""
+    #: ⭐ P17c.1 — PROVENANCE ENOUGH TO BECOME A CANONICAL `BasisConversion`.
+    #: This shape is a PROVIDER-ADAPTER, not a second conversion vocabulary: it
+    #: is what USDA/OFF hand over, and `as_basis_conversion` turns it into the
+    #: contract `core.semantics` already defines. Without these fields it could
+    #: not, because that contract REFUSES a cross-basis conversion with no
+    #: source — "an unsourced factor is an invented density".
+    dataset_id: str = ""
+    dataset_version: str = ""
+    record_key: str = ""
+    record_version: str = ""
+    immutable_within_version: bool = False
+
+    def as_basis_conversion(self):
+        """The canonical `BasisConversion` this measure licenses, or None.
+
+        ⛔ NONE WHEN IT CANNOT BE JUSTIFIED, NEVER A CONVERSION WITH NO SOURCE.
+        `BasisConversion.__post_init__` raises without a `SourceReference`, and
+        that refusal is correct — so a measure lacking provenance yields no
+        conversion rather than a fabricated one. The mass it produces is still
+        usable for pricing today; what is missing is the AUDIT RECORD, and P17f
+        is where that becomes required rather than optional.
+        """
+        if not (self.dataset_id and self.dataset_version and self.record_key):
+            return None
+        from decimal import Decimal
+
+        # ⚠ THE CLASS IS `ConversionEvidence`. "BasisConversion" is what it gets
+        # called in discussion, and importing that name is an ImportError at the
+        # first call rather than at import time — a failure that would have
+        # surfaced in production, not in review.
+        from core.semantics import (ConversionEvidence, ServingBasis,
+                                    SourceReference)
+        return ConversionEvidence(
+            from_basis=ServingBasis.COUNT, to_basis=ServingBasis.MASS,
+            factor=Decimal(str(self.grams_per_unit)),
+            source=SourceReference(
+                dataset_id=self.dataset_id,
+                dataset_version=self.dataset_version,
+                record_key=self.record_key,
+                record_version=self.record_version,
+                immutable_within_version=self.immutable_within_version),
+            policy_version="p17c.1")
 
 
 def unit_matches(consumed, unit_id: str) -> bool:
@@ -185,9 +227,29 @@ def mass_from_measures(consumed, measures) -> Optional[float]:
                or getattr(consumed, "unit", "")).strip().lower()
     if not want or want in ("g", "gram", "grams", "ml"):
         return None
+    measure = _matching_measure(consumed, measures)
+    return float(count) * measure.grams_per_unit if measure else None
+
+
+def _matching_measure(consumed, measures):
+    """The FIRST sourced measure whose unit is the one the user counted.
+
+    Split out so `mass_from_measures` and `resolve_scaling` cannot disagree
+    about WHICH measure applied — one returning the mass and the other naming a
+    different record as its provenance would be a citation that does not match
+    the number it justifies.
+    """
+    if consumed is None or getattr(consumed, "count", None) in (None, 0):
+        return None
+    if getattr(consumed, "unit_is_fraction", False):
+        return None
+    want = str(getattr(consumed, "unit_label", "")
+               or getattr(consumed, "unit", "")).strip().lower()
+    if not want or want in ("g", "gram", "grams", "ml"):
+        return None
     for measure in measures or ():
         if unit_matches(consumed, measure.unit_text):
-            return float(count) * measure.grams_per_unit
+            return measure
     return None
 
 
@@ -331,6 +393,65 @@ def _factor(basis: SourceBasis, consumed: NormalizedQuantity) -> float:
             "per-unit values need a count or a known unit mass")
 
     raise ScalingRefused(f"unknown source basis: {basis!r}")
+
+
+@dataclass(frozen=True)
+class ScalingResolution:
+    """HOW a portion was reconciled with a source's basis, and by what.
+
+    ⭐⭐ ONE RESOLVER, AND P17g IS WHY. The predicate must be able to ask "is
+    there a local authoritative scalable path for this item" and get the SAME
+    answer the pricer will act on. If coverage re-implements that question it
+    will drift from pricing — the precise defect the blunt `has_mass` rule was
+    written to prevent, and the one that made count-only foods unpriceable in
+    the first place.
+    """
+    factor: float
+    basis_name: str
+    #: The mass a sourced measure supplied, when the portion had none.
+    resolved_grams: Optional[float] = None
+    #: The canonical `BasisConversion` that licensed it, when the measure
+    #: carried provenance. Persisted by P17f so a correction can reprice
+    #: deterministically instead of rediscovering the nutrition.
+    conversion: object = None
+    evidence_ids: tuple = ()
+
+
+def resolve_scaling(source_basis: SourceBasis, consumed: NormalizedQuantity,
+                    measures=()) -> ScalingResolution:
+    """THE ONE PLACE A PORTION MEETS A BASIS. Raises `ScalingRefused`.
+
+    ⭐ THE SOURCED MEASURE IS A LAST RESORT, and that ordering is the safety
+    property: it is consulted ONLY on a portion the basis already refused, so
+    this can turn a refusal into a price and never one price into another.
+    """
+    try:
+        return ScalingResolution(factor=_factor(source_basis, consumed),
+                                 basis_name=getattr(source_basis, "basis", ""))
+    except ScalingRefused:
+        grams = mass_from_measures(consumed, measures)
+        if grams is None:
+            raise
+        converted = replace(consumed, grams=grams)
+        factor = _factor(source_basis, converted)
+        measure = _matching_measure(consumed, measures)
+        return ScalingResolution(
+            factor=factor, basis_name=getattr(source_basis, "basis", ""),
+            resolved_grams=grams,
+            conversion=measure.as_basis_conversion() if measure else None,
+            evidence_ids=((measure.source_id,) if measure and measure.source_id
+                          else ()))
+
+
+def can_scale(source_basis: SourceBasis, consumed: NormalizedQuantity,
+              measures=()) -> bool:
+    """`resolve_scaling` asked as a yes/no. THE PREDICATE'S ENTRY POINT — it
+    exists so P17g cannot accidentally define scalability a second time."""
+    try:
+        resolve_scaling(source_basis, consumed, measures)
+        return True
+    except ScalingRefused:
+        return False
 
 
 def scale_profile(profile: NutrientProfile, source_basis: SourceBasis,
