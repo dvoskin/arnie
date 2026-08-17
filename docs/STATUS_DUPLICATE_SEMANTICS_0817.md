@@ -6,9 +6,11 @@
 | | |
 |---|---|
 | Deployed | `29ba0e1` on `main`, live and confirmed via `/health` |
-| Verified | In production, user 26, iOS, 13:10 UTC |
+| Verified | In production, user 26, iOS — **both settlement branches** (13:10 legacy, 13:26–13:37 canonical) |
 | Cohort | 1 user (26), iOS only — unchanged |
 | Tests | 9398, dual-engine: Postgres 9369 passed / 0 failed · SQLite 9287 passed / 0 failed |
+
+**Duplicate semantics are closed.** Nothing on this tranche is outstanding.
 
 ---
 
@@ -84,6 +86,30 @@ key. Reply text alone could have changed for other reasons.
 Also verified: one `created` food ledger event per row, and a `Clear my day` in
 the same window wrote its `deleted` event correctly.
 
+### The canonical branch, verified separately
+
+The run above routed to the legacy branch (`coverage_for` called the food
+unsupported), so a second run was driven on a food that demonstrably settles
+canonically for this account:
+
+```
+13:26:34  '150g of fried chicken'  ->  logged 328 cal, row #3017
+13:37:35  '150g of fried chicken'  ->  "Already logged that one."
+13:37:52  '150G of Fried Chicken'  ->  "Already logged that one."
+```
+
+Here the load-bearing observable is the **operation id shape**:
+
+```
+before A12   general:26:ios:<UUID>            the TURN id
+after  A12   general:26:meal:9303ac8deca72cd7 the MESSAGE identity   <- observed
+```
+
+One `meal_commits` row at `revision 0`, a `created food canonical:create` ledger
+event, and — the A2/A8 half — **zero `processed_turns` claims in the window**. The
+canonical branch refused both duplicates using only its own claim and borrowed
+nothing from legacy, which was the design constraint.
+
 **Offline, through the real turn against a live model, on both branches** —
 `scripts/reproduce_the_duplicate_turn_reply.py`, three sends including a re-cased
 one: one row, two "Already logged that one." on each branch. Canonical wrote
@@ -130,13 +156,16 @@ leaf, and it wrote a row.** A food already in memory needs no model call; the
 6 ms duplicates inherited that fast path. The answer was in the stages of the
 turn that *worked*, not the one that failed.
 
+The canonical run then closed it in the opposite direction from where it started.
+Send 1 there — a successful log that wrote row `#3017` — recorded **29 ms with
+`stages={}`**, because the `pricing.*` and `tools` leaves are legacy-executor
+instrumentation the canonical writer does not emit. On the canonical path a turn
+that succeeded is **indistinguishable by latency and stages from a refused
+duplicate**. It was never a layer fingerprint, and there it cannot be one even in
+principle.
+
 ## Open, and deliberately not closed here
 
-- ⚠ **A12's canonical half is production-unverified.** The verified replay routed
-  to the legacy branch (`coverage_for` called the food unsupported), so no
-  `meal_commits` row was written. Proven offline on both branches and
-  dual-engine; needs one production turn on a food the coverage predicate calls
-  `Supported`.
 - **`turn_metrics.outcome` cannot report a native failure.** `_rt.done()` runs in
   the `finally` around `coordinator.run`, which never raises; `raise state.error`
   happens after the trace closed. Deferred on purpose — changing it mid-canary
@@ -154,7 +183,15 @@ turn that *worked*, not the one that failed.
 ## Next
 
 ```
-1  one production turn on a Supported food, to verify A12's canonical half
-2  freeze general-settlement backend hardening
-3  oils
+1  freeze general-settlement backend hardening
+2  oils
 ```
+
+Also surfaced while picking the canonical test food, and worth knowing before
+coverage is widened: **`ground turkey` declines canonical settlement despite a
+`user_food_matches` row with `confidence='exact'`.** `_memory` applies the
+ambiguous-address quarantine (`_address_has_one_authority`) — that surface key
+binds to more than one source record, so MEMORY abstains, and with no artifact
+row the predicate returns `Unsupported`. Working as designed, and a reminder that
+"the user has logged this before" is not the same fact as "canonical can price
+it". Coverage widens by landing evidence, not by loosening the predicate.
