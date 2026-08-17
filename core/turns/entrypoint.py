@@ -202,6 +202,45 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     if execution is not None and hasattr(execution, "response"):
         return execution
 
+    # ⛔⛔ A DUPLICATE IS NOT A FAILURE, AND IT REACHED THE USER AS AN OUTAGE.
+    #
+    # `ExactlyOnceRefusal` is raised when `claim_processed_turn` finds the same
+    # (user, lowercased text, plan) inside its 60-minute window. Nothing caught
+    # it, so it propagated here, out of `run_chat_turn`, and the client rendered
+    # the 500 as "Arnie's temporarily unavailable · Retry". Reproduced through
+    # the real turn 2026-08-16 by sending one message twice.
+    #
+    # ⭐ THE GESTURE THAT HITS IT IS ORDINARY: clear the day, re-log the same
+    # food in the same words. Exactly-once exists to DEDUPLICATE; erroring is
+    # the one thing it must not do, because the refusal is indistinguishable
+    # from the outage it imitates.
+    #
+    # ⛔⛔ AND IT MUST RETURN HERE, NEVER FALL THROUGH. On a refusal
+    # `state.execution` is None, so the `native_no_plan` delegation below would
+    # hand an ALREADY-LOGGED meal to the legacy executor and write it a second
+    # time — the exact double-log the claim exists to prevent, caused by its own
+    # repair. The refusal is raised BEFORE the executor runs, so nothing of this
+    # turn was written and there is nothing to undo; the prior turn's row stands.
+    #
+    # ⭐⭐ THE TWO LINES BELOW ARE ORDER-DEPENDENT, AND MUTATION TESTING IS HOW
+    # THAT WAS LEARNED. Deleting the `return` alone leaves the tests GREEN: the
+    # delegation is guarded by `not _bubbles`, so giving the duplicate a REPLY
+    # already closes that path, and the return is defence-in-depth behind it.
+    # Making the reply conditional, or moving it after the return, re-opens the
+    # double write with nothing left to catch it.
+    from core.platform import Response
+    from core.turns.stages.execute_native import ExactlyOnceRefusal
+    if isinstance(state.error, ExactlyOnceRefusal):
+        logger.info(
+            "event=duplicate_turn_absorbed turn=%s — same (user, text, plan) "
+            "inside the claim window; answering from the prior turn rather "
+            "than raising, and NOT delegating to legacy",
+            getattr(request, "turn_id", "-"))
+        state.error = None
+        if not getattr(state.response, "bubbles", None):
+            state.response = Response.from_text("Already logged that one.")
+        return _result_from_state(state, legacy_kwargs)
+
     if state.error is not None:
         raise state.error
 
