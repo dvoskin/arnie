@@ -61,6 +61,7 @@ P10  presentation from the canonical branch                ⚠ the card gap is
                                                               §3a.3. Hardened
                                                               by three review
                                                               rounds, below
+```
 
 ⛔ **COMMIT-MESSAGE NUMBERING DOES NOT MATCH THIS BOARD, AND THE BOARD WINS.**
 Three commits are titled `P9` / `P11` / `P12` in git while directive-P11 is the
@@ -102,31 +103,59 @@ DOWN. See §3a.4.
 ROUTING RATE** — it came from the 08-15 identity-SEAM measurement
 (`entity_identity_skipped reason=no_interpretation`), a different population.
 
-**P12 REMAINS THE CANARY, and has not started.**
-P11  P2 coverage AT MEAL LEVEL, with its routing rate
-P12  one-user canary — ONLY once the coordinator actually
-     routes that user through the branch
-P13  B-1.8 keeps the canonical correction defect. Do NOT
-     weaken the ownership firewall to make this slice look
-     finished
-P14  only after coordinator adoption is proven may general
-     settlement be called PRODUCTION-OWNED
-P2   rerun the corpus from a clean database                 costs credits. NO
-                                                            LONGER A CLOSURE
-                                                            GATE — it is the
-                                                            input A10 and the
-                                                            coverage predicate
-                                                            (decision D) need,
-                                                            and the precondition
-                                                            for widening the
-                                                            cohort
-P6   build ResolvedMeal + GeneralSettlementOwner
-P7   add routing, refusal, provenance and ownership gates
-P8   execute the A7 poisoned proof
-P9   pre-register the offline canary
-P10  canary behind an independent fail-closed cohort
-P11  measure coverage and miss rate BEFORE any expansion
+**P12 — THE CANARY — HAS RUN AND PASSED, ON BOTH BRANCHES** *(2026-08-17,
+`29ba0e1`)*. Its precondition was "only once the coordinator actually routes that
+user through the branch"; it does, and canonical settlement owned real
+production meals under `general:26:meal:…`. **P13/P14 and the backend freeze are
+in §FREEZE at the end of this section.**
+⛔ **THIS BLOCK WAS CORRUPTED AND IS REPLACED** *(Danny, 2026-08-17, on review)*.
+It had accumulated two different lists into one run-on paragraph — the live
+P11–P14 status notes and a superseded P2/P6–P11 plan — in a document used as an
+execution authority. What follows is the immutable status table. Nothing here is
+a sequence; the sequence is §NEXT below.
+
+```text
+PHASE  WHAT IT WAS                                 STATE
+P0     correct the closure language, freeze rollout ✅ 11511f1
+P1     repair corpus correlation                    ✅ 79ba9ad  (attribution v2)
+P2     rerun the corpus from a clean database       ⏸ OFF THE CRITICAL PATH.
+                                                      Costs credits. Its purpose
+                                                      was the coverage number and
+                                                      P11 produced one from
+                                                      history. What it still
+                                                      uniquely offers is the
+                                                      shadow-vs-off COMPARISON
+P3     re-close interpretation adoption — SCOPED    ✅ fc2db9d  (§0z)
+P4     amend §3a.2 with decisions A–D               ✅ IN FORCE
+P5     approve the A1–A10 plan                      ✅ GO (Danny)
+P6     ResolvedMeal + GeneralSettlementOwner        ✅ built, gated, mutation-
+                                                      proven; A7 passed live
+P7     negative twin for every positive invariant   ✅ 11 twins
+P8     dual-engine on the EXACT tree                ✅ 77c842e
+P9     one REAL turn through the routing seam       ✅ PASS (five gates, not four)
+P10    presentation from the canonical branch       ✅ CLOSED at ecacd76
+P11    coverage AND ownership, at MEAL level        ✅ MEASURED (beac35a, corrected
+                                                      in §3a.4) — 36.9% ownership
+P12    one-user production canary                   ✅ PASSED 2026-08-17 on BOTH
+                                                      settlement branches
+P13    B-1.8 canonical correction defect            ⏸ PARKED, and stays a real
+                                                      defect. Do NOT weaken the
+                                                      ownership firewall to make
+                                                      a slice look finished
+P14    call general settlement PRODUCTION-OWNED     ✅ FOR THE COHORT ONLY —
+                                                      adoption is proven for
+                                                      user 26, not for the fleet
+P15    ambiguous memory is never authoritative      ✅ 3b03943  (both owners)
+A12    canonical owns what a duplicate is           ✅ 29ba0e1  (§FREEZE)
+P16    MISS ATTRIBUTION / COVERAGE MAP              ⬅ THE ONLY OPEN ENGINEERING
+                                                      PHASE. See §NEXT
 ```
+
+⚠ **P16, NOT P15 — THE NAME IN THE REVIEW COLLIDES.** The review called miss
+attribution "P15", but P15 is already spent: `3b03943`, *"ambiguous memory is
+never authoritative — for EITHER settlement owner"*. Two phases sharing a number
+in the execution authority is exactly how an agent resurrects the wrong work, so
+the new tranche is **P16**.
 
 ⭐ **WHY P2 MOVED RATHER THAN VANISHED.** It was sequenced as a closure gate
 when the corpus was believed to carry the adoption evidence. It does not — step
@@ -136,10 +165,13 @@ COVERAGE number, and coverage is what the settlement slice's own risk turns on:
 whole of that slice's exposure. **P2 is now a design input to P6, not a
 permission slip for P3.**
 
-⛔ **THE IMMEDIATE NEXT MOVE IS P12 — THE CANARY** *(2026-08-16)*. P4 ✅, P5 ✅,
-P6–P10 ✅ (`ecacd76`), P11 ✅ measured (`beac35a`, corrected in §3a.4).
-⛔ **Cohort expansion still prohibited** — the canary comes first, and it is
-gated on the coordinator rollout, not on this slice.
+⛔ **SUPERSEDED — THE CANARY HAS RUN.** This paragraph read "the immediate next
+move is P12" on 2026-08-16. P4 ✅, P5 ✅, P6–P10 ✅ (`ecacd76`), P11 ✅ measured
+(`beac35a`, corrected in §3a.4), **P12 ✅ passed live 2026-08-17 (`29ba0e1`)**.
+The immediate next move is COVERAGE — see §FREEZE.
+⛔ **Cohort expansion is still prohibited**, and the reason has changed: it is no
+longer waiting on the canary but on COVERAGE. Widening is a coverage decision
+whose blast radius is mispricing, and the ownership rate is 36.9%.
 
 ⭐ **AND P2 IS NO LONGER ON THE CRITICAL PATH.** Its purpose was the coverage
 number; P11 produced one from HISTORICAL production data with no credits and
@@ -150,8 +182,232 @@ What P2 still uniquely offers is the shadow-vs-off COMPARISON.
 
 ```text
 ENTITY_RESOLUTION_CONSUME_ALLOWLIST = 26        keep it — do not widen
-cohort expansion                     PROHIBITED until P3 closes
+GENERAL_SETTLEMENT_ALLOWLIST        = 26        keep it — do not widen
+cohort expansion                     PROHIBITED — a COVERAGE decision now,
+                                     not a canary one
 ```
+
+## ⛔⛔ §FREEZE — GENERAL-SETTLEMENT BACKEND HARDENING IS CLOSED *(Danny, 2026-08-17)*
+
+**Live: `29ba0e1`. Cohort: user 26, iOS. Verified in production on BOTH
+settlement branches.** Dual-engine at the freeze commit, 9398 tests each:
+Postgres 9369 passed / 0 failed · SQLite 9287 passed / 0 failed.
+
+```text
+P12  one-user canary                                    ✅ PASSED, both branches
+P13  B-1.8 keeps the canonical correction defect        ⏸ PARKED, unchanged. Do
+                                                          NOT weaken the
+                                                          ownership firewall to
+                                                          make a slice look done
+P14  general settlement may be called PRODUCTION-OWNED  ✅ adoption proven for
+                                                          the cohort — and for
+                                                          the COHORT ONLY
+A12  canonical owns what a duplicate is                 ✅ 29ba0e1
+```
+
+### What the freeze means
+
+**Backend hardening for the general canonical settlement owner is finished.**
+A1–A12 are built, gated, mutation-proven, dual-engine, and production-verified.
+From here the work is COVERAGE, and **coverage widens by landing EVIDENCE, never
+by loosening this backend.** If a later reader is tempted to return `Supported`
+for a food with no local evidence, the thing to change is the artifact.
+
+The frozen surface is enforced executably, not by prose:
+`tests/test_the_general_settlement_backend_is_frozen.py`.
+
+```text
+LOCALLY_EVIDENCED     = ("memory", "artifact")   ESTIMATE stays out
+DUPLICATE_WINDOW_SEC  = 3600.0                   legacy's hour, deliberately
+meal identity         = the user's MESSAGE       never the turn id, never the
+                                                 model's plan
+POLICY_VERSION        = food_policy_native_v1    distinguishable from the ledger's
+coverage ladder       identity -> quantity -> mass -> memory -> artifact -> decline
+```
+
+⭐ **THE FREEZE IS NOT A VETO.** Changing a frozen value is allowed — it has to
+be a decision made on purpose, recorded here, with the freeze test edited in the
+same commit. That is the whole difference between a freeze and a drift.
+
+⚠ **AND IT WATCHES FOR GATE DELETION.** The cheapest way to defeat an invariant
+is to delete the test that names it, and until now nothing was looking. The
+freeze file carries a manifest of every frozen invariant and imports each
+enforcing gate; a rename is fine, a silent disappearance is not.
+
+### A12 — what canonical means by "the same meal"
+
+The two owners disagreed and **the migration was the one that had moved**: the
+legacy branch refused a retyped identical message inside the hour, while
+canonical keyed its operation id on the TURN id — which absorbs a redelivery and
+nothing else — so three sends wrote three rows. Promoting a user changed a user
+invariant. Canonical now decides it, using primitives it already had:
+
+```text
+identity   the user's MESSAGE, normalised for case and whitespace
+revision   which occurrence of that meal this is
+window     60 minutes — legacy's, unchanged
+```
+
+`meal_commits` is already unique on `(operation_id, revision)`, so this needed no
+second claim, no new table, and nothing imported from legacy. Keying on the
+message also closed a second hole: the legacy key fingerprinted
+`input["food_name"]` verbatim, so `"White Rice"` and `"White rice"` hashed
+differently and a re-cased plan slipped the guard.
+
+⭐ **A8'S AST GATE REFUSED THE FIRST VERSION AND WAS RIGHT.** The duplicate signal
+was first renamed inside `NativeExecutionStage.run` — an except handler around
+settlement, which is exactly how a canonical refusal reaches the legacy executor.
+`DuplicateMeal` now propagates like `PricingRefused`, and the entrypoint absorbs
+both signals as one so the user cannot tell which owner settled the turn.
+
+Production evidence, both branches, three sends each including a re-cased one:
+
+```text
+legacy    one claim (was TWO), 1 row, 2x "Already logged that one."
+canonical general:26:meal:9303ac8deca72cd7 rev=0, 1 row, 2x same reply,
+          and ZERO processed_turns claims — canonical borrowed nothing
+```
+
+### ⛔ WHAT COMES NEXT IS A COVERAGE DECISION, AND THE MEASUREMENT DISAGREES WITH THE ROADMAP
+
+The frozen roadmap's step 4 is "the next largest measured gap *(expected:
+PRODUCT)*" and step 5 is the oils. **The measurement does not put the oils
+anywhere near the front.** From §3a.2, 691 real production entries:
+
+```text
+NON-ENGLISH   30.4%   <- the largest measured gap, by 3x
+BRANDED        9.8%
+QUALIFIED      7.7%
+bare           5.6%   <- where the oils live
+```
+
+⚠ **AND THE DIRECTIVE ALREADY SAYS SO**: "landing all five oils moves real
+coverage under one point." The artifact is the deciding rung on 1.9% of real
+food. So `oils -> materiality -> branded` is an ordering by *readiness*, not by
+measured gap; **non-English is the biggest number and it is not on that list.**
+This is flagged, not resolved — the sequencing call is Danny's, and it should be
+made with these four numbers in view rather than around them.
+
+⭐ Materiality (B-1.7b) is the exception that does not need a coverage argument:
+it changes WHEN the product asks rather than what it can price, so its value does
+not depend on which bucket is largest.
+
+## ⏭ §NEXT — THE ONLY EXECUTABLE SEQUENCING IN THIS DOCUMENT *(Danny, 2026-08-17, on review)*
+
+> ⛔⛔ **ONE BOARD RULE.** **This section is the only place in this document that
+> may tell anyone what to do next.** Everything below it is EVIDENCE and HISTORY.
+> A section below this line may describe what was next *at the time it was
+> written*, and must mark itself superseded when it does — it may never carry an
+> executable instruction. Enforced by
+> `tests/test_only_one_board_sequences_the_work.py`, not by good intentions.
+>
+> ⭐ **WHY THIS RULE EXISTS.** The document is 8,000 lines of correctly-marked
+> history, and enough old `NEXT` / `blocked` / `owed` language survived inside it
+> that an agent could still pick up a superseded instruction in good faith —
+> several sections still describe general settlement as the future substantive
+> build, which it is not: it is frozen and production-proven.
+
+```text
+GENERAL SETTLEMENT BACKEND             ✅ FROZEN          (§FREEZE)
+ONE-USER PRODUCTION CANARY             ✅ PASSED          (P12, both branches)
+CURRENT OWNERSHIP                      36.9%             (P11, meal level)
+
+NEXT
+1. P16  attribute the 108 current evidence misses by ROOT CAUSE
+2.      rank root causes by RECOVERABLE OWNERSHIP POINTS
+3.      attack the #1 measured coverage mechanism
+4.      re-measure ownership
+5.      repeat until the rollout threshold is crossed
+6.      expand the cohort deliberately
+
+PARALLEL PRODUCT-CORRECTNESS WORK — does not wait on coverage
+        B-1.7b  materiality
+        B-1.7c  composition
+        B-1.8   canonical repair
+        B-2     messy / multi-food
+
+DO NOT
+        loosen canonical eligibility
+        reintroduce heuristics
+        reopen legacy authority
+        widen the cohort merely because P12 passed
+```
+
+### ⛔ THE ROLLOUT THRESHOLD — PREDETERMINED, SO "COVERAGE DECISION" STOPS BEING SUBJECTIVE
+
+The directive said cohort expansion was prohibited pending a coverage decision
+and never said what number permits it, which makes the decision re-arguable every
+time the number moves.
+
+```text
+OWNERSHIP        COHORT PERMITTED
+< 40%            user 26 only                    <- WE ARE HERE (36.9%)
+40 – 55%         controlled 1–5%
+55 – 70%         controlled 10–25%
+70% +            consider broad canonical promotion
+```
+
+⚠ **THESE PERCENTAGES ARE A PRODUCT AND RISK DECISION, NOT A MEASUREMENT.** They
+were set by Danny on 2026-08-17 review and nothing in this repository derives
+them. They are binding until he changes them, and the point is that they were
+fixed BEFORE the number moved. Changing them is allowed; changing them in the
+same breath as reporting a new ownership number is not.
+
+⭐ **THE NUMBER TO RUN THE PROGRAM ON IS 36.9% OWNERSHIP** — not the older
+44–46% coverage figures, and not the flattering 45.6% support rate. Ownership is
+routing × support, and it is the only one of the three that describes the
+product.
+
+### ⛔⛔ P16 — MISS ATTRIBUTION: THE 108 ARE THE AUTHORITATIVE BACKLOG NOW
+
+**The older 30.4 / 9.8 / 7.7 / 5.6 taxonomy no longer dictates engineering.** It
+is a 691-entry, ENTRY-LEVEL identity analysis from 2026-08-14. P11 is newer,
+MEAL-level, and taken after substantial architecture changed — and it says 108
+structured meals declined for `no local evidence` and 3 for `no stated quantity`.
+What P11 does not do is break those 108 into causal buckets. That is P16.
+
+⭐⭐⭐ **A ROW BELONGS TO A MECHANISM, NOT A LANGUAGE.** "Russian" is not the defect
+any more — the interpretation boundary already fixed ADDRESSABILITY. If
+`Сметана 5%` resolves correctly and then no compatible candidate can be seated,
+the defect is **cacheability / evidence retrieval**, not "non-English support".
+The live sour-cream row is exactly that shape: correct addressing, empty usable
+evidence. Classifying by input language would send a large tranche at the wrong
+layer.
+
+Pre-registered output shape — the classification is DETERMINISTIC and every row
+lands in exactly one leaf:
+
+```text
+CURRENT CANONICAL MISSES — 108
+
+NON-ENGLISH
+  identity unresolved
+  identity resolved, memory absent
+  identity resolved, candidate rejected
+  artifact absent
+BRANDED
+  PRODUCT recognized, producer absent
+  PRODUCT unrecognized
+QUALIFIED / MODIFIED
+  preparation vocabulary miss
+  modifier identity miss
+  evidence exists but selection fails
+BARE
+  genuinely uncovered canonical food
+OTHER
+  explicit typed reason
+```
+
+⚠ **SAME POPULATION AS P11, OR THE RANKING IS NOT COMPARABLE** — the 21-day
+window where the ledger population is complete, 406 rows / 252 meals, grouped by
+`ledger_events.turn_id`. Extend `scripts/measure_settlement_coverage.py`; do not
+write a second instrument that approximates it.
+
+**Then rank by `recoverable ownership points × confidence × implementation
+risk`** and attack the top mechanism — not the next feature name. If candidate
+seating carries 42 of 108, seating goes first; if PRODUCT carries 35–40, PRODUCT
+goes first. Feature names are user-input categories, not architectural root
+causes, and sequencing by them is how the oils came to look next.
 
 **What P0 changed** *(documentation only — no code, no schema, no flag)*:
 §0z restated from "closed" to "functionally connected, evidence closure
@@ -177,7 +433,7 @@ real food turns onto the canonical spine reliably, then expand what that spine
 can do.
 
 ```text
- 1  INTERPRETATION BOUNDARY          <- P0, next
+ 1  INTERPRETATION BOUNDARY          (was P0-next; CLOSED — see §NEXT)
  2  general canonical settlement owner
  3  RE-MEASURE real coverage         <- decides step 4; do not skip to features
  4  next largest measured gap        (expected: PRODUCT/branded rung)
@@ -428,7 +684,7 @@ sequence Danny froze from this state is:
 ```text
 wire identity producer into ordinary turn path   ✅ 54d91bd
 local / dual-engine gates                        ✅ SQLite 9098/0 · PG 9181/0
-shadow real-turn corpus                          <- next, and only now worth spending on
+shadow real-turn corpus                          (was next; P2, off the critical path)
 canary shadow -> canary consumption -> replay/re-measure
 general canonical settlement owner -> settlement canary -> oils
 ```
@@ -987,7 +1243,9 @@ and that is the real completion of B.**
 
 ## ⏭ THE PRIOR ROADMAP *(Danny, 2026-08-11; revised 2026-08-14 — SUPERSEDED ABOVE for sequencing; the Phase 0 detail below remains accurate)*
 
-**THE NEXT SESSION STARTS AT THE AUTHORITATIVE REBUILD — PHASE 0 STEP 1.**
+**HISTORY — NOT EXECUTABLE.** This read "the next session starts at the
+authoritative rebuild — Phase 0 step 1". Phase 0 closed 2026-08-14; the only
+executable sequencing is §NEXT.
 Not at B-1.7a, and not at any B slice. Phase 0.9 is applied, G1/G2/G3 are
 closed, and the build-path proof now RUNS — which is how we learned the store
 does not yet cover the retrieval population (see THE STORE IS NOT POPULATED
@@ -1454,7 +1712,7 @@ the canonical regime Phase 0 proves against" is SEPARATE from "expose it to
 `as_eaten` tie-break needs its own canary with explicit cut/coating controls.
 See 0.8 and step 11 below.
 
-### 0  PRICING AUTHORITY MIGRATION  <- IMMEDIATE NEXT SESSION
+### 0  PRICING AUTHORITY MIGRATION  *(HISTORY — was "immediate next session"; done, see §NEXT)*
 
 Move these qualification dimensions into DETERMINISTIC CODE:
 
@@ -3076,7 +3334,7 @@ P1(b) canonical ownership firewall     100%   CLOSED, fired 3x in production
 B-1.5 clarification lifecycle          100%   CLOSED — canary 5 passed, F N/A
 B-1.6 conditional field lifecycle      100%   CLOSED — a/b/c, end to end
 Canonical identity boundary            100%   key AND ranker, both consumers
-B-1.7 accuracy policy                    0%   NEXT
+B-1.7 accuracy policy                    0%   (was NEXT; see §NEXT)
 Added-fat COMPONENT pricing              0%   blocked on ADDED_FAT_IDENTITY
 Interpreter extraction survival          0%   ~1-in-3 loss measured -> B-1.7
 ```
@@ -4104,6 +4362,66 @@ them.
 
 ## Status board
 
+### ⏱ SESSION 2026-08-16/17 — DUPLICATE SEMANTICS CLOSED · BACKEND FROZEN
+
+```text
+LOCAL       the freeze commit           origin/main 7059fbc (docs)
+DEPLOYED    29ba0e1 — live, confirmed via /health, branch main
+SUITE       9423 collected · SQLite 9311 passed / 111 skipped
+                          · Postgres 9393 passed /  29 skipped   0 failed both
+COHORT      user 26, iOS only · general_settlement_reachable = true
+BACKEND     A1-A12 FROZEN — tests/test_the_general_settlement_backend_is_frozen.py
+```
+
+⛔ **THE PUSH DID NOT DEPLOY, TWICE.** `e2d732d` and `eedacfd` both sat on `main`
+with production serving `8f5501d` until the deploy was triggered by hand. Do not
+read "pushed to main" as "live" — read `/health`.
+
+**WHAT CLOSED, AND THE OBSERVABLE THAT PROVES EACH:**
+
+```text
+the duplicate's reply    the coordinator's FAILURE FLOOR had already filled
+                         `state.response` before the absorption ran, so
+                         "Already logged that one." was unreachable. eedacfd
+the legacy fingerprint   a re-cased plan minted its OWN claim. The observable is
+                         the CLAIM COUNT: two before, one after
+A12 canonical identity   the operation id shape: `general:26:meal:9303ac8deca72cd7`
+                         where it read `general:26:ios:<UUID>` before — and ZERO
+                         processed_turns claims, so canonical borrowed nothing
+```
+
+⭐⭐ **THREE MISREADINGS OF ONE LATENCY NUMBER, TWO OF THEM THIS SESSION'S.** A 6 ms
+duplicate was read as proof that a different layer caught it, then as an
+unexplained anomaly. Neither. A food already in memory makes **no model call**,
+so the successful send was 112 ms with no `llm` leaf — and a successful CANONICAL
+log is 29 ms with `stages={}`, because `pricing.*` and `tools` are legacy-executor
+instrumentation. **On the canonical path a turn that succeeded is
+indistinguishable by latency and stages from a refused duplicate.** Read the
+stages of the turn that WORKED before attributing a symptom to a mechanism.
+
+⚠ **STILL OPEN, DELIBERATELY:** `turn_metrics.outcome` cannot report a native
+failure — `_rt.done()` runs in the `finally` around `coordinator.run`, which never
+raises, while `raise state.error` happens after the trace closed. Deferred because
+changing it mid-canary moves the measurement contract. · 6 of 88 `meal_commits`
+rows for user 26 carry `created_at IS NULL` despite `server_default=func.now()`;
+A12 fails closed on an unstamped row, but the NULLs have the shape of the
+`_migrate` Postgres gap. · Whether a day-clear should drop that day's claims is
+an unmade product decision. · ⛔ **THE "NO CI HAS EVER RUN" NOTE WAS FALSE** —
+`ci.yml` runs the suite on every push to `main` against a real Postgres, and the
+check-runs API shows `test` = FAILURE on `29ba0e1` and `7059fbc`. `main` has been
+RED since the A12 push, from this document's own staleness gate (code 08-17 vs
+stamp 08-14, lag 3 > MAX_LAG_DAYS 2). Reconciling and stamping it is the fix. A
+second workflow, `eval.yml` (`battery`), failed on `eedacfd` and is unexamined.
+
+⭐ **AND FOUR "PRE-EXISTING" TEST FAILURES WERE A CLOCK** — labelled
+"order-dependent" once and "they fail standalone too" once, neither reading having
+varied anything. The fixture built its `DailyLog` from the HOST'S `date.today()`
+while the code under test resolved the USER'S logging day, so they were red
+whenever the runner sat in a timezone behind UTC. Green now across 15 timezone ×
+rollover-hour combinations. **A failure nobody can reproduce on demand gets
+explained away — and this was the ratchet protecting "no row is deleted without a
+ledger event".**
+
 ### ⏱ SESSION 2026-08-13 — BASELINE FROZEN · RANKER REACHED · V2 SPLIT
 
 ```text
@@ -4177,7 +4495,23 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-14 against the SEAM-POPULATION SLICE, opened from
+Last reconciled 2026-08-17 against the DUPLICATE-SEMANTICS SLICE AND THE BACKEND
+FREEZE. What was actually re-read and corrected, rather than date-bumped: the
+corrected-sequencing board's P12 line, which claimed the canary "has not
+started" — it has run and passed on both settlement branches · the "immediate
+next move is P12" paragraph, superseded and marked so · the ROLLOUT IS FROZEN
+block, which named only the entity-resolution allowlist and gave the canary as
+the reason cohort expansion is prohibited; the reason is now COVERAGE and
+`GENERAL_SETTLEMENT_ALLOWLIST` is named alongside it · a new §FREEZE section
+recording that backend hardening is closed, what the frozen surface is, and that
+the freeze is enforced by a test rather than by this prose · a session entry at
+the top of this board, since the previous one was 2026-08-13 and reported a
+DEPLOYED sha 15 commits behind. **The measured coverage ordering is flagged as an
+open sequencing decision in §FREEZE and deliberately not resolved:** the roadmap
+reads oils → materiality → branded, while the measurement puts non-English at
+30.4% and the oils' bucket at 5.6%.
+
+Previously reconciled 2026-08-14 against the SEAM-POPULATION SLICE, opened from
 merged main after #74. Building the batch-completeness instrumentation found
 that a PARTIAL abstention was being written as `DIFFERENT_IDENTITY` at
 confidence 0.95 — a durable, confident verdict about a row no model assessed,

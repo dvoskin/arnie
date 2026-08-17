@@ -8,9 +8,9 @@
 | Deployed | `29ba0e1` on `main`, live and confirmed via `/health` |
 | Verified | In production, user 26, iOS — **both settlement branches** (13:10 legacy, 13:26–13:37 canonical) |
 | Cohort | 1 user (26), iOS only — unchanged |
-| Tests | 9398, dual-engine: Postgres 9369 passed / 0 failed · SQLite 9287 passed / 0 failed |
+| Tests | 9428, dual-engine, **both engines collected identically**: Postgres 9399 passed / 0 failed · SQLite 9317 passed / 0 failed |
 
-**Duplicate semantics are closed.** Nothing on this tranche is outstanding.
+**Duplicate semantics are closed.** ⛔ **But `main` CI is RED at `29ba0e1` and `7059fbc`** — see the open list; the freeze commit is the fix.
 
 ---
 
@@ -176,7 +176,18 @@ principle.
   not exist and have the shape of the `_migrate` Postgres gap.
 - **Whether a day-clear should drop that day's claims** is a product decision,
   still unmade. The window is unchanged at 60 minutes.
-- ⚠ **No CI has ever run on this branch.** Every green is local, dual-engine.
+- ⛔ **THE "NO CI HAS EVER RUN" NOTE WAS FALSE, AND IT WAS LOAD-BEARING.**
+  `.github/workflows/ci.yml` runs the suite on every push to `main`, against a
+  REAL Postgres service. Verified 2026-08-17 via the check-runs API: `eedacfd`
+  `test` = success, `29ba0e1` `test` = **failure**, `7059fbc` `test` = **failure**.
+  So `main` has been red since the A12 push, and every "every green is local"
+  statement in this session inherited a belief nobody had checked.
+- ⚠ **The cause is the directive staleness gate, and the arithmetic matches CI
+  exactly**: `eedacfd` code 08-16 vs stamp 08-14 = lag 2 (passes at MAX_LAG_DAYS=2);
+  `29ba0e1` code 08-17 vs stamp 08-14 = lag 3 (fails). The freeze commit reconciles
+  the directive and stamps 08-17, which is the fix.
+- ⚠ A second workflow, `eval.yml` (`battery`), failed on `eedacfd` and is
+  unexamined.
 - ⛔ **The card is still absent on native turns**, which remains the blocker on
   widening past user 26.
 
