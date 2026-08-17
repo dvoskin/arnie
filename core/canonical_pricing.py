@@ -48,7 +48,9 @@ mackerel defect survived is that nothing looked wrong.
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
@@ -206,6 +208,33 @@ class ProductEvidence:
     servings_per_package: Optional[float] = None
     source_id: str = ""
 
+    def __post_init__(self):
+        """⛔⛔ BOTH BASES MAY EXIST, AND IF THEY DO THEY MUST AGREE *(P17b.1)*.
+
+        Manufacturer data routinely states per-serving AND per-100 g. Silently
+        preferring one would let a contradictory record price differently
+        depending on which field a future reader happened to consult — and the
+        disagreement would never surface, because each number looks fine alone.
+
+        With a serving mass in hand the two are the SAME CLAIM twice, so they
+        are checked against each other here: at construction, which is the
+        earliest a producer can be told it is wrong, and long before the number
+        reaches a meal. Tolerance is 10% — panels round, and rounding is not a
+        contradiction.
+        """
+        per100 = (self.per100g or {}).get("calories")
+        per_serv = (self.per_serving or {}).get("calories")
+        if not (per100 and per_serv and self.serving_grams):
+            return
+        implied = float(per100) * float(self.serving_grams) / 100.0
+        if implied <= 0:
+            return
+        if abs(implied - float(per_serv)) / implied > 0.10:
+            raise ValueError(
+                f"{self.identifier}: per-serving says {per_serv} kcal but "
+                f"per-100 g implies {implied:.0f} for {self.serving_grams} g — "
+                f"one record cannot hold two different claims about one food")
+
 
 @dataclass(frozen=True)
 class ArtifactEvidence:
@@ -294,17 +323,116 @@ def _profile(values: dict, *, source: str, source_id: str,
 # mean "per 100 g", and per-100 g is exactly the assumption that has to stop
 # being free.
 
-#: Basis type -> the `basis` recorded on PricedFood. Keyed by class NAME so this
-#: needs no import at module scope, where `skills.nutrition` is deliberately not
-#: reachable.
-_BASIS_NAMES = {"Per100g": "per_100g", "Per100ml": "per_100ml",
-                "PerServing": "per_serving", "PerUnit": "per_unit"}
+
+
+@dataclass(frozen=True)
+class SourcedMeasure:
+    """"One <unit> weighs N grams", ACCORDING TO THE RECORD THAT IS PRICING.
+
+    ⛔⛔ THIS IS A CONVERSION ON THE CONSUMED QUANTITY, NOT A BASIS ON THE
+    EVIDENCE, and the distinction is the whole architecture. Per-100 g numbers
+    plus "1 large egg = 50 g" means `2 eggs -> 100 g -> per-100 g scales
+    normally`. Declaring `PerUnit(unit_mass_g=50)` over those same numbers would
+    instead claim they DESCRIBE one egg, and two eggs would price at 2 x the
+    per-100 g figure — the 728-kcal defect P17b pinned.
+
+    ⚠ AND IT CARRIES ITS UNIT SO IDENTITY CAN BE PROVEN. A measure for one whole
+    roll may not price one PIECE of that roll (prod fe#2719, 460 cal committed
+    over the interpreter's correct 130-190). The unit text is what lets the
+    conversion refuse rather than multiply.
+    """
+    unit_text: str
+    grams_per_unit: float
+    source_id: str = ""
+
+
+#: A serving panel states a COUNT and a unit: "2 cookies", "1 bar", "1 large
+#: egg". The count matters — 30 g for "2 cookies" is 15 g per cookie.
+_PANEL = re.compile(r"^\s*(\d+(?:\.\d+)?)?\s*(.+?)\s*$")
+
+
+def measure_from_panel(serving_text, serving_mass_g, source_id=""):
+    """A `SourcedMeasure` from a provider's own serving panel, or None.
+
+    ⚠ NONE IS THE COMMON ANSWER AND MUST STAY CHEAP. A record with no panel, a
+    zero mass, or a panel that names no unit yields nothing — the portion then
+    stays unconvertible and the rung declines, which is the honest outcome.
+    """
+    try:
+        grams = float(serving_mass_g)
+    except (TypeError, ValueError):
+        return None
+    if grams <= 0:
+        return None
+    match = _PANEL.match(str(serving_text or "").strip().lower())
+    if not match or not match.group(2):
+        return None
+    count = float(match.group(1)) if match.group(1) else 1.0
+    if count <= 0:
+        return None
+    return SourcedMeasure(unit_text=match.group(2),
+                          grams_per_unit=grams / count, source_id=source_id)
+
+
+def mass_from_measures(consumed, measures) -> Optional[float]:
+    """The mass a BARE COUNT implies, per a sourced measure that counts the
+    SAME unit — or None, which leaves the portion exactly as unpriceable as it
+    was.
+
+    ⛔ NEVER A FALLBACK GUESS. If no measure names the unit the user counted,
+    this returns None and the rung declines. Inventing a mass here is precisely
+    the "model guesses 1 serving ~ X grams, therefore canonical owns it" that
+    the directive forbids — the conversion has to be evidence or it is nothing.
+    """
+    if consumed is None or getattr(consumed, "grams", None) is not None:
+        return None
+    count = getattr(consumed, "count", None)
+    if not count:
+        return None
+    want = str(getattr(consumed, "unit_label", "")
+               or getattr(consumed, "unit", "")).strip().lower()
+    if not want or want in ("g", "gram", "grams", "ml"):
+        return None
+    for measure in measures or ():
+        # Word-boundary, singular-or-plural. Narrow ON PURPOSE: "piece" must not
+        # match "1 roll", which is the whole point of carrying the unit.
+        if re.search(rf"\b{re.escape(want)}s?\b", measure.unit_text):
+            return float(count) * measure.grams_per_unit
+    return None
+
+
+def _product_measures(ev: "ProductEvidence") -> tuple:
+    """A product's own serving panel as a conversion, when it states one.
+
+    ⚠ `serving_unit` IS REQUIRED. A mass with no unit cannot be matched against
+    what the user counted, and matching it against ANY count is exactly how "one
+    piece of a roll" becomes "one whole roll".
+    """
+    measure = measure_from_panel(ev.serving_unit, ev.serving_grams,
+                                 source_id=ev.identifier)
+    return (measure,) if measure else ()
 
 
 def _basis_name(source_basis) -> str:
-    """What the row will say it scaled FROM. `None` means it scaled from
-    nothing — the evidence was already a statement about the portion eaten."""
-    return _BASIS_NAMES.get(type(source_basis).__name__, "per_portion")
+    """What the row will say it scaled FROM, ASKED OF THE BASIS ITSELF.
+
+    ⛔ A CLASS-NAME TABLE HERE WAS A SECOND REGISTRY *(fixed on review,
+    2026-08-17)*. Every basis in `scaling` already publishes `.basis`, so mapping
+    type names duplicated the contract — and a basis added there later would
+    have priced correctly while being PERSISTED as `per_portion`, silently
+    corrupting the one field a later correction reads.
+
+    `None` means it scaled from nothing: the evidence already described the
+    portion eaten. A basis object with no `.basis` is a bug, and says so.
+    """
+    if source_basis is None:
+        return "per_portion"
+    name = getattr(source_basis, "basis", "")
+    if not name:
+        raise ValueError(
+            f"{type(source_basis).__name__} declares no `.basis` identifier, so "
+            f"the row cannot record what it scaled from")
+    return name
 
 
 def _from_memory(ev: MemoryEvidence):
@@ -314,7 +442,7 @@ def _from_memory(ev: MemoryEvidence):
     return (_profile(ev.per100g, source="memory", source_id=ev.source_id,
                      confidence=ev.confidence, estimated=False),
             Rung.MEMORY, ev.source_id or "memory", dict(ev.per100g or {}),
-            Per100g())
+            Per100g(), ())
 
 
 def _from_product(ev: ProductEvidence):
@@ -344,13 +472,21 @@ def _from_product(ev: ProductEvidence):
                          source_id=ev.identifier, confidence=0.95,
                          estimated=False, basis="per_serving"),
                 Rung.PRODUCT, ev.identifier, dict(ev.per_serving),
+                # ⛔ NO `as_served` ON A MANUFACTURER LABEL *(P17b.1)*. That
+                # flag means "the dish AS SERVED" — a restaurant estimate or a
+                # saved regular, where one helping genuinely IS one serving
+                # however loosely described. A packet states a MEASURED serving,
+                # and setting the flag widened `countable` so ANY compatible
+                # count could multiply it. Identity now does that work instead.
                 PerServing(serving_mass_g=ev.serving_grams,
                            servings_per_package=ev.servings_per_package,
-                           as_served=True))
+                           unit_id=ev.serving_unit),
+                _product_measures(ev))
     if ev.per100g:
         return (_profile(ev.per100g, source="product", source_id=ev.identifier,
                          confidence=0.95, estimated=False),
-                Rung.PRODUCT, ev.identifier, dict(ev.per100g), Per100g())
+                Rung.PRODUCT, ev.identifier, dict(ev.per100g), Per100g(),
+                _product_measures(ev))
     return None
 
 
@@ -458,7 +594,13 @@ def _from_artifact(ev: ArtifactEvidence, *, query: str):
     return (_profile(per100g, source="usda", source_id=fdc,
                      confidence=0.85, estimated=False),
             Rung.ARTIFACT, f"usda:{fdc}" if fdc else "usda", dict(per100g),
-            Per100g())
+            Per100g(),
+            # ⭐ P17c — THE WINNER'S OWN SERVING PANEL, and only the winner's.
+            # A measure from a record that did not price this food would be a
+            # second source's claim wearing the first one's authority.
+            tuple(m for m in (measure_from_panel(
+                winner.get("serving_text"), winner.get("serving_mass_g"),
+                source_id=f"usda:{fdc}"),) if m))
 
 
 def _from_estimate(ev: EstimateEvidence):
@@ -485,7 +627,7 @@ def _from_estimate(ev: EstimateEvidence):
     # contract exists to remove.
     basis = (PerServing(serving_mass_g=float(ev.basis_grams), as_served=True)
              if ev.basis_grams else None)
-    return profile, Rung.ESTIMATE, "", {}, basis
+    return profile, Rung.ESTIMATE, "", {}, basis, ()
 
 
 def price(*, entity: str, preparation: str = "", consumed=None,
@@ -547,7 +689,7 @@ def price(*, entity: str, preparation: str = "", consumed=None,
             continue
         if not chosen:
             continue
-        profile, rung, evidence_id, raw_per_basis, source_basis = chosen
+        profile, rung, evidence_id, raw_per_basis, source_basis, measures = chosen
         before = profile.amount("calories")
 
         # ⭐ P17a — THE PRICER NO LONGER DECIDES THE BASIS FROM THE RUNG. It
@@ -569,9 +711,37 @@ def price(*, entity: str, preparation: str = "", consumed=None,
                 profile = scale_profile(profile, source_basis, consumed)
                 basis_name = _basis_name(source_basis)
             except ScalingRefused as exc:
-                logger.info("event=rung_unscalable food=%s rung=%s basis=%s — %s",
-                            entity, rung.value, basis_name, exc)
-                continue
+                # ⭐⭐ P17c — THE SOURCED MEASURE IS A LAST RESORT, AND THAT
+                # ORDERING IS THE SAFETY PROPERTY. It is only ever consulted on
+                # a portion the scaler ALREADY REFUSED, so no currently-priced
+                # meal can change value: this branch can turn a refusal into a
+                # price, never one price into another.
+                #
+                # "2 eggs" + "1 large egg = 50 g" -> 100 g -> the per-100 g rung
+                # scales normally. The conversion moves the QUANTITY; the
+                # evidence's basis is untouched.
+                grams = mass_from_measures(consumed, measures)
+                if grams is None:
+                    logger.info(
+                        "event=rung_unscalable food=%s rung=%s basis=%s — %s",
+                        entity, rung.value, _basis_name(source_basis), exc)
+                    continue
+                try:
+                    profile = scale_profile(
+                        profile, source_basis,
+                        dataclasses.replace(consumed, grams=grams))
+                except ScalingRefused as retry:
+                    logger.info(
+                        "event=rung_unscalable food=%s rung=%s measure=%.1fg "
+                        "— %s", entity, rung.value, grams, retry)
+                    continue
+                basis_name = _basis_name(source_basis)
+                logger.info(
+                    "event=sourced_measure_resolved food=%s rung=%s count=%s "
+                    "unit=%r grams=%.1f", entity, rung.value,
+                    getattr(consumed, "count", None),
+                    getattr(consumed, "unit_label", "") or
+                    getattr(consumed, "unit", ""), grams)
 
         # ⭐ THE FULL MICRONUTRIENT SET SURVIVES, scaled by the same factor.
         #

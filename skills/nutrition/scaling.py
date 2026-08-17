@@ -21,6 +21,7 @@ ladder can act on. A guess surfaces as a confident wrong number.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, replace
 from typing import Optional, Union
 
@@ -57,11 +58,24 @@ class PerServing:
 
     Without that flag the two collapse, and "one plate" reads as one serving of
     a packaged label whose serving mass we never knew.
+
+    ⛔⛔ `unit_id` IS WHAT A COUNT MUST MATCH BEFORE IT MAY MULTIPLY *(P17b.1,
+    2026-08-17)*. A label states "1 BAR = 200 kcal"; without the unit named, a
+    count of two BOTTLES multiplies it just as happily, because
+    `count_is_serving_compatible` answers about the COUNT alone and can never
+    see what the source is counting. Set it and the count path demands identity;
+    leave it unset and behaviour is exactly as before.
+
+    ⚠ `servings_per_package` IS CARRIED AND NOT YET CONSUMED. `_factor` has no
+    package path, so "1 bottle = 2 servings" does NOT resolve today. It is not
+    package support; it is the field package support will read.
     """
     serving_mass_g: Optional[float] = None
     serving_ml: Optional[float] = None
     servings_per_package: Optional[float] = None
     as_served: bool = False
+    #: What ONE serving IS — "bar", "bottle", "large egg". Identity, not prose.
+    unit_id: str = ""
     basis = "per_serving"
 
 
@@ -74,7 +88,29 @@ class PerUnit:
     the user described, not a measured piece."""
     unit_mass_g: Optional[float] = None
     as_served: bool = False
+    unit_id: str = ""
     basis = "per_unit"
+
+
+def unit_matches(consumed, unit_id: str) -> bool:
+    """Does the user's counted unit name the SAME thing the source counts?
+
+    ⭐ ONE AUTHORITY, DELIBERATELY. The sourced-measure conversion in
+    `canonical_pricing` asks the same question about a serving panel, and two
+    implementations of "is this the same unit" would eventually disagree — which
+    is the predicate/pricer drift the whole tranche is built to avoid.
+
+    Word-boundary and singular-or-plural, and NARROW ON PURPOSE: "piece" must
+    not match "bar", because knowing a whole bar weighs 55 g says nothing about
+    what one piece of it weighs.
+    """
+    want = str(getattr(consumed, "unit_label", "")
+               or getattr(consumed, "unit", "")).strip().lower()
+    target = str(unit_id or "").strip().lower()
+    if not want or not target:
+        return False
+    return bool(re.search(rf"\b{re.escape(want)}s?\b", target)
+                or re.search(rf"\b{re.escape(target)}s?\b", want))
 
 
 SourceBasis = Union[Per100g, Per100ml, PerServing, PerUnit]
@@ -148,6 +184,24 @@ def _factor(basis: SourceBasis, consumed: NormalizedQuantity) -> float:
         # never the multiplier. `unit_is_fraction` is likewise false when the
         # unit IS the product ("6 slices" of turkey deli slice).
         _no_panel = basis.serving_mass_g is None and basis.serving_ml is None
+        # ⛔⛔ IDENTITY BEFORE MULTIPLICATION *(P17b.1)*. Reached only when the
+        # mass and volume paths could not reconcile the bases themselves — a
+        # gram portion needs no name match, because the mass IS the common
+        # ground. Here there is only a count, so the source must say what it
+        # counts and the count must be of that thing.
+        if basis.unit_id:
+            if not unit_matches(consumed, basis.unit_id):
+                raise ScalingRefused(
+                    f"this source states its serving as {basis.unit_id!r}, and "
+                    f"{consumed.unit_label or consumed.unit!r} is not that — a "
+                    f"count may only multiply the unit the evidence describes")
+            # A PART OF THE UNIT IS NOT ONE OF THE UNIT, panel or no panel.
+            # Knowing a whole bar weighs 55 g does not say what one piece of it
+            # weighs, so a stated serving mass must NOT license a fraction.
+            if consumed.unit_is_fraction:
+                raise ScalingRefused(
+                    f"one {consumed.unit} of a {basis.unit_id} is a PART of the "
+                    f"serving this source describes, and its size is not stated")
         if countable and not (consumed.unit_is_fraction and _no_panel):
             return float(count)
         if consumed.unit_is_fraction and _no_panel and count is not None:

@@ -361,11 +361,25 @@ async def build_one(entity: str, preparation: str, store=None,
     # mechanical layer would refuse for free had to be rejected by hand
     # instead. A corpus that cannot exercise a veto is a corpus that quietly
     # proves less than it appears to.
+    # ⛔⛔ AND THE SERVING PANEL IS CARRIED FOR EXACTLY THE SAME REASON — P17c,
+    # 2026-08-17. `api.usda` has extracted `serving_text` / `serving_mass_g` /
+    # `serving_ml` on every candidate the whole time, with a comment saying it
+    # is "carried so a COUNT portion ('15 pieces') can be given a mass from the
+    # record that is answering" — and this line then threw all three away.
+    # Measured: 0 of 124 committed candidates carried a panel.
+    #
+    # So the sourced measure that would let "2 eggs" resolve was being FETCHED
+    # AND DISCARDED at build time, one field over from the `data_type` drop
+    # above. A count-only portion was left unpriceable by construction, which is
+    # 142 of 207 declining items and the largest single mechanism P16 found.
     kept = [{"evidence_id": f"{SOURCE}:{r.get('fdc_id')}",
              "source": SOURCE,
              "fdc_id": r.get("fdc_id"), "description": r.get("description"),
              "data_type": r.get("data_type") or "",
-             "per100g": r.get("per100g") or {}}
+             "per100g": r.get("per100g") or {},
+             "serving_text": r.get("serving_text") or "",
+             "serving_mass_g": r.get("serving_mass_g"),
+             "serving_ml": r.get("serving_ml")}
             for r in kept if (r.get("per100g") or {}).get("calories")]
     if not kept:
         # UNRESOLVED IS NOT "NO EVIDENCE". If nothing priced because nothing

@@ -142,6 +142,80 @@ def test_a_piece_of_a_source_with_no_serving_panel_is_refused():
               consumed=_count(1, "piece", fraction=True), product=no_panel)
 
 
+# ── P17b.1 — A COUNT MUST COUNT THE THING THE EVIDENCE DESCRIBES ────────────
+#
+# ⛔⛔ THE HOLE THIS CLOSES, FOUND ON REVIEW. P17b declared `serving_unit` and
+# then threw it away: `_from_product` built a `PerServing` carrying only a mass,
+# and `_factor` asks `count_is_serving_compatible`, which answers about the
+# COUNT ALONE and cannot see what the source counts. So a label reading
+# "1 bar = 200 kcal" would happily price "2 bottles" at 400.
+#
+# It also set `as_served=True` on a manufacturer label. That flag means "the
+# dish AS SERVED" — a restaurant estimate or a saved regular — and it WIDENS
+# `countable`, so it made the mismatch easier rather than harder.
+
+def test_a_count_of_a_different_unit_cannot_multiply_a_serving():
+    """⛔⛔ THE BLOCKER. Two BOTTLES against a label that states one BAR."""
+    with pytest.raises(PricingRefused):
+        price(entity="Barebells bar", consumed=_count(2, "bottle"),
+              product=BAR)
+
+
+def test_a_piece_of_the_bar_is_not_one_bar():
+    """⛔ A PART OF THE UNIT IS NOT ONE OF THE UNIT, panel or no panel.
+
+    The older sushi guard only refused a fractional unit when the source stated
+    NO panel — so the moment `serving_grams=55` existed, "1 piece of the bar"
+    became acceptable. Knowing the whole bar weighs 55 g says nothing about what
+    one piece of it weighs.
+    """
+    with pytest.raises(PricingRefused):
+        price(entity="Barebells bar",
+              consumed=_count(1, "piece", fraction=True), product=BAR)
+
+
+def test_a_mass_needs_no_unit_name_because_mass_reconciles_the_bases():
+    """⭐ AND THE IDENTITY GATE MUST NOT OVERREACH. 110 g against a 55 g serving
+    is two servings by arithmetic — no unit word is involved, so naming the
+    portion "bottle" cannot make a gram measurement wrong."""
+    priced = price(entity="Barebells bar",
+                   consumed=NormalizedQuantity(amount=110, unit="bottle",
+                                               grams=110.0),
+                   product=BAR)
+    assert priced.calories == pytest.approx(400.0)
+
+
+def test_a_product_stating_two_contradictory_bases_is_refused_at_construction():
+    """⛔ ONE RECORD CANNOT HOLD TWO DIFFERENT CLAIMS ABOUT ONE FOOD. Caught
+    where a producer would trip it, not where a meal would inherit it."""
+    with pytest.raises(ValueError, match="two different claims"):
+        ProductEvidence(identifier="off:bad",
+                        per_serving={"calories": 200.0},
+                        per100g={"calories": 900.0}, serving_grams=55.0)
+
+
+def test_bases_that_agree_within_panel_rounding_are_accepted():
+    """Panels round. 364 kcal/100 g x 55 g = 200.2, and a label saying 200 is
+    the same claim, not a contradiction."""
+    ProductEvidence(identifier="off:ok", per_serving={"calories": 200.0},
+                    per100g={"calories": 364.0}, serving_grams=55.0)
+
+
+def test_a_basis_with_no_identifier_is_a_loud_bug_not_a_silent_per_portion():
+    """⚠ THE PROVENANCE TRAP THE REVIEW CAUGHT. `_basis_name` used to map class
+    NAMES, so a basis added to `scaling` would price correctly and then be
+    PERSISTED as `per_portion` — corrupting exactly the field a later correction
+    reads. It now asks the basis, and an unnamed one raises."""
+    import core.canonical_pricing as cp
+
+    class Nameless:
+        pass
+
+    assert cp._basis_name(None) == "per_portion"
+    with pytest.raises(ValueError, match="declares no"):
+        cp._basis_name(Nameless())
+
+
 # ── FAIL CLOSED, NEVER DEFAULT ──────────────────────────────────────────────
 
 def test_a_product_with_no_numbers_fails_closed_rather_than_defaulting():
@@ -180,7 +254,8 @@ def test_removing_a_declared_basis_changes_the_price(monkeypatch):
     assert before.calories == pytest.approx(330.0)
 
     real = cp._from_memory
-    monkeypatch.setattr(cp, "_from_memory", lambda ev: (*real(ev)[:4], None))
+    monkeypatch.setattr(cp, "_from_memory",
+                        lambda ev: (*real(ev)[:4], None, ()))
     after = price(entity="Chicken breast", consumed=_g(200.0),
                   memory=MemoryEvidence(per100g=CHICKEN_PER100G))
 
@@ -199,27 +274,99 @@ def test_swapping_the_serving_basis_for_per_100g_is_caught(monkeypatch):
 
     real = cp._from_product
     monkeypatch.setattr(cp, "_from_product",
-                        lambda ev: (*real(ev)[:4], Per100g()))
+                        lambda ev: (*real(ev)[:4], Per100g(), ()))
     with pytest.raises(PricingRefused):
         # per-100 g needs a mass; a bare count of bars no longer resolves.
         price(entity="Barebells bar", consumed=_count(2), product=BAR)
 
 
-# ── WHAT P17c STILL OWES, ASSERTED AS A GAP RATHER THAN ASSUMED ─────────────
+# ── P17c — THE SOURCED MEASURE, WHICH MOVES THE QUANTITY NOT THE BASIS ──────
 
-def test_a_sourced_piece_to_grams_conversion_is_not_wired_yet():
-    """⛔ THE REMAINING HALF OF THE BAND, NAMED. A generic food priced per 100 g
-    with a sourced measure ("1 large egg = 50 g") should let "2 eggs" resolve to
-    100 g. That is a CONVERSION applied to the CONSUMED quantity, not a basis
-    swap on the evidence — declaring `PerUnit` over per-100 g numbers would be
-    the 728 bug again.
+def _egg(serving_text="1 large egg", serving_mass_g=50.0):
+    """A generic per-100 g artifact record that also states its own measure.
 
-    ArtifactEvidence carries no conversion today, so this still refuses. The
-    test asserts the gap so that closing it is a deliberate, visible change
-    rather than something discovered by a coverage number moving.
+    ⚠ These fields were being FETCHED AND DISCARDED. `api.usda` has extracted
+    `serving_text` / `serving_mass_g` all along — with a comment saying they are
+    carried so a COUNT portion can be given a mass — and the artifact builder
+    dropped all three. Measured before P17c: 0 of 124 committed candidates
+    carried a panel.
     """
+    return ArtifactEvidence(candidates=(
+        {"fdc_id": "1", "description": "Egg, whole, cooked",
+         "per100g": {"calories": 155.0, "protein": 13.0},
+         "serving_text": serving_text, "serving_mass_g": serving_mass_g},))
+
+
+def test_a_sourced_measure_gives_a_bare_count_a_mass():
+    """⭐⭐ "2 eggs" -> 100 g -> the per-100 g rung scales normally.
+
+    The conversion moves the QUANTITY. The evidence's basis is untouched, which
+    is what keeps this from being the 728 bug: `PerUnit` over per-100 g numbers
+    would claim they describe ONE EGG and price two eggs at 310.
+    """
+    priced = price(entity="Egg", consumed=_count(2, "egg"), artifact=_egg())
+
+    assert priced.rung is Rung.ARTIFACT
+    assert priced.basis == "per_100g", (
+        "the evidence is still per-100 g — a sourced measure must not rewrite "
+        "what the numbers describe")
+    assert priced.calories == pytest.approx(155.0, abs=1.0), (
+        "2 eggs x 50 g = 100 g, and 100 g of a 155 kcal/100 g record is 155")
+
+
+def test_the_panel_count_is_read_not_assumed():
+    """"2 cookies = 30 g" means ONE cookie is 15 g. Reading the mass as
+    per-unit would double every portion of a multi-unit panel."""
+    cookies = ArtifactEvidence(candidates=(
+        {"fdc_id": "9", "description": "Cookie", "per100g": {"calories": 400.0},
+         "serving_text": "2 cookies", "serving_mass_g": 30.0},))
+    priced = price(entity="Cookie", consumed=_count(2, "cookie"),
+                   artifact=cookies)
+    assert priced.calories == pytest.approx(120.0, abs=1.0), (
+        "2 cookies is 30 g, not 60 g — the panel's own count was ignored")
+
+
+def test_a_measure_for_a_different_unit_is_refused():
+    """⛔⛔ THE SUSHI-ROLL INVARIANT, NOW AT THE CONVERSION LAYER. A measure for
+    one whole ROLL may not give a mass to one PIECE of it. Prod fe#2719
+    committed 460 cal over the interpreter's own correct 130-190 by exactly
+    this substitution."""
+    roll = ArtifactEvidence(candidates=(
+        {"fdc_id": "7", "description": "Sushi roll",
+         "per100g": {"calories": 200.0},
+         "serving_text": "1 roll", "serving_mass_g": 230.0},))
     with pytest.raises(PricingRefused):
-        price(entity="Egg", consumed=_count(2, "piece", serving_compatible=False),
-              artifact=ArtifactEvidence(candidates=(
-                  {"fdc_id": "1", "description": "Egg, whole, cooked",
-                   "per100g": {"calories": 155.0, "protein": 13.0}},)))
+        price(entity="Special roll", consumed=_count(1, "piece"),
+              artifact=roll)
+
+
+def test_a_record_with_no_panel_still_refuses_a_count():
+    """No measure means no conversion. The portion stays exactly as
+    unpriceable as it was — the honest outcome, and the one that keeps a
+    guessed mass from ever becoming canonical authority."""
+    with pytest.raises(PricingRefused):
+        price(entity="Egg", consumed=_count(2, "egg"),
+              artifact=_egg(serving_text="", serving_mass_g=None))
+
+
+def test_the_measure_is_a_last_resort_and_cannot_change_a_priced_meal():
+    """⭐ THE SAFETY PROPERTY. The conversion is consulted ONLY after the scaler
+    has already refused, so a portion that priced before must price identically
+    now. This is what makes P17c incapable of moving an existing number."""
+    with_panel = price(entity="Egg", consumed=_g(100.0), artifact=_egg())
+    without = price(entity="Egg", consumed=_g(100.0),
+                    artifact=_egg(serving_text="", serving_mass_g=None))
+    assert with_panel.calories == without.calories == pytest.approx(155.0)
+
+
+def test_the_sourced_measure_is_load_bearing(monkeypatch):
+    """⚠ ANTI-VACUITY for P17c: disable the conversion and "2 eggs" must go
+    back to being unpriceable. Otherwise the assertions above would pass on a
+    build where the panel was still being dropped."""
+    import core.canonical_pricing as cp
+
+    assert price(entity="Egg", consumed=_count(2, "egg"),
+                 artifact=_egg()).calories > 0
+    monkeypatch.setattr(cp, "mass_from_measures", lambda *a, **k: None)
+    with pytest.raises(PricingRefused):
+        price(entity="Egg", consumed=_count(2, "egg"), artifact=_egg())
