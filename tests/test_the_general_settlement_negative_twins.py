@@ -1126,3 +1126,102 @@ def test_a_row_with_no_recorded_event_carries_no_token():
         meal_totals=None)
     view = execution_view(result, [{"food_name": "X", "quantity": "1 g"}])
     assert view.calls[0].event_id is None
+
+
+# ══ P14/4 — a native turn must be measurable ═══════════════════════════════
+
+@pytest.mark.asyncio
+async def test_a_native_turn_persists_a_trace():
+    """⛔⛔ NATIVE TURNS WERE UNMEASURED. The RequestTrace lifecycle lived only
+    in core/conversation.py, so a DELEGATED turn was recorded and a NATIVELY
+    EXECUTED one produced no turn_metrics row and every timed() leaf was a
+    silent no-op. `stages_json` is what diagnosed the first corn failure — the
+    canary path cannot be the blind one."""
+    from types import SimpleNamespace
+
+    import core.request_trace as rt_mod
+    from core.turns import entrypoint
+    import core.turns.factory as factory
+
+    persisted = []
+
+    class _Coordinator:
+        route_stage = SimpleNamespace(decision=None)
+
+        async def run(self, request):
+            assert rt_mod.current_trace() is not None, (
+                "no ambient trace during the native turn — timed() leaves "
+                "would record nothing")
+            return SimpleNamespace(
+                execution=SimpleNamespace(response=SimpleNamespace(bubbles=["x"])),
+                response=None, error=None)
+
+    async def _build(request, **kw):
+        return _Coordinator()
+
+    real_build = factory.build_coordinator
+    real_persist = rt_mod.RequestTrace.persist_isolated
+
+    async def _fake_persist(self):
+        persisted.append(self)
+
+    factory.build_coordinator = _build
+    rt_mod.RequestTrace.persist_isolated = _fake_persist
+    try:
+        await entrypoint.run_turn(
+            request=SimpleNamespace(turn_id="ios:TRACED", user_id=26,
+                                    platform="ios", text="x", metadata={}))
+    finally:
+        factory.build_coordinator = real_build
+        rt_mod.RequestTrace.persist_isolated = real_persist
+
+    assert len(persisted) == 1, "the native turn left no metric row"
+    assert persisted[0].turn_id == "ios:TRACED"
+
+
+@pytest.mark.asyncio
+async def test_an_outer_trace_is_not_duplicated():
+    """⚠ ONE TURN, ONE ROW. If a caller already holds a trace, this must not
+    start a second — two rows for one turn read as extra traffic rather than
+    as double counting."""
+    from types import SimpleNamespace
+
+    import core.request_trace as rt_mod
+    from core.turns import entrypoint
+    import core.turns.factory as factory
+
+    persisted = []
+
+    class _Coordinator:
+        route_stage = SimpleNamespace(decision=None)
+
+        async def run(self, request):
+            return SimpleNamespace(
+                execution=SimpleNamespace(response=SimpleNamespace(bubbles=["x"])),
+                response=None, error=None)
+
+    async def _build(request, **kw):
+        return _Coordinator()
+
+    async def _fake_persist(self):
+        persisted.append(self)
+
+    real_build = factory.build_coordinator
+    real_persist = rt_mod.RequestTrace.persist_isolated
+    factory.build_coordinator = _build
+    rt_mod.RequestTrace.persist_isolated = _fake_persist
+    outer = rt_mod.RequestTrace(turn_id="telegram:OUTER", channel="telegram",
+                                command="turn", user_id=26)
+    try:
+        with rt_mod.active(outer):
+            await entrypoint.run_turn(
+                request=SimpleNamespace(turn_id="telegram:OUTER", user_id=26,
+                                        platform="telegram", text="x",
+                                        metadata={}))
+    finally:
+        factory.build_coordinator = real_build
+        rt_mod.RequestTrace.persist_isolated = real_persist
+
+    assert persisted == [], (
+        "a second trace was persisted for a turn that already had one — the "
+        "outer owner will persist it, and two rows is double counting")

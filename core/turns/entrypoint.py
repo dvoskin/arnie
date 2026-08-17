@@ -126,9 +126,34 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     already has its own recovery and swallowing an exception here would hide a
     failure the legacy path was prepared to report honestly.
     """
+    from core.request_trace import RequestTrace, active as _trace_active
+    from core.request_trace import current_trace
     from core.turn_identity import CURRENT_TURN_ID
     from core.turns.factory import build_coordinator
     from core.turns.observe import CURRENT_ROUTE
+
+    # ⛔⛔ A NATIVE TURN WAS UNMEASURED. The RequestTrace lifecycle lives ONLY in
+    # `core/conversation.py` (~731-751), so a turn the coordinator DELEGATES
+    # reaches it and is recorded, while a turn the coordinator EXECUTES
+    # NATIVELY produced no `turn_metrics` row at all — and every `timed()` leaf
+    # on that path was a silent no-op. Measured 2026-08-16: neither iOS canary
+    # replay left a metric row, while Telegram turns did.
+    #
+    # ⭐ THAT IS THE SAME OMISSION CLASS AS `CURRENT_TURN_ID`, bound three lines
+    # below for the same reason: the native path was built without the ambient
+    # bindings the legacy wrapper provides. And it is the one that hurts most —
+    # `stages_json` is what diagnosed the first corn failure, so the canary path
+    # cannot be the blind one.
+    #
+    # ⚠ ONLY WHEN THERE IS NO TRACE ALREADY. If a caller (Telegram, or any
+    # future wrapper) has one active, this must not start a second — two traces
+    # for one turn means two rows, and a duplicated turn reads as extra traffic
+    # rather than as double counting.
+    _outer = current_trace()
+    _rt = _outer or RequestTrace(
+        turn_id=getattr(request, "turn_id", "") or "",
+        channel=getattr(request, "platform", "") or "",
+        command="turn", user_id=getattr(request, "user_id", None))
 
     coordinator = await build_coordinator(request, **legacy_kwargs)
     # The route this turn took, published for anything downstream that would
@@ -148,11 +173,29 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     # a leaked contextvar stamps the NEXT turn's writes with this one's id.
     _token = CURRENT_ROUTE.set(getattr(coordinator.route_stage, "decision", None))
     _tid_token = CURRENT_TURN_ID.set(getattr(request, "turn_id", None))
+    _outcome = "ok"
     try:
-        state = await coordinator.run(request)
+        # Ambient, so `timed()` leaves record themselves — the mechanism that
+        # makes `stages_json` mean anything.
+        with _trace_active(_rt):
+            state = await coordinator.run(request)
+    except Exception as exc:
+        _outcome = f"error:{type(exc).__name__}"
+        raise
     finally:
         CURRENT_TURN_ID.reset(_tid_token)
         CURRENT_ROUTE.reset(_token)
+        # OURS TO CLOSE ONLY IF OURS TO OPEN. An outer trace belongs to its
+        # own owner, which will mark and persist it.
+        if _outer is None:
+            try:
+                _rt.done(outcome=_outcome)
+                await _rt.persist_isolated()
+            except Exception:            # noqa: BLE001
+                # Telemetry describing a turn must never break the turn, the
+                # same rule `record_ledger_event` and `persist` already follow.
+                logger.warning("native turn metric not persisted turn=%s",
+                               getattr(request, "turn_id", "-"), exc_info=True)
 
     # DELEGATED: `state.execution` IS the legacy TurnResult, unchanged.
     execution = state.execution
