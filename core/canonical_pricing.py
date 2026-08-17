@@ -106,6 +106,19 @@ class PricedFood:
     #: defect `resolution` was added to the ledger to fix.
     basis: str = ""
     assumptions: tuple = ()
+    # ── P17f — THE SCALING RESOLUTION, CARRIED TO THE ROW ────────────────────
+    # USDA nutrition and a USDA piece weight are TWO CLAIMS, and "actually that
+    # was 3 eggs" needs both to reprice deterministically instead of
+    # rediscovering the nutrition. Optional and omitted-when-absent, never
+    # defaulted: a price with no conversion must not look like one with an
+    # unnamed conversion.
+    scaling_factor: Optional[float] = None
+    #: The mass a sourced conversion supplied, when the portion had none.
+    resolved_grams: Optional[float] = None
+    conversion_evidence_ids: tuple = ()
+    #: What ONE of the source basis IS: (1.0, "bar"), (100.0, "g").
+    source_amount: Optional[float] = None
+    source_unit: str = ""
 
     @property
     def estimated(self) -> bool:
@@ -760,6 +773,7 @@ def price(*, entity: str, preparation: str = "", consumed=None,
         # it `per_100g` here would rewrite the provenance of every unscaled row
         # while claiming to be a no-op refactor.
         basis_name = "per_portion"
+        scaling = None
         if consumed is not None and source_basis is not None:
             # ⭐⭐ P17c.1 — ONE RESOLVER ANSWERS "CAN THIS PORTION MEET THIS
             # BASIS", and the pricer no longer orchestrates a fallback of its
@@ -780,6 +794,7 @@ def price(*, entity: str, preparation: str = "", consumed=None,
             # refusal the resolver just worked around.
             profile = _apply(profile, resolution.factor)
             basis_name = resolution.basis_name or _basis_name(source_basis)
+            scaling = resolution
             if resolution.resolved_grams is not None:
                 logger.info(
                     "event=sourced_measure_resolved food=%s rung=%s count=%s "
@@ -805,6 +820,13 @@ def price(*, entity: str, preparation: str = "", consumed=None,
                   if k not in MACRO_FIELDS and k not in ("fiber", "sugar",
                                                          "sodium")
                   and isinstance(v, (int, float))}
+        # What ONE of the declared basis is — the source side of the scale.
+        _amt, _unit = ((100.0, "g") if basis_name == "per_100g" else
+                       (100.0, "ml") if basis_name == "per_100ml" else
+                       (1.0, getattr(source_basis, "unit_id", "") or "serving")
+                       if basis_name == "per_serving" else
+                       (1.0, getattr(source_basis, "unit_id", "") or "unit")
+                       if basis_name == "per_unit" else (None, ""))
         priced = PricedFood(
             calories=float(profile.amount("calories") or 0.0),
             protein=profile.amount("protein"),
@@ -813,7 +835,12 @@ def price(*, entity: str, preparation: str = "", consumed=None,
             fiber=profile.amount("fiber"), sugar=profile.amount("sugar"),
             sodium=profile.amount("sodium"),
             micros=micros or None, micros_estimated=(rung is Rung.ESTIMATE),
-            rung=rung, evidence_id=evidence_id, basis=basis_name)
+            rung=rung, evidence_id=evidence_id, basis=basis_name,
+            scaling_factor=(scaling.factor if scaling else None),
+            resolved_grams=(scaling.resolved_grams if scaling else None),
+            conversion_evidence_ids=(tuple(scaling.evidence_ids)
+                                     if scaling else ()),
+            source_amount=_amt, source_unit=_unit)
         # AN INDEFENSIBLE PRICE IS ALSO A FAILED RUNG. Continuing is what turns
         # "the estimate was zero" into "try the next thing" rather than
         # "refuse the meal".

@@ -194,10 +194,29 @@ async def assemble(db, *, user_id: int, entity: str, preparation: str,
     return {
         "memory": await _memory(db, user_id, identity,
                                 str(item.get("canonical_entity_id") or "")),
-        # PRODUCT stays None until an exact authoritative identifier is
-        # carried on the item. A fuzzy name match must never be promoted here:
-        # `_match: "exact"` once said so about a pizza.
-        "product": None,
+        # ⭐ P17f.4 — PRODUCT is a LOAD of a persisted snapshot, and only that.
+        # The item must carry the exact `product_evidence_id` a binding step
+        # recorded; a fuzzy name match must never be promoted here (`_match:
+        # "exact"` once said so about a pizza), and nothing here fetches — a
+        # missing snapshot is a declined rung, never a provider call. Dark
+        # today: no producer writes the reference until the P17f.5 wire.
+        "product": await _product(db, item.get("product_evidence_id")),
         "artifact": _artifact(entity, preparation),
         "estimate": _estimate(item, basis_grams),
     }
+
+
+async def _product(db, evidence_id):
+    """The snapshot this item was bound to, or None. LOCAL READ ONLY."""
+    if not evidence_id:
+        return None
+    try:
+        from skills.nutrition.product_store import load_product_evidence
+
+        return await load_product_evidence(db, evidence_id)
+    except Exception:                                    # noqa: BLE001
+        # An unavailable read is NOT an absence of evidence — same rule as
+        # `_memory` above: decline the rung, log, never guess.
+        logger.warning("product rung unavailable for evidence_id=%s",
+                       evidence_id, exc_info=True)
+        return None

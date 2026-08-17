@@ -353,9 +353,29 @@ async def write_canonical_meal(db, *, operation, resolved_meal
 
     written = []
     for item in items:
+        # ⭐ P17f — THE PRICING RECEIPT, AS COLUMNS. "Which facts did this meal
+        # use, and how" is first-class on the row — B-1.8 joins on it — while
+        # the payload copy below remains for replay compatibility. Omitted
+        # entirely when the caller recorded no pricing: a legacy or estimate
+        # row must not look like a receipted one.
+        _pricing = (item.attributes or {}).get("pricing") or {}
+        _receipt = {k: v for k, v in {
+            "pricing_rung": _pricing.get("rung"),
+            "nutrition_evidence_id": _pricing.get("evidence_id"),
+            "source_basis": _pricing.get("basis"),
+            "basis_evidence_id": _pricing.get("basis_evidence_id"),
+            "conversion_evidence_ids_json": (
+                json.dumps(list(_pricing["conversion_evidence_ids"]))
+                if _pricing.get("conversion_evidence_ids") else None),
+            "source_amount": _pricing.get("source_amount"),
+            "source_unit": _pricing.get("source_unit"),
+            "scaling_factor": _pricing.get("scaling_factor"),
+            "product_evidence_id": _pricing.get("product_evidence_id"),
+        }.items() if v not in (None, "", [])}
         entry = await add_food_entry(
             db, log.id,
             commit=False,                 # the meal is ONE mutation
+            **_receipt,
             ledger_source=meal.intent.ledger_source,
             user_id=user_id,
             raw_input=item.raw_input or item.name,

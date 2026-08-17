@@ -459,6 +459,16 @@ async def _migrate(conn):
         #    preferred over the health score's keyword proxy. SQLite-only net —
         #    Postgres handled by paired alembic migration e2f3a4b5c6d7.
         ("food_entries", "processing_level", "VARCHAR"),
+        # ── P17f pricing receipt (paired with alembic prodev001) ──────────────
+        ("food_entries", "pricing_rung", "VARCHAR"),
+        ("food_entries", "nutrition_evidence_id", "VARCHAR"),
+        ("food_entries", "source_basis", "VARCHAR"),
+        ("food_entries", "basis_evidence_id", "VARCHAR"),
+        ("food_entries", "conversion_evidence_ids_json", "TEXT"),
+        ("food_entries", "source_amount", "FLOAT"),
+        ("food_entries", "source_unit", "VARCHAR"),
+        ("food_entries", "scaling_factor", "FLOAT"),
+        ("food_entries", "product_evidence_id", "INTEGER"),
         # ── 2026-07-17: activation gates — when the user earned the Log/Coach
         #    tabs (null = locked). SQLite-only net — Postgres handled by paired
         #    alembic migration e7750abe4362 (which also grandfathers existing users).

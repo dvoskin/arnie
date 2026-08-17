@@ -549,6 +549,26 @@ class GeneralSettlementOwner:
                         "basis": getattr(priced.analysis, "basis", "") or "",
                         "expected_source": (coverage.expected_source
                                             if coverage else ""),
+                        # ⭐ P17f — DUAL PROVENANCE, ADDITIVE AND OMITTED WHEN
+                        # ABSENT. Nutrition evidence and a serving conversion
+                        # are TWO CLAIMS; "actually that was 3 eggs" reprices
+                        # from both, deterministically, instead of
+                        # rediscovering the nutrition. A price with no
+                        # conversion must not look like one with an unnamed
+                        # conversion, so nothing here is defaulted.
+                        **{k: v for k, v in {
+                            "scaling_factor": getattr(
+                                priced.analysis, "scaling_factor", None),
+                            "resolved_grams": getattr(
+                                priced.analysis, "resolved_grams", None),
+                            "conversion_evidence_ids": list(getattr(
+                                priced.analysis, "conversion_evidence_ids",
+                                ()) or ()),
+                            "source_amount": getattr(
+                                priced.analysis, "source_amount", None),
+                            "source_unit": getattr(
+                                priced.analysis, "source_unit", "") or None,
+                        }.items() if v not in (None, [], "")},
                     }})
                 for index, priced in enumerate(resolved)),
         )

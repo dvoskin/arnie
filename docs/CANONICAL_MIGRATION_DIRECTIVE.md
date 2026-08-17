@@ -679,7 +679,27 @@ P17d.1-4 ✅ exact producer, corrected BY the probe before it
          prose. Acquisition wiring is Danny's sequencing call
 P17e     ✅ package + fraction as basis DATA — spp active,
          parity refused when unstated
-P17f     ◻ persisted dual provenance
+P17f     ✅ persisted immutable evidence. product_evidence is
+         append-only and snapshot-addressed; the pricing receipt
+         is COLUMNS on food_entries; assemble() loads-only, proven
+         with the OFF client poisoned. Migration prodev001.
+         ⛔⛔ INVARIANT: evidence rows are immutable snapshots;
+         canonical meal rows reference them; acquisition may ADD
+         evidence; settlement may only READ evidence.
+         Hardened on review, all three structural not conventional:
+           · identity = provider + code + provider_revision +
+             fingerprint, each EXPLICIT (revision was hidden in
+             the hash; a rev bump with identical facts is now
+             visibly two snapshots with one fingerprint)
+           · FK RESTRICT — the ENGINE refuses to delete evidence a
+             committed meal cites. Caught model/migration drift:
+             the model declared the FK, the migration added a bare
+             Integer, and only production would have allowed the
+             delete
+           · provider_revision NOT NULL, '' for revision-less
+             providers — a NULL component exempts a row from
+             UNIQUE in both Postgres and SQLite
+         Dark: nothing writes product_evidence_id until P17f.5
 P17g     ◻ eligibility predicate LAST
 P17h     ◻ mutation + positive twins
 ```

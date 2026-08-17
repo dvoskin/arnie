@@ -238,6 +238,25 @@ class FoodEntry(Base):
     micronutrients_json = Column(Text)       # {"iron": 2.1, "vitamin_d": 400, ...}
     micros_estimated = Column(Boolean, default=False)  # micros came from LLM fallback, not a DB match
     from_photo = Column(Boolean, default=False)
+    # ── P17f — THE PRICING RECEIPT *(Danny, 2026-08-17)* ─────────────────────
+    # "Which facts did this meal actually use, and how?" — first-class columns,
+    # deliberately NOT buried in a payload blob, because B-1.8 joins on them:
+    # load the referenced evidence, change the factor, reprice deterministically.
+    # All nullable; legacy and estimate rows simply never write them.
+    pricing_rung = Column(String)                  # memory|product|artifact|estimate
+    nutrition_evidence_id = Column(String)         # usda:173423 | off:...#rev
+    source_basis = Column(String)                  # per_100g|per_serving|...
+    basis_evidence_id = Column(String)
+    conversion_evidence_ids_json = Column(Text)    # ["usda:173423", ...]
+    source_amount = Column(Float)                  # 1.0 (bar) | 100.0 (g)
+    source_unit = Column(String)
+    scaling_factor = Column(Float)
+    # ⛔ RESTRICT: a meal from six months ago must not be able to LOSE the
+    # evidence it cites. "Append-only" is a database guarantee, not a habit of
+    # the current repository code.
+    product_evidence_id = Column(Integer,
+                                 ForeignKey("product_evidence.id",
+                                            ondelete="RESTRICT"))
     # NOVA-style processing class set by the model at log time (whole |
     # processed | ultra_processed). The health score prefers this over its
     # food-name keyword proxy. Nullable — older rows fall back to keywords.
@@ -1869,3 +1888,77 @@ class FoodEntityResolution(Base):
     reason = Column(Text, nullable=False, default="")   # ⚠ ADVISORY
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ProductEvidenceRecord(Base):
+    """⭐ P17f — ONE EXACT EVIDENCE SNAPSHOT, APPEND-ONLY *(Danny, 2026-08-17)*.
+
+    ⛔⛔ THE FROZEN STORAGE INVARIANT: EVIDENCE ROWS ARE IMMUTABLE SNAPSHOTS.
+    CANONICAL MEAL ROWS REFERENCE THEM. ACQUISITION MAY ADD EVIDENCE;
+    SETTLEMENT MAY ONLY READ EVIDENCE.
+
+    This is NOT "whatever OFF currently says about this barcode" — OFF is
+    mutable, so keying by code alone would let tomorrow's edit rewrite the
+    evidence out from under meals already committed. The identity is
+
+        canonical_code + provider revision + fingerprint
+
+    and a re-acquisition that finds CHANGED facts INSERTS a new snapshot; it
+    never mutates yesterday's. "Latest for acquisition convenience" is a
+    query over created_at, not an overwrite.
+
+    THE SPLIT THIS TABLE CREATES, which is exactly what B-1.8 needs:
+        product_evidence     "what facts did Arnie know?"
+        canonical meal row   "which facts did THIS meal use, and how?"
+    Six months later, "actually I had 3 bars" loads THIS row by id, changes
+    the factor 2 -> 3, and reprices — no OFF fetch, no reinterpretation.
+    """
+    __tablename__ = "product_evidence"
+    __table_args__ = (
+        # One snapshot per distinct set of facts: same code + same fingerprint
+        # is the SAME knowledge, and re-acquiring it is idempotent.
+        # ⛔⛔ FOUR-PART IDENTITY *(Danny, review)*: provider + code + provider
+        # REVISION + fingerprint, each EXPLICIT. The first draft buried the
+        # revision inside the fingerprint — functionally similar, but identity
+        # must be readable in the constraint, not archaeologically derivable
+        # from a hash's inputs. Two providers describing one barcode are two
+        # snapshots even when the captured facts are byte-identical, and two
+        # provider revisions are two snapshots even when the nutrition is.
+        UniqueConstraint("provider", "canonical_code", "provider_revision",
+                         "source_fingerprint",
+                         name="uq_product_evidence_snapshot"),
+        Index("ix_product_evidence_code", "canonical_code", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    provider = Column(String, nullable=False, server_default="off")
+    #: ZERO-NORMALIZED digits — the P17d.0 probe showed OFF canonicalizes
+    #: equivalent UPC-A/EAN-13 forms in BOTH directions, so two spellings of
+    #: one product must not become two identities.
+    canonical_code = Column(String, nullable=False)
+    #: ⛔ NOT NULL, EMPTY-STRING FOR REVISION-LESS PROVIDERS *(Danny, review)*.
+    #: Postgres and SQLite both admit unlimited duplicate rows through a UNIQUE
+    #: constraint when a component is NULL — so a nullable revision would
+    #: quietly exempt exactly the providers without revisions from snapshot
+    #: identity. '' participates in uniqueness; NULL does not. The rule is
+    #: structural, not a store-code convention.
+    provider_revision = Column(String, nullable=False, server_default="")
+    provider_modified_at = Column(Integer)         # OFF last_modified_t epoch
+    source_fingerprint = Column(String, nullable=False)
+    product_name = Column(String)                  # presentation only, theirs
+    brands = Column(String)                        # presentation only, theirs
+    #: The label's panels, structured facts as persisted. Either may be absent;
+    #: `per100ml` exists because nutrition_data_per='100ml' is real (probed on
+    #: Fairlife) and calling those numbers per-100g is a basis lie.
+    per_serving_json = Column(Text)
+    per100g_json = Column(Text)
+    per100ml_json = Column(Text)
+    serving_amount = Column(Float)
+    serving_unit = Column(String)                  # caller knowledge: "bar"
+    serving_mass_g = Column(Float)
+    serving_ml = Column(Float)
+    package_unit = Column(String)                  # caller knowledge: "bottle"
+    servings_per_package = Column(Float)
+    #: Structured provenance: {dataset_id, record_key, rev, modified_t, ...}.
+    source_reference_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
