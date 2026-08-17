@@ -334,12 +334,16 @@ CURRENT OWNERSHIP                      20.2%             (re-measured 08-17,
                                                          meal level, at cd2b74a)
 
 NEXT
-1. P16  ✅ DONE — the 207 declining items are attributed by MECHANISM
-2.      rank root causes by RECOVERABLE OWNERSHIP POINTS
-3.      attack the #1 measured coverage mechanism
+1. P16  ✅ DONE — 207 declining items attributed by MECHANISM
+2. P16b MEAL-LEVEL ROLLUP: item counts are not ownership POINTS. Counterfactual
+        per mechanism — re-run decide() with M satisfied, count meals that flip
+3. P17  the mechanism P16 chose: PRODUCT / per-serving basis (142/207, 69%).
+        Land the basis; do NOT loosen the predicate
 4.      re-measure ownership
 5.      repeat until the rollout threshold is crossed
 6.      expand the cohort deliberately
+
+PARALLEL SESSIONS -> docs/HANDOFF_PARALLEL_SESSION_0817.md (how, not what)
 
 PARALLEL PRODUCT-CORRECTNESS WORK — does not wait on coverage
         B-1.7b  materiality
