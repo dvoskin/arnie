@@ -493,6 +493,13 @@ COVERAGE TRACK
              □ canonical event stores stable product/evidence reference
              □ settlement performs zero provider calls
              □ prose remains presentation/context only
+             ⛔ OPERATIONAL PRECONDITION *(Danny, 2026-08-17 close)*: before
+             exercising this wire against anything LIVE, confirm the deploy
+             has advanced through `prodev001` — read /health for the commit
+             AND verify alembic_version reports prodev001 applied cleanly.
+             Production was last observed at 8e2ed45, several commits behind.
+             □ P17g starts only when BOTH the wire and that production-schema
+               verification are true
            THEN P17g change the eligibility predicate LAST.
            THEN P17h positive twins + mandatory mutation twins.
 
