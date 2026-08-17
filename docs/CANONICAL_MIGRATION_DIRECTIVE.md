@@ -347,7 +347,7 @@ not depend on which bucket is largest.
 > the canonical primitives rather than bypassing them.
 
 ```text
-HEAD                                   c406e87
+HEAD                                   c54077e
 GENERAL SETTLEMENT BACKEND             ✅ FROZEN          (§FREEZE)
 ONE-USER PRODUCTION CANARY             ✅ PASSED          (P12, both branches)
 CURRENT OWNERSHIP BASELINE             ~20.3%            (predicate a747b56,
@@ -657,7 +657,12 @@ P17c.2   ✅ authoritative precedence + real-normalizer twins     0dcc1f8
 P17c.3a  ✅ durable source-snapshot identity, no placeholder    c406e87
 P17c.3b  ✅ hydrated at FDC 15.3 — 120/124 candidates, 259
          portions, additive-verified, every measure stamped
-P17d     ◻ exact PRODUCT producer
+P17d.0   ✅ OFF raw barcode probe — raw responses committed   ee07427
+P17d.1-4 ✅ exact producer, corrected BY the probe before it
+         landed (identity guard, serving unit, 100ml trap)     c54077e
+         ⚠ dark: no channel yet delivers a barcode to the
+         backend — iOS resolves scans client-side and sends
+         prose. Acquisition wiring is Danny's sequencing call
 P17e     ◻ package + fraction
 P17f     ◻ persisted dual provenance
 P17g     ◻ eligibility predicate LAST
