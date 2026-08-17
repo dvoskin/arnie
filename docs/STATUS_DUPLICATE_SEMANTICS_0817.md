@@ -1,0 +1,160 @@
+# Status — duplicate-turn semantics · 2026-08-17
+
+**For team review. Summary only; the working record is
+`docs/HANDOVER_DUPLICATE_TURN_0816.md`.**
+
+| | |
+|---|---|
+| Deployed | `29ba0e1` on `main`, live and confirmed via `/health` |
+| Verified | In production, user 26, iOS, 13:10 UTC |
+| Cohort | 1 user (26), iOS only — unchanged |
+| Tests | 9398, dual-engine: Postgres 9369 passed / 0 failed · SQLite 9287 passed / 0 failed |
+
+---
+
+## What was wrong
+
+Two user-visible defects, both on repeated food messages.
+
+**1. A duplicate read as an outage.** Re-sending the same food answered
+*"Something went sideways on my end. Resend that and I'll catch it."* — an
+instruction to retry the one thing that cannot succeed. The meal was already on
+the board; nothing had failed.
+
+**2. A re-cased message slipped the duplicate guard.** The idempotency key
+fingerprinted the model's plan verbatim, so `"White Rice"` and `"White rice"`
+hashed differently. The second send took its own claim, the executor ran, a
+downstream guard blocked the write, and the user got a *different* broken reply:
+*"Lost the thread there. Try one more time."*
+
+Neither produced a double row — data integrity held throughout — but both told
+the user the product was broken when it was not.
+
+## What shipped
+
+**`eedacfd` — the duplicate's reply was the coordinator's failure floor.**
+`TurnCoordinator.run` catches every exception and fills `state.response` from
+`Finalizer.recover()` (the `llm_error` recovery line) *before* the entrypoint
+absorbs the duplicate. The entrypoint's replacement was guarded by
+`if not response.bubbles`, which was never true. It now discards a response that
+`is_recovery_text`, so a duplicate answers *"Already logged that one."*
+
+**`29ba0e1` — canonical owns what a duplicate is (A12).** The two settlement
+owners disagreed, and the migration was the one that had moved:
+
+```
+legacy branch     one row, two refusals   (claim on user + text + plan, 60 min)
+canonical branch  three rows              (operation id was the TURN id, so a
+                                           retyped message is a new operation)
+```
+
+Promoting a user from legacy to canonical silently changed what happens when
+they send the same thing twice — a user invariant, not an implementation detail.
+Canonical now decides it, using the primitives it already had:
+
+```
+identity   the user's MESSAGE, normalised for case and whitespace
+           (never the turn id, never the model's plan)
+revision   which occurrence of that meal this is
+window     60 minutes — legacy's, unchanged
+```
+
+`meal_commits` is already unique on `(operation_id, revision)`, so this needed no
+second claim, no new table, and nothing imported from legacy. Keying on the
+message also closes defect 2 at the canonical boundary; `_fingerprint_token`
+closes it at the legacy boundary.
+
+## Evidence
+
+Three sends before and after, 28 minutes apart on the same account:
+
+| | baseline `8f5501d` | verified `29ba0e1` |
+|---|---|---|
+| send 1 | logs, one row | logs, one row |
+| send 2, same text | "Something went sideways…" | **"Already logged that one."** |
+| send 3, re-cased | "Lost the thread there…" | **"Already logged that one."** |
+| idempotency claims taken | **two** | **one** |
+| food rows written | 1 | 1 |
+| recovery bubbles shown | 2 | **0** |
+
+The claim count is the load-bearing number: one claim instead of two is the
+direct evidence that the re-cased plan now collides rather than minting its own
+key. Reply text alone could have changed for other reasons.
+
+Also verified: one `created` food ledger event per row, and a `Clear my day` in
+the same window wrote its `deleted` event correctly.
+
+**Offline, through the real turn against a live model, on both branches** —
+`scripts/reproduce_the_duplicate_turn_reply.py`, three sends including a re-cased
+one: one row, two "Already logged that one." on each branch. Canonical wrote
+three rows before this change.
+
+**Mutation-checked.** Nine mutations across the two commits, each turning the
+suite red with the correct failure name: reverting the recovery-text guard;
+deleting the duplicate's reply; deleting reply and return together; identity
+reverting to the turn id; `meal_surface` no longer lowercasing; the window
+collapsing to zero; the window never expiring; the stage swallowing the signal;
+the legacy fingerprint no longer normalising.
+
+## Two process findings worth the team's attention
+
+**A green test whose fixture supplied the deciding value.** The first duplicate
+test stubbed the entire coordinator and passed `response=None` by hand, so the
+failure floor never ran — the one field that decided the production outcome was
+the one the test invented. The replacement drives the real coordinator and real
+finaliser and stubs only the stage that genuinely raises. One of the new tests
+was itself vacuous until it was driven over a floor returning `None`.
+
+**Four "pre-existing" test failures were a clock.** Recorded once as
+"order-dependent, pre-existing" and once as "they fail standalone too". Neither
+reading varied anything. Holding the commit fixed and varying only `TZ`:
+
+```
+Pacific/Honolulu  local 08-16 18:57   4 failed
+America/Chicago   local 08-16 23:57   4 failed
+America/New_York  local 08-17 00:57   0 failed
+Europe/London     local 08-17 05:57   0 failed
+```
+
+The fixture built its `DailyLog` from the *host's* calendar date while the code
+under test resolved the *user's* logging day. Fixed to use the same resolver
+production uses; green across 15 timezone × rollover-hour combinations. This was
+the ratchet protecting "no row is deleted without a ledger event" — it had become
+routinely ignorable, which is how it survived two sessions.
+
+**A latency reading is not a layer fingerprint.** The investigation was sent down
+the wrong path by a 6 ms duplicate, read as proof that a different layer caught
+it. The successful send of the verified replay settled it: 112 ms,
+`{"pricing.memory": 10, "pricing.fetch_candidates": 10, "tools": 57}`, **no `llm`
+leaf, and it wrote a row.** A food already in memory needs no model call; the
+6 ms duplicates inherited that fast path. The answer was in the stages of the
+turn that *worked*, not the one that failed.
+
+## Open, and deliberately not closed here
+
+- ⚠ **A12's canonical half is production-unverified.** The verified replay routed
+  to the legacy branch (`coverage_for` called the food unsupported), so no
+  `meal_commits` row was written. Proven offline on both branches and
+  dual-engine; needs one production turn on a food the coverage predicate calls
+  `Supported`.
+- **`turn_metrics.outcome` cannot report a native failure.** `_rt.done()` runs in
+  the `finally` around `coordinator.run`, which never raises; `raise state.error`
+  happens after the trace closed. Deferred on purpose — changing it mid-canary
+  would alter the measurement contract.
+- **6 of 88 `meal_commits` rows for user 26 have `created_at IS NULL`**, despite
+  `server_default=func.now()`. A12 reads `created_at` to decide the window and
+  fails closed on an unstamped row, so behaviour is safe; the NULLs still should
+  not exist and have the shape of the `_migrate` Postgres gap.
+- **Whether a day-clear should drop that day's claims** is a product decision,
+  still unmade. The window is unchanged at 60 minutes.
+- ⚠ **No CI has ever run on this branch.** Every green is local, dual-engine.
+- ⛔ **The card is still absent on native turns**, which remains the blocker on
+  widening past user 26.
+
+## Next
+
+```
+1  one production turn on a Supported food, to verify A12's canonical half
+2  freeze general-settlement backend hardening
+3  oils
+```
