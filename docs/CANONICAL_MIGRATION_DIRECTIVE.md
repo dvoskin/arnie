@@ -15,13 +15,26 @@
 > `tests/test_the_canonical_invariants.py`; this document is the sequencing
 > authority.
 
-## ⏭⏭⏭⏭ CORRECTED SEQUENCING *(Danny, 2026-08-16. THIS SUPERSEDES EVERY SEQUENCE BELOW, INCLUDING THE FROZEN ROADMAP.)*
+>
+> **CURRENT RECONCILIATION — 2026-08-17 @ `0dcc1f8`.** §NEXT is the **only
+> executable sequencing authority** in this file. P16/P16b measurement is closed;
+> P17 is the active coverage tranche. `P17c.2` has landed: one scaling resolver,
+> authoritative quantity precedence, canonical-eligibility separated from
+> estimate scalability, real-normalizer twins, plural/canonical unit matching,
+> and sourced panel provenance. The local suite reported by that commit is
+> **9350 passed / 107 skipped / 0 failed**. The pricing artifact is still
+> intentionally unchanged. **The immediate P17 blocker is source-snapshot
+> identity before USDA hydration** — no authoritative measure may be committed
+> with `dataset_version="committed_artifact"` or with an immutability claim the
+> source contract cannot actually prove.
 
-> **The state, after P1 sharpened P0.** Interpretation adoption is **CLOSED for
-> ADDRESSING**, on production evidence plus store-side measurement that never
-> touched the broken instrument. **Coverage and cacheability are OPEN and
-> UNQUANTIFIED.** 2026-08-15 published both as one claim; P0 retracted both; P1
-> showed the retraction was too wide. §0z carries the scoped closure.
+## ⚠ HISTORICAL CORRECTED SEQUENCING *(Danny, 2026-08-16. SUPERSEDED FOR EXECUTION BY §NEXT.)*
+
+> **Historical state at the time.** Interpretation adoption was closed for
+> ADDRESSING while coverage/cacheability had not yet been re-measured. That
+> uncertainty is now resolved enough to sequence: P16/P16b measured the current
+> predicate and selected P17. This block is retained as history only; **§NEXT
+> below is the sole live board.**
 
 ```text
 P0   correct the closure language and FREEZE the rollout   ✅ 11511f1
@@ -166,8 +179,12 @@ P14    call general settlement PRODUCTION-OWNED     ✅ FOR THE COHORT ONLY —
                                                       user 26, not for the fleet
 P15    ambiguous memory is never authoritative      ✅ 3b03943  (both owners)
 A12    canonical owns what a duplicate is           ✅ 29ba0e1  (§FREEZE)
-P16    MISS ATTRIBUTION / COVERAGE MAP              ⬅ THE ONLY OPEN ENGINEERING
-                                                      PHASE. See §NEXT
+P16    MISS ATTRIBUTION / COVERAGE MAP              ✅ MEASURED 2026-08-17
+P16b   meal-level recovery + re-attribution          ✅ FROZEN population
+                                                      p16b_0817 · 361 rows /
+                                                      232 meals
+P17    authoritative serving-basis consumption       🟡 ACTIVE — current head
+                                                      0dcc1f8; §NEXT + §P17
 ```
 
 ⚠ **P16, NOT P15 — THE NAME IN THE REVIEW COLLIDES.** The review called miss
@@ -312,28 +329,33 @@ made with these four numbers in view rather than around them.
 it changes WHEN the product asks rather than what it can price, so its value does
 not depend on which bucket is largest.
 
-## ⏭ §NEXT — THE ONLY EXECUTABLE SEQUENCING IN THIS DOCUMENT *(Danny, 2026-08-17, on review)*
+## ⏭ §NEXT — THE ONLY EXECUTABLE SEQUENCING IN THIS DOCUMENT *(Danny, 2026-08-17; reconciled at `c406e87`)*
 
 > ⛔⛔ **ONE BOARD RULE.** **This section is the only place in this document that
-> may tell anyone what to do next.** Everything below it is EVIDENCE and HISTORY.
-> A section below this line may describe what was next *at the time it was
-> written*, and must mark itself superseded when it does — it may never carry an
-> executable instruction. Enforced by
-> `tests/test_only_one_board_sequences_the_work.py`, not by good intentions.
+> may tell anyone what to do next.** Everything below it is EVIDENCE, METHOD,
+> CAPABILITY PLACEMENT or HISTORY. A later section may say where a capability
+> belongs; it may not silently promote that capability ahead of the measured
+> sequence. Enforced by `tests/test_only_one_board_sequences_the_work.py`.
 >
-> ⭐ **WHY THIS RULE EXISTS.** The document is 8,000 lines of correctly-marked
-> history, and enough old `NEXT` / `blocked` / `owed` language survived inside it
-> that an agent could still pick up a superseded instruction in good faith —
-> several sections still describe general settlement as the future substantive
-> build, which it is not: it is frozen and production-proven.
+> ⭐ **PRODUCT GOAL AND PROGRAM RULE ARE BOTH TRUE.** We are building toward a
+> coach that can understand normal food language, resolve exact branded products,
+> ask only material questions, handle several foods in one turn, accept
+> corrections, use memory to reduce friction, and coach from settled truth.
+> **That product destination does not authorize feature-order engineering.**
+> Coverage work is selected by measured recoverable ownership; correctness work
+> runs in parallel where explicitly allowed; later product capabilities compose
+> the canonical primitives rather than bypassing them.
 
 ```text
+HEAD                                   c406e87
 GENERAL SETTLEMENT BACKEND             ✅ FROZEN          (§FREEZE)
 ONE-USER PRODUCTION CANARY             ✅ PASSED          (P12, both branches)
-CURRENT OWNERSHIP                      ~20.3%            (predicate a747b56,
+CURRENT OWNERSHIP BASELINE             ~20.3%            (predicate a747b56,
                                                          population p16b_0817)
 BASELINE POPULATION                    ✅ FROZEN          361 rows / 232 meals,
                                                          sha 6247a33c55ed64f5
+P17 STATUS                             🟡 ACTIVE          c.3a landed; artifact
+                                                         still NOT hydrated
 ROLLOUT                                FROZEN — user 26 only
 
 NEXT
@@ -341,13 +363,12 @@ NEXT
 ⭐⭐ TWO INDEPENDENT CLOCKS RUN BEFORE ROLLOUT, AND EXPANSION WAITS FOR BOTH
     COVERAGE     can Arnie correctly OWN enough meals?
     CORRECTNESS  can a user safely INTERACT with the meals it owns —
-                 including CORRECTING them?
-    Neither clock alone authorizes a wider cohort. This is the change of
-    2026-08-17: the old roadmap had only the first one.
+                 including CORRECTING identity, quantity and product variant?
+    Neither clock alone authorizes a wider cohort.
 
 COVERAGE TRACK
 1. P16b  ✅ DONE — population FROZEN as p16b_0817, misses rolled up to MEALS,
-         and RE-ATTRIBUTED 08-17 after the split below. Recoverable ownership
+         then re-attributed through the REAL normalizer. Recoverable ownership
          points, ranked LOWER against LOWER:
 
            MECHANISM                          ITEMS   LOWER    UPPER  non-latin
@@ -362,29 +383,17 @@ COVERAGE TRACK
                                                       15.4 .. 57.4 total
 
          ⛔⛔ "COUNT-ONLY QUANTITY" WAS ONE PREDICATE BRANCH DESCRIBING FOUR
-         DEFECTS. P16 read `has_mass == False` and named the bucket for the
-         shape it assumed. Driving the REAL normalizer over the frozen rows
-         splits 142 into 84 + 51 + 6 + 1: a THIRD of it is a mass stated in
-         CYRILLIC — `150 г`, `200 мл` — that the unit parser does not read. That
-         is not a missing serving basis and no serving evidence would price it.
+         DEFECTS. Driving the real normalizer split 142 into 84 + 51 + 6 + 1.
+         `150 г` / `200 мл` are stated quantities the parser does not read; they
+         are NOT serving-basis misses. A unit-alias fix therefore has a 0.0-point
+         lower bound because those rows can immediately hit the evidence wall.
 
-         ⭐⭐ AND THE CHEAP FIX IS NOT A CHEAP WIN. A unit-alias table looks like
-         51 items for almost no work, and its LOWER bound is 0.0 POINTS: given a
-         mass, those foods hit the evidence wall immediately. Its whole 7.2 is
-         contingent on evidence ALSO existing for them. Satisfying a mechanism
-         is not recovering a meal — the third time this measurement has said so.
-
-         ⭐ THE `non_latin` TAG EARNED ITS KEEP BY REFUSING TO BE A BUCKET. The
-         non-Latin rows were never one mechanism: 51 are an unparsed unit token,
-         14 a genuine count. Only executing the parser over them could tell.
-
-         13 meals are blocked by more than one mechanism and no single tranche
-         recovers them
+         13 meals carry more than one blocker.
 
          ⭐⭐ CONTINGENCY RANKING — Δ(M | P17), NOT STANDALONE CEILINGS. P17
          alone recovers 27 meals at its floor, 55 at its ceiling. What each
-         OTHER mechanism then adds, with both flipped together through the real
-         decide():
+         OTHER mechanism then adds, with both flipped together through real
+         `decide()`:
 
            MECHANISM                            Δ MEALS   Δ PTS      standalone
                                                   L / U    L / U        upper
@@ -395,271 +404,623 @@ COVERAGE TRACK
            TYPED:mass_present_but_not_read       1 /  5   0.5 /  2.3      1.8
            IDENTITY:distinct_refused             0 /  3   0.0 /  1.4      1.4
 
-         ⛔ SEVERAL MARGINALS EXCEED THEIR OWN STANDALONE CEILING, which is the
-         whole reason this had to be run rather than inferred: identity is worth
-         18.5 AFTER P17 versus 16.7 alone. Meals carrying two blockers are
-         recovered by NEITHER mechanism singly and by the PAIR — so subtracting
-         two independently-measured columns would have understated the second
-         tranche and could have ranked it wrongly.
+         Several marginals exceed their standalone ceilings because two-blocker
+         meals are recovered by the pair, not by either isolated flip. Identity
+         remains the strongest likely second tranche, but **it is a contingency,
+         not a precommitment**. Only cacheability is tight at both bounds (+3.2).
 
-         ⚠ AND ONLY CACHEABILITY IS CERTAIN. It is tight (0.5 / 0.5 flip
-         identical), so its +3.2 holds at BOTH bounds. Every other contingency
-         is worth nothing at the floor, because those mechanisms deliver
-         evidence only in their optimistic reading
-2. P17   AUTHORITATIVE SERVING-BASIS CONSUMPTION — selected by the measurement.
+2. P17   🟡 ACTIVE — AUTHORITATIVE SERVING-BASIS CONSUMPTION.
 
-         ⛔⛔ THE ARCHITECTURE DECISION IS CLOSED, AND IT IS NOT "BUILD A SERVING
-         ARCHITECTURE". ServingBasis, BasisConversion, the scaling engine, typed
-         quantity semantics and the evidence ladder ALREADY EXIST. P17 ACTIVATES
-         them across canonical pricing. Do NOT define ServingEvidence,
-         PerFraction, ServingRung or any parallel quantity hierarchy.
+         THE ARCHITECTURE DECISION IS CLOSED:
+           · authority and serving basis remain independent axes
+           · coverage and pricing share one scaling resolver
+           · heuristic normalized mass may produce an ESTIMATE but never
+             evidence-backed canonical ownership
+           · an unsourced conversion may scale for ESTIMATE but never makes
+             `can_scale(authoritative_only=True)` true
+           · user-stated exact quantity outranks sourced conversion
+           · direct compatible authoritative basis outranks conversion
+           · sourced ConversionEvidence outranks heuristic mass
+           · provider identity never grants authority
+           · synthesized web evidence never prices
 
-         TWO AXES, AND THEY ARE NEVER COLLAPSED INTO ONE ENUM
-           MEMORY · PRODUCT · ARTIFACT · ESTIMATE    where the nutrition CAME FROM
-           COUNT · PIECE · STANDARD_SERVING ·        what amount those numbers
-           PACKAGE · FRACTION  + BasisConversion     DESCRIBE, and how that
-                                                     reconciles with what was eaten
+         LANDED:
+           ✅ P17a/b       basis-aware evidence-backed pricing contract
+           ✅ P17b.1      count must count the source's unit
+           ✅ P17b.2      one unit authority / one conversion engine
+           ✅ P17-SA      provider / authority contract
+           ✅ P17c.1      one `resolve_scaling`; `can_scale` is the same call
+                          asked as yes/no                         89e606d
+           ✅ P17c.2      quantity-authority precedence; real-normalizer twins;
+                          plural/canonical unit identity; panel provenance;
+                          authoritative eligibility separated from estimate
+                          scalability                             0dcc1f8
 
-         An evidence-backed rung may settle a count-only quantity ONLY when it
-         carries one of:
-           A. direct authoritative nutrition on a COMPATIBLE serving basis, or
-           B. a SOURCED deterministic conversion into another authoritative basis
-         FRACTION never prices independently — it modifies an EVIDENCED parent.
-         PRODUCT is ONE serving-evidence producer, not the serving architecture;
-         generic structured measure evidence feeds the same contract.
-         assemble() stays LOAD-NEVER-BUILD: local, retrieval-free, model-free.
-         The model may read "two big eggs" -> count 2, size large. It may NEVER
-         establish that a large egg is 50 g.
+           ✅ P17c.3a     durable source-snapshot identity BEFORE hydration.
+                          No placeholder version reached a durable record.
+                                                                  c406e87
 
-         ⛔ COVERAGE AND PRICING SHARE ONE BASIS-COMPATIBILITY PRIMITIVE, or the
-         predicate and the pricer drift — the exact defect the has_mass rule was
-         written to prevent. `decide()` must ask whether a local authoritative
-         path is actually SCALABLE, never merely whether a basis field exists.
+         ⭐ WHAT THE PROVIDER ACTUALLY EXPOSES, PROBED NOT ASSUMED. Before the
+         contract was written, `/food/{id}?format=full` was inspected:
 
-         ⛔ A model-generated piece weight, serving size, package relationship or
-         gram conversion NEVER grants canonical authority.
+             dataType           'SR Legacy'
+             publicationDate    '4/1/2019'      <- a real record version
+             foodPortions[].id  83012           <- stable per-portion identity
+             release version    ABSENT from the record entirely
 
-         ACCEPTANCE: a formerly count-only meal reaches an authoritative
-         canonical nutrition value WITHOUT estimate authority, guessed serving
-         mass, heuristic conversion, provider access at settlement, or legacy
-         ownership.
+         So the FDC release CANNOT be read from the record. `--fdc-release` is
+         required with no default, an absent version yields NO authoritative
+         conversion, and `immutable_within_version` is claimed only once the
+         version it refers to is named. `record_key` is `fdc_id#portion:<id>`,
+         because an fdc_id names a FOOD and a food states several portions —
+         "1 large" is not "1 cup".
 
-         ⚠ +24.8 IS THE COUNTERFACTUAL CEILING, NOT A FORECAST — and it FELL
-         from 36.5 when the bucket was split, because a third of what P17 was
-         credited with belongs to the unit parser. Expect +12.2 .. +24.8.
+         ⚠ AND THE IMMUTABILITY CLAIM IS NOT UNIFORM ACROSS DATA TYPES. SR
+         Legacy is FINAL, so `immutable_within_version=True` is genuinely
+         defensible there; Foundation updates periodically and Branded monthly,
+         so the same assertion is weaker for them. The committed artifact is
+         121 SR Legacy + 3 Foundation + ZERO Branded, which is why the claim
+         holds for almost all of it today — and why P17d cannot source exact
+         products from this artifact at all.
 
-         ⛔ P17 ALONE NO LONGER GUARANTEES REACHING THE 40% BAND *(corrected
-         08-17 — an earlier draft of this line said "reaches 40% at neither
-         bound", which contradicted its own arithmetic)*:
+         ⬅ IMMEDIATE NEXT INSIDE P17:
+           THEN P17c.3b USDA HYDRATION + ARTIFACT REBUILD.
+             - fetch authoritative serving measures at BUILD time only
+             - expected population from the dry run: 124 candidates / about
+               259 portion records; re-measure rather than assuming this count
+             - write source identity on every committed measure
+             - artifact must remain load-only at settlement
 
-             floor    20.3 + 12.2 = 32.5%    short of the band
-             ceiling  20.3 + 24.8 = 45.1%    across it
+           THEN P17d EXACT PRODUCT PRODUCER.
+             - barcode / GTIN / already-bound stable product_variant_id only
+             - no fuzzy OFF/name/model confidence may construct PRODUCT
+             - direct per-unit label basis stays direct; do not route through
+               grams merely because grams are available
 
-         So NO SECOND TRANCHE IS PRECOMMITTED. A second mechanism is RANKED as a
-         contingency, to be reached for only if measured P17 ownership lands
-         under 40%. Do not interrupt P17 to start one.
-         Method and commit order: §P17 immediately below this board.
-3.       RE-MEASURE on p16b_0817, THE IDENTICAL 232 MEALS. The delta is then
-         attributable SOLELY to P17:
-             P16b baseline  ->  P17 on the same population  ->  delta
-4.       RE-MEASURE current rolling production, SEPARATELY. 3 and 4 together are
-         what separate a real gain from a drift in what people happened to eat.
-         A single rolling re-measurement cannot tell those apart
-5.       attack the next largest measured mechanism. Likely
-         IDENTITY:no_resolution_row (48, second-largest) — but 3 and 4 decide
-6.       repeat until the ownership threshold is crossed
+           THEN P17e PACKAGE + FRACTION through conversion DATA.
+           THEN P17f persist dual nutrition + basis/conversion provenance.
+           THEN P17g change the eligibility predicate LAST.
+           THEN P17h positive twins + mandatory mutation twins.
+
+         ⛔ +24.8 IS A COUNTERFACTUAL CEILING, NOT A FORECAST:
+             floor    20.3 + 12.2 = 32.5%
+             ceiling  20.3 + 24.8 = 45.1%
+         P17 therefore may cross 40% but does not guarantee it.
+
+3.       RE-MEASURE `p16b_0817`, THE IDENTICAL 232 MEALS, after P17g/P17h.
+         The delta is attributable to P17 only:
+             baseline -> P17 on same population -> delta
+
+4.       RUN THE P17 DEPLOYMENT CANARY WITHOUT WAITING FOR ORGANIC VOLUME.
+         First SHADOW the new authoritative path, then consume for user 26 only.
+         Prove:
+             path actually executed — a quiet canary is not evidence
+             current decision vs P17 decision recorded
+             rung + nutrition evidence + basis/conversion evidence recorded
+             resolved amount / scaling factor explain every numerical delta
+             no provider/model call occurs at settlement
+             canonical write happens exactly once
+             ledger/day totals/presentation agree
+             latency acceptable
+             refusal twins remain refusals
+             rollback stops P17 consumption without corrupting shadow evidence
+
+         PREREGISTERED live/synthetic examples should include:
+             2 eggs · 3 large eggs · 100 g eggs
+             direct per-bar product basis
+             count with mismatching unit
+             unsourced conversion
+             1 bottle / half bottle after P17e
+             100 g chicken · 6 oz salmon regression twins
+         Exact branded/flavor clarification is NOT smuggled into this canary;
+         P17d proves exact PRODUCT consumption, not product-family ambiguity.
+
+5.       RE-MEASURE current rolling production SEPARATELY. Frozen-population
+         movement proves the mechanism; rolling production proves relevance to
+         what users are eating now.
+
+6.       IF ownership remains under 40%, attack the next largest CONDITIONAL
+         marginal measured after P17. Identity is the current likely winner
+         (+18.5 ceiling after P17), but steps 3–5 decide. Do not add standalone
+         ceilings.
+
+7.       repeat measure -> tranche -> canary until the ownership threshold is
+         crossed.
 
 ORDERED PRODUCT-CORRECTNESS TRACK — parallel to coverage; touches nothing frozen
-A. B-1.7b  MATERIALITY   should Arnie ask about the oil/preparation AT ALL?
-                         Needs NO coverage argument — it changes WHEN the
-                         product asks, not what it can price. May start now
-B. B-1.7a  OILS          if added fat matters, can Arnie identify and price it?
-                         MOVED BACK from the head of the roadmap 2026-08-17:
-                         it is the deciding rung on 1.9% of real food — a
-                         capability under materiality's policy, not a milestone
-C. B-1.7c  COMPOSITION   chicken + olive oil = chicken contribution + oil
-                         contribution. Depends on B
+A. B-1.7b  MATERIALITY   should Arnie ask about preparation/added fat AT ALL?
+                         May proceed in parallel because it changes when the
+                         product asks, not which coverage tranche is selected.
+B. B-1.7a  OILS          if added fat matters, identify a real fat entity;
+                         never add a calorie multiplier.
+C. B-1.7c  COMPOSITION   chicken + olive oil = two canonical contributions.
+                         Depends on B.
 
-INDEPENDENT REPAIR TRACK — parallel to both; independent of both
-D. B-1.8   CANONICAL CORRECTION / REPAIR. "Actually that was 8 oz" is KNOWINGLY
-           broken on canonical meals. The ownership firewall is CORRECT; the
-           defect is real, and PARKED is not CLOSED.
-           ⭐ IT SCALES WITH THE COVERAGE TRACK'S SUCCESS — the firewall breaks
-           correction on precisely the meals canonical wins, so 1–6 going well
-           makes this worse, never better.
-           ⛔ MUST CLOSE BEFORE ANY COHORT EXPANSION
+INDEPENDENT REPAIR TRACK — parallel to both
+D. B-1.8   CANONICAL CORRECTION / REPAIR.
+           Must handle more than amount corrections:
+             "actually that was 8 oz"
+             "actually it was 3 eggs"
+             "actually it was the Elite one"
+             "actually it was Cookies & Cream"
+           Corrections bind to the canonical event, reuse persisted nutrition
+           and conversion evidence where still applicable, reprice
+           deterministically, and write a ledger mutation.
+           ⛔ MUST CLOSE BEFORE ANY COHORT EXPANSION.
 
 ROLLOUT GATE — expansion beyond user 26 requires BOTH
            ownership >= 40%                       (bands: §ROLLOUT below)
            AND
            B-1.8 canonical repair CLOSED
-⛔ CROSSING AN OWNERSHIP THRESHOLD DOES NOT ITSELF AUTHORIZE EXPANSION. 40% makes
-   Arnie coverage-ELIGIBLE. The correctness clock decides whether it is ready.
+⛔ Crossing an ownership threshold does not itself authorize expansion.
+
+PRODUCT-COMPLETENESS GATE BEFORE B-2
+           SINGLE-ITEM PRODUCT_VARIANT binding must be canonical and
+           production-proven before B-2 composes several product ambiguities.
+           This is a destination gate, NOT a command to interrupt P17 or the
+           measured post-P17 tranche.
+           Current canonical primitives already include
+           `ClarificationAttribute.PRODUCT_VARIANT` and
+           `SelectProductVariant`; the nutrition field registry still needs a
+           real PRODUCT_VARIANT registration/producer before this capability
+           may be called canonical.
 
 AFTER SINGLE-ITEM / DEPENDENT SEMANTICS ARE PRODUCTION-PROVEN
-           B-2       messy / multi-food
-           PROMOTE   canonical broadly
-           DELETE    the legacy food system
-           C         conversation / one voice
-           D         personalization / memory
-           E         coaching intelligence
-           F         proactive agency
+           B-2       messy / multi-food — compose independent event-bound
+                     quantity / preparation / product-variant fields
+           PROMOTE   canonical broadly, only through rollout gates
+           DELETE    legacy food system after canonical promotion is proven
+           C         conversation / one voice — render structured unresolved
+                     state naturally; never derive semantics from prose
+           D         personalization / memory — rank/shorten clarification;
+                     never supply unstated product identity as fact
+           E         coaching intelligence — consume settled canonical truth
+           F         proactive agency — decide when to speak / stay silent
 
 PARALLEL SESSIONS -> docs/HANDOFF_PARALLEL_SESSION_0817.md (how, not what)
 
 DO NOT
            loosen canonical eligibility
-           reintroduce heuristics
-           let a GUESSED serving size grant canonical authority — a basis
-                without evidence is a heuristic wearing a unit
+           reintroduce heuristic authority
+           let a guessed serving size/piece weight/package relation grant
+                MEMORY / PRODUCT / ARTIFACT ownership
+           let an unsourced conversion make `can_scale` authoritative
+           stamp placeholder dataset versions into durable evidence
+           assert source immutability without a source/version contract that
+                actually guarantees it
+           turn OFF/USDA/WEB into authority rungs
+           let synthesized web evidence price
            reopen legacy authority
            weaken the correction firewall
-           change rollout thresholds because a new measurement disappointed
-           widen solely because the ownership number crossed a band
-           widen the cohort merely because P12 passed
-           sequence by feature name; sequence by measured mechanism
-           quote a coverage number without its predicate commit
+           change rollout thresholds because a measurement disappointed
+           widen solely because ownership crossed a band
+           widen because the original P12 canary passed
+           sequence by feature name; sequence coverage by measured mechanism
+           quote a coverage number without its predicate commit/population
 ```
 
-### ⏭ §P17 — THE COMMIT ORDER *(Danny, 2026-08-17, on the code read)*
+### ⏭ §P17 — METHOD AND CURRENT SUBPHASE STATUS *(reconciled 2026-08-17 @ `c406e87`)*
 
-> This is METHOD for the tranche §NEXT selected. §NEXT still owns the ordering
-> of the program; this owns the ordering *within* P17.
+> **PLACEMENT RULE.** This section is METHOD for the tranche selected by §NEXT.
+> It may describe how P17 closes; it does not select the program's next tranche
+> after P17. §NEXT remains the only executable sequencing board.
 
-⛔⛔ **THE DEFECT IS AN INVERSION, AND IT IS ALREADY MEASURED IN THE SOURCE.**
-`serving_grams` appears exactly ONCE in this repository — its own declaration on
-`ProductEvidence` — never written, never read, never tested. `ProductEvidence`
-itself is constructed only in tests. And the pricing loop reads:
+### P17 invariants now frozen
 
 ```text
-EVIDENCE-BACKED                              ESTIMATE
-MEMORY / PRODUCT / ARTIFACT                  (no authority)
-        │                                        │
-        ▼                                        ▼
-   ALWAYS Per100g()                     may use PerServing(...)
+AUTHORITY AXIS
+    MEMORY · PRODUCT · ARTIFACT · ESTIMATE
+    answers WHY nutrition may be used
+
+BASIS / CONVERSION AXIS
+    COUNT · PIECE · STANDARD_SERVING · PACKAGE · FRACTION
+    + ConversionEvidence
+    answers WHAT amount the nutrition describes and HOW it reconciles with intake
+
+QUANTITY PRECEDENCE
+    1  USER-STATED EXACT QUANTITY
+    2  DIRECT COMPATIBLE AUTHORITATIVE BASIS
+    3  SOURCED ConversionEvidence
+    4  HEURISTIC NORMALIZED MASS
+       -> may support ESTIMATE; NEVER evidence-backed canonical ownership
 ```
 
-**The one rung with no evidence authority is the only one that can express a
-serving basis.** That is why a count-only portion is priceable today only by
-guessing, which `decide()` correctly refuses — and it is the whole 12.6 .. 36.5
-band, stated structurally.
+`mass_is_exact` is the existing discriminator for the first class:
+`mass_conversion | volume_conversion` are exact; `piece_weight | ontology |
+vessel` are not. Do not invent a second authority classifier.
+
+`resolve_scaling(...)` is the one place a consumed quantity meets a source
+basis. `price()` consumes the resolution; `can_scale()` asks the same resolver
+whether an **authoritative** resolution exists. There is no second eligibility
+implementation.
+
+The real-normalizer twins are load-bearing:
+- `"2 eggs"` may arrive with heuristic `grams=100`; a sourced `56 g / egg`
+  conversion must produce **112 g**, not preserve the heuristic 100
+- `"100 g eggs"` remains **100 g**; a sourced per-egg conversion may not
+  reinterpret a user-stated exact mass
+- an unsourced measure may produce a numeric ESTIMATE path but may not make
+  canonical eligibility true
+- unit matching uses canonical/user unit semantics before raw `unit_label`, and
+  singularizes real production forms (`eggs` vs `large egg`)
+
+### P17 status
 
 ```text
-P17a  ACTIVATE THE BASIS CONTRACT IN THE PRICER — no behaviour change.
-      Each rung builder hands price() what its evidence DESCRIBES:
-          profile · rung · nutrition_evidence_id · source_basis ·
-          basis_evidence · raw_values
-      Replace `if rung is ESTIMATE: PerServing else: Per100g` with
-      `scale_profile(profile, source_basis, consumed)`.
-      Migration mapping, explicit: MEMORY->Per100g · ARTIFACT->Per100g ·
-      PRODUCT->whatever its evidence states · ESTIMATE->current basis.
-      ⛔ NO `source_basis or Per100g()` FALLBACK FOR NEW EVIDENCE. Existing
-         evidence is explicitly ADAPTED; missing basis on new evidence FAILS
-         CLOSED, or "missing metadata" silently comes to mean "per 100 g".
-      Suite must stay behaviourally byte-for-byte equivalent.
-
-P17b  PROVE DIRECT EVIDENCE-BACKED SERVING PRICING, on synthetic evidence only,
-      BEFORE any retrieval exists: PRODUCT per-bar × 2 bars = exactly 2× ·
-      ARTIFACT per100g + sourced PIECE->grams × 2 pieces = correct amount.
-      Proves the contract independently of any producer.
-
-P17c  GENERIC STRUCTURED MEASURE PRODUCER — the highest-value producer for the
-      measured population (egg · banana · apple · potato · piece foods).
-      Sourced measures only. ⛔ `core/portions.py` priors are SANITY MACHINERY,
-      never canonical authority.
-
-P17-SA  ⛔⛔ THE SOURCE / AUTHORITY CONTRACT — FROZEN BEFORE P17d *(Danny,
-        2026-08-17)*, because P17d creates the first real PRODUCT producer and
-        the shape it lands in is the shape every later provider inherits.
-
-        PROVIDER AND CANONICAL AUTHORITY ARE INDEPENDENT AXES.
-
-            USDA · OFF · manufacturer web · restaurant web   WHERE a record
-                                                             was retrieved
-            MEMORY · PRODUCT · ARTIFACT · ESTIMATE           WHY nutrition is
-                                                             authorized
-
-        ⛔ THERE IS NO `USDA rung`, NO `OFF rung`, NO `WEB rung`, and adding one
-        would collapse two axes that must stay apart — exactly as `rung` and
-        `ServingBasis` must. One provider may produce several claim classes;
-        several providers may feed one authority class.
-
-        1. NO PROVIDER RECEIVES AUTHORITY BECAUSE OF ITS NAME. Authority is
-           assigned by deterministic policy over the CLAIM.
-        2. OFF IS A PRODUCT PRODUCER, NEVER A PRODUCT RUNG. An OFF record may
-           produce PRODUCT evidence ONLY when exact product identity is
-           mechanically established — GTIN / barcode, or an already-bound exact
-           product_variant_id. ⛔ Provider match labels, string similarity and
-           model confidence establish NOTHING: OFF once called an unrelated
-           chicken pizza `_match: "exact"`.
-        3. USDA IS A PROVIDER, NOT A SYNONYM FOR ARTIFACT. Qualified structured
-           generic-food records ordinarily feed ARTIFACT, and a different
-           structured database must be able to feed it too without inventing a
-           rung. A USDA branded row with mechanically exact identity could
-           support PRODUCT if policy permits — provider does not predetermine.
-        4. ⛔⛔ SYNTHESIZED WEB EVIDENCE NEVER PRICES. `evidence_type =
-           synthesized_text` may support semantic claims, materiality,
-           clarification and candidate DISCOVERY. It may never become PRODUCT or
-           ARTIFACT nutrition authority, however credible the page looks. A
-           synthesis is not re-derivable, and pricing must be reproducible.
-        5. WEB MAY DISCOVER AN ATTRIBUTABLE STRUCTURED SOURCE. If a manufacturer
-           or first-party restaurant record independently satisfies canonical
-           policy — exact item identity, first-party source, nutrition stated
-           directly, basis stated, attributable, reproducible — then THE SOURCE
-           RECORD may price. The synthesis that found it may not; discovery is
-           not authority.
-        6. THE SEMANTIC RESOLVER MAY CLASSIFY WHAT A RECORD MEANS. It may never
-           decide that a record is authoritative enough to price. CODE DECIDES
-           AUTHORITY — the boundary `semantic_evidence` already holds.
-
-        ⭐ WHY THIS IS FROZEN NOW AND NOT AFTER: P17g's predicate has to ask
-        "does a local AUTHORITATIVE scalable path exist". If provider and
-        authority are still tangled when that lands, the predicate will be
-        written around whichever providers happen to exist rather than around
-        the evidence contract, and every later provider will fight it.
-
-P17d  EXACT PRODUCT PRODUCER — replace `"product": None`. Barcode / GTIN /
-      stable variant id ONLY. No fuzzy name match may construct PRODUCT;
-      `_match: "exact"` once said so about a pizza.
-      ⭐ AND DO NOT ROUTE THROUGH GRAMS BECAUSE GRAMS EXIST. If the label says
-      1 bar = 200 kcal and the user said 1 bar, the authoritative path is 1×200,
-      not bar->55 g->per100g->55 g.
-
-P17e  PACKAGE + FRACTION, through BasisConversion as DATA — never a branch in
-      scale_profile(). 1 bottle = 2 servings · half bottle = 1 serving ·
-      half bar = 0.5 bar.
-
-P17f  DUAL PROVENANCE ON THE ROW: rung · nutrition_evidence_id · source_basis ·
-      basis_evidence_id · conversion_evidence_ids · source_amount · source_unit ·
-      scaling_factor. USDA NUTRITION AND A USDA PIECE WEIGHT ARE TWO CLAIMS, and
-      B-1.8 needs both to reprice "actually that was 3 eggs" deterministically
-      rather than rediscover the nutrition.
-
-P17g  THE PREDICATE, LAST. ItemFacts and decide() admit a count-only food only
-      when a local authoritative SCALABLE path exists — asked through the SAME
-      primitive the pricer uses (`resolve_scaling_factor` -> resolution or
-      ScalingRefused; `can_scale` is that call in a try). Freeze manifest edited
-      IN THIS COMMIT: deliberate change plus freeze update is the contract;
-      silent structural drift is what is prohibited.
-
-P17h  MUTATION TWINS, MANDATORY RED
-      delete basis evidence · replace a sourced conversion with a model guess ·
-      change the egg unit to slice · use a whole-roll basis for one piece ·
-      ignore package->servings · allow FRACTION with no parent basis · let a
-      missing basis default to Per100g · let a fuzzy product build PRODUCT
-      POSITIVE TWINS
-      2 eggs · 1 medium banana · 2 large eggs · 1 Barebells bar · half a
-      Barebells bar · 1 Fairlife bottle · half a Fairlife bottle ·
-      100 g chicken · 6 oz salmon   <- the last two prove the MASS paths did
-      not regress
+P17a     ✅ basis-aware rung contract active
+P17b     ✅ direct evidence-backed serving pricing proven
+P17b.1   ✅ source unit identity carried and enforced            d540467
+P17b.2   ✅ one unit authority / one conversion engine           672efc4
+P17-SA   ✅ provider / canonical-authority axes frozen           7a74bf1
+P17c.1   ✅ one scaling resolver; `can_scale` shares it          89e606d
+P17c.2   ✅ authoritative precedence + real-normalizer twins     0dcc1f8
+P17c.3a  ✅ durable source-snapshot identity, no placeholder    c406e87
+P17c.3b  ⬅ OPEN — USDA hydrate; needs an explicit FDC release
+P17d     ◻ exact PRODUCT producer
+P17e     ◻ package + fraction
+P17f     ◻ persisted dual provenance
+P17g     ◻ eligibility predicate LAST
+P17h     ◻ mutation + positive twins
 ```
 
-⛔ **AND A COMPATIBILITY CHECK IS NOT A COUNT CHECK.** `2 pieces of sushi roll`
-against evidence for `1 whole roll = 460 kcal` must not become `2 × 460`. A
-serving basis needs identity enough to prove the user's counted entity IS the
-evidence's counted entity — unit id, subject entity, optional product variant.
-Reuse `ServingBasis` if it already carries that; extend it if not. **Do not add
-a sibling type merely to carry identity.**
+### ⭐ MEASURED FACTS AND TRAPS THIS TRANCHE ALREADY HIT *(added 2026-08-17 @ `c406e87`)*
+
+Four things the sections below anticipate in the abstract, now measured, plus
+two traps that are cheap to walk into and expensive to detect.
+
+```text
+HYDRATION SIZE, MEASURED RATHER THAN ESTIMATED   (dry run, no write)
+    120 of 124 committed candidates yield a measure     259 portions
+    4 candidates yield NONE — a record may simply state no usable portion,
+      which is an absence to report, never a gap to fill with a default
+    artifact composition: 121 SR Legacy · 3 Foundation · ZERO Branded
+```
+
+⛔⛔ **P17d CANNOT SOURCE EXACT PRODUCTS FROM THIS ARTIFACT.** There is not one
+Branded row in it. That is not an argument for relaxing PRODUCT admission — it
+is the measured reason OFF (or another exact-identity provider) is *required*
+for P17d rather than merely preferred, and it should be known before anyone
+tries to satisfy P17d from what is already committed.
+
+⛔⛔ **THE STEP-3 RE-MEASURE COMPARES TWO PREDICATES, AND THAT IS BY DESIGN —
+SAY SO OR IT BECOMES THE 36.9% FAILURE AGAIN.** The baseline 20.3% was taken at
+predicate `a747b56`; the post-P17 number will be taken after P17g has CHANGED
+`decide()`. The instrument executes the predicate, so the two figures are not
+the same instrument — which is exactly the discipline this document already
+requires, and exactly the shape of the failure that cost a day on 36.9%. The
+difference is that here the predicate change IS the tranche being measured. So
+the delta is legitimate, and publishing it **must name both predicate commits
+and the frozen population**, or a later reader will quote one number against the
+other as though the instrument had held still.
+
+⚠ **P17g'S REAL INTEGRATION RISK IS GATE B, NOT THE PREDICATE LOGIC.**
+`can_scale` needs the SOURCED MEASURES to answer authoritatively, and `look()`
+today performs LOCAL READS ONLY and returns booleans. Wiring the predicate to
+the resolver therefore means `look()` must obtain measures from already-loaded
+local evidence — never by reaching for the artifact loader mid-turn, and never
+by a provider call. The predicate is where a retrieval could quietly re-enter
+the settle path after `price()` was made synchronous specifically to forbid it.
+
+⭐ **AND THE CANARY NEED NOT RE-PROVE "no provider/model call at settlement".**
+`price()` is synchronous: there is no `await` in it, so no provider or model
+call can hide there. That is a structural guarantee, stronger than any observed
+run, and the canary's effort is better spent on the claims only production can
+settle — that the path EXECUTED, that refusal twins stayed refusals, and that
+rollback stops consumption without corrupting shadow evidence.
+
+⚠ **A UNIT MATCHER THAT CANNOT FOLD A PLURAL DISABLES THE WHOLE TRANCHE
+SILENTLY.** `unit_matches` appended an optional `s` to the search term only, so
+it matched `egg` inside `eggs` but not `eggs` against USDA's `large egg` — and
+production normalization yields `unit="eggs"`. Every real count would have
+failed to match while every synthetic test passed. This is the standing shape of
+the hazard: the capability looks landed, the gates are green, and it never fires
+once in production.
+
+### P17c.3a — durable source-snapshot identity BEFORE hydration
+
+⛔ `dataset_version="committed_artifact"` is a placeholder, not a source
+version. It may not be baked into authoritative `SourceReference`s.
+
+A durable source reference must make a later correction able to answer **which
+source facts were actually committed**, not merely which provider/key would be
+queried today.
+
+Required shape/consequences:
+
+```text
+dataset_id          provider dataset identity, e.g. usda_fdc
+dataset_version     meaningful provider release/snapshot identity when known
+record_key          provider record id, e.g. FDC id
+record_version      provider record version OR exact captured snapshot identity
+data_type           preserved as provider-structured metadata
+content fingerprint fingerprint of the exact normalized source facts committed
+```
+
+`SourceReference` already requires a `record_version` OR an
+`immutable_within_version` declaration. Therefore:
+
+- set `immutable_within_version=True` **only** when the underlying source/version
+  contract actually guarantees the record cannot change inside that version
+- if the live provider does not expose a trustworthy release/record version,
+  do **not invent one** and do not claim immutability; capture the exact build-time
+  record/snapshot and give that snapshot a durable version/fingerprint
+- same `record_key` observed under two distinct source snapshots must produce
+  distinguishable references
+- missing durable source identity means a conversion may not grant canonical
+  authority
+- nutrition evidence and serving/conversion evidence are separate claims even
+  when they came from the same provider record
+
+This is the last cheap point to settle the contract: the artifact is still
+unchanged. Hydrating first and correcting provenance second turns a dark-path
+contract edit into a data migration over every committed measure.
+
+### P17c.3b — USDA structured measure hydration
+
+Only after P17c.3a is green:
+
+- fetch `/food/{fdc_id}` detail at BUILD time, never settlement
+- preserve serving panel measures and `foodPortions`
+- carry provenance through both paths symmetrically
+- normalize every measure into the existing `ConversionEvidence` contract
+- rebuild the artifact only after the conversion representation is final
+- re-measure actual candidate/portion counts; the previous dry run observed
+  roughly 124 candidates / 259 portions, which is evidence about that run, not
+  a permanent constant
+
+`core/portions.py` piece weights remain sanity/estimate machinery. They do not
+become authority because USDA happened to agree with one of them.
+
+### P17-SA — source / authority contract *(FROZEN before P17d)*
+
+PROVIDER AND CANONICAL AUTHORITY ARE INDEPENDENT AXES.
+
+```text
+USDA · OFF · manufacturer web · restaurant web    WHERE a record was retrieved
+MEMORY · PRODUCT · ARTIFACT · ESTIMATE             WHY nutrition is authorized
+```
+
+1. **No provider receives authority because of its name.** Deterministic policy
+   assigns authority to a claim.
+2. **OFF is a PRODUCT producer, never a PRODUCT rung.** PRODUCT requires
+   mechanically exact identity: GTIN/barcode or an already-bound stable
+   `product_variant_id`. Provider `_match`, string similarity and model
+   confidence establish no such identity.
+3. **USDA is a provider, not a synonym for ARTIFACT.** Qualified structured
+   generic-food records ordinarily feed ARTIFACT; other structured providers
+   must be able to do the same without inventing new rungs.
+4. **`evidence_type=synthesized_text` never prices.** It may support semantic
+   classification, materiality, clarification or discovery.
+5. Web/search may discover an attributable first-party structured source. The
+   source may price if it independently satisfies canonical policy; the
+   synthesis that found it may not.
+6. The semantic resolver may classify what a record means. **Code decides
+   authority.**
+
+### P17d — exact PRODUCT producer
+
+Replace `"product": None` with a real producer, but keep the admission narrow:
+
+```text
+ALLOWED
+barcode / GTIN
+already-bound stable product_variant_id
+equivalent mechanically exact stable identifier
+
+NOT ALLOWED
+provider "_match"
+brand/name overlap
+fuzzy search rank
+model confidence
+user-history prior by itself
+```
+
+If a label says `1 bar = 200 kcal` and the user consumed one of that exact bar,
+the authoritative path is direct per-bar scaling. Do not route through grams
+merely because grams also exist.
+
+**P17d does NOT own product-family ambiguity.** `"Barebells bar"` with an
+unstated flavor is not exact PRODUCT merely because OFF returns plausible
+siblings. That belongs to canonical PRODUCT_VARIANT binding described in the
+placement section below.
+
+### P17e — PACKAGE + FRACTION
+
+Represent relationships as conversion data, never a new branch in
+`scale_profile()`:
+
+```text
+1 bottle = 2 servings
+half bottle = 1 serving
+half bar = 0.5 bar
+```
+
+FRACTION never prices independently; it modifies an evidenced parent.
+
+### P17f — persisted dual provenance
+
+Persist enough to deterministically replay a later repair:
+
+```text
+rung
+nutrition_evidence_id
+source_basis
+basis_evidence_id
+conversion_evidence_ids
+source_amount
+source_unit
+scaling_factor
+source snapshot/version/fingerprint
+```
+
+USDA nutrition and USDA `1 large egg = 56 g` are two claims. B-1.8 must be able
+to change 2 eggs -> 3 eggs by reusing those claims, not by rediscovering USDA.
+
+### P17g — predicate LAST
+
+Only after producers, provenance and scaling are settled may `ItemFacts` /
+`decide()` admit a count-only item when the **same scaling resolver used by
+pricing** says an authoritative local path exists.
+
+The predicate must not ask:
+- whether mass happens to be present
+- whether a basis field exists
+- whether a provider returned something
+- whether a heuristic can produce a number
+
+It asks: **can this authoritative evidence be scaled to this consumed quantity
+without retrieval, guessing or unsourced conversion?**
+
+The freeze manifest changes in the same commit as the intentional predicate
+change.
+
+### P17h — mandatory positive and mutation twins
+
+Positive:
+
+```text
+2 eggs
+2 large eggs
+source disagreement with piece-weight prior -> source wins
+100 g eggs -> user mass wins
+1 medium banana
+exact 1 Barebells bar
+half exact Barebells bar
+1 Fairlife bottle
+half Fairlife bottle
+100 g chicken
+6 oz salmon
+```
+
+Mandatory RED mutations:
+
+```text
+delete basis evidence
+remove conversion provenance
+replace sourced conversion with model/ontology guess
+restore placeholder dataset_version
+claim immutable source with no version contract
+change egg unit to slice
+use whole-roll basis for one sushi piece
+ignore package -> servings
+allow FRACTION with no evidenced parent
+default a missing new-evidence basis to Per100g
+let fuzzy product search construct PRODUCT
+make `can_scale` disagree with the pricer
+```
+
+### PRODUCT CAPABILITY PLACEMENT — NOT EXECUTABLE SEQUENCING
+
+This subsection says **where the final product behavior belongs**. It does not
+override §NEXT's measured order.
+
+#### Single-item PRODUCT_VARIANT binding — required before B-2
+
+The canonical vocabulary already contains `ClarificationAttribute.PRODUCT_VARIANT`
+and the typed patch `SelectProductVariant(entity_id, serving_id)`. The capability
+is **not complete merely because those types exist**: the nutrition semantic-field
+registry must actually register/produce PRODUCT_VARIANT and generated options
+must come from attributable structured product candidates.
+
+Target flow:
+
+```text
+"Barebells bar"
+      ↓
+canonical product family / unresolved variant
+      ↓
+structured candidate set for THIS event
+      ↓
+is the nutritional/semantic difference material enough to ask?
+      ↓
+YES -> PRODUCT_VARIANT clarification
+      ↓
+user selects/confirms
+      ↓
+SelectProductVariant(stable id)
+      ↓
+exact PRODUCT evidence may price
+```
+
+Flavor is only one variant dimension. The same field may distinguish:
+`flavor · formulation · product line · format · fat level · package/size`
+when those are genuinely different catalog products.
+
+Memory may rank or shorten the question:
+
+```text
+"Salty Peanut like usual, or a different one?"
+```
+
+but history may never silently turn `"Barebells bar"` into Salty Peanut.
+A prior reduces friction; it does not manufacture a user statement or exact
+PRODUCT authority.
+
+#### B-1.8 — corrections across the same typed fields
+
+Repair must support changing quantity, serving, identity and product variant.
+A correction targets the canonical event and replaces/recomputes the affected
+typed field using persisted evidence. It does not route the canonical row back
+through legacy mutation.
+
+#### B-2 — multi-food composition
+
+Only after the single-item fields are production-proven:
+
+```text
+"Barebells bar and a Fairlife shake"
+      ↓
+event A: PRODUCT_VARIANT unresolved
+event B: PRODUCT_VARIANT unresolved
+      ↓
+two independent candidate sets
+      ↓
+one operation / event-bound ClarificationGroups
+```
+
+Candidate sets, options and patches may never cross event boundaries. B-2
+**composes** single-item semantics; it must not invent a multi-food resolver.
+
+#### C — conversation / one voice
+
+C owns how the structured unresolved state is spoken/rendered:
+
+```text
+"Which ones — Salty Peanut or Caramel Cashew for the Barebells,
+and regular Core Power or Elite for the Fairlife?"
+```
+
+C does not decide what is unresolved, which candidate is authoritative, or what
+nutrition to use. Conversation is presentation over typed state.
+
+#### D — personalization / memory
+
+D uses history to rank likely answers, shorten questions and reduce
+clarifications-per-meal. It never turns an unstated variant/preparation/amount
+into settled fact merely because it is common for the user.
+
+#### E / F — intelligence and agency
+
+E coaches from settled canonical events and provenance. F decides when to act or
+stay silent. Neither may participate in canonical nutrition authority.
+
+### P17 CANARY / USER-SIDE EXPECTATION
+
+Before P17g, the user should see essentially no behavior change: the artifact
+is intentionally dark and unchanged.
+
+After P17 is complete, the expected user-side improvement is **less friction,
+not more UI**:
+- ordinary count foods resolve more often on the first message
+- fewer unnecessary quantity questions
+- fewer estimate/fallback paths
+- exact branded products use their label basis deterministically
+- incorrect/mismatched unit evidence still refuses
+
+Live proof stays on user 26 until the rollout gate moves. A canary must include
+successful cases **and refusals**, and it must prove the new mechanism executed;
+"no behavior changed" with zero P17 resolutions is a failed instrument, not a
+safe result.
 
 ### ⛔ THE ROLLOUT THRESHOLD — PREDETERMINED, SO "COVERAGE DECISION" STOPS BEING SUBJECTIVE
 
@@ -669,7 +1030,7 @@ time the number moves.
 
 ```text
 OWNERSHIP        COHORT PERMITTED
-< 40%            user 26 only                    <- WE ARE HERE (20.2%)
+< 40%            user 26 only        <- WE ARE HERE, baseline ~20.3%
 40 – 55%         controlled 1–5%
 55 – 70%         controlled 10–25%
 70% +            consider broad canonical promotion
