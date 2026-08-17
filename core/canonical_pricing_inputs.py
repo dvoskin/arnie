@@ -37,16 +37,13 @@ async def _address_has_one_authority(db, name_norm: str) -> bool:
     for anybody. Exact agreement, deliberately — a tolerance would be a
     threshold, and a threshold is where nutrition judgement gets smuggled in.
     """
-    from sqlalchemy import select
+    # ⭐ ONE DEFINITION, IN MEMORY'S OWN HOME. Both settlement owners must obey
+    # the same rule, so it lives beside the rows in `db.queries` rather than
+    # inside the canonical lane — legacy reading a canonical module would be
+    # the wrong dependency for a shared EVIDENCE invariant.
+    from db.queries import address_has_one_authority
 
-    from db.models import UserFoodMatch
-
-    rows = (await db.execute(
-        select(UserFoodMatch.cal_100, UserFoodMatch.protein_100,
-               UserFoodMatch.carbs_100, UserFoodMatch.fat_100)
-        .where(UserFoodMatch.name_norm == name_norm,
-               UserFoodMatch.cal_100.isnot(None)))).all()
-    return len({tuple(r) for r in rows}) <= 1
+    return await address_has_one_authority(db, name_norm)
 
 
 async def _memory(db, user_id: int, identity: str,

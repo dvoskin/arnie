@@ -126,3 +126,49 @@ def test_the_guard_reads_only_the_bindings_never_the_food():
     assert not numbers, (
         f"the guard carries magic numbers {numbers} — a tolerance is a "
         f"threshold, and a threshold is where nutrition judgement is smuggled in")
+
+
+# ══ CONTAINMENT: the rule binds BOTH owners ════════════════════════════════
+
+def test_the_legacy_pricer_consults_the_shared_admissibility_predicate():
+    """⛔⛔ DECLINING TO A KNOWN-UNSAFE OWNER REPRODUCED THE EXACT ERROR
+    CANONICAL PREVENTED. Measured 2026-08-16: canonical abstained on `cucumber`
+    (10 vs 179 kcal/100g) and routed the meal to legacy, which priced it from
+    the same corrupt address — 179 x 1.5 = 268 kcal for 150 g of cucumber.
+    Legacy still writes roughly half of all meals, so a guard on one lane is a
+    guard with a longer fuse.
+
+    ⭐ CONTAINMENT, NOT MIGRATION: legacy does not call canonical settlement or
+    learn identity. Its memory rung abstains and its OWN fallback continues.
+
+    Asserted structurally, because exercising `_analyze_food` end to end needs
+    a model and a provider."""
+    import ast
+    import inspect
+
+    import handlers.tool_executor as te
+
+    source = inspect.getsource(te)
+    tree = ast.parse(source)
+    called = {n.func.id for n in ast.walk(tree)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    assert "address_has_one_authority" in called, (
+        "the legacy pricer does not consult the shared admissibility "
+        "predicate — an ambiguous address it reads is still authoritative")
+
+    # And it must not have grown its own copy: one definition, in memory's home.
+    assert "def address_has_one_authority" not in source, (
+        "legacy defined its own admissibility rule — two definitions of "
+        "'can this address establish authority' is how they drift apart")
+
+
+def test_both_lanes_share_one_definition():
+    """The canonical rung and the legacy pricer must resolve to the SAME
+    function object, so a change to the rule cannot reach one lane only."""
+    import core.canonical_pricing_inputs as cpi
+    import db.queries as q
+
+    assert hasattr(q, "address_has_one_authority")
+    source = __import__("inspect").getsource(cpi._address_has_one_authority)
+    assert "from db.queries import address_has_one_authority" in source, (
+        "canonical no longer delegates to the shared definition")

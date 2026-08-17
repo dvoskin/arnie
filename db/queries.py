@@ -3345,6 +3345,38 @@ def is_premium(user) -> bool:
 
 # ── Recurring food memory (USDA matches per user) ──────────────────────────────
 
+async def address_has_one_authority(db: AsyncSession, name_norm: str) -> bool:
+    """Can this normalized address establish a SINGLE source authority?
+
+    ⛔⛔ AMBIGUOUS HISTORICAL MEMORY IS NEVER AUTHORITATIVE, REGARDLESS OF WHICH
+    SETTLEMENT OWNER READS IT *(Danny, 2026-08-16)*. `user_food_matches` records
+    no canonical identity — a row is keyed by a lossy surface normalization, so
+    it is evidence about a STRING. Measured fleet-wide: 28 addresses are bound
+    to more than one set of per-100g numbers.
+
+    ⭐ IT LIVES HERE, BESIDE THE ROWS, BECAUSE BOTH LANES MUST OBEY IT. The
+    canonical rung already abstained on `cucumber` (10 vs 179 kcal/100g) — and
+    then LEGACY priced the same meal from the same corrupt address at 179 x 1.5
+    = 268 kcal for 150 g. Declining to a known-unsafe owner reproduced the exact
+    error canonical had just prevented, and legacy still writes ~52% of meals.
+    A guard on one lane is a guard with a longer fuse — the same argument
+    `get_user_food_match` makes below for the letterless-key rule.
+    
+    ⚠ AGREEMENT, NOT PLAUSIBILITY. Bindings asserting the SAME numbers are one
+    authority re-cached; different numbers are competing ones. Exact agreement,
+    no tolerance — a threshold is where nutrition judgement gets smuggled in.
+    This reads no food name, no user, and no calorie range.
+    """
+    from db.models import UserFoodMatch
+
+    rows = (await db.execute(
+        select(UserFoodMatch.cal_100, UserFoodMatch.protein_100,
+               UserFoodMatch.carbs_100, UserFoodMatch.fat_100)
+        .where(UserFoodMatch.name_norm == name_norm,
+               UserFoodMatch.cal_100.isnot(None)))).all()
+    return len({tuple(r) for r in rows}) <= 1
+
+
 async def get_user_food_match(db: AsyncSession, user_id: int, name_norm: str):
     """Fetch a user's stored match for a normalized food name, if any.
 

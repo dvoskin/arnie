@@ -2607,6 +2607,34 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
         with _stage("pricing.memory"):
             m = (await get_user_food_match(db, user.id, name_norm)
                  if (name_norm and not generic) else None)
+        # ⛔⛔ AMBIGUOUS HISTORICAL MEMORY IS NEVER AUTHORITATIVE, WHICHEVER
+        # OWNER READS IT *(Danny, 2026-08-16)*.
+        #
+        # The canonical rung already abstains on an address whose bindings
+        # disagree. Measured in production the same day: canonical DECLINED
+        # `cucumber` (10 vs 179 kcal/100g) and routed the meal to legacy —
+        # which then priced it from the same corrupt address, 179 x 1.5 = 268
+        # kcal for 150 g of cucumber. **Declining to a known-unsafe owner
+        # reproduced the exact error canonical had just prevented**, and legacy
+        # still writes roughly half of all meals.
+        #
+        # ⭐ THIS IS CONTAINMENT, NOT MIGRATION. Legacy does not call canonical
+        # settlement, learn identity, or change owners. Its memory rung simply
+        # abstains on an address that cannot establish authority, and its own
+        # existing fallback (USDA / web / estimate) continues exactly as it
+        # does for a cache miss — the branch immediately below already handles
+        # `m` being None, which is why this is safe to place here.
+        #
+        # ⚠ NO CALORIE PLAUSIBILITY, NO FOOD NAMES, NO EXCEPTIONS. The test is
+        # agreement between bindings and nothing else.
+        if m is not None:
+            from db.queries import address_has_one_authority
+            if not await address_has_one_authority(db, name_norm):
+                logger.info(
+                    "event=legacy_memory_inadmissible key=%r reason="
+                    "ambiguous_address — competing authorities for this "
+                    "surface key; falling through to retrieval", name_norm)
+                m = None
         # Staleness horizon: a cached match the user hasn't logged in ~90 days
         # may describe a reformulated product or a different brand behind the
         # same name. Skip it (user-confirmed rows never expire) and fall
