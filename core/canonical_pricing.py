@@ -245,16 +245,77 @@ def _profile(per100g: dict, *, source: str, source_id: str,
         **{k: v for k, v in (per100g or {}).items()})
 
 
+# ══ P17a — THE RUNG DECLARES WHAT ITS EVIDENCE DESCRIBES ════════════════════
+#
+# ⛔⛔ THE DEFECT WAS AN INVERSION, AND IT WAS STRUCTURAL. `price()` used to
+# decide the basis by asking WHICH RUNG it was holding:
+#
+#       if rung is ESTIMATE:  PerServing(...)      <- no evidence authority
+#       else:                 Per100g()            <- all three evidence rungs
+#
+# So the ONE rung that may not price at zero, and whose numbers are a model's,
+# was the only rung that could express a serving basis — while MEMORY, PRODUCT
+# and ARTIFACT were forced through per-100 g and could not price a count at all.
+# `ProductEvidence.serving_grams` existed for exactly this and was DEAD: one
+# occurrence in the whole repository, its own declaration.
+#
+# That is why "2 eggs" was priceable only by GUESSING, which `decide()` then
+# correctly refused — the 12.6 .. 36.5 recoverable-ownership band P16b measured,
+# stated as source.
+#
+# ⭐ SO THE BUILDER DECLARES THE BASIS, AND THE PRICER JUST SCALES. Authority
+# ("who supplied the nutrition") and basis ("what amount do these numbers
+# describe") are two axes, and this is where they stop being one.
+#
+# ⛔ A `basis or Per100g()` FALLBACK IS FORBIDDEN FOR NEW EVIDENCE. Every rung
+# below states its basis EXPLICITLY — the migration adapts existing evidence
+# rather than defaulting it, because a default makes "missing metadata" silently
+# mean "per 100 g", and per-100 g is exactly the assumption that has to stop
+# being free.
+
+#: Basis type -> the `basis` recorded on PricedFood. Keyed by class NAME so this
+#: needs no import at module scope, where `skills.nutrition` is deliberately not
+#: reachable.
+_BASIS_NAMES = {"Per100g": "per_100g", "Per100ml": "per_100ml",
+                "PerServing": "per_serving", "PerUnit": "per_unit"}
+
+
+def _basis_name(source_basis) -> str:
+    """What the row will say it scaled FROM. `None` means it scaled from
+    nothing — the evidence was already a statement about the portion eaten."""
+    return _BASIS_NAMES.get(type(source_basis).__name__, "per_portion")
+
+
 def _from_memory(ev: MemoryEvidence):
+    from skills.nutrition.scaling import Per100g
+
+    # `user_food_matches` stores per-100 g and nothing else. Stated, not defaulted.
     return (_profile(ev.per100g, source="memory", source_id=ev.source_id,
                      confidence=ev.confidence, estimated=False),
-            Rung.MEMORY, ev.source_id or "memory", dict(ev.per100g or {}))
+            Rung.MEMORY, ev.source_id or "memory", dict(ev.per100g or {}),
+            Per100g())
 
 
 def _from_product(ev: ProductEvidence):
+    """⛔⛔ `serving_grams` IS A CONVERSION INPUT, NOT A NUTRITION BASIS — and
+    the first draft of P17a got this wrong in a way worth recording.
+
+    `ProductEvidence.per100g` holds numbers PER 100 G. Declaring
+    `PerServing(serving_mass_g=55)` over them reads "these numbers describe one
+    serving", so two bars would scale 364 kcal/100 g by a factor of 2 and commit
+    728 kcal where the label says 400. The basis must describe THE NUMBERS
+    ALONGSIDE IT, never merely a fact that happens to be true about the food.
+
+    So PRODUCT declares per-100 g here, matching its only nutrition field, and
+    `serving_grams` stays unused until P17d gives this rung evidence whose
+    NUMBERS are per serving. That is the honest no-op: P17a moves the basis
+    DECISION out of the pricer, and does not invent a basis nothing produces.
+    """
+    from skills.nutrition.scaling import Per100g
+
     return (_profile(ev.per100g, source="product", source_id=ev.identifier,
                      confidence=0.95, estimated=False),
-            Rung.PRODUCT, ev.identifier, dict(ev.per100g or {}))
+            Rung.PRODUCT, ev.identifier, dict(ev.per100g or {}), Per100g())
 
 
 class IdentityCompositionFailed(Exception):
@@ -352,9 +413,16 @@ def _from_artifact(ev: ArtifactEvidence, *, query: str):
                        winner.get("fdc_id"))
         return None
     fdc = str(winner.get("fdc_id") or "")
+    # ⚠ PER-100 G BECAUSE THE ARTIFACT'S `per100g` KEY SAYS SO, not by default.
+    # When P17c lands sourced PIECE->grams measures beside these candidates,
+    # THIS is the line that starts returning a PerUnit/PerServing basis — and
+    # `price()` will not need to change for it to work.
+    from skills.nutrition.scaling import Per100g
+
     return (_profile(per100g, source="usda", source_id=fdc,
                      confidence=0.85, estimated=False),
-            Rung.ARTIFACT, f"usda:{fdc}" if fdc else "usda", dict(per100g))
+            Rung.ARTIFACT, f"usda:{fdc}" if fdc else "usda", dict(per100g),
+            Per100g())
 
 
 def _from_estimate(ev: EstimateEvidence):
@@ -367,11 +435,21 @@ def _from_estimate(ev: EstimateEvidence):
     """
     if ev.calories is None:
         return None
+    from skills.nutrition.scaling import PerServing
+
     profile = _profile({"calories": ev.calories, "protein": ev.protein,
                         "carbs": ev.carbs, "fat": ev.fat},
                        source="estimate", source_id="", confidence=0.4,
                        estimated=True)
-    return profile, Rung.ESTIMATE, "", {}
+    # ⛔ NO BASIS MEANS DO NOT SCALE — AND THAT IS A THIRD STATE, NOT A DEFAULT.
+    # Without a stated basis there is nothing to scale FROM: the estimate is
+    # already a statement about a portion, so it stands as given. Collapsing
+    # this into Per100g() would reprice every basis-less estimate as though its
+    # calories described 100 g, which is the silent-default failure this whole
+    # contract exists to remove.
+    basis = (PerServing(serving_mass_g=float(ev.basis_grams), as_served=True)
+             if ev.basis_grams else None)
+    return profile, Rung.ESTIMATE, "", {}, basis
 
 
 def price(*, entity: str, preparation: str = "", consumed=None,
@@ -390,9 +468,10 @@ def price(*, entity: str, preparation: str = "", consumed=None,
     single exit, so no rung can smuggle out an indefensible price.
     """
     from skills.nutrition.models import MACRO_FIELDS
-    from skills.nutrition.scaling import (Per100g, PerServing,
-                                          ScalingRefused,
-                                          scale_profile)
+    # ⭐ NO BASIS TYPES IMPORTED HERE ANY MORE, AND THAT IS THE POINT OF P17a.
+    # `price()` cannot name a basis, so it cannot pick one — the rung builders
+    # do, and this function only applies what they declared.
+    from skills.nutrition.scaling import ScalingRefused, scale_profile
 
     # A NON-POSITIVE PORTION IS NOT A MEAL. Scaling 165 kcal/100 g by zero
     # grams yields a legitimate-looking zero from an EVIDENCE-backed rung, so
@@ -432,29 +511,30 @@ def price(*, entity: str, preparation: str = "", consumed=None,
             continue
         if not chosen:
             continue
-        profile, rung, evidence_id, raw_per_basis = chosen
+        profile, rung, evidence_id, raw_per_basis, source_basis = chosen
         before = profile.amount("calories")
 
+        # ⭐ P17a — THE PRICER NO LONGER DECIDES THE BASIS FROM THE RUNG. It
+        # scales what the evidence SAYS IT IS. `source_basis is None` means the
+        # evidence already describes the portion eaten and must not be scaled;
+        # every other case goes through the one scaling engine, which refuses an
+        # incompatible basis rather than guessing.
+        #
+        # This is what makes P17c/P17d additive: a producer that returns a
+        # PerUnit or PerServing basis starts pricing counts correctly WITHOUT
+        # another edit here.
+        # ⚠ NAMED ONLY WHEN IT ACTUALLY SCALED. With no `consumed` nothing is
+        # scaled, and the row said `per_portion` before this change — labelling
+        # it `per_100g` here would rewrite the provenance of every unscaled row
+        # while claiming to be a no-op refactor.
         basis_name = "per_portion"
-        if consumed is not None:
+        if consumed is not None and source_basis is not None:
             try:
-                if rung is Rung.ESTIMATE:
-                    # Per ITS OWN quantity, not per 100 g. Without a stated
-                    # basis there is nothing to scale FROM, so it stands as
-                    # given: it is already a statement about a portion, and an
-                    # unscalable answer costs precision, not the meal.
-                    grams = getattr(ev, "basis_grams", None)
-                    if grams:
-                        profile = scale_profile(
-                            profile, PerServing(serving_mass_g=float(grams),
-                                                as_served=True), consumed)
-                        basis_name = "per_serving"
-                else:
-                    profile = scale_profile(profile, Per100g(), consumed)
-                    basis_name = "per_100g"
+                profile = scale_profile(profile, source_basis, consumed)
+                basis_name = _basis_name(source_basis)
             except ScalingRefused as exc:
-                logger.info("event=rung_unscalable food=%s rung=%s — %s",
-                            entity, rung.value, exc)
+                logger.info("event=rung_unscalable food=%s rung=%s basis=%s — %s",
+                            entity, rung.value, basis_name, exc)
                 continue
 
         # ⭐ THE FULL MICRONUTRIENT SET SURVIVES, scaled by the same factor.

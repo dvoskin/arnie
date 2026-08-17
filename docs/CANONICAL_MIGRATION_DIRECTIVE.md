@@ -361,38 +361,47 @@ COVERAGE TRACK
          POINTS, because 142 count-only items sit in 89 meals and satisfying a
          mechanism is not recovering an item. 8 meals are blocked by more than
          one mechanism and no single tranche recovers them
-2. P17   AUTHORITATIVE SERVING-BASIS EVIDENCE — selected by the measurement,
-         first at both ends of the band. COUNT · PIECE · SERVING · PACKAGE ·
-         FRACTION. assemble() hard-codes PRODUCT to None, so every canonical
-         rung is per-100g and "2 eggs", "1 banana", "half a bar" are
-         unpriceable BY CONSTRUCTION.
+2. P17   AUTHORITATIVE SERVING-BASIS CONSUMPTION — selected by the measurement.
 
-         ⛔⛔ DESIGN DECISION, TAKEN ON THE BAND *(Danny, 2026-08-17)*: BUILD IT
-         AS AN EVIDENCE-BEARING CANONICAL RUNG, NOT AS A CONVERSION FEATURE.
-         The scale factor exists, but as an operation DERIVED FROM evidence —
-         never as the thing granting authority. A tranche that merely
-         manufactures a mass is STRUCTURALLY UNDERPOWERED: only 28 of the 89
-         count-only meals recover on `has_mass` alone, the rest hit the
-         evidence wall immediately, and ownership lands near 33% — short of the
-         40% band, having spent the whole tranche.
+         ⛔⛔ THE ARCHITECTURE DECISION IS CLOSED, AND IT IS NOT "BUILD A SERVING
+         ARCHITECTURE". ServingBasis, BasisConversion, the scaling engine, typed
+         quantity semantics and the evidence ladder ALREADY EXIST. P17 ACTIVATES
+         them across canonical pricing. Do NOT define ServingEvidence,
+         PerFraction, ServingRung or any parallel quantity hierarchy.
 
-         Every usable basis must carry ONE of:
-           1. direct serving nutrition   (1 large egg = 72 kcal / 6.3 g protein)
-           2. a SOURCED conversion into another evidence-backed basis
-              (1 medium banana = 118 g -> existing per-100g rung)
-         PRODUCT becomes ONE PRODUCER of serving evidence, not the architecture
-         for every count-based food.
+         TWO AXES, AND THEY ARE NEVER COLLAPSED INTO ONE ENUM
+           MEMORY · PRODUCT · ARTIFACT · ESTIMATE    where the nutrition CAME FROM
+           COUNT · PIECE · STANDARD_SERVING ·        what amount those numbers
+           PACKAGE · FRACTION  + BasisConversion     DESCRIBE, and how that
+                                                     reconciles with what was eaten
 
-         ⛔ NEVER: a model guesses 1 serving ≈ X grams, and canonical therefore
-         owns it. That is heuristic authority re-entering through the basis.
+         An evidence-backed rung may settle a count-only quantity ONLY when it
+         carries one of:
+           A. direct authoritative nutrition on a COMPATIBLE serving basis, or
+           B. a SOURCED deterministic conversion into another authoritative basis
+         FRACTION never prices independently — it modifies an EVIDENCED parent.
+         PRODUCT is ONE serving-evidence producer, not the serving architecture;
+         generic structured measure evidence feeds the same contract.
+         assemble() stays LOAD-NEVER-BUILD: local, retrieval-free, model-free.
+         The model may read "two big eggs" -> count 2, size large. It may NEVER
+         establish that a large egg is 50 g.
 
-         ACCEPTANCE is NOT "count-only stops hitting the mass refusal". It is:
-         A FORMERLY COUNT-ONLY MEAL REACHES AN AUTHORITATIVE CANONICAL NUTRITION
-         VALUE WITHOUT ESTIMATE AUTHORITY.
+         ⛔ COVERAGE AND PRICING SHARE ONE BASIS-COMPATIBILITY PRIMITIVE, or the
+         predicate and the pricer drift — the exact defect the has_mass rule was
+         written to prevent. `decide()` must ask whether a local authoritative
+         path is actually SCALABLE, never merely whether a basis field exists.
 
-         ⚠ 36.5 IS AN UPPER BOUND, NOT A TARGET. It answers "what if evidence
-         stops being the next blocker". Expect to land between +12.6 and +36.5;
-         aim at the upper half, and do not report the ceiling as the forecast
+         ⛔ A model-generated piece weight, serving size, package relationship or
+         gram conversion NEVER grants canonical authority.
+
+         ACCEPTANCE: a formerly count-only meal reaches an authoritative
+         canonical nutrition value WITHOUT estimate authority, guessed serving
+         mass, heuristic conversion, provider access at settlement, or legacy
+         ownership.
+
+         ⚠ +36.5 IS THE COUNTERFACTUAL CEILING, NOT A FORECAST. Expect to land
+         between +12.6 and +36.5; aim at the upper half.
+         Method and commit order: §P17 immediately below this board.
 3.       RE-MEASURE on p16b_0817, THE IDENTICAL 232 MEALS. The delta is then
          attributable SOLELY to P17:
              P16b baseline  ->  P17 on the same population  ->  delta
@@ -454,6 +463,96 @@ DO NOT
            sequence by feature name; sequence by measured mechanism
            quote a coverage number without its predicate commit
 ```
+
+### ⏭ §P17 — THE COMMIT ORDER *(Danny, 2026-08-17, on the code read)*
+
+> This is METHOD for the tranche §NEXT selected. §NEXT still owns the ordering
+> of the program; this owns the ordering *within* P17.
+
+⛔⛔ **THE DEFECT IS AN INVERSION, AND IT IS ALREADY MEASURED IN THE SOURCE.**
+`serving_grams` appears exactly ONCE in this repository — its own declaration on
+`ProductEvidence` — never written, never read, never tested. `ProductEvidence`
+itself is constructed only in tests. And the pricing loop reads:
+
+```text
+EVIDENCE-BACKED                              ESTIMATE
+MEMORY / PRODUCT / ARTIFACT                  (no authority)
+        │                                        │
+        ▼                                        ▼
+   ALWAYS Per100g()                     may use PerServing(...)
+```
+
+**The one rung with no evidence authority is the only one that can express a
+serving basis.** That is why a count-only portion is priceable today only by
+guessing, which `decide()` correctly refuses — and it is the whole 12.6 .. 36.5
+band, stated structurally.
+
+```text
+P17a  ACTIVATE THE BASIS CONTRACT IN THE PRICER — no behaviour change.
+      Each rung builder hands price() what its evidence DESCRIBES:
+          profile · rung · nutrition_evidence_id · source_basis ·
+          basis_evidence · raw_values
+      Replace `if rung is ESTIMATE: PerServing else: Per100g` with
+      `scale_profile(profile, source_basis, consumed)`.
+      Migration mapping, explicit: MEMORY->Per100g · ARTIFACT->Per100g ·
+      PRODUCT->whatever its evidence states · ESTIMATE->current basis.
+      ⛔ NO `source_basis or Per100g()` FALLBACK FOR NEW EVIDENCE. Existing
+         evidence is explicitly ADAPTED; missing basis on new evidence FAILS
+         CLOSED, or "missing metadata" silently comes to mean "per 100 g".
+      Suite must stay behaviourally byte-for-byte equivalent.
+
+P17b  PROVE DIRECT EVIDENCE-BACKED SERVING PRICING, on synthetic evidence only,
+      BEFORE any retrieval exists: PRODUCT per-bar × 2 bars = exactly 2× ·
+      ARTIFACT per100g + sourced PIECE->grams × 2 pieces = correct amount.
+      Proves the contract independently of any producer.
+
+P17c  GENERIC STRUCTURED MEASURE PRODUCER — the highest-value producer for the
+      measured population (egg · banana · apple · potato · piece foods).
+      Sourced measures only. ⛔ `core/portions.py` priors are SANITY MACHINERY,
+      never canonical authority.
+
+P17d  EXACT PRODUCT PRODUCER — replace `"product": None`. Barcode / GTIN /
+      stable variant id ONLY. No fuzzy name match may construct PRODUCT;
+      `_match: "exact"` once said so about a pizza.
+      ⭐ AND DO NOT ROUTE THROUGH GRAMS BECAUSE GRAMS EXIST. If the label says
+      1 bar = 200 kcal and the user said 1 bar, the authoritative path is 1×200,
+      not bar->55 g->per100g->55 g.
+
+P17e  PACKAGE + FRACTION, through BasisConversion as DATA — never a branch in
+      scale_profile(). 1 bottle = 2 servings · half bottle = 1 serving ·
+      half bar = 0.5 bar.
+
+P17f  DUAL PROVENANCE ON THE ROW: rung · nutrition_evidence_id · source_basis ·
+      basis_evidence_id · conversion_evidence_ids · source_amount · source_unit ·
+      scaling_factor. USDA NUTRITION AND A USDA PIECE WEIGHT ARE TWO CLAIMS, and
+      B-1.8 needs both to reprice "actually that was 3 eggs" deterministically
+      rather than rediscover the nutrition.
+
+P17g  THE PREDICATE, LAST. ItemFacts and decide() admit a count-only food only
+      when a local authoritative SCALABLE path exists — asked through the SAME
+      primitive the pricer uses (`resolve_scaling_factor` -> resolution or
+      ScalingRefused; `can_scale` is that call in a try). Freeze manifest edited
+      IN THIS COMMIT: deliberate change plus freeze update is the contract;
+      silent structural drift is what is prohibited.
+
+P17h  MUTATION TWINS, MANDATORY RED
+      delete basis evidence · replace a sourced conversion with a model guess ·
+      change the egg unit to slice · use a whole-roll basis for one piece ·
+      ignore package->servings · allow FRACTION with no parent basis · let a
+      missing basis default to Per100g · let a fuzzy product build PRODUCT
+      POSITIVE TWINS
+      2 eggs · 1 medium banana · 2 large eggs · 1 Barebells bar · half a
+      Barebells bar · 1 Fairlife bottle · half a Fairlife bottle ·
+      100 g chicken · 6 oz salmon   <- the last two prove the MASS paths did
+      not regress
+```
+
+⛔ **AND A COMPATIBILITY CHECK IS NOT A COUNT CHECK.** `2 pieces of sushi roll`
+against evidence for `1 whole roll = 460 kcal` must not become `2 × 460`. A
+serving basis needs identity enough to prove the user's counted entity IS the
+evidence's counted entity — unit id, subject entity, optional product variant.
+Reuse `ServingBasis` if it already carries that; extend it if not. **Do not add
+a sibling type merely to carry identity.**
 
 ### ⛔ THE ROLLOUT THRESHOLD — PREDETERMINED, SO "COVERAGE DECISION" STOPS BEING SUBJECTIVE
 
