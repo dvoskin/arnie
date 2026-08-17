@@ -920,6 +920,38 @@ source snapshot/version/fingerprint
 USDA nutrition and USDA `1 large egg = 56 g` are two claims. B-1.8 must be able
 to change 2 eggs -> 3 eggs by reusing those claims, not by rediscovering USDA.
 
+### ⭐⭐ P17 REMEASURE — PREREGISTERED *(Danny, 2026-08-18, BEFORE the measurement exists)*
+
+⛔ WRITTEN DOWN NOW so the result cannot be argued into a different question
+later — the same discipline as the P12 canary preregistration.
+
+```text
+POPULATION      p16b_0817 — the identical 232 meals, sha 6247a33c55ed64f5
+BASELINE        ~20.3%   predicate a747b56
+EXPECTED GAIN   +12.2 .. +24.8 pts  ->  ~32.5% .. ~45.1%
+PUBLISH         BOTH predicate commits, or it is not a figure
+
+THE QUESTION    how much HISTORICAL food traffic becomes canonically ownable
+                because sourced serving conversions are now authoritative and
+                P17g admits them?
+
+NOT THE QUESTION  the barcode wire. Those 232 meals contain no barcode event,
+                and any scan-infrastructure contribution to this number would
+                make the measurement LESS trustworthy, not more. Scan coverage
+                arrives through FUTURE traffic and is measured there.
+
+INTERPRETATION, FIXED IN ADVANCE
+    ~37%   NOT a failed P17 — a clean measurement saying the next tranche
+           comes from the largest remaining CONDITIONAL marginal (Δ(M|P17):
+           identity +18.5 ceiling; only cacheability certain at +3.2)
+    ~43%   coverage gate crossed — and rollout still does NOT widen until
+           B-1.8 correction/repair closes. Two clocks, as frozen.
+```
+
+GO CONDITION FOR P17g *(Danny)*: the iOS barcode field is shipped AND the
+deploy has advanced with /health showing schema.applied = expected = prodev001,
+in_sync = true. Then P17g immediately.
+
 ### P17g — predicate LAST
 
 Only after producers, provenance and scaling are settled may `ItemFacts` /
