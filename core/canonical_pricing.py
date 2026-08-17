@@ -205,6 +205,10 @@ class ProductEvidence:
     #: The unit one serving IS ("bar", "bottle"). Identity, so a count can be
     #: proven to count the same thing the evidence describes.
     serving_unit: str = ""
+    #: ⭐ P17e — what one PACKAGE is called ("bottle", "tub"), when package and
+    #: serving are different things. Identity for the package path; a count of
+    #: this unit is count x servings_per_package servings.
+    package_unit: str = ""
     servings_per_package: Optional[float] = None
     source_id: str = ""
 
@@ -534,7 +538,8 @@ def _from_product(ev: ProductEvidence):
                 # count could multiply it. Identity now does that work instead.
                 PerServing(serving_mass_g=ev.serving_grams,
                            servings_per_package=ev.servings_per_package,
-                           unit_id=ev.serving_unit),
+                           unit_id=ev.serving_unit,
+                           package_unit_id=ev.package_unit),
                 _product_measures(ev))
     if ev.per100g:
         return (_profile(ev.per100g, source="product", source_id=ev.identifier,

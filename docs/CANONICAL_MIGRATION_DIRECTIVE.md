@@ -347,7 +347,8 @@ not depend on which bucket is largest.
 > the canonical primitives rather than bypassing them.
 
 ```text
-HEAD                                   c54077e
+HEAD                                   the commit carrying this line
+                                       (git log -1 -- this file)
 GENERAL SETTLEMENT BACKEND             ✅ FROZEN          (§FREEZE)
 ONE-USER PRODUCTION CANARY             ✅ PASSED          (P12, both branches)
 CURRENT OWNERSHIP BASELINE             ~20.3%            (predicate a747b56,
@@ -479,6 +480,19 @@ COVERAGE TRACK
 
            THEN P17e PACKAGE + FRACTION through conversion DATA.
            THEN P17f persist dual nutrition + basis/conversion provenance.
+           THEN P17f.5 EXACT PRODUCT ACQUISITION WIRE *(Danny, 2026-08-17 —
+           deliberately BETWEEN persistence and activation, so P17 cannot be
+           declared production-proven while its exact PRODUCT path is
+           physically unreachable, and so the iOS change cannot accidentally
+           create scan -> backend fetches OFF DURING SETTLEMENT)*:
+             □ iOS scan preserves raw barcode
+             □ backend receives barcode separately from prose
+             □ barcode is never reconstructed from product name
+             □ acquisition performs exact-ID fetch
+             □ ProductEvidence persisted before settlement
+             □ canonical event stores stable product/evidence reference
+             □ settlement performs zero provider calls
+             □ prose remains presentation/context only
            THEN P17g change the eligibility predicate LAST.
            THEN P17h positive twins + mandatory mutation twins.
 
@@ -663,7 +677,8 @@ P17d.1-4 ✅ exact producer, corrected BY the probe before it
          ⚠ dark: no channel yet delivers a barcode to the
          backend — iOS resolves scans client-side and sends
          prose. Acquisition wiring is Danny's sequencing call
-P17e     ◻ package + fraction
+P17e     ✅ package + fraction as basis DATA — spp active,
+         parity refused when unstated
 P17f     ◻ persisted dual provenance
 P17g     ◻ eligibility predicate LAST
 P17h     ◻ mutation + positive twins

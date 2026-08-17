@@ -66,9 +66,13 @@ class PerServing:
     see what the source is counting. Set it and the count path demands identity;
     leave it unset and behaviour is exactly as before.
 
-    ⚠ `servings_per_package` IS CARRIED AND NOT YET CONSUMED. `_factor` has no
-    package path, so "1 bottle = 2 servings" does NOT resolve today. It is not
-    package support; it is the field package support will read.
+    ⭐ P17e — `servings_per_package` IS NOW CONSUMED, and the package relation is
+    DATA on this basis rather than a branch anywhere: a count of the PACKAGE
+    unit multiplies by it. "1 bottle" of a 2-servings-per-bottle label is 2
+    servings; "half a bottle" is 1. ⛔ BOTH HALVES OF THE RELATION ARE REQUIRED:
+    a package unit with no stated servings-per-package REFUSES rather than
+    quietly assuming one package = one serving — that equality is a fact some
+    labels state and others contradict, never a default.
     """
     serving_mass_g: Optional[float] = None
     serving_ml: Optional[float] = None
@@ -76,6 +80,9 @@ class PerServing:
     as_served: bool = False
     #: What ONE serving IS — "bar", "bottle", "large egg". Identity, not prose.
     unit_id: str = ""
+    #: What ONE PACKAGE is called — "bottle", "tub", "bag" — when the package
+    #: is a DIFFERENT thing from the serving. Identity for the package path.
+    package_unit_id: str = ""
     basis = "per_serving"
 
 
@@ -423,6 +430,27 @@ def _factor(basis: SourceBasis, consumed: NormalizedQuantity) -> float:
             return grams / float(basis.serving_mass_g)
         if ml is not None and basis.serving_ml:
             return ml / float(basis.serving_ml)
+        # ⭐ P17e — THE PACKAGE PATH, DRIVEN BY THE BASIS'S OWN DATA. A count of
+        # the PACKAGE unit is count x servings_per_package servings. Checked
+        # BEFORE the serving-unit path because a package_unit_id exists exactly
+        # when package and serving are different things — and a "bottle" count
+        # against a "scoop" serving must not fall through to the serving gate
+        # and be refused as a unit mismatch.
+        if (basis.package_unit_id and count is not None
+                and unit_matches(consumed, basis.package_unit_id)):
+            if consumed.unit_is_fraction:
+                raise ScalingRefused(
+                    f"one {consumed.unit} of a {basis.package_unit_id} is a "
+                    f"PART of the package, and its size is not stated")
+            if not basis.servings_per_package:
+                # ⛔ ONE PACKAGE = ONE SERVING IS A FACT, NOT A DEFAULT. Some
+                # labels state it; others state 2, or 2.5. Assuming it here
+                # would silently halve every multi-serving bottle.
+                raise ScalingRefused(
+                    f"this source names the package ({basis.package_unit_id!r})"
+                    f" but not how many servings it holds — the relation must "
+                    f"be stated, never assumed")
+            return float(count) * float(basis.servings_per_package)
         # A FRACTION OF THE DISH IS NOT ONE OF THE DISH. `countable` asks
         # whether the count may multiply this source's serving, and both of its
         # inputs answer about the COUNT alone — neither can see that the source

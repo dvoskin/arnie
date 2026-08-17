@@ -699,3 +699,100 @@ def test_the_subject_is_never_appended_to_a_real_unit_noun():
     with pytest.raises(ScalingRefused):
         resolve_scaling(Per100g(), normalize_quantity("2 salmon", "Salmon"),
                         measures)
+
+
+# ── P17e — PACKAGE + FRACTION, THROUGH THE BASIS'S OWN DATA ─────────────────
+#
+# ⭐ Package/fraction describes CONSUMPTION; it never establishes nutrition
+# authority. PRODUCT nutrition + a stated package relation + a consumed
+# fraction = a priceable amount. "half bottle" of a bottle whose size nobody
+# stated remains unpriceable, exactly as before.
+
+#: A label: 120 kcal per serving (a "scoop"), 2 servings per bottle.
+TUB = ProductEvidence(
+    identifier="off:900123", per_serving={"calories": 120.0, "protein": 26.0},
+    serving_unit="scoop", package_unit="bottle", servings_per_package=2.0)
+
+
+def test_a_count_of_packages_multiplies_by_the_stated_relation():
+    """1 bottle = 2 servings = 240 kcal — the field P17b carried as inert
+    metadata is now load-bearing data on the basis."""
+    priced = price(entity="Core Power", consumed=_count(1, "bottle"),
+                   product=TUB)
+    assert priced.calories == pytest.approx(240.0)
+    assert priced.basis == "per_serving"
+
+
+def test_a_fraction_of_a_package_is_a_fraction_of_the_relation():
+    """half bottle -> 0.5 x 2 servings = 120 kcal."""
+    priced = price(entity="Core Power", consumed=_count(0.5, "bottle"),
+                   product=TUB)
+    assert priced.calories == pytest.approx(120.0)
+
+
+def test_a_count_of_servings_still_prices_directly():
+    """The serving path is untouched by the package path: 2 scoops = 240."""
+    priced = price(entity="Core Power", consumed=_count(2, "scoop"),
+                   product=TUB)
+    assert priced.calories == pytest.approx(240.0)
+
+
+def test_a_package_count_with_no_stated_relation_is_refused():
+    """⛔ ONE PACKAGE = ONE SERVING IS A FACT, NOT A DEFAULT. A source that
+    names the package but not how many servings it holds REFUSES — assuming
+    parity would silently halve every multi-serving bottle."""
+    unstated = ProductEvidence(
+        identifier="off:900124", per_serving={"calories": 120.0},
+        serving_unit="scoop", package_unit="bottle")
+    with pytest.raises(PricingRefused):
+        price(entity="Core Power", consumed=_count(1, "bottle"),
+              product=unstated)
+
+
+def test_a_count_of_neither_unit_is_still_refused():
+    """The identity gates compose: "2 cans" is neither the scoop nor the
+    bottle, and the package path must not have loosened anything."""
+    with pytest.raises(PricingRefused):
+        price(entity="Core Power", consumed=_count(2, "can"), product=TUB)
+
+
+def test_the_package_relation_derives_only_from_agreeing_units():
+    """⭐ PROBED ON COCA-COLA: product_quantity 355 ml beside a 354.882 ml
+    serving -> spp 1.0003, sourced arithmetic from one record. A package in ml
+    against a serving in g derives NOTHING — that would be a density guess."""
+    from skills.nutrition.off import product_evidence_from_off
+
+    can = {"code": "0049000042566", "product_quantity": 355,
+           "product_quantity_unit": "ml", "serving_quantity": 354.882,
+           "serving_quantity_unit": "ml", "rev": 155,
+           "last_modified_t": 1786673920, "nutrition_data_per": "100g",
+           "nutriments": {"energy-kcal_100g": 0.5, "proteins_100g": 0.0,
+                          "carbohydrates_100g": 0.1, "fat_100g": 0.0,
+                          "energy-kcal_serving": 1.0, "proteins_serving": 0.0,
+                          "carbohydrates_serving": 0.4, "fat_serving": 0.0}}
+    ev = product_evidence_from_off(can, serving_unit="serving",
+                                   package_unit="can")
+    assert ev.servings_per_package == pytest.approx(1.0003, abs=1e-3)
+
+    mixed = dict(can, product_quantity_unit="g")
+    assert product_evidence_from_off(
+        mixed, serving_unit="serving").servings_per_package is None
+
+
+def test_the_package_path_is_data_not_a_branch(monkeypatch):
+    """⚠ ANTI-VACUITY: blank the relation on the SAME basis and the same
+    portion must refuse — proving the multiplication came from the data, not
+    from anything shaped like a product-specific branch."""
+    import dataclasses
+
+    from core.canonical_pricing import _from_product
+    import core.canonical_pricing as cp
+
+    real = _from_product
+    def _stripped(ev):
+        out = real(ev)
+        basis = dataclasses.replace(out[5 - 1], servings_per_package=None)
+        return (*out[:4], basis, out[5])
+    monkeypatch.setattr(cp, "_from_product", _stripped)
+    with pytest.raises(PricingRefused):
+        price(entity="Core Power", consumed=_count(1, "bottle"), product=TUB)

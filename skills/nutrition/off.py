@@ -471,7 +471,8 @@ async def fetch_product(barcode: str) -> Optional[dict]:
     return product
 
 
-def product_evidence_from_off(record: dict, *, serving_unit: str = ""):
+def product_evidence_from_off(record: dict, *, serving_unit: str = "",
+                              package_unit: str = ""):
     """`ProductEvidence` from an EXACT-IDENTITY OFF record, or None.
 
     ⛔ THE RECORD MUST CARRY ITS CODE. A name-search hit stripped of its barcode
@@ -535,6 +536,20 @@ def product_evidence_from_off(record: dict, *, serving_unit: str = ""):
     if quantity and quantity > 0 and unit == "g":
         serving_grams = float(quantity)
 
+    # ⭐ P17e — SERVINGS PER PACKAGE, DERIVED FROM TWO STATED FIELDS OF THE
+    # SAME RECORD, and only when their units AGREE. The probe found the inputs
+    # live: Coca-Cola states product_quantity 355 ml beside a 354.882 ml
+    # serving. 355/354.882 is sourced arithmetic, not an assumption; a package
+    # in ml against a serving in g would be a density guess and derives nothing.
+    servings_per_package = None
+    package_q = _num(record.get("product_quantity"))
+    package_unit_of = str(record.get("product_quantity_unit") or "").strip().lower()
+    serving_q = _num(record.get("serving_quantity"))
+    serving_unit_of = str(record.get("serving_quantity_unit") or "").strip().lower()
+    if (package_q and serving_q and package_q > 0 and serving_q > 0
+            and package_unit_of and package_unit_of == serving_unit_of):
+        servings_per_package = round(package_q / serving_q, 4)
+
     rev = record.get("rev")
     modified = record.get("last_modified_t")
     source_id = f"off:{code}#rev:{rev}@{modified}"
@@ -545,6 +560,10 @@ def product_evidence_from_off(record: dict, *, serving_unit: str = ""):
                 identifier=f"off:{code}", per_serving=per_serving,
                 per100g=per100g, serving_grams=serving_grams,
                 serving_unit=str(serving_unit).strip().lower(),
+                # Like serving_unit, the package NOUN is the caller's knowledge
+                # — OFF states '355 ml', never 'bottle'. The RELATION is OFF's.
+                package_unit=str(package_unit).strip().lower(),
+                servings_per_package=servings_per_package,
                 source_id=source_id)
         if not per100g:
             return None
