@@ -330,32 +330,90 @@ not depend on which bucket is largest.
 ```text
 GENERAL SETTLEMENT BACKEND             ✅ FROZEN          (§FREEZE)
 ONE-USER PRODUCTION CANARY             ✅ PASSED          (P12, both branches)
-CURRENT OWNERSHIP                      20.2%             (re-measured 08-17,
-                                                         meal level, at cd2b74a)
+CURRENT OWNERSHIP                      ~20.2%            (08-17, meal level,
+                                                         predicate at cd2b74a)
+ROLLOUT                                FROZEN — user 26 only
 
 NEXT
-1. P16  ✅ DONE — 207 declining items attributed by MECHANISM
-2. P16b MEAL-LEVEL ROLLUP: item counts are not ownership POINTS. Counterfactual
-        per mechanism — re-run decide() with M satisfied, count meals that flip
-3. P17  the mechanism P16 chose: PRODUCT / per-serving basis (142/207, 69%).
-        Land the basis; do NOT loosen the predicate
-4.      re-measure ownership
-5.      repeat until the rollout threshold is crossed
-6.      expand the cohort deliberately
+
+⭐⭐ TWO INDEPENDENT CLOCKS RUN BEFORE ROLLOUT, AND EXPANSION WAITS FOR BOTH
+    COVERAGE     can Arnie correctly OWN enough meals?
+    CORRECTNESS  can a user safely INTERACT with the meals it owns —
+                 including CORRECTING them?
+    Neither clock alone authorizes a wider cohort. This is the change of
+    2026-08-17: the old roadmap had only the first one.
+
+COVERAGE TRACK
+1. P16b  FREEZE one exact historical meal population, then roll the P16
+         attribution from declining ITEMS to recoverable MEAL ownership points.
+         Item counts are NOT points: A11 declines the whole meal on one
+         unsupported item, so a mechanism spread thinly across multi-item meals
+         recovers fewer points than its item count implies. Counterfactual per
+         mechanism — re-run decide() with M satisfied, count the meals that flip.
+         ⭐ PRODUCT leading is a PREDICTION (142/207 items) until this runs
+2. P17   attack the #1 MEASURED mechanism — step 1 names it, not this line.
+         EXPECTED: authoritative SERVING-BASIS EVIDENCE
+         (count · piece · serving · package · fraction). assemble() hard-codes
+         PRODUCT to None, so every canonical rung is per-100g and "2 eggs",
+         "1 banana", "half a bar" are unpriceable BY CONSTRUCTION.
+         Land the basis; do NOT loosen the predicate
+3.       RE-MEASURE on the SAME FROZEN POPULATION — this is what isolates what
+         the PREDICATE gained
+4.       RE-MEASURE current rolling production — 3 and 4 together are what
+         separate a real gain from a drift in what people happened to eat.
+         A single rolling re-measurement cannot tell those apart
+5.       attack the next largest measured mechanism. Likely
+         IDENTITY:no_resolution_row (48, second-largest) — but 3 and 4 decide
+6.       repeat until the ownership threshold is crossed
+
+ORDERED PRODUCT-CORRECTNESS TRACK — parallel to coverage; touches nothing frozen
+A. B-1.7b  MATERIALITY   should Arnie ask about the oil/preparation AT ALL?
+                         Needs NO coverage argument — it changes WHEN the
+                         product asks, not what it can price. May start now
+B. B-1.7a  OILS          if added fat matters, can Arnie identify and price it?
+                         MOVED BACK from the head of the roadmap 2026-08-17:
+                         it is the deciding rung on 1.9% of real food — a
+                         capability under materiality's policy, not a milestone
+C. B-1.7c  COMPOSITION   chicken + olive oil = chicken contribution + oil
+                         contribution. Depends on B
+
+INDEPENDENT REPAIR TRACK — parallel to both; independent of both
+D. B-1.8   CANONICAL CORRECTION / REPAIR. "Actually that was 8 oz" is KNOWINGLY
+           broken on canonical meals. The ownership firewall is CORRECT; the
+           defect is real, and PARKED is not CLOSED.
+           ⭐ IT SCALES WITH THE COVERAGE TRACK'S SUCCESS — the firewall breaks
+           correction on precisely the meals canonical wins, so 1–6 going well
+           makes this worse, never better.
+           ⛔ MUST CLOSE BEFORE ANY COHORT EXPANSION
+
+ROLLOUT GATE — expansion beyond user 26 requires BOTH
+           ownership >= 40%                       (bands: §ROLLOUT below)
+           AND
+           B-1.8 canonical repair CLOSED
+⛔ CROSSING AN OWNERSHIP THRESHOLD DOES NOT ITSELF AUTHORIZE EXPANSION. 40% makes
+   Arnie coverage-ELIGIBLE. The correctness clock decides whether it is ready.
+
+AFTER SINGLE-ITEM / DEPENDENT SEMANTICS ARE PRODUCTION-PROVEN
+           B-2       messy / multi-food
+           PROMOTE   canonical broadly
+           DELETE    the legacy food system
+           C         conversation / one voice
+           D         personalization / memory
+           E         coaching intelligence
+           F         proactive agency
 
 PARALLEL SESSIONS -> docs/HANDOFF_PARALLEL_SESSION_0817.md (how, not what)
 
-PARALLEL PRODUCT-CORRECTNESS WORK — does not wait on coverage
-        B-1.7b  materiality
-        B-1.7c  composition
-        B-1.8   canonical repair
-        B-2     messy / multi-food
-
 DO NOT
-        loosen canonical eligibility
-        reintroduce heuristics
-        reopen legacy authority
-        widen the cohort merely because P12 passed
+           loosen canonical eligibility
+           reintroduce heuristics
+           reopen legacy authority
+           weaken the correction firewall
+           change rollout thresholds because a new measurement disappointed
+           widen solely because the ownership number crossed a band
+           widen the cohort merely because P12 passed
+           sequence by feature name; sequence by measured mechanism
+           quote a coverage number without its predicate commit
 ```
 
 ### ⛔ THE ROLLOUT THRESHOLD — PREDETERMINED, SO "COVERAGE DECISION" STOPS BEING SUBJECTIVE
@@ -372,11 +430,49 @@ OWNERSHIP        COHORT PERMITTED
 70% +            consider broad canonical promotion
 ```
 
+⛔⛔ **THE NUMBER IS NECESSARY, NOT SUFFICIENT. B-1.8 GATES EVERY BAND IN THIS
+TABLE.** *(Danny, 2026-08-17)* Correction — "actually that was 8 oz" — still
+fails on a canonical meal, because the ownership firewall correctly refuses to
+let the old correction system write canonical rows. Crossing 40% with that open
+would ship a broken everyday action to 1–5% of the fleet, **and the firewall
+breaks correction on precisely the meals the coverage track just won** — so the
+defect's blast radius is proportional to the coverage work succeeding.
+
+```text
+ownership >= band   ->  Arnie is coverage-ELIGIBLE for that cohort
+B-1.8 CLOSED        ->  Arnie is READY for it
+expansion            =  BOTH, never either
+```
+
+Eligible is not ready. This is a gate, not a preference, and it is the reason
+the board carries two clocks instead of one.
+
 ⚠ **THESE PERCENTAGES ARE A PRODUCT AND RISK DECISION, NOT A MEASUREMENT.** They
 were set by Danny on 2026-08-17 review and nothing in this repository derives
 them. They are binding until he changes them, and the point is that they were
 fixed BEFORE the number moved. Changing them is allowed; changing them in the
 same breath as reporting a new ownership number is not.
+
+⭐ **REVIEWED AND RETAINED ON 2026-08-17, AND THE REASONING IS RECORDED SO IT IS
+NOT RE-LITIGATED EACH TIME THE NUMBER DISAPPOINTS.** The bands entered at
+`cd2b74a`, one commit before `8443cb0` published 20.2% — so they were indeed
+calibrated while 36.9% was operative, and the gap to the first band widened from
+3.1 points to 19.8 overnight. Two different arguments follow from that, and only
+one of them is legitimate:
+
+```text
+DISTANCE  "40% is far away now, so lower it"        <- this is goalpost-moving,
+                                                       and the rule above bars it
+ANCHOR    "the bands were calibrated against a      <- legitimate: a units
+           figure the predicate cannot produce"        problem, not an ambition
+                                                       one
+```
+
+The anchor argument is real and is NOT resolved here. It is deferred to a
+separate, dated decision requiring **at least two measurements on the current
+predicate — the P16b frozen-population baseline and a post-P17 reading** — so
+that any recalibration is made against two points on one scale rather than under
+a single disappointing number. **40% stands until then.**
 
 ⭐ **THE NUMBER TO RUN THE PROGRAM ON IS 20.2% OWNERSHIP** — not the superseded
 36.9%, not the older 44–46% coverage figures, and not the flattering 24.3%

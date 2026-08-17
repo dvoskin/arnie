@@ -63,9 +63,20 @@ mutation     GREEN proves nothing. Break the line under test and require RED
              with the right failure NAME. Check the fixture can fail at all.
 ```
 
-## THE SEQUENCE
+## THE SEQUENCE IS NOT HERE
 
-### P16b — the meal-level rollup *(small, precise, do this first)*
+⛔ **Read `§NEXT` in the directive.** This document deliberately does not carry
+the order, and it used to: on 2026-08-17 Danny re-sequenced the program — oils
+moved back behind materiality, B-1.8 became a *gate* on cohort expansion rather
+than a parallel lane, and B-2 moved behind the whole coverage track. Anything
+restated here would have gone stale within the hour. **Two boards is the failure
+the one-board rule exists to prevent, and a handoff is the easiest place to grow
+a second one.**
+
+What follows is METHOD for the two tranches at the head of that board — how to
+run them, not whether to.
+
+### P16b — the meal-level rollup *(method)*
 
 P16 attributed **declining ITEMS**; ownership is a **MEAL** rate. The ranking is
 by *recoverable ownership points*, and item counts are not points. Compute the
@@ -84,7 +95,7 @@ summing to no more than `100% - 20.2%`, recorded to
 items — but **do not skip this to save an hour**: a mechanism spread thinly across
 many multi-item meals recovers fewer points than its item count suggests.
 
-### P17 — the PRODUCT rung / per-serving basis *(the tranche P16 chose)*
+### P17 — the PRODUCT rung / per-serving basis *(method)*
 
 ```text
 142 of 207 declining items (69%)   TYPED:count_only_quantity
@@ -105,22 +116,12 @@ same commit.
 cause.** Do not turn P17 into a non-English tranche. The defect is a missing
 serving basis and it is language-neutral.
 
-### Then
+### What comes after P17 — go and read §NEXT
 
-```text
-re-measure ownership · check the rollout band · only then widen the cohort
-```
-
-### Runs in parallel safely — touches nothing frozen
-
-```text
-B-1.7b  materiality      changes WHEN the product asks, not what it can price;
-                         needs no coverage argument
-B-1.7c  composition
-B-1.8   canonical repair PARKED and still a real defect. Do NOT weaken the
-                         ownership firewall to make it look finished
-B-2     messy / multi-food
-```
+Re-measure, name the predicate commit, and let the *new* measurement pick the
+next mechanism. ⛔ **Crossing 40% does not by itself permit a wider cohort:
+B-1.8 gates the first band.** The bands and that gate live in the directive,
+not here.
 
 ## DO NOT
 
