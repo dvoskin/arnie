@@ -301,10 +301,60 @@ def _matching_measure(consumed, measures):
     want = _consumed_unit(consumed)
     if not want:
         return None
+    stated_size = str(getattr(consumed, "size_descriptor", "")
+                      or "").strip().lower()
     for measure in measures or ():
-        if unit_matches(consumed, measure.unit_text):
-            return measure
+        if not unit_matches(consumed, measure.unit_text):
+            continue
+        # ⛔ A STATED SIZE MUST NOT BIND TO A DIFFERENT ONE. "2 medium eggs"
+        # shares the token "egg" with a "large egg" measure, and without this
+        # guard the entity match would price medium eggs at 46 g each while
+        # citing a record about large ones. An UNSTATED size may bind — the
+        # measure is then the record's own reference portion — but a stated
+        # size that conflicts is a different claim, not a loose match.
+        measure_sizes = _SIZE_TOKENS & _unit_tokens(measure.unit_text)
+        if stated_size and measure_sizes and stated_size not in measure_sizes:
+            continue
+        return measure
     return None
+
+
+#: Size words a portion's unit_text may carry. Mirrors the size vocabulary the
+#: normalizer captures into `size_descriptor`. THE ONLY COPY — the pricer's
+#: zero-rule AST gate forbids string collections there, and a second copy here
+#: would be a second unit authority anyway.
+_SIZE_TOKENS = frozenset({"small", "medium", "large", "jumbo", "extra",
+                          "x", "xl", "big"})
+
+
+def _subject_noun(description: str) -> str:
+    """The record's head noun: "Egg, whole, cooked, fried" -> "egg"."""
+    head = str(description or "").split(",")[0].strip().lower()
+    words = [w for w in re.findall(r"[^\W\d_]+", head) if w]
+    return words[-1] if words else ""
+
+
+def _measure_unit_text(unit_text: str, description: str) -> str:
+    """The unit a measure counts, with the record's IMPLICIT subject restored.
+
+    ⛔⛔ FOUND END-TO-END AGAINST THE HYDRATED ARTIFACT, NOT IN REVIEW. USDA
+    states the egg portion as `modifier="large"`, `measureUnit="undetermined"` —
+    a bare SIZE with no entity noun, because the subject is the record itself.
+    So `unit_matches("eggs", "large")` failed, the sourced conversion never
+    fired, and "2 eggs" — THE TRANCHE'S NAMESAKE — silently fell back to the
+    piece-weight heuristic with `authoritative=False`. Green tests throughout:
+    the synthetic panels all said "large egg", never "large".
+
+    ⚠ THE SUBJECT IS APPENDED ONLY TO A BARE SIZE DESCRIPTOR. Appending it to a
+    real unit noun would let "2 salmon" match an "oz" measure and price two
+    salmon at 56 grams.
+    """
+    tokens = set(re.findall(r"[^\W\d_]+", str(unit_text or "").lower()))
+    if tokens and tokens <= _SIZE_TOKENS:
+        subject = _subject_noun(description)
+        if subject:
+            return f"{unit_text} {subject}"
+    return unit_text
 
 
 SourceBasis = Union[Per100g, Per100ml, PerServing, PerUnit]

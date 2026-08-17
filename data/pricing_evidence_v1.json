@@ -42,7 +42,69 @@
       "zinc": 0.54,
       "niacin": 0.978,
       "vitamin_b6": 0.091
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 134.0,
+       "portion_id": 83012,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "6b3d3a1b7560146a"
+      },
+      {
+       "unit_text": "spear, extra large (8-3/4\" to 10\" long)",
+       "amount": 1.0,
+       "grams": 24.0,
+       "portion_id": 83016,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "c74d8fcb151af273"
+      },
+      {
+       "unit_text": "spear, large (7-1/4\" to 8-1/2\")",
+       "amount": 1.0,
+       "grams": 20.0,
+       "portion_id": 83015,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "3232499d7774a91f"
+      },
+      {
+       "unit_text": "spear tip (2\" long or less)",
+       "amount": 1.0,
+       "grams": 3.5,
+       "portion_id": 83017,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "a793d9dd4aed092b"
+      },
+      {
+       "unit_text": "spear, medium (5-1/4\" to 7\" long)",
+       "amount": 1.0,
+       "grams": 16.0,
+       "portion_id": 83014,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "cc4b75e58559a7f3"
+      },
+      {
+       "unit_text": "spear, small (5\" long or less)",
+       "amount": 1.0,
+       "grams": 12.0,
+       "portion_id": 83013,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "a5810f856015b992"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169208",
@@ -77,7 +139,29 @@
       "potassium": 253,
       "zinc": 0.59,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "package (10 oz)",
+       "amount": 1.0,
+       "grams": 284.0,
+       "portion_id": 84435,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "6344e02e51743193"
+      },
+      {
+       "unit_text": "spears",
+       "amount": 4.0,
+       "grams": 58.0,
+       "portion_id": 84434,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "6ed4b6afb35c9ce6"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169207",
@@ -115,7 +199,39 @@
       "calories": 19.0,
       "vitamin_e": 1.22,
       "vitamin_a": 41.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 242.0,
+       "portion_id": 84431,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "1bec947ab11eacce"
+      },
+      {
+       "unit_text": "spear (about 5\" long)",
+       "amount": 1.0,
+       "grams": 18.0,
+       "portion_id": 84432,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "8f44bf7735b78d0a"
+      },
+      {
+       "unit_text": "can (300 x 407)",
+       "amount": 1.0,
+       "grams": 248.0,
+       "portion_id": 84433,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9dd75fcfde83c8a2"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168390",
@@ -153,7 +269,29 @@
       "phosphorus": 54.0,
       "sodium": 14.0,
       "protein": 2.4
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "spears (1/2\" base)",
+       "amount": 4.0,
+       "grams": 60.0,
+       "portion_id": 83019,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "c6b517693611adc6"
+      },
+      {
+       "unit_text": "cup",
+       "amount": 0.5,
+       "grams": 90.0,
+       "portion_id": 83018,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "0c56ee20439a8127"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169313",
@@ -191,7 +329,29 @@
       "thiamin": 0.162,
       "riboflavin": 0.139,
       "folate": 149
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "spears (1/2\" base)",
+       "amount": 4.0,
+       "grams": 60.0,
+       "portion_id": 84641,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "99c9d4ab8fae5d6a"
+      },
+      {
+       "unit_text": "cup",
+       "amount": 0.5,
+       "grams": 90.0,
+       "portion_id": 84640,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "3db3c6ad6adbf0c5"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169314",
@@ -229,7 +389,29 @@
       "niacin": 0.851,
       "vitamin_b6": 0.098,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "can (300 x 407)",
+       "amount": 1.0,
+       "grams": 411.0,
+       "portion_id": 84643,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "f0812973274faac2"
+      },
+      {
+       "unit_text": "cup",
+       "amount": 0.5,
+       "grams": 122.0,
+       "portion_id": 84642,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "7d86b832ffc58d24"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168494",
@@ -267,7 +449,39 @@
       "vitamin_k": 80.0,
       "saturated_fat": 0.096,
       "vitamin_a": 40.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "spears",
+       "amount": 4.0,
+       "grams": 60.0,
+       "portion_id": 83190,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "09f9d763029ab2b0"
+      },
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 180.0,
+       "portion_id": 83188,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "766e53c3a97d72ee"
+      },
+      {
+       "unit_text": "package (10 oz) yields",
+       "amount": 1.0,
+       "grams": 293.0,
+       "portion_id": 83189,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "d83f4a806ea224ed"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169209",
@@ -305,7 +519,39 @@
       "calories": 18.0,
       "monounsaturated_fat": 0.013,
       "polyunsaturated_fat": 0.185
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 180.0,
+       "portion_id": 84436,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "8a5cec4de24f7268"
+      },
+      {
+       "unit_text": "spears",
+       "amount": 4.0,
+       "grams": 60.0,
+       "portion_id": 84438,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "b28fe689537540da"
+      },
+      {
+       "unit_text": "package (10 oz) yields",
+       "amount": 1.0,
+       "grams": 293.0,
+       "portion_id": 84437,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "7b54c681be72749f"
+      }
+     ]
     }
    ],
    "raw": 9,
@@ -349,7 +595,89 @@
       "niacin": 0.665,
       "vitamin_b6": 0.367,
       "vitamin_e": 0.1
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "nlea serving",
+       "amount": 1.0,
+       "grams": 126.0,
+       "portion_id": 93518,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "0e092eabefcdee58"
+      },
+      {
+       "unit_text": "extra large (9\" or longer)",
+       "amount": 1.0,
+       "grams": 152.0,
+       "portion_id": 93517,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "e270bb1d971200b6"
+      },
+      {
+       "unit_text": "large (8\" to 8-7/8\" long)",
+       "amount": 1.0,
+       "grams": 136.0,
+       "portion_id": 93516,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "a23af52c59d9380d"
+      },
+      {
+       "unit_text": "cup, sliced",
+       "amount": 1.0,
+       "grams": 150.0,
+       "portion_id": 93512,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "6f28fb40a842cca5"
+      },
+      {
+       "unit_text": "small (6\" to 6-7/8\" long)",
+       "amount": 1.0,
+       "grams": 101.0,
+       "portion_id": 93514,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "fb8b5e59ed9be825"
+      },
+      {
+       "unit_text": "extra small (less than 6\" long)",
+       "amount": 1.0,
+       "grams": 81.0,
+       "portion_id": 93513,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "6cef173d2e71f770"
+      },
+      {
+       "unit_text": "medium (7\" to 7-7/8\" long)",
+       "amount": 1.0,
+       "grams": 118.0,
+       "portion_id": 93515,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "7261046d402e3f0f"
+      },
+      {
+       "unit_text": "cup, mashed",
+       "amount": 1.0,
+       "grams": 225.0,
+       "portion_id": 93511,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "330b33355e150d8b"
+      }
+     ]
     },
     {
      "evidence_id": "usda:1105073",
@@ -371,7 +699,29 @@
       "carbs": 20.1,
       "vitamin_a": 1.0,
       "calories": 85.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "peeled banana",
+       "amount": 1.0,
+       "grams": 110.0,
+       "portion_id": 267488,
+       "data_type": "Foundation",
+       "publication_date": "4/1/2020",
+       "dataset_version": "15.3",
+       "fingerprint": "02127555afd213c1"
+      },
+      {
+       "unit_text": "racc",
+       "amount": 1.0,
+       "grams": 140.0,
+       "portion_id": 312673,
+       "data_type": "Foundation",
+       "publication_date": "4/1/2020",
+       "dataset_version": "15.3",
+       "fingerprint": "e002fcecb22da730"
+      }
+     ]
     }
    ],
    "raw": 8,
@@ -417,7 +767,19 @@
       "cholesterol": 67.0,
       "trans_fat": 0.078,
       "saturated_fat": 1.15
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 94832,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "db60ce537c956fb6"
+      }
+     ]
     }
    ],
    "raw": 13,
@@ -461,7 +823,19 @@
       "cholesterol": 76.0,
       "trans_fat": 0.128,
       "saturated_fat": 2.3
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 91931,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "ca46ec2b33ae88c4"
+      }
+     ]
     },
     {
      "evidence_id": "usda:174751",
@@ -497,7 +871,19 @@
       "vitamin_b6": 0.279,
       "monounsaturated_fat": 8.07,
       "polyunsaturated_fat": 0.561
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 94853,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "6bd0f5afc4051bff"
+      }
+     ]
     },
     {
      "evidence_id": "usda:174733",
@@ -533,7 +919,19 @@
       "vitamin_b6": 0.323,
       "monounsaturated_fat": 4.7,
       "polyunsaturated_fat": 0.338
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 94835,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "e65557c36c5d268d"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173108",
@@ -569,7 +967,19 @@
       "vitamin_e": 0.81,
       "niacin": 4.98,
       "vitamin_b6": 0.229
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 91954,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "1ec646304db52154"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173094",
@@ -605,7 +1015,19 @@
       "vitamin_b6": 0.23,
       "monounsaturated_fat": 2.66,
       "polyunsaturated_fat": 0.37
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 91940,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "65dad90ff4a6163f"
+      }
+     ]
     }
    ],
    "raw": 8,
@@ -655,7 +1077,29 @@
       "calories": 208,
       "niacin": 5.73,
       "vitamin_b6": 0.543
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 138.0,
+       "portion_id": 94791,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "caeb6e612053c747"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 94790,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "b27302ec1e0eb043"
+      }
+     ]
     },
     {
      "evidence_id": "usda:174703",
@@ -692,7 +1136,29 @@
       "phosphorus": 242,
       "sodium": 87.0,
       "iron": 3.56
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 94792,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "71c73d0588c13a95"
+      },
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 129.0,
+       "portion_id": 94793,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "63a112b05ab21b99"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171785",
@@ -768,7 +1234,29 @@
       "saturated_fat": 2.64,
       "calories": 177,
       "sugar": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 89366,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "91da8eed799ece82"
+      },
+      {
+       "unit_text": "steak",
+       "amount": 1.0,
+       "grams": 297.0,
+       "portion_id": 89367,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "8adbdb5a85cc7b46"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168731",
@@ -806,7 +1294,19 @@
       "cholesterol": 81.0,
       "vitamin_d": 0.1,
       "vitamin_a": 1.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz ( 1 serving )",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 83662,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "b3389ca38cb74094"
+      }
+     ]
     }
    ],
    "raw": 9,
@@ -856,7 +1356,29 @@
       "trans_fat": 0.329,
       "saturated_fat": 2.93,
       "cholesterol": 81.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 84982,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "f05fcfba56526101"
+      },
+      {
+       "unit_text": "roast",
+       "amount": 1.0,
+       "grams": 645.0,
+       "portion_id": 84983,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "642657673f1bc816"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169496",
@@ -894,7 +1416,29 @@
       "monounsaturated_fat": 4.69,
       "polyunsaturated_fat": 0.431,
       "cholesterol": 84.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 84980,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "3355d3a424edacb5"
+      },
+      {
+       "unit_text": "roast",
+       "amount": 1.0,
+       "grams": 586.0,
+       "portion_id": 84981,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "88f7d8e6457f1a00"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171215",
@@ -932,7 +1476,29 @@
       "trans_fat": 0.882,
       "saturated_fat": 6.46,
       "polyunsaturated_fat": 0.59
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "roast",
+       "amount": 1.0,
+       "grams": 586.0,
+       "portion_id": 88182,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "f33165317e542a6b"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 88181,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "2b2ecf4bd6f659b6"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171216",
@@ -970,7 +1536,29 @@
       "niacin": 4.31,
       "vitamin_b6": 0.382,
       "polyunsaturated_fat": 0.679
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 88183,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "0c264725a37e65de"
+      },
+      {
+       "unit_text": "roast",
+       "amount": 1.0,
+       "grams": 645.0,
+       "portion_id": 88184,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "4a6c87d1a1879d32"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168674",
@@ -1008,7 +1596,29 @@
       "trans_fat": 0.373,
       "saturated_fat": 3.42,
       "cholesterol": 83.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "roast",
+       "amount": 1.0,
+       "grams": 609.0,
+       "portion_id": 83547,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "a107437f1adb2ff8"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 83546,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "f0027b23e70322ed"
+      }
+     ]
     },
     {
      "evidence_id": "usda:170820",
@@ -1046,7 +1656,29 @@
       "vitamin_b6": 0.38,
       "monounsaturated_fat": 7.24,
       "polyunsaturated_fat": 0.664
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 87319,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "5b118edf890e14d8"
+      },
+      {
+       "unit_text": "roast",
+       "amount": 1.0,
+       "grams": 609.0,
+       "portion_id": 87320,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "110ba0a15ec90803"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173089",
@@ -1082,7 +1714,19 @@
       "cholesterol": 69.0,
       "trans_fat": 0.183,
       "saturated_fat": 3.58
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 91935,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "864b4b4e5d714c25"
+      }
+     ]
     }
    ],
    "raw": 10,
@@ -1159,7 +1803,69 @@
       "cholesterol": 0.0,
       "vitamin_a": 31.0,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "bunch",
+       "amount": 1.0,
+       "grams": 608.0,
+       "portion_id": 86529,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "ab729be385fa63ef"
+      },
+      {
+       "unit_text": "cup, chopped or diced",
+       "amount": 0.5,
+       "grams": 44.0,
+       "portion_id": 86532,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "fb732b0fae961ad0"
+      },
+      {
+       "unit_text": "stalk",
+       "amount": 1.0,
+       "grams": 151.0,
+       "portion_id": 86531,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "17a5a652bfe96a8d"
+      },
+      {
+       "unit_text": "spear (about 5\" long)",
+       "amount": 1.0,
+       "grams": 31.0,
+       "portion_id": 86530,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "0c334c560a51fe51"
+      },
+      {
+       "unit_text": "nlea serving",
+       "amount": 1.0,
+       "grams": 148.0,
+       "portion_id": 86533,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "8f2e05b42a7a66d7"
+      },
+      {
+       "unit_text": "cup chopped",
+       "amount": 1.0,
+       "grams": 91.0,
+       "portion_id": 86528,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "d87f270118b66ca2"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169329",
@@ -1228,7 +1934,19 @@
       "cholesterol": 0.0,
       "saturated_fat": 0.054,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "stalk",
+       "amount": 1.0,
+       "grams": 114.0,
+       "portion_id": 84661,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9e3184f039a2e215"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168510",
@@ -1266,7 +1984,59 @@
       "phosphorus": 67.0,
       "sodium": 262,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "stalk, large (11\"-12\" long)",
+       "amount": 1.0,
+       "grams": 280.0,
+       "portion_id": 83214,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "ca567ed2b2e67034"
+      },
+      {
+       "unit_text": "spear (about 5\" long)",
+       "amount": 1.0,
+       "grams": 37.0,
+       "portion_id": 83217,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "41f76ce8c65c7995"
+      },
+      {
+       "unit_text": "cup, chopped",
+       "amount": 0.5,
+       "grams": 78.0,
+       "portion_id": 83213,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "7cb4ea0bae4fd752"
+      },
+      {
+       "unit_text": "stalk, medium (7-1/2\" - 8\" long)",
+       "amount": 1.0,
+       "grams": 180.0,
+       "portion_id": 83215,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "8d1bc3113c900d52"
+      },
+      {
+       "unit_text": "stalk, small (5\" long)",
+       "amount": 1.0,
+       "grams": 140.0,
+       "portion_id": 83216,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "4091f93731ba4084"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169967",
@@ -1304,7 +2074,59 @@
       "saturated_fat": 0.079,
       "vitamin_a": 77.0,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "stalk, large (11\"-12\" long)",
+       "amount": 1.0,
+       "grams": 280.0,
+       "portion_id": 85773,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "7a489bcb5559e207"
+      },
+      {
+       "unit_text": "spear (about 5\" long)",
+       "amount": 1.0,
+       "grams": 37.0,
+       "portion_id": 85776,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "3e33376448acdc63"
+      },
+      {
+       "unit_text": "cup, chopped",
+       "amount": 0.5,
+       "grams": 78.0,
+       "portion_id": 85772,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "88f09c5f257dc05a"
+      },
+      {
+       "unit_text": "stalk, medium (7-1/2\" - 8\" long)",
+       "amount": 1.0,
+       "grams": 180.0,
+       "portion_id": 85774,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "50252a75de23be46"
+      },
+      {
+       "unit_text": "stalk, small (5\" long)",
+       "amount": 1.0,
+       "grams": 140.0,
+       "portion_id": 85775,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9316cecee8ad9a02"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168511",
@@ -1342,7 +2164,19 @@
       "zinc": 0.28,
       "vitamin_e": 1.32,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 184.0,
+       "portion_id": 83218,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "e5dad619e74fa789"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168512",
@@ -1380,7 +2214,29 @@
       "vitamin_k": 99.5,
       "vitamin_a": 56.0,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "package (10 oz) yields",
+       "amount": 1.0,
+       "grams": 250.0,
+       "portion_id": 83220,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "65d243e3fd364646"
+      },
+      {
+       "unit_text": "cup",
+       "amount": 0.5,
+       "grams": 92.0,
+       "portion_id": 83219,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "98a5c69edb7c29f1"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169969",
@@ -1418,7 +2274,19 @@
       "phosphorus": 49.0,
       "sodium": 11.0,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 184.0,
+       "portion_id": 85779,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "465b26b207ce7e9b"
+      }
+     ]
     },
     {
      "evidence_id": "usda:170380",
@@ -1456,7 +2324,29 @@
       "vitamin_b12": 0.0,
       "vitamin_e": 1.32,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "package (10 oz) yields",
+       "amount": 1.0,
+       "grams": 250.0,
+       "portion_id": 86535,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "e310b03d92d6e021"
+      },
+      {
+       "unit_text": "cup",
+       "amount": 0.5,
+       "grams": 92.0,
+       "portion_id": 86534,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9e5f84a7cae22813"
+      }
+     ]
     }
    ],
    "raw": 14,
@@ -1500,7 +2390,59 @@
       "zinc": 0.27,
       "niacin": 0.507,
       "vitamin_b6": 0.184
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "floweret",
+       "amount": 1.0,
+       "grams": 13.0,
+       "portion_id": 85819,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "3eea138ca9e7cd81"
+      },
+      {
+       "unit_text": "head medium (5-6\" dia.)",
+       "amount": 1.0,
+       "grams": 588.0,
+       "portion_id": 85821,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "e827c28e33aae9df"
+      },
+      {
+       "unit_text": "head small (4\" dia.)",
+       "amount": 1.0,
+       "grams": 265.0,
+       "portion_id": 85822,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "ec10be47aef7198c"
+      },
+      {
+       "unit_text": "head large (6-7\" dia.)",
+       "amount": 1.0,
+       "grams": 840.0,
+       "portion_id": 85820,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "495c9d6c5a386017"
+      },
+      {
+       "unit_text": "cup chopped (1/2\" pieces)",
+       "amount": 1.0,
+       "grams": 107.0,
+       "portion_id": 85818,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "2b6d1b74d4056bc0"
+      }
+     ]
     },
     {
      "evidence_id": "usda:170398",
@@ -1538,7 +2480,29 @@
       "sugar": 2.22,
       "vitamin_e": 0.07,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup (1\" pieces)",
+       "amount": 0.5,
+       "grams": 66.0,
+       "portion_id": 86575,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "8f440836f595ac12"
+      },
+      {
+       "unit_text": "package (10 oz)",
+       "amount": 1.0,
+       "grams": 284.0,
+       "portion_id": 86576,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "0cd6a4d1676a39f8"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169389",
@@ -1576,7 +2540,59 @@
       "monounsaturated_fat": 0.028,
       "polyunsaturated_fat": 0.133,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "head, small (4\" dia)",
+       "amount": 1.0,
+       "grams": 325.0,
+       "portion_id": 84778,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9851b624c0d053fa"
+      },
+      {
+       "unit_text": "head, medium (5-6\" dia)",
+       "amount": 1.0,
+       "grams": 431.0,
+       "portion_id": 84777,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "c41fe4287b48151b"
+      },
+      {
+       "unit_text": "head, large (6-7\" dia)",
+       "amount": 1.0,
+       "grams": 511.0,
+       "portion_id": 84776,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "39d7426b55fc5d2f"
+      },
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 64.0,
+       "portion_id": 84774,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "e252ea9afe550b35"
+      },
+      {
+       "unit_text": "floweret",
+       "amount": 1.0,
+       "grams": 25.0,
+       "portion_id": 84775,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "939a43fa3f81235a"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169391",
@@ -1611,7 +2627,19 @@
       "monounsaturated_fat": 0.029,
       "polyunsaturated_fat": 0.137,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup (1\" pieces)",
+       "amount": 0.5,
+       "grams": 62.0,
+       "portion_id": 84780,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "19f1c172dfc22095"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168520",
@@ -1649,7 +2677,29 @@
       "vitamin_k": 13.8,
       "vitamin_e": 0.07,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup (1\" pieces)",
+       "amount": 0.5,
+       "grams": 62.0,
+       "portion_id": 83234,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "ae8660578e3746f7"
+      },
+      {
+       "unit_text": "flowerets",
+       "amount": 3.0,
+       "grams": 54.0,
+       "portion_id": 83235,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "e624c6f9fd3d5f35"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169390",
@@ -1687,7 +2737,19 @@
       "vitamin_e": 0.04,
       "monounsaturated_fat": 0.03,
       "polyunsaturated_fat": 0.137
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "head",
+       "amount": 0.2,
+       "grams": 90.0,
+       "portion_id": 84779,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9a63502ab27ea447"
+      }
+     ]
     },
     {
      "evidence_id": "usda:170397",
@@ -1725,7 +2787,29 @@
       "vitamin_e": 0.07,
       "vitamin_k": 13.8,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup (1\" pieces)",
+       "amount": 0.5,
+       "grams": 62.0,
+       "portion_id": 86573,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "13dd4056a8bad575"
+      },
+      {
+       "unit_text": "flowerets",
+       "amount": 3.0,
+       "grams": 54.0,
+       "portion_id": 86574,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "d3120dba8d0fab1f"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168521",
@@ -1763,7 +2847,19 @@
       "vitamin_e": 0.06,
       "vitamin_k": 11.9,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup (1\" pieces)",
+       "amount": 1.0,
+       "grams": 180.0,
+       "portion_id": 83236,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "4bfb9053ca613dc8"
+      }
+     ]
     },
     {
      "evidence_id": "usda:170399",
@@ -1801,7 +2897,19 @@
       "vitamin_e": 0.06,
       "vitamin_k": 11.9,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup (1\" pieces)",
+       "amount": 1.0,
+       "grams": 180.0,
+       "portion_id": 86577,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "a970c2e68bc155f0"
+      }
+     ]
     }
    ],
    "raw": 9,
@@ -1844,7 +2952,39 @@
       "vitamin_e": 0.46,
       "sugar": 0.0,
       "fiber": 0.1
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup, chopped or diced",
+       "amount": 1.0,
+       "grams": 140.0,
+       "portion_id": 87860,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "525fdad818f2b924"
+      },
+      {
+       "unit_text": "unit (yield from 1 lb ready-to-cook chicken)",
+       "amount": 1.0,
+       "grams": 155.0,
+       "portion_id": 87861,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "fa632997e062422b"
+      },
+      {
+       "unit_text": "chicken, bone and skin removed",
+       "amount": 0.5,
+       "grams": 258.0,
+       "portion_id": 87862,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "f147f3a36ed3bb5f"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171074",
@@ -1877,7 +3017,29 @@
       "magnesium": 25.0,
       "phosphorus": 176,
       "sodium": 99.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "unit (yield from 1 lb ready-to-cook chicken)",
+       "amount": 1.0,
+       "grams": 35.0,
+       "portion_id": 87911,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "156c8a6d9f749138"
+      },
+      {
+       "unit_text": "back, bone and skin removed",
+       "amount": 0.5,
+       "grams": 58.0,
+       "portion_id": 87912,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "2bc2b31e197e9e3e"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171078",
@@ -1914,7 +3076,29 @@
       "vitamin_k": 2.4,
       "sugar": 0.0,
       "vitamin_e": 0.42
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "unit (yield from 1 lb ready-to-cook chicken)",
+       "amount": 1.0,
+       "grams": 52.0,
+       "portion_id": 87922,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "e4333b6b2460fa1f"
+      },
+      {
+       "unit_text": "breast, bone and skin removed",
+       "amount": 0.5,
+       "grams": 86.0,
+       "portion_id": 87923,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "d3e8d0a86046f70a"
+      }
+     ]
     },
     {
      "evidence_id": "usda:172375",
@@ -1947,7 +3131,29 @@
       "vitamin_b12": 0.35,
       "cholesterol": 94.0,
       "saturated_fat": 2.13
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "unit (yield from 1 lb ready-to-cook chicken)",
+       "amount": 1.0,
+       "grams": 25.0,
+       "portion_id": 90472,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "b664120e3eaac2da"
+      },
+      {
+       "unit_text": "drumstick, bone and skin removed",
+       "amount": 1.0,
+       "grams": 42.0,
+       "portion_id": 90473,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "11cb5a49b966a25d"
+      }
+     ]
     },
     {
      "evidence_id": "usda:172379",
@@ -1980,7 +3186,29 @@
       "polyunsaturated_fat": 2.22,
       "niacin": 6.69,
       "vitamin_b6": 0.39
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "leg, bone and skin removed",
+       "amount": 1.0,
+       "grams": 94.0,
+       "portion_id": 90487,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "d43985ff4a5a9ba8"
+      },
+      {
+       "unit_text": "unit (yield from 1 lb ready-to-cook chicken)",
+       "amount": 1.0,
+       "grams": 56.0,
+       "portion_id": 90486,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "18135d385346e4c3"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171448",
@@ -2017,7 +3245,39 @@
       "vitamin_e": 1.24,
       "sugar": 0.0,
       "folate": 18.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "unit (yield from 1 lb ready-to-cook chicken)",
+       "amount": 1.0,
+       "grams": 280.0,
+       "portion_id": 88748,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "715857e68daf1506"
+      },
+      {
+       "unit_text": "chicken, bone removed",
+       "amount": 0.5,
+       "grams": 466.0,
+       "portion_id": 88749,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9beb36c8743c1c03"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 88747,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "cad21efa511a4a79"
+      }
+     ]
     }
    ],
    "raw": 13,
@@ -2060,7 +3320,29 @@
       "vitamin_e": 0.54,
       "vitamin_k": 0.0,
       "vitamin_a": 10.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 88942,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "07a4e0867bf5fa2e"
+      },
+      {
+       "unit_text": "piece",
+       "amount": 1.0,
+       "grams": 196.0,
+       "portion_id": 88943,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "b6fad798c9230f80"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171536",
@@ -2096,7 +3378,29 @@
       "saturated_fat": 1.01,
       "monounsaturated_fat": 1.32,
       "polyunsaturated_fat": 0.713
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "piece",
+       "amount": 1.0,
+       "grams": 192.0,
+       "portion_id": 88947,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "5bf6f31f71052efa"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 88946,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "0e9aba2d29429a0a"
+      }
+     ]
     }
    ],
    "raw": 10,
@@ -2139,7 +3443,39 @@
       "vitamin_b6": 0.35,
       "monounsaturated_fat": 5.4,
       "polyunsaturated_fat": 2.92
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "chicken, bone removed",
+       "amount": 0.5,
+       "grams": 480.0,
+       "portion_id": 92997,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "8697c29a6f65713e"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 92995,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "1dc72501d67f2c05"
+      },
+      {
+       "unit_text": "unit (yield from 1 lb ready-to-cook chicken)",
+       "amount": 1.0,
+       "grams": 210.0,
+       "portion_id": 92996,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "5e1f6b581b74112d"
+      }
+     ]
     },
     {
      "evidence_id": "usda:172395",
@@ -2172,7 +3508,29 @@
       "polyunsaturated_fat": 1.51,
       "niacin": 7.88,
       "vitamin_b6": 0.41
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup, chopped or diced",
+       "amount": 1.0,
+       "grams": 140.0,
+       "portion_id": 90531,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "60db79175242188c"
+      },
+      {
+       "unit_text": "unit (yield from 1 lb ready-to-cook chicken)",
+       "amount": 1.0,
+       "grams": 171.0,
+       "portion_id": 90532,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "dc1ce3c791ee3fdf"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173639",
@@ -2205,7 +3563,29 @@
       "vitamin_b6": 0.31,
       "monounsaturated_fat": 3.31,
       "polyunsaturated_fat": 2.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup, chopped or diced",
+       "amount": 1.0,
+       "grams": 140.0,
+       "portion_id": 93005,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "0cdcd67068b0cf8c"
+      },
+      {
+       "unit_text": "unit (yield from 1 lb ready-to-cook chicken)",
+       "amount": 1.0,
+       "grams": 94.0,
+       "portion_id": 93006,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "e4f1f98649721c9c"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173637",
@@ -2242,7 +3622,29 @@
       "sugar": 0.0,
       "vitamin_e": 0.27,
       "vitamin_k": 0.3
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "unit (yield from 1 lb ready-to-cook chicken)",
+       "amount": 1.0,
+       "grams": 78.0,
+       "portion_id": 93002,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "4e2a61244f4c9df9"
+      },
+      {
+       "unit_text": "cup, chopped or diced",
+       "amount": 1.0,
+       "grams": 140.0,
+       "portion_id": 93001,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "852d3daef47e7c12"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173646",
@@ -2274,7 +3676,39 @@
       "cholesterol": 86.0,
       "saturated_fat": 3.26,
       "protein": 29.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 93020,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "4d44298710d191be"
+      },
+      {
+       "unit_text": "unit (yield from 1 lb ready-to cook capon)",
+       "amount": 1.0,
+       "grams": 196.0,
+       "portion_id": 93021,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "93046b52af44b8bd"
+      },
+      {
+       "unit_text": "capon, bone removed",
+       "amount": 0.5,
+       "grams": 637.0,
+       "portion_id": 93022,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "387ae6aefaf4d894"
+      }
+     ]
     }
    ],
    "raw": 8,
@@ -2355,7 +3789,19 @@
       "polyunsaturated_fat": 3.25,
       "vitamin_d": 2.2,
       "calories": 196
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "large",
+       "amount": 1.0,
+       "grams": 46.0,
+       "portion_id": 92497,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "cc1461954103f0aa"
+      }
+     ]
     },
     {
      "evidence_id": "usda:172185",
@@ -2393,7 +3839,29 @@
       "vitamin_b6": 0.143,
       "vitamin_d": 1.7,
       "calories": 154
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "large",
+       "amount": 1.0,
+       "grams": 61.0,
+       "portion_id": 90048,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "0af5d21c92fbd638"
+      },
+      {
+       "unit_text": "tbsp",
+       "amount": 1.0,
+       "grams": 15.0,
+       "portion_id": 90047,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "47cafc758526a203"
+      }
+     ]
     },
     {
      "evidence_id": "usda:172186",
@@ -2431,7 +3899,19 @@
       "cholesterol": 370,
       "trans_fat": 0.038,
       "saturated_fat": 3.11
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "large",
+       "amount": 1.0,
+       "grams": 50.0,
+       "portion_id": 90049,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "01596b980843d2c5"
+      }
+     ]
     },
     {
      "evidence_id": "usda:172187",
@@ -2469,7 +3949,39 @@
       "vitamin_b6": 0.134,
       "vitamin_d": 1.8,
       "calories": 149
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 220.0,
+       "portion_id": 90052,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "74fbe8b0fa81549c"
+      },
+      {
+       "unit_text": "large",
+       "amount": 1.0,
+       "grams": 61.0,
+       "portion_id": 90050,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "3c952bad0f4b22df"
+      },
+      {
+       "unit_text": "tbsp",
+       "amount": 1.0,
+       "grams": 13.7,
+       "portion_id": 90051,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "1fb336706daf89e1"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173424",
@@ -2506,7 +4018,39 @@
       "fat": 10.6,
       "carbs": 1.12,
       "niacin": 0.064
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "tbsp",
+       "amount": 1.0,
+       "grams": 8.5,
+       "portion_id": 92499,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "50442da42fd4d15e"
+      },
+      {
+       "unit_text": "cup, chopped",
+       "amount": 1.0,
+       "grams": 136.0,
+       "portion_id": 92498,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "f90e05690090198b"
+      },
+      {
+       "unit_text": "large",
+       "amount": 1.0,
+       "grams": 50.0,
+       "portion_id": 92500,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "7c9f737cc2d38777"
+      }
+     ]
     }
    ],
    "raw": 16,
@@ -2550,7 +4094,19 @@
       "polyunsaturated_fat": 3.25,
       "vitamin_d": 2.2,
       "calories": 196
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "large",
+       "amount": 1.0,
+       "grams": 46.0,
+       "portion_id": 92497,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "cc1461954103f0aa"
+      }
+     ]
     }
    ],
    "raw": 4,
@@ -2606,7 +4162,39 @@
       "phosphorus": 254,
       "sodium": 4450.0,
       "vitamin_a": 47.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup, cooked",
+       "amount": 1.0,
+       "grams": 136.0,
+       "portion_id": 82563,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "b5af11179f3f7150"
+      },
+      {
+       "unit_text": "cubic inch, boneless",
+       "amount": 1.0,
+       "grams": 17.0,
+       "portion_id": 82562,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "99dba449a7a738b2"
+      },
+      {
+       "unit_text": "piece (5-1/2\" x 1-1/2\" x 1/2\")",
+       "amount": 1.0,
+       "grams": 80.0,
+       "portion_id": 82561,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "1568563e177487ef"
+      }
+     ]
     },
     {
      "evidence_id": "usda:175119",
@@ -2643,7 +4231,29 @@
       "riboflavin": 0.312,
       "folate": 1.0,
       "vitamin_b12": 8.71
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 95678,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "f729ebdc795c9d74"
+      },
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 112.0,
+       "portion_id": 95677,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "250ea5c75bfa11b6"
+      }
+     ]
     },
     {
      "evidence_id": "usda:175122",
@@ -2676,7 +4286,29 @@
       "zinc": 0.56,
       "monounsaturated_fat": 0.764,
       "polyunsaturated_fat": 0.46
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 95685,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "aa23914614950909"
+      },
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 198.0,
+       "portion_id": 95686,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "117b1161e08e5a33"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173673",
@@ -2713,7 +4345,29 @@
       "calcium": 11.0,
       "potassium": 446,
       "zinc": 0.49
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 187.0,
+       "portion_id": 93082,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "56992dffec837f77"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 93081,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "a5c923bdb03049ad"
+      }
+     ]
     },
     {
      "evidence_id": "usda:175120",
@@ -2746,7 +4400,29 @@
       "vitamin_b6": 0.46,
       "monounsaturated_fat": 7.01,
       "polyunsaturated_fat": 4.3
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 95680,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "1d2c7ad24b29bd32"
+      },
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 88.0,
+       "portion_id": 95679,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "369c562685f8fee5"
+      }
+     ]
     },
     {
      "evidence_id": "usda:175121",
@@ -2783,7 +4459,49 @@
       "riboflavin": 0.212,
       "folate": 5.0,
       "vitamin_b12": 6.94
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 190.0,
+       "portion_id": 95682,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "172d7ebd4adbebff"
+      },
+      {
+       "unit_text": "oz, boneless",
+       "amount": 1.0,
+       "grams": 28.35,
+       "portion_id": 95681,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "3dd9273090615d0c"
+      },
+      {
+       "unit_text": "cubic inch",
+       "amount": 1.0,
+       "grams": 16.0,
+       "portion_id": 95683,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "c48f4f1bcb33f51a"
+      },
+      {
+       "unit_text": "can (15 oz)",
+       "amount": 1.0,
+       "grams": 361.0,
+       "portion_id": 95684,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "34b63770163f5df9"
+      }
+     ]
     },
     {
      "evidence_id": "usda:174236",
@@ -2816,7 +4534,29 @@
       "magnesium": 41.0,
       "phosphorus": 318,
       "sodium": 203
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 93994,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "51c37955bfdfe945"
+      },
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 154.0,
+       "portion_id": 93995,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "4c0c64cd12d6af41"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173674",
@@ -2849,7 +4589,29 @@
       "magnesium": 38.0,
       "phosphorus": 271,
       "sodium": 66.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 146.0,
+       "portion_id": 93083,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "05bf9bc117a4d045"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 93084,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "c50c274788746221"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171994",
@@ -2886,7 +4648,49 @@
       "zinc": 0.86,
       "monounsaturated_fat": 3.37,
       "polyunsaturated_fat": 2.49
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 176.0,
+       "portion_id": 89702,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "467b050836f60cbc"
+      },
+      {
+       "unit_text": "cubic inch, boneless",
+       "amount": 1.0,
+       "grams": 17.0,
+       "portion_id": 89701,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "7c7651953bad7680"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 89703,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "375a6ff4bdde8e04"
+      },
+      {
+       "unit_text": "oz, boneless",
+       "amount": 1.0,
+       "grams": 28.35,
+       "portion_id": 89700,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "bda245730e71791c"
+      }
+     ]
     }
    ],
    "raw": 9,
@@ -2925,7 +4729,29 @@
       "vitamin_b6": 0.46,
       "monounsaturated_fat": 7.01,
       "polyunsaturated_fat": 4.3
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 95680,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "1d2c7ad24b29bd32"
+      },
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 88.0,
+       "portion_id": 95679,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "369c562685f8fee5"
+      }
+     ]
     },
     {
      "evidence_id": "usda:174236",
@@ -2958,7 +4784,29 @@
       "magnesium": 41.0,
       "phosphorus": 318,
       "sodium": 203
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 93994,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "51c37955bfdfe945"
+      },
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 154.0,
+       "portion_id": 93995,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "4c0c64cd12d6af41"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173674",
@@ -2991,7 +4839,29 @@
       "magnesium": 38.0,
       "phosphorus": 271,
       "sodium": 66.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 146.0,
+       "portion_id": 93083,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "05bf9bc117a4d045"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 93084,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "c50c274788746221"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171994",
@@ -3028,7 +4898,49 @@
       "zinc": 0.86,
       "monounsaturated_fat": 3.37,
       "polyunsaturated_fat": 2.49
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 176.0,
+       "portion_id": 89702,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "467b050836f60cbc"
+      },
+      {
+       "unit_text": "cubic inch, boneless",
+       "amount": 1.0,
+       "grams": 17.0,
+       "portion_id": 89701,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "7c7651953bad7680"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 89703,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "375a6ff4bdde8e04"
+      },
+      {
+       "unit_text": "oz, boneless",
+       "amount": 1.0,
+       "grams": 28.35,
+       "portion_id": 89700,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "bda245730e71791c"
+      }
+     ]
     }
    ],
    "raw": 6,
@@ -3079,7 +4991,29 @@
       "folate": 21.0,
       "vitamin_b12": 0.0,
       "cholesterol": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup pieces",
+       "amount": 1.0,
+       "grams": 145.0,
+       "portion_id": 86035,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "4673c20911d7f12a"
+      },
+      {
+       "unit_text": "mushrooms",
+       "amount": 4.0,
+       "grams": 72.0,
+       "portion_id": 86036,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "be79ca0d48e4f7d8"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168437",
@@ -3117,7 +5051,29 @@
       "saturated_fat": 0.05,
       "monounsaturated_fat": 0.07,
       "polyunsaturated_fat": 0.034
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup pieces",
+       "amount": 1.0,
+       "grams": 145.0,
+       "portion_id": 83100,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "02b9caee44562c69"
+      },
+      {
+       "unit_text": "mushrooms",
+       "amount": 4.0,
+       "grams": 72.0,
+       "portion_id": 83101,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "887aee004d0a117a"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168537",
@@ -3155,7 +5111,39 @@
       "vitamin_d": 0.2,
       "vitamin_a": 0.0,
       "saturated_fat": 0.061
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "tbsp",
+       "amount": 1.0,
+       "grams": 9.8,
+       "portion_id": 83261,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "0a0d79044b320a84"
+      },
+      {
+       "unit_text": "cup pieces",
+       "amount": 1.0,
+       "grams": 156.0,
+       "portion_id": 83260,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "07510b209368e2f8"
+      },
+      {
+       "unit_text": "mushroom",
+       "amount": 1.0,
+       "grams": 12.0,
+       "portion_id": 83262,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "1701d52ac9843cc9"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169252",
@@ -3193,7 +5181,39 @@
       "saturated_fat": 0.061,
       "vitamin_d": 0.2,
       "vitamin_a": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup pieces",
+       "amount": 1.0,
+       "grams": 156.0,
+       "portion_id": 84533,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "2353abf8bcb2cb85"
+      },
+      {
+       "unit_text": "mushroom",
+       "amount": 1.0,
+       "grams": 12.0,
+       "portion_id": 84535,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "bda09a707d1b752d"
+      },
+      {
+       "unit_text": "tbsp",
+       "amount": 1.0,
+       "grams": 9.8,
+       "portion_id": 84534,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "c84883b15aaa5242"
+      }
+     ]
     }
    ],
    "raw": 4,
@@ -3237,7 +5257,19 @@
       "vitamin_a": 0.0,
       "protein": 3.28,
       "vitamin_d": 0.3
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup sliced",
+       "amount": 1.0,
+       "grams": 121.0,
+       "portion_id": 84501,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "0144aecdcf32693b"
+      }
+     ]
     },
     {
      "evidence_id": "usda:169377",
@@ -3272,7 +5304,19 @@
       "niacin": 6.26,
       "vitamin_b6": 0.122,
       "fat": 0.58
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup sliced",
+       "amount": 1.0,
+       "grams": 121.0,
+       "portion_id": 84734,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "7beef0f63210db8d"
+      }
+     ]
     }
    ],
    "raw": 4,
@@ -3322,7 +5366,39 @@
       "polyunsaturated_fat": 0.559,
       "trans_fat": 0.001,
       "saturated_fat": 0.31
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "tbsp",
+       "amount": 1.0,
+       "grams": 14.6,
+       "portion_id": 93457,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9ce143ae932f38db"
+      },
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 234.0,
+       "portion_id": 93456,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "e911586d26e52901"
+      },
+      {
+       "unit_text": "cup",
+       "amount": 0.75,
+       "grams": 175.0,
+       "portion_id": 93458,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "53ba40240f02f27d"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171675",
@@ -3359,7 +5435,29 @@
       "fat": 1.52,
       "carbs": 12.0,
       "calories": 71.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 234.0,
+       "portion_id": 89172,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "d6a1efc06f9cf308"
+      },
+      {
+       "unit_text": "cup",
+       "amount": 0.75,
+       "grams": 175.0,
+       "portion_id": 89173,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "f9661826b3e7b1d6"
+      }
+     ]
     }
    ],
    "raw": 10,
@@ -3403,7 +5501,29 @@
       "trans_fat": 0.0,
       "sugar": 0.91,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 0.5,
+       "grams": 78.0,
+       "portion_id": 86083,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "5ab0fee94988e532"
+      },
+      {
+       "unit_text": "potato (2-1/2\" dia, sphere)",
+       "amount": 1.0,
+       "grams": 136.0,
+       "portion_id": 86084,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "73fffdb3e695626a"
+      }
+     ]
     },
     {
      "evidence_id": "usda:170522",
@@ -3438,7 +5558,29 @@
       "niacin": 1.62,
       "vitamin_b6": 0.319,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 0.5,
+       "grams": 78.0,
+       "portion_id": 86800,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "eab0500f201d913c"
+      },
+      {
+       "unit_text": "potato (2-1/3\" x 4-3/4\")",
+       "amount": 1.0,
+       "grams": 156.0,
+       "portion_id": 86801,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "b965e51170230b59"
+      }
+     ]
     },
     {
      "evidence_id": "usda:170115",
@@ -3473,7 +5615,19 @@
       "saturated_fat": 0.026,
       "cholesterol": 0.0,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "skin",
+       "amount": 1.0,
+       "grams": 58.0,
+       "portion_id": 86085,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "eff261fcfd530489"
+      }
+     ]
     }
    ],
    "raw": 15,
@@ -3517,7 +5671,39 @@
       "monounsaturated_fat": 5.97,
       "polyunsaturated_fat": 5.4,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "serving small",
+       "amount": 1.0,
+       "grams": 71.0,
+       "portion_id": 87095,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9a43c53e4c2cb829"
+      },
+      {
+       "unit_text": "serving medium",
+       "amount": 1.0,
+       "grams": 117.0,
+       "portion_id": 87096,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "5f31ae322a6e7e24"
+      },
+      {
+       "unit_text": "serving large",
+       "amount": 1.0,
+       "grams": 154.0,
+       "portion_id": 87097,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "162c4a442e6b1bf6"
+      }
+     ]
     }
    ],
    "raw": 8,
@@ -3569,7 +5755,19 @@
       "vitamin_b12": 0.0,
       "vitamin_d": 0.0,
       "vitamin_a": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 174.0,
+       "portion_id": 85385,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "c21c9a7def19ef18"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173263",
@@ -3602,7 +5800,19 @@
       "saturated_fat": 0.213,
       "protein": 3.09,
       "calories": 147
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 155.0,
+       "portion_id": 92208,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "ea21199e4cb6de20"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168930",
@@ -3635,7 +5845,19 @@
       "cholesterol": 0.0,
       "saturated_fat": 0.057,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 186.0,
+       "portion_id": 84018,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "93064de5027706ce"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168880",
@@ -3669,7 +5891,19 @@
       "thiamin": 0.167,
       "riboflavin": 0.016,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 186.0,
+       "portion_id": 83930,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "b936555abfe1d3bd"
+      }
+     ]
     },
     {
      "evidence_id": "usda:168932",
@@ -3701,7 +5935,19 @@
       "saturated_fat": 0.051,
       "protein": 2.36,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 205.0,
+       "portion_id": 84020,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "09880ef090412a16"
+      }
+     ]
     }
    ],
    "raw": 16,
@@ -3742,7 +5988,29 @@
       "folate": 30.0,
       "carbs": 0.0,
       "vitamin_b6": 0.4
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 198.0,
+       "portion_id": 93113,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "48e5fc0c4145e7cc"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 93112,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "c49c98ab234b2711"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173687",
@@ -3779,7 +6047,49 @@
       "riboflavin": 0.101,
       "folate": 2.0,
       "vitamin_b12": 3.26
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 93109,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "ef8cd2ba675d6125"
+      },
+      {
+       "unit_text": "cubic inch, boneless",
+       "amount": 1.0,
+       "grams": 17.0,
+       "portion_id": 93110,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "f56f7a2b5fba0dc5"
+      },
+      {
+       "unit_text": "oz, boneless",
+       "amount": 1.0,
+       "grams": 28.35,
+       "portion_id": 93108,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "61eae7c477d4a11e"
+      },
+      {
+       "unit_text": "cup, cooked",
+       "amount": 1.0,
+       "grams": 136.0,
+       "portion_id": 93111,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "1ed3df52c74f0618"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173689",
@@ -3813,7 +6123,29 @@
       "vitamin_b12": 3.0,
       "cholesterol": 74.0,
       "saturated_fat": 0.84
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 198.0,
+       "portion_id": 93115,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "5803956a333111e6"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 93114,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "8d89a5bfc333c534"
+      }
+     ]
     },
     {
      "evidence_id": "usda:175138",
@@ -3851,7 +6183,29 @@
       "vitamin_c": 0.0,
       "fiber": 0.0,
       "folate": 4.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 95720,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "1ee4860b462c6e7a"
+      },
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 159.0,
+       "portion_id": 95721,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "cdb7d46988c73762"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173691",
@@ -3889,7 +6243,39 @@
       "calories": 131,
       "carbs": 0.0,
       "fiber": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz, boneless",
+       "amount": 1.0,
+       "grams": 28.35,
+       "portion_id": 93118,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9136868ff7cc23fc"
+      },
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 198.0,
+       "portion_id": 93119,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "6f4e2711f2e1a9b8"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 93120,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "2ac402e17c762539"
+      }
+     ]
     },
     {
      "evidence_id": "usda:175167",
@@ -3926,7 +6312,29 @@
       "vitamin_c": 3.9,
       "folate": 26.0,
       "carbs": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 95786,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "31641815e0122fc5"
+      },
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 198.0,
+       "portion_id": 95787,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "0cafaf8a2b94120c"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173686",
@@ -3959,7 +6367,29 @@
       "polyunsaturated_fat": 2.54,
       "niacin": 7.86,
       "vitamin_b6": 0.818
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 93106,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9abc4e3e40814944"
+      },
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 198.0,
+       "portion_id": 93107,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "b52712cb443cfb8d"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171999",
@@ -3992,7 +6422,29 @@
       "sodium": 60.0,
       "cholesterol": 85.0,
       "saturated_fat": 3.21
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 154.0,
+       "portion_id": 89711,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "217f8b97ae51de7a"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 89710,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9cfaf3185a5a452f"
+      }
+     ]
     },
     {
      "evidence_id": "usda:172000",
@@ -4025,7 +6477,29 @@
       "vitamin_b6": 0.462,
       "monounsaturated_fat": 1.98,
       "polyunsaturated_fat": 1.15
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 154.0,
+       "portion_id": 89713,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "394db4dcb3b2d50f"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 89712,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "07e98012266cd2ad"
+      }
+     ]
     },
     {
      "evidence_id": "usda:172001",
@@ -4063,7 +6537,29 @@
       "vitamin_b6": 0.696,
       "monounsaturated_fat": 1.62,
       "polyunsaturated_fat": 0.973
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 124.0,
+       "portion_id": 89715,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "b079412328338daa"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 89714,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9c6180517fce9121"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173692",
@@ -4101,7 +6597,29 @@
       "cholesterol": 61.0,
       "trans_fat": 0.023,
       "saturated_fat": 0.969
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 93121,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "314103db2048a229"
+      },
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 155.0,
+       "portion_id": 93122,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "5d5e4b2103bea238"
+      }
+     ]
     },
     {
      "evidence_id": "usda:175168",
@@ -4138,7 +6656,29 @@
       "phosphorus": 252,
       "sodium": 61.0,
       "calories": 206
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 178.0,
+       "portion_id": 95789,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "5d2d1f84cf7a3bb4"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 95788,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "863edca0f5e8dbb0"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171998",
@@ -4171,7 +6711,29 @@
       "vitamin_b6": 0.944,
       "monounsaturated_fat": 2.7,
       "polyunsaturated_fat": 3.26
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 89708,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "9865da2256d98613"
+      },
+      {
+       "unit_text": "fillet",
+       "amount": 0.5,
+       "grams": 154.0,
+       "portion_id": 89709,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "3068e869fdf4600f"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173716",
@@ -4204,7 +6766,29 @@
       "protein": 24.3,
       "cholesterol": 63.0,
       "saturated_fat": 1.94
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 143.0,
+       "portion_id": 93173,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "34da2d7e096d62a9"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 93174,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "fc70f6f013d185cd"
+      }
+     ]
     }
    ],
    "raw": 16,
@@ -4235,7 +6819,19 @@
       "zinc": 1.64,
       "monounsaturated_fat": 0.048,
       "polyunsaturated_fat": 0.079
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 95807,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "c4348aad30d97f15"
+      }
+     ]
     },
     {
      "evidence_id": "usda:175179",
@@ -4260,7 +6856,19 @@
       "cholesterol": 161,
       "trans_fat": 0.004,
       "saturated_fat": 0.101
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 95806,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "d0bbee7b02a0202f"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171972",
@@ -4297,7 +6905,59 @@
       "calories": 100,
       "sodium": 870,
       "fiber": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 1.0,
+       "grams": 28.35,
+       "portion_id": 89654,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "61270f537456b359"
+      },
+      {
+       "unit_text": "cup",
+       "amount": 1.0,
+       "grams": 128.0,
+       "portion_id": 89653,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "511ab6d0bbbf4878"
+      },
+      {
+       "unit_text": "can (4.5 oz), drained",
+       "amount": 1.0,
+       "grams": 128.0,
+       "portion_id": 89655,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "c7439a7bd68a4d42"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 89657,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "112b781dc3d95511"
+      },
+      {
+       "unit_text": "shrimp",
+       "amount": 10.0,
+       "grams": 32.0,
+       "portion_id": 89656,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "1442db7b23955bc7"
+      }
+     ]
     },
     {
      "evidence_id": "usda:171971",
@@ -4335,7 +6995,29 @@
       "calcium": 91.0,
       "potassium": 170,
       "zinc": 1.63
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 85.0,
+       "portion_id": 89651,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "081e6f7cb57e1573"
+      },
+      {
+       "unit_text": "large",
+       "amount": 4.0,
+       "grams": 22.0,
+       "portion_id": 89652,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "608644ac0cc02e94"
+      }
+     ]
     }
    ],
    "raw": 9,
@@ -4378,7 +7060,19 @@
       "saturated_fat": 0.585,
       "monounsaturated_fat": 0.498,
       "polyunsaturated_fat": 0.363
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 116.0,
+       "portion_id": 95803,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "024893590f53d4c0"
+      }
+     ]
     },
     {
      "evidence_id": "usda:175177",
@@ -4415,7 +7109,19 @@
       "monounsaturated_fat": 0.955,
       "polyunsaturated_fat": 0.6,
       "vitamin_d": 3.7
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 87.0,
+       "portion_id": 95804,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "1ef7ace0e0c6ccff"
+      }
+     ]
     }
    ],
    "raw": 2,
@@ -4465,7 +7171,19 @@
       "monounsaturated_fat": 0.955,
       "polyunsaturated_fat": 0.6,
       "vitamin_d": 3.7
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "fillet",
+       "amount": 1.0,
+       "grams": 87.0,
+       "portion_id": 95804,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "1ef7ace0e0c6ccff"
+      }
+     ]
     }
    ],
    "raw": 1,
@@ -4521,7 +7239,29 @@
       "folate": 27.0,
       "vitamin_b12": 0.0,
       "saturated_fat": 2.92
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 1.0,
+       "grams": 28.35,
+       "portion_id": 90647,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "7529318ead3545f2"
+      },
+      {
+       "unit_text": "piece",
+       "amount": 1.0,
+       "grams": 13.0,
+       "portion_id": 90648,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "2939c4e1bbd974dd"
+      }
+     ]
     },
     {
      "evidence_id": "usda:174291",
@@ -4555,7 +7295,19 @@
       "polyunsaturated_fat": 5.64,
       "fat": 9.99,
       "vitamin_d": 0.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "block",
+       "amount": 0.25,
+       "grams": 122.0,
+       "portion_id": 94089,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "2dc3cb528474dbd7"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173788",
@@ -4579,7 +7331,29 @@
       "protein": 10.9,
       "carbs": 0.97,
       "calories": 85.0
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 2.0,
+       "grams": 56.0,
+       "portion_id": 93259,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "0d68df4bc49f87c3"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 84.0,
+       "portion_id": 93260,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "785822f4f405c4d3"
+      }
+     ]
     },
     {
      "evidence_id": "usda:173787",
@@ -4603,7 +7377,29 @@
       "carbs": 2.19,
       "calories": 59.0,
       "protein": 6.38
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 2.0,
+       "grams": 56.0,
+       "portion_id": 93257,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "44c5c06681b16004"
+      },
+      {
+       "unit_text": "oz",
+       "amount": 3.0,
+       "grams": 84.0,
+       "portion_id": 93258,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "d985d9e92d2ee876"
+      }
+     ]
     }
    ],
    "raw": 8,
@@ -4647,7 +7443,29 @@
       "folate": 27.0,
       "vitamin_b12": 0.0,
       "saturated_fat": 2.92
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "oz",
+       "amount": 1.0,
+       "grams": 28.35,
+       "portion_id": 90647,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "7529318ead3545f2"
+      },
+      {
+       "unit_text": "piece",
+       "amount": 1.0,
+       "grams": 13.0,
+       "portion_id": 90648,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "2939c4e1bbd974dd"
+      }
+     ]
     },
     {
      "evidence_id": "usda:174304",
@@ -4681,7 +7499,19 @@
       "vitamin_b12": 0.0,
       "cholesterol": 0.0,
       "saturated_fat": 2.92
-     }
+     },
+     "measures": [
+      {
+       "unit_text": "piece",
+       "amount": 1.0,
+       "grams": 13.0,
+       "portion_id": 94107,
+       "data_type": "SR Legacy",
+       "publication_date": "4/1/2019",
+       "dataset_version": "15.3",
+       "fingerprint": "91b982b0ab17516b"
+      }
+     ]
     }
    ],
    "raw": 8,
@@ -4700,20 +7530,20 @@
    "identity": "potato|",
    "evidence_id": "usda:170032",
    "reason": "part_of_food_not_the_food",
-   "note": "\"Potatoes, raw, SKIN\" is the SKIN \u2014 a part of the potato, not a whole-potato record. An admission defect, not a ranking preference: the ladder holds boiled flesh at 87 and microwaved flesh at 100, and this row cannot legitimately describe 'potato' at any ranking.",
+   "note": "\"Potatoes, raw, SKIN\" is the SKIN — a part of the potato, not a whole-potato record. An admission defect, not a ranking preference: the ladder holds boiled flesh at 87 and microwaved flesh at 100, and this row cannot legitimately describe 'potato' at any ranking.",
    "round": "phase_0.9_winner_review"
   }
  ],
  "provenance_notes": [
   {
    "round": "phase_0.9_source_qualification",
-   "note": "backfilled source-qualified evidence_id onto every candidate. The artifact was built entirely from USDA, so the namespace is recoverable here and ONLY here \u2014 after this, provenance is carried rather than inferred, and the destructive path compares on it instead of on a provider-local number.",
+   "note": "backfilled source-qualified evidence_id onto every candidate. The artifact was built entirely from USDA, so the namespace is recoverable here and ONLY here — after this, provenance is carried rather than inferred, and the destructive path compares on it instead of on a provider-local number.",
    "candidates_qualified": 115
   }
  ],
  "meta": {
   "annotations": {
-   "asparagus|\u241fusda:168389": {
+   "asparagus|␟usda:168389": {
     "identity_key": "asparagus|",
     "evidence_id": "usda:168389",
     "relationship": "SAME_IDENTITY",
@@ -4726,7 +7556,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "asparagus|\u241fusda:168390": {
+   "asparagus|␟usda:168390": {
     "identity_key": "asparagus|",
     "evidence_id": "usda:168390",
     "relationship": "SAME_IDENTITY",
@@ -4739,7 +7569,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "asparagus|\u241fusda:168494": {
+   "asparagus|␟usda:168494": {
     "identity_key": "asparagus|",
     "evidence_id": "usda:168494",
     "relationship": "SAME_IDENTITY",
@@ -4752,7 +7582,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "asparagus|\u241fusda:169207": {
+   "asparagus|␟usda:169207": {
     "identity_key": "asparagus|",
     "evidence_id": "usda:169207",
     "relationship": "SAME_IDENTITY",
@@ -4765,7 +7595,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "asparagus|\u241fusda:169208": {
+   "asparagus|␟usda:169208": {
     "identity_key": "asparagus|",
     "evidence_id": "usda:169208",
     "relationship": "SAME_IDENTITY",
@@ -4778,7 +7608,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "asparagus|\u241fusda:169209": {
+   "asparagus|␟usda:169209": {
     "identity_key": "asparagus|",
     "evidence_id": "usda:169209",
     "relationship": "SAME_IDENTITY",
@@ -4791,7 +7621,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "asparagus|\u241fusda:169313": {
+   "asparagus|␟usda:169313": {
     "identity_key": "asparagus|",
     "evidence_id": "usda:169313",
     "relationship": "SAME_IDENTITY",
@@ -4804,7 +7634,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "asparagus|\u241fusda:169314": {
+   "asparagus|␟usda:169314": {
     "identity_key": "asparagus|",
     "evidence_id": "usda:169314",
     "relationship": "SAME_IDENTITY",
@@ -4817,7 +7647,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "asparagus|\u241fusda:171537": {
+   "asparagus|␟usda:171537": {
     "identity_key": "asparagus|",
     "evidence_id": "usda:171537",
     "relationship": "DIFFERENT_IDENTITY",
@@ -4830,7 +7660,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "banana|\u241fusda:1105073": {
+   "banana|␟usda:1105073": {
     "identity_key": "banana|",
     "evidence_id": "usda:1105073",
     "relationship": "SAME_IDENTITY",
@@ -4843,7 +7673,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "banana|\u241fusda:167629": {
+   "banana|␟usda:167629": {
     "identity_key": "banana|",
     "evidence_id": "usda:167629",
     "relationship": "DIFFERENT_IDENTITY",
@@ -4856,7 +7686,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "banana|\u241fusda:167732": {
+   "banana|␟usda:167732": {
     "identity_key": "banana|",
     "evidence_id": "usda:167732",
     "relationship": "DIFFERENT_IDENTITY",
@@ -4869,7 +7699,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "banana|\u241fusda:168849": {
+   "banana|␟usda:168849": {
     "identity_key": "banana|",
     "evidence_id": "usda:168849",
     "relationship": "DIFFERENT_IDENTITY",
@@ -4882,7 +7712,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "banana|\u241fusda:169394": {
+   "banana|␟usda:169394": {
     "identity_key": "banana|",
     "evidence_id": "usda:169394",
     "relationship": "DIFFERENT_IDENTITY",
@@ -4895,7 +7725,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "banana|\u241fusda:171351": {
+   "banana|␟usda:171351": {
     "identity_key": "banana|",
     "evidence_id": "usda:171351",
     "relationship": "DIFFERENT_IDENTITY",
@@ -4908,7 +7738,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "banana|\u241fusda:173944": {
+   "banana|␟usda:173944": {
     "identity_key": "banana|",
     "evidence_id": "usda:173944",
     "relationship": "SAME_IDENTITY",
@@ -4921,7 +7751,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "banana|\u241fusda:173945": {
+   "banana|␟usda:173945": {
     "identity_key": "banana|",
     "evidence_id": "usda:173945",
     "relationship": "DIFFERENT_IDENTITY",
@@ -4934,7 +7764,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|fried\u241fusda:168623": {
+   "beef|fried␟usda:168623": {
     "identity_key": "beef|fried",
     "evidence_id": "usda:168623",
     "relationship": "DIFFERENT_IDENTITY",
@@ -4947,7 +7777,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|fried\u241fusda:168627": {
+   "beef|fried␟usda:168627": {
     "identity_key": "beef|fried",
     "evidence_id": "usda:168627",
     "relationship": "DIFFERENT_IDENTITY",
@@ -4960,7 +7790,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|fried\u241fusda:172935": {
+   "beef|fried␟usda:172935": {
     "identity_key": "beef|fried",
     "evidence_id": "usda:172935",
     "relationship": "DIFFERENT_IDENTITY",
@@ -4973,7 +7803,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|fried\u241fusda:173085": {
+   "beef|fried␟usda:173085": {
     "identity_key": "beef|fried",
     "evidence_id": "usda:173085",
     "relationship": "SAME_IDENTITY",
@@ -4986,7 +7816,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|fried\u241fusda:173094": {
+   "beef|fried␟usda:173094": {
     "identity_key": "beef|fried",
     "evidence_id": "usda:173094",
     "relationship": "SAME_IDENTITY",
@@ -4999,7 +7829,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|fried\u241fusda:173108": {
+   "beef|fried␟usda:173108": {
     "identity_key": "beef|fried",
     "evidence_id": "usda:173108",
     "relationship": "SAME_IDENTITY",
@@ -5012,7 +7842,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|fried\u241fusda:174733": {
+   "beef|fried␟usda:174733": {
     "identity_key": "beef|fried",
     "evidence_id": "usda:174733",
     "relationship": "SAME_IDENTITY",
@@ -5025,7 +7855,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|fried\u241fusda:174751": {
+   "beef|fried␟usda:174751": {
     "identity_key": "beef|fried",
     "evidence_id": "usda:174751",
     "relationship": "SAME_IDENTITY",
@@ -5038,7 +7868,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|grilled\u241fusda:168731": {
+   "beef|grilled␟usda:168731": {
     "identity_key": "beef|grilled",
     "evidence_id": "usda:168731",
     "relationship": "SAME_IDENTITY",
@@ -5051,7 +7881,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|grilled\u241fusda:169243": {
+   "beef|grilled␟usda:169243": {
     "identity_key": "beef|grilled",
     "evidence_id": "usda:169243",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5064,7 +7894,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "beef|grilled\u241fusda:170200": {
+   "beef|grilled␟usda:170200": {
     "identity_key": "beef|grilled",
     "evidence_id": "usda:170200",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5077,7 +7907,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|grilled\u241fusda:171785": {
+   "beef|grilled␟usda:171785": {
     "identity_key": "beef|grilled",
     "evidence_id": "usda:171785",
     "relationship": "SAME_IDENTITY",
@@ -5090,7 +7920,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|grilled\u241fusda:171786": {
+   "beef|grilled␟usda:171786": {
     "identity_key": "beef|grilled",
     "evidence_id": "usda:171786",
     "relationship": "SAME_IDENTITY",
@@ -5103,7 +7933,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|grilled\u241fusda:172935": {
+   "beef|grilled␟usda:172935": {
     "identity_key": "beef|grilled",
     "evidence_id": "usda:172935",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5116,7 +7946,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "beef|grilled\u241fusda:172936": {
+   "beef|grilled␟usda:172936": {
     "identity_key": "beef|grilled",
     "evidence_id": "usda:172936",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5129,7 +7959,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|grilled\u241fusda:174618": {
+   "beef|grilled␟usda:174618": {
     "identity_key": "beef|grilled",
     "evidence_id": "usda:174618",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5142,7 +7972,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|grilled\u241fusda:174702": {
+   "beef|grilled␟usda:174702": {
     "identity_key": "beef|grilled",
     "evidence_id": "usda:174702",
     "relationship": "SAME_IDENTITY",
@@ -5155,7 +7985,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|grilled\u241fusda:174703": {
+   "beef|grilled␟usda:174703": {
     "identity_key": "beef|grilled",
     "evidence_id": "usda:174703",
     "relationship": "SAME_IDENTITY",
@@ -5168,7 +7998,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|roasted\u241fusda:168674": {
+   "beef|roasted␟usda:168674": {
     "identity_key": "beef|roasted",
     "evidence_id": "usda:168674",
     "relationship": "SAME_IDENTITY",
@@ -5181,7 +8011,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|roasted\u241fusda:169496": {
+   "beef|roasted␟usda:169496": {
     "identity_key": "beef|roasted",
     "evidence_id": "usda:169496",
     "relationship": "SAME_IDENTITY",
@@ -5194,7 +8024,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|roasted\u241fusda:169497": {
+   "beef|roasted␟usda:169497": {
     "identity_key": "beef|roasted",
     "evidence_id": "usda:169497",
     "relationship": "SAME_IDENTITY",
@@ -5207,7 +8037,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|roasted\u241fusda:170791": {
+   "beef|roasted␟usda:170791": {
     "identity_key": "beef|roasted",
     "evidence_id": "usda:170791",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5220,7 +8050,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|roasted\u241fusda:170820": {
+   "beef|roasted␟usda:170820": {
     "identity_key": "beef|roasted",
     "evidence_id": "usda:170820",
     "relationship": "SAME_IDENTITY",
@@ -5233,7 +8063,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|roasted\u241fusda:171215": {
+   "beef|roasted␟usda:171215": {
     "identity_key": "beef|roasted",
     "evidence_id": "usda:171215",
     "relationship": "SAME_IDENTITY",
@@ -5246,7 +8076,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|roasted\u241fusda:171216": {
+   "beef|roasted␟usda:171216": {
     "identity_key": "beef|roasted",
     "evidence_id": "usda:171216",
     "relationship": "SAME_IDENTITY",
@@ -5259,7 +8089,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|roasted\u241fusda:172935": {
+   "beef|roasted␟usda:172935": {
     "identity_key": "beef|roasted",
     "evidence_id": "usda:172935",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5272,7 +8102,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "beef|roasted\u241fusda:173089": {
+   "beef|roasted␟usda:173089": {
     "identity_key": "beef|roasted",
     "evidence_id": "usda:173089",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -5285,7 +8115,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "beef|roasted\u241fusda:174597": {
+   "beef|roasted␟usda:174597": {
     "identity_key": "beef|roasted",
     "evidence_id": "usda:174597",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5298,7 +8128,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "beef|\u241fusda:170198": {
+   "beef|␟usda:170198": {
     "identity_key": "beef|",
     "evidence_id": "usda:170198",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5311,7 +8141,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "beef|\u241fusda:170199": {
+   "beef|␟usda:170199": {
     "identity_key": "beef|",
     "evidence_id": "usda:170199",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5324,7 +8154,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "beef|\u241fusda:170200": {
+   "beef|␟usda:170200": {
     "identity_key": "beef|",
     "evidence_id": "usda:170200",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5337,7 +8167,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|\u241fusda:170602": {
+   "beef|␟usda:170602": {
     "identity_key": "beef|",
     "evidence_id": "usda:170602",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5350,7 +8180,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|\u241fusda:170606": {
+   "beef|␟usda:170606": {
     "identity_key": "beef|",
     "evidence_id": "usda:170606",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5363,7 +8193,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|\u241fusda:172012": {
+   "beef|␟usda:172012": {
     "identity_key": "beef|",
     "evidence_id": "usda:172012",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5376,7 +8206,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "beef|\u241fusda:172935": {
+   "beef|␟usda:172935": {
     "identity_key": "beef|",
     "evidence_id": "usda:172935",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5389,7 +8219,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "beef|\u241fusda:172936": {
+   "beef|␟usda:172936": {
     "identity_key": "beef|",
     "evidence_id": "usda:172936",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5402,7 +8232,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "beef|\u241fusda:173086": {
+   "beef|␟usda:173086": {
     "identity_key": "beef|",
     "evidence_id": "usda:173086",
     "relationship": "UNRESOLVED",
@@ -5415,7 +8245,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "beef|\u241fusda:173332": {
+   "beef|␟usda:173332": {
     "identity_key": "beef|",
     "evidence_id": "usda:173332",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5428,7 +8258,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "beef|\u241fusda:174579": {
+   "beef|␟usda:174579": {
     "identity_key": "beef|",
     "evidence_id": "usda:174579",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5441,7 +8271,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "beef|\u241fusda:174618": {
+   "beef|␟usda:174618": {
     "identity_key": "beef|",
     "evidence_id": "usda:174618",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5454,7 +8284,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "beef|\u241fusda:174730": {
+   "beef|␟usda:174730": {
     "identity_key": "beef|",
     "evidence_id": "usda:174730",
     "relationship": "SAME_IDENTITY",
@@ -5467,7 +8297,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:168510": {
+   "broccoli|␟usda:168510": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:168510",
     "relationship": "SAME_IDENTITY",
@@ -5480,7 +8310,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:168511": {
+   "broccoli|␟usda:168511": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:168511",
     "relationship": "SAME_IDENTITY",
@@ -5493,7 +8323,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:168512": {
+   "broccoli|␟usda:168512": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:168512",
     "relationship": "SAME_IDENTITY",
@@ -5506,7 +8336,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:169329": {
+   "broccoli|␟usda:169329": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:169329",
     "relationship": "SAME_IDENTITY",
@@ -5519,7 +8349,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:169331": {
+   "broccoli|␟usda:169331": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:169331",
     "relationship": "SAME_IDENTITY",
@@ -5532,7 +8362,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:169392": {
+   "broccoli|␟usda:169392": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:169392",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5545,7 +8375,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:169404": {
+   "broccoli|␟usda:169404": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:169404",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5558,7 +8388,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:169967": {
+   "broccoli|␟usda:169967": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:169967",
     "relationship": "SAME_IDENTITY",
@@ -5571,7 +8401,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:169969": {
+   "broccoli|␟usda:169969": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:169969",
     "relationship": "SAME_IDENTITY",
@@ -5584,7 +8414,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:170379": {
+   "broccoli|␟usda:170379": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:170379",
     "relationship": "SAME_IDENTITY",
@@ -5597,7 +8427,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:170380": {
+   "broccoli|␟usda:170380": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:170380",
     "relationship": "SAME_IDENTITY",
@@ -5610,7 +8440,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:170381": {
+   "broccoli|␟usda:170381": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:170381",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5623,7 +8453,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:170382": {
+   "broccoli|␟usda:170382": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:170382",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5636,7 +8466,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "broccoli|\u241fusda:747447": {
+   "broccoli|␟usda:747447": {
     "identity_key": "broccoli|",
     "evidence_id": "usda:747447",
     "relationship": "SAME_IDENTITY",
@@ -5649,7 +8479,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "butter|\u241fusda:173410": {
+   "butter|␟usda:173410": {
     "identity_key": "butter|",
     "evidence_id": "usda:173410",
     "relationship": "SAME_IDENTITY",
@@ -5662,7 +8492,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "butter|\u241fusda:173411": {
+   "butter|␟usda:173411": {
     "identity_key": "butter|",
     "evidence_id": "usda:173411",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -5675,7 +8505,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "cauliflower|\u241fusda:168520": {
+   "cauliflower|␟usda:168520": {
     "identity_key": "cauliflower|",
     "evidence_id": "usda:168520",
     "relationship": "SAME_IDENTITY",
@@ -5688,7 +8518,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "cauliflower|\u241fusda:168521": {
+   "cauliflower|␟usda:168521": {
     "identity_key": "cauliflower|",
     "evidence_id": "usda:168521",
     "relationship": "SAME_IDENTITY",
@@ -5701,7 +8531,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "cauliflower|\u241fusda:169389": {
+   "cauliflower|␟usda:169389": {
     "identity_key": "cauliflower|",
     "evidence_id": "usda:169389",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -5714,7 +8544,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "cauliflower|\u241fusda:169390": {
+   "cauliflower|␟usda:169390": {
     "identity_key": "cauliflower|",
     "evidence_id": "usda:169390",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -5727,7 +8557,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "cauliflower|\u241fusda:169391": {
+   "cauliflower|␟usda:169391": {
     "identity_key": "cauliflower|",
     "evidence_id": "usda:169391",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -5740,7 +8570,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "cauliflower|\u241fusda:169986": {
+   "cauliflower|␟usda:169986": {
     "identity_key": "cauliflower|",
     "evidence_id": "usda:169986",
     "relationship": "SAME_IDENTITY",
@@ -5753,7 +8583,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "cauliflower|\u241fusda:170397": {
+   "cauliflower|␟usda:170397": {
     "identity_key": "cauliflower|",
     "evidence_id": "usda:170397",
     "relationship": "SAME_IDENTITY",
@@ -5766,7 +8596,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "cauliflower|\u241fusda:170398": {
+   "cauliflower|␟usda:170398": {
     "identity_key": "cauliflower|",
     "evidence_id": "usda:170398",
     "relationship": "SAME_IDENTITY",
@@ -5779,7 +8609,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "cauliflower|\u241fusda:170399": {
+   "cauliflower|␟usda:170399": {
     "identity_key": "cauliflower|",
     "evidence_id": "usda:170399",
     "relationship": "SAME_IDENTITY",
@@ -5792,7 +8622,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|fried\u241fusda:167719": {
+   "chicken|fried␟usda:167719": {
     "identity_key": "chicken|fried",
     "evidence_id": "usda:167719",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5805,7 +8635,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|fried\u241fusda:169842": {
+   "chicken|fried␟usda:169842": {
     "identity_key": "chicken|fried",
     "evidence_id": "usda:169842",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5818,7 +8648,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "chicken|fried\u241fusda:170343": {
+   "chicken|fried␟usda:170343": {
     "identity_key": "chicken|fried",
     "evidence_id": "usda:170343",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5831,7 +8661,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "chicken|fried\u241fusda:170350": {
+   "chicken|fried␟usda:170350": {
     "identity_key": "chicken|fried",
     "evidence_id": "usda:170350",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5844,7 +8674,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "chicken|fried\u241fusda:170738": {
+   "chicken|fried␟usda:170738": {
     "identity_key": "chicken|fried",
     "evidence_id": "usda:170738",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5857,7 +8687,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "chicken|fried\u241fusda:171053": {
+   "chicken|fried␟usda:171053": {
     "identity_key": "chicken|fried",
     "evidence_id": "usda:171053",
     "relationship": "SAME_IDENTITY",
@@ -5870,7 +8700,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|fried\u241fusda:171058": {
+   "chicken|fried␟usda:171058": {
     "identity_key": "chicken|fried",
     "evidence_id": "usda:171058",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5883,7 +8713,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|fried\u241fusda:171074": {
+   "chicken|fried␟usda:171074": {
     "identity_key": "chicken|fried",
     "evidence_id": "usda:171074",
     "relationship": "SAME_IDENTITY",
@@ -5896,7 +8726,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|fried\u241fusda:171078": {
+   "chicken|fried␟usda:171078": {
     "identity_key": "chicken|fried",
     "evidence_id": "usda:171078",
     "relationship": "SAME_IDENTITY",
@@ -5909,7 +8739,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|fried\u241fusda:171448": {
+   "chicken|fried␟usda:171448": {
     "identity_key": "chicken|fried",
     "evidence_id": "usda:171448",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -5922,7 +8752,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "chicken|fried\u241fusda:172375": {
+   "chicken|fried␟usda:172375": {
     "identity_key": "chicken|fried",
     "evidence_id": "usda:172375",
     "relationship": "SAME_IDENTITY",
@@ -5935,7 +8765,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|fried\u241fusda:172379": {
+   "chicken|fried␟usda:172379": {
     "identity_key": "chicken|fried",
     "evidence_id": "usda:172379",
     "relationship": "SAME_IDENTITY",
@@ -5948,7 +8778,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|fried\u241fusda:174491": {
+   "chicken|fried␟usda:174491": {
     "identity_key": "chicken|fried",
     "evidence_id": "usda:174491",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5961,7 +8791,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|grilled\u241fusda:169243": {
+   "chicken|grilled␟usda:169243": {
     "identity_key": "chicken|grilled",
     "evidence_id": "usda:169243",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5974,7 +8804,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "chicken|grilled\u241fusda:169857": {
+   "chicken|grilled␟usda:169857": {
     "identity_key": "chicken|grilled",
     "evidence_id": "usda:169857",
     "relationship": "DIFFERENT_IDENTITY",
@@ -5987,7 +8817,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|grilled\u241fusda:170368": {
+   "chicken|grilled␟usda:170368": {
     "identity_key": "chicken|grilled",
     "evidence_id": "usda:170368",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6000,7 +8830,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|grilled\u241fusda:170724": {
+   "chicken|grilled␟usda:170724": {
     "identity_key": "chicken|grilled",
     "evidence_id": "usda:170724",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6013,7 +8843,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|grilled\u241fusda:170752": {
+   "chicken|grilled␟usda:170752": {
     "identity_key": "chicken|grilled",
     "evidence_id": "usda:170752",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6026,7 +8856,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|grilled\u241fusda:170786": {
+   "chicken|grilled␟usda:170786": {
     "identity_key": "chicken|grilled",
     "evidence_id": "usda:170786",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6039,7 +8869,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|grilled\u241fusda:171513": {
+   "chicken|grilled␟usda:171513": {
     "identity_key": "chicken|grilled",
     "evidence_id": "usda:171513",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6052,7 +8882,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|grilled\u241fusda:171534": {
+   "chicken|grilled␟usda:171534": {
     "identity_key": "chicken|grilled",
     "evidence_id": "usda:171534",
     "relationship": "SAME_IDENTITY",
@@ -6065,7 +8895,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|grilled\u241fusda:171536": {
+   "chicken|grilled␟usda:171536": {
     "identity_key": "chicken|grilled",
     "evidence_id": "usda:171536",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -6078,7 +8908,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "chicken|grilled\u241fusda:172957": {
+   "chicken|grilled␟usda:172957": {
     "identity_key": "chicken|grilled",
     "evidence_id": "usda:172957",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6091,7 +8921,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "chicken|grilled\u241fusda:173312": {
+   "chicken|grilled␟usda:173312": {
     "identity_key": "chicken|grilled",
     "evidence_id": "usda:173312",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6104,7 +8934,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|roasted\u241fusda:172395": {
+   "chicken|roasted␟usda:172395": {
     "identity_key": "chicken|roasted",
     "evidence_id": "usda:172395",
     "relationship": "SAME_IDENTITY",
@@ -6117,7 +8947,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|roasted\u241fusda:173633": {
+   "chicken|roasted␟usda:173633": {
     "identity_key": "chicken|roasted",
     "evidence_id": "usda:173633",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6130,7 +8960,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|roasted\u241fusda:173635": {
+   "chicken|roasted␟usda:173635": {
     "identity_key": "chicken|roasted",
     "evidence_id": "usda:173635",
     "relationship": "SAME_IDENTITY",
@@ -6143,7 +8973,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|roasted\u241fusda:173637": {
+   "chicken|roasted␟usda:173637": {
     "identity_key": "chicken|roasted",
     "evidence_id": "usda:173637",
     "relationship": "SAME_IDENTITY",
@@ -6156,7 +8986,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|roasted\u241fusda:173639": {
+   "chicken|roasted␟usda:173639": {
     "identity_key": "chicken|roasted",
     "evidence_id": "usda:173639",
     "relationship": "SAME_IDENTITY",
@@ -6169,7 +8999,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|roasted\u241fusda:173646": {
+   "chicken|roasted␟usda:173646": {
     "identity_key": "chicken|roasted",
     "evidence_id": "usda:173646",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -6182,7 +9012,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "chicken|roasted\u241fusda:174496": {
+   "chicken|roasted␟usda:174496": {
     "identity_key": "chicken|roasted",
     "evidence_id": "usda:174496",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6195,7 +9025,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "chicken|roasted\u241fusda:174608": {
+   "chicken|roasted␟usda:174608": {
     "identity_key": "chicken|roasted",
     "evidence_id": "usda:174608",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6208,7 +9038,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "coconut oil|\u241fusda:171412": {
+   "coconut oil|␟usda:171412": {
     "identity_key": "coconut oil|",
     "evidence_id": "usda:171412",
     "relationship": "SAME_IDENTITY",
@@ -6221,7 +9051,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "coconut oil|\u241fusda:330458": {
+   "coconut oil|␟usda:330458": {
     "identity_key": "coconut oil|",
     "evidence_id": "usda:330458",
     "relationship": "SAME_IDENTITY",
@@ -6234,7 +9064,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "egg|fried\u241fusda:168199": {
+   "egg|fried␟usda:168199": {
     "identity_key": "egg|fried",
     "evidence_id": "usda:168199",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6247,7 +9077,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "egg|fried\u241fusda:169732": {
+   "egg|fried␟usda:169732": {
     "identity_key": "egg|fried",
     "evidence_id": "usda:169732",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6260,7 +9090,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "egg|fried\u241fusda:172185": {
+   "egg|fried␟usda:172185": {
     "identity_key": "egg|fried",
     "evidence_id": "usda:172185",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6273,7 +9103,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "egg|fried\u241fusda:172187": {
+   "egg|fried␟usda:172187": {
     "identity_key": "egg|fried",
     "evidence_id": "usda:172187",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6286,7 +9116,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "egg|fried\u241fusda:172451": {
+   "egg|fried␟usda:172451": {
     "identity_key": "egg|fried",
     "evidence_id": "usda:172451",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6299,7 +9129,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "egg|fried\u241fusda:173423": {
+   "egg|fried␟usda:173423": {
     "identity_key": "egg|fried",
     "evidence_id": "usda:173423",
     "relationship": "SAME_IDENTITY",
@@ -6312,7 +9142,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:168901": {
+   "egg|␟usda:168901": {
     "identity_key": "egg|",
     "evidence_id": "usda:168901",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6325,7 +9155,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:169732": {
+   "egg|␟usda:169732": {
     "identity_key": "egg|",
     "evidence_id": "usda:169732",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6338,7 +9168,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:169734": {
+   "egg|␟usda:169734": {
     "identity_key": "egg|",
     "evidence_id": "usda:169734",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6351,7 +9181,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:172185": {
+   "egg|␟usda:172185": {
     "identity_key": "egg|",
     "evidence_id": "usda:172185",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -6364,7 +9194,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:172186": {
+   "egg|␟usda:172186": {
     "identity_key": "egg|",
     "evidence_id": "usda:172186",
     "relationship": "SAME_IDENTITY",
@@ -6377,7 +9207,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:172187": {
+   "egg|␟usda:172187": {
     "identity_key": "egg|",
     "evidence_id": "usda:172187",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -6390,7 +9220,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:172673": {
+   "egg|␟usda:172673": {
     "identity_key": "egg|",
     "evidence_id": "usda:172673",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6403,7 +9233,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:172674": {
+   "egg|␟usda:172674": {
     "identity_key": "egg|",
     "evidence_id": "usda:172674",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6416,7 +9246,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:172741": {
+   "egg|␟usda:172741": {
     "identity_key": "egg|",
     "evidence_id": "usda:172741",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6429,7 +9259,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:173423": {
+   "egg|␟usda:173423": {
     "identity_key": "egg|",
     "evidence_id": "usda:173423",
     "relationship": "SAME_IDENTITY",
@@ -6442,7 +9272,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:173424": {
+   "egg|␟usda:173424": {
     "identity_key": "egg|",
     "evidence_id": "usda:173424",
     "relationship": "SAME_IDENTITY",
@@ -6455,7 +9285,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:173429": {
+   "egg|␟usda:173429": {
     "identity_key": "egg|",
     "evidence_id": "usda:173429",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6468,7 +9298,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:174901": {
+   "egg|␟usda:174901": {
     "identity_key": "egg|",
     "evidence_id": "usda:174901",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6481,7 +9311,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:747997": {
+   "egg|␟usda:747997": {
     "identity_key": "egg|",
     "evidence_id": "usda:747997",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6494,7 +9324,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:748236": {
+   "egg|␟usda:748236": {
     "identity_key": "egg|",
     "evidence_id": "usda:748236",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6507,7 +9337,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "egg|\u241fusda:748967": {
+   "egg|␟usda:748967": {
     "identity_key": "egg|",
     "evidence_id": "usda:748967",
     "relationship": "SAME_IDENTITY",
@@ -6520,7 +9350,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mackerel|roasted\u241fusda:168149": {
+   "mackerel|roasted␟usda:168149": {
     "identity_key": "mackerel|roasted",
     "evidence_id": "usda:168149",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6533,7 +9363,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mackerel|roasted\u241fusda:171994": {
+   "mackerel|roasted␟usda:171994": {
     "identity_key": "mackerel|roasted",
     "evidence_id": "usda:171994",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -6546,7 +9376,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "mackerel|roasted\u241fusda:173674": {
+   "mackerel|roasted␟usda:173674": {
     "identity_key": "mackerel|roasted",
     "evidence_id": "usda:173674",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -6559,7 +9389,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "mackerel|roasted\u241fusda:174236": {
+   "mackerel|roasted␟usda:174236": {
     "identity_key": "mackerel|roasted",
     "evidence_id": "usda:174236",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -6572,7 +9402,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "mackerel|roasted\u241fusda:175120": {
+   "mackerel|roasted␟usda:175120": {
     "identity_key": "mackerel|roasted",
     "evidence_id": "usda:175120",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -6585,7 +9415,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "mackerel|roasted\u241fusda:175121": {
+   "mackerel|roasted␟usda:175121": {
     "identity_key": "mackerel|roasted",
     "evidence_id": "usda:175121",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6598,7 +9428,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mackerel|\u241fusda:168149": {
+   "mackerel|␟usda:168149": {
     "identity_key": "mackerel|",
     "evidence_id": "usda:168149",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -6611,7 +9441,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "mackerel|\u241fusda:171994": {
+   "mackerel|␟usda:171994": {
     "identity_key": "mackerel|",
     "evidence_id": "usda:171994",
     "relationship": "SAME_IDENTITY",
@@ -6624,7 +9454,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mackerel|\u241fusda:173673": {
+   "mackerel|␟usda:173673": {
     "identity_key": "mackerel|",
     "evidence_id": "usda:173673",
     "relationship": "SAME_IDENTITY",
@@ -6637,7 +9467,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mackerel|\u241fusda:173674": {
+   "mackerel|␟usda:173674": {
     "identity_key": "mackerel|",
     "evidence_id": "usda:173674",
     "relationship": "SAME_IDENTITY",
@@ -6650,7 +9480,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mackerel|\u241fusda:174236": {
+   "mackerel|␟usda:174236": {
     "identity_key": "mackerel|",
     "evidence_id": "usda:174236",
     "relationship": "SAME_IDENTITY",
@@ -6663,7 +9493,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mackerel|\u241fusda:175119": {
+   "mackerel|␟usda:175119": {
     "identity_key": "mackerel|",
     "evidence_id": "usda:175119",
     "relationship": "SAME_IDENTITY",
@@ -6676,7 +9506,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mackerel|\u241fusda:175120": {
+   "mackerel|␟usda:175120": {
     "identity_key": "mackerel|",
     "evidence_id": "usda:175120",
     "relationship": "SAME_IDENTITY",
@@ -6689,7 +9519,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mackerel|\u241fusda:175121": {
+   "mackerel|␟usda:175121": {
     "identity_key": "mackerel|",
     "evidence_id": "usda:175121",
     "relationship": "SAME_IDENTITY",
@@ -6702,7 +9532,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mackerel|\u241fusda:175122": {
+   "mackerel|␟usda:175122": {
     "identity_key": "mackerel|",
     "evidence_id": "usda:175122",
     "relationship": "SAME_IDENTITY",
@@ -6715,7 +9545,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mayonnaise|\u241fusda:171009": {
+   "mayonnaise|␟usda:171009": {
     "identity_key": "mayonnaise|",
     "evidence_id": "usda:171009",
     "relationship": "SAME_IDENTITY",
@@ -6728,7 +9558,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "mayonnaise|\u241fusda:171443": {
+   "mayonnaise|␟usda:171443": {
     "identity_key": "mayonnaise|",
     "evidence_id": "usda:171443",
     "relationship": "UNRESOLVED",
@@ -6741,7 +9571,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "mayonnaise|\u241fusda:173594": {
+   "mayonnaise|␟usda:173594": {
     "identity_key": "mayonnaise|",
     "evidence_id": "usda:173594",
     "relationship": "UNRESOLVED",
@@ -6754,7 +9584,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "mushrooms|grilled\u241fusda:168437": {
+   "mushrooms|grilled␟usda:168437": {
     "identity_key": "mushrooms|grilled",
     "evidence_id": "usda:168437",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6767,7 +9597,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mushrooms|grilled\u241fusda:169243": {
+   "mushrooms|grilled␟usda:169243": {
     "identity_key": "mushrooms|grilled",
     "evidence_id": "usda:169243",
     "relationship": "SAME_IDENTITY",
@@ -6780,7 +9610,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mushrooms|grilled\u241fusda:169377": {
+   "mushrooms|grilled␟usda:169377": {
     "identity_key": "mushrooms|grilled",
     "evidence_id": "usda:169377",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -6793,7 +9623,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "mushrooms|grilled\u241fusda:170097": {
+   "mushrooms|grilled␟usda:170097": {
     "identity_key": "mushrooms|grilled",
     "evidence_id": "usda:170097",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6806,7 +9636,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mushrooms|\u241fusda:168437": {
+   "mushrooms|␟usda:168437": {
     "identity_key": "mushrooms|",
     "evidence_id": "usda:168437",
     "relationship": "SAME_IDENTITY",
@@ -6819,7 +9649,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mushrooms|\u241fusda:168537": {
+   "mushrooms|␟usda:168537": {
     "identity_key": "mushrooms|",
     "evidence_id": "usda:168537",
     "relationship": "SAME_IDENTITY",
@@ -6832,7 +9662,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mushrooms|\u241fusda:169252": {
+   "mushrooms|␟usda:169252": {
     "identity_key": "mushrooms|",
     "evidence_id": "usda:169252",
     "relationship": "SAME_IDENTITY",
@@ -6845,7 +9675,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "mushrooms|\u241fusda:170097": {
+   "mushrooms|␟usda:170097": {
     "identity_key": "mushrooms|",
     "evidence_id": "usda:170097",
     "relationship": "SAME_IDENTITY",
@@ -6858,7 +9688,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "oats|\u241fusda:168872": {
+   "oats|␟usda:168872": {
     "identity_key": "oats|",
     "evidence_id": "usda:168872",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6871,7 +9701,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "oats|\u241fusda:168873": {
+   "oats|␟usda:168873": {
     "identity_key": "oats|",
     "evidence_id": "usda:168873",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6884,7 +9714,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "oats|\u241fusda:171675": {
+   "oats|␟usda:171675": {
     "identity_key": "oats|",
     "evidence_id": "usda:171675",
     "relationship": "SAME_IDENTITY",
@@ -6897,7 +9727,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "oats|\u241fusda:172666": {
+   "oats|␟usda:172666": {
     "identity_key": "oats|",
     "evidence_id": "usda:172666",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6910,7 +9740,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "oats|\u241fusda:172676": {
+   "oats|␟usda:172676": {
     "identity_key": "oats|",
     "evidence_id": "usda:172676",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6923,7 +9753,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "oats|\u241fusda:172677": {
+   "oats|␟usda:172677": {
     "identity_key": "oats|",
     "evidence_id": "usda:172677",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6936,7 +9766,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "oats|\u241fusda:172769": {
+   "oats|␟usda:172769": {
     "identity_key": "oats|",
     "evidence_id": "usda:172769",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6949,7 +9779,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "oats|\u241fusda:173576": {
+   "oats|␟usda:173576": {
     "identity_key": "oats|",
     "evidence_id": "usda:173576",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6962,7 +9792,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "oats|\u241fusda:173905": {
+   "oats|␟usda:173905": {
     "identity_key": "oats|",
     "evidence_id": "usda:173905",
     "relationship": "SAME_IDENTITY",
@@ -6975,7 +9805,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "oats|\u241fusda:174626": {
+   "oats|␟usda:174626": {
     "identity_key": "oats|",
     "evidence_id": "usda:174626",
     "relationship": "DIFFERENT_IDENTITY",
@@ -6988,7 +9818,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "olive oil|\u241fusda:171413": {
+   "olive oil|␟usda:171413": {
     "identity_key": "olive oil|",
     "evidence_id": "usda:171413",
     "relationship": "SAME_IDENTITY",
@@ -7001,7 +9831,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "potato|fried\u241fusda:168015": {
+   "potato|fried␟usda:168015": {
     "identity_key": "potato|fried",
     "evidence_id": "usda:168015",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7014,7 +9844,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "potato|fried\u241fusda:168444": {
+   "potato|fried␟usda:168444": {
     "identity_key": "potato|fried",
     "evidence_id": "usda:168444",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7027,7 +9857,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "potato|fried\u241fusda:168445": {
+   "potato|fried␟usda:168445": {
     "identity_key": "potato|fried",
     "evidence_id": "usda:168445",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7040,7 +9870,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "potato|fried\u241fusda:168946": {
+   "potato|fried␟usda:168946": {
     "identity_key": "potato|fried",
     "evidence_id": "usda:168946",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7053,7 +9883,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "potato|fried\u241fusda:168948": {
+   "potato|fried␟usda:168948": {
     "identity_key": "potato|fried",
     "evidence_id": "usda:168948",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7066,7 +9896,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "potato|fried\u241fusda:169267": {
+   "potato|fried␟usda:169267": {
     "identity_key": "potato|fried",
     "evidence_id": "usda:169267",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7079,7 +9909,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "potato|fried\u241fusda:169764": {
+   "potato|fried␟usda:169764": {
     "identity_key": "potato|fried",
     "evidence_id": "usda:169764",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7092,7 +9922,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "potato|fried\u241fusda:170698": {
+   "potato|fried␟usda:170698": {
     "identity_key": "potato|fried",
     "evidence_id": "usda:170698",
     "relationship": "SAME_IDENTITY",
@@ -7105,7 +9935,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "potato|fried\u241fusda:173423": {
+   "potato|fried␟usda:173423": {
     "identity_key": "potato|fried",
     "evidence_id": "usda:173423",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7118,7 +9948,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:167943": {
+   "potato|␟usda:167943": {
     "identity_key": "potato|",
     "evidence_id": "usda:167943",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7131,7 +9961,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:168446": {
+   "potato|␟usda:168446": {
     "identity_key": "potato|",
     "evidence_id": "usda:168446",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7144,7 +9974,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:168484": {
+   "potato|␟usda:168484": {
     "identity_key": "potato|",
     "evidence_id": "usda:168484",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7157,7 +9987,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:168854": {
+   "potato|␟usda:168854": {
     "identity_key": "potato|",
     "evidence_id": "usda:168854",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7170,7 +10000,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:170032": {
+   "potato|␟usda:170032": {
     "identity_key": "potato|",
     "evidence_id": "usda:170032",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7183,7 +10013,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:170088": {
+   "potato|␟usda:170088": {
     "identity_key": "potato|",
     "evidence_id": "usda:170088",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7196,7 +10026,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:170092": {
+   "potato|␟usda:170092": {
     "identity_key": "potato|",
     "evidence_id": "usda:170092",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7209,7 +10039,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:170114": {
+   "potato|␟usda:170114": {
     "identity_key": "potato|",
     "evidence_id": "usda:170114",
     "relationship": "SAME_IDENTITY",
@@ -7222,7 +10052,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:170115": {
+   "potato|␟usda:170115": {
     "identity_key": "potato|",
     "evidence_id": "usda:170115",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -7235,7 +10065,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:170133": {
+   "potato|␟usda:170133": {
     "identity_key": "potato|",
     "evidence_id": "usda:170133",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7248,7 +10078,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:170519": {
+   "potato|␟usda:170519": {
     "identity_key": "potato|",
     "evidence_id": "usda:170519",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7261,7 +10091,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:170522": {
+   "potato|␟usda:170522": {
     "identity_key": "potato|",
     "evidence_id": "usda:170522",
     "relationship": "SAME_IDENTITY",
@@ -7274,7 +10104,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:170542": {
+   "potato|␟usda:170542": {
     "identity_key": "potato|",
     "evidence_id": "usda:170542",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7287,7 +10117,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:173343": {
+   "potato|␟usda:173343": {
     "identity_key": "potato|",
     "evidence_id": "usda:173343",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7300,7 +10130,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "potato|\u241fusda:173508": {
+   "potato|␟usda:173508": {
     "identity_key": "potato|",
     "evidence_id": "usda:173508",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7313,7 +10143,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:167966": {
+   "rice|␟usda:167966": {
     "identity_key": "rice|",
     "evidence_id": "usda:167966",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7326,7 +10156,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:167967": {
+   "rice|␟usda:167967": {
     "identity_key": "rice|",
     "evidence_id": "usda:167967",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7339,7 +10169,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:168855": {
+   "rice|␟usda:168855": {
     "identity_key": "rice|",
     "evidence_id": "usda:168855",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7352,7 +10182,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:168880": {
+   "rice|␟usda:168880": {
     "identity_key": "rice|",
     "evidence_id": "usda:168880",
     "relationship": "SAME_IDENTITY",
@@ -7365,7 +10195,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:168897": {
+   "rice|␟usda:168897": {
     "identity_key": "rice|",
     "evidence_id": "usda:168897",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7378,7 +10208,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:168914": {
+   "rice|␟usda:168914": {
     "identity_key": "rice|",
     "evidence_id": "usda:168914",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7391,7 +10221,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:168930": {
+   "rice|␟usda:168930": {
     "identity_key": "rice|",
     "evidence_id": "usda:168930",
     "relationship": "SAME_IDENTITY",
@@ -7404,7 +10234,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:168932": {
+   "rice|␟usda:168932": {
     "identity_key": "rice|",
     "evidence_id": "usda:168932",
     "relationship": "SAME_IDENTITY",
@@ -7417,7 +10247,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:168951": {
+   "rice|␟usda:168951": {
     "identity_key": "rice|",
     "evidence_id": "usda:168951",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7430,7 +10260,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:169679": {
+   "rice|␟usda:169679": {
     "identity_key": "rice|",
     "evidence_id": "usda:169679",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7443,7 +10273,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:169680": {
+   "rice|␟usda:169680": {
     "identity_key": "rice|",
     "evidence_id": "usda:169680",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7456,7 +10286,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:169711": {
+   "rice|␟usda:169711": {
     "identity_key": "rice|",
     "evidence_id": "usda:169711",
     "relationship": "SAME_IDENTITY",
@@ -7469,7 +10299,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:170251": {
+   "rice|␟usda:170251": {
     "identity_key": "rice|",
     "evidence_id": "usda:170251",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7482,7 +10312,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:173161": {
+   "rice|␟usda:173161": {
     "identity_key": "rice|",
     "evidence_id": "usda:173161",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7495,7 +10325,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:173263": {
+   "rice|␟usda:173263": {
     "identity_key": "rice|",
     "evidence_id": "usda:173263",
     "relationship": "SAME_IDENTITY",
@@ -7508,7 +10338,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "rice|\u241fusda:173914": {
+   "rice|␟usda:173914": {
     "identity_key": "rice|",
     "evidence_id": "usda:173914",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7521,7 +10351,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|grilled\u241fusda:171999": {
+   "salmon|grilled␟usda:171999": {
     "identity_key": "salmon|grilled",
     "evidence_id": "usda:171999",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -7534,7 +10364,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "salmon|roasted\u241fusda:171999": {
+   "salmon|roasted␟usda:171999": {
     "identity_key": "salmon|roasted",
     "evidence_id": "usda:171999",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -7547,7 +10377,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "salmon|roasted\u241fusda:172000": {
+   "salmon|roasted␟usda:172000": {
     "identity_key": "salmon|roasted",
     "evidence_id": "usda:172000",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -7560,7 +10390,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "salmon|roasted\u241fusda:172001": {
+   "salmon|roasted␟usda:172001": {
     "identity_key": "salmon|roasted",
     "evidence_id": "usda:172001",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -7573,7 +10403,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "salmon|roasted\u241fusda:173692": {
+   "salmon|roasted␟usda:173692": {
     "identity_key": "salmon|roasted",
     "evidence_id": "usda:173692",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -7586,7 +10416,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "salmon|roasted\u241fusda:175168": {
+   "salmon|roasted␟usda:175168": {
     "identity_key": "salmon|roasted",
     "evidence_id": "usda:175168",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -7599,7 +10429,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:171998": {
+   "salmon|␟usda:171998": {
     "identity_key": "salmon|",
     "evidence_id": "usda:171998",
     "relationship": "SAME_IDENTITY",
@@ -7612,7 +10442,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:171999": {
+   "salmon|␟usda:171999": {
     "identity_key": "salmon|",
     "evidence_id": "usda:171999",
     "relationship": "SAME_IDENTITY",
@@ -7625,7 +10455,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:172000": {
+   "salmon|␟usda:172000": {
     "identity_key": "salmon|",
     "evidence_id": "usda:172000",
     "relationship": "SAME_IDENTITY",
@@ -7638,7 +10468,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:172001": {
+   "salmon|␟usda:172001": {
     "identity_key": "salmon|",
     "evidence_id": "usda:172001",
     "relationship": "SAME_IDENTITY",
@@ -7651,7 +10481,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:172343": {
+   "salmon|␟usda:172343": {
     "identity_key": "salmon|",
     "evidence_id": "usda:172343",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7664,7 +10494,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:173686": {
+   "salmon|␟usda:173686": {
     "identity_key": "salmon|",
     "evidence_id": "usda:173686",
     "relationship": "SAME_IDENTITY",
@@ -7677,7 +10507,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:173687": {
+   "salmon|␟usda:173687": {
     "identity_key": "salmon|",
     "evidence_id": "usda:173687",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -7690,7 +10520,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:173688": {
+   "salmon|␟usda:173688": {
     "identity_key": "salmon|",
     "evidence_id": "usda:173688",
     "relationship": "SAME_IDENTITY",
@@ -7703,7 +10533,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:173689": {
+   "salmon|␟usda:173689": {
     "identity_key": "salmon|",
     "evidence_id": "usda:173689",
     "relationship": "SAME_IDENTITY",
@@ -7716,7 +10546,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:173691": {
+   "salmon|␟usda:173691": {
     "identity_key": "salmon|",
     "evidence_id": "usda:173691",
     "relationship": "SAME_IDENTITY",
@@ -7729,7 +10559,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:173692": {
+   "salmon|␟usda:173692": {
     "identity_key": "salmon|",
     "evidence_id": "usda:173692",
     "relationship": "SAME_IDENTITY",
@@ -7742,7 +10572,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:173716": {
+   "salmon|␟usda:173716": {
     "identity_key": "salmon|",
     "evidence_id": "usda:173716",
     "relationship": "SAME_IDENTITY",
@@ -7755,7 +10585,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:173722": {
+   "salmon|␟usda:173722": {
     "identity_key": "salmon|",
     "evidence_id": "usda:173722",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7768,7 +10598,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:175138": {
+   "salmon|␟usda:175138": {
     "identity_key": "salmon|",
     "evidence_id": "usda:175138",
     "relationship": "SAME_IDENTITY",
@@ -7781,7 +10611,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:175167": {
+   "salmon|␟usda:175167": {
     "identity_key": "salmon|",
     "evidence_id": "usda:175167",
     "relationship": "SAME_IDENTITY",
@@ -7794,7 +10624,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "salmon|\u241fusda:175168": {
+   "salmon|␟usda:175168": {
     "identity_key": "salmon|",
     "evidence_id": "usda:175168",
     "relationship": "SAME_IDENTITY",
@@ -7807,7 +10637,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "shrimp|fried\u241fusda:171970": {
+   "shrimp|fried␟usda:171970": {
     "identity_key": "shrimp|fried",
     "evidence_id": "usda:171970",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -7820,7 +10650,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "shrimp|fried\u241fusda:172037": {
+   "shrimp|fried␟usda:172037": {
     "identity_key": "shrimp|fried",
     "evidence_id": "usda:172037",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7833,7 +10663,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "shrimp|\u241fusda:168077": {
+   "shrimp|␟usda:168077": {
     "identity_key": "shrimp|",
     "evidence_id": "usda:168077",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7846,7 +10676,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "shrimp|\u241fusda:168080": {
+   "shrimp|␟usda:168080": {
     "identity_key": "shrimp|",
     "evidence_id": "usda:168080",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7859,7 +10689,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "shrimp|\u241fusda:169008": {
+   "shrimp|␟usda:169008": {
     "identity_key": "shrimp|",
     "evidence_id": "usda:169008",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7872,7 +10702,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "shrimp|\u241fusda:171970": {
+   "shrimp|␟usda:171970": {
     "identity_key": "shrimp|",
     "evidence_id": "usda:171970",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7885,7 +10715,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "shrimp|\u241fusda:171971": {
+   "shrimp|␟usda:171971": {
     "identity_key": "shrimp|",
     "evidence_id": "usda:171971",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -7898,7 +10728,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "shrimp|\u241fusda:171972": {
+   "shrimp|␟usda:171972": {
     "identity_key": "shrimp|",
     "evidence_id": "usda:171972",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -7911,7 +10741,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "shrimp|\u241fusda:173160": {
+   "shrimp|␟usda:173160": {
     "identity_key": "shrimp|",
     "evidence_id": "usda:173160",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7924,7 +10754,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "shrimp|\u241fusda:175179": {
+   "shrimp|␟usda:175179": {
     "identity_key": "shrimp|",
     "evidence_id": "usda:175179",
     "relationship": "SAME_IDENTITY",
@@ -7937,7 +10767,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "shrimp|\u241fusda:175180": {
+   "shrimp|␟usda:175180": {
     "identity_key": "shrimp|",
     "evidence_id": "usda:175180",
     "relationship": "SAME_IDENTITY",
@@ -7950,7 +10780,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tilapia|roasted\u241fusda:167634": {
+   "tilapia|roasted␟usda:167634": {
     "identity_key": "tilapia|roasted",
     "evidence_id": "usda:167634",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7963,7 +10793,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "tilapia|roasted\u241fusda:170686": {
+   "tilapia|roasted␟usda:170686": {
     "identity_key": "tilapia|roasted",
     "evidence_id": "usda:170686",
     "relationship": "DIFFERENT_IDENTITY",
@@ -7976,7 +10806,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "tilapia|roasted\u241fusda:175177": {
+   "tilapia|roasted␟usda:175177": {
     "identity_key": "tilapia|roasted",
     "evidence_id": "usda:175177",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -7989,7 +10819,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "tilapia|\u241fusda:175176": {
+   "tilapia|␟usda:175176": {
     "identity_key": "tilapia|",
     "evidence_id": "usda:175176",
     "relationship": "SAME_IDENTITY",
@@ -8002,7 +10832,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tilapia|\u241fusda:175177": {
+   "tilapia|␟usda:175177": {
     "identity_key": "tilapia|",
     "evidence_id": "usda:175177",
     "relationship": "SAME_IDENTITY",
@@ -8015,7 +10845,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|fried\u241fusda:167695": {
+   "tofu|fried␟usda:167695": {
     "identity_key": "tofu|fried",
     "evidence_id": "usda:167695",
     "relationship": "DIFFERENT_IDENTITY",
@@ -8028,7 +10858,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|fried\u241fusda:167722": {
+   "tofu|fried␟usda:167722": {
     "identity_key": "tofu|fried",
     "evidence_id": "usda:167722",
     "relationship": "DIFFERENT_IDENTITY",
@@ -8041,7 +10871,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|fried\u241fusda:172450": {
+   "tofu|fried␟usda:172450": {
     "identity_key": "tofu|fried",
     "evidence_id": "usda:172450",
     "relationship": "DIFFERENT_IDENTITY",
@@ -8054,7 +10884,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|fried\u241fusda:172451": {
+   "tofu|fried␟usda:172451": {
     "identity_key": "tofu|fried",
     "evidence_id": "usda:172451",
     "relationship": "SAME_IDENTITY",
@@ -8067,7 +10897,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|fried\u241fusda:173788": {
+   "tofu|fried␟usda:173788": {
     "identity_key": "tofu|fried",
     "evidence_id": "usda:173788",
     "relationship": "DIFFERENT_IDENTITY",
@@ -8080,7 +10910,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|fried\u241fusda:174280": {
+   "tofu|fried␟usda:174280": {
     "identity_key": "tofu|fried",
     "evidence_id": "usda:174280",
     "relationship": "DIFFERENT_IDENTITY",
@@ -8093,7 +10923,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|fried\u241fusda:174291": {
+   "tofu|fried␟usda:174291": {
     "identity_key": "tofu|fried",
     "evidence_id": "usda:174291",
     "relationship": "DIFFERENT_IDENTITY",
@@ -8106,7 +10936,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|fried\u241fusda:174304": {
+   "tofu|fried␟usda:174304": {
     "identity_key": "tofu|fried",
     "evidence_id": "usda:174304",
     "relationship": "SAME_IDENTITY",
@@ -8119,7 +10949,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|\u241fusda:167695": {
+   "tofu|␟usda:167695": {
     "identity_key": "tofu|",
     "evidence_id": "usda:167695",
     "relationship": "DIFFERENT_IDENTITY",
@@ -8132,7 +10962,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|\u241fusda:167722": {
+   "tofu|␟usda:167722": {
     "identity_key": "tofu|",
     "evidence_id": "usda:167722",
     "relationship": "DIFFERENT_IDENTITY",
@@ -8145,7 +10975,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|\u241fusda:172450": {
+   "tofu|␟usda:172450": {
     "identity_key": "tofu|",
     "evidence_id": "usda:172450",
     "relationship": "DIFFERENT_IDENTITY",
@@ -8158,7 +10988,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|\u241fusda:172451": {
+   "tofu|␟usda:172451": {
     "identity_key": "tofu|",
     "evidence_id": "usda:172451",
     "relationship": "SAME_IDENTITY",
@@ -8171,7 +11001,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|\u241fusda:173787": {
+   "tofu|␟usda:173787": {
     "identity_key": "tofu|",
     "evidence_id": "usda:173787",
     "relationship": "SAME_IDENTITY",
@@ -8184,7 +11014,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|\u241fusda:173788": {
+   "tofu|␟usda:173788": {
     "identity_key": "tofu|",
     "evidence_id": "usda:173788",
     "relationship": "SAME_IDENTITY",
@@ -8197,7 +11027,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|\u241fusda:174280": {
+   "tofu|␟usda:174280": {
     "identity_key": "tofu|",
     "evidence_id": "usda:174280",
     "relationship": "DIFFERENT_IDENTITY",
@@ -8210,7 +11040,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "tofu|\u241fusda:174291": {
+   "tofu|␟usda:174291": {
     "identity_key": "tofu|",
     "evidence_id": "usda:174291",
     "relationship": "SAME_IDENTITY",
@@ -8223,7 +11053,7 @@
     "review_status": "unreviewed",
     "invalidation_reason": ""
    },
-   "vegetable oil|\u241fusda:171422": {
+   "vegetable oil|␟usda:171422": {
     "identity_key": "vegetable oil|",
     "evidence_id": "usda:171422",
     "relationship": "COMPATIBLE_SPECIALIZATION",
@@ -8236,7 +11066,7 @@
     "review_status": "baseline_reviewed",
     "invalidation_reason": ""
    },
-   "vegetable oil|\u241fusda:172370": {
+   "vegetable oil|␟usda:172370": {
     "identity_key": "vegetable oil|",
     "evidence_id": "usda:172370",
     "relationship": "COMPATIBLE_SPECIALIZATION",

@@ -360,6 +360,13 @@ from skills.nutrition.scaling import (  # noqa: E402
     SourcedMeasure, mass_from_measures, measure_from_panel)
 
 
+# ⛔ NO UNIT VOCABULARY LIVES IN THIS MODULE. `_measure_unit_text` and the size
+# words sit in `skills.nutrition.scaling` beside `unit_matches` — the first
+# draft put a copy here, which was BOTH a second unit authority (the exact
+# two-engines smell every review of this tranche has caught) AND a literal
+# string collection inside the pricer, which the zero-rule AST gate rightly
+# forbids: this module must never hold name lists that could grow into
+# food-name branches.
 def _candidate_measures(winner: dict) -> tuple:
     """Every sourced measure the WINNING record states about itself.
 
@@ -403,7 +410,10 @@ def _candidate_measures(winner: dict) -> tuple:
             amount = float(measure.get("amount") or 1.0)
         except (TypeError, ValueError):
             continue
-        unit_text = str(measure.get("unit_text") or "").strip().lower()
+        from skills.nutrition.scaling import _measure_unit_text
+        unit_text = _measure_unit_text(
+            str(measure.get("unit_text") or "").strip().lower(),
+            winner.get("description"))
         # ⚠ THE AMOUNT IS READ, NOT ASSUMED. USDA states "2 tbsp = 30 g" as
         # amount=2; treating the gram weight as per-unit would double it.
         if grams > 0 and amount > 0 and unit_text:

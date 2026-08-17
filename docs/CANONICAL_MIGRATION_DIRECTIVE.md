@@ -354,8 +354,8 @@ CURRENT OWNERSHIP BASELINE             ~20.3%            (predicate a747b56,
                                                          population p16b_0817)
 BASELINE POPULATION                    ✅ FROZEN          361 rows / 232 meals,
                                                          sha 6247a33c55ed64f5
-P17 STATUS                             🟡 ACTIVE          c.3a landed; artifact
-                                                         still NOT hydrated
+P17 STATUS                             🟡 ACTIVE          c.3b HYDRATED at FDC
+                                                         release 15.3
 ROLLOUT                                FROZEN — user 26 only
 
 NEXT
@@ -655,7 +655,8 @@ P17-SA   ✅ provider / canonical-authority axes frozen           7a74bf1
 P17c.1   ✅ one scaling resolver; `can_scale` shares it          89e606d
 P17c.2   ✅ authoritative precedence + real-normalizer twins     0dcc1f8
 P17c.3a  ✅ durable source-snapshot identity, no placeholder    c406e87
-P17c.3b  ⬅ OPEN — USDA hydrate; needs an explicit FDC release
+P17c.3b  ✅ hydrated at FDC 15.3 — 120/124 candidates, 259
+         portions, additive-verified, every measure stamped
 P17d     ◻ exact PRODUCT producer
 P17e     ◻ package + fraction
 P17f     ◻ persisted dual provenance

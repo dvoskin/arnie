@@ -622,3 +622,80 @@ def test_a_differing_fingerprint_marks_differing_committed_facts():
     be able to reproduce."""
     assert _measure(source_fingerprint="aaa") != _measure(
         source_fingerprint="bbb")
+
+
+# ── P17c.3b — THE IMPLICIT SUBJECT, FOUND END-TO-END AGAINST THE HYDRATED
+# ARTIFACT, NOT IN REVIEW ───────────────────────────────────────────────────
+#
+# ⛔⛔ USDA STATES THE EGG PORTION AS `modifier="large"` WITH
+# `measureUnit="undetermined"` — a bare SIZE, no entity noun, because the
+# subject is the record itself. So `unit_matches("eggs", "large")` failed, the
+# sourced conversion never fired, and "2 eggs" — THE TRANCHE'S NAMESAKE —
+# silently fell to the piece-weight heuristic with authoritative=False. Every
+# synthetic panel had said "large egg"; only the committed artifact said
+# "large".
+
+def _fried_egg_measures():
+    from core.canonical_pricing import _candidate_measures
+    return _candidate_measures({
+        "fdc_id": "173423", "description": "Egg, whole, cooked, fried",
+        "dataset_version": "15.3",
+        "measures": [{"unit_text": "large", "amount": 1.0, "grams": 46.0,
+                      "portion_id": 92497, "data_type": "SR Legacy",
+                      "publication_date": "4/1/2019",
+                      "dataset_version": "15.3", "fingerprint": "cc14"}]})
+
+
+def test_a_bare_size_measure_inherits_the_records_subject():
+    """"large" on an egg record means "large EGG", and real "2 eggs" must reach
+    it: sourced, authoritative, 92 g — not the piece-weight prior's 100."""
+    from skills.nutrition.normalize import normalize_quantity
+    from skills.nutrition.scaling import Per100g, resolve_scaling
+
+    r = resolve_scaling(Per100g(), normalize_quantity("2 eggs", "Egg"),
+                        _fried_egg_measures())
+    assert r.path == "sourced_conversion"
+    assert r.authoritative
+    assert r.resolved_grams == pytest.approx(92.0)
+
+
+def test_a_stated_size_matching_the_measure_binds_to_it():
+    from skills.nutrition.normalize import normalize_quantity
+    from skills.nutrition.scaling import Per100g, resolve_scaling
+
+    r = resolve_scaling(Per100g(), normalize_quantity("3 large eggs", "Egg"),
+                        _fried_egg_measures())
+    assert r.resolved_grams == pytest.approx(138.0), (
+        "3 large eggs is 3 x 46 g by USDA's own measure — the heuristic table "
+        "said 67.5 g/egg, a 32% error the source exists to correct")
+
+
+def test_a_stated_size_conflicting_with_the_measure_does_not_bind():
+    """⛔ "2 medium eggs" shares the token "egg" with the large-egg measure, and
+    binding would price medium eggs while citing a record about large ones. It
+    falls to the heuristic and is NOT canonically eligible."""
+    from skills.nutrition.normalize import normalize_quantity
+    from skills.nutrition.scaling import Per100g, resolve_scaling
+
+    r = resolve_scaling(Per100g(), normalize_quantity("2 medium eggs", "Egg"),
+                        _fried_egg_measures())
+    assert r.path.startswith("heuristic:")
+    assert not r.authoritative
+
+
+def test_the_subject_is_never_appended_to_a_real_unit_noun():
+    """⛔ THE OVERREACH GUARD. An "oz" measure on a salmon record must not
+    become "oz salmon" — or "2 salmon" would price two salmon at 56 grams."""
+    from core.canonical_pricing import _candidate_measures
+    from skills.nutrition.normalize import normalize_quantity
+    from skills.nutrition.scaling import Per100g, ScalingRefused, resolve_scaling
+
+    measures = _candidate_measures({
+        "fdc_id": "175168", "description": "Salmon, sockeye, cooked",
+        "dataset_version": "15.3",
+        "measures": [{"unit_text": "oz", "amount": 1.0, "grams": 28.35,
+                      "portion_id": 1, "dataset_version": "15.3"}]})
+    assert all("salmon" not in m.unit_text for m in measures)
+    with pytest.raises(ScalingRefused):
+        resolve_scaling(Per100g(), normalize_quantity("2 salmon", "Salmon"),
+                        measures)
