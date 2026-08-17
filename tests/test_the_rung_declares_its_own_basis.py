@@ -49,7 +49,11 @@ CHICKEN_PER100G = {"calories": 165.0, "protein": 31.0, "carbs": 0.0, "fat": 3.6}
 
 
 def _g(grams: float) -> NormalizedQuantity:
-    return NormalizedQuantity(amount=grams, unit="g", grams=grams)
+    """A user-stated mass. ⚠ `normalization_source` IS NOT DECORATION: it is what
+    marks the mass EXACT rather than assumed, and production always sets it.
+    Omitting it here made a stated "100 g" look like a piece-weight guess."""
+    return NormalizedQuantity(amount=grams, unit="g", grams=grams,
+                              normalization_source="mass_conversion")
 
 
 def _count(n: float, unit: str = "bar", *, fraction: bool = False,
@@ -396,32 +400,76 @@ def test_can_scale_never_disagrees_with_what_pricing_does():
     """⛔⛔ THE P17g GUARANTEE, ASSERTED BEFORE P17g EXISTS.
 
     The predicate will ask `can_scale`; the pricer acts on `resolve_scaling`.
-    If those two could ever differ, coverage would promise a meal that pricing
-    then refuses — the exact drift the blunt `has_mass` rule was written to
-    prevent. They are the same call, and this is what keeps them so.
+    If those could differ, coverage would promise a meal pricing then refuses —
+    the drift the blunt `has_mass` rule was written to prevent. They are one
+    call, and this keeps them so.
     """
+    from core.canonical_pricing import _candidate_measures
     from skills.nutrition.scaling import Per100g, can_scale
 
     egg = _egg()
-    measures_present = ({"fdc_id": "1", "serving_text": "1 large egg",
-                         "serving_mass_g": 50.0},)
-    from core.canonical_pricing import _candidate_measures
-    measures = _candidate_measures(measures_present[0])
+    measures = _candidate_measures({"fdc_id": "1", "serving_text": "1 large egg",
+                                    "serving_mass_g": 50.0})
 
     for portion, expected in ((_count(2, "egg"), True),
                               (_count(2, "bottle"), False),
                               (_g(100.0), True),
                               (_count(1, "piece", fraction=True), False)):
-        agrees = can_scale(Per100g(), portion, measures)
+        mechanical = can_scale(Per100g(), portion, measures,
+                               authoritative_only=False)
         try:
             price(entity="Egg", consumed=portion, artifact=egg)
             priced = True
         except PricingRefused:
             priced = False
-        assert agrees == priced == expected, (
-            f"can_scale said {agrees} and pricing said {priced} for "
-            f"{portion.unit_label!r} — the predicate and the pricer must not "
-            f"be able to hold different views of scalability")
+        assert mechanical == priced == expected, (
+            f"can_scale said {mechanical} and pricing said {priced} for "
+            f"{portion.unit!r} — the predicate and the pricer must not be able "
+            f"to hold different views of scalability")
+
+
+def test_authoritative_eligibility_is_stricter_than_mere_scalability():
+    """⭐⭐ P17c.2 — NORMALIZATION MAY ESTIMATE WHAT THE USER PROBABLY MEANT; IT
+    MAY NOT OUTRANK EVIDENCE WHEN CANONICAL OWNERSHIP IS DECIDED.
+
+    A heuristic piece-weight mass still SCALES — an estimate may use it — and it
+    must never make canonical eligibility true. So the two questions separate.
+    """
+    from skills.nutrition.models import COUNT_BASIS_UNIT
+    from skills.nutrition.scaling import Per100g, can_scale, resolve_scaling
+
+    heuristic = NormalizedQuantity(
+        amount=2, unit="eggs", count=2.0, unit_label="2 eggs", grams=100.0,
+        count_basis=COUNT_BASIS_UNIT, normalization_source="piece_weight")
+
+    assert can_scale(Per100g(), heuristic, (), authoritative_only=False), (
+        "a heuristic mass must still be usable — an estimate may price on it")
+    assert not can_scale(Per100g(), heuristic, ()), (
+        "a piece-weight table granted canonical eligibility — that is the "
+        "assumption layer outranking the evidence layer")
+    assert resolve_scaling(Per100g(), heuristic, ()).path == \
+        "heuristic:piece_weight"
+
+
+def test_an_unsourced_measure_cannot_grant_canonical_authority():
+    """⛔ AN UNSOURCED FACTOR IS AN INVENTED DENSITY. It may still produce a
+    number; it may never settle a canonical rung."""
+    from skills.nutrition.models import COUNT_BASIS_UNIT
+    from skills.nutrition.scaling import (Per100g, SourcedMeasure, can_scale,
+                                          resolve_scaling)
+
+    portion = NormalizedQuantity(amount=2, unit="egg", count=2.0,
+                                 unit_label="2 eggs",
+                                 count_basis=COUNT_BASIS_UNIT)
+    unsourced = (SourcedMeasure(unit_text="egg", grams_per_unit=50.0),)
+    sourced = (SourcedMeasure(unit_text="egg", grams_per_unit=50.0,
+                              dataset_id="usda_fdc", dataset_version="2025-04",
+                              record_key="173423",
+                              immutable_within_version=True),)
+
+    assert resolve_scaling(Per100g(), portion, unsourced).resolved_grams == 100.0
+    assert not can_scale(Per100g(), portion, unsourced)
+    assert can_scale(Per100g(), portion, sourced)
 
 
 def test_the_sourced_measure_is_load_bearing(monkeypatch):
@@ -430,15 +478,88 @@ def test_the_sourced_measure_is_load_bearing(monkeypatch):
     build where the panel was still being dropped.
 
     ⚠ AND THE SEAM MOVED ONCE ALREADY. This patched
-    `canonical_pricing.mass_from_measures` until P17c.1 put the single resolver
-    in `scaling`, at which point the mutation stopped biting and this test went
-    RED — which is the anti-vacuity check doing precisely its job. It now
-    patches the function the resolver actually calls.
+    `canonical_pricing.mass_from_measures` until P17c.1 moved the resolver into
+    `scaling`, and then `scaling.mass_from_measures` until P17c.2 made the
+    resolver call `_matching_measure` directly. BOTH TIMES the mutation went
+    inert and this test went RED, which is the anti-vacuity check doing exactly
+    its job on code that moved out from under it.
     """
     import skills.nutrition.scaling as sc
 
     assert price(entity="Egg", consumed=_count(2, "egg"),
                  artifact=_egg()).calories > 0
-    monkeypatch.setattr(sc, "mass_from_measures", lambda *a, **k: None)
+    monkeypatch.setattr(sc, "_matching_measure", lambda *a, **k: None)
     with pytest.raises(PricingRefused):
         price(entity="Egg", consumed=_count(2, "egg"), artifact=_egg())
+
+
+# ── P17c.2 — DRIVEN THROUGH THE REAL NORMALIZER, NOT A HAND-BUILT SHAPE ─────
+#
+# ⛔⛔ EVERY TEST ABOVE CONSTRUCTS ITS OWN `NormalizedQuantity`, AND THAT HID THE
+# SEAM THAT DECIDES THIS TRANCHE. Production normalization of "2 eggs" already
+# returns grams=100 from a PIECE-WEIGHT TABLE and stores the raw wording in
+# `unit_label`. Under the original ordering `_factor` succeeded on that heuristic
+# mass immediately, so the USDA conversion was never consulted and P17 would have
+# been DECORATIVE on exactly the foods it was built for.
+
+def _sourced(grams_per_unit: float, unit_text: str = "large egg"):
+    from skills.nutrition.scaling import SourcedMeasure
+    return (SourcedMeasure(unit_text=unit_text, grams_per_unit=grams_per_unit,
+                           source_id="usda:173423", dataset_id="usda_fdc",
+                           dataset_version="2025-04", record_key="173423",
+                           immutable_within_version=True),)
+
+
+def test_production_normalization_of_two_eggs_is_a_heuristic_mass():
+    """The premise, executed rather than assumed."""
+    from skills.nutrition.normalize import normalize_quantity
+
+    q = normalize_quantity("2 eggs", "Egg")
+    assert q.grams == pytest.approx(100.0)
+    assert q.normalization_source == "piece_weight"
+    assert not q.mass_is_exact
+    assert q.unit_label == "2 eggs", (
+        "unit_label holds the user's RAW WORDING — matching a source unit "
+        "against it asks whether '2 eggs' is the same unit as 'large egg'")
+
+
+def test_a_sourced_conversion_outranks_the_piece_weight_prior():
+    """⭐⭐ THE TRANCHE'S REASON FOR EXISTING. Not because the numbers differ —
+    here they would not — but because one is EVIDENCE and one is an ASSUMPTION."""
+    from skills.nutrition.normalize import normalize_quantity
+    from skills.nutrition.scaling import Per100g, resolve_scaling
+
+    resolution = resolve_scaling(Per100g(), normalize_quantity("2 eggs", "Egg"),
+                                 _sourced(50.0))
+    assert resolution.path == "sourced_conversion"
+    assert resolution.resolved_grams == pytest.approx(100.0)
+    assert resolution.authoritative
+    assert resolution.conversion is not None
+
+
+def test_when_the_source_disagrees_with_the_prior_the_source_wins():
+    """⛔⛔ IF THIS RETURNS 100 g, P17 IS DECORATIVE. USDA says 56 g/egg; the
+    piece-weight table says 50. Two eggs is 112 g, not 100."""
+    from skills.nutrition.normalize import normalize_quantity
+    from skills.nutrition.scaling import Per100g, resolve_scaling
+
+    resolution = resolve_scaling(Per100g(), normalize_quantity("2 eggs", "Egg"),
+                                 _sourced(56.0))
+    assert resolution.resolved_grams == pytest.approx(112.0), (
+        "the heuristic 100 g won over a sourced 112 g — normalization outranked "
+        "evidence, which is the precedence this tranche exists to invert")
+    assert resolution.factor == pytest.approx(1.12)
+
+
+def test_a_user_stated_mass_is_never_reinterpreted_by_a_source():
+    """⛔ PRECEDENCE 1. The user measured it. A per-unit conversion may not
+    second-guess a quantity they stated outright."""
+    from skills.nutrition.normalize import normalize_quantity
+    from skills.nutrition.scaling import Per100g, resolve_scaling
+
+    q = normalize_quantity("100 g", "Egg")
+    assert q.mass_is_exact
+    resolution = resolve_scaling(Per100g(), q, _sourced(56.0))
+    assert resolution.path == "user_stated_exact"
+    assert resolution.resolved_grams is None
+    assert resolution.factor == pytest.approx(1.0)

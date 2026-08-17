@@ -376,9 +376,17 @@ def _candidate_measures(winner: dict) -> tuple:
     PRODUCT.
     """
     out = []
+    provenance = {
+        "dataset_id": "usda_fdc",
+        "dataset_version": str(winner.get("dataset_version")
+                               or "committed_artifact"),
+        "record_key": str(winner.get("fdc_id") or ""),
+        "immutable_within_version": True,
+    } if winner.get("fdc_id") else {}
     panel = measure_from_panel(winner.get("serving_text"),
                                winner.get("serving_mass_g"),
-                               source_id=str(winner.get("fdc_id") or ""))
+                               source_id=f"usda:{winner.get('fdc_id')}",
+                               **provenance)
     if panel:
         out.append(panel)
     for measure in (winner.get("measures") or ()):
@@ -391,9 +399,18 @@ def _candidate_measures(winner: dict) -> tuple:
         # ⚠ THE AMOUNT IS READ, NOT ASSUMED. USDA states "2 tbsp = 30 g" as
         # amount=2; treating the gram weight as per-unit would double it.
         if grams > 0 and amount > 0 and unit_text:
-            out.append(SourcedMeasure(unit_text=unit_text,
-                                      grams_per_unit=grams / amount,
-                                      source_id=str(winner.get("fdc_id") or "")))
+            out.append(SourcedMeasure(
+                unit_text=unit_text, grams_per_unit=grams / amount,
+                source_id=f"usda:{winner.get('fdc_id')}",
+                # ⭐ PROVENANCE, WITHOUT WHICH THIS MEASURE CANNOT GRANT
+                # CANONICAL AUTHORITY (P17c.2). An FDC id names one immutable
+                # record within a dataset release, which is exactly what
+                # `SourceReference` requires and why the version is carried.
+                dataset_id="usda_fdc",
+                dataset_version=str(winner.get("dataset_version")
+                                    or "committed_artifact"),
+                record_key=str(winner.get("fdc_id") or ""),
+                immutable_within_version=True))
     return tuple(out)
 
 

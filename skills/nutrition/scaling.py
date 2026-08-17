@@ -157,6 +157,28 @@ class SourcedMeasure:
             policy_version="p17c.1")
 
 
+def _consumed_unit(consumed) -> str:
+    """WHAT THE USER COUNTED, as a unit rather than as prose.
+
+    ⛔⛔ DISPLAY WORDING IS NOT IDENTITY *(P17c.2)*. `unit_label` deliberately
+    holds the user's raw phrasing — production normalization of "2 eggs" stores
+    `unit="eggs"` and `unit_label="2 eggs"` — so preferring the label asked
+    whether "2 eggs" was the same unit as "large egg" instead of whether "egg"
+    was. The synthetic tests hid it by setting both to the same word.
+
+    Canonical unit first, the user's own stated unit next, raw wording last and
+    only as weak evidence. A mass/volume token is not a countable unit at all.
+    """
+    for candidate in (getattr(consumed, "unit", ""),
+                      getattr(consumed, "user_stated_unit", ""),
+                      getattr(consumed, "unit_label", "")):
+        word = str(candidate or "").strip().lower()
+        if word and word not in ("g", "gram", "grams", "ml", "milliliter",
+                                 "milliliters", "oz", "kg", "l"):
+            return word
+    return ""
+
+
 def unit_matches(consumed, unit_id: str) -> bool:
     """Does the user's counted unit name the SAME thing the source counts?
 
@@ -169,13 +191,26 @@ def unit_matches(consumed, unit_id: str) -> bool:
     not match "bar", because knowing a whole bar weighs 55 g says nothing about
     what one piece of it weighs.
     """
-    want = str(getattr(consumed, "unit_label", "")
-               or getattr(consumed, "unit", "")).strip().lower()
+    want = _consumed_unit(consumed)
     target = str(unit_id or "").strip().lower()
     if not want or not target:
         return False
-    return bool(re.search(rf"\b{re.escape(want)}s?\b", target)
-                or re.search(rf"\b{re.escape(target)}s?\b", want))
+    # ⛔⛔ SINGULARISE BOTH SIDES, AND THE REAL NORMALIZER IS WHY. The first
+    # version appended an optional "s" to the search term only, so it could
+    # match "egg" inside "eggs" but NOT "eggs" against "large egg" — and
+    # production normalization of "2 eggs" yields unit="eggs" while USDA states
+    # "large egg". The synthetic tests used the singular on both sides and never
+    # saw it. A unit matcher that cannot fold a plural is a unit matcher that
+    # silently refuses every real count.
+    want_tokens = _unit_tokens(want)
+    target_tokens = _unit_tokens(target)
+    return bool(want_tokens & target_tokens)
+
+
+def _unit_tokens(text: str) -> set:
+    """Singularised word tokens of a unit phrase. "large egg" -> {large, egg}."""
+    return {token[:-1] if len(token) > 3 and token.endswith("s") else token
+            for token in re.findall(r"[^\W\d_]+", text.lower(), re.UNICODE)}
 
 
 #: A serving panel states a COUNT and a unit: "2 cookies", "1 bar", "1 large
@@ -183,8 +218,15 @@ def unit_matches(consumed, unit_id: str) -> bool:
 _PANEL = re.compile(r"^\s*(\d+(?:\.\d+)?)?\s*(.+?)\s*$")
 
 
-def measure_from_panel(serving_text, serving_mass_g, source_id=""):
-    """A `SourcedMeasure` from a provider's own serving panel, or None."""
+def measure_from_panel(serving_text, serving_mass_g, source_id="", **provenance):
+    """A `SourcedMeasure` from a provider's own serving panel, or None.
+
+    ⚠ PROVENANCE TRAVELS HERE TOO. A serving PANEL is exactly as sourced as a
+    `foodPortions` row — same record, same dataset — and the first version took
+    provenance on one path and not the other, so a panel-derived measure was
+    silently non-authoritative while an otherwise identical portion-derived one
+    was not.
+    """
     try:
         grams = float(serving_mass_g)
     except (TypeError, ValueError):
@@ -198,7 +240,8 @@ def measure_from_panel(serving_text, serving_mass_g, source_id=""):
     if count <= 0:
         return None
     return SourcedMeasure(unit_text=match.group(2),
-                          grams_per_unit=grams / count, source_id=source_id)
+                          grams_per_unit=grams / count, source_id=source_id,
+                          **provenance)
 
 
 def mass_from_measures(consumed, measures) -> Optional[float]:
@@ -223,9 +266,8 @@ def mass_from_measures(consumed, measures) -> Optional[float]:
     # bar's mass, for the same reason the PerServing path refuses it.
     if getattr(consumed, "unit_is_fraction", False):
         return None
-    want = str(getattr(consumed, "unit_label", "")
-               or getattr(consumed, "unit", "")).strip().lower()
-    if not want or want in ("g", "gram", "grams", "ml"):
+    want = _consumed_unit(consumed)
+    if not want:
         return None
     measure = _matching_measure(consumed, measures)
     return float(count) * measure.grams_per_unit if measure else None
@@ -243,9 +285,8 @@ def _matching_measure(consumed, measures):
         return None
     if getattr(consumed, "unit_is_fraction", False):
         return None
-    want = str(getattr(consumed, "unit_label", "")
-               or getattr(consumed, "unit", "")).strip().lower()
-    if not want or want in ("g", "gram", "grams", "ml"):
+    want = _consumed_unit(consumed)
+    if not want:
         return None
     for measure in measures or ():
         if unit_matches(consumed, measure.unit_text):
@@ -410,48 +451,99 @@ class ScalingResolution:
     basis_name: str
     #: The mass a sourced measure supplied, when the portion had none.
     resolved_grams: Optional[float] = None
-    #: The canonical `BasisConversion` that licensed it, when the measure
+    #: The canonical `ConversionEvidence` that licensed it, when the measure
     #: carried provenance. Persisted by P17f so a correction can reprice
     #: deterministically instead of rediscovering the nutrition.
     conversion: object = None
     evidence_ids: tuple = ()
+    #: ⛔⛔ MAY THIS RESOLUTION SUPPORT CANONICAL OWNERSHIP? False when the
+    #: factor rests on a HEURISTIC normalized mass (a piece-weight table, a
+    #: vessel guess, an ontology default) or on a measure with no provenance.
+    #: The number is still produced — an estimate may use it — but MEMORY,
+    #: PRODUCT and ARTIFACT may not be settled on it.
+    authoritative: bool = True
+    #: How the factor was reached, for the audit and for the log.
+    path: str = "basis"
 
 
 def resolve_scaling(source_basis: SourceBasis, consumed: NormalizedQuantity,
                     measures=()) -> ScalingResolution:
     """THE ONE PLACE A PORTION MEETS A BASIS. Raises `ScalingRefused`.
 
-    ⭐ THE SOURCED MEASURE IS A LAST RESORT, and that ordering is the safety
-    property: it is consulted ONLY on a portion the basis already refused, so
-    this can turn a refusal into a price and never one price into another.
+    ⛔⛔ PRECEDENCE, FROZEN *(Danny, P17c.2, 2026-08-17)*. "Sourced measure is a
+    last resort" was too broad, and it quietly handed the decision to whichever
+    layer produced a number first:
+
+        1  USER-STATED EXACT QUANTITY     "100 g", "6 oz"     mass_is_exact
+        2  DIRECT COMPATIBLE BASIS        2 bars vs a per-bar label
+        3  SOURCED ConversionEvidence     USDA: 1 large egg = 50 g
+        4  HEURISTIC NORMALIZED MASS      piece_weight, vessel, ontology
+                                          -> NEVER canonical authority
+
+    ⭐ THE CASE THAT MADE THIS NECESSARY: `normalize_quantity("2 eggs")` already
+    returns grams=100 from a PIECE-WEIGHT TABLE. Under the old ordering
+    `_factor` succeeded on that immediately and the USDA conversion was never
+    consulted — so P17 would have been DECORATIVE on exactly the foods it was
+    built for, and if USDA said 56 g/egg the heuristic 50 g would have won
+    merely by arriving first.
+
+    ⚠ NORMALIZATION MAY ESTIMATE WHAT THE USER PROBABLY MEANT. IT MAY NOT
+    OUTRANK EVIDENCE WHEN CANONICAL OWNERSHIP IS BEING DECIDED.
     """
-    try:
+    name = getattr(source_basis, "basis", "")
+
+    # 1 — an exact user-stated measurement is the authority. A sourced
+    # conversion must not reinterpret a quantity the user actually measured.
+    if getattr(consumed, "mass_is_exact", False):
         return ScalingResolution(factor=_factor(source_basis, consumed),
-                                 basis_name=getattr(source_basis, "basis", ""))
+                                 basis_name=name, path="user_stated_exact")
+
+    # 2 — a basis that consumes the portion WITHOUT needing a mass: a count of
+    # the label's own units. Tested by stripping any heuristic mass, so that a
+    # piece-weight prior cannot masquerade as a direct match.
+    massless = replace(consumed, grams=None, milliliters=None)
+    try:
+        return ScalingResolution(factor=_factor(source_basis, massless),
+                                 basis_name=name, path="direct_basis")
     except ScalingRefused:
-        grams = mass_from_measures(consumed, measures)
-        if grams is None:
-            raise
-        converted = replace(consumed, grams=grams)
-        factor = _factor(source_basis, converted)
-        measure = _matching_measure(consumed, measures)
+        pass
+
+    # 3 — a sourced conversion, which OUTRANKS the heuristic mass below.
+    measure = _matching_measure(massless, measures)
+    if measure is not None:
+        grams = float(massless.count) * measure.grams_per_unit
+        conversion = measure.as_basis_conversion()
         return ScalingResolution(
-            factor=factor, basis_name=getattr(source_basis, "basis", ""),
-            resolved_grams=grams,
-            conversion=measure.as_basis_conversion() if measure else None,
-            evidence_ids=((measure.source_id,) if measure and measure.source_id
-                          else ()))
+            factor=_factor(source_basis, replace(consumed, grams=grams)),
+            basis_name=name, resolved_grams=grams, conversion=conversion,
+            evidence_ids=(measure.source_id,) if measure.source_id else (),
+            # ⛔ AN UNSOURCED FACTOR IS AN INVENTED DENSITY. It may still price
+            # an estimate; it may never settle a canonical rung.
+            authoritative=conversion is not None,
+            path="sourced_conversion" if conversion is not None
+            else "unsourced_measure")
+
+    # 4 — whatever normalization produced. It scales, but it is an ASSUMPTION,
+    # and `authoritative` says so out loud rather than in a comment.
+    return ScalingResolution(factor=_factor(source_basis, consumed),
+                             basis_name=name, authoritative=False,
+                             path=f"heuristic:{consumed.normalization_source}")
 
 
 def can_scale(source_basis: SourceBasis, consumed: NormalizedQuantity,
-              measures=()) -> bool:
+              measures=(), *, authoritative_only: bool = True) -> bool:
     """`resolve_scaling` asked as a yes/no. THE PREDICATE'S ENTRY POINT — it
-    exists so P17g cannot accidentally define scalability a second time."""
+    exists so P17g cannot accidentally define scalability a second time.
+
+    ⛔ `authoritative_only` DEFAULTS TRUE, because the predicate's question is
+    not "can a number be produced" but "may canonical OWN this". A heuristic
+    piece weight answers the first and must never answer the second.
+    """
     try:
-        resolve_scaling(source_basis, consumed, measures)
-        return True
+        resolution = resolve_scaling(source_basis, consumed, measures)
     except ScalingRefused:
         return False
+    return resolution.authoritative or not authoritative_only
 
 
 def scale_profile(profile: NutrientProfile, source_basis: SourceBasis,
