@@ -113,11 +113,43 @@ def test_the_board_itself_still_sequences():
     """⭐ THE POSITIVE HALF. A gate that only forbids instructions would pass
     perfectly on a document that had stopped telling anyone anything."""
     listing = _the_sequencing_list()
-    for required in ("P16", "DO NOT", "36.9%"):
+    for required in ("P16", "DO NOT"):
         assert required in listing, (
             f"the §NEXT sequencing list lost {required!r} — it must carry the "
-            f"open phase, the prohibitions and the ownership number it is "
-            f"sequenced on")
+            f"open phase and the prohibitions")
+
+
+def test_the_board_quotes_the_ownership_NUMBER_THE_INSTRUMENT_MEASURED():
+    """⛔⛔ THE BOARD MAY NOT SEQUENCE ON A SUPERSEDED NUMBER.
+
+    This gate first hard-coded `36.9%`, and hours later that number was found to
+    be unproducible by the current predicate: P11 ran at `beac35a` (08-15) and
+    the count-only/mass branch entered `decide()` at `951b90e` (08-16), AFTER it.
+    Re-measuring the same window gave 20.2%. **A number published under one
+    instrument was being used to sequence work under another** — the failure this
+    repository keeps paying for.
+
+    ⭐ SO THE ASSERTION IS AGREEMENT, NOT A LITERAL. The board must quote the
+    ownership rate the instrument's own recorded run produced. Re-run the
+    instrument and this gate demands the board be updated; edit the board and it
+    demands the instrument agree. A hard-coded percentage could only ever catch
+    forgetting to edit the test.
+    """
+    import json
+
+    recorded = (pathlib.Path(__file__).resolve().parent.parent / "data"
+                / "corpus" / "settlement_coverage.json")
+    assert recorded.exists(), (
+        "no recorded settlement-coverage run — the board's ownership number has "
+        "nothing to agree with. Run "
+        "`python -m scripts.measure_settlement_coverage --days 21 --write`")
+    measured = json.loads(recorded.read_text())["C_ownership_rate_pct"]
+    listing = _the_sequencing_list()
+    assert f"{measured}%" in listing, (
+        f"the §NEXT board does not quote the measured ownership rate "
+        f"{measured}% — it reads:\n{listing}\n"
+        f"Either the board is sequencing on a superseded number, or the "
+        f"instrument was re-run and the board was not updated.")
 
 
 def test_the_matcher_can_still_fail():

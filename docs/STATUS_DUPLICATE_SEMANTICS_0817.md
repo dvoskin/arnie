@@ -194,9 +194,18 @@ principle.
 ## Next
 
 ```
-1  freeze general-settlement backend hardening
-2  oils
+1  PRODUCT / per-serving basis — 142 of 207 declining items (69%)
+2  identity-resolution coverage — 48 of 207
+3  re-measure ownership, repeat until the rollout threshold is crossed
 ```
+
+⛔ **AND THE OWNERSHIP NUMBER MOVED WHILE THIS DOCUMENT WAS BEING WRITTEN.** P11
+published 36.9% at `beac35a` (08-15). The count-only/mass branch entered
+`decide()` at `951b90e` (08-16), after it — so re-running the same instrument on
+the same window gives **20.2%**, with 86 count-only declines where P11 saw 3.
+The drop is honest: the mass branch declines meals canonical genuinely cannot
+price. **36.9% was never producible by the current predicate.** Any coverage
+figure must name the predicate commit it was taken at.
 
 Also surfaced while picking the canonical test food, and worth knowing before
 coverage is widened: **`ground turkey` declines canonical settlement despite a

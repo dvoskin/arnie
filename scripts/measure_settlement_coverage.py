@@ -174,6 +174,10 @@ async def measure(*, days: int, limit: int) -> dict:
     meals: dict = collections.defaultdict(
         lambda: {"items": [], "sources": set(), "user_id": None,
                  "operations": set()})
+    #: ⚠ AN EMPTY DICT, NEVER A MISSING NAME. If the window is withheld the
+    #: function returns before attribution runs, and a NameError there would
+    #: read as an instrument crash rather than as "not computed".
+    attribution_result: dict = {}
     try:
         session = async_sessionmaker(engine, expire_on_commit=False)
         async with session() as db:
@@ -275,6 +279,18 @@ async def measure(*, days: int, limit: int) -> dict:
             for key, meal in meals.items():
                 verdicts[key] = await coverage_for(
                     db, user_id=int(meal["user_id"]), items=meal["items"])
+
+            # ⛔ P16 RUNS HERE, INSIDE THE SESSION, OVER THESE MEALS AND THESE
+            # VERDICTS. Attribution needs the same database handle the predicate
+            # used; computing it after `finally` would need a second session and
+            # a re-selected population, which is exactly the second instrument
+            # the directive forbids. `classify_meal` is pure, so the structured
+            # set can be derived here without waiting for the buckets below.
+            attribution_result = await attribute_misses(
+                db, meals=meals, verdicts=verdicts,
+                structured=[k for k, m in meals.items()
+                            if classify_meal(m["sources"],
+                                             m.get("operations")) == "structured"])
     finally:
         await engine.dispose()
 
@@ -321,6 +337,7 @@ async def measure(*, days: int, limit: int) -> dict:
     declines = collections.Counter(
         getattr(verdicts[k], "reason", "") for k in structured
         if not isinstance(verdicts[k], Supported))
+    attribution = attribution_result or {}
     expected = collections.Counter(
         getattr(verdicts[k], "expected_source", "")
         for k in supported_structured)
@@ -368,6 +385,7 @@ async def measure(*, days: int, limit: int) -> dict:
         "expected_rung_of_supported": dict(expected),
         "settled_by": dict(settled_by),
         "why_structured_meals_decline": dict(declines.most_common()),
+        "P16_miss_attribution": attribution,
         "limits": [
             "meals are grouped by ledger_events.turn_id; a row with no created "
             "event cannot be grouped and is counted as its own meal",
@@ -379,6 +397,141 @@ async def measure(*, days: int, limit: int) -> dict:
             "OVERSTATE memory",
             "read-only: no writes, no model, no network beyond the database",
         ],
+    }
+
+
+# ══ P16 — MISS ATTRIBUTION ══════════════════════════════════════════════════
+#
+# ⛔⛔ A ROW BELONGS TO A MECHANISM, NOT A LANGUAGE *(Danny, 2026-08-17)*.
+# "Russian" stopped being the defect when the interpretation boundary fixed
+# ADDRESSABILITY. If `Сметана 5%` resolves correctly and then no compatible
+# candidate can be seated, the defect is CACHEABILITY — evidence retrieval — and
+# a tranche aimed at "non-English support" would land at the wrong layer. So the
+# primary axis is the mechanism that failed and the script is a TAG.
+#
+# ⭐ SAME POPULATION, SAME PREDICATE, BY CONSTRUCTION. This runs inside `measure`
+# over the meals it already built and the verdicts it already computed. A second
+# instrument that re-selected the population could not be ranked against P11 —
+# and an instrument that approximates its subject cannot discover that its
+# subject is broken.
+#
+# ⚠ FIRST MATCH WINS, AND THE ORDER IS THE CONTRACT. Every declining item lands
+# in exactly one leaf, checked cheapest-and-most-specific first, so the counts
+# sum to the number of declining items rather than double-counting a row that
+# fails two ways.
+
+#: The typed declines the predicate itself names — these are not "no evidence".
+_TYPED = {
+    "no canonical identity": "TYPED:no_canonical_identity",
+    "no stated quantity": "TYPED:no_stated_quantity",
+    "count-only quantity": "TYPED:count_only_quantity",
+}
+
+
+def _non_latin(text: str) -> bool:
+    """A tag, never a bucket. Recorded so a mechanism can be cross-tabulated by
+    script — which is the question "is this a non-English problem?" asked in a
+    form that can actually be answered."""
+    return any(ord(ch) > 0x24F for ch in (text or "") if ch.isalpha())
+
+
+async def _mechanism(db, *, user_id: int, item: dict, facts) -> str:
+    """The one mechanism that stopped this item, from LOCAL reads only."""
+    from core.canonical_pricing_inputs import _address_has_one_authority
+    from core.food_intelligence import memory_key
+    from db.queries import get_user_food_match
+    from skills.nutrition.entity_resolution import resolve as resolve_entity
+    from skills.nutrition.pricing_artifact import evidence_for, split_identity
+
+    identity = str(item.get("food_name") or "").strip()
+    entity, preparation = split_identity(identity)
+
+    # 1-3: the predicate's own typed declines, before any evidence question.
+    if not facts.has_identity:
+        return _TYPED["no canonical identity"]
+    if not facts.has_quantity:
+        return _TYPED["no stated quantity"]
+    if not facts.has_mass:
+        return _TYPED["count-only quantity"]
+
+    # 4: the interesting bucket — priceable shape, no local evidence.
+    #
+    # ⭐ IDENTITY STATE FIRST, because a surface that never resolved cannot have
+    # a memory address worth asking about, and `product` / `distinct` are
+    # DELIBERATE refusals rather than misses.
+    try:
+        row = await resolve_entity(db, identity)
+    except Exception:                                    # noqa: BLE001
+        row = None
+    state = getattr(getattr(row, "state", None), "value", None) or (
+        str(getattr(row, "state", "")) or "")
+    if row is None:
+        return "IDENTITY:no_resolution_row"
+    if state == "unresolved":
+        return "IDENTITY:resolver_declined"
+    if state == "product":
+        return "BRANDED:product_recognised_but_non_binding"
+    if state == "distinct":
+        return "IDENTITY:distinct_refused_a_false_collapse"
+
+    # Memory: a row may EXIST and still be inadmissible. That distinction is the
+    # whole reason this phase exists — it separates "we have never seen this
+    # food" from "we have seen it and cannot trust the address".
+    key = memory_key(identity, "")
+    if not key:
+        return "IDENTITY:key_not_addressable"
+    try:
+        memory_row = await get_user_food_match(db, user_id, key)
+    except Exception:                                    # noqa: BLE001
+        memory_row = None
+    if memory_row is not None:
+        if not getattr(memory_row, "cal_100", None):
+            return "MEMORY:row_unusable_no_per100g"
+        if not await _address_has_one_authority(db, key):
+            return "CACHEABILITY:memory_quarantined_ambiguous_address"
+        return "MEMORY:present_but_predicate_declined_UNEXPECTED"
+
+    # Artifact: absent for the stated preparation, or absent entirely? The two
+    # are different tranches — a vocabulary gap versus an uncovered food.
+    if entity and evidence_for(entity, "") is not None:
+        return "QUALIFIED:preparation_vocabulary_miss"
+    return "BARE:artifact_entity_absent"
+
+
+async def attribute_misses(db, *, meals: dict, verdicts: dict,
+                           structured: list) -> dict:
+    """Every DECLINING item of every declining structured meal, by mechanism."""
+    from core.general_settlement import Supported, decide, look
+
+    counts: collections.Counter = collections.Counter()
+    tagged: collections.Counter = collections.Counter()
+    examples: dict = {}
+    items_seen = 0
+    for key in structured:
+        if isinstance(verdicts.get(key), Supported):
+            continue
+        meal = meals[key]
+        for item in meal["items"]:
+            facts = await look(db, user_id=int(meal["user_id"]), item=item)
+            if isinstance(decide(facts), Supported):
+                continue                       # this item was fine; another sank the meal
+            items_seen += 1
+            mechanism = await _mechanism(db, user_id=int(meal["user_id"]),
+                                         item=item, facts=facts)
+            counts[mechanism] += 1
+            if _non_latin(str(item.get("food_name") or "")):
+                tagged[mechanism] += 1
+            examples.setdefault(mechanism, str(item.get("food_name") or "")[:48])
+    return {
+        "declining_items": items_seen,
+        "by_mechanism": dict(counts.most_common()),
+        "non_latin_within_each_mechanism": dict(tagged.most_common()),
+        "one_example_each": examples,
+        "reading": "Rank tranches by RECOVERABLE OWNERSHIP POINTS, not by "
+                   "bucket name. `non_latin_within_each_mechanism` answers "
+                   "'is this a non-English problem?' WITHOUT letting language "
+                   "become the bucket — a resolved Cyrillic surface with an "
+                   "unusable address is a cacheability defect.",
     }
 
 
@@ -416,6 +569,16 @@ def render(report: dict) -> str:
     out.append("\n    WHY STRUCTURED MEALS DECLINE")
     for reason, count in (report["why_structured_meals_decline"] or {}).items():
         out.append(f"      {count:5d}  {reason}")
+    a = report.get("P16_miss_attribution") or {}
+    if a.get("by_mechanism"):
+        out.append(f"\n    P16 — MISS ATTRIBUTION BY MECHANISM "
+                   f"({a['declining_items']} declining items)")
+        nl = a.get("non_latin_within_each_mechanism") or {}
+        ex = a.get("one_example_each") or {}
+        for mech, count in a["by_mechanism"].items():
+            out.append(f"      {count:5d}  {mech:<52} "
+                       f"non-latin {nl.get(mech, 0):3d}   e.g. {ex.get(mech,'')}")
+        out.append(f"\n      {a.get('reading','')}")
     out.append("\n    LIMITS")
     for limit in report["limits"]:
         out.append(f"      · {limit}")

@@ -1,32 +1,58 @@
 {
  "window_days": 21,
- "rows": 405,
- "meals": 251,
+ "rows": 362,
+ "meals": 233,
  "rows_without_a_turn_id": 0,
- "A_routing_rate_pct": 80.1,
- "B_support_rate_within_structured_pct": 48.2,
- "C_ownership_rate_pct": 38.6,
+ "A_routing_rate_pct": 83.0,
+ "B_support_rate_within_structured_pct": 24.3,
+ "C_ownership_rate_pct": 20.2,
  "identity": "C = A x B, and C is the only one that describes the product. B alone flatters this slice by the size of the routing ceiling.",
- "structured_meals": 193,
- "legacy_meals": 48,
+ "structured_meals": 185,
+ "legacy_meals": 38,
  "not_a_chat_turn_meals_EXCLUDED": 10,
  "unrecognised_writer_meals": 0,
  "unclassified_canonical_meals": 0,
  "canary_verdict_publishable": true,
  "writer_note": "A is derived from the WRITER (ledger_events.source) as a proxy for the route, because no per-meal routing record is persisted. `canonical:*` counts as structured-route: in this window every canonical write carries a `chat_quantity` operation id (the B-1 answer path). If quick_log or general settlement later emit `canonical:create` too, this proxy needs the operation id to disambiguate them.",
- "supported_structured_meals": 93,
- "supported_legacy_meals_NOT_COVERAGE": 25,
+ "supported_structured_meals": 45,
+ "supported_legacy_meals_NOT_COVERAGE": 13,
  "expected_rung_of_supported": {
-  "memory": 81,
-  "artifact": 12
+  "artifact": 14,
+  "memory": 30,
+  "artifact+memory": 1
  },
  "settled_by": {
-  "legacy_executor": 215,
+  "general_settlement_owner": 1,
+  "legacy_executor": 196,
   "b1_answer_path": 26,
   "canonical:quick_log": 10
  },
  "why_structured_meals_decline": {
-  "no local evidence — estimate would be worse than legacy": 100
+  "count-only quantity — every canonical rung is per-100g and cannot be scaled without a mass": 86,
+  "no local evidence — estimate would be worse than legacy": 54
+ },
+ "P16_miss_attribution": {
+  "declining_items": 207,
+  "by_mechanism": {
+   "TYPED:count_only_quantity": 142,
+   "IDENTITY:no_resolution_row": 48,
+   "CACHEABILITY:memory_quarantined_ambiguous_address": 7,
+   "BRANDED:product_recognised_but_non_binding": 7,
+   "IDENTITY:distinct_refused_a_false_collapse": 3
+  },
+  "non_latin_within_each_mechanism": {
+   "TYPED:count_only_quantity": 67,
+   "IDENTITY:no_resolution_row": 4,
+   "IDENTITY:distinct_refused_a_false_collapse": 3
+  },
+  "one_example_each": {
+   "CACHEABILITY:memory_quarantined_ambiguous_address": "ground turkey",
+   "IDENTITY:distinct_refused_a_false_collapse": "Сметана 5%",
+   "IDENTITY:no_resolution_row": "Salmon, pan-cooked with oil",
+   "TYPED:count_only_quantity": "Seaweed Salad",
+   "BRANDED:product_recognised_but_non_binding": "Barebells Salty Peanut Protein Bar"
+  },
+  "reading": "Rank tranches by RECOVERABLE OWNERSHIP POINTS, not by bucket name. `non_latin_within_each_mechanism` answers 'is this a non-English problem?' WITHOUT letting language become the bucket — a resolved Cyrillic surface with an unusable address is a cacheability defect."
  },
  "limits": [
   "meals are grouped by ledger_events.turn_id; a row with no created event cannot be grouped and is counted as its own meal",

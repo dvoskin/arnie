@@ -82,16 +82,35 @@ it in the zero-delta set, and the retry must succeed exactly once.
 
 **P11 — COVERAGE — MEASURED, from production, no credits spent:**
 
+⛔⛔ **THE 2026-08-15 FIGURES BELOW ARE SUPERSEDED, AND NOT BECAUSE THE WINDOW
+SLID — BECAUSE THE PREDICATE CHANGED UNDER THEM** *(re-measured 2026-08-17)*.
+P11 ran at `beac35a` on 08-15. The count-only/mass branch entered `decide()` at
+`951b90e` on 08-16, AFTER it. So the `108 / 3` decline split describes a
+predicate that had no mass branch, and re-running the SAME instrument on the SAME
+window reclassifies most of it:
+
 ```text
-21-day window where the ledger population is COMPLETE · 406 rows · 252 meals
-
-A  routing rate    81.0%   structured-route / ORDINARY FOOD-CHAT meals
-B  support rate    45.6%   supported / STRUCTURED-ROUTE      <- flattering
-C  OWNERSHIP RATE  36.9%   supported / ORDINARY FOOD-CHAT    =  A x B
-
-expected rung of the supported:  memory 81 · artifact 12
-declines: 108 "no local evidence" · 3 "no stated quantity"
+                      P11 @ beac35a (08-15)     RE-MEASURED (08-17)
+population            406 rows · 252 meals      362 rows · 233 meals
+A  routing rate                 81.0%                  83.0%
+B  support rate                 45.6%                  24.3%   <- flattering
+C  OWNERSHIP RATE               36.9%                  20.2%   =  A x B
+expected rung         memory 81 · artifact 12   memory 30 · artifact 14 · both 1
+declines              108 no local evidence      86 count-only quantity
+                        3 no stated quantity     54 no local evidence
 ```
+
+⭐ **THE DROP IS HONEST, NOT A REGRESSION.** The mass branch declines meals
+canonical genuinely cannot price — every rung is per-100g and a count carries no
+mass — so 20.2% is what ownership always was once the predicate stopped calling
+count-only meals supportable. **36.9% was never a number the current system
+could produce.**
+
+⚠ **AND THIS IS THE FAILURE MODE THIS PROJECT KEEPS PAYING FOR: a number
+published under one instrument used to sequence work under another.** The 108 was
+made the authoritative backlog on 2026-08-17 review, hours before the re-measure
+showed it does not exist. Any coverage figure quoted here must name the predicate
+commit it was taken at.
 
 ⛔ **THE FIRST PUBLICATION OF THESE NUMBERS WAS WRONG AND IS SUPERSEDED**
 (66.7 / 42.3 / 28.2). It read `ledger_events.source` as the ROUTE when it names
@@ -135,7 +154,7 @@ P8     dual-engine on the EXACT tree                ✅ 77c842e
 P9     one REAL turn through the routing seam       ✅ PASS (five gates, not four)
 P10    presentation from the canonical branch       ✅ CLOSED at ecacd76
 P11    coverage AND ownership, at MEAL level        ✅ MEASURED (beac35a, corrected
-                                                      in §3a.4) — 36.9% ownership
+                                                      in §3a.4) — 20.2% ownership
 P12    one-user production canary                   ✅ PASSED 2026-08-17 on BOTH
                                                       settlement branches
 P13    B-1.8 canonical correction defect            ⏸ PARKED, and stays a real
@@ -171,7 +190,8 @@ move is P12" on 2026-08-16. P4 ✅, P5 ✅, P6–P10 ✅ (`ecacd76`), P11 ✅ me
 The immediate next move is COVERAGE — see §FREEZE.
 ⛔ **Cohort expansion is still prohibited**, and the reason has changed: it is no
 longer waiting on the canary but on COVERAGE. Widening is a coverage decision
-whose blast radius is mispricing, and the ownership rate is 36.9%.
+whose blast radius is mispricing, and the ownership rate is 20.2% (re-measured
+2026-08-17; the 36.9% this line carried came from a superseded predicate).
 
 ⭐ **AND P2 IS NO LONGER ON THE CRITICAL PATH.** Its purpose was the coverage
 number; P11 produced one from HISTORICAL production data with no credits and
@@ -310,10 +330,11 @@ not depend on which bucket is largest.
 ```text
 GENERAL SETTLEMENT BACKEND             ✅ FROZEN          (§FREEZE)
 ONE-USER PRODUCTION CANARY             ✅ PASSED          (P12, both branches)
-CURRENT OWNERSHIP                      36.9%             (P11, meal level)
+CURRENT OWNERSHIP                      20.2%             (re-measured 08-17,
+                                                         meal level, at cd2b74a)
 
 NEXT
-1. P16  attribute the 108 current evidence misses by ROOT CAUSE
+1. P16  ✅ DONE — the 207 declining items are attributed by MECHANISM
 2.      rank root causes by RECOVERABLE OWNERSHIP POINTS
 3.      attack the #1 measured coverage mechanism
 4.      re-measure ownership
@@ -341,7 +362,7 @@ time the number moves.
 
 ```text
 OWNERSHIP        COHORT PERMITTED
-< 40%            user 26 only                    <- WE ARE HERE (36.9%)
+< 40%            user 26 only                    <- WE ARE HERE (20.2%)
 40 – 55%         controlled 1–5%
 55 – 70%         controlled 10–25%
 70% +            consider broad canonical promotion
@@ -353,73 +374,70 @@ them. They are binding until he changes them, and the point is that they were
 fixed BEFORE the number moved. Changing them is allowed; changing them in the
 same breath as reporting a new ownership number is not.
 
-⭐ **THE NUMBER TO RUN THE PROGRAM ON IS 36.9% OWNERSHIP** — not the older
-44–46% coverage figures, and not the flattering 45.6% support rate. Ownership is
+⭐ **THE NUMBER TO RUN THE PROGRAM ON IS 20.2% OWNERSHIP** — not the superseded
+36.9%, not the older 44–46% coverage figures, and not the flattering 24.3%
+support rate. Ownership is
 routing × support, and it is the only one of the three that describes the
 product.
 
-### ⛔⛔ P16 — MISS ATTRIBUTION: THE 108 ARE THE AUTHORITATIVE BACKLOG NOW
+### ✅ P16 — MISS ATTRIBUTION, MEASURED *(2026-08-17, `scripts.measure_settlement_coverage --days 21`)*
 
-**The older 30.4 / 9.8 / 7.7 / 5.6 taxonomy no longer dictates engineering.** It
-is a 691-entry, ENTRY-LEVEL identity analysis from 2026-08-14. P11 is newer,
-MEAL-level, and taken after substantial architecture changed — and it says 108
-structured meals declined for `no local evidence` and 3 for `no stated quantity`.
-What P11 does not do is break those 108 into causal buckets. That is P16.
-
-⭐⭐⭐ **A ROW BELONGS TO A MECHANISM, NOT A LANGUAGE.** "Russian" is not the defect
-any more — the interpretation boundary already fixed ADDRESSABILITY. If
-`Сметана 5%` resolves correctly and then no compatible candidate can be seated,
-the defect is **cacheability / evidence retrieval**, not "non-English support".
-The live sour-cream row is exactly that shape: correct addressing, empty usable
-evidence. Classifying by input language would send a large tranche at the wrong
-layer.
-
-Pre-registered output shape — the classification is DETERMINISTIC and every row
-lands in exactly one leaf:
+**RUN, not planned.** 207 declining items across the declining structured meals,
+each classified into exactly one mechanism, first match wins:
 
 ```text
-CURRENT CANONICAL MISSES — 108
-
-NON-ENGLISH
-  identity unresolved
-  identity resolved, memory absent
-  identity resolved, candidate rejected
-  artifact absent
-BRANDED
-  PRODUCT recognized, producer absent
-  PRODUCT unrecognized
-QUALIFIED / MODIFIED
-  preparation vocabulary miss
-  modifier identity miss
-  evidence exists but selection fails
-BARE
-  genuinely uncovered canonical food
-OTHER
-  explicit typed reason
+MECHANISM                                            COUNT   non-latin   example
+TYPED:count_only_quantity                              142      67       Seaweed Salad
+IDENTITY:no_resolution_row                              48       4       Salmon, pan-cooked with oil
+CACHEABILITY:memory_quarantined_ambiguous_address        7       0       ground turkey
+BRANDED:product_recognised_but_non_binding               7       0       Barebells Salty Peanut Protein Bar
+IDENTITY:distinct_refused_a_false_collapse               3       3       Сметана 5%
 ```
 
-⚠ **SAME POPULATION AS P11, OR THE RANKING IS NOT COMPARABLE** — the 21-day
-window where the ledger population is complete, 406 rows / 252 meals, grouped by
-`ledger_events.turn_id`. Extend `scripts/measure_settlement_coverage.py`; do not
-write a second instrument that approximates it.
+⛔⛔ **THE DOMINANT MECHANISM IS COUNT-ONLY QUANTITY — 142 of 207, 69%.** Not
+non-English, not branded, not the oils. This is the **PRODUCT rung**:
+`assemble()` hard-codes it to `None`, so there is no per-serving basis at all and
+any count-only portion is unpriceable by construction. The frozen roadmap's step
+4 guessed *"expected: PRODUCT"*; the measurement now says it outright, by a
+factor of three over anything else.
 
-**Then rank by `recoverable ownership points × confidence × implementation
-risk`** and attack the top mechanism — not the next feature name. If candidate
-seating carries 42 of 108, seating goes first; if PRODUCT carries 35–40, PRODUCT
-goes first. Feature names are user-input categories, not architectural root
-causes, and sequencing by them is how the oils came to look next.
+⭐⭐⭐ **AND THE LANGUAGE CROSS-TAB IS WHY THIS AXIS WAS THE RIGHT ONE.** 67 of the
+142 count-only items are non-Latin. A tranche named "non-English support" would
+have *appeared* to fix a large share while the actual defect is a missing serving
+basis, which is language-neutral — the wrong layer, chosen by a correlation.
+Meanwhile:
 
-**What P0 changed** *(documentation only — no code, no schema, no flag)*:
-§0z restated from "closed" to "functionally connected, evidence closure
-pending" · both corpus run artifacts marked invalid for reconciliation-derived
-conclusions and preserved byte for byte · the invalid ratios and weighted
-conclusions removed from the handoff · the cacheability phenomenon kept and
-deliberately unquantified · the stale caller count corrected in §3a.2 · the two
-blocking contract ambiguities recorded with recommended resolutions, **pending
-P4 and not yet in force**.
+```text
+Сметана 5%   -> IDENTITY:distinct_refused_a_false_collapse   a DELIBERATE refusal
+ground turkey-> CACHEABILITY:memory_quarantined_ambiguous_address   only 7 items
+```
 
-**The defect, the invalidation scope, and the P1/P2 contracts:**
-[CORPUS_ATTRIBUTION_DEFECT_0816.md](CORPUS_ATTRIBUTION_DEFECT_0816.md).
+The sour-cream row is not a coverage miss at all; `DISTINCT` is the system
+declining to collapse two foods, working as designed. And cacheability — the
+mechanism the review expected to lead — is **7 items**, not the tranche.
+
+⚠ **TWO LIMITS, BOTH LOAD-BEARING BEFORE ANYTHING IS SEQUENCED ON THIS.**
+`IDENTITY:no_resolution_row` (48) partly reflects the instrument's own stated
+limit: `food_entries` carries no `canonical_entity_id`, so the predicate is asked
+with an EMPTY identity — this is coverage without identity stamping, which is what
+the fleet has today but not what a stamped turn would see. And these are declining
+**items** while ownership is a **meal** rate, so recoverable ownership POINTS per
+mechanism still needs the meal-level rollup before the ranking is final.
+
+**The ranking to act on, subject to that rollup:** PRODUCT / per-serving basis
+first by a wide margin, then identity-resolution coverage. Rank by
+`recoverable ownership points × confidence × implementation risk`, never by
+feature name — feature names are user-input categories, and sequencing by them is
+how the oils came to look next.
+
+The instrument was EXTENDED, not duplicated: attribution runs inside
+`measure()`'s own session, over the meals it already grouped and the verdicts it
+already computed, so P11 and P16 cannot disagree about the population. Recorded
+to `data/corpus/settlement_coverage.json`.
+
+⛔ **THE OLDER 30.4 / 9.8 / 7.7 / 5.6 TAXONOMY DOES NOT DICTATE ENGINEERING.** It
+is a 691-entry, ENTRY-LEVEL identity analysis from 2026-08-14, and this
+measurement supersedes it for sequencing.
 
 ## ⏭⏭⏭ THE FROZEN ROADMAP — MEASURED-ADOPTION ORDER *(Danny, 2026-08-14. SUPERSEDED FOR SEQUENCING BY THE CORRECTION ABOVE; the content below remains the plan of record for steps 2 onward.)*
 
