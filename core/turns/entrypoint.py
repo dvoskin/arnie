@@ -228,7 +228,28 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     # already closes that path, and the return is defence-in-depth behind it.
     # Making the reply conditional, or moving it after the return, re-opens the
     # double write with nothing left to catch it.
+    #
+    # ⛔⛔ AND THE REPLY WAS ALREADY WRITTEN BEFORE THIS RAN — WHICH IS WHY THE
+    # SYMPTOM SURVIVED THE FIRST REPAIR. `TurnCoordinator.run` catches EVERY
+    # exception and sets `state.response = await finalizer.recover(state)`, the
+    # coordinator's failure floor: `recovery_message("llm_error", ...)`. So by
+    # the time the refusal reaches here the bubbles are already full, and a
+    # replacement guarded only by `not bubbles` is unreachable on the live path.
+    # Production kept answering "Something went sideways on my end. Resend that
+    # and I'll catch it." — an instruction to retry the one thing that cannot
+    # succeed — while every test was green (`conversation_logs` #9223/#9224,
+    # user 26, 2026-08-17 02:40 UTC, `build_sha` 8f5501d).
+    #
+    # ⭐ SO THE CONDITION IS "NO REPLY THIS TURN CAN OWN", NOT "NO REPLY".
+    # A recovery bubble is by definition not this turn's answer: it is the
+    # product's word for "this failed, send it again", and `is_recovery_text`
+    # exists precisely so a stored one is never replayed onto. A duplicate did
+    # not fail — the meal is on the board — so the floor is discarded here.
+    #
+    # ⚠ NARROW ON PURPOSE. Only the refusal branch does this. Every other error
+    # still raises below, keeps the floor, and reaches the caller as a failure.
     from core.platform import Response
+    from core.recovery import is_recovery_text
     from core.turns.stages.execute_native import ExactlyOnceRefusal
     if isinstance(state.error, ExactlyOnceRefusal):
         logger.info(
@@ -237,7 +258,9 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
             "than raising, and NOT delegating to legacy",
             getattr(request, "turn_id", "-"))
         state.error = None
-        if not getattr(state.response, "bubbles", None):
+        _said = [b for b in (getattr(state.response, "bubbles", None) or ())
+                 if (b or "").strip()]
+        if not _said or any(is_recovery_text(b) for b in _said):
             state.response = Response.from_text("Already logged that one.")
         return _result_from_state(state, legacy_kwargs)
 
