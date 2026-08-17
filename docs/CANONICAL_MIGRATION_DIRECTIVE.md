@@ -361,20 +361,43 @@ COVERAGE TRACK
          POINTS, because 142 count-only items sit in 89 meals and satisfying a
          mechanism is not recovering an item. 8 meals are blocked by more than
          one mechanism and no single tranche recovers them
-2. P17   SERVING-BASIS EVIDENCE — SELECTED BY THE MEASUREMENT, first at both
-         ends of the band (count · piece · serving · package · fraction).
-         assemble() hard-codes PRODUCT to None, so every canonical rung is
-         per-100g and "2 eggs", "1 banana", "half a bar" are unpriceable BY
-         CONSTRUCTION. Land the basis; do NOT loosen the predicate.
-         ⛔⛔ THE BAND IS THE DESIGN BRIEF. A basis that supplies only a SCALE
-         FACTOR recovers 12.6 points and leaves ownership near 33% — SHORT of
-         the 40% band. One that arrives as an EVIDENCE RUNG recovers 36.5 and
-         reaches ~57%. That gap is larger than every other mechanism combined,
-         so HOW P17 is built decides more than WHETHER it ships
-3.       RE-MEASURE on the SAME FROZEN POPULATION — this is what isolates what
-         the PREDICATE gained
-4.       RE-MEASURE current rolling production — 3 and 4 together are what
-         separate a real gain from a drift in what people happened to eat.
+2. P17   AUTHORITATIVE SERVING-BASIS EVIDENCE — selected by the measurement,
+         first at both ends of the band. COUNT · PIECE · SERVING · PACKAGE ·
+         FRACTION. assemble() hard-codes PRODUCT to None, so every canonical
+         rung is per-100g and "2 eggs", "1 banana", "half a bar" are
+         unpriceable BY CONSTRUCTION.
+
+         ⛔⛔ DESIGN DECISION, TAKEN ON THE BAND *(Danny, 2026-08-17)*: BUILD IT
+         AS AN EVIDENCE-BEARING CANONICAL RUNG, NOT AS A CONVERSION FEATURE.
+         The scale factor exists, but as an operation DERIVED FROM evidence —
+         never as the thing granting authority. A tranche that merely
+         manufactures a mass is STRUCTURALLY UNDERPOWERED: only 28 of the 89
+         count-only meals recover on `has_mass` alone, the rest hit the
+         evidence wall immediately, and ownership lands near 33% — short of the
+         40% band, having spent the whole tranche.
+
+         Every usable basis must carry ONE of:
+           1. direct serving nutrition   (1 large egg = 72 kcal / 6.3 g protein)
+           2. a SOURCED conversion into another evidence-backed basis
+              (1 medium banana = 118 g -> existing per-100g rung)
+         PRODUCT becomes ONE PRODUCER of serving evidence, not the architecture
+         for every count-based food.
+
+         ⛔ NEVER: a model guesses 1 serving ≈ X grams, and canonical therefore
+         owns it. That is heuristic authority re-entering through the basis.
+
+         ACCEPTANCE is NOT "count-only stops hitting the mass refusal". It is:
+         A FORMERLY COUNT-ONLY MEAL REACHES AN AUTHORITATIVE CANONICAL NUTRITION
+         VALUE WITHOUT ESTIMATE AUTHORITY.
+
+         ⚠ 36.5 IS AN UPPER BOUND, NOT A TARGET. It answers "what if evidence
+         stops being the next blocker". Expect to land between +12.6 and +36.5;
+         aim at the upper half, and do not report the ceiling as the forecast
+3.       RE-MEASURE on p16b_0817, THE IDENTICAL 232 MEALS. The delta is then
+         attributable SOLELY to P17:
+             P16b baseline  ->  P17 on the same population  ->  delta
+4.       RE-MEASURE current rolling production, SEPARATELY. 3 and 4 together are
+         what separate a real gain from a drift in what people happened to eat.
          A single rolling re-measurement cannot tell those apart
 5.       attack the next largest measured mechanism. Likely
          IDENTITY:no_resolution_row (48, second-largest) — but 3 and 4 decide
@@ -421,6 +444,8 @@ PARALLEL SESSIONS -> docs/HANDOFF_PARALLEL_SESSION_0817.md (how, not what)
 DO NOT
            loosen canonical eligibility
            reintroduce heuristics
+           let a GUESSED serving size grant canonical authority — a basis
+                without evidence is a heuristic wearing a unit
            reopen legacy authority
            weaken the correction firewall
            change rollout thresholds because a new measurement disappointed
