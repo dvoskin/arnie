@@ -380,6 +380,32 @@ COVERAGE TRACK
 
          13 meals are blocked by more than one mechanism and no single tranche
          recovers them
+
+         ⭐⭐ CONTINGENCY RANKING — Δ(M | P17), NOT STANDALONE CEILINGS. P17
+         alone recovers 27 meals at its floor, 55 at its ceiling. What each
+         OTHER mechanism then adds, with both flipped together through the real
+         decide():
+
+           MECHANISM                            Δ MEALS   Δ PTS      standalone
+                                                  L / U    L / U        upper
+           IDENTITY:no_resolution_row            0 / 41   0.0 / 18.5     16.7
+           TYPED:mass_stated_but_unit_unparsed   0 / 20   0.0 /  9.0      7.2
+           CACHEABILITY:memory_quarantined       7 /  7   3.2 /  3.2      3.2
+           BRANDED:product_non_binding           0 /  6   0.0 /  2.7      1.8
+           TYPED:mass_present_but_not_read       1 /  5   0.5 /  2.3      1.8
+           IDENTITY:distinct_refused             0 /  3   0.0 /  1.4      1.4
+
+         ⛔ SEVERAL MARGINALS EXCEED THEIR OWN STANDALONE CEILING, which is the
+         whole reason this had to be run rather than inferred: identity is worth
+         18.5 AFTER P17 versus 16.7 alone. Meals carrying two blockers are
+         recovered by NEITHER mechanism singly and by the PAIR — so subtracting
+         two independently-measured columns would have understated the second
+         tranche and could have ranked it wrongly.
+
+         ⚠ AND ONLY CACHEABILITY IS CERTAIN. It is tight (0.5 / 0.5 flip
+         identical), so its +3.2 holds at BOTH bounds. Every other contingency
+         is worth nothing at the floor, because those mechanisms deliver
+         evidence only in their optimistic reading
 2. P17   AUTHORITATIVE SERVING-BASIS CONSUMPTION — selected by the measurement.
 
          ⛔⛔ THE ARCHITECTURE DECISION IS CLOSED, AND IT IS NOT "BUILD A SERVING
@@ -421,9 +447,17 @@ COVERAGE TRACK
          ⚠ +24.8 IS THE COUNTERFACTUAL CEILING, NOT A FORECAST — and it FELL
          from 36.5 when the bucket was split, because a third of what P17 was
          credited with belongs to the unit parser. Expect +12.2 .. +24.8.
-         ⛔ P17 ALONE NO LONGER REACHES 40% AT EITHER BOUND (20.3 + 24.8 = 45.1
-         at the ceiling, 32.5 at the floor). The rollout band needs P17 AND at
-         least one more mechanism; plan the tranche knowing that.
+
+         ⛔ P17 ALONE NO LONGER GUARANTEES REACHING THE 40% BAND *(corrected
+         08-17 — an earlier draft of this line said "reaches 40% at neither
+         bound", which contradicted its own arithmetic)*:
+
+             floor    20.3 + 12.2 = 32.5%    short of the band
+             ceiling  20.3 + 24.8 = 45.1%    across it
+
+         So NO SECOND TRANCHE IS PRECOMMITTED. A second mechanism is RANKED as a
+         contingency, to be reached for only if measured P17 ownership lands
+         under 40%. Do not interrupt P17 to start one.
          Method and commit order: §P17 immediately below this board.
 3.       RE-MEASURE on p16b_0817, THE IDENTICAL 232 MEALS. The delta is then
          attributable SOLELY to P17:
@@ -533,6 +567,56 @@ P17c  GENERIC STRUCTURED MEASURE PRODUCER — the highest-value producer for the
       measured population (egg · banana · apple · potato · piece foods).
       Sourced measures only. ⛔ `core/portions.py` priors are SANITY MACHINERY,
       never canonical authority.
+
+P17-SA  ⛔⛔ THE SOURCE / AUTHORITY CONTRACT — FROZEN BEFORE P17d *(Danny,
+        2026-08-17)*, because P17d creates the first real PRODUCT producer and
+        the shape it lands in is the shape every later provider inherits.
+
+        PROVIDER AND CANONICAL AUTHORITY ARE INDEPENDENT AXES.
+
+            USDA · OFF · manufacturer web · restaurant web   WHERE a record
+                                                             was retrieved
+            MEMORY · PRODUCT · ARTIFACT · ESTIMATE           WHY nutrition is
+                                                             authorized
+
+        ⛔ THERE IS NO `USDA rung`, NO `OFF rung`, NO `WEB rung`, and adding one
+        would collapse two axes that must stay apart — exactly as `rung` and
+        `ServingBasis` must. One provider may produce several claim classes;
+        several providers may feed one authority class.
+
+        1. NO PROVIDER RECEIVES AUTHORITY BECAUSE OF ITS NAME. Authority is
+           assigned by deterministic policy over the CLAIM.
+        2. OFF IS A PRODUCT PRODUCER, NEVER A PRODUCT RUNG. An OFF record may
+           produce PRODUCT evidence ONLY when exact product identity is
+           mechanically established — GTIN / barcode, or an already-bound exact
+           product_variant_id. ⛔ Provider match labels, string similarity and
+           model confidence establish NOTHING: OFF once called an unrelated
+           chicken pizza `_match: "exact"`.
+        3. USDA IS A PROVIDER, NOT A SYNONYM FOR ARTIFACT. Qualified structured
+           generic-food records ordinarily feed ARTIFACT, and a different
+           structured database must be able to feed it too without inventing a
+           rung. A USDA branded row with mechanically exact identity could
+           support PRODUCT if policy permits — provider does not predetermine.
+        4. ⛔⛔ SYNTHESIZED WEB EVIDENCE NEVER PRICES. `evidence_type =
+           synthesized_text` may support semantic claims, materiality,
+           clarification and candidate DISCOVERY. It may never become PRODUCT or
+           ARTIFACT nutrition authority, however credible the page looks. A
+           synthesis is not re-derivable, and pricing must be reproducible.
+        5. WEB MAY DISCOVER AN ATTRIBUTABLE STRUCTURED SOURCE. If a manufacturer
+           or first-party restaurant record independently satisfies canonical
+           policy — exact item identity, first-party source, nutrition stated
+           directly, basis stated, attributable, reproducible — then THE SOURCE
+           RECORD may price. The synthesis that found it may not; discovery is
+           not authority.
+        6. THE SEMANTIC RESOLVER MAY CLASSIFY WHAT A RECORD MEANS. It may never
+           decide that a record is authoritative enough to price. CODE DECIDES
+           AUTHORITY — the boundary `semantic_evidence` already holds.
+
+        ⭐ WHY THIS IS FROZEN NOW AND NOT AFTER: P17g's predicate has to ask
+        "does a local AUTHORITATIVE scalable path exist". If provider and
+        authority are still tangled when that lands, the predicate will be
+        written around whichever providers happen to exist rather than around
+        the evidence contract, and every later provider will fight it.
 
 P17d  EXACT PRODUCT PRODUCER — replace `"product": None`. Barcode / GTIN /
       stable variant id ONLY. No fuzzy name match may construct PRODUCT;

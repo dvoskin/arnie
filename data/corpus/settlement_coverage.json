@@ -1,6 +1,6 @@
 {
  "window_days": 21,
- "predicate_commit": "672efc4",
+ "predicate_commit": "8ad599d",
  "population": {
   "frozen": true,
   "name": "p16b_0817",
@@ -213,6 +213,55 @@
     "3": 2
    },
    "meals_no_single_mechanism_can_recover": 13,
+   "CONDITIONAL_MARGINAL_after_TYPED:count_only_quantity": {
+    "CACHEABILITY:memory_quarantined_ambiguous_address": {
+     "extra_meals_LOWER": 7,
+     "extra_points_LOWER": 3.2,
+     "extra_meals_UPPER": 7,
+     "extra_points_UPPER": 3.2
+    },
+    "IDENTITY:distinct_refused_a_false_collapse": {
+     "extra_meals_LOWER": 0,
+     "extra_points_LOWER": 0.0,
+     "extra_meals_UPPER": 3,
+     "extra_points_UPPER": 1.4
+    },
+    "IDENTITY:no_resolution_row": {
+     "extra_meals_LOWER": 0,
+     "extra_points_LOWER": 0.0,
+     "extra_meals_UPPER": 41,
+     "extra_points_UPPER": 18.5
+    },
+    "TYPED:mass_stated_but_unit_unparsed": {
+     "extra_meals_LOWER": 0,
+     "extra_points_LOWER": 0.0,
+     "extra_meals_UPPER": 20,
+     "extra_points_UPPER": 9.0
+    },
+    "BRANDED:product_recognised_but_non_binding": {
+     "extra_meals_LOWER": 0,
+     "extra_points_LOWER": 0.0,
+     "extra_meals_UPPER": 6,
+     "extra_points_UPPER": 2.7
+    },
+    "TYPED:mass_present_but_not_read": {
+     "extra_meals_LOWER": 1,
+     "extra_points_LOWER": 0.5,
+     "extra_meals_UPPER": 5,
+     "extra_points_UPPER": 2.3
+    },
+    "TYPED:energy_stated_not_a_quantity": {
+     "extra_meals_LOWER": 0,
+     "extra_points_LOWER": 0.0,
+     "extra_meals_UPPER": 1,
+     "extra_points_UPPER": 0.5
+    },
+    "__base__": {
+     "meals_recovered_by_TYPED:count_only_quantity_LOWER": 27,
+     "meals_recovered_by_TYPED:count_only_quantity_UPPER": 55
+    }
+   },
+   "reading_the_marginal": "Δ(M | P17) — the meals mechanism M recovers that P17 has NOT already recovered, with both flipped together through the real decide(). Rank a SECOND tranche on this, never on a standalone ceiling: 13 meals carry more than one blocker, so fixing P17 changes which mechanism is still load-bearing for them. This does not reopen P17 — it is the contingency if measured P17 ownership lands under the band.",
    "total_ownership_points_recoverable_LOWER": 15.4,
    "total_ownership_points_recoverable_UPPER": 57.4,
    "SELF_CHECK_upper_recoveries_equal_single_mechanism_meals": {

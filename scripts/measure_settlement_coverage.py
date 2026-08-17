@@ -690,6 +690,11 @@ async def _mechanism(db, *, user_id: int, item: dict, facts) -> str:
 # the evidence that delivery might also bring. Where the two coincide the
 # mechanism is TIGHT and the band collapses to a point.
 
+#: The tranche §NEXT selected. The conditional-marginal ranking is computed
+#: RELATIVE TO THIS, because a standalone ceiling cannot rank a second tranche
+#: once meals are blocked by more than one mechanism.
+_PRIMARY = "TYPED:count_only_quantity"
+
 #: mechanism -> (what the fix literally supplies, what it might also supply).
 #: Flipping anything else would be inventing a capability the tranche does not
 #: deliver; flipping less would be denying the one it does.
@@ -736,6 +741,37 @@ _COUNTERFACTUAL = {
     "IDENTITY:distinct_refused_a_false_collapse": ({}, {"has_artifact": True}),
     "BRANDED:product_recognised_but_non_binding": ({}, {"has_artifact": True}),
 }
+
+
+def _meals_recovered(declining_meals: dict, flips: dict) -> int:
+    """How many declining meals become Supported when EVERY mechanism in
+    `flips` is satisfied at once.
+
+    ⛔⛔ THIS IS WHY A STANDALONE CEILING CANNOT RANK THE SECOND TRANCHE
+    *(Danny, 2026-08-17)*. 13 meals are blocked by more than one mechanism, and
+    fixing the first one changes which of the others is still load-bearing. So
+    "identity's standalone upper is 16.7, therefore identity is second" does not
+    follow — the number that decides is the MARGINAL one:
+
+        Δ(M | P17) = ownership(P17 + M) - ownership(P17)
+
+    computed by running the REAL `decide()` with both flipped together, not by
+    subtracting two independently-measured columns.
+    """
+    from core.general_settlement import Supported, decide
+
+    recovered = 0
+    for records in declining_meals.values():
+        for record in records:
+            facts = record["facts"]
+            flip = flips.get(record["mechanism"])
+            if flip:
+                facts = dataclasses.replace(facts, **flip)
+            if not isinstance(decide(facts), Supported):
+                break
+        else:
+            recovered += 1
+    return recovered
 
 
 def _meal_recovers(records: list, mechanism: str, *, flip: dict) -> bool:
@@ -833,6 +869,31 @@ async def attribute_misses(db, *, meals: dict, verdicts: dict,
     # meal recovers under M only if EVERY declining item is an M, so a meal
     # blocked by two mechanisms is recovered by NEITHER alone — and is invisible
     # in every row of the table above.
+    # ── CONDITIONAL MARGINAL AFTER THE SELECTED TRANCHE ─────────────────────
+    #
+    # ⭐ A CONTINGENCY RANKING THAT COSTS NO ENGINEERING FOCUS. P17 is chosen and
+    # is not reopened by this; the question is only which mechanism to reach for
+    # IF measured P17 ownership lands short of the band. Answered now, while the
+    # population is frozen, rather than argued later from standalone ceilings.
+    selected = _PRIMARY
+    marginal: dict = {}
+    if selected in counts:
+        for bound_name, index in (("LOWER", 0), ("UPPER", 1)):
+            base_flip = {selected: _COUNTERFACTUAL[selected][index]}
+            base = _meals_recovered(declining_meals, base_flip)
+            for mechanism in counts:
+                if mechanism == selected or mechanism not in _COUNTERFACTUAL:
+                    continue
+                pair = dict(base_flip)
+                pair[mechanism] = _COUNTERFACTUAL[mechanism][index]
+                gain = _meals_recovered(declining_meals, pair) - base
+                entry = marginal.setdefault(mechanism, {})
+                entry[f"extra_meals_{bound_name}"] = gain
+                entry[f"extra_points_{bound_name}"] = round(
+                    100.0 * gain / denominator, 1)
+            marginal.setdefault("__base__", {})[
+                f"meals_recovered_by_{selected}_{bound_name}"] = base
+
     blocked_by = collections.Counter(
         len({x["mechanism"] for x in r}) for r in declining_meals.values())
     multi = sum(c for n, c in blocked_by.items() if n > 1)
@@ -858,6 +919,15 @@ async def attribute_misses(db, *, meals: dict, verdicts: dict,
             "meals_blocked_by_N_distinct_mechanisms": {
                 str(n): c for n, c in sorted(blocked_by.items())},
             "meals_no_single_mechanism_can_recover": multi,
+            "CONDITIONAL_MARGINAL_after_" + _PRIMARY: marginal,
+            "reading_the_marginal": (
+                "Δ(M | P17) — the meals mechanism M recovers that P17 has NOT "
+                "already recovered, with both flipped together through the real "
+                "decide(). Rank a SECOND tranche on this, never on a standalone "
+                "ceiling: 13 meals carry more than one blocker, so fixing P17 "
+                "changes which mechanism is still load-bearing for them. This "
+                "does not reopen P17 — it is the contingency if measured P17 "
+                "ownership lands under the band."),
             "total_ownership_points_recoverable_LOWER": round(sum(low), 1),
             "total_ownership_points_recoverable_UPPER": round(sum(high), 1),
             # ⭐⭐ THE ROLLUP CHECKS ITSELF, AND THE CHECK IS EXACT. Under the
