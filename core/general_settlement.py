@@ -83,6 +83,143 @@ class SettlementIdempotencyConflict(RuntimeError):
     """
 
 
+# ══ A12 — WHAT CANONICAL MEANS BY "THE SAME MEAL" ═══════════════════════════
+#
+# ⛔⛔ THE TWO OWNERS DISAGREED, AND THE MIGRATION WAS THE ONE THAT MOVED.
+# Measured 2026-08-17 by driving one message three times through the real turn:
+#
+#     legacy branch     1 row, 2 refusals   (claim_processed_turn, 60 min)
+#     canonical branch  3 rows              (operation id was the TURN id, so a
+#                                            retyped message is a new operation)
+#
+# The turn id absorbs a REDELIVERY — the same send arriving twice — and nothing
+# else. Legacy additionally refuses a RETYPED identical message inside an hour.
+# So promoting a user from legacy to canonical silently changed what happens
+# when they send the same thing twice, which is a user invariant and not an
+# implementation detail. Canonical has to own that definition, and own it here.
+#
+# ⭐ IDENTITY IS THE USER'S MESSAGE; REVISION IS WHICH OCCURRENCE.
+# `meal_commits` is already unique on (operation_id, operation_revision), so
+# canonical needs nothing new: the identity says WHAT meal this is, the revision
+# says which time it was logged, and the window decides which of the two a send
+# increments. No second claim, no legacy machinery imported, no new table.
+#
+# ⭐⭐ AND IT IS DERIVED FROM THE MESSAGE, NEVER FROM THE MODEL'S PLAN. The
+# legacy key fingerprints `input["food_name"]` verbatim, so the same three sends
+# produced `"White rice"` once and `"White Rice"` once and the second slipped
+# through a guard that was working exactly as written. A key that depends on the
+# interpreter's output is a key that fails whenever the interpreter is not
+# deterministic — which is most of the time. The user typed the same sentence;
+# that is the fact worth keying on, and it is stable by construction.
+#
+# ⚠ THE WINDOW IS LEGACY'S, ON PURPOSE. 60 minutes, matching
+# `claim_processed_turn`, so this slice changes WHO decides and not WHAT is
+# decided. Whether a day-clear should drop its claims is still open and is
+# deliberately not answered here.
+
+#: A repeat of the same message inside this window is the same meal.
+DUPLICATE_WINDOW_SEC = 3600.0
+
+
+class DuplicateMeal(RuntimeError):
+    """This meal already settled, inside the window. Not a failure.
+
+    ⛔ RAISED BEFORE ANY WRITE, so a duplicate is non-mutating by construction
+    rather than by a handler remembering to be careful — the same property A8
+    relies on for `PricingRefused`.
+
+    ⭐ AND IT IS NOT `ExactlyOnceRefusal`. That type lives in
+    `core.turns.stages.execute_native`, and settlement importing a stage would
+    invert the dependency this module spends its docstring defending. The stage
+    translates; canonical decides. What the USER sees is identical either way,
+    which is the whole point of settling the definition.
+    """
+
+    def __init__(self, operation_id: str, revision: int):
+        super().__init__(f"{operation_id}@{revision}: already settled inside "
+                         f"the {int(DUPLICATE_WINDOW_SEC)}s window")
+        self.operation_id, self.revision = operation_id, revision
+
+
+def meal_surface(text: str) -> str:
+    """The user's message reduced to what makes two sends the same meal.
+
+    Case and internal whitespace only. NOT stemming, not synonyms, not word
+    order — "chicken and rice" and "rice and chicken" are different sentences
+    and a person who types the second one meant to type it.
+    """
+    return " ".join((text or "").strip().lower().split())
+
+
+def meal_identity(user_id, *, source_text: str, source_turn_id: str) -> str:
+    """The operation id for this meal.
+
+    ⚠ AN ABSENT MESSAGE FALLS BACK TO THE TURN ID, and that is not a detail.
+    Hashing an empty surface would give every text-less meal ONE identity, so a
+    photo log and a tap would collide with each other and the second would be
+    handed the first's committed result. An absent message must not be
+    representable as a shared identity — it degrades to transport identity,
+    which is exactly what this path had before.
+    """
+    import hashlib
+
+    from core.canonical_writer import operation_id_for
+
+    surface = meal_surface(source_text)
+    if not surface:
+        return operation_id_for("general", int(user_id), source_turn_id)
+    digest = hashlib.sha1(surface.encode("utf-8")).hexdigest()[:16]
+    return operation_id_for("general", int(user_id), f"meal:{digest}")
+
+
+async def occurrence_for(db, *, operation_id: str, now=None):
+    """`(revision to claim, the result to replay)` for this meal identity.
+
+    The LATEST recorded occurrence decides:
+
+        inside the window   this send is the same meal -> replay its result
+        outside the window  a new occurrence           -> claim revision + 1
+        none at all         the first                  -> claim revision 0
+
+    ⭐ `clock.now()` IS THE DATABASE'S CLOCK. `created_at` is written by
+    `server_default=func.now()`, so comparing it against `datetime.utcnow()`
+    would be the cross-domain comparison `docs/ONE_CLOCK_MIGRATION.md` exists to
+    remove — and a host drifting the wrong way would silently widen or collapse
+    the window.
+
+    ⚠ A CLAIM WITH NO RESULT IS TREATED AS OCCUPIED, NOT ABSENT. It means a
+    writer is in flight or something left a partial state; handing the next send
+    a fresh revision would let both write. It returns `(revision, None)` so the
+    caller claims the SAME revision and meets `CommitInProgress` — the existing,
+    louder answer — rather than quietly writing twice.
+    """
+    from sqlalchemy import desc, select
+
+    from core import clock
+    from core.meal_commit import _result_of
+    from db.models import MealCommit
+
+    row = (await db.execute(
+        select(MealCommit)
+        .where(MealCommit.operation_id == operation_id)
+        .order_by(desc(MealCommit.operation_revision))
+        .limit(1))).scalars().first()
+    if row is None:
+        return 0, None
+
+    revision = int(row.operation_revision or 0)
+    stamped = getattr(row, "created_at", None)
+    age = None
+    if stamped is not None:
+        age = ((now or clock.now()) - stamped).total_seconds()
+    # An unstamped row cannot be aged, so it is treated as INSIDE the window:
+    # refusing a possible duplicate costs one re-send, admitting one costs a
+    # phantom meal the user did not log.
+    if age is None or age < DUPLICATE_WINDOW_SEC:
+        return revision, _result_of(row)
+    return revision + 1, None
+
+
 # ══ A11 — THE COVERAGE PREDICATE ════════════════════════════════════════════
 #
 # Split the way `assemble`/`price` is split, and for the same reason: `look()`
@@ -298,6 +435,7 @@ class GeneralSettlementOwner:
     native stage invokes for structured_food under the lane flag (A1)."""
 
     async def settle(self, db, *, user, items, source_turn_id: str,
+                     source_text: str = "",
                      coverage: Optional[Supported] = None):
         """ResolvedMeal -> commit_or_load_existing -> write_canonical_meal.
 
@@ -306,35 +444,57 @@ class GeneralSettlementOwner:
         remembering to be careful: no food row, no ledger event. Catching it to
         substitute a number is the failure being deleted; catching it to fall
         back to legacy is the dual-authority failure being prevented.
+
+        ⛔ `DuplicateMeal` PROPAGATES FOR THE SAME REASON (A12), and is raised
+        BEFORE pricing — a meal already on the board must not pay for a second
+        resolution, and a refusal that ran the pricer is a refusal that could
+        have written.
         """
         from core.canonical_writer import (MealIntent, ResolvedFood,
-                                           ResolvedMeal, operation_id_for,
-                                           write_canonical_meal)
+                                           ResolvedMeal, write_canonical_meal)
         from core.commit_coordinator import commit_or_load_existing
         from core.semantics import (CanonicalEvent, Confidence,
                                     NutritionProvenance, ResolutionStatus)
 
+        # ⛔⛔ THE IDENTITY IS DECIDED BEFORE ANYTHING IS PRICED OR WRITTEN.
+        # `operation_id_for("general", user, source_turn_id)` used to be built
+        # inline below, which made the turn id the identity and a retyped meal a
+        # new operation — the invariant divergence A12 records. The user-scoping
+        # that comment defended is unchanged and still lives in
+        # `operation_id_for`; what changed is what gets scoped.
+        operation_id = meal_identity(user.id, source_text=source_text,
+                                     source_turn_id=source_turn_id)
+        revision, replay = await occurrence_for(db, operation_id=operation_id)
+        if replay is not None:
+            logger.info(
+                "event=general_duplicate turn=%s user=%s operation=%s "
+                "revision=%d — the same message inside the %ds window; "
+                "answering from the meal already settled, writing nothing",
+                source_turn_id, user.id, operation_id, revision,
+                int(DUPLICATE_WINDOW_SEC))
+            raise DuplicateMeal(operation_id, revision)
+
         resolved = [await self._price(db, user=user, item=item)
                     for item in items]
 
-        # ⛔⛔ USER-SCOPED, AND THE REPOSITORY ALREADY SAID SO. This was
-        # `f"turn:{source_turn_id}"`, and `operation_id_for`'s docstring
-        # describes that exact bug verbatim: `make_turn_id` returns
-        # `f"{channel}:{cid}"` when the client supplies an Idempotency-Key,
-        # with NO user in it — "so two users sending the same key would share
-        # an operation, and the second would be handed the first's committed
-        # result". `meal_commits` is unique on (operation_id, revision) and
-        # deliberately excludes user_id, and `_load` looks up by id alone, so
-        # THE ID ITSELF HAS TO CARRY THE SCOPE.
+        # ⛔⛔ USER-SCOPED, AND THE REPOSITORY ALREADY SAID SO. `operation_id_for`
+        # (now reached through `meal_identity` above) describes the bug verbatim:
+        # `make_turn_id` returns `f"{channel}:{cid}"` when the client supplies an
+        # Idempotency-Key, with NO user in it — "so two users sending the same
+        # key would share an operation, and the second would be handed the
+        # first's committed result". `meal_commits` is unique on
+        # (operation_id, revision) and deliberately excludes user_id, and `_load`
+        # looks up by id alone, so THE ID ITSELF HAS TO CARRY THE SCOPE. That is
+        # doubly true now the identity is a hash of the message: two users typing
+        # "100g of white rice" produce the same digest and must not share a meal.
         #
         # The content guard does not save this: two users logging the same food
         # at the same portion agree on name and quantity, so B silently
         # receives A's stored result — A's entry_id, A's macros — and writes no
         # row of its own.
         meal = ResolvedMeal(
-            operation_id=operation_id_for("general", int(user.id),
-                                          source_turn_id),
-            revision=0,
+            operation_id=operation_id,
+            revision=revision,
             user_id=int(user.id),
             logging_day=_logging_day(user),
             user_timezone=_zone(user),
@@ -395,13 +555,16 @@ class GeneralSettlementOwner:
 
         result = await commit_or_load_existing(
             db, operation=GeneralTurnOperation(
-                operation_id=meal.operation_id, user_id=int(user.id)),
+                operation_id=meal.operation_id, user_id=int(user.id),
+                revision=revision),
             resolved_meal=meal, writer=write_canonical_meal)
         logger.info(
             "event=general_settled turn=%s user=%s items=%d rungs=%s "
-            "expected=%s", source_turn_id, user.id, len(resolved),
+            "expected=%s operation=%s revision=%d", source_turn_id, user.id,
+            len(resolved),
             ",".join(p.analysis.rung.value for p in resolved),
-            coverage.expected_source if coverage else "-")
+            coverage.expected_source if coverage else "-",
+            meal.operation_id, revision)
         return result
 
     async def _price(self, db, *, user, item: dict):

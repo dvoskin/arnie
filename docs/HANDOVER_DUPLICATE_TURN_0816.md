@@ -84,26 +84,54 @@ failed one on the native lane — the likely reason `outcome=ok` on 1188/1188
 all-time. **Deliberately not fixed here:** it changes what the P12 canary
 readings mean mid-canary, which is a call to make on purpose.
 
-## ⭐ TWO EXACTLY-ONCE FINDINGS FROM THE OFFLINE DRIVE
+## ✅ A12 — CANONICAL NOW OWNS WHAT A DUPLICATE IS
 
-⛔ **THE CLAIM KEY IS CASE-SENSITIVE IN THE PLAN, NOT ONLY IN THE MESSAGE.**
-`turn_idempotency_key` lowercases the message and then fingerprints
-`input["food_name"]` **verbatim** (`core/food_ledger.py:159`). Send 3 of the
-triple produced `"White Rice"` where send 1 produced `"White rice"`, so the key
-missed and a second row was written. One duplicate absorbed, one not, from the
-same text — the guard holds only while the model is stable.
+Both findings from the offline drive are closed in one slice, because they were
+one contract:
 
-⛔ **THE TWO SETTLEMENT OWNERS DO NOT AGREE ON WHAT A DUPLICATE IS.**
-With `GENERAL_SETTLEMENT_ALLOWLIST` on, `_canonical_route` returns an owner and
-`NativeExecutionStage` takes **no legacy claim** — `commit_or_load_existing` is
-keyed on `source_turn_id`, so a *retyped* identical message is a different turn
-and logs again. Driven three times under canonical settlement: **three rows.**
-Under the legacy branch the same three sends give one row and two refusals.
-Production's rice turn took the legacy branch (a hashed `processed_turns` row
-with an empty `result_summary`, 02:39:38 UTC), which is why it was refused at
-all. **An undeclared divergence in exactly-once semantics between two owners is
-the dual authority this migration exists to delete** — worth settling before
-general-settlement hardening is frozen.
+⛔ **THE TWO OWNERS DISAGREED, AND THE MIGRATION WAS THE ONE THAT MOVED.**
+Canonical's operation id was the TURN id, which absorbs a redelivery and nothing
+else; legacy additionally refuses a *retyped* identical message inside an hour.
+Three sends gave **one row and two refusals on legacy, three rows canonically** —
+so promoting a user changed a user invariant.
+
+⛔ **THE LEGACY KEY WAS CASE-SENSITIVE IN THE PLAN.** `turn_idempotency_key`
+lowercased the message and fingerprinted `input["food_name"]` **verbatim**, so
+send 3's `"White Rice"` missed send 1's `"White rice"` and wrote a second row.
+A key that depends on model output is only as stable as the model.
+
+**The definition, decided once and owned by canonical:**
+
+```text
+identity   the USER'S MESSAGE, normalised for case and whitespace
+           — never the turn id, never the model's plan
+revision   which occurrence of that meal this is
+window     60 minutes, legacy's, unchanged — this slice moves WHO decides,
+           not WHAT is decided
+```
+
+`meal_commits` is already unique on (operation_id, revision), so this needs **no
+second claim, no new table, and nothing imported from legacy**. Keying on the
+message rather than the plan closes the case-sensitivity hole in the same move;
+`_fingerprint_token` closes it at the legacy boundary too.
+
+⭐ **A8'S AST GATE REFUSED THE FIRST VERSION AND WAS RIGHT.** The duplicate
+signal was first renamed inside `NativeExecutionStage.run` — an except handler
+around settlement, which is exactly how a canonical refusal reaches the legacy
+executor. `DuplicateMeal` now propagates like `PricingRefused` and the entrypoint
+absorbs both signals as one, so the user cannot tell which owner settled.
+
+**Driven three times through the real turn, on both branches:**
+
+```text
+canonical    send 1 logs · send 2 "Already logged that one." · send 3 (re-cased) same · 1 row
+legacy       send 1 logs · send 2 "Already logged that one." · send 3 (re-cased) same · 1 row
+```
+
+⚠ **CHANGING `turn_idempotency_key` CHANGES EVERY LIVE DIGEST.** Claims already
+in `processed_turns` were hashed with the old shape, so on the first deploy a
+duplicate inside its window misses once and logs. One extra row per in-flight
+claim, once.
 
 ## ✅ RESOLVED — THE TWO "UNEXPLAINED" `processed_turns` ROWS
 
@@ -193,12 +221,28 @@ deliberately not made.
 
 ## STANDING RISKS, UNCHANGED
 
-- ⚠ **NO CI HAS EVER RUN ON THIS BRANCH.** Every green is local dual-engine.
-  Full suite at this commit: **9265 passed, 107 skipped, 4 xfail, 4 failed.**
-- ⚠ **4 pre-existing failures** in `test_no_row_is_deleted_without_a_ledger_event`,
-  proven failing at `d598610`, before any of this work. ⭐ **NOT order-dependent
-  as previously recorded** — they fail standalone too. Correct the claim before
-  anyone spends a session chasing test ordering.
+- ⚠ **NO CI HAS EVER RUN ON THIS BRANCH.** Every green is local. Dual-engine at
+  this commit, 9398 tests each: **Postgres 9369 passed / 29 skipped / 0 failed ·
+  SQLite 9287 passed / 111 skipped / 0 failed.** Postgres runs 82 more tests
+  than SQLite, which is how you know the Postgres run was not a silent fallback.
+- ✅ **THE 4 DELETION-LEDGER FAILURES WERE A CLOCK, AND BOTH EARLIER READINGS
+  WERE WRONG.** Called "order-dependent, pre-existing" in one handover and "not
+  order-dependent, they fail standalone" in the next. Neither varied anything.
+  Holding the commit fixed and varying only `TZ`:
+
+  ```text
+  Pacific/Honolulu  local 08-16 18:57   4 failed
+  America/Chicago   local 08-16 23:57   4 failed
+  America/New_York  local 08-17 00:57   0 failed
+  Europe/London     local 08-17 05:57   0 failed
+  ```
+
+  The fixture built its `DailyLog` with `date.today()` — the HOST'S calendar
+  date — while `reset_today_log(s, user_id, "UTC")` targets `_user_today("UTC")`.
+  They agree only when the host's local date equals the user's. Fixed by using
+  the resolver production uses; green across 15 timezone × rollover-hour
+  combinations. ⭐ **A failure nobody can reproduce on demand gets explained
+  away, and this was the ratchet protecting "no delete without a ledger event".**
 - ⛔ **The card is still absent on native turns**, which remains the blocker on
   widening beyond user 26 (§3a.3).
 
@@ -206,12 +250,14 @@ deliberately not made.
 
 ```text
 1  ✅ the duplicate's reply — it was the coordinator's failure floor, not a
-      pre-interpretation layer
-2  ✅ rice triple re-run OFFLINE through the real turn: send 2 answers
-      "Already logged that one." — production re-run is Danny's, after deploy
-3  freeze general-settlement hardening  <- settle the two owners' duplicate
-      semantics first; they currently disagree (above)
-4  OILS
+      pre-interpretation layer                                       (eedacfd)
+2  ✅ rice triple, offline through the real turn, BOTH branches
+3  ✅ A12 — canonical owns what a duplicate is, and the legacy key is
+      normalised at the same contract
+4  Danny: deploy, then the production three-send test including the
+   capitalisation variation
+5  freeze general-settlement backend hardening
+6  OILS
 ```
 
 Related: `docs/P12_CANARY_PREREGISTRATION.md` ·

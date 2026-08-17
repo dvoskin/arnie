@@ -106,8 +106,23 @@ class NativeExecutionStage:
             # any write, so there is no row and no ledger event to undo.
             owner, coverage = settlement
             items = _food_inputs(ops)
+            # ⭐ THE MESSAGE TRAVELS WITH THE MEAL (A12). Canonical's idempotency
+            # is keyed on what the USER TYPED, not on the turn id and not on the
+            # model's plan — so `settle` needs the text, and this is the only
+            # place that has both it and the routing decision.
+            #
+            # ⛔⛔ AND `DuplicateMeal` PROPAGATES, exactly like `PricingRefused`.
+            # An earlier version of this line caught it here to rename it, and
+            # A8's AST gate refused the patch: `NativeExecutionStage.run` may
+            # hold NO except handler at all, because a handler around settlement
+            # is precisely how a canonical refusal reaches the legacy executor.
+            # The gate was right and the rename belongs at the absorption point,
+            # not on the settlement path — `core/turns/entrypoint.py` treats the
+            # two signals as one, so the user reads "Already logged that one."
+            # whichever owner settled the turn.
             result = await owner.settle(db, user=user, items=items,
                                         source_turn_id=request.turn_id,
+                                        source_text=request.text or "",
                                         coverage=coverage)
             # ⛔⛔ PUBLISH, OR THE USER SEES NOTHING. The snapshot and the
             # renderer read the execution view; the legacy executor is the only

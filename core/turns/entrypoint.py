@@ -248,10 +248,22 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     #
     # ⚠ NARROW ON PURPOSE. Only the refusal branch does this. Every other error
     # still raises below, keeps the floor, and reaches the caller as a failure.
+    # ⭐ TWO OWNERS, TWO SIGNALS, ONE ANSWER (A12). The legacy branch of the
+    # native stage refuses through `claim_processed_turn`; canonical refuses
+    # through its own occurrence check and raises `DuplicateMeal`. Both mean
+    # "this meal is already on the board", both are raised before any write, and
+    # the user must not be able to tell which owner settled the turn — so the
+    # absorption is stated once, over both types.
+    #
+    # ⚠ THE RENAME LIVES HERE AND NOT IN THE STAGE. A8's AST gate forbids ANY
+    # except handler in `NativeExecutionStage.run`, because a handler around
+    # settlement is how a canonical refusal reaches the legacy executor. That
+    # gate refused the first version of this slice, and it was right.
+    from core.general_settlement import DuplicateMeal
     from core.platform import Response
     from core.recovery import is_recovery_text
     from core.turns.stages.execute_native import ExactlyOnceRefusal
-    if isinstance(state.error, ExactlyOnceRefusal):
+    if isinstance(state.error, (ExactlyOnceRefusal, DuplicateMeal)):
         logger.info(
             "event=duplicate_turn_absorbed turn=%s — same (user, text, plan) "
             "inside the claim window; answering from the prior turn rather "

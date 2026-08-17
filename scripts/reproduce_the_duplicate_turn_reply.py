@@ -40,11 +40,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if os.getenv("ARNIE_PROVE_DB"):
     os.environ["DATABASE_URL"] = os.environ["ARNIE_PROVE_DB"]
 
-#: The message, verbatim as Danny sent it.
-TEXT = "100g of white rice"
-
-#: Sends. The first logs; every one after it is a duplicate.
-SENDS = 3
+#: The three sends. The first logs; the rest are duplicates.
+#:
+#: ⭐ THE THIRD IS RE-CASED ON PURPOSE. Two things could let it through, and
+#: they are different defects with one symptom:
+#:   * the MESSAGE differing by case  — closed by `meal_surface` normalising
+#:     the identity canonical keys on;
+#:   * the model RE-CASING ITS PLAN between sends — what actually happened in
+#:     the 2026-08-17 triple ("White rice" then "White Rice"), closed by keying
+#:     on the message at all, and by `_fingerprint_token` at the legacy boundary.
+#: Driving a re-cased message exercises the first and leaves the second free to
+#: happen on its own, which is how it was found.
+SENDS = ("100g of white rice", "100g of white rice", "100G of White Rice")
 
 
 def _mirror_production(uid: int) -> None:
@@ -52,23 +59,27 @@ def _mirror_production(uid: int) -> None:
     sets them — a repro that silently runs legacy proves nothing about the
     native lane's claim.
 
-    ⭐ EXCEPT THE SETTLEMENT COHORT, WHICH IS A KNOB HERE, because it decides
-    WHICH exactly-once mechanism the turn gets and therefore whether the
-    refusal under repair is reachable at all:
+    ⭐ EXCEPT THE SETTLEMENT COHORT, WHICH IS A KNOB HERE, because each branch
+    reaches a DIFFERENT exactly-once mechanism and A12 exists because the two
+    used to disagree about what they were for:
 
-        canonical settlement  `_canonical_route` returns an owner and
-                              `NativeExecutionStage` takes NO legacy claim —
-                              `commit_or_load_existing` is the claim, and it is
-                              keyed on `source_turn_id`, so a RETYPED identical
-                              message is a different turn and logs again.
+        canonical settlement  `_canonical_route` returns an owner and takes NO
+                              legacy claim. Its own occurrence check decides —
+                              identity from the user's MESSAGE, revision per
+                              occurrence, 60-minute window — and raises
+                              `DuplicateMeal`.
         legacy branch         `_claim` -> `claim_processed_turn` on
-                              (user, text, plan), which is what refuses a
-                              retyped duplicate inside the 60-minute window and
-                              raises `ExactlyOnceRefusal`.
+                              (user, text, plan), raising `ExactlyOnceRefusal`.
+
+    ⛔ BEFORE A12 THIS KNOB CHANGED THE ANSWER: three sends gave ONE row and two
+    refusals on the legacy branch and THREE ROWS canonically, because the
+    canonical operation id was the turn id and a retyped message is a new turn.
+    Driving both branches is the point of the knob — they must now agree, and
+    the user must not be able to tell which one settled the turn.
 
     Production's rice turn took the LEGACY branch (a hashed `processed_turns`
-    row with an empty `result_summary`, 2026-08-17 02:39:38 UTC), which is why
-    its duplicates were refused. Set `PROVE_SETTLEMENT=1` to drive the other.
+    row with an empty `result_summary`, 2026-08-17 02:39:38 UTC). Set
+    `PROVE_SETTLEMENT=1` to drive the other.
     """
     os.environ["TURN_COORDINATOR_MODE"] = "new_execute"
     os.environ["TURN_COORDINATOR_LANES"] = "structured_food"
@@ -138,15 +149,18 @@ async def main() -> int:
     from core.recovery import is_recovery_text
     from db.queries import reload_user
 
-    print(f"user={uid}  gates=production-mirror  sends={SENDS}\n")
+    branch = ("canonical" if os.getenv("PROVE_SETTLEMENT") == "1"
+              else "legacy-claim")
+    print(f"user={uid}  gates=production-mirror  branch={branch}  "
+          f"sends={len(SENDS)}\n")
 
     outcomes = []
-    for attempt in range(SENDS):
+    for attempt, text in enumerate(SENDS):
         async with session() as db:
             user = await reload_user(db, uid)
             try:
                 result = await run_chat_turn(
-                    db, user, TEXT, platform="ios", schedule_background=False,
+                    db, user, text, platform="ios", schedule_background=False,
                     client_msg_id=f"dup-{attempt}")
                 await db.commit()
             except Exception:                        # noqa: BLE001
@@ -165,8 +179,8 @@ async def main() -> int:
         outcomes.append((verdict, " | ".join(bubbles)[:200]))
 
     print("=" * 74)
-    for i, (verdict, detail) in enumerate(outcomes, 1):
-        print(f"send {i}: {verdict}\n    {detail}\n")
+    for i, ((verdict, detail), text) in enumerate(zip(outcomes, SENDS), 1):
+        print(f"send {i}: {verdict}  {text!r}\n    {detail}\n")
 
     board = await _board(session, uid)
     print("=" * 74)

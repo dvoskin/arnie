@@ -157,16 +157,42 @@ def _idem_ttl_sec() -> float:
     return float(os.getenv("FOOD_IDEM_TTL_SEC", "90"))
 
 
+def _fingerprint_token(value) -> str:
+    """One plan field, reduced to what makes two plans the same plan.
+
+    ⛔⛔ THE MESSAGE WAS NORMALISED AND THE PLAN WAS NOT, so this key could be
+    defeated by the interpreter alone. Measured 2026-08-17 by driving one
+    message three times: send 1 produced `"White rice"`, send 3 produced
+    `"White Rice"`, the digests differed, and the third send logged a second row
+    while the second was correctly refused. Same text, same user, same seconds —
+    one duplicate caught and one not, decided by the model's capitalisation.
+
+    ⭐ A KEY THAT DEPENDS ON MODEL OUTPUT IS ONLY AS STABLE AS THE MODEL. This
+    normalises at the boundary where the key is built rather than adding a
+    comparison exception downstream, so every consumer of the key inherits it.
+    Case and surrounding whitespace only — `"2 eggs"` and `"3 eggs"` are still
+    different plans, which is the whole point of fingerprinting the plan at all.
+    """
+    return " ".join(str(value or "").strip().lower().split())
+
+
 def turn_idempotency_key(user_id, message: str, tool_calls: list) -> str:
     """Stable key for one (user, message, plan) — the same key means the same
-    turn arrived again, not a new report."""
+    turn arrived again, not a new report.
+
+    ⚠ CHANGING THIS CHANGES EVERY LIVE DIGEST. Claims already in
+    `processed_turns` were hashed with the old shape, so on the first deploy a
+    duplicate arriving inside its window misses once and logs. One extra row per
+    in-flight claim, once — named here because a silent hash change is the kind
+    of thing that later reads as the guard having failed.
+    """
     fingerprint = []
     for tc in tool_calls or []:
         inp = tc.get("input") or {}
         fingerprint.append([
-            str(tc.get("name") or ""),
-            str(inp.get("food_name") or inp.get("entry_id") or ""),
-            str(inp.get("quantity") or ""),
+            _fingerprint_token(tc.get("name")),
+            _fingerprint_token(inp.get("food_name") or inp.get("entry_id")),
+            _fingerprint_token(inp.get("quantity")),
         ])
     raw = json.dumps([str(user_id), (message or "").strip().lower(), fingerprint])
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()

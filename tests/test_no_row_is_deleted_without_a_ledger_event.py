@@ -53,12 +53,40 @@ async def sessions(engine):
 
 @pytest_asyncio.fixture
 async def a_logged_day(sessions):
-    """A user with a real day: two foods and one exercise."""
+    """A user with a real day: two foods and one exercise.
+
+    ⛔⛔ THE DAY IS THE USER'S LOGGING DAY, NOT THE MACHINE'S CALENDAR DATE.
+    This built its `DailyLog` with `date.today()` — the date of whatever host
+    ran the suite — while `reset_today_log(s, user_id, "UTC")` targets
+    `_user_today("UTC")`. The two agree only when the host's local date happens
+    to equal the user's, so these four gates went RED whenever the runner sat in
+    a timezone behind UTC late in the day, and green again a few hours later.
+    Measured 2026-08-17 by holding the commit fixed and varying only `TZ`:
+
+        Pacific/Honolulu  local 08-16 18:57   4 failed
+        America/Chicago   local 08-16 23:57   4 failed
+        America/New_York  local 08-17 00:57   0 failed
+        Europe/London     local 08-17 05:57   0 failed
+
+    ⭐ AND THE COST WAS PAID IN DIAGNOSIS, TWICE. Two handovers wrote these off
+    without varying anything: first as "order-dependent, pre-existing", then as
+    "not order-dependent, they fail standalone too". Both readings came from a
+    single observation of a clock-dependent test. **A failure nobody can
+    reproduce on demand gets explained away, and this is the ratchet that
+    protects "no delete without a ledger event" — the one gate that must not be
+    routinely ignorable.**
+
+    ⚠ ONE RESOLVER, THE SAME ONE PRODUCTION USES, for the same timezone the
+    reset is given. Hard-coding a date here would fix today and rot at the next
+    rollover change; `LOGGING_DAY_ROLLOVER_HOUR` moves this too, by design.
+    """
+    from db.queries import _user_today
+
     async with sessions() as s:
         user = User(telegram_id="clear:1", name="Clear", timezone="UTC")
         s.add(user)
         await s.flush()
-        log = DailyLog(user_id=user.id, date=date.today())
+        log = DailyLog(user_id=user.id, date=_user_today("UTC"))
         s.add(log)
         await s.flush()
         s.add_all([
