@@ -7,15 +7,31 @@
 
 ## WHERE THINGS STAND
 
+⛔⛔ **NO MUTABLE STATE IS WRITTEN DOWN HERE, AND THAT IS THE SECOND LESSON THIS
+FILE HAS LEARNED.** The first version of this block hard-coded
+`origin/main 8443cb0` — and it was **already wrong in the commit that shipped
+it**, because the same commit moved main. A handoff whose whole purpose is
+"verify, never assume" cannot itself publish a SHA. Ask the system:
+
 ```text
-live (verify, never assume)   /health -> commit  == cd2b74a at time of writing
-origin/main                   8443cb0            (one ahead of live)
-CI                            GREEN. ci.yml runs the suite on every push to
-                              main against a REAL Postgres service
-cohort                        user 26, iOS only. general_settlement_reachable
-backend                       A1–A12 FROZEN (§FREEZE)
-OWNERSHIP                     20.2%   band `<40%` -> user 26 only
-open engineering              P16 ✅ measured · P16b and P17 below
+origin/main    git fetch origin && git rev-parse --short origin/main
+local vs main  git log --oneline origin/main..HEAD
+live           curl -s https://arnie.onrender.com/health   -> .commit
+CI             ../arnie/.venv/bin/python scripts/release_check.py
+               (needs GITHUB_TOKEN; without it the checks read UNREADABLE,
+                which is NOT the same as green)
+ownership      data/corpus/settlement_coverage.json -> C_ownership_rate_pct,
+               and read `predicate_commit` in the same file. A figure without
+               its predicate is not a figure
+```
+
+What is STATIC, and therefore safe to write down:
+
+```text
+cohort         user 26, iOS only. general_settlement_reachable
+backend        A1–A12 FROZEN (§FREEZE)
+rollout        expansion needs BOTH ownership >= 40% AND B-1.8 closed (§NEXT)
+sequencing     §NEXT in docs/CANONICAL_MIGRATION_DIRECTIVE.md — never here
 ```
 
 ## ⛔⛔ FIVE THINGS THAT WILL BITE A PARALLEL SESSION
@@ -76,36 +92,51 @@ a second one.**
 What follows is METHOD for the two tranches at the head of that board — how to
 run them, not whether to.
 
-### P16b — the meal-level rollup *(method)*
+### P16b — the meal-level rollup ✅ RAN *(2026-08-17, method kept for re-runs)*
 
-P16 attributed **declining ITEMS**; ownership is a **MEAL** rate. The ranking is
-by *recoverable ownership points*, and item counts are not points. Compute the
-counterfactual per mechanism:
+Ownership is a **MEAL** rate and item counts are not points. The counterfactual:
 
-> for each declining structured meal, re-run `decide()` over its items with
-> mechanism *M* treated as satisfied — count the meals that become `Supported`.
+> for each declining structured meal, flip the fact mechanism *M* names on the
+> items it stopped and re-run the REAL `decide()` over every item — count the
+> meals that become `Supported`.
 
-That number, divided by ordinary food-chat meals, is the ownership points
-mechanism *M* recovers. Extend `scripts/measure_settlement_coverage.py` in place;
-it already holds the meals, the verdicts and the session.
+Implemented in `scripts/measure_settlement_coverage.py`
+(`--freeze NAME` / `--population NAME`), which holds the meals, the verdicts and
+the session. **Two traps it hit, both worth knowing before re-running it:**
 
-**Acceptance:** a table of `mechanism -> meals recovered -> ownership points`,
-summing to no more than `100% - 20.2%`, recorded to
-`data/corpus/settlement_coverage.json`. Expect PRODUCT to lead — 142 of 207
-items — but **do not skip this to save an hour**: a mechanism spread thinly across
-many multi-item meals recovers fewer points than its item count suggests.
+⛔ **Satisfying a mechanism is not recovering an item.** Flipping `has_mass` on a
+count-only item moves it PAST the mass branch and straight into the evidence
+branches, where it can decline again. 142 count-only items sit in 89 meals, and
+only 28 of those recover on mass alone.
 
-### P17 — the PRODUCT rung / per-serving basis *(method)*
+⛔⛔ **Rank LOWER against LOWER.** The first version of the table banded PRODUCT
+(mass only .. mass + evidence) while silently handing every IDENTITY mechanism
+the optimistic end for free — which read as an inversion of P16 that was not
+there. Each mechanism now carries both ends: LOWER is what the tranche literally
+puts into `ItemFacts`, UPPER adds the evidence delivery might also bring.
 
-```text
-142 of 207 declining items (69%)   TYPED:count_only_quantity
-```
+⭐ It self-checks: under the UPPER flip every meal blocked by exactly one
+mechanism must recover and every multi-mechanism meal must not, so the UPPER
+recoveries must sum to the single-mechanism meal count exactly.
+
+### Candidate P17 method — use ONLY if the measurement selects serving-basis evidence
+
+⛔ **The measurement names the tranche; this document does not.** Read §NEXT for
+what P16b actually selected, and re-read `settlement_coverage.json` if it has
+been re-run since. What follows applies *if and only if*
+`TYPED:count_only_quantity` is still the ranked mechanism.
 
 `assemble()` hard-codes PRODUCT to `None`, so every canonical rung is per-100g and
 a count-only portion ("1 medium", "2 eggs", "a bar") cannot be scaled at all. The
 predicate correctly refuses them — `decide()`'s mass branch exists because
 canonical committed a corn-on-the-cob at a refusal. **The fix is to land a
 per-serving basis, not to loosen the predicate.**
+
+⭐⭐ **AND THE BAND IS A DESIGN INSTRUCTION, NOT A FOOTNOTE.** A serving basis
+that only supplies a scale factor recovers the LOWER end; one that arrives as an
+evidence rung of its own recovers the UPPER. The gap between those two is larger
+than every other mechanism combined, so *how* P17 is built matters more than
+whether it ships.
 
 ⚠ **`decide()`'s mass branch is the place PRODUCT earns its way back in**, and its
 own comment says so: *"When PRODUCT gains a producer, this branch is where it

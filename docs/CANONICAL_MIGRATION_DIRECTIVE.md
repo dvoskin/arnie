@@ -330,8 +330,10 @@ not depend on which bucket is largest.
 ```text
 GENERAL SETTLEMENT BACKEND             ✅ FROZEN          (§FREEZE)
 ONE-USER PRODUCTION CANARY             ✅ PASSED          (P12, both branches)
-CURRENT OWNERSHIP                      ~20.2%            (08-17, meal level,
-                                                         predicate at cd2b74a)
+CURRENT OWNERSHIP                      ~20.3%            (predicate a747b56,
+                                                         population p16b_0817)
+BASELINE POPULATION                    ✅ FROZEN          361 rows / 232 meals,
+                                                         sha 6247a33c55ed64f5
 ROLLOUT                                FROZEN — user 26 only
 
 NEXT
@@ -344,19 +346,31 @@ NEXT
     2026-08-17: the old roadmap had only the first one.
 
 COVERAGE TRACK
-1. P16b  FREEZE one exact historical meal population, then roll the P16
-         attribution from declining ITEMS to recoverable MEAL ownership points.
-         Item counts are NOT points: A11 declines the whole meal on one
-         unsupported item, so a mechanism spread thinly across multi-item meals
-         recovers fewer points than its item count implies. Counterfactual per
-         mechanism — re-run decide() with M satisfied, count the meals that flip.
-         ⭐ PRODUCT leading is a PREDICTION (142/207 items) until this runs
-2. P17   attack the #1 MEASURED mechanism — step 1 names it, not this line.
-         EXPECTED: authoritative SERVING-BASIS EVIDENCE
-         (count · piece · serving · package · fraction). assemble() hard-codes
-         PRODUCT to None, so every canonical rung is per-100g and "2 eggs",
-         "1 banana", "half a bar" are unpriceable BY CONSTRUCTION.
-         Land the basis; do NOT loosen the predicate
+1. P16b  ✅ DONE — population FROZEN as p16b_0817, misses rolled up to MEALS.
+         Points are recoverable ownership, ranked LOWER against LOWER:
+
+           MECHANISM                          ITEMS   LOWER    UPPER
+           TYPED:count_only_quantity            142   12.6%    36.5%
+           IDENTITY:no_resolution_row            48    0.0%    16.7%
+           CACHEABILITY:memory_quarantined        7    3.2%     3.2%  (tight)
+           BRANDED:product_non_binding            7    0.0%     1.8%
+           IDENTITY:distinct_refused              3    0.0%     1.4%
+                                                      15.8 .. 59.6 total
+
+         ⭐ THE PREDICTION HELD, THE MAGNITUDE DID NOT. 69% of ITEMS is 12.6–36.5
+         POINTS, because 142 count-only items sit in 89 meals and satisfying a
+         mechanism is not recovering an item. 8 meals are blocked by more than
+         one mechanism and no single tranche recovers them
+2. P17   SERVING-BASIS EVIDENCE — SELECTED BY THE MEASUREMENT, first at both
+         ends of the band (count · piece · serving · package · fraction).
+         assemble() hard-codes PRODUCT to None, so every canonical rung is
+         per-100g and "2 eggs", "1 banana", "half a bar" are unpriceable BY
+         CONSTRUCTION. Land the basis; do NOT loosen the predicate.
+         ⛔⛔ THE BAND IS THE DESIGN BRIEF. A basis that supplies only a SCALE
+         FACTOR recovers 12.6 points and leaves ownership near 33% — SHORT of
+         the 40% band. One that arrives as an EVIDENCE RUNG recovers 36.5 and
+         reaches ~57%. That gap is larger than every other mechanism combined,
+         so HOW P17 is built decides more than WHETHER it ships
 3.       RE-MEASURE on the SAME FROZEN POPULATION — this is what isolates what
          the PREDICATE gained
 4.       RE-MEASURE current rolling production — 3 and 4 together are what

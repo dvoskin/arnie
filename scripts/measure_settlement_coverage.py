@@ -37,13 +37,45 @@ from __future__ import annotations
 import argparse
 import asyncio
 import collections
+import dataclasses
+import hashlib
 import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def predicate_commit() -> str:
+    """⛔⛔ NO COVERAGE FIGURE PUBLISHES WITHOUT THE COMMIT IT WAS TAKEN AT
+    *(Danny, 2026-08-17)*.
+
+    `36.9%` was published at `beac35a` on 08-15; the count-only/mass branch
+    entered `decide()` at `951b90e` on 08-16; re-running the SAME instrument on
+    the SAME window then gave 20.2%. For a day the program was sequenced on a
+    number the system could no longer produce. The directive now requires every
+    figure to name its predicate, and a requirement that lives only in prose is
+    a requirement the next run forgets — so the instrument stamps itself.
+
+    ⚠ AND A DIRTY TREE IS NOT A COMMIT. A measurement taken over uncommitted
+    edits cannot be reproduced from the sha, so it says so in the string rather
+    than quietly naming a commit that did not produce it.
+    """
+    def _git(*args) -> str:
+        out = subprocess.run(["git", *args], cwd=ROOT, capture_output=True,
+                             text=True, timeout=30)
+        return out.stdout.strip() if out.returncode == 0 else ""
+
+    sha = _git("rev-parse", "--short", "HEAD")
+    if not sha:
+        return "UNKNOWN — git unavailable, so this figure names no predicate"
+    dirty = _git("status", "--porcelain", "--", "core", "skills", "db")
+    return f"{sha}-DIRTY" if dirty else sha
 
 # ⛔⛔ `ledger_events.source` NAMES THE WRITER, NOT THE ROUTE, and the first
 # version of this instrument treated the two as one. `canonical_writer` says it
@@ -162,12 +194,30 @@ def _database_url() -> str:
     return url.replace("+psycopg", "").replace("+asyncpg", "")
 
 
-async def measure(*, days: int, limit: int) -> dict:
+async def measure(*, days: int, limit: int, population: dict = None) -> dict:
+    """`population` pins the EXACT rows to measure, replacing the rolling clock.
+
+    ⛔⛔ A ROLLING WINDOW CANNOT TELL A PREDICATE GAIN FROM A TRAFFIC DRIFT
+    *(Danny, 2026-08-17)*. `now() - days` selects a different population every
+    time it runs, so "ownership went from 20.2% to X" after P17 would confound
+    what the predicate learned with what people happened to eat that fortnight.
+    P16b freezes one exact historical meal population; the post-P17 re-measure
+    runs against THIS list and against fresh production, and the two together
+    are what separate the two explanations. Either alone cannot.
+    """
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
     from core.general_settlement import Supported, coverage_for
     from db.database import make_engine
+
+    # The population predicate, and the ONE place the clock is chosen.
+    if population:
+        entry_ids = [int(i) for i in population["entry_ids"]]
+        where, params = "fe.id = ANY(:ids)", {"ids": entry_ids}
+    else:
+        where = "fe.timestamp > now() - make_interval(days => :days)"
+        params = {"days": days}
 
     engine = make_engine(_database_url().replace("postgresql://",
                                                  "postgresql+psycopg://"))
@@ -194,8 +244,8 @@ async def measure(*, days: int, limit: int) -> dict:
                 "  SELECT 1 FROM ledger_events le WHERE le.entry_id = fe.id "
                 "  AND le.event_type = 'created')) "
                 "FROM food_entries fe "
-                "WHERE fe.timestamp > now() - make_interval(days => :days)"
-            ), {"days": days})).one()
+                f"WHERE {where}"
+            ), params)).one()
             total_rows, ledgered = int(coverage_of_population[0]), int(
                 coverage_of_population[1])
             if total_rows and ledgered != total_rows:
@@ -222,9 +272,28 @@ async def measure(*, days: int, limit: int) -> dict:
                 "JOIN daily_logs dl ON dl.id = fe.daily_log_id "
                 "JOIN ledger_events le ON le.entry_id = fe.id "
                 "     AND le.event_type = 'created' "
-                "WHERE fe.timestamp > now() - make_interval(days => :days) "
+                f"WHERE {where} "
                 "ORDER BY fe.timestamp DESC LIMIT :limit"
-            ), {"days": days, "limit": limit})).all()
+            ), {**params, "limit": limit})).all()
+
+            # ⛔ A FROZEN POPULATION THAT SILENTLY SHRANK IS NOT FROZEN. A row
+            # deleted since the freeze would quietly change every denominator
+            # below, which is precisely the drift the freeze exists to remove —
+            # so the count is checked against the manifest and reported, never
+            # assumed.
+            population_drift = None
+            if population:
+                found = {int(r[0]) for r in rows}
+                missing = sorted(set(entry_ids) - found)
+                if missing:
+                    population_drift = {
+                        "frozen_entry_ids": len(entry_ids),
+                        "found_now": len(found),
+                        "missing": missing[:50],
+                        "note": "rows in the frozen population no longer "
+                                "select — deleted, or their created event went "
+                                "away. Every rate below is over the survivors.",
+                    }
 
             # ⭐ WHICH CANONICAL OWNER SETTLED IT. Every canonical lane emits
             # `canonical:create` — B-1, quick_log and the general settlement
@@ -286,11 +355,18 @@ async def measure(*, days: int, limit: int) -> dict:
             # a re-selected population, which is exactly the second instrument
             # the directive forbids. `classify_meal` is pure, so the structured
             # set can be derived here without waiting for the buckets below.
+            # ⭐ THE DENOMINATOR IS COMPUTED HERE, not passed in later. Ownership
+            # POINTS are meals-recovered over ORDINARY FOOD-CHAT meals — the
+            # same denominator as C — and a rollup scored against any other
+            # population would produce percentages that cannot be added to
+            # 20.2%. `classify_meal` is pure, so this costs nothing.
+            _class = {k: classify_meal(m["sources"], m.get("operations"))
+                      for k, m in meals.items()}
             attribution_result = await attribute_misses(
                 db, meals=meals, verdicts=verdicts,
-                structured=[k for k, m in meals.items()
-                            if classify_meal(m["sources"],
-                                             m.get("operations")) == "structured"])
+                structured=[k for k, c in _class.items() if c == "structured"],
+                chat_meals=sum(1 for c in _class.values()
+                               if c in ("structured", "legacy")))
     finally:
         await engine.dispose()
 
@@ -344,6 +420,29 @@ async def measure(*, days: int, limit: int) -> dict:
 
     return {
         "window_days": days,
+        # ⛔⛔ THE FIGURE NAMES ITS PREDICATE OR IT IS NOT A FIGURE. See
+        # `predicate_commit` — 36.9% cost a day of sequencing for want of this
+        # one string, and the directive's rule lived only in prose until now.
+        "predicate_commit": predicate_commit(),
+        "population": (
+            {"frozen": True, "name": population.get("name"),
+             "frozen_at": population.get("frozen_at"),
+             "entry_ids": len(population.get("entry_ids") or []),
+             "checksum": population.get("checksum")}
+            if population else
+            {"frozen": False,
+             "selector": f"rolling: fe.timestamp > now() - {days} days",
+             "WARNING": "a rolling window re-selects a different population "
+                        "every run, so a change in this number cannot be "
+                        "attributed to the predicate. Freeze one with "
+                        "--freeze before using it as a baseline."}),
+        "population_drift": population_drift,
+        # ⭐ THE EXACT ROWS THIS RUN MEASURED, so a freeze is the SAME selection
+        # rather than a second query that resembles it — the join and the LIMIT
+        # both narrow the population, and a manifest built independently would
+        # differ from the numbers it claims to pin. `main` consumes and removes
+        # this; it never reaches the recorded report.
+        "_selected_entry_ids": sorted(int(r[0]) for r in rows),
         "rows": len(rows),
         "meals": len(meals),
         "rows_without_a_turn_id": len(turnless),
@@ -498,19 +597,113 @@ async def _mechanism(db, *, user_id: int, item: dict, facts) -> str:
     return "BARE:artifact_entity_absent"
 
 
+# ══ P16b — THE MEAL-LEVEL ROLLUP ════════════════════════════════════════════
+#
+# ⛔⛔ ITEM COUNTS ARE NOT OWNERSHIP POINTS *(Danny, 2026-08-17)*. Ownership is a
+# MEAL rate and A11 declines the whole meal on ONE unsupported item, so a
+# mechanism spread thinly across many multi-item meals recovers far fewer points
+# than its item count implies. P16 said PRODUCT leads with 142 of 207 items;
+# that is a PREDICTION about points until this runs.
+#
+# ⭐ THE COUNTERFACTUAL IS EXECUTED, NOT MODELLED. `ItemFacts` is frozen, so a
+# mechanism is "satisfied" by `dataclasses.replace`-ing exactly the fact it names
+# and re-running the REAL `decide()`. Nothing here re-implements the predicate —
+# the same objection that killed the modelled-coverage instrument applies with
+# full force to a counterfactual, which is even easier to make flattering.
+#
+# ⛔ AND SATISFYING A MECHANISM DOES NOT IMPLY SUPPORT. This is the whole reason
+# the rollup can surprise: flipping `has_mass` on a count-only item moves it PAST
+# the mass branch and straight into the evidence branches, where it may decline
+# again for "no local evidence". An item recovered is not a meal recovered, and a
+# mechanism satisfied is not an item recovered.
+
+# ⛔⛔ EVERY MECHANISM GETS THE SAME TREATMENT, OR THE TABLE IS NOT A RANKING.
+# The first version of this map gave PRODUCT a band — mass only, then mass plus
+# evidence — and silently handed every IDENTITY mechanism the optimistic end for
+# free. That put PRODUCT's LOWER bound (12.6) in a column next to IDENTITY's
+# UPPER bound (16.7) and read as an inversion of P16. It was an artifact of the
+# map. **A number computed under one assumption, ranked against a number
+# computed under another, is the exact failure that cost this program a day on
+# 36.9%** — and a counterfactual is far easier to make flattering than a
+# measurement, because nothing in production contradicts it.
+#
+# So: LOWER is what the tranche LITERALLY delivers into `ItemFacts`. UPPER adds
+# the evidence that delivery might also bring. Where the two coincide the
+# mechanism is TIGHT and the band collapses to a point.
+
+#: mechanism -> (what the fix literally supplies, what it might also supply).
+#: Flipping anything else would be inventing a capability the tranche does not
+#: deliver; flipping less would be denying the one it does.
+_COUNTERFACTUAL = {
+    # ── TIGHT: the deliverable IS one of decide()'s five facts ──────────────
+    "TYPED:no_canonical_identity": ({"has_identity": True},) * 2,
+    "TYPED:no_stated_quantity": ({"has_quantity": True},) * 2,
+    # The memory ROW EXISTS in both of these; the tranche makes it usable.
+    "CACHEABILITY:memory_quarantined_ambiguous_address": (
+        {"has_memory": True},) * 2,
+    "MEMORY:row_unusable_no_per100g": ({"has_memory": True},) * 2,
+    "MEMORY:present_but_predicate_declined_UNEXPECTED": (
+        {"has_memory": True},) * 2,
+    # These two ARE artifact-coverage tranches: the deliverable is the evidence.
+    "QUALIFIED:preparation_vocabulary_miss": ({"has_artifact": True},) * 2,
+    "BARE:artifact_entity_absent": ({"has_artifact": True},) * 2,
+    "IDENTITY:key_not_addressable": ({"has_memory": True},) * 2,
+
+    # ── BANDED: the fix supplies part of the answer, and evidence MAY follow ─
+    # A per-serving basis certainly supplies the MASS. Whether the count-only
+    # food also gains per-serving nutrition depends on what P17 ships.
+    "TYPED:count_only_quantity": ({"has_mass": True},
+                                  {"has_mass": True, "has_artifact": True}),
+    # ⚠ RESOLUTION IS NOT EVIDENCE, AND THIS IS WHERE THAT BITES. A resolver row
+    # supplies NONE of decide()'s five facts — the item already had mass and
+    # still declined for "no local evidence". So the honest lower bound of an
+    # identity tranche is ZERO recovered meals, and its upper bound assumes
+    # resolution also lands evidence for the food it resolved.
+    "IDENTITY:no_resolution_row": ({}, {"has_artifact": True}),
+    "IDENTITY:resolver_declined": ({}, {"has_artifact": True}),
+    "IDENTITY:distinct_refused_a_false_collapse": ({}, {"has_artifact": True}),
+    "BRANDED:product_recognised_but_non_binding": ({}, {"has_artifact": True}),
+}
+
+
+def _meal_recovers(records: list, mechanism: str, *, flip: dict) -> bool:
+    """Would this declining meal become Supported if `mechanism` were satisfied?
+
+    ⛔ EVERY DECLINING ITEM MUST CLEAR, because one unsupported item declines
+    the meal. Items whose mechanism is something else are left EXACTLY as they
+    were — that is what makes the recoveries disjoint across mechanisms and the
+    column summable.
+    """
+    from core.general_settlement import Supported, decide
+
+    for record in records:
+        facts = record["facts"]
+        if record["mechanism"] == mechanism:
+            facts = dataclasses.replace(facts, **flip)
+        if not isinstance(decide(facts), Supported):
+            return False
+    return True
+
+
 async def attribute_misses(db, *, meals: dict, verdicts: dict,
-                           structured: list) -> dict:
-    """Every DECLINING item of every declining structured meal, by mechanism."""
+                           structured: list, chat_meals: int) -> dict:
+    """Every DECLINING item of every declining structured meal, by mechanism —
+    and then the same misses rolled up to MEALS and to ownership POINTS."""
     from core.general_settlement import Supported, decide, look
 
     counts: collections.Counter = collections.Counter()
     tagged: collections.Counter = collections.Counter()
     examples: dict = {}
     items_seen = 0
+    #: meal key -> the declining items of that meal, with facts and mechanism.
+    #: Built ONCE: the rollup must not re-select a population or re-ask the
+    #: predicate, or it could not be compared with the numbers above it.
+    declining_meals: dict = {}
     for key in structured:
         if isinstance(verdicts.get(key), Supported):
             continue
         meal = meals[key]
+        records = []
         for item in meal["items"]:
             facts = await look(db, user_id=int(meal["user_id"]), item=item)
             if isinstance(decide(facts), Supported):
@@ -522,6 +715,60 @@ async def attribute_misses(db, *, meals: dict, verdicts: dict,
             if _non_latin(str(item.get("food_name") or "")):
                 tagged[mechanism] += 1
             examples.setdefault(mechanism, str(item.get("food_name") or "")[:48])
+            records.append({"facts": facts, "mechanism": mechanism})
+        if records:
+            declining_meals[key] = records
+
+    # ── the rollup ──────────────────────────────────────────────────────────
+    denominator = max(int(chat_meals), 1)
+    rollup: dict = {}
+    for mechanism in counts:
+        band = _COUNTERFACTUAL.get(mechanism)
+        if band is None:
+            # ⛔ AN UNMAPPED MECHANISM IS REPORTED, NEVER SCORED ZERO. A new
+            # leaf in `_mechanism` with no counterfactual here would otherwise
+            # silently recover nothing and read as "this tranche is worthless".
+            rollup[mechanism] = {
+                "declining_items": counts[mechanism],
+                "meals_recovered_LOWER": None,
+                "ownership_points_LOWER": None,
+                "UNMAPPED": "no counterfactual defined for this mechanism — it "
+                            "is NOT scored, and this is not a zero",
+            }
+            continue
+        lower_flip, upper_flip = band
+        containing = [k for k, r in declining_meals.items()
+                      if any(x["mechanism"] == mechanism for x in r)]
+        lower = [k for k in containing
+                 if _meal_recovers(declining_meals[k], mechanism,
+                                   flip=lower_flip)] if lower_flip else []
+        upper = [k for k in containing
+                 if _meal_recovers(declining_meals[k], mechanism,
+                                   flip=upper_flip)]
+        rollup[mechanism] = {
+            "declining_items": counts[mechanism],
+            "declining_meals_containing_it": len(containing),
+            "meals_recovered_LOWER": len(lower),
+            "ownership_points_LOWER": round(100.0 * len(lower) / denominator, 1),
+            "meals_recovered_UPPER": len(upper),
+            "ownership_points_UPPER": round(100.0 * len(upper) / denominator, 1),
+            "tight": lower_flip == upper_flip,
+            "delivers": {"lower": lower_flip or "nothing decide() can see",
+                         "upper": upper_flip},
+        }
+
+    # ⭐ WHY THE COLUMNS DO NOT SUM TO THE ITEM COUNTS, STATED AS A NUMBER. A
+    # meal recovers under M only if EVERY declining item is an M, so a meal
+    # blocked by two mechanisms is recovered by NEITHER alone — and is invisible
+    # in every row of the table above.
+    blocked_by = collections.Counter(
+        len({x["mechanism"] for x in r}) for r in declining_meals.values())
+    multi = sum(c for n, c in blocked_by.items() if n > 1)
+    low = [e["ownership_points_LOWER"] for e in rollup.values()
+           if e.get("ownership_points_LOWER") is not None]
+    high = [e["ownership_points_UPPER"] for e in rollup.values()
+            if e.get("ownership_points_UPPER") is not None]
+
     return {
         "declining_items": items_seen,
         "by_mechanism": dict(counts.most_common()),
@@ -532,6 +779,47 @@ async def attribute_misses(db, *, meals: dict, verdicts: dict,
                    "'is this a non-English problem?' WITHOUT letting language "
                    "become the bucket — a resolved Cyrillic surface with an "
                    "unusable address is a cacheability defect.",
+        "P16b_meal_rollup": {
+            "declining_meals": len(declining_meals),
+            "ordinary_food_chat_meals_DENOMINATOR": denominator,
+            "by_mechanism": rollup,
+            "meals_blocked_by_N_distinct_mechanisms": {
+                str(n): c for n, c in sorted(blocked_by.items())},
+            "meals_no_single_mechanism_can_recover": multi,
+            "total_ownership_points_recoverable_LOWER": round(sum(low), 1),
+            "total_ownership_points_recoverable_UPPER": round(sum(high), 1),
+            # ⭐⭐ THE ROLLUP CHECKS ITSELF, AND THE CHECK IS EXACT. Under the
+            # UPPER flip every mechanism supplies evidence, so a meal blocked by
+            # exactly ONE mechanism must recover under that mechanism, and a
+            # meal blocked by two must recover under NEITHER. Therefore the
+            # UPPER recoveries must sum to exactly the number of
+            # single-mechanism meals. If this disagrees, the counterfactual is
+            # double-counting meals across mechanisms and every point in the
+            # table above is wrong — which a plausible-looking table would never
+            # otherwise reveal.
+            "SELF_CHECK_upper_recoveries_equal_single_mechanism_meals": {
+                "upper_recoveries_summed": sum(
+                    e.get("meals_recovered_UPPER") or 0
+                    for e in rollup.values()),
+                "meals_blocked_by_exactly_one": blocked_by.get(1, 0),
+                "holds": sum(e.get("meals_recovered_UPPER") or 0
+                             for e in rollup.values()) == blocked_by.get(1, 0),
+            },
+            "method": "For each declining meal, the fact(s) each mechanism "
+                      "names are flipped on the items it stopped and the REAL "
+                      "decide() is re-run over every item. A meal recovers only "
+                      "if all of its declining items clear, so recoveries are "
+                      "DISJOINT across mechanisms and the points column sums.",
+            "reading_the_band": "LOWER is what the tranche literally puts into "
+                                "ItemFacts; UPPER adds the evidence that "
+                                "delivery might also bring. RANK LOWER AGAINST "
+                                "LOWER AND UPPER AGAINST UPPER — the first "
+                                "version of this table compared one mechanism's "
+                                "floor with another's ceiling and read as an "
+                                "inversion that was not there. Where `tight` is "
+                                "true the two ends coincide because the "
+                                "deliverable IS one of decide()'s facts.",
+        },
     }
 
 
@@ -541,9 +829,17 @@ def render(report: dict) -> str:
                 f"    {report['why_withheld']}\n"
                 f"    {report['rows_groupable']} of {report['rows_in_window']} "
                 f"rows groupable over {report['window_days']} days\n")
+    pop = report.get("population") or {}
     out = ["\n  P11 — SETTLEMENT COVERAGE, AT MEAL LEVEL\n",
            f"    {report['rows']} rows in {report['meals']} meals over "
-           f"{report['window_days']} days\n"]
+           f"{report['window_days']} days",
+           f"    predicate {report.get('predicate_commit','?')}   population "
+           f"{'FROZEN ' + str(pop.get('name')) if pop.get('frozen') else 'ROLLING (not a baseline)'}"]
+    if report.get("population_drift"):
+        d = report["population_drift"]
+        out.append(f"    ⛔ POPULATION DRIFT — {d['found_now']} of "
+                   f"{d['frozen_entry_ids']} frozen rows still select")
+    out.append("")
     b = report["B_support_rate_within_structured_pct"]
     out.append(f"    A  routing rate    {report['A_routing_rate_pct']:5.1f}%   "
                f"structured-route / ORDINARY FOOD-CHAT meals")
@@ -579,10 +875,41 @@ def render(report: dict) -> str:
             out.append(f"      {count:5d}  {mech:<52} "
                        f"non-latin {nl.get(mech, 0):3d}   e.g. {ex.get(mech,'')}")
         out.append(f"\n      {a.get('reading','')}")
+    roll = (a.get("P16b_meal_rollup") or {})
+    if roll.get("by_mechanism"):
+        out.append(f"\n    P16b — ROLLED UP TO MEALS, AND TO OWNERSHIP POINTS")
+        out.append(f"      {roll['declining_meals']} declining meals over "
+                   f"{roll['ordinary_food_chat_meals_DENOMINATOR']} ordinary "
+                   f"food-chat meals\n")
+        out.append(f"      {'MECHANISM':<52}{'ITEMS':>6}"
+                   f"{'PTS LOWER':>11}{'PTS UPPER':>11}   rank LOWER vs LOWER")
+        ordered = sorted(roll["by_mechanism"].items(),
+                         key=lambda kv: -(kv[1].get("ownership_points_UPPER") or 0))
+        for mech, e in ordered:
+            if e.get("UNMAPPED"):
+                out.append(f"      {mech:<52}{e['declining_items']:>6}"
+                           f"{'   UNMAPPED':>11}")
+                continue
+            tight = "  (tight)" if e.get("tight") else ""
+            out.append(f"      {mech:<52}{e['declining_items']:>6}"
+                       f"{e['ownership_points_LOWER']:>10.1f}%"
+                       f"{e['ownership_points_UPPER']:>10.1f}%{tight}")
+        out.append(f"\n      {roll['total_ownership_points_recoverable_LOWER']:.1f}"
+                   f" .. {roll['total_ownership_points_recoverable_UPPER']:.1f}"
+                   f" ownership points recoverable by single mechanisms")
+        out.append(f"      {roll['meals_no_single_mechanism_can_recover']} "
+                   f"declining meals are blocked by MORE THAN ONE mechanism "
+                   f"and no single tranche recovers them")
+        out.append(f"      blocked by N distinct mechanisms: "
+                   f"{roll['meals_blocked_by_N_distinct_mechanisms']}")
     out.append("\n    LIMITS")
     for limit in report["limits"]:
         out.append(f"      · {limit}")
     return "\n".join(out) + "\n"
+
+
+def population_path(name: str) -> pathlib.Path:
+    return ROOT / "data" / "corpus" / f"population_{name}.json"
 
 
 def main() -> int:
@@ -590,13 +917,51 @@ def main() -> int:
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--limit", type=int, default=2000)
     parser.add_argument("--write", action="store_true")
+    parser.add_argument("--freeze", metavar="NAME",
+                        help="record the exact rows this run measured as a "
+                             "reusable frozen population")
+    parser.add_argument("--population", metavar="NAME",
+                        help="measure EXACTLY a previously frozen population "
+                             "instead of a rolling window")
     args = parser.parse_args()
 
-    report = asyncio.run(measure(days=args.days, limit=args.limit))
+    frozen = None
+    if args.population:
+        path = population_path(args.population)
+        if not path.exists():
+            raise SystemExit(f"no frozen population at {path}")
+        frozen = json.loads(path.read_text())
+
+    report = asyncio.run(measure(days=args.days, limit=args.limit,
+                                 population=frozen))
+    selected = report.pop("_selected_entry_ids", [])
     print(render(report))
+
+    if args.freeze:
+        if report.get("PUBLISHED") is False:
+            raise SystemExit("refusing to freeze a WITHHELD run — the "
+                             "population it names is not the one measured")
+        # ⭐ ABSOLUTE BOUNDS AND A CHECKSUM, NOT A DAY COUNT. "21 days" names a
+        # different set every morning; a sorted id list with a digest names one
+        # set forever, and the digest is what lets a later run prove it re-read
+        # the same one rather than a manifest someone edited.
+        digest = hashlib.sha256(
+            ",".join(str(i) for i in selected).encode()).hexdigest()[:16]
+        path = population_path(args.freeze)
+        path.write_text(json.dumps({
+            "name": args.freeze,
+            "frozen_at": report.get("predicate_commit"),
+            "frozen_from_window_days": args.days,
+            "entry_ids": selected,
+            "checksum": digest,
+            "why": "P16b. A rolling window cannot separate a PREDICATE gain "
+                   "from a drift in what people ate. Re-run with "
+                   f"`--population {args.freeze}` to measure this exact set.",
+        }, indent=1))
+        print(f"  frozen {len(selected)} rows -> {path}  [{digest}]\n")
+
     if args.write:
-        path = (pathlib.Path(__file__).resolve().parents[1] / "data"
-                / "corpus" / "settlement_coverage.json")
+        path = ROOT / "data" / "corpus" / "settlement_coverage.json"
         path.write_text(json.dumps(report, indent=1, ensure_ascii=False))
         print(f"  recorded -> {path}\n")
     return 0
