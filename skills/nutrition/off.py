@@ -413,6 +413,153 @@ async def _search_sal(name: str, page_size: int) -> Optional[list]:
     return out
 
 
+# ══ P17d — EXACT-IDENTITY FETCH, THE ONLY OFF PATH THAT MAY FEED PRODUCT ════
+
+#: The by-barcode endpoint. §P17-SA: an OFF record may produce PRODUCT evidence
+#: ONLY when identity is mechanically established — this endpoint takes a GTIN
+#: and returns one product or nothing. The name search above may DISCOVER a
+#: candidate; it may never construct PRODUCT, and `_match: "exact"` once said
+#: so about an unrelated chicken pizza.
+_PRODUCT_URL = "https://world.openfoodfacts.org/api/v2/product/{code}.json"
+
+
+async def fetch_product(barcode: str) -> Optional[dict]:
+    """One product, named by its GTIN/barcode, or None. ACQUISITION TIME ONLY —
+    never called at settlement; `assemble()` stays LOAD-NEVER-BUILD.
+
+    ⭐ WHAT THE ENDPOINT ACTUALLY RETURNS, PROBED 2026-08-17 (code 70004199):
+
+        serving_size        '55.0g'         serving_quantity   55
+        nutrition_data_per  '100g'
+        rev                 1               <- OFF's PER-RECORD revision
+        last_modified_t     1724712330      <- epoch of last edit
+
+    ⛔⛔ OFF HAS NO DATASET RELEASES. It is a MUTABLE crowd database: any record
+    can change at any moment, so provenance built from it may NEVER claim
+    `immutable_within_version`. `rev` + `last_modified_t` are the record
+    version, and the fingerprint of the committed facts is what a later
+    correction reproduces — the same discipline P17c.3a froze for USDA, under
+    a provider where it matters even more.
+
+    ⚠ AND THE PROBE FOUND THE CONTENT RISK LIVE: that very record states
+    200 kcal/100g for a bar that is ~364 — someone entered PER-BAR values as
+    per-100 g. Internally consistent, factually wrong. Barcode identity is
+    mechanical; content is crowd-sourced. The reconciliation check and the
+    estimate-sanity window remain the guards; identity alone admits nothing.
+    """
+    code = re.sub(r"\D", "", str(barcode or ""))
+    if not code or len(code) < 6:
+        return None
+    body = await _get_json(_PRODUCT_URL.format(code=code), {}, attempts=2)
+    # ⛔ BODY status IS THE SIGNAL, NOT HTTP. Probed: a one-digit mutation gets
+    # HTTP 404, but a NONEXISTENT WELL-FORMED code gets HTTP 200 with status 0.
+    if not body or body.get("status") != 1:
+        return None
+    product = body.get("product") or {}
+    # ⛔⛔ IDENTITY GUARD, CODIFIED FROM OBSERVATION (P17d.0), NOT DESIGNED. The
+    # first draft compared digit strings exactly — and the probe showed OFF
+    # resolves equivalent UPC-A/EAN-13 forms to ITS OWN stored canonical code in
+    # BOTH directions: 070004199 -> '70004199' (zeros stripped), 049000042566 ->
+    # '0049000042566' (zero ADDED). Exact comparison would refuse CORRECT
+    # responses. The observed equivalence is leading-zero-insensitivity, and
+    # nothing looser: a mutated check digit still misses rather than fuzzing.
+    returned = re.sub(r"\D", "", str(product.get("code") or ""))
+    if returned.lstrip("0") != code.lstrip("0") or not returned.lstrip("0"):
+        logger.warning("off: asked for %s, got %r — refusing the swap",
+                       code, product.get("code"))
+        return None
+    return product
+
+
+def product_evidence_from_off(record: dict, *, serving_unit: str = ""):
+    """`ProductEvidence` from an EXACT-IDENTITY OFF record, or None.
+
+    ⛔ THE RECORD MUST CARRY ITS CODE. A name-search hit stripped of its barcode
+    is exactly the fuzzy input §P17-SA forbids from constructing PRODUCT, so an
+    envelope without one produces nothing, whatever else it contains.
+
+    ⭐⭐ `serving_unit` IS THE CALLER'S KNOWLEDGE, NOT OFF'S. The probe showed OFF
+    states the serving as a MASS ('55.0g') and names no unit noun — there is no
+    "bar" anywhere in the record. Without a unit noun, P17b.1's identity gate
+    cannot run, and a per-serving basis with an empty `unit_id` would let
+    "2 bottles" multiply a bar label again. So:
+
+        serving_unit given    -> per-serving evidence, identity-gated counts
+        serving_unit absent   -> per-100 g evidence + serving mass as a
+                                 CONVERSION INPUT. Gram portions price; a bare
+                                 count does not, until a binding step (product
+                                 variant selection, a scan flow that keeps its
+                                 unit) supplies what the thing is called.
+
+    That is a narrower capability than dropping the gate, on purpose.
+
+    ⛔⛔ AND NOTHING FROM OFF IS EVER IMMUTABLE. `source_id` carries
+    `off:{code}#rev:{rev}@{last_modified_t}` — the record version, because a
+    crowd database has no releases and the same code can answer differently
+    tomorrow. The probe also found the content risk live: a record stating
+    200 kcal/100 g for a ~364 kcal/100 g bar, per-bar values entered as
+    per-100 g. Internally CONSISTENT, so reconciliation passes — reconciliation
+    catches contradiction, not shared error. Identity admits the record;
+    plausibility guards stay separate and stay necessary.
+    """
+    from core.canonical_pricing import ProductEvidence
+
+    code = re.sub(r"\D", "", str((record or {}).get("code") or ""))
+    if not code:
+        return None
+    nutriments = (record or {}).get("nutriments") or {}
+    per100g = _per100g(nutriments)
+    per_serving = _per_serving(nutriments)
+    if not per100g and not per_serving:
+        return None
+
+    # ⛔⛔ THE *_100g-SUFFIXED KEYS DO NOT ALWAYS HOLD PER-100-G VALUES. Probed:
+    # Fairlife carries `nutrition_data_per = '100ml'`, and its `_100g` keys then
+    # hold PER-100-ML numbers. Declaring Per100g over those is the exact
+    # mislabel class that priced a tablespoon of oil at 131 kcal. Until a
+    # Per100ml product path exists, a non-100g record emits NO per-100g claim —
+    # its per-serving panel still stands, because a serving is a serving.
+    if str(record.get("nutrition_data_per") or "100g").strip() != "100g":
+        per100g = None
+
+    # The serving mass from the EXPLICIT unit field the probe found
+    # (`serving_quantity_unit`: 'g' | 'ml'), with the text form as fallback.
+    # A drink's serving is ml, and calling 240 ml "240 g" is a density
+    # assumption wearing a unit.
+    serving_grams = None
+    quantity = _num(record.get("serving_quantity"))
+    unit = str(record.get("serving_quantity_unit") or "").strip().lower()
+    if not unit and re.search(
+            r"\d\s*g\b", str(record.get("serving_size") or "").lower()):
+        unit = "g"
+    if quantity and quantity > 0 and unit == "g":
+        serving_grams = float(quantity)
+
+    rev = record.get("rev")
+    modified = record.get("last_modified_t")
+    source_id = f"off:{code}#rev:{rev}@{modified}"
+
+    try:
+        if per_serving and serving_unit:
+            return ProductEvidence(
+                identifier=f"off:{code}", per_serving=per_serving,
+                per100g=per100g, serving_grams=serving_grams,
+                serving_unit=str(serving_unit).strip().lower(),
+                source_id=source_id)
+        if not per100g:
+            return None
+        return ProductEvidence(
+            identifier=f"off:{code}", per100g=per100g,
+            serving_grams=serving_grams, source_id=source_id)
+    except ValueError as exc:
+        # ⛔ A RECORD WHOSE TWO BASES CONTRADICT IS REFUSED, NOT RAISED THROUGH.
+        # `ProductEvidence.__post_init__` catches per-serving vs per-100 g
+        # disagreement; on crowd data that is an expected input, and the honest
+        # producer answer is "no evidence from this record", logged.
+        logger.warning("off: %s refused as product evidence — %s", code, exc)
+        return None
+
+
 async def search(name: str, page_size: int = 8) -> Optional[dict]:
     """Search OFF by name; return a candidate {per100g, _match, name, brand} for
     the best strongly-matching product, or None. Never raises.
