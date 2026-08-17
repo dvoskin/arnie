@@ -188,8 +188,22 @@ class ProductEvidence:
     so about a pizza.
     """
     identifier: str
-    per100g: dict
+    #: Numbers PER 100 G. Optional since P17b: a label may state only a serving.
+    per100g: Optional[dict] = None
+    #: ⭐ P17b — NUMBERS PER ONE SERVING, the label's own basis. "1 bar =
+    #: 200 kcal" is authoritative AS STATED, and routing it through grams to
+    #: rebuild a per-100 g figure adds two lossy transformations to reach a
+    #: number the label already gave. When this is set the rung declares
+    #: `PerServing`, and `per100g` is not consulted.
+    per_serving: Optional[dict] = None
+    #: What one serving WEIGHS. A CONVERSION INPUT, never a nutrition basis —
+    #: pairing it with `per100g` numbers and calling that "per serving" would
+    #: price two bars at 728 kcal against a label that says 400.
     serving_grams: Optional[float] = None
+    #: The unit one serving IS ("bar", "bottle"). Identity, so a count can be
+    #: proven to count the same thing the evidence describes.
+    serving_unit: str = ""
+    servings_per_package: Optional[float] = None
     source_id: str = ""
 
 
@@ -229,20 +243,27 @@ class EstimateEvidence:
     basis_grams: Optional[float] = None
 
 
-def _profile(per100g: dict, *, source: str, source_id: str,
-             confidence: float, estimated: bool):
-    """A per-100 g profile, with unknown fields left UNKNOWN.
+def _profile(values: dict, *, source: str, source_id: str,
+             confidence: float, estimated: bool, basis: str = "per_100g"):
+    """A profile on a STATED basis, with unknown fields left UNKNOWN.
 
     `profile_from_values` drops None, so a missing sodium stays missing rather
     than becoming a confident zero — the same distinction the zero rule makes
     one level up.
+
+    ⚠ `basis` IS PROVENANCE, NOT THE SCALING INPUT. `scale_profile` reads the
+    SourceBasis object it is handed and overwrites this label with
+    `per_portion`, so getting it wrong would not misprice anything — it would
+    lie about what the numbers were before they were scaled, which is the field
+    an audit reads. It defaults to per-100 g because three of the four rungs
+    genuinely are.
     """
     from skills.nutrition.models import profile_from_values
 
     return profile_from_values(
-        source=source, basis="per_100g", confidence=confidence,
+        source=source, basis=basis, confidence=confidence,
         estimated=estimated, source_id=source_id,
-        **{k: v for k, v in (per100g or {}).items()})
+        **{k: v for k, v in (values or {}).items()})
 
 
 # ══ P17a — THE RUNG DECLARES WHAT ITS EVIDENCE DESCRIBES ════════════════════
@@ -306,16 +327,31 @@ def _from_product(ev: ProductEvidence):
     728 kcal where the label says 400. The basis must describe THE NUMBERS
     ALONGSIDE IT, never merely a fact that happens to be true about the food.
 
-    So PRODUCT declares per-100 g here, matching its only nutrition field, and
-    `serving_grams` stays unused until P17d gives this rung evidence whose
-    NUMBERS are per serving. That is the honest no-op: P17a moves the basis
-    DECISION out of the pricer, and does not invent a basis nothing produces.
+    ⭐ P17b — SO THE BASIS FOLLOWS THE NUMBERS, AND ONLY THE NUMBERS.
+    `per_serving` set means the label stated a serving, and the rung declares
+    `PerServing`. `per100g` set means it stated per-100 g. Neither set means
+    this rung has NO NUMBERS, and it FAILS CLOSED — returning None drops it and
+    the ladder continues, rather than manufacturing a basis for an empty dict.
     """
-    from skills.nutrition.scaling import Per100g
+    from skills.nutrition.scaling import Per100g, PerServing
 
-    return (_profile(ev.per100g, source="product", source_id=ev.identifier,
-                     confidence=0.95, estimated=False),
-            Rung.PRODUCT, ev.identifier, dict(ev.per100g or {}), Per100g())
+    if ev.per_serving:
+        # ⛔ `as_served=True` says the serving is the LABEL'S, so a count of
+        # servings may multiply it. `serving_mass_g` still travels: without it a
+        # gram-stated portion cannot resolve against this basis and
+        # `scale_profile` REFUSES — which is correct, not a gap to paper over.
+        return (_profile(ev.per_serving, source="product",
+                         source_id=ev.identifier, confidence=0.95,
+                         estimated=False, basis="per_serving"),
+                Rung.PRODUCT, ev.identifier, dict(ev.per_serving),
+                PerServing(serving_mass_g=ev.serving_grams,
+                           servings_per_package=ev.servings_per_package,
+                           as_served=True))
+    if ev.per100g:
+        return (_profile(ev.per100g, source="product", source_id=ev.identifier,
+                         confidence=0.95, estimated=False),
+                Rung.PRODUCT, ev.identifier, dict(ev.per100g), Per100g())
+    return None
 
 
 class IdentityCompositionFailed(Exception):
