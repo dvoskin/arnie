@@ -143,9 +143,21 @@ own comment says so: *"When PRODUCT gains a producer, this branch is where it
 earns its place."* Editing that branch means editing the freeze manifest in the
 same commit.
 
-⭐ **67 of those 142 items are non-Latin — and that is a correlation, not the
-cause.** Do not turn P17 into a non-English tranche. The defect is a missing
-serving basis and it is language-neutral.
+⭐⭐ **AND THE NON-LATIN ROWS WERE TWO MECHANISMS, NOT ONE — CORRECTED 08-17.**
+This section previously said the 67 non-Latin items were "a correlation, not the
+cause", and that was half right in a way that mattered. Re-attributing by driving
+the REAL normalizer over the frozen rows splits the old 142 into 84 genuine
+counts and **51 rows stating a mass in Cyrillic** — `150 г`, `200 мл` — that the
+unit parser does not read. Those 51 are 51-of-51 non-Latin and are NOT a serving
+problem; no serving evidence would price them.
+
+⛔ So the standing instruction holds for a better reason: do not turn P17 into a
+non-English tranche, **because "non-English" spans two different defects at two
+different layers**. Sequence by the mechanism the parser can be shown to hit.
+
+⚠ **AND DO NOT READ THE UNIT-ALIAS FIX AS FREE COVERAGE.** It is 51 items and a
+LOWER bound of **0.0 ownership points** — given a mass, those foods hit the
+evidence wall immediately.
 
 ### What comes after P17 — go and read §NEXT
 

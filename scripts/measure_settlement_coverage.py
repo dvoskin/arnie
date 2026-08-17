@@ -526,6 +526,61 @@ _TYPED = {
     "count-only quantity": "TYPED:count_only_quantity",
 }
 
+# ══ THE MASS-LESS SPLIT ═════════════════════════════════════════════════════
+#
+# ⛔⛔ "COUNT-ONLY QUANTITY" WAS ONE PREDICATE BRANCH DESCRIBING FOUR DEFECTS
+# *(2026-08-17, found by driving the REAL normalizer over the frozen rows)*.
+# P16 read `facts.has_mass == False` and named the whole bucket for the shape it
+# assumed was underneath. Measured on p16b_0817, 183 mass-less rows:
+#
+#     118   64.5%   genuinely count-only          '1 piece'  '1 bar'
+#      63   34.4%   A STATED MASS, unit unparsed  '300 г'  '200 мл'  '150 г'
+#       2    1.1%   no quantity at all
+#
+# A third of the dominant mechanism is GRAMS WRITTEN IN CYRILLIC that the unit
+# parser does not recognise. `150 г` is a mass, stated plainly — it is not a
+# missing serving basis, and no amount of serving-basis evidence would price it.
+# The two need different tranches, and a bucket that merges them sends the
+# larger one to the wrong layer.
+#
+# ⭐ AND THIS IS THE `non_latin` TAG EARNING ITS KEEP RATHER THAN BECOMING A
+# BUCKET. P16 recorded that 67 of 142 were non-Latin and correctly refused to
+# call the tranche "non-English". That was right: the non-Latin rows are not ONE
+# mechanism, they are two — an unparsed unit token and a genuine count — and
+# only executing the parser over them could tell which.
+
+#: A quantity that is ENTIRELY a number plus a mass/volume word. The unit tokens
+#: are the ones observed unparsed in production; a token that already parses can
+#: never reach here, because `has_mass` would be true.
+_MASS_ONLY = re.compile(
+    r"^\s*[\d]+(?:[.,][\d]+)?\s*"
+    r"(г|гр|грамм\w*|г\.|кг|килограмм\w*|мл|миллилитр\w*|л|литр\w*)"
+    r"\s*\.?\s*$", re.I | re.UNICODE)
+
+#: A mass stated SOMEWHERE in the string but not as the whole of it —
+#: '1 piece (~120g)'. The number exists and was not read.
+_MASS_EMBEDDED = re.compile(
+    r"[\d]+(?:[.,][\d]+)?\s*(g|г|гр|kg|кг|ml|мл|oz)\b", re.I | re.UNICODE)
+
+#: '180 cal' — an ENERGY claim, which is not a quantity at all and cannot be
+#: scaled against any basis. A different defect again.
+_ENERGY = re.compile(r"^\s*[\d]+(?:[.,][\d]+)?\s*(cal|ккал|kcal|калор\w*)\s*$",
+                     re.I | re.UNICODE)
+
+
+def mass_less_shape(quantity_text: str) -> str:
+    """WHY this quantity produced no gram mass. Executed, never assumed."""
+    text = str(quantity_text or "").strip()
+    if not text:
+        return "TYPED:no_stated_quantity"
+    if _ENERGY.match(text):
+        return "TYPED:energy_stated_not_a_quantity"
+    if _MASS_ONLY.match(text):
+        return "TYPED:mass_stated_but_unit_unparsed"
+    if _MASS_EMBEDDED.search(text):
+        return "TYPED:mass_present_but_not_read"
+    return "TYPED:count_only_quantity"
+
 
 def _non_latin(text: str) -> bool:
     """A tag, never a bucket. Recorded so a mechanism can be cross-tabulated by
@@ -551,7 +606,11 @@ async def _mechanism(db, *, user_id: int, item: dict, facts) -> str:
     if not facts.has_quantity:
         return _TYPED["no stated quantity"]
     if not facts.has_mass:
-        return _TYPED["count-only quantity"]
+        # ⛔ THE PREDICATE SAYS "no mass"; ONLY THE STRING SAYS WHY. Splitting
+        # here rather than in `decide()` is deliberate: the predicate's branch
+        # is correct as it stands — none of these can be scaled today — and the
+        # instrument's job is to say which TRANCHE would fix each one.
+        return mass_less_shape(item.get("quantity"))
 
     # 4: the interesting bucket — priceable shape, no local evidence.
     #
@@ -654,6 +713,19 @@ _COUNTERFACTUAL = {
     # food also gains per-serving nutrition depends on what P17 ships.
     "TYPED:count_only_quantity": ({"has_mass": True},
                                   {"has_mass": True, "has_artifact": True}),
+    # ⭐ THE SAME FLIP, A COMPLETELY DIFFERENT TRANCHE. A unit-alias table gives
+    # `150 г` a real mass; a serving-basis producer gives `1 piece` one. Both
+    # satisfy `has_mass`, so their counterfactuals are identical and their COSTS
+    # are not — which is exactly why they must be counted apart.
+    "TYPED:mass_stated_but_unit_unparsed": (
+        {"has_mass": True}, {"has_mass": True, "has_artifact": True}),
+    "TYPED:mass_present_but_not_read": (
+        {"has_mass": True}, {"has_mass": True, "has_artifact": True}),
+    # An energy claim names no amount of food. Nothing in `ItemFacts` can be
+    # flipped to make "180 cal" scalable, so its LOWER bound is honestly zero
+    # and its upper bound assumes the turn re-asks for a quantity.
+    "TYPED:energy_stated_not_a_quantity": (
+        {}, {"has_mass": True, "has_artifact": True}),
     # ⚠ RESOLUTION IS NOT EVIDENCE, AND THIS IS WHERE THAT BITES. A resolver row
     # supplies NONE of decide()'s five facts — the item already had mass and
     # still declined for "no local evidence". So the honest lower bound of an

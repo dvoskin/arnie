@@ -346,21 +346,40 @@ NEXT
     2026-08-17: the old roadmap had only the first one.
 
 COVERAGE TRACK
-1. P16b  ✅ DONE — population FROZEN as p16b_0817, misses rolled up to MEALS.
-         Points are recoverable ownership, ranked LOWER against LOWER:
+1. P16b  ✅ DONE — population FROZEN as p16b_0817, misses rolled up to MEALS,
+         and RE-ATTRIBUTED 08-17 after the split below. Recoverable ownership
+         points, ranked LOWER against LOWER:
 
-           MECHANISM                          ITEMS   LOWER    UPPER
-           TYPED:count_only_quantity            142   12.6%    36.5%
-           IDENTITY:no_resolution_row            48    0.0%    16.7%
-           CACHEABILITY:memory_quarantined        7    3.2%     3.2%  (tight)
-           BRANDED:product_non_binding            7    0.0%     1.8%
-           IDENTITY:distinct_refused              3    0.0%     1.4%
-                                                      15.8 .. 59.6 total
+           MECHANISM                          ITEMS   LOWER    UPPER  non-latin
+           TYPED:count_only_quantity             84   12.2%    24.8%     14
+           IDENTITY:no_resolution_row            48    0.0%    16.7%      4
+           TYPED:mass_stated_but_unit_unparsed   51    0.0%     7.2%     51
+           CACHEABILITY:memory_quarantined        7    3.2%     3.2%      0  (tight)
+           BRANDED:product_non_binding            7    0.0%     1.8%      0
+           TYPED:mass_present_but_not_read        6    0.0%     1.8%      2
+           IDENTITY:distinct_refused              3    0.0%     1.4%      3
+           TYPED:energy_stated_not_a_quantity     1    0.0%     0.5%      0
+                                                      15.4 .. 57.4 total
 
-         ⭐ THE PREDICTION HELD, THE MAGNITUDE DID NOT. 69% of ITEMS is 12.6–36.5
-         POINTS, because 142 count-only items sit in 89 meals and satisfying a
-         mechanism is not recovering an item. 8 meals are blocked by more than
-         one mechanism and no single tranche recovers them
+         ⛔⛔ "COUNT-ONLY QUANTITY" WAS ONE PREDICATE BRANCH DESCRIBING FOUR
+         DEFECTS. P16 read `has_mass == False` and named the bucket for the
+         shape it assumed. Driving the REAL normalizer over the frozen rows
+         splits 142 into 84 + 51 + 6 + 1: a THIRD of it is a mass stated in
+         CYRILLIC — `150 г`, `200 мл` — that the unit parser does not read. That
+         is not a missing serving basis and no serving evidence would price it.
+
+         ⭐⭐ AND THE CHEAP FIX IS NOT A CHEAP WIN. A unit-alias table looks like
+         51 items for almost no work, and its LOWER bound is 0.0 POINTS: given a
+         mass, those foods hit the evidence wall immediately. Its whole 7.2 is
+         contingent on evidence ALSO existing for them. Satisfying a mechanism
+         is not recovering a meal — the third time this measurement has said so.
+
+         ⭐ THE `non_latin` TAG EARNED ITS KEEP BY REFUSING TO BE A BUCKET. The
+         non-Latin rows were never one mechanism: 51 are an unparsed unit token,
+         14 a genuine count. Only executing the parser over them could tell.
+
+         13 meals are blocked by more than one mechanism and no single tranche
+         recovers them
 2. P17   AUTHORITATIVE SERVING-BASIS CONSUMPTION — selected by the measurement.
 
          ⛔⛔ THE ARCHITECTURE DECISION IS CLOSED, AND IT IS NOT "BUILD A SERVING
@@ -399,8 +418,12 @@ COVERAGE TRACK
          mass, heuristic conversion, provider access at settlement, or legacy
          ownership.
 
-         ⚠ +36.5 IS THE COUNTERFACTUAL CEILING, NOT A FORECAST. Expect to land
-         between +12.6 and +36.5; aim at the upper half.
+         ⚠ +24.8 IS THE COUNTERFACTUAL CEILING, NOT A FORECAST — and it FELL
+         from 36.5 when the bucket was split, because a third of what P17 was
+         credited with belongs to the unit parser. Expect +12.2 .. +24.8.
+         ⛔ P17 ALONE NO LONGER REACHES 40% AT EITHER BOUND (20.3 + 24.8 = 45.1
+         at the ceiling, 32.5 at the floor). The rollout band needs P17 AND at
+         least one more mechanism; plan the tranche knowing that.
          Method and commit order: §P17 immediately below this board.
 3.       RE-MEASURE on p16b_0817, THE IDENTICAL 232 MEALS. The delta is then
          attributable SOLELY to P17:

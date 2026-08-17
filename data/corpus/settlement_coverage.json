@@ -1,6 +1,6 @@
 {
  "window_days": 21,
- "predicate_commit": "a747b56",
+ "predicate_commit": "672efc4",
  "population": {
   "frozen": true,
   "name": "p16b_0817",
@@ -43,23 +43,31 @@
  "P16_miss_attribution": {
   "declining_items": 207,
   "by_mechanism": {
-   "TYPED:count_only_quantity": 142,
+   "TYPED:count_only_quantity": 84,
+   "TYPED:mass_stated_but_unit_unparsed": 51,
    "IDENTITY:no_resolution_row": 48,
    "CACHEABILITY:memory_quarantined_ambiguous_address": 7,
    "BRANDED:product_recognised_but_non_binding": 7,
-   "IDENTITY:distinct_refused_a_false_collapse": 3
+   "TYPED:mass_present_but_not_read": 6,
+   "IDENTITY:distinct_refused_a_false_collapse": 3,
+   "TYPED:energy_stated_not_a_quantity": 1
   },
   "non_latin_within_each_mechanism": {
-   "TYPED:count_only_quantity": 67,
+   "TYPED:mass_stated_but_unit_unparsed": 51,
+   "TYPED:count_only_quantity": 14,
    "IDENTITY:no_resolution_row": 4,
-   "IDENTITY:distinct_refused_a_false_collapse": 3
+   "IDENTITY:distinct_refused_a_false_collapse": 3,
+   "TYPED:mass_present_but_not_read": 2
   },
   "one_example_each": {
    "CACHEABILITY:memory_quarantined_ambiguous_address": "ground turkey",
    "IDENTITY:distinct_refused_a_false_collapse": "Сметана 5%",
    "IDENTITY:no_resolution_row": "Salmon, pan-cooked with oil",
    "TYPED:count_only_quantity": "Seaweed Salad",
-   "BRANDED:product_recognised_but_non_binding": "Barebells Salty Peanut Protein Bar"
+   "TYPED:mass_stated_but_unit_unparsed": "Пицца сырная",
+   "BRANDED:product_recognised_but_non_binding": "Barebells Salty Peanut Protein Bar",
+   "TYPED:mass_present_but_not_read": "Миндальное молоко",
+   "TYPED:energy_stated_not_a_quantity": "1% cottage cheese"
   },
   "reading": "Rank tranches by RECOVERABLE OWNERSHIP POINTS, not by bucket name. `non_latin_within_each_mechanism` answers 'is this a non-English problem?' WITHOUT letting language become the bucket — a resolved Cyrillic surface with an unusable address is a cacheability defect.",
   "P16b_meal_rollup": {
@@ -114,12 +122,30 @@
      }
     },
     "TYPED:count_only_quantity": {
-     "declining_items": 142,
-     "declining_meals_containing_it": 89,
-     "meals_recovered_LOWER": 28,
-     "ownership_points_LOWER": 12.6,
-     "meals_recovered_UPPER": 81,
-     "ownership_points_UPPER": 36.5,
+     "declining_items": 84,
+     "declining_meals_containing_it": 68,
+     "meals_recovered_LOWER": 27,
+     "ownership_points_LOWER": 12.2,
+     "meals_recovered_UPPER": 55,
+     "ownership_points_UPPER": 24.8,
+     "tight": false,
+     "delivers": {
+      "lower": {
+       "has_mass": true
+      },
+      "upper": {
+       "has_mass": true,
+       "has_artifact": true
+      }
+     }
+    },
+    "TYPED:mass_stated_but_unit_unparsed": {
+     "declining_items": 51,
+     "declining_meals_containing_it": 20,
+     "meals_recovered_LOWER": 0,
+     "ownership_points_LOWER": 0.0,
+     "meals_recovered_UPPER": 16,
+     "ownership_points_UPPER": 7.2,
      "tight": false,
      "delivers": {
       "lower": {
@@ -145,19 +171,53 @@
        "has_artifact": true
       }
      }
+    },
+    "TYPED:mass_present_but_not_read": {
+     "declining_items": 6,
+     "declining_meals_containing_it": 6,
+     "meals_recovered_LOWER": 0,
+     "ownership_points_LOWER": 0.0,
+     "meals_recovered_UPPER": 4,
+     "ownership_points_UPPER": 1.8,
+     "tight": false,
+     "delivers": {
+      "lower": {
+       "has_mass": true
+      },
+      "upper": {
+       "has_mass": true,
+       "has_artifact": true
+      }
+     }
+    },
+    "TYPED:energy_stated_not_a_quantity": {
+     "declining_items": 1,
+     "declining_meals_containing_it": 1,
+     "meals_recovered_LOWER": 0,
+     "ownership_points_LOWER": 0.0,
+     "meals_recovered_UPPER": 1,
+     "ownership_points_UPPER": 0.5,
+     "tight": false,
+     "delivers": {
+      "lower": "nothing decide() can see",
+      "upper": {
+       "has_mass": true,
+       "has_artifact": true
+      }
+     }
     }
    },
    "meals_blocked_by_N_distinct_mechanisms": {
-    "1": 132,
-    "2": 7,
-    "3": 1
+    "1": 127,
+    "2": 11,
+    "3": 2
    },
-   "meals_no_single_mechanism_can_recover": 8,
-   "total_ownership_points_recoverable_LOWER": 15.8,
-   "total_ownership_points_recoverable_UPPER": 59.6,
+   "meals_no_single_mechanism_can_recover": 13,
+   "total_ownership_points_recoverable_LOWER": 15.4,
+   "total_ownership_points_recoverable_UPPER": 57.4,
    "SELF_CHECK_upper_recoveries_equal_single_mechanism_meals": {
-    "upper_recoveries_summed": 132,
-    "meals_blocked_by_exactly_one": 132,
+    "upper_recoveries_summed": 127,
+    "meals_blocked_by_exactly_one": 127,
     "holds": true
    },
    "method": "For each declining meal, the fact(s) each mechanism names are flipped on the items it stopped and the REAL decide() is re-run over every item. A meal recovers only if all of its declining items clear, so recoveries are DISJOINT across mechanisms and the points column sums.",
