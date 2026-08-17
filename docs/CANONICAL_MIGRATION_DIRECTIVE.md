@@ -920,7 +920,7 @@ source snapshot/version/fingerprint
 USDA nutrition and USDA `1 large egg = 56 g` are two claims. B-1.8 must be able
 to change 2 eggs -> 3 eggs by reusing those claims, not by rediscovering USDA.
 
-### ⭐⭐ P17 REMEASURE — PREREGISTERED *(Danny, 2026-08-18, BEFORE the measurement exists)*
+### ⭐⭐ P17 REMEASURE — PREREGISTERED *(Danny, 2026-08-17, BEFORE the measurement exists)*
 
 ⛔ WRITTEN DOWN NOW so the result cannot be argued into a different question
 later — the same discipline as the P12 canary preregistration.
