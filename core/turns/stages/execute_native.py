@@ -34,6 +34,32 @@ def _food_inputs(ops) -> list:
             if (op or {}).get("name") == "log_food"]
 
 
+def _bind_scanned_product(items: list) -> list:
+    """⭐ P17f.5 — BIND THE SCANNED SNAPSHOT, SINGLE-ITEM ONLY, ONE VIEW.
+
+    Called by `_food_inputs`' consumers via the wrapper below so COVERAGE and
+    SETTLEMENT see the same items: when P17g asks "is there an authoritative
+    path for this item", the product reference must already be on the item the
+    predicate reads, or coverage and pricing would judge two different meals.
+
+    A scan names ONE product. A multi-item turn binds nothing rather than
+    smearing one product's evidence across foods it does not describe.
+    `assemble()` loads the reference locally; nothing here fetches.
+    """
+    from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+
+    snapshot_id = SCANNED_PRODUCT_EVIDENCE.get()
+    if snapshot_id is not None and items:
+        if len(items) == 1:
+            items[0]["product_evidence_id"] = snapshot_id
+        else:
+            logger.info(
+                "event=scan_binding_skipped items=%d snapshot=%s — a scan "
+                "names one product and this turn has several",
+                len(items), snapshot_id)
+    return items
+
+
 class ExactlyOnceRefusal(RuntimeError):
     """The turn was already executed. Not an error the user should see — the
     renderer replays the prior answer."""
@@ -105,7 +131,7 @@ class NativeExecutionStage:
             # A refusal is non-mutating by construction: it is raised before
             # any write, so there is no row and no ledger event to undo.
             owner, coverage = settlement
-            items = _food_inputs(ops)
+            items = _bind_scanned_product(_food_inputs(ops))
             # ⭐ THE MESSAGE TRAVELS WITH THE MEAL (A12). Canonical's idempotency
             # is keyed on what the USER TYPED, not on the turn id and not on the
             # model's plan — so `settle` needs the text, and this is the only
@@ -165,7 +191,7 @@ class NativeExecutionStage:
 
         if not settlement_cohort(getattr(user, "id", None)):
             return None
-        calls = _food_inputs(ops)
+        calls = _bind_scanned_product(_food_inputs(ops))
         if not calls or len(calls) != len(ops):
             return None
         try:

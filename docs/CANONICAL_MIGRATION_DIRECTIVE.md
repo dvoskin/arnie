@@ -485,14 +485,30 @@ COVERAGE TRACK
            declared production-proven while its exact PRODUCT path is
            physically unreachable, and so the iOS change cannot accidentally
            create scan -> backend fetches OFF DURING SETTLEMENT)*:
-             □ iOS scan preserves raw barcode
-             □ backend receives barcode separately from prose
-             □ barcode is never reconstructed from product name
-             □ acquisition performs exact-ID fetch
-             □ ProductEvidence persisted before settlement
-             □ canonical event stores stable product/evidence reference
-             □ settlement performs zero provider calls
-             □ prose remains presentation/context only
+             □ iOS scan preserves raw barcode          <- THE OPEN HALF
+             ✅ backend receives barcode separately from prose
+                (ChatRequest.barcode; invalid shapes sanitize to None)
+             ✅ barcode is never reconstructed from product name — the
+                validator ignores codes inside the MESSAGE, and a structural
+                test forbids the acquisition module from ever knowing about
+                prose
+             ✅ acquisition performs exact-ID fetch, at INGRESS, with a
+                local-newest-snapshot fallback when the provider is down —
+                yesterday's evidence is evidence
+             ✅ ProductEvidence persisted (and COMMITTED) before the turn runs
+             ✅ canonical event stores the reference: snapshot id rides the
+                item -> pricing receipt's product_evidence_id column
+             ✅ settlement performs zero provider calls — AST ban: no settle-
+                path module imports acquisition or the OFF client; E2E twin
+                prices 2 bars with the provider dead
+             ✅ prose remains presentation/context only
+             ⭐ binding is ONE VIEW (`_bind_scanned_product` wraps
+                `_food_inputs` for BOTH coverage and settlement), single-item
+                only — a scan names one product, and P17g's predicate will
+                read the same items the pricer does
+             ⚠ scan-bound snapshots carry NO unit noun (OFF names none), so
+                they land per-100g + serving mass as a conversion input: gram
+                portions price now; "2 bars" waits for unit binding
              ⛔ OPERATIONAL PRECONDITION *(Danny, 2026-08-17 close)*: before
              exercising this wire against anything LIVE, confirm the deploy
              has advanced through `prodev001` — read /health for the commit

@@ -95,6 +95,19 @@ class ChatRequest(BaseModel):
     # first reply instead of re-running + double-logging). Optional + backward-
     # compatible: older clients omit it and fall back to the text-window heuristic.
     client_msg_id: Optional[str] = Field(default=None, max_length=128)
+    # ⭐ P17f.5 — THE RAW BARCODE, SEPARATE FROM PROSE. A scan turn's message
+    # stays presentation ("I scanned a barcode — ..."); the code rides HERE or
+    # it does not exist — the backend never reconstructs it from text. Invalid
+    # shapes sanitize to None rather than failing the message: a bad barcode
+    # must not kill a chat turn.
+    barcode: Optional[str] = Field(default=None, max_length=32)
+
+    @field_validator("barcode")
+    @classmethod
+    def _digits_or_none(cls, v):
+        import re as _re
+        digits = _re.sub(r"\D", "", v or "")
+        return digits if 6 <= len(digits) <= 14 else None
 
     @field_validator("message")
     @classmethod
@@ -230,8 +243,21 @@ async def _backfill_city(identity: str, lat: float, lng: float) -> None:
         city = await _reverse_geocode(lat, lng)
         if not city:
             return
+        # ⭐ P17f.5 — SET UNCONDITIONALLY, EVERY TURN, the PRIOR_REPLY_UNSEEN
+        # lesson: a reused task's stale snapshot id from an earlier scan must
+        # never bind to this turn's food.
+        from skills.nutrition.product_acquisition import (
+            SCANNED_PRODUCT_EVIDENCE, acquire_product_evidence)
+        SCANNED_PRODUCT_EVIDENCE.set(None)
         async with AsyncSessionLocal() as db:
             user = await resolve_user(db, identity)
+            if barcode:
+                # ACQUISITION TIME: network here, at ingress, BEFORE the turn —
+                # never at settlement. Failure binds nothing and costs nothing.
+                snapshot_id = await acquire_product_evidence(db, barcode)
+                if snapshot_id is not None:
+                    SCANNED_PRODUCT_EVIDENCE.set(snapshot_id)
+                await db.commit()   # the snapshot survives even if the turn dies
             if user and not user.city:
                 user.city = city
                 await db.commit()
@@ -273,7 +299,8 @@ def _still_working_line(seed: str) -> str:
 async def _coached_reply(identity: str, text: str, source_type: str,
                          lat: Optional[float] = None,
                          lng: Optional[float] = None,
-                         client_msg_id: Optional[str] = None) -> dict:
+                         client_msg_id: Optional[str] = None,
+                         barcode: Optional[str] = None) -> dict:
     """Resolve the user, run one coaching turn under the per-identity lock, and
     return the serialized wire payload + turn metadata. Shared by every chat entry.
 
@@ -306,8 +333,21 @@ async def _coached_reply(identity: str, text: str, source_type: str,
         # (`CURRENT_ROUTE` resets in a finally for exactly this reason.)
         from core.turn_identity import PRIOR_REPLY_UNSEEN
         PRIOR_REPLY_UNSEEN.set(_unseen)
+        # ⭐ P17f.5 — SET UNCONDITIONALLY, EVERY TURN, the PRIOR_REPLY_UNSEEN
+        # lesson: a reused task's stale snapshot id from an earlier scan must
+        # never bind to this turn's food.
+        from skills.nutrition.product_acquisition import (
+            SCANNED_PRODUCT_EVIDENCE, acquire_product_evidence)
+        SCANNED_PRODUCT_EVIDENCE.set(None)
         async with AsyncSessionLocal() as db:
             user = await resolve_user(db, identity)
+            if barcode:
+                # ACQUISITION TIME: network here, at ingress, BEFORE the turn —
+                # never at settlement. Failure binds nothing and costs nothing.
+                snapshot_id = await acquire_product_evidence(db, barcode)
+                if snapshot_id is not None:
+                    SCANNED_PRODUCT_EVIDENCE.set(snapshot_id)
+                await db.commit()   # the snapshot survives even if the turn dies
             if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
                 # Persist coords NOW; the city reverse-geocode is network I/O
                 # that used to run inline HERE — while holding the per-user
@@ -391,6 +431,7 @@ async def chat(req: ChatRequest, identity: str = Depends(current_identity)):
     return await _coached_reply(
         identity, req.message, source_type=PLATFORM,
         lat=req.lat, lng=req.lng, client_msg_id=req.client_msg_id,
+        barcode=req.barcode,
     )
 
 
@@ -894,8 +935,21 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
         # must not inherit an earlier turn's answer.
         from core.turn_identity import PRIOR_REPLY_UNSEEN
         PRIOR_REPLY_UNSEEN.set(_unseen)
+        # ⭐ P17f.5 — SET UNCONDITIONALLY, EVERY TURN, the PRIOR_REPLY_UNSEEN
+        # lesson: a reused task's stale snapshot id from an earlier scan must
+        # never bind to this turn's food.
+        from skills.nutrition.product_acquisition import (
+            SCANNED_PRODUCT_EVIDENCE, acquire_product_evidence)
+        SCANNED_PRODUCT_EVIDENCE.set(None)
         async with AsyncSessionLocal() as db:
             user = await resolve_user(db, identity)
+            if barcode:
+                # ACQUISITION TIME: network here, at ingress, BEFORE the turn —
+                # never at settlement. Failure binds nothing and costs nothing.
+                snapshot_id = await acquire_product_evidence(db, barcode)
+                if snapshot_id is not None:
+                    SCANNED_PRODUCT_EVIDENCE.set(snapshot_id)
+                await db.commit()   # the snapshot survives even if the turn dies
 
             async def on_bubble(text: str) -> None:
                 # The iOS streamed wire enforces voice, the same way core/platform
