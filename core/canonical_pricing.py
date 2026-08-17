@@ -820,13 +820,14 @@ def price(*, entity: str, preparation: str = "", consumed=None,
                   if k not in MACRO_FIELDS and k not in ("fiber", "sugar",
                                                          "sodium")
                   and isinstance(v, (int, float))}
-        # What ONE of the declared basis is — the source side of the scale.
-        _amt, _unit = ((100.0, "g") if basis_name == "per_100g" else
-                       (100.0, "ml") if basis_name == "per_100ml" else
-                       (1.0, getattr(source_basis, "unit_id", "") or "serving")
-                       if basis_name == "per_serving" else
-                       (1.0, getattr(source_basis, "unit_id", "") or "unit")
-                       if basis_name == "per_unit" else (None, ""))
+        # What ONE of the declared basis is — ASKED OF THE BASIS, because the
+        # zero-rule AST gate rightly forbids string comparisons in this module:
+        # a name selector here is the seed of a food-name branch, and the first
+        # draft of this block was exactly that (`basis_name == "per_100g"`).
+        _amt, _unit = (source_basis.source_quantity()
+                       if source_basis is not None
+                       and hasattr(source_basis, "source_quantity")
+                       else (None, ""))
         priced = PricedFood(
             calories=float(profile.amount("calories") or 0.0),
             protein=profile.amount("protein"),

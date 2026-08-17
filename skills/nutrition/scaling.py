@@ -40,10 +40,17 @@ class ScalingRefused(ValueError):
 class Per100g:
     basis = "per_100g"
 
+    def source_quantity(self):
+        """What ONE of this basis IS — the source side of a pricing receipt."""
+        return 100.0, "g"
+
 
 @dataclass(frozen=True)
 class Per100ml:
     basis = "per_100ml"
+
+    def source_quantity(self):
+        return 100.0, "ml"
 
 
 @dataclass(frozen=True)
@@ -85,6 +92,9 @@ class PerServing:
     package_unit_id: str = ""
     basis = "per_serving"
 
+    def source_quantity(self):
+        return 1.0, (self.unit_id or "serving")
+
 
 @dataclass(frozen=True)
 class PerUnit:
@@ -97,6 +107,9 @@ class PerUnit:
     as_served: bool = False
     unit_id: str = ""
     basis = "per_unit"
+
+    def source_quantity(self):
+        return 1.0, (self.unit_id or "unit")
 
 
 @dataclass(frozen=True)
