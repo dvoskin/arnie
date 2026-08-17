@@ -120,8 +120,9 @@ async def food_portions(fdc_id) -> list[dict]:
             f"{_BASE}/food/{fdc_id}",
             params={"api_key": _key(), "format": "full"})
         resp.raise_for_status()
+        body = resp.json()
         out = []
-        for portion in (resp.json().get("foodPortions") or []):
+        for portion in (body.get("foodPortions") or []):
             grams = portion.get("gramWeight")
             if not isinstance(grams, (int, float)) or grams <= 0:
                 continue
@@ -140,9 +141,19 @@ async def food_portions(fdc_id) -> list[dict]:
                 or description
             if not unit_text:
                 continue
-            out.append({"unit_text": unit_text.lower(),
-                        "amount": amount,
-                        "grams": float(grams)})
+            out.append({
+                "unit_text": unit_text.lower(),
+                "amount": amount,
+                "grams": float(grams),
+                # ⭐ PROVENANCE THE RECORD ACTUALLY PUBLISHES (P17c.3a), probed
+                # rather than assumed: `dataType`, `publicationDate` and a
+                # stable per-portion `id` are present; there is NO release
+                # version in the record, so the FDC release must be supplied by
+                # the caller and may never be derived from today's date.
+                "portion_id": portion.get("id"),
+                "data_type": str(body.get("dataType") or ""),
+                "publication_date": str(body.get("publicationDate") or ""),
+            })
         return out
     except Exception as e:
         logger.warning(f"USDA foodPortions failed for {fdc_id}: {e}")

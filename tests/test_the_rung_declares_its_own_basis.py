@@ -563,3 +563,62 @@ def test_a_user_stated_mass_is_never_reinterpreted_by_a_source():
     assert resolution.path == "user_stated_exact"
     assert resolution.resolved_grams is None
     assert resolution.factor == pytest.approx(1.0)
+
+
+# ── P17c.3a — SOURCE SNAPSHOT IDENTITY, BEFORE ANY DURABLE RECORD EXISTS ────
+#
+# ⛔⛔ THE PLACEHOLDER THAT WAS ALMOST BAKED IN. `dataset_version` defaulted to
+# the literal "committed_artifact", and that string would have been stamped into
+# 259 durable conversion records as the version a later correction CITES — while
+# also asserting `immutable_within_version=True` about a version nobody had
+# identified. Fixing it after hydration would have been a data migration; today
+# it is a dark-path edit.
+
+def _measure(**over):
+    from skills.nutrition.scaling import SourcedMeasure
+    base = dict(unit_text="large egg", grams_per_unit=50.0,
+                source_id="usda:173423", dataset_id="usda_fdc",
+                dataset_version="15.3", record_key="173423#portion:83012",
+                record_version="4/1/2019", data_type="SR Legacy",
+                source_fingerprint="abc123", immutable_within_version=True)
+    base.update(over)
+    return SourcedMeasure(**base)
+
+
+def test_a_measure_with_no_release_version_is_not_authoritative():
+    """⛔ FAIL CLOSED. A source whose VERSION was never identified cannot
+    license a conversion, because claiming immutability about an unnamed
+    version is the weakest possible link in an audit trail."""
+    assert _measure(dataset_version="").as_basis_conversion() is None
+    assert _measure().as_basis_conversion() is not None
+
+
+def test_the_same_record_under_two_releases_is_two_distinguishable_sources():
+    """⭐⭐ THE POINT OF A SNAPSHOT IDENTITY. USDA serves the CURRENT database
+    and its data types move at different cadences, so `fdc_id + usda_fdc` names
+    a moving target. Two releases of one record must not collapse into one
+    citation — otherwise a correction six months later cannot tell which facts
+    were actually committed."""
+    old = _measure(dataset_version="15.2").as_basis_conversion()
+    new = _measure(dataset_version="15.3").as_basis_conversion()
+
+    assert old.source != new.source, (
+        "two FDC releases of the same record produced one SourceReference — "
+        "the snapshot is not part of the identity")
+    assert old.source.dataset_version == "15.2"
+    assert new.source.dataset_version == "15.3"
+    assert old.source.record_key == new.source.record_key
+
+
+def test_the_portion_id_makes_the_record_key_exact():
+    """An fdc_id names a FOOD; a food states several portions. "1 large" is not
+    "1 cup", so the conversion cites the portion it actually used."""
+    conversion = _measure().as_basis_conversion()
+    assert conversion.source.record_key == "173423#portion:83012"
+
+
+def test_a_differing_fingerprint_marks_differing_committed_facts():
+    """The fingerprint pins the FACTS, not the id — what a later reprice must
+    be able to reproduce."""
+    assert _measure(source_fingerprint="aaa") != _measure(
+        source_fingerprint="bbb")

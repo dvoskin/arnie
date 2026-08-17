@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import pathlib
 import sys
@@ -45,7 +46,25 @@ def _immutable(candidate: dict) -> dict:
     return {k: v for k, v in candidate.items() if k not in WRITABLE}
 
 
-async def enrich(*, write: bool) -> int:
+def fingerprint(measure: dict, fdc_id) -> str:
+    """A hash of the EXACT normalized facts committed for this measure.
+
+    ⛔ `fdc_id + "usda_fdc"` DOES NOT DESCRIBE WHAT ARNIE SAW. The FDC API serves
+    the current database and its data types move at different cadences —
+    Foundation periodically, Branded monthly, SR Legacy final — so an id plus a
+    dataset name names a MOVING TARGET. The fingerprint pins the facts
+    themselves, which is what a later correction must reproduce.
+    """
+    payload = json.dumps({"fdc_id": str(fdc_id),
+                          "unit_text": measure.get("unit_text"),
+                          "amount": measure.get("amount"),
+                          "grams": measure.get("grams"),
+                          "portion_id": measure.get("portion_id")},
+                         sort_keys=True)
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+async def enrich(*, write: bool, release: str) -> int:
     from api import usda
     from dotenv import load_dotenv
 
@@ -71,6 +90,13 @@ async def enrich(*, write: bool) -> int:
             measures = await usda.food_portions(fdc_id)
             if not measures:
                 continue
+            for measure in measures:
+                # ⛔⛔ THE RELEASE IS STAMPED FROM THE CALLER, NEVER DERIVED.
+                # The record itself carries no release version — probed, not
+                # assumed — and deriving one from today's date would put a
+                # fabricated identity into a durable audit record.
+                measure["dataset_version"] = release
+                measure["fingerprint"] = fingerprint(measure, fdc_id)
             candidate["measures"] = measures
             enriched += 1
             portions += len(measures)
@@ -101,8 +127,18 @@ async def enrich(*, write: bool) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write", action="store_true")
+    # ⛔ REQUIRED, WITH NO DEFAULT. "committed_artifact" was very nearly baked
+    # into 259 durable conversion records as the version a correction cites.
+    parser.add_argument(
+        "--fdc-release", required=True, metavar="VERSION",
+        help="the FoodData Central release these records were read from, e.g. "
+             "15.3. Look it up; it is NOT in the record and must not be "
+             "guessed or derived from the date.")
     args = parser.parse_args()
-    return asyncio.run(enrich(write=args.write))
+    if not str(args.fdc_release).strip():
+        raise SystemExit("--fdc-release may not be empty")
+    return asyncio.run(enrich(write=args.write,
+                              release=str(args.fdc_release).strip()))
 
 
 if __name__ == "__main__":

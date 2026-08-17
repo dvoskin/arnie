@@ -120,20 +120,33 @@ class SourcedMeasure:
     #: not, because that contract REFUSES a cross-basis conversion with no
     #: source — "an unsourced factor is an invented density".
     dataset_id: str = ""
+    #: ⛔⛔ THE PROVIDER'S REAL RELEASE — "15.3", not a placeholder *(P17c.3a)*.
+    #: An earlier draft defaulted this to the literal "committed_artifact", and
+    #: that string would have been baked into 259 durable conversion records as
+    #: the thing a correction cites. USDA publishes explicit FDC releases and the
+    #: RECORD DOES NOT CARRY ONE — probed, not assumed — so it must be supplied
+    #: at hydration and may NEVER be derived from today's date.
     dataset_version: str = ""
     record_key: str = ""
     record_version: str = ""
     immutable_within_version: bool = False
+    #: Which USDA table this came from. Foundation updates ~twice yearly,
+    #: Branded monthly, SR Legacy is final — different update models, so the
+    #: subtype belongs INSIDE the evidence rather than in pricing policy.
+    data_type: str = ""
+    #: A hash of the exact normalized facts committed. `fdc_id + usda_fdc` does
+    #: not describe WHAT ARNIE SAW at build time when the upstream row can move.
+    source_fingerprint: str = ""
 
     def as_basis_conversion(self):
-        """The canonical `BasisConversion` this measure licenses, or None.
+        """The canonical `ConversionEvidence` this measure licenses, or None.
 
-        ⛔ NONE WHEN IT CANNOT BE JUSTIFIED, NEVER A CONVERSION WITH NO SOURCE.
-        `BasisConversion.__post_init__` raises without a `SourceReference`, and
-        that refusal is correct — so a measure lacking provenance yields no
-        conversion rather than a fabricated one. The mass it produces is still
-        usable for pricing today; what is missing is the AUDIT RECORD, and P17f
-        is where that becomes required rather than optional.
+        ⛔⛔ FAIL CLOSED, AND NO FALLBACK VERSION. `ConversionEvidence` refuses a
+        cross-basis factor with no source — "an unsourced factor is an invented
+        density" — and a source whose VERSION we never identified is barely
+        better. Asserting `immutable_within_version=True` about a version we
+        could not name is the weakest link in an audit trail, so an absent
+        `dataset_version` yields NO authoritative conversion at all.
         """
         if not (self.dataset_id and self.dataset_version and self.record_key):
             return None

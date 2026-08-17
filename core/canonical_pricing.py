@@ -376,12 +376,20 @@ def _candidate_measures(winner: dict) -> tuple:
     PRODUCT.
     """
     out = []
+    # ⛔⛔ NO FALLBACK VERSION (P17c.3a). `dataset_version` comes from the
+    # artifact or it is absent, and absent means NOT AUTHORITATIVE. A literal
+    # "committed_artifact" would have been stamped into every durable conversion
+    # record as the thing a correction cites, while also asserting immutability
+    # about a version nobody identified.
+    release = str(winner.get("dataset_version") or "")
     provenance = {
         "dataset_id": "usda_fdc",
-        "dataset_version": str(winner.get("dataset_version")
-                               or "committed_artifact"),
+        "dataset_version": release,
         "record_key": str(winner.get("fdc_id") or ""),
-        "immutable_within_version": True,
+        "record_version": str(winner.get("publication_date") or ""),
+        "data_type": str(winner.get("data_type") or ""),
+        # Only claimed once the version it refers to is actually named.
+        "immutable_within_version": bool(release),
     } if winner.get("fdc_id") else {}
     panel = measure_from_panel(winner.get("serving_text"),
                                winner.get("serving_mass_g"),
@@ -399,18 +407,23 @@ def _candidate_measures(winner: dict) -> tuple:
         # ⚠ THE AMOUNT IS READ, NOT ASSUMED. USDA states "2 tbsp = 30 g" as
         # amount=2; treating the gram weight as per-unit would double it.
         if grams > 0 and amount > 0 and unit_text:
+            # ⭐ THE PORTION'S OWN ID MAKES THE RECORD KEY EXACT. An fdc_id
+            # names a FOOD; a food states several portions, and the conversion
+            # cites the one it used — "1 large" is not "1 cup".
+            portion_id = measure.get("portion_id")
             out.append(SourcedMeasure(
                 unit_text=unit_text, grams_per_unit=grams / amount,
                 source_id=f"usda:{winner.get('fdc_id')}",
-                # ⭐ PROVENANCE, WITHOUT WHICH THIS MEASURE CANNOT GRANT
-                # CANONICAL AUTHORITY (P17c.2). An FDC id names one immutable
-                # record within a dataset release, which is exactly what
-                # `SourceReference` requires and why the version is carried.
                 dataset_id="usda_fdc",
-                dataset_version=str(winner.get("dataset_version")
-                                    or "committed_artifact"),
-                record_key=str(winner.get("fdc_id") or ""),
-                immutable_within_version=True))
+                dataset_version=str(measure.get("dataset_version") or release),
+                record_key=(f"{winner.get('fdc_id')}#portion:{portion_id}"
+                            if portion_id else str(winner.get("fdc_id") or "")),
+                record_version=str(measure.get("publication_date") or ""),
+                data_type=str(measure.get("data_type")
+                              or winner.get("data_type") or ""),
+                source_fingerprint=str(measure.get("fingerprint") or ""),
+                immutable_within_version=bool(
+                    measure.get("dataset_version") or release)))
     return tuple(out)
 
 
