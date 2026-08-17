@@ -1,0 +1,1819 @@
+{
+ "code": "0811620021036",
+ "product": {
+  "_id": "0811620021036",
+  "_keywords": [
+   "sin",
+   "leche",
+   "nutrition",
+   "shake",
+   "lactosa",
+   "lacteo"
+  ],
+  "added_countries_tags": [],
+  "additives_n": 4,
+  "additives_original_tags": [
+   "en:e960",
+   "en:e440",
+   "en:e418",
+   "en:e452i"
+  ],
+  "additives_tags": [
+   "en:e418",
+   "en:e440",
+   "en:e452",
+   "en:e452i",
+   "en:e960"
+  ],
+  "allergens": "",
+  "allergens_from_ingredients": "",
+  "allergens_from_user": "(es) ",
+  "allergens_hierarchy": [],
+  "allergens_lc": "en",
+  "allergens_tags": [],
+  "amino_acids_tags": [],
+  "brand_owner": "Fair Oaks Farms Brands, Inc.",
+  "brand_owner_imported": "Fair Oaks Farms Brands, Inc.",
+  "brands": "",
+  "brands_tags": [],
+  "categories": "Milks",
+  "categories_hierarchy": [
+   "en:dairies",
+   "en:milks-liquid-and-powder",
+   "en:milks"
+  ],
+  "categories_lc": "en",
+  "categories_properties": {
+   "agribalyse_proxy_food_code:en": "19041"
+  },
+  "categories_properties_tags": [
+   "all-products",
+   "categories-known",
+   "agribalyse-food-code-unknown",
+   "agribalyse-proxy-food-code-19041",
+   "agribalyse-proxy-food-code-known",
+   "ciqual-food-code-unknown",
+   "agribalyse-known",
+   "agribalyse-19041"
+  ],
+  "categories_tags": [
+   "en:dairies",
+   "en:milks-liquid-and-powder",
+   "en:milks"
+  ],
+  "category_properties": {},
+  "checkers_tags": [],
+  "ciqual_food_name_tags": [
+   "unknown"
+  ],
+  "cities_tags": [],
+  "code": "0811620021036",
+  "codes_tags": [
+   "code-13",
+   "0811620021xxx",
+   "081162002xxxx",
+   "08116200xxxxx",
+   "0811620xxxxxx",
+   "081162xxxxxxx",
+   "08116xxxxxxxx",
+   "0811xxxxxxxxx",
+   "081xxxxxxxxxx",
+   "08xxxxxxxxxxx",
+   "0xxxxxxxxxxxx"
+  ],
+  "compared_to_category": "en:milks",
+  "complete": 0,
+  "completeness": 0.45,
+  "correctors_tags": [
+   "org-database-usda",
+   "acuario"
+  ],
+  "countries": "United States",
+  "countries_hierarchy": [
+   "en:united-states"
+  ],
+  "countries_lc": "en",
+  "countries_tags": [
+   "en:united-states"
+  ],
+  "created_t": 1568999340,
+  "creator": "elcoco",
+  "data_quality_bugs_tags": [],
+  "data_quality_errors_tags": [],
+  "data_quality_info_tags": [
+   "en:no-packaging-data",
+   "en:ingredients-percent-analysis-ok",
+   "en:ecoscore-extended-data-not-computed",
+   "en:food-groups-1-known",
+   "en:food-groups-2-known",
+   "en:food-groups-3-unknown"
+  ],
+  "data_quality_tags": [
+   "en:no-packaging-data",
+   "en:ingredients-percent-analysis-ok",
+   "en:ecoscore-extended-data-not-computed",
+   "en:food-groups-1-known",
+   "en:food-groups-2-known",
+   "en:food-groups-3-unknown",
+   "en:nutrition-value-very-high-for-category-fiber",
+   "en:serving-quantity-defined-but-quantity-undefined",
+   "en:ecoscore-origins-of-ingredients-origins-are-100-percent-unknown",
+   "en:ecoscore-packaging-packaging-data-missing",
+   "en:ecoscore-production-system-no-label"
+  ],
+  "data_quality_warnings_tags": [
+   "en:nutrition-value-very-high-for-category-fiber",
+   "en:serving-quantity-defined-but-quantity-undefined",
+   "en:ecoscore-origins-of-ingredients-origins-are-100-percent-unknown",
+   "en:ecoscore-packaging-packaging-data-missing",
+   "en:ecoscore-production-system-no-label"
+  ],
+  "data_sources": "App - elcoco, Apps, Databases, database-usda, App - El CoCo",
+  "data_sources_imported": "Databases, database-usda",
+  "data_sources_tags": [
+   "app-elcoco",
+   "apps",
+   "databases",
+   "database-usda",
+   "app-el-coco"
+  ],
+  "debug_param_sorted_langs": [
+   "en",
+   "es"
+  ],
+  "ecoscore_data": {
+   "adjustments": {
+    "origins_of_ingredients": {
+     "aggregated_origins": [
+      {
+       "epi_score": 0,
+       "origin": "en:unknown",
+       "percent": 100,
+       "transportation_score": 0
+      }
+     ],
+     "epi_score": 0,
+     "epi_value": -5,
+     "origins_from_categories": [
+      "en:unknown"
+     ],
+     "origins_from_origins_field": [
+      "en:unknown"
+     ],
+     "transportation_score": 0,
+     "transportation_scores": {
+      "ad": 0,
+      "al": 0,
+      "at": 0,
+      "ax": 0,
+      "ba": 0,
+      "be": 0,
+      "bg": 0,
+      "ch": 0,
+      "cy": 0,
+      "cz": 0,
+      "de": 0,
+      "dk": 0,
+      "dz": 0,
+      "ee": 0,
+      "eg": 0,
+      "es": 0,
+      "fi": 0,
+      "fo": 0,
+      "fr": 0,
+      "gg": 0,
+      "gi": 0,
+      "gr": 0,
+      "hr": 0,
+      "hu": 0,
+      "ie": 0,
+      "il": 0,
+      "im": 0,
+      "is": 0,
+      "it": 0,
+      "je": 0,
+      "lb": 0,
+      "li": 0,
+      "lt": 0,
+      "lu": 0,
+      "lv": 0,
+      "ly": 0,
+      "ma": 0,
+      "mc": 0,
+      "md": 0,
+      "me": 0,
+      "mk": 0,
+      "mt": 0,
+      "nl": 0,
+      "no": 0,
+      "pl": 0,
+      "ps": 0,
+      "pt": 0,
+      "ro": 0,
+      "rs": 0,
+      "se": 0,
+      "si": 0,
+      "sj": 0,
+      "sk": 0,
+      "sm": 0,
+      "sy": 0,
+      "tn": 0,
+      "tr": 0,
+      "ua": 0,
+      "uk": 0,
+      "us": 0,
+      "va": 0,
+      "world": 0,
+      "xk": 0
+     },
+     "transportation_value": 0,
+     "transportation_values": {
+      "ad": 0,
+      "al": 0,
+      "at": 0,
+      "ax": 0,
+      "ba": 0,
+      "be": 0,
+      "bg": 0,
+      "ch": 0,
+      "cy": 0,
+      "cz": 0,
+      "de": 0,
+      "dk": 0,
+      "dz": 0,
+      "ee": 0,
+      "eg": 0,
+      "es": 0,
+      "fi": 0,
+      "fo": 0,
+      "fr": 0,
+      "gg": 0,
+      "gi": 0,
+      "gr": 0,
+      "hr": 0,
+      "hu": 0,
+      "ie": 0,
+      "il": 0,
+      "im": 0,
+      "is": 0,
+      "it": 0,
+      "je": 0,
+      "lb": 0,
+      "li": 0,
+      "lt": 0,
+      "lu": 0,
+      "lv": 0,
+      "ly": 0,
+      "ma": 0,
+      "mc": 0,
+      "md": 0,
+      "me": 0,
+      "mk": 0,
+      "mt": 0,
+      "nl": 0,
+      "no": 0,
+      "pl": 0,
+      "ps": 0,
+      "pt": 0,
+      "ro": 0,
+      "rs": 0,
+      "se": 0,
+      "si": 0,
+      "sj": 0,
+      "sk": 0,
+      "sm": 0,
+      "sy": 0,
+      "tn": 0,
+      "tr": 0,
+      "ua": 0,
+      "uk": 0,
+      "us": 0,
+      "va": 0,
+      "world": 0,
+      "xk": 0
+     },
+     "value": -5,
+     "values": {
+      "ad": -5,
+      "al": -5,
+      "at": -5,
+      "ax": -5,
+      "ba": -5,
+      "be": -5,
+      "bg": -5,
+      "ch": -5,
+      "cy": -5,
+      "cz": -5,
+      "de": -5,
+      "dk": -5,
+      "dz": -5,
+      "ee": -5,
+      "eg": -5,
+      "es": -5,
+      "fi": -5,
+      "fo": -5,
+      "fr": -5,
+      "gg": -5,
+      "gi": -5,
+      "gr": -5,
+      "hr": -5,
+      "hu": -5,
+      "ie": -5,
+      "il": -5,
+      "im": -5,
+      "is": -5,
+      "it": -5,
+      "je": -5,
+      "lb": -5,
+      "li": -5,
+      "lt": -5,
+      "lu": -5,
+      "lv": -5,
+      "ly": -5,
+      "ma": -5,
+      "mc": -5,
+      "md": -5,
+      "me": -5,
+      "mk": -5,
+      "mt": -5,
+      "nl": -5,
+      "no": -5,
+      "pl": -5,
+      "ps": -5,
+      "pt": -5,
+      "ro": -5,
+      "rs": -5,
+      "se": -5,
+      "si": -5,
+      "sj": -5,
+      "sk": -5,
+      "sm": -5,
+      "sy": -5,
+      "tn": -5,
+      "tr": -5,
+      "ua": -5,
+      "uk": -5,
+      "us": -5,
+      "va": -5,
+      "world": -5,
+      "xk": -5
+     },
+     "warning": "origins_are_100_percent_unknown"
+    },
+    "packaging": {
+     "value": -15,
+     "warning": "packaging_data_missing"
+    },
+    "production_system": {
+     "labels": [],
+     "value": 0,
+     "warning": "no_label"
+    },
+    "threatened_species": {}
+   },
+   "agribalyse": {
+    "agribalyse_food_code": "19041",
+    "agribalyse_proxy_food_code": "19041",
+    "co2_agriculture": 0.92988042,
+    "co2_consumption": 0,
+    "co2_distribution": 0.015701413,
+    "co2_packaging": 0.14806368,
+    "co2_processing": 0.01123937,
+    "co2_total": 1.306214873,
+    "co2_transportation": 0.20132999,
+    "code": "19041",
+    "dqr": "2.47",
+    "ef_agriculture": 0.085558183,
+    "ef_consumption": 0,
+    "ef_distribution": 0.0045893771,
+    "ef_packaging": 0.014222522,
+    "ef_processing": 0.00143687,
+    "ef_total": 0.1213617571,
+    "ef_transportation": 0.015554805,
+    "is_beverage": 1,
+    "name_en": "Milk, semi-skimmed, UHT",
+    "name_fr": "Lait demi-écrémé, UHT",
+    "score": 57,
+    "version": "3.1.1"
+   },
+   "grade": "d",
+   "grades": {
+    "ad": "d",
+    "al": "d",
+    "at": "d",
+    "ax": "d",
+    "ba": "d",
+    "be": "d",
+    "bg": "d",
+    "ch": "d",
+    "cy": "d",
+    "cz": "d",
+    "de": "d",
+    "dk": "d",
+    "dz": "d",
+    "ee": "d",
+    "eg": "d",
+    "es": "d",
+    "fi": "d",
+    "fo": "d",
+    "fr": "d",
+    "gg": "d",
+    "gi": "d",
+    "gr": "d",
+    "hr": "d",
+    "hu": "d",
+    "ie": "d",
+    "il": "d",
+    "im": "d",
+    "is": "d",
+    "it": "d",
+    "je": "d",
+    "lb": "d",
+    "li": "d",
+    "lt": "d",
+    "lu": "d",
+    "lv": "d",
+    "ly": "d",
+    "ma": "d",
+    "mc": "d",
+    "md": "d",
+    "me": "d",
+    "mk": "d",
+    "mt": "d",
+    "nl": "d",
+    "no": "d",
+    "pl": "d",
+    "ps": "d",
+    "pt": "d",
+    "ro": "d",
+    "rs": "d",
+    "se": "d",
+    "si": "d",
+    "sj": "d",
+    "sk": "d",
+    "sm": "d",
+    "sy": "d",
+    "tn": "d",
+    "tr": "d",
+    "ua": "d",
+    "uk": "d",
+    "us": "d",
+    "va": "d",
+    "world": "d",
+    "xk": "d"
+   },
+   "missing": {
+    "labels": 1,
+    "origins": 1,
+    "packagings": 1
+   },
+   "missing_data_warning": 1,
+   "missing_key_data": 1,
+   "previous_data": {
+    "agribalyse": {
+     "agribalyse_food_code": "19041",
+     "agribalyse_proxy_food_code": "19041",
+     "co2_agriculture": 1.1888463,
+     "co2_consumption": 0,
+     "co2_distribution": 0.012078628,
+     "co2_packaging": 0.17188731,
+     "co2_processing": 0.01061493,
+     "co2_total": 1.4865868,
+     "co2_transportation": 0.10315961,
+     "code": "19041",
+     "dqr": "2.47",
+     "ef_agriculture": 0.10502456,
+     "ef_consumption": 0,
+     "ef_distribution": 0.004287772,
+     "ef_packaging": 0.014723028,
+     "ef_processing": 0.0014905525,
+     "ef_total": 0.13351659,
+     "ef_transportation": 0.0079906595,
+     "is_beverage": 1,
+     "name_en": "Milk, semi-skimmed, UHT",
+     "name_fr": "Lait demi-écrémé, UHT",
+     "score": 54
+    },
+    "grade": "d",
+    "score": 34
+   },
+   "score": 37,
+   "scores": {
+    "ad": 37,
+    "al": 37,
+    "at": 37,
+    "ax": 37,
+    "ba": 37,
+    "be": 37,
+    "bg": 37,
+    "ch": 37,
+    "cy": 37,
+    "cz": 37,
+    "de": 37,
+    "dk": 37,
+    "dz": 37,
+    "ee": 37,
+    "eg": 37,
+    "es": 37,
+    "fi": 37,
+    "fo": 37,
+    "fr": 37,
+    "gg": 37,
+    "gi": 37,
+    "gr": 37,
+    "hr": 37,
+    "hu": 37,
+    "ie": 37,
+    "il": 37,
+    "im": 37,
+    "is": 37,
+    "it": 37,
+    "je": 37,
+    "lb": 37,
+    "li": 37,
+    "lt": 37,
+    "lu": 37,
+    "lv": 37,
+    "ly": 37,
+    "ma": 37,
+    "mc": 37,
+    "md": 37,
+    "me": 37,
+    "mk": 37,
+    "mt": 37,
+    "nl": 37,
+    "no": 37,
+    "pl": 37,
+    "ps": 37,
+    "pt": 37,
+    "ro": 37,
+    "rs": 37,
+    "se": 37,
+    "si": 37,
+    "sj": 37,
+    "sk": 37,
+    "sm": 37,
+    "sy": 37,
+    "tn": 37,
+    "tr": 37,
+    "ua": 37,
+    "uk": 37,
+    "us": 37,
+    "va": 37,
+    "world": 37,
+    "xk": 37
+   },
+   "status": "known"
+  },
+  "ecoscore_grade": "d",
+  "ecoscore_score": 37,
+  "ecoscore_tags": [
+   "d"
+  ],
+  "editors_tags": [
+   "org-database-usda",
+   "elcoco.3a8fc8e9e535e26799c035b67cfc4f52",
+   "elcoco",
+   "acuario",
+   "roboto-app"
+  ],
+  "emb_codes": "",
+  "emb_codes_hierarchy": [],
+  "emb_codes_lc": "en",
+  "emb_codes_tags": [],
+  "entry_dates_tags": [
+   "2019-09-20",
+   "2019-09",
+   "2019"
+  ],
+  "expiration_date": "",
+  "food_groups": "en:milk-and-yogurt",
+  "food_groups_tags": [
+   "en:milk-and-dairy-products",
+   "en:milk-and-yogurt"
+  ],
+  "generic_name": "",
+  "generic_name_en": "",
+  "generic_name_es": "",
+  "id": "0811620021036",
+  "image_front_small_url": "https://images.openfoodfacts.org/images/products/081/162/002/1036/front_es.3.200.jpg",
+  "image_front_thumb_url": "https://images.openfoodfacts.org/images/products/081/162/002/1036/front_es.3.100.jpg",
+  "image_front_url": "https://images.openfoodfacts.org/images/products/081/162/002/1036/front_es.3.400.jpg",
+  "image_nutrition_small_url": "https://images.openfoodfacts.org/images/products/081/162/002/1036/nutrition_es.4.200.jpg",
+  "image_nutrition_thumb_url": "https://images.openfoodfacts.org/images/products/081/162/002/1036/nutrition_es.4.100.jpg",
+  "image_nutrition_url": "https://images.openfoodfacts.org/images/products/081/162/002/1036/nutrition_es.4.400.jpg",
+  "image_small_url": "https://images.openfoodfacts.org/images/products/081/162/002/1036/front_es.3.200.jpg",
+  "image_thumb_url": "https://images.openfoodfacts.org/images/products/081/162/002/1036/front_es.3.100.jpg",
+  "image_url": "https://images.openfoodfacts.org/images/products/081/162/002/1036/front_es.3.400.jpg",
+  "images": {
+   "1": {
+    "sizes": {
+     "100": {
+      "h": 100,
+      "w": 75
+     },
+     "400": {
+      "h": 400,
+      "w": 300
+     },
+     "full": {
+      "h": 1066,
+      "w": 800
+     }
+    },
+    "uploaded_t": 1568999340,
+    "uploader": "elcoco"
+   },
+   "2": {
+    "sizes": {
+     "100": {
+      "h": 100,
+      "w": 75
+     },
+     "400": {
+      "h": 400,
+      "w": 300
+     },
+     "full": {
+      "h": 1066,
+      "w": 800
+     }
+    },
+    "uploaded_t": 1568999340,
+    "uploader": "elcoco"
+   },
+   "front_es": {
+    "imgid": "1",
+    "rev": "3",
+    "sizes": {
+     "100": {
+      "h": 100,
+      "w": 75
+     },
+     "200": {
+      "h": 200,
+      "w": 150
+     },
+     "400": {
+      "h": 400,
+      "w": 300
+     },
+     "full": {
+      "h": 1066,
+      "w": 800
+     }
+    }
+   },
+   "nutrition_es": {
+    "imgid": "2",
+    "rev": "4",
+    "sizes": {
+     "100": {
+      "h": 100,
+      "w": 75
+     },
+     "200": {
+      "h": 200,
+      "w": 150
+     },
+     "400": {
+      "h": 400,
+      "w": 300
+     },
+     "full": {
+      "h": 1066,
+      "w": 800
+     }
+    }
+   }
+  },
+  "informers_tags": [
+   "elcoco.3a8fc8e9e535e26799c035b67cfc4f52",
+   "elcoco",
+   "roboto-app",
+   "org-database-usda"
+  ],
+  "ingredients": [
+   {
+    "id": "en:filtered-reduced-fat-grade-a-milk",
+    "is_in_taxonomy": 0,
+    "percent_estimate": 52.5,
+    "percent_max": 100,
+    "percent_min": 5,
+    "text": "Filtered reduced fat grade a milk"
+   },
+   {
+    "ciqual_food_code": "31008",
+    "id": "en:honey",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 23.75,
+    "percent_max": 50,
+    "percent_min": 0,
+    "text": "honey",
+    "vegan": "no",
+    "vegetarian": "yes"
+   },
+   {
+    "ciqual_food_code": "13014",
+    "ecobalyse_code": "strawberry-non-eu",
+    "id": "en:strawberry-puree",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 11.875,
+    "percent_max": 33.3333333333333,
+    "percent_min": 0,
+    "text": "strawberry puree",
+    "vegan": "maybe",
+    "vegetarian": "maybe"
+   },
+   {
+    "ciqual_food_code": "9310",
+    "ecobalyse_code": "flour",
+    "id": "en:oat-flour",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 5.9375,
+    "percent_max": 25,
+    "percent_min": 0,
+    "text": "oat flour",
+    "vegan": "yes",
+    "vegetarian": "yes"
+   },
+   {
+    "id": "en:fructooligosaccharide",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 2.96875,
+    "percent_max": 20,
+    "percent_min": 0,
+    "text": "fructooligosaccharides"
+   },
+   {
+    "id": "en:monk-juice-concentrate",
+    "is_in_taxonomy": 0,
+    "percent_estimate": 1.484375,
+    "percent_max": 16.6666666666667,
+    "percent_min": 0,
+    "text": "monk juice concentrate"
+   },
+   {
+    "id": "en:e960",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.7421875,
+    "percent_max": 14.2857142857143,
+    "percent_min": 0,
+    "text": "stevia leaf extract",
+    "vegan": "yes",
+    "vegetarian": "yes"
+   },
+   {
+    "id": "en:natural-flavouring",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.37109375,
+    "percent_max": "5",
+    "percent_min": 0,
+    "text": "natural flavors",
+    "vegan": "maybe",
+    "vegetarian": "maybe"
+   },
+   {
+    "id": "en:e440a",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.185546875,
+    "percent_max": "5",
+    "percent_min": 0,
+    "text": "pectin",
+    "vegan": "yes",
+    "vegetarian": "yes"
+   },
+   {
+    "id": "en:e418",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.0927734375,
+    "percent_max": "5",
+    "percent_min": 0,
+    "text": "gellan gum",
+    "vegan": "yes",
+    "vegetarian": "yes"
+   },
+   {
+    "ciqual_food_code": "20091",
+    "ecobalyse_code": "beetroot-fr",
+    "id": "en:red-beetroot",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.04638671875,
+    "percent_max": "5",
+    "percent_min": 0,
+    "processing": "en:concentrated,en:juice",
+    "text": "red beet",
+    "vegan": "yes",
+    "vegetarian": "yes"
+   },
+   {
+    "id": "en:e452i",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.023193359375,
+    "percent_max": "5",
+    "percent_min": 0,
+    "text": "sodium polyphosphate",
+    "vegan": "yes",
+    "vegetarian": "yes"
+   },
+   {
+    "id": "en:lactase",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.0115966796875,
+    "percent_max": "5",
+    "percent_min": 0,
+    "text": "lactase enzyme",
+    "vegan": "maybe",
+    "vegetarian": "maybe"
+   },
+   {
+    "id": "en:retinyl-palmitate",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.00579833984375,
+    "percent_max": "5",
+    "percent_min": 0,
+    "text": "vitamin a palmitate",
+    "vegan": "yes",
+    "vegetarian": "yes"
+   },
+   {
+    "id": "en:vitamins",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.002899169921875,
+    "percent_max": "5",
+    "percent_min": 0,
+    "text": "vitamins",
+    "vegan": "yes",
+    "vegetarian": "yes"
+   },
+   {
+    "id": "en:vitamin-k",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.0014495849609375,
+    "percent_max": "5",
+    "percent_min": 0,
+    "text": "vitamin k",
+    "vegan": "yes",
+    "vegetarian": "yes"
+   },
+   {
+    "id": "en:menaquinone",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.00072479248046875,
+    "percent_max": "5",
+    "percent_min": 0,
+    "text": "menaquinone",
+    "vegan": "yes",
+    "vegetarian": "yes"
+   },
+   {
+    "id": "en:vitamin-c",
+    "ingredients": [
+     {
+      "id": "en:e300",
+      "is_in_taxonomy": 1,
+      "percent_estimate": 0.000362396240234375,
+      "percent_max": "5",
+      "percent_min": 0,
+      "text": "ascorbic acid",
+      "vegan": "yes",
+      "vegetarian": "yes"
+     }
+    ],
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.000362396240234375,
+    "percent_max": "5",
+    "percent_min": 0,
+    "text": "vitamin c"
+   },
+   {
+    "id": "en:vitamin-e",
+    "ingredients": [
+     {
+      "id": "en:e306",
+      "is_in_taxonomy": 1,
+      "percent_estimate": 0.000181198120117188,
+      "percent_max": "5",
+      "percent_min": 0,
+      "text": "tocopherols",
+      "vegan": "yes",
+      "vegetarian": "yes"
+     }
+    ],
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.000181198120117188,
+    "percent_max": "5",
+    "percent_min": 0,
+    "text": "vitamin e"
+   },
+   {
+    "id": "en:cholecalciferol",
+    "is_in_taxonomy": 1,
+    "percent_estimate": 0.000181198120117188,
+    "percent_max": "5",
+    "percent_min": 0,
+    "text": "vitamin d3",
+    "vegan": "maybe",
+    "vegetarian": "maybe"
+   }
+  ],
+  "ingredients_analysis": {
+   "en:non-vegan": [
+    "en:honey"
+   ],
+   "en:palm-oil-content-unknown": [
+    "en:filtered-reduced-fat-grade-a-milk",
+    "en:monk-juice-concentrate"
+   ],
+   "en:vegan-status-unknown": [
+    "en:filtered-reduced-fat-grade-a-milk",
+    "en:fructooligosaccharide",
+    "en:monk-juice-concentrate",
+    "en:vitamin-c",
+    "en:vitamin-e"
+   ],
+   "en:vegetarian-status-unknown": [
+    "en:filtered-reduced-fat-grade-a-milk",
+    "en:fructooligosaccharide",
+    "en:monk-juice-concentrate",
+    "en:vitamin-c",
+    "en:vitamin-e"
+   ]
+  },
+  "ingredients_analysis_tags": [
+   "en:palm-oil-free",
+   "en:non-vegan",
+   "en:vegetarian-status-unknown"
+  ],
+  "ingredients_from_or_that_may_be_from_palm_oil_n": 0,
+  "ingredients_from_palm_oil_n": 0,
+  "ingredients_from_palm_oil_tags": [],
+  "ingredients_hierarchy": [
+   "en:filtered-reduced-fat-grade-a-milk",
+   "en:honey",
+   "en:added-sugar",
+   "en:strawberry-puree",
+   "en:fruit",
+   "en:berries",
+   "en:puree",
+   "en:strawberry",
+   "en:oat-flour",
+   "en:cereal",
+   "en:flour",
+   "en:cereal-flour",
+   "en:oat",
+   "en:fructooligosaccharide",
+   "en:sweetener",
+   "en:monk-juice-concentrate",
+   "en:e960",
+   "en:natural-flavouring",
+   "en:flavouring",
+   "en:e440a",
+   "en:e418",
+   "en:red-beetroot",
+   "en:vegetable",
+   "en:root-vegetable",
+   "en:taproot-vegetable",
+   "en:beetroot",
+   "en:e452i",
+   "en:e452",
+   "en:lactase",
+   "en:enzyme",
+   "en:retinyl-palmitate",
+   "en:vitamins",
+   "en:vitamin-a",
+   "en:vitamin-k",
+   "en:menaquinone",
+   "en:vitamin-c",
+   "en:vitamin-e",
+   "en:cholecalciferol",
+   "en:vitamin-d",
+   "en:e300",
+   "en:e306"
+  ],
+  "ingredients_lc": "en",
+  "ingredients_n": 22,
+  "ingredients_n_tags": [
+   "22",
+   "21-30"
+  ],
+  "ingredients_non_nutritive_sweeteners_n": 1,
+  "ingredients_original_tags": [
+   "en:filtered-reduced-fat-grade-a-milk",
+   "en:honey",
+   "en:strawberry-puree",
+   "en:oat-flour",
+   "en:fructooligosaccharide",
+   "en:monk-juice-concentrate",
+   "en:e960",
+   "en:natural-flavouring",
+   "en:e440a",
+   "en:e418",
+   "en:red-beetroot",
+   "en:e452i",
+   "en:lactase",
+   "en:retinyl-palmitate",
+   "en:vitamins",
+   "en:vitamin-k",
+   "en:menaquinone",
+   "en:vitamin-c",
+   "en:vitamin-e",
+   "en:cholecalciferol",
+   "en:e300",
+   "en:e306"
+  ],
+  "ingredients_percent_analysis": 1,
+  "ingredients_sweeteners_n": 1,
+  "ingredients_tags": [
+   "en:filtered-reduced-fat-grade-a-milk",
+   "en:honey",
+   "en:added-sugar",
+   "en:strawberry-puree",
+   "en:fruit",
+   "en:berries",
+   "en:puree",
+   "en:strawberry",
+   "en:oat-flour",
+   "en:cereal",
+   "en:flour",
+   "en:cereal-flour",
+   "en:oat",
+   "en:fructooligosaccharide",
+   "en:sweetener",
+   "en:monk-juice-concentrate",
+   "en:e960",
+   "en:natural-flavouring",
+   "en:flavouring",
+   "en:e440a",
+   "en:e418",
+   "en:red-beetroot",
+   "en:vegetable",
+   "en:root-vegetable",
+   "en:taproot-vegetable",
+   "en:beetroot",
+   "en:e452i",
+   "en:e452",
+   "en:lactase",
+   "en:enzyme",
+   "en:retinyl-palmitate",
+   "en:vitamins",
+   "en:vitamin-a",
+   "en:vitamin-k",
+   "en:menaquinone",
+   "en:vitamin-c",
+   "en:vitamin-e",
+   "en:cholecalciferol",
+   "en:vitamin-d",
+   "en:e300",
+   "en:e306"
+  ],
+  "ingredients_text": "Filtered reduced fat grade a milk, honey, strawberry puree, oat flour, fructooligosaccharides, monk juice concentrate, stevia leaf extract, natural flavors, pectin, gellan gum, red beet juice concentrate, sodium polyphosphate, lactase enzyme, vitamin a palmitate, vitamin k (menaquinone), vitamin c (ascorbic acid), vitamin e (tocopherols), vitamin d3.",
+  "ingredients_text_en": "Filtered reduced fat grade a milk, honey, strawberry puree, oat flour, fructooligosaccharides, monk juice concentrate, stevia leaf extract, natural flavors, pectin, gellan gum, red beet juice concentrate, sodium polyphosphate, lactase enzyme, vitamin a palmitate, vitamin k (menaquinone), vitamin c (ascorbic acid), vitamin e (tocopherols), vitamin d3.",
+  "ingredients_text_en_imported": "Filtered reduced fat grade a milk, honey, strawberry puree, oat flour, fructooligosaccharides, monk juice concentrate, stevia leaf extract, natural flavors, pectin, gellan gum, red beet juice concentrate, sodium polyphosphate, lactase enzyme, vitamin a palmitate, vitamin k (menaquinone), vitamin c (ascorbic acid), vitamin e (tocopherols), vitamin d3.",
+  "ingredients_text_es": "",
+  "ingredients_text_with_allergens": "Filtered reduced fat grade a milk, honey, strawberry puree, oat flour, fructooligosaccharides, monk juice concentrate, stevia leaf extract, natural flavors, pectin, gellan gum, red beet juice concentrate, sodium polyphosphate, lactase enzyme, vitamin a palmitate, vitamin k (menaquinone), vitamin c (ascorbic acid), vitamin e (tocopherols), vitamin d3.",
+  "ingredients_text_with_allergens_en": "Filtered reduced fat grade a milk, honey, strawberry puree, oat flour, fructooligosaccharides, monk juice concentrate, stevia leaf extract, natural flavors, pectin, gellan gum, red beet juice concentrate, sodium polyphosphate, lactase enzyme, vitamin a palmitate, vitamin k (menaquinone), vitamin c (ascorbic acid), vitamin e (tocopherols), vitamin d3.",
+  "ingredients_text_with_allergens_es": "",
+  "ingredients_that_may_be_from_palm_oil_n": 0,
+  "ingredients_that_may_be_from_palm_oil_tags": [],
+  "ingredients_with_specified_percent_n": 0,
+  "ingredients_with_specified_percent_sum": 0,
+  "ingredients_with_unspecified_percent_n": 20,
+  "ingredients_with_unspecified_percent_sum": 100,
+  "ingredients_without_ciqual_codes": [
+   "en:cholecalciferol",
+   "en:e300",
+   "en:e306",
+   "en:e418",
+   "en:e440a",
+   "en:e452i",
+   "en:e960",
+   "en:filtered-reduced-fat-grade-a-milk",
+   "en:fructooligosaccharide",
+   "en:lactase",
+   "en:menaquinone",
+   "en:monk-juice-concentrate",
+   "en:natural-flavouring",
+   "en:retinyl-palmitate",
+   "en:vitamin-c",
+   "en:vitamin-e",
+   "en:vitamin-k",
+   "en:vitamins"
+  ],
+  "ingredients_without_ciqual_codes_n": 18,
+  "ingredients_without_ecobalyse_ids": [
+   "en:cholecalciferol",
+   "en:e300",
+   "en:e306",
+   "en:e418",
+   "en:e440a",
+   "en:e452i",
+   "en:e960",
+   "en:filtered-reduced-fat-grade-a-milk",
+   "en:fructooligosaccharide",
+   "en:honey",
+   "en:lactase",
+   "en:menaquinone",
+   "en:monk-juice-concentrate",
+   "en:natural-flavouring",
+   "en:retinyl-palmitate",
+   "en:vitamin-c",
+   "en:vitamin-e",
+   "en:vitamin-k",
+   "en:vitamins"
+  ],
+  "ingredients_without_ecobalyse_ids_n": 19,
+  "interface_version_created": "20150316.jqm2",
+  "interface_version_modified": "20190830",
+  "known_ingredients_n": 39,
+  "labels": "No lactose",
+  "labels_hierarchy": [
+   "en:no-lactose"
+  ],
+  "labels_lc": "en",
+  "labels_tags": [
+   "en:no-lactose"
+  ],
+  "lang": "en",
+  "languages": {
+   "en:english": 2,
+   "en:spanish": 2
+  },
+  "languages_codes": {
+   "en": 2,
+   "es": 2
+  },
+  "languages_hierarchy": [
+   "en:english",
+   "en:spanish"
+  ],
+  "languages_tags": [
+   "en:english",
+   "en:spanish",
+   "en:2",
+   "en:multilingual"
+  ],
+  "last_edit_dates_tags": [
+   "2020-06-08",
+   "2020-06",
+   "2020"
+  ],
+  "last_editor": "acuario",
+  "last_image_dates_tags": [
+   "2019-09-20",
+   "2019-09",
+   "2019"
+  ],
+  "last_image_t": 1568999341,
+  "last_modified_by": "acuario",
+  "last_modified_t": 1591598282,
+  "last_updated_t": 1738781954,
+  "lc": "en",
+  "lc_imported": "en",
+  "link": "",
+  "main_countries_tags": [],
+  "manufacturing_places": "",
+  "manufacturing_places_hierarchy": [],
+  "manufacturing_places_lc": "en",
+  "manufacturing_places_tags": [],
+  "max_imgid": "2",
+  "minerals_tags": [],
+  "misc_tags": [
+   "en:ecoscore-changed",
+   "en:ecoscore-computed",
+   "en:ecoscore-extended-data-not-computed",
+   "en:ecoscore-missing-data-labels",
+   "en:ecoscore-missing-data-no-packagings",
+   "en:ecoscore-missing-data-origins",
+   "en:ecoscore-missing-data-packagings",
+   "en:ecoscore-missing-data-warning",
+   "en:nutriscore-2021-a-2023-d",
+   "en:nutriscore-2021-better-than-2023",
+   "en:nutriscore-2021-different-from-2023",
+   "en:nutriscore-computed",
+   "en:nutrition-all-nutriscore-values-known",
+   "en:nutrition-fruits-vegetables-legumes-estimate-from-ingredients",
+   "en:nutrition-fruits-vegetables-nuts-estimate-from-ingredients",
+   "en:packagings-empty",
+   "en:packagings-not-complete",
+   "en:packagings-number-of-components-0"
+  ],
+  "nova_group": 4,
+  "nova_group_debug": "",
+  "nova_groups": "4",
+  "nova_groups_markers": {
+   "3": [
+    [
+     "ingredients",
+     "en:honey"
+    ],
+    [
+     "ingredients",
+     "en:enzyme"
+    ]
+   ],
+   "4": [
+    [
+     "additives",
+     "en:e418"
+    ],
+    [
+     "additives",
+     "en:e440"
+    ],
+    [
+     "additives",
+     "en:e452"
+    ],
+    [
+     "additives",
+     "en:e960"
+    ],
+    [
+     "ingredients",
+     "en:flavouring"
+    ],
+    [
+     "ingredients",
+     "en:sweetener"
+    ]
+   ]
+  },
+  "nova_groups_tags": [
+   "en:4-ultra-processed-food-and-drink-products"
+  ],
+  "nucleotides_tags": [],
+  "nutrient_levels": {
+   "fat": "low",
+   "salt": "low",
+   "saturated-fat": "low",
+   "sugars": "low"
+  },
+  "nutrient_levels_tags": [
+   "en:fat-in-low-quantity",
+   "en:saturated-fat-in-low-quantity",
+   "en:sugars-in-low-quantity",
+   "en:salt-in-low-quantity"
+  ],
+  "nutriments": {
+   "calcium": 0.167,
+   "calcium_100g": 0.167,
+   "calcium_serving": 0.401,
+   "calcium_unit": "g",
+   "calcium_value": 0.167,
+   "carbohydrates": 7.08,
+   "carbohydrates_100g": 7.08,
+   "carbohydrates_serving": 17,
+   "carbohydrates_unit": "g",
+   "carbohydrates_value": 7.08,
+   "cholesterol": 0.008,
+   "cholesterol_100g": 0.008,
+   "cholesterol_serving": 0.0192,
+   "cholesterol_unit": "g",
+   "cholesterol_value": 0.008,
+   "energy": 297,
+   "energy-kcal": 71,
+   "energy-kcal_100g": 71,
+   "energy-kcal_serving": 170,
+   "energy-kcal_unit": "kcal",
+   "energy-kcal_value": 71,
+   "energy_100g": 297,
+   "energy_serving": 713,
+   "energy_unit": "kJ",
+   "energy_value": 297,
+   "fat": 2.08,
+   "fat_100g": 2.08,
+   "fat_serving": 4.99,
+   "fat_unit": "g",
+   "fat_value": 2.08,
+   "fiber": 2.1,
+   "fiber_100g": 2.1,
+   "fiber_serving": 5.04,
+   "fiber_unit": "g",
+   "fiber_value": 2.1,
+   "iron": 0,
+   "iron_100g": 0,
+   "iron_serving": 0,
+   "iron_unit": "g",
+   "iron_value": 0,
+   "nova-group": 4,
+   "nova-group_100g": 4,
+   "nova-group_serving": 4,
+   "nova-group_unit": "",
+   "nova-group_value": 4,
+   "phosphorus": 0.125,
+   "phosphorus_100g": 0.125,
+   "phosphorus_serving": 0.3,
+   "phosphorus_unit": "g",
+   "phosphorus_value": 0.125,
+   "phylloquinone": 1.17e-05,
+   "phylloquinone_100g": 1.17e-05,
+   "phylloquinone_serving": 2.81e-05,
+   "phylloquinone_unit": "g",
+   "phylloquinone_value": 1.17e-05,
+   "potassium": 0.129,
+   "potassium_100g": 0.129,
+   "potassium_serving": 0.31,
+   "potassium_unit": "g",
+   "potassium_value": 0.129,
+   "proteins": 6.25,
+   "proteins_100g": 6.25,
+   "proteins_serving": 15,
+   "proteins_unit": "g",
+   "proteins_value": 6.25,
+   "salt": 0.145,
+   "salt_100g": 0.145,
+   "salt_serving": 0.348,
+   "salt_unit": "g",
+   "salt_value": 0.145,
+   "saturated-fat": 1.04,
+   "saturated-fat_100g": 1.04,
+   "saturated-fat_serving": 2.5,
+   "saturated-fat_unit": "g",
+   "saturated-fat_value": 1.04,
+   "sodium": 0.058,
+   "sodium_100g": 0.058,
+   "sodium_serving": 0.139,
+   "sodium_unit": "g",
+   "sodium_value": 0.058,
+   "sugars": 4.17,
+   "sugars_100g": 4.17,
+   "sugars_serving": 10,
+   "sugars_unit": "g",
+   "sugars_value": 4.17,
+   "trans-fat": 0,
+   "trans-fat_100g": 0,
+   "trans-fat_serving": 0,
+   "trans-fat_unit": "g",
+   "trans-fat_value": 0,
+   "vitamin-a": 0.0002499,
+   "vitamin-a_100g": 0.0002499,
+   "vitamin-a_serving": 0.0006,
+   "vitamin-a_unit": "g",
+   "vitamin-a_value": 0.0002499,
+   "vitamin-c": 0.0175,
+   "vitamin-c_100g": 0.0175,
+   "vitamin-c_serving": 0.042,
+   "vitamin-c_unit": "g",
+   "vitamin-c_value": 0.0175
+  },
+  "nutriscore": {
+   "2021": {
+    "category_available": 1,
+    "data": {
+     "energy": 297,
+     "energy_points": 0,
+     "energy_value": 297,
+     "fiber": 2.1,
+     "fiber_points": 2,
+     "fiber_value": 2.1,
+     "fruits_vegetables_nuts_colza_walnut_olive_oils": 11.92138671875,
+     "fruits_vegetables_nuts_colza_walnut_olive_oils_points": 0,
+     "fruits_vegetables_nuts_colza_walnut_olive_oils_value": 11.9,
+     "is_beverage": 0,
+     "is_cheese": 0,
+     "is_fat": 0,
+     "is_water": 0,
+     "negative_points": 0,
+     "positive_points": 5,
+     "proteins": 6.25,
+     "proteins_points": 3,
+     "proteins_value": 6.25,
+     "saturated_fat": 1.04,
+     "saturated_fat_points": 0,
+     "saturated_fat_value": 1,
+     "sodium": 58,
+     "sodium_points": 0,
+     "sodium_value": 58,
+     "sugars": 4.17,
+     "sugars_points": 0,
+     "sugars_value": 4.17
+    },
+    "grade": "a",
+    "nutrients_available": 1,
+    "nutriscore_applicable": 1,
+    "nutriscore_computed": 1,
+    "score": -5
+   },
+   "2023": {
+    "category_available": 1,
+    "data": {
+     "components": {
+      "negative": [
+       {
+        "id": "energy",
+        "points": 6,
+        "points_max": 10,
+        "unit": "kJ",
+        "value": 297
+       },
+       {
+        "id": "sugars",
+        "points": 3,
+        "points_max": 10,
+        "unit": "g",
+        "value": 4.17
+       },
+       {
+        "id": "saturated_fat",
+        "points": 1,
+        "points_max": 10,
+        "unit": "g",
+        "value": 1.04
+       },
+       {
+        "id": "salt",
+        "points": 0,
+        "points_max": 20,
+        "unit": "g",
+        "value": 0.14
+       },
+       {
+        "id": "non_nutritive_sweeteners",
+        "points": 4,
+        "points_max": 4,
+        "unit": "number",
+        "value": 1
+       }
+      ],
+      "positive": [
+       {
+        "id": "proteins",
+        "points": 7,
+        "points_max": 7,
+        "unit": "g",
+        "value": 6.25
+       },
+       {
+        "id": "fiber",
+        "points": 0,
+        "points_max": 5,
+        "unit": "g",
+        "value": 2.1
+       },
+       {
+        "id": "fruits_vegetables_legumes",
+        "points": 0,
+        "points_max": 6,
+        "unit": "%",
+        "value": 11.9
+       }
+      ]
+     },
+     "count_proteins": 1,
+     "count_proteins_reason": "beverage",
+     "is_beverage": 1,
+     "is_cheese": 0,
+     "is_fat_oil_nuts_seeds": 0,
+     "is_red_meat_product": 0,
+     "is_water": 0,
+     "negative_points": 14,
+     "negative_points_max": 54,
+     "positive_nutrients": [
+      "proteins",
+      "fiber",
+      "fruits_vegetables_legumes"
+     ],
+     "positive_points": 7,
+     "positive_points_max": 18
+    },
+    "grade": "d",
+    "nutrients_available": 1,
+    "nutriscore_applicable": 1,
+    "nutriscore_computed": 1,
+    "score": 7
+   }
+  },
+  "nutriscore_2021_tags": [
+   "a"
+  ],
+  "nutriscore_2023_tags": [
+   "d"
+  ],
+  "nutriscore_data": {
+   "components": {
+    "negative": [
+     {
+      "id": "energy",
+      "points": 6,
+      "points_max": 10,
+      "unit": "kJ",
+      "value": 297
+     },
+     {
+      "id": "sugars",
+      "points": 3,
+      "points_max": 10,
+      "unit": "g",
+      "value": 4.17
+     },
+     {
+      "id": "saturated_fat",
+      "points": 1,
+      "points_max": 10,
+      "unit": "g",
+      "value": 1.04
+     },
+     {
+      "id": "salt",
+      "points": 0,
+      "points_max": 20,
+      "unit": "g",
+      "value": 0.14
+     },
+     {
+      "id": "non_nutritive_sweeteners",
+      "points": 4,
+      "points_max": 4,
+      "unit": "number",
+      "value": 1
+     }
+    ],
+    "positive": [
+     {
+      "id": "proteins",
+      "points": 7,
+      "points_max": 7,
+      "unit": "g",
+      "value": 6.25
+     },
+     {
+      "id": "fiber",
+      "points": 0,
+      "points_max": 5,
+      "unit": "g",
+      "value": 2.1
+     },
+     {
+      "id": "fruits_vegetables_legumes",
+      "points": 0,
+      "points_max": 6,
+      "unit": "%",
+      "value": 11.9
+     }
+    ]
+   },
+   "count_proteins": 1,
+   "count_proteins_reason": "beverage",
+   "grade": "d",
+   "is_beverage": 1,
+   "is_cheese": 0,
+   "is_fat_oil_nuts_seeds": 0,
+   "is_red_meat_product": 0,
+   "is_water": 0,
+   "negative_points": 14,
+   "negative_points_max": 54,
+   "positive_nutrients": [
+    "proteins",
+    "fiber",
+    "fruits_vegetables_legumes"
+   ],
+   "positive_points": 7,
+   "positive_points_max": 18,
+   "score": 7
+  },
+  "nutriscore_grade": "d",
+  "nutriscore_score": 7,
+  "nutriscore_score_opposite": -7,
+  "nutriscore_tags": [
+   "d"
+  ],
+  "nutriscore_version": "2023",
+  "nutrition_data": "on",
+  "nutrition_data_per": "100ml",
+  "nutrition_data_per_imported": "100g",
+  "nutrition_data_prepared_per": "100g",
+  "nutrition_data_prepared_per_imported": "100g",
+  "nutrition_grade_fr": "d",
+  "nutrition_grades": "d",
+  "nutrition_grades_tags": [
+   "d"
+  ],
+  "nutrition_score_beverage": 0,
+  "nutrition_score_debug": "",
+  "nutrition_score_warning_fruits_vegetables_legumes_estimate_from_ingredients": 1,
+  "nutrition_score_warning_fruits_vegetables_legumes_estimate_from_ingredients_value": 11.92138671875,
+  "nutrition_score_warning_fruits_vegetables_nuts_estimate_from_ingredients": 1,
+  "nutrition_score_warning_fruits_vegetables_nuts_estimate_from_ingredients_value": 11.92138671875,
+  "obsolete": "",
+  "obsolete_since_date": "",
+  "origins": "",
+  "origins_hierarchy": [],
+  "origins_lc": "en",
+  "origins_tags": [],
+  "other_nutritional_substances_tags": [],
+  "packaging": "",
+  "packaging_hierarchy": [],
+  "packaging_lc": "en",
+  "packaging_materials_tags": [],
+  "packaging_old": "",
+  "packaging_recycling_tags": [],
+  "packaging_shapes_tags": [],
+  "packaging_tags": [],
+  "packagings": [],
+  "packagings_materials": {},
+  "photographers_tags": [
+   "elcoco"
+  ],
+  "pnns_groups_1": "Milk and dairy products",
+  "pnns_groups_1_tags": [
+   "milk-and-dairy-products",
+   "known"
+  ],
+  "pnns_groups_2": "Milk and yogurt",
+  "pnns_groups_2_tags": [
+   "milk-and-yogurt",
+   "known"
+  ],
+  "popularity_key": 1,
+  "popularity_tags": [
+   "top-75-percent-scans-2024",
+   "top-80-percent-scans-2024",
+   "top-85-percent-scans-2024",
+   "top-90-percent-scans-2024",
+   "top-50000-us-scans-2024",
+   "top-100000-us-scans-2024",
+   "top-country-us-scans-2024"
+  ],
+  "product_name": "Nutrition shake",
+  "product_name_en": "Nutrition shake",
+  "product_name_en_imported": "Nutrition shake",
+  "product_name_es": "",
+  "product_type": "food",
+  "purchase_places": "",
+  "purchase_places_hierarchy": [],
+  "purchase_places_lc": "en",
+  "purchase_places_tags": [],
+  "quantity": "",
+  "removed_countries_tags": [],
+  "rev": 8,
+  "scans_n": 1,
+  "schema_version": 998,
+  "selected_images": {
+   "front": {
+    "display": {
+     "es": "https://images.openfoodfacts.org/images/products/081/162/002/1036/front_es.3.400.jpg"
+    },
+    "small": {
+     "es": "https://images.openfoodfacts.org/images/products/081/162/002/1036/front_es.3.200.jpg"
+    },
+    "thumb": {
+     "es": "https://images.openfoodfacts.org/images/products/081/162/002/1036/front_es.3.100.jpg"
+    }
+   },
+   "nutrition": {
+    "display": {
+     "es": "https://images.openfoodfacts.org/images/products/081/162/002/1036/nutrition_es.4.400.jpg"
+    },
+    "small": {
+     "es": "https://images.openfoodfacts.org/images/products/081/162/002/1036/nutrition_es.4.200.jpg"
+    },
+    "thumb": {
+     "es": "https://images.openfoodfacts.org/images/products/081/162/002/1036/nutrition_es.4.100.jpg"
+    }
+   }
+  },
+  "serving_quantity": 240,
+  "serving_quantity_unit": "ml",
+  "serving_size": "8 OZA (240 ml)",
+  "serving_size_imported": "8 OZA (240 ml)",
+  "sortkey": 1591598282,
+  "sources": [
+   {
+    "fields": [
+     "lc",
+     "product_name_en",
+     "categories",
+     "countries",
+     "brand_owner",
+     "data_sources",
+     "serving_size",
+     "ingredients_text_en",
+     "nutrients.calcium_unit",
+     "nutrients.calcium_value",
+     "nutrients.carbohydrates_unit",
+     "nutrients.carbohydrates_value",
+     "nutrients.cholesterol_unit",
+     "nutrients.cholesterol_value",
+     "nutrients.energy_unit",
+     "nutrients.energy_value",
+     "nutrients.energy-kcal_unit",
+     "nutrients.energy-kcal_value",
+     "nutrients.fat_unit",
+     "nutrients.fat_value",
+     "nutrients.fiber_unit",
+     "nutrients.fiber_value",
+     "nutrients.iron_unit",
+     "nutrients.iron_value",
+     "nutrients.phosphorus_unit",
+     "nutrients.phosphorus_value",
+     "nutrients.phylloquinone_unit",
+     "nutrients.phylloquinone_value",
+     "nutrients.potassium_unit",
+     "nutrients.potassium_value",
+     "nutrients.proteins_unit",
+     "nutrients.proteins_value",
+     "nutrients.salt_unit",
+     "nutrients.salt_value",
+     "nutrients.saturated-fat_unit",
+     "nutrients.saturated-fat_value",
+     "nutrients.sugars_unit",
+     "nutrients.sugars_value",
+     "nutrients.trans-fat_unit",
+     "nutrients.trans-fat_value",
+     "nutrients.vitamin-a_unit",
+     "nutrients.vitamin-a_value",
+     "nutrients.vitamin-b12_unit",
+     "nutrients.vitamin-b12_value",
+     "nutrients.vitamin-b2_unit",
+     "nutrients.vitamin-b2_value",
+     "nutrients.vitamin-c_unit",
+     "nutrients.vitamin-c_value"
+    ],
+    "id": "database-usda",
+    "images": [],
+    "import_t": 1587665597,
+    "manufacturer": null,
+    "name": "database-usda",
+    "url": null
+   }
+  ],
+  "sources_fields": {
+   "org-database-usda": {
+    "available_date": "2020-02-26T00:00:00Z",
+    "fdc_category": "Milk",
+    "fdc_data_source": "LI",
+    "fdc_id": "800889",
+    "modified_date": "2020-02-26T00:00:00Z",
+    "publication_date": "2020-04-01T00:00:00Z"
+   }
+  },
+  "states": "To be completed, Nutrition facts completed, Ingredients completed, Expiration date to be completed, Packaging code to be completed, Characteristics to be completed, Origins to be completed, Categories completed, Brands to be completed, Packaging to be completed, Quantity to be completed, Product name completed, Photos to be validated, Packaging photo to be selected, Nutrition photo to be selected, Ingredients photo to be selected, Front photo to be selected, Photos uploaded",
+  "states_hierarchy": [
+   "en:to-be-completed",
+   "en:nutrition-facts-completed",
+   "en:ingredients-completed",
+   "en:expiration-date-to-be-completed",
+   "en:packaging-code-to-be-completed",
+   "en:characteristics-to-be-completed",
+   "en:origins-to-be-completed",
+   "en:categories-completed",
+   "en:brands-to-be-completed",
+   "en:packaging-to-be-completed",
+   "en:quantity-to-be-completed",
+   "en:product-name-completed",
+   "en:photos-to-be-validated",
+   "en:packaging-photo-to-be-selected",
+   "en:nutrition-photo-to-be-selected",
+   "en:ingredients-photo-to-be-selected",
+   "en:front-photo-to-be-selected",
+   "en:photos-uploaded"
+  ],
+  "states_tags": [
+   "en:to-be-completed",
+   "en:nutrition-facts-completed",
+   "en:ingredients-completed",
+   "en:expiration-date-to-be-completed",
+   "en:packaging-code-to-be-completed",
+   "en:characteristics-to-be-completed",
+   "en:origins-to-be-completed",
+   "en:categories-completed",
+   "en:brands-to-be-completed",
+   "en:packaging-to-be-completed",
+   "en:quantity-to-be-completed",
+   "en:product-name-completed",
+   "en:photos-to-be-validated",
+   "en:packaging-photo-to-be-selected",
+   "en:nutrition-photo-to-be-selected",
+   "en:ingredients-photo-to-be-selected",
+   "en:front-photo-to-be-selected",
+   "en:photos-uploaded"
+  ],
+  "stores": "",
+  "stores_hierarchy": [],
+  "stores_lc": "en",
+  "stores_tags": [],
+  "traces": "",
+  "traces_from_ingredients": "",
+  "traces_from_user": "(es) ",
+  "traces_hierarchy": [],
+  "traces_lc": "en",
+  "traces_tags": [],
+  "unique_scans_n": 1,
+  "unknown_ingredients_n": 2,
+  "unknown_nutrients_tags": [],
+  "update_key": "sort",
+  "vitamins_tags": [
+   "en:retinyl-palmitate",
+   "en:vitamin-k",
+   "en:menaquinone",
+   "en:vitamin-c",
+   "en:l-ascorbic-acid",
+   "en:vitamin-e",
+   "en:cholecalciferol"
+  ],
+  "with_non_nutritive_sweeteners": 1
+ },
+ "status": 1,
+ "status_verbose": "product found"
+}
