@@ -263,13 +263,28 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
     sodium, old basis evidence, old conversion ids, old resolved mass — a row
     describing two foods at once. Absence is a legitimate write.
     """
-    from sqlalchemy import select
+    entry = await _locked_owned_row(db, user=user, entry_id=entry_id)
 
-    from core.canonical_pricing import PricingRefused, price
-    from core.canonical_pricing_inputs import assemble
-    from db.models import DailyLog, FoodEntry
-    from db.queries import MutationAuthority, update_food_entry
-    from skills.nutrition.normalize import normalize_quantity
+    new_identity = str(new_identity or "").strip()
+    if not new_identity and product_evidence_id is None:
+        raise CorrectionRefused("an identity repair needs a new identity or "
+                                "a product snapshot to rebind to")
+    old_identity = str(entry.parsed_food_name or "")
+    return await _rebind(
+        db, user=user, entry=entry, identity=new_identity or old_identity,
+        product_evidence_id=product_evidence_id,
+        new_quantity_text=new_quantity_text, idempotency=idempotency,
+        claim_payload={"identity": new_identity,
+                       "product_evidence_id": product_evidence_id})
+
+
+async def _locked_owned_row(db, *, user, entry_id: int):
+    """The row, FOR UPDATE, proven to be this user's and canonically owned.
+    Every repair reads THROUGH this so whatever it derives from the row
+    (the old identity, the old preparation) is derived under the lock — a
+    correct lock over a stale read still loses the write (B-1.6a)."""
+    from sqlalchemy import select
+    from db.models import DailyLog
 
     entry = await _lock_row(db, entry_id)
     if entry is None:
@@ -279,17 +294,29 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
     )).scalar_one_or_none()
     if log is None or int(log.user_id) != int(user.id):
         raise CorrectionRefused(f"entry {entry_id} is not this user's")
-
     owner = await creating_source_of(db, entry.id)
     if not (owner and str(owner).startswith("canonical:")):
         raise NotACanonicalRow(
             f"entry {entry_id} was created by {owner!r} — legacy keeps it")
+    return entry
 
-    new_identity = str(new_identity or "").strip()
-    if not new_identity and product_evidence_id is None:
-        raise CorrectionRefused("an identity repair needs a new identity or "
-                                "a product snapshot to rebind to")
 
+async def _rebind(db, *, user, entry, identity: str,
+                  product_evidence_id: Optional[int],
+                  new_quantity_text: Optional[str],
+                  idempotency: Optional[tuple],
+                  claim_payload: dict) -> Optional[IdentityRepairResult]:
+    """THE ONE REBIND TRANSACTION every semantic repair ends in: claim reserved
+    (commit=False) -> price ONCE from local evidence at the effective quantity
+    -> wholesale row replacement -> ledger event -> claim completed -> ONE
+    commit. `identity` is already the NEW composed identity; the caller
+    derived it under the row lock."""
+    from core.canonical_pricing import PricingRefused, price
+    from core.canonical_pricing_inputs import assemble
+    from db.queries import MutationAuthority, update_food_entry
+    from skills.nutrition.normalize import normalize_quantity
+
+    entry_id = int(entry.id)
     claim_id = None
     if idempotency:
         from core.idempotency import claim_request
@@ -297,9 +324,7 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
         claim = await claim_request(
             db, channel="canonical", command="correction", user_id=int(user.id),
             client_key=str(turn_id), turn_id=str(turn_id),
-            payload={"entry_id": int(entry_id), "identity": new_identity,
-                     "product_evidence_id": product_evidence_id,
-                     "message": message},
+            payload={"entry_id": entry_id, "message": message, **claim_payload},
             commit=False)
         if claim.replay:
             return None
@@ -307,7 +332,6 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
 
     # ── REBIND + REPRICE, from local evidence at the EXISTING quantity ──────
     old_identity = str(entry.parsed_food_name or "")
-    identity = new_identity or old_identity
     entity, preparation = _split_identity_words(identity)
     # Field-merge: a stated quantity replaces, an omitted one preserves — and
     # either way the price is computed ONCE, at that quantity, on the rebound
@@ -400,6 +424,60 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
                                 new_identity=identity, rung=priced.rung.value,
                                 evidence_id=priced.evidence_id or "",
                                 changes=changes)
+
+
+# ══ B-1.8c2.3 — SetPreparation: PRESERVE THE ENTITY, REPLACE THE PREPARATION ═
+#
+#     SetPreparation(event, fried) on "Grilled chicken"
+#         -> lock the canonical row (the old identity is read UNDER the lock)
+#         -> split: entity "chicken", old prep "grilled"       (structural)
+#         -> compose: name_with("chicken", "fried") = "chicken, fried"
+#         -> _rebind: local evidence for chicken|fried, evidence-backed price
+#            or refuse, wholesale receipt, one claim / one event / one commit
+#
+# ⛔ NOT name_with(old_name, "fried"): that yields "Grilled chicken, fried" —
+# two preparations on one food, a key nothing matches, and a row that says
+# both. The entity is what survives; the preparation is what changes.
+# ⛔ The preparation must be in the REGISTERED vocabulary. An unknown id is a
+# refusal, not "unknown" silently composed away by name_with.
+# ⛔ The twin: "grilled chicken" + correction "chicken thigh" is an IDENTITY
+# repair -> "chicken thigh", NOT "grilled chicken thigh". A new identity
+# replaces wholesale; only SetPreparation preserves the entity.
+
+
+async def correct_preparation(db, *, user, entry_id: int, preparation_id: str,
+                              new_quantity_text: Optional[str] = None,
+                              idempotency: Optional[tuple] = None
+                              ) -> Optional[IdentityRepairResult]:
+    """Replace ONE canonically owned row's preparation, keeping its entity,
+    and reprice it from local evidence for entity+preparation. Raises
+    NotACanonicalRow / CorrectionRefused; None on an idempotent replay."""
+    from core.semantic_fields import spec_for
+    from skills.nutrition.preparation_ontology import name_with
+
+    prep = str(preparation_id or "").strip().lower()
+    vocabulary = tuple(spec_for("preparation").vocabulary)
+    if prep not in vocabulary:
+        raise CorrectionRefused(
+            f"preparation {preparation_id!r} is not in the registered "
+            f"vocabulary {list(vocabulary)} — refusing to compose an unknown "
+            f"preparation into an identity")
+
+    entry = await _locked_owned_row(db, user=user, entry_id=entry_id)
+    old_identity = str(entry.parsed_food_name or "")
+    entity, old_prep = _split_identity_words(old_identity)
+    if not entity:
+        raise CorrectionRefused(
+            f"entry {entry_id} has no entity to preserve ({old_identity!r})")
+    identity = name_with(entity, prep)
+    logger.info("event=canonical_preparation_repair entry=%s entity=%r prep "
+                "%r -> %r identity=%r", entry_id, entity, old_prep, prep,
+                identity)
+    return await _rebind(
+        db, user=user, entry=entry, identity=identity, product_evidence_id=None,
+        new_quantity_text=new_quantity_text, idempotency=idempotency,
+        claim_payload={"identity": identity, "preparation_id": prep,
+                       "product_evidence_id": None})
 
 
 # ══ B-1.8c2.2 — A TAP BINDS TO THE SNAPSHOT IT WAS OFFERED FROM ══════════════

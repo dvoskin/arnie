@@ -822,26 +822,79 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                                  memory-disagrees proof had to run at "110 g"
                                  to mean anything. Both found by MUTATION, not
                                  by green.
-                                 ⚠ FLAGGED, NOT CHANGED: (1) "2 cups" of a
-                                 peanut bar normalizes to 260 g via the VESSEL
-                                 HEURISTIC and the product rung scales it —
-                                 heuristic mass reaching an exact label is a
-                                 P17 authority question (resolve_scaling says
-                                 heuristic is never authoritative; price()'s
-                                 product rung reads consumed.grams regardless).
-                                 (2) settle-time scan (P17f.5 _bind_scanned_
-                                 product) still runs the UNBOUND ladder: a
-                                 memory row for the same name can outrank the
-                                 scanned snapshot. Whether a scan is a binding
-                                 like a tap is Danny's call; c2.2 did not widen
-                                 to settlement.
+                                 ⚠ FLAGGED, DECIDED *(Danny 2026-08-18)*, NOT
+                                 IN c2: (1) "2 cups" of a peanut bar -> vessel
+                                 heuristic 260 g -> exact PRODUCT nutrition.
+                                 INVARIANT for the P17 authority tranche:
+                                   exact product evidence x heuristic quantity
+                                   conversion != authoritative settlement
+                                 exact nutrition authority does not make an
+                                 estimated consumption mass authoritative.
+                                 (2) SCAN IS BINDING, like a tap — stronger,
+                                 even: the user supplied the exact identifier.
+                                 Once acquisition has verified scanned code <->
+                                 canonical_code <-> persisted ProductEvidence,
+                                 MEMORY may not outrank it:
+                                   SCAN-BOUND -> that snapshot only -> PRODUCT
+                                   -> price or refuse   (not MEMORY -> PRODUCT)
+                                 Same evidence-constraint primitive c2.2 built
+                                 (assemble/price bound=True) — a reusable
+                                 authority concept, not a new special case.
+                                 FIX IN THE P17 SCAN/BINDING TRANCHE, after
+                                 c2.3. Settle today still runs the unbound
+                                 ladder for a scan.
                                  NOT WIRED LIVE: no producer opens a
                                  PRODUCT_VARIANT operation yet (form B, the
                                  acquisition wire), so no live turn reaches
                                  select_product_variant. The chain is enforced
                                  for the day it does.
-                       B-1.8c2   ⏳ PRODUCER-BOUND SEMANTIC REPAIR — the ONE
-                                 remaining capability (#6 and #7 collapsed):
+                       B-1.8c2.3 ✅ SetPreparation *(2026-08-18, local)*:
+                                 correct_preparation(entry, prep) -> lock ->
+                                 split OLD identity UNDER THE LOCK (entity
+                                 preserved structurally, old prep dropped) ->
+                                 name_with(entity, prep) -> _rebind: local
+                                 evidence for entity|prep, ESTIMATE withheld,
+                                 wholesale receipt, one claim / one event /
+                                 one commit. Unregistered prep -> refuse
+                                 BEFORE the lock (name_with would silently
+                                 drop it and still write a row+event).
+                                 REFACTOR: correct_identity and
+                                 correct_preparation share _locked_owned_row
+                                 + _rebind — one transaction path, and what a
+                                 repair derives from the row is derived under
+                                 FOR UPDATE (B-1.6a: a lock over a stale read
+                                 still loses the write).
+                                 TWINS (tests/test_a_preparation_repair_
+                                 keeps_the_entity.py, 6): grilled chicken +
+                                 SetPreparation(fried) -> "chicken, fried" ·
+                                 grilled chicken + "chicken thigh" -> chicken
+                                 thigh, NOT grilled chicken thigh (a grilled-
+                                 thigh memory row at 999 kcal present and NOT
+                                 chosen) · no evidence -> refuse, row byte-
+                                 identical, zero events · unregistered prep
+                                 refused · duplicate -> exactly once · undo ->
+                                 exact old snapshot. MUTATION: name_with(old_
+                                 name, prep) ("Grilled chicken, fried") turns
+                                 3 twins RED.
+                                 NOT WIRED LIVE, deliberately: the interpreter's
+                                 update_food_entry has no preparation field
+                                 (a text "actually fried" arrives as food_name
+                                 and takes the identity path, which lands on
+                                 the same chicken|fried); the typed producer
+                                 is the B-1 PREPARATION field on a correction
+                                 operation, which does not exist yet. The
+                                 primitive is ready for it; the route is not
+                                 invented ahead of it.
+                       B-1.8c    ✅ EFFECTIVELY DONE (c1 · c2.1 · c2.2 · c2.3):
+                                 the reusable authority primitive (bound
+                                 evidence constraint) + the persisted-universe
+                                 producer + preserve/replace semantics. What
+                                 remains for B-1.8 is PROOF (d), not
+                                 architecture: twins + E2E + rollback/canary +
+                                 the stale-event undo twin.
+                       B-1.8c2   ✅ (was ⏳) PRODUCER-BOUND SEMANTIC REPAIR —
+                                 closed by c2.1–c2.3 above; original statement
+                                 kept for the record:
                                    -> a producer emits typed
                                       SelectProductVariant / SetPreparation
                                    -> binds the exact snapshot / semantic field
@@ -912,9 +965,9 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                        bound ExactProductCandidate + PRODUCT_VARIANT FieldSpec
                        + reopening producer · c2.2 ✅ tap -> stored patch ->
                        exact candidate in exact revision -> exact snapshot ->
-                       BOUND pricing · c2.3 NEXT SetPreparation: preserve
+                       BOUND pricing · c2.3 ✅ SetPreparation: preserve
                        entity, replace prep, evidence rebind ("grilled chicken
-                       -> chicken thigh" does NOT keep grilled).
+                       -> chicken thigh" does NOT keep grilled). NEXT: B-1.8d.
                        ⛔ B-1.8 IS NOT CLOSED UNTIL c2. The frozen directive
                        names "actually it was the Elite one" and "actually it
                        was Cookies & Cream" as B-1.8's own examples; moving
