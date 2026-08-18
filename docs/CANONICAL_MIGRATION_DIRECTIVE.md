@@ -346,6 +346,71 @@ not depend on which bucket is largest.
 > runs in parallel where explicitly allowed; later product capabilities compose
 > the canonical primitives rather than bypassing them.
 
+### ⚠ §CARRY-FORWARD REGISTER — findings that MUST be picked up downstream *(2026-08-18)*
+
+> Not sequencing (§NEXT owns that). A REGISTER: each item names its owner
+> tranche so the next person does not rediscover it. Remove an item only by
+> naming the commit that closed it. When a tranche named as OWNER goes GO,
+> its brief must cite the CF ids it takes.
+
+```text
+ID   FINDING                                          OWNER TRANCHE       STATUS
+CF1  POISONED MEMORY ROW ufm 1941501: "Grilled        M1 (memory quality) OPEN
+     Chicken Breast" prices 230 kcal / 16.5 g
+     protein / 22.5 g carbs / 10 g sugar per 6 oz —
+     not chicken; settled user 26 row 3027 from
+     MEMORY on 08-18 and the canonical correction
+     faithfully scaled the poison to 8 oz. Same
+     class as ufm#400 (13.2 C/100 g). Quarantine at
+     read time via the disagreement test, or fix the
+     row; NEVER by a calorie range.
+CF2  CANONICAL REFUSALS REACH THE USER AS GENERIC     rendering (after      OPEN
+     RECOVERY COPY: CorrectionRefused / StaleUndo /  B-1.8; not semantic)
+     PricingRefused propagate (A8, correct) and the
+     coordinator's failure floor answers with
+     recovery_message("llm_error"). "Undo the newer
+     correction first" / "I can't price that from
+     what I know" never reach the user. Refusal
+     stays canonical (closure criterion held); the
+     COPY is the gap.
+CF3  ENTRY 2674 UNLEDGERED MUTATION: "Ground beef,   ledger invariant      OPEN
+     seasoned" -> "Ground bison, seasoned" with NO   (I3-family)
+     ledger event — one production write path does
+     not record. Found by M1.1. Owner is the ledger
+     invariant; do not derail a tranche for it, do
+     not lose it either.
+CF4  HEURISTIC MASS x EXACT PRODUCT: "2 cups" of a   P17 authority         OPEN
+     peanut bar -> vessel heuristic 260 g -> the     tranche
+     PRODUCT rung scales an exact label from an
+     estimated mass. INVARIANT (Danny): exact
+     product evidence x heuristic quantity
+     conversion != authoritative settlement.
+CF5  SCAN IS BINDING like a tap (Danny): settle-time P17 scan/binding      OPEN
+     _bind_scanned_product still runs the UNBOUND   tranche (NEXT)
+     ladder — a memory row can outrank the scanned
+     snapshot. Use the c2.2 primitive
+     (assemble/price bound=True): SCAN-BOUND -> that
+     snapshot only -> price or refuse.
+CF6  LANE PROMOTION RULE (learned from 3 canaries):  every future lane     RULE
+     a proven CONSUMER (stage) is unreachable if the
+     PRODUCER (planner) or RENDERER in front of it
+     is unproven on the LIVE request shape, or the
+     lane is not in TURN_COORDINATOR_LANES. Before
+     claiming a path is live: read /health lanes +
+     allowlist, prove planner inputs on the real
+     request, prove the reply renders. "Lost the
+     thread there" = EMPTY reply (kind "stall"),
+     not an exception; turn_metrics.outcome now
+     records error:<Type> for a caught stage error.
+CF7  TEST_POSTGRES_URL FORM: the shared PG harness   tooling               RULE
+     needs postgresql+psycopg://...; +asyncpg
+     yields 174 connect() errors. Full-suite recipe:
+     TZ=UTC TEST_POSTGRES_URL="postgresql+psycopg://
+     $(whoami)@localhost:5432/arnie_test" and no
+     extra -q (addopts already has -q; -qq hides the
+     N-passed line — read it or claim nothing).
+```
+
 ```text
 HEAD                                   the commit carrying this line
                                        (git log -1 -- this file)
