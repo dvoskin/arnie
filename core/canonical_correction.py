@@ -318,17 +318,27 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
     item = {"food_name": identity, "quantity": quantity_text}
     if product_evidence_id is not None:
         item["product_evidence_id"] = int(product_evidence_id)
+    # ⛔⛔ A NAMED SNAPSHOT IS A BINDING, AND A BINDING IS AN EVIDENCE
+    # CONSTRAINT *(B-1.8c2.2, Danny)*. With product_evidence_id set, this
+    # repair prices from THAT snapshot or refuses: memory, artifact and
+    # estimate are never READ (assemble bound=True) and never RANKED
+    # (price bound=True). Before c2.2 the ladder still ran MEMORY first, so a
+    # user with a memory row for the same name would have had their explicit
+    # product selection out-ranked by their own history — the tap thrown away
+    # while the correction looked successful.
+    bound = product_evidence_id is not None
     try:
         inputs = await assemble(
             db, user_id=int(user.id), entity=entity, preparation=preparation,
             identity=identity, item=item,
-            basis_grams=getattr(consumed, "grams", None) if consumed else None)
+            basis_grams=getattr(consumed, "grams", None) if consumed else None,
+            bound=bound)
         # ⛔ THE ESTIMATE RUNG IS WITHHELD. An identity repair may only land on
         # evidence; letting price() fall through to the interpreter's estimate
         # would be a re-guess. Nothing to price from -> refuse -> the turn asks.
         inputs["estimate"] = None
         priced = price(entity=identity, preparation=preparation,
-                       consumed=consumed, **inputs)
+                       consumed=consumed, bound=bound, **inputs)
     except PricingRefused as exc:
         if claim_id is not None:
             await db.rollback()
@@ -390,6 +400,73 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
                                 new_identity=identity, rung=priced.rung.value,
                                 evidence_id=priced.evidence_id or "",
                                 changes=changes)
+
+
+# ══ B-1.8c2.2 — A TAP BINDS TO THE SNAPSHOT IT WAS OFFERED FROM ══════════════
+#
+#     tap -> stored SelectProductVariant (the interaction's patch_for)
+#         -> reopen the exact universe (candidate_set_id / operation_id / user)
+#         -> verify_selection: option == candidate == snapshot == entity
+#         -> correct_identity(product_evidence_id=..., BOUND)
+#            -> assemble(bound)  never reads memory / artifact / estimate
+#            -> price(bound)     that snapshot, or PricingRefused
+#         -> ONE canonical correction transaction (claim + row + ledger)
+#
+# ⛔ NOTHING HERE INVENTS. The universe was persisted by a producer that had
+# exact evidence; this function only ENFORCES that the tap, the candidate and
+# the snapshot agree, then hands the proven ids to the repair. A patch with
+# product_evidence_id == 0 (a v1 payload) is UNBOUND and refused — it is never
+# "helped" by looking up the newest snapshot for the entity.
+
+
+class ProductSelectionRefused(CorrectionRefused):
+    """The tap did not prove its triangle. Non-mutating by construction: it is
+    raised before the claim is reserved and before any row is locked."""
+
+
+async def select_product_variant(db, *, user, entry_id: int, patch,
+                                 operation_id: str,
+                                 candidate_set_id: Optional[str],
+                                 new_quantity_text: Optional[str] = None,
+                                 idempotency: Optional[tuple] = None
+                                 ) -> Optional[IdentityRepairResult]:
+    """Apply a stored SelectProductVariant to a canonically owned row.
+
+    Raises ProductSelectionRefused when the triangle does not close (unbound
+    patch, foreign candidate, option/candidate disagreement, snapshot missing
+    or about another product, universe of another user/operation), then
+    everything `correct_identity` raises. Returns None on an idempotent replay.
+    """
+    from skills.nutrition.product_variant_clarification import (
+        NoExactUniverse, reopen, verify_selection)
+
+    try:
+        universe = await reopen(db, operation_id=str(operation_id),
+                                user_id=int(user.id),
+                                candidate_set_id=candidate_set_id)
+        candidate = await verify_selection(db, patch=patch, universe=universe)
+    except NoExactUniverse as exc:
+        logger.info("event=product_selection_refused entry=%s operation=%s "
+                    "reason=%s", entry_id, operation_id, exc)
+        raise ProductSelectionRefused(str(exc)) from exc
+
+    if not str(candidate.label or "").strip():
+        # The row's parsed_food_name would otherwise be PRESERVED (omitted ->
+        # preserved) while its receipt says off:<code> — a row naming one food
+        # and priced as another. A candidate offered without a label is not
+        # a candidate the user could have chosen knowingly.
+        raise ProductSelectionRefused(
+            f"candidate {candidate.candidate_id!r} has no label — refusing to "
+            f"rebind the row's identity to an unnamed product")
+    logger.info("event=product_selection_verified entry=%s entity=%s "
+                "snapshot=%s candidate=%s set=%s", entry_id,
+                candidate.entity_id, candidate.product_evidence_id,
+                candidate.candidate_id, universe.candidate_set_id)
+    return await correct_identity(
+        db, user=user, entry_id=entry_id,
+        new_identity=str(candidate.label or ""),
+        product_evidence_id=int(candidate.product_evidence_id),
+        new_quantity_text=new_quantity_text, idempotency=idempotency)
 
 
 # ══ B-1.8d — UNDO IS A RESTORE, NOT A REPAIR ═════════════════════════════════

@@ -183,14 +183,30 @@ def _estimate(item: dict, basis_grams=None):
 
 async def assemble(db, *, user_id: int, entity: str, preparation: str,
                    identity: str, item: dict,
-                   basis_grams=None) -> dict:
+                   basis_grams=None, bound: bool = False) -> dict:
     """Every rung's evidence, ready for a synchronous `price()`.
 
     Keyed deliberately on TWO names: `identity` is the composed food
     ("Chicken, fried") that memory and pricing speak, while `entity` and
     `preparation` are the artifact's key. Collapsing them would either lose the
     preparation from memory lookups or lose the artifact hit.
+
+    ⛔⛔ `bound=True` — B-1.8c2.2. The item is BOUND to one exact product
+    snapshot (`item["product_evidence_id"]`), and a binding CONSTRAINS the
+    evidence universe: memory, artifact and estimate are NOT READ AT ALL — not
+    loaded-and-outranked, not consulted. "MEMORY disagrees -> never consulted"
+    must be true mechanically, and the only mechanical proof is that the read
+    never happens. Pair with `price(bound=True)`, which prices that snapshot
+    or refuses.
     """
+    if bound:
+        pid = item.get("product_evidence_id")
+        if not pid:
+            raise ValueError("bound assemble needs item['product_evidence_id']")
+        return {"memory": None,
+                "product": await _product(db, pid),
+                "artifact": None,
+                "estimate": None}
     return {
         "memory": await _memory(db, user_id, identity,
                                 str(item.get("canonical_entity_id") or "")),

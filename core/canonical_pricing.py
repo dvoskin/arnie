@@ -700,7 +700,8 @@ def price(*, entity: str, preparation: str = "", consumed=None,
           memory: Optional[MemoryEvidence] = None,
           product: Optional[ProductEvidence] = None,
           artifact: Optional[ArtifactEvidence] = None,
-          estimate: Optional[EstimateEvidence] = None) -> PricedFood:
+          estimate: Optional[EstimateEvidence] = None,
+          bound: bool = False) -> PricedFood:
     """What this food costs. SYNCHRONOUS, and deliberately so.
 
     A synchronous signature is the strongest possible statement of Gate B:
@@ -743,10 +744,31 @@ def price(*, entity: str, preparation: str = "", consumed=None,
     # bypass the narrow handler in `b1_answer_turn` and take the whole turn
     # down — worse than the zero-calorie row this P1 exists to delete.
     priced = None
-    for ev, build in ((memory, _from_memory), (product, _from_product),
-                      (artifact, lambda e: _from_artifact(
-                          e, query=_ranker_query(entity, preparation))),
-                      (estimate, _from_estimate)):
+    # ⛔⛔ B-1.8c2.2 — `bound=True` IS AN EVIDENCE CONSTRAINT, NOT A PRIORITY
+    # *(Danny)*. A typed exact product selection CONSTRAINS the evidence
+    # universe to that one snapshot; it does not merely raise PRODUCT's rank.
+    #
+    #     bound=False   MEMORY -> PRODUCT -> ARTIFACT -> ESTIMATE   (unchanged)
+    #     bound=True    the specified PRODUCT snapshot ONLY
+    #                   -> scalable: price · not scalable: REFUSE. No fallback.
+    #
+    # Because: the user tapped "Core Power Elite 42 g"; if that label cannot
+    # scale the stated amount, the truth is "we cannot price the product you
+    # selected" — never "so we priced your old memory row instead", which
+    # would throw the exact clarification away while looking successful.
+    if bound:
+        if product is None:
+            raise PricingRefused(
+                f"{entity!r} is bound to an exact product but no product "
+                f"evidence was supplied — a binding with no snapshot is not a "
+                f"binding")
+        rungs = ((product, _from_product),)
+    else:
+        rungs = ((memory, _from_memory), (product, _from_product),
+                 (artifact, lambda e: _from_artifact(
+                     e, query=_ranker_query(entity, preparation))),
+                 (estimate, _from_estimate))
+    for ev, build in rungs:
         if ev is None:
             continue
         try:

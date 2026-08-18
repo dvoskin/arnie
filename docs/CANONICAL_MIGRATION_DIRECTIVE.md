@@ -773,6 +773,73 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                                  Zero persisted select_product_variant patches
                                  in production, proven. A v1-shaped payload
                                  (evidence id 0) is UNBOUND, never weakly bound.
+                       B-1.8c2.2 ✅ THE CHAIN IS ENFORCED, NOT INVENTED
+                                 *(2026-08-18, local, unpushed through review)*:
+                                 tap -> answer_from_chip -> STORED patch ->
+                                 reopen(op/user/set) -> verify_selection ->
+                                 correct_identity(BOUND) -> ONE txn.
+                                 · verify_selection proves the WHOLE triangle:
+                                   patch is SelectProductVariant with
+                                   product_evidence_id > 0 (else
+                                   UnboundSelection) · a candidate in THIS
+                                   universe has patch.entity_id · that
+                                   candidate's product_evidence_id AND
+                                   serving_id == the patch's · then
+                                   verify_candidate_binding (snapshot exists,
+                                   provider:canonical_code == entity)
+                                 · BOUND = evidence constraint, mechanically:
+                                   assemble(bound=True) does NOT READ memory /
+                                   artifact / estimate; price(bound=True)
+                                   prices that snapshot or PricingRefused.
+                                   correct_identity(product_evidence_id=X) is
+                                   bound BY ITSELF — before c2.2 the ladder ran
+                                   MEMORY first over an explicit snapshot
+                                   binding (proven: with bound mutated off, the
+                                   memory-disagrees proofs go RED)
+                                 · select_product_variant() =
+                                   ProductSelectionRefused (non-mutating: row
+                                   byte-identical, zero correction events) or
+                                   the repair; exactly-once via the same claim
+                                 PROOFS (tests/test_a_tap_binds_to_the_
+                                 snapshot_it_offered.py, 9): 123 offered / 124
+                                 later / tap -> 123 priced, receipt says 123 ·
+                                 candidate from another set REFUSE · another op
+                                 / another user REFUSE · patch says 123
+                                 candidate says 124 REFUSE · v1 patch (evidence
+                                 0) UNBOUND, refused from bound pricing (both
+                                 the verifier and price(bound, product=None)) ·
+                                 MEMORY disagrees -> NEVER CONSULTED (spy on
+                                 _memory: zero calls) · bound PRODUCT cannot
+                                 scale ("2 pieces") -> REFUSE, no fallback,
+                                 while the same identity UNBOUND prices from
+                                 memory.
+                                 ⚠ INSTRUMENT NOTES: (a) the memory rung
+                                 quarantines a surface key bound to disagreeing
+                                 records FLEET-WIDE, so a shared-session test
+                                 must use per-user labels or memory abstains
+                                 and the proof is vacuous; (b) "2 bars" is a
+                                 quantity memory CANNOT price, so the
+                                 memory-disagrees proof had to run at "110 g"
+                                 to mean anything. Both found by MUTATION, not
+                                 by green.
+                                 ⚠ FLAGGED, NOT CHANGED: (1) "2 cups" of a
+                                 peanut bar normalizes to 260 g via the VESSEL
+                                 HEURISTIC and the product rung scales it —
+                                 heuristic mass reaching an exact label is a
+                                 P17 authority question (resolve_scaling says
+                                 heuristic is never authoritative; price()'s
+                                 product rung reads consumed.grams regardless).
+                                 (2) settle-time scan (P17f.5 _bind_scanned_
+                                 product) still runs the UNBOUND ladder: a
+                                 memory row for the same name can outrank the
+                                 scanned snapshot. Whether a scan is a binding
+                                 like a tap is Danny's call; c2.2 did not widen
+                                 to settlement.
+                                 NOT WIRED LIVE: no producer opens a
+                                 PRODUCT_VARIANT operation yet (form B, the
+                                 acquisition wire), so no live turn reaches
+                                 select_product_variant. The chain is enforced
+                                 for the day it does.
                        B-1.8c2   ⏳ PRODUCER-BOUND SEMANTIC REPAIR — the ONE
                                  remaining capability (#6 and #7 collapsed):
                                    -> a producer emits typed
@@ -841,12 +908,13 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                          bound=False  MEMORY -> PRODUCT -> ARTIFACT -> ESTIMATE
                          bound=True   the specified snapshot ONLY -> scalable:
                                       price · not scalable: REFUSE. No fallback.
-                       c2 ORDER: c2.1 discriminated universe + snapshot-bound
-                       ProductCandidate + PRODUCT_VARIANT FieldSpec + reopening
-                       producer · c2.2 tap -> stored patch -> exact candidate
-                       in exact revision -> exact snapshot -> BOUND pricing ·
-                       c2.3 SetPreparation: preserve entity, replace prep,
-                       evidence rebind.
+                       c2 ORDER: c2.1 ✅ discriminated universe + snapshot-
+                       bound ExactProductCandidate + PRODUCT_VARIANT FieldSpec
+                       + reopening producer · c2.2 ✅ tap -> stored patch ->
+                       exact candidate in exact revision -> exact snapshot ->
+                       BOUND pricing · c2.3 NEXT SetPreparation: preserve
+                       entity, replace prep, evidence rebind ("grilled chicken
+                       -> chicken thigh" does NOT keep grilled).
                        ⛔ B-1.8 IS NOT CLOSED UNTIL c2. The frozen directive
                        names "actually it was the Elite one" and "actually it
                        was Cookies & Cream" as B-1.8's own examples; moving
@@ -5633,7 +5701,7 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-17 against the DUPLICATE-SEMANTICS SLICE AND THE BACKEND
+Last reconciled 2026-08-18 against the DUPLICATE-SEMANTICS SLICE AND THE BACKEND
 FREEZE. What was actually re-read and corrected, rather than date-bumped: the
 corrected-sequencing board's P12 line, which claimed the canary "has not
 started" — it has run and passed on both settlement branches · the "immediate

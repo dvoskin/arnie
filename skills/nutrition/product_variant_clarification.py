@@ -108,6 +108,72 @@ async def verify_candidate_binding(db, candidate) -> None:
             f"either")
 
 
+class UnboundSelection(NoExactUniverse):
+    """The stored patch names WHAT was selected but not WHICH observation
+    (product_evidence_id == 0 — a v1 payload, or a hand-built patch). Such a
+    selection is UNBOUND: it may not price from the PRODUCT rung, and it is
+    refused from bound pricing outright, never "weakly bound" to the latest
+    snapshot for that entity."""
+
+
+async def verify_selection(db, *, patch, universe):
+    """⛔⛔ B-1.8c2.2 — THE WHOLE TRIANGLE, OR REFUSE *(Danny)*.
+
+        option (stored patch)  ──entity_id, product_evidence_id──▶ candidate
+        candidate              ──product_evidence_id─────────────▶ snapshot
+        snapshot               ──provider:canonical_code──────────▶ entity_id
+
+    Returns the ExactProductCandidate the tap resolves to, after proving:
+
+        1. the patch is a SelectProductVariant with product_evidence_id > 0
+           (else UnboundSelection — a v1 patch is unbound, never weakly bound)
+        2. a candidate in THIS reopened universe has patch.entity_id — a
+           candidate from another set is not "close enough"
+        3. that candidate's product_evidence_id == patch.product_evidence_id —
+           the option and the candidate name the SAME observation, or the tap
+           is refused ("patch says 123, candidate says 124")
+        4. `verify_candidate_binding`: the snapshot exists and mechanically
+           represents the entity (`ns:code` == provider:canonical_code)
+
+    Nothing here repairs, resolves "latest", or picks the nearest candidate.
+    """
+    from core.semantics import SelectProductVariant
+
+    if not isinstance(patch, SelectProductVariant):
+        raise NoExactUniverse(
+            f"a product selection must be a SelectProductVariant, got "
+            f"{type(patch).__name__}")
+    if int(getattr(patch, "product_evidence_id", 0) or 0) <= 0:
+        raise UnboundSelection(
+            f"selection {patch.entity_id!r} carries no product_evidence_id — "
+            f"UNBOUND: it names a product but not the observation the user "
+            f"saw; refusing to bind it to any snapshot")
+    matches = [c for c in getattr(universe, "candidates", ())
+               if str(c.entity_id) == str(patch.entity_id)]
+    if not matches:
+        raise NoExactUniverse(
+            f"selection {patch.entity_id!r} is not a member of universe "
+            f"{universe.candidate_set_id!r} — a candidate from another set is "
+            f"not this operation's answer")
+    same = [c for c in matches
+            if int(c.product_evidence_id) == int(patch.product_evidence_id)]
+    if not same:
+        raise NoExactUniverse(
+            f"selection {patch.entity_id!r} says snapshot "
+            f"{patch.product_evidence_id} but the universe's candidate says "
+            f"{[int(c.product_evidence_id) for c in matches]} — the option and "
+            f"its candidate disagree; refusing to price from either")
+    candidate = same[0]
+    if str(getattr(candidate, "serving_id", "") or "") != str(patch.serving_id or ""):
+        raise NoExactUniverse(
+            f"selection {patch.entity_id!r} names serving "
+            f"{patch.serving_id!r} but its candidate names "
+            f"{candidate.serving_id!r} — the three ids travel together or "
+            f"not at all")
+    await verify_candidate_binding(db, candidate)
+    return candidate
+
+
 def exact_universe_members(universe=None) -> tuple:
     """The vocabulary this field's answers must come from: the entity ids of a
     persisted exact universe. With no universe there is NO vocabulary — the
