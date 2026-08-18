@@ -239,3 +239,211 @@ def test_the_stage_still_holds_no_except_handler():
     tree = ast.parse(inspect.getsource(NativeExecutionStage.run).lstrip())
     handlers = [n for n in ast.walk(tree) if isinstance(n, ast.ExceptHandler)]
     assert not handlers, "an except handler entered NativeExecutionStage.run"
+
+
+# ── EXACTLY ONCE, IN ONE TRANSACTION (B-1.8b.1) ─────────────────────────────
+#
+# ⛔⛔ THE FIRST CUT WIRED THE PRE-COMMIT CLAIM — claim_processed_turn commits
+# the claim BEFORE the write, the lifecycle canonical settlement deliberately
+# abandoned. Danny stopped it. The corrected shape reserves the claim FLUSHED
+# inside the correction's own transaction and completes it immediately before
+# the ONE commit. Three tests, not one: replay is the easy half; the two crash
+# windows are what distinguish exactly-once from merely-deduped-when-lucky.
+
+class _Req:
+    def __init__(self, text, turn_id="ios:corr-1"):
+        self.text, self.turn_id = text, turn_id
+        self.metadata = {}
+
+
+class _Validation:
+    def __init__(self, ops):
+        self.approved_operations = ops
+
+
+# ⛔⛔ THE TWO CRASH-WINDOW TESTS ARE POSTGRES-ONLY, AND THAT IS A FINDING, NOT
+# A DODGE. Isolated 2026-08-18: `claim_request(commit=False)` reserves under a
+# SAVEPOINT; on aiosqlite the pysqlite driver COMMITS THE OUTER TRANSACTION when
+# that savepoint releases (the repo's conftest already documents this for the
+# crash tests), so a rollback leaves the claim durable — the exact defect these
+# tests exist to catch, but manufactured by the test engine. On Postgres the
+# same code rolls the claim back to zero. Transaction-boundary truth lives in
+# the database production runs; these run there or not at all.
+_PG = __import__("os").getenv("TEST_POSTGRES_URL")
+_needs_pg = pytest.mark.skipif(
+    not _PG, reason="transaction-boundary proof: needs a real Postgres "
+                    "(TEST_POSTGRES_URL) — sqlite commits on savepoint release")
+
+
+@pytest.fixture
+async def pg_db():
+    """A real Postgres session, One-Clock pinned, schema built by the MODELS
+    (this file proves lifecycle, not schema — the migrations gate does that)."""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from db.database import Base, make_engine
+    url = _PG.replace("+asyncpg", "+psycopg")
+    engine = make_engine(url)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with Session() as session:
+        yield session
+    await engine.dispose()
+
+
+async def _pg_user(pg_db):
+    from db.models import User
+    u = User(telegram_id="pg-corr", name="pg")
+    pg_db.add(u); await pg_db.commit()
+    return u
+
+
+async def _reload(db, entry_id):
+    """A fresh SELECT. After a rollback the identity map's objects are expired
+    and `db.get()` would lazy-load synchronously (MissingGreenlet under async
+    sqlite); a real query is what production readers do anyway."""
+    from db.models import FoodEntry
+    from sqlalchemy import select
+    # ⚠ NO expire_all(): it would re-expire `user`, which the retry hands back
+    # to run() — and a sync attribute read on an expired object under async
+    # is MissingGreenlet. populate_existing overwrites the identity-map copy.
+    return (await db.execute(
+        select(FoodEntry).where(FoodEntry.id == entry_id)
+        .execution_options(populate_existing=True))).scalar_one()
+
+
+async def _run(stage, db, user, ops, text, turn_id="ios:corr-1"):
+    req = _Req(text, turn_id)
+    req.metadata = {"db": db, "user": user, "today_log": None}
+    return await stage.run(req, validation=_Validation(ops))
+
+
+@pytest.mark.asyncio
+async def test_1_same_turn_twice_is_one_correction_one_event_one_claim(db, make_user):
+    """SAME TURN TWICE -> one effective correction, one canonical:correction
+    event, one COMPLETED claim. The replay raises ExactlyOnceRefusal — the
+    signal the renderer already answers from — and writes nothing."""
+    from core.turns.stages.execute_native import (ExactlyOnceRefusal,
+                                                  NativeExecutionStage)
+    from db.models import FoodEntry, IdempotencyRecord, LedgerEvent
+    from sqlalchemy import select
+
+    user = await make_user()
+    row = await _canonical_meal(db, user, quantity="2 eggs")
+    ops = [{"name": "update_food_entry",
+            "input": {"entry_id": row.id, "quantity": "3 eggs"}}]
+    stage = NativeExecutionStage()
+
+    first = await _run(stage, db, user, ops, "actually 3 eggs")
+    assert first.calls[0].committed
+    with pytest.raises(ExactlyOnceRefusal):
+        await _run(stage, db, user, ops, "actually 3 eggs")   # the resend
+
+    fresh = await db.get(FoodEntry, row.id)
+    await db.refresh(fresh)
+    assert fresh.calories == pytest.approx(270.0), (
+        f"the resend compounded: {fresh.calories} — 3 eggs became 4.5")
+    events = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.entry_id == row.id, LedgerEvent.event_type == "updated",
+        LedgerEvent.source == CORRECTION_SOURCE))).scalars().all()
+    assert len(events) == 1
+    claims = (await db.execute(select(IdempotencyRecord).where(
+        IdempotencyRecord.user_id == user.id,
+        IdempotencyRecord.command == "correction"))).scalars().all()
+    assert len(claims) == 1 and claims[0].status == "completed"
+    assert claims[0].result_entry_id == row.id
+
+
+@_needs_pg
+@pytest.mark.asyncio
+async def test_2_failure_after_reservation_before_write_rolls_both_back(pg_db, monkeypatch):
+    db = pg_db
+    """FAILURE AFTER CLAIM RESERVATION, BEFORE THE WRITE COMMITS -> claim and
+    mutation roll back TOGETHER, and the retry succeeds. Simulated with a
+    refusal (the primitive raises after the claim is reserved) — the same
+    unwind a crash would produce."""
+    from core.canonical_correction import CorrectionRefused
+    from core.turns.stages.execute_native import NativeExecutionStage
+    from db.models import FoodEntry, IdempotencyRecord
+    from sqlalchemy import select
+
+    user = await _pg_user(db)
+    row = await _canonical_meal(db, user, quantity="2 large eggs")
+    row_id, user_id = int(row.id), int(user.id)   # ints: survive rollbacks
+    stage = NativeExecutionStage()
+
+    bad = [{"name": "update_food_entry",
+            "input": {"entry_id": row_id, "quantity": "3 medium eggs"}}]
+    with pytest.raises(CorrectionRefused):
+        await _run(stage, db, user, bad, "actually 3 medium eggs", "ios:t2")
+
+    await db.rollback()          # clear the failed transaction
+    await db.refresh(user)       # `user` is handed to run() again below
+    claims = (await db.execute(select(IdempotencyRecord).where(
+        IdempotencyRecord.user_id == user_id))).scalars().all()
+    assert claims == [], "the reservation survived a failure before the write"
+    fresh = await _reload(db, row_id)
+    assert fresh.calories == pytest.approx(180.0) and fresh.quantity == "2 large eggs"
+
+    good = [{"name": "update_food_entry",
+             "input": {"entry_id": row_id, "quantity": "3 large eggs"}}]
+    result = await _run(stage, db, user, good, "actually 3 large eggs", "ios:t2b")
+    assert result.calls[0].committed
+    fresh = await _reload(db, row_id)
+    assert fresh.calories == pytest.approx(270.0)
+
+
+@_needs_pg
+@pytest.mark.asyncio
+async def test_3_failure_after_mutation_staged_before_commit_leaves_nothing_durable(
+        pg_db, monkeypatch):
+    db = pg_db
+    """FAILURE AFTER THE ROW MUTATION IS STAGED, BEFORE COMMIT -> no durable
+    changed row, no durable ledger event, no durable completed claim; the retry
+    succeeds. The crash is injected INSIDE update_food_entry, after the row
+    and the event are staged and the claim is completed, at the commit itself.
+    """
+    from core.turns.stages.execute_native import NativeExecutionStage
+    from db.models import FoodEntry, IdempotencyRecord, LedgerEvent
+    from sqlalchemy import select
+    import db.queries as queries
+
+    user = await _pg_user(db)
+    row = await _canonical_meal(db, user, quantity="2 eggs")
+    row_id, user_id = int(row.id), int(user.id)   # ints: survive rollbacks
+    stage = NativeExecutionStage()
+    ops = [{"name": "update_food_entry",
+            "input": {"entry_id": row_id, "quantity": "3 eggs"}}]
+
+    real_complete = queries._complete_claim_in_txn
+    async def _crash_at_commit(db_, claim_id, entry_id, daily_log_id):
+        await real_complete(db_, claim_id, entry_id, daily_log_id)
+        # Everything is staged: row mutated, event recorded, claim completed.
+        # The process dies before `db.commit()`.
+        await db_.rollback()
+        raise RuntimeError("simulated crash before commit")
+    monkeypatch.setattr(queries, "_complete_claim_in_txn", _crash_at_commit)
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        await _run(stage, db, user, ops, "actually 3 eggs", "ios:t3")
+    monkeypatch.setattr(queries, "_complete_claim_in_txn", real_complete)
+    await db.rollback()          # clear the failed transaction
+    await db.refresh(user)       # `user` is handed to run() again below
+
+    fresh = await _reload(db, row_id)
+    assert fresh.calories == pytest.approx(180.0), "the row change survived the crash"
+    events = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.entry_id == row_id, LedgerEvent.event_type == "updated"
+    ))).scalars().all()
+    assert events == [], "the ledger event survived the crash"
+    claims = (await db.execute(select(IdempotencyRecord).where(
+        IdempotencyRecord.user_id == user_id))).scalars().all()
+    assert not any(c.status == "completed" for c in claims), (
+        "a completed claim survived a crash whose work did not")
+
+    # The retry — same turn — succeeds: nothing durable blocked it.
+    result = await _run(stage, db, user, ops, "actually 3 eggs", "ios:t3")
+    assert result.calls[0].committed
+    fresh = await _reload(db, row_id)
+    assert fresh.calories == pytest.approx(270.0)

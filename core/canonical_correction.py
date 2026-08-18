@@ -85,12 +85,20 @@ async def creating_source_of(db, entry_id: int) -> Optional[str]:
 
 
 async def correct_quantity(db, *, user, entry_id: int, new_quantity_text: str,
-                           idempotency_claim_id: Optional[int] = None
-                           ) -> CorrectionResult:
+                           idempotency: Optional[tuple] = None
+                           ) -> Optional[CorrectionResult]:
     """Repair the quantity of ONE canonically owned row. Raises
     `NotACanonicalRow` (route to legacy, untouched), `CorrectionRefused`
     (canonical, but not deterministically computable — ask), or the
     firewall's own `CrossOwnerMutation` if the binding was somehow wrong.
+
+    ⭐ `idempotency=(turn_id, message)` MAKES THE CORRECTION EXACTLY-ONCE, IN
+    ONE TRANSACTION *(B-1.8b.1)*. The claim is RESERVED (flushed under a
+    savepoint, never independently committed), the row is repaired and
+    written, and `update_food_entry` completes the claim immediately before
+    its single commit — claim + mutation + ledger event land together or roll
+    back together. Returns None when the claim says this exact turn already
+    corrected the row: the caller replays, writes nothing.
     """
     from sqlalchemy import select
 
@@ -116,6 +124,22 @@ async def correct_quantity(db, *, user, entry_id: int, new_quantity_text: str,
         raise NotACanonicalRow(
             f"entry {entry_id} was created by {owner!r} — legacy keeps it")
 
+    # ── RESERVE: the claim, inside THIS transaction ─────────────────────────
+    claim_id = None
+    if idempotency:
+        from core.idempotency import claim_request
+
+        turn_id, message = idempotency
+        claim = await claim_request(
+            db, channel="canonical", command="correction", user_id=int(user.id),
+            client_key=str(turn_id), turn_id=str(turn_id),
+            payload={"entry_id": int(entry_id), "quantity": new_quantity_text,
+                     "message": message},
+            commit=False)                          # <- the whole point
+        if claim.replay:
+            return None
+        claim_id = claim.record_id
+
     # ── REPAIR: the primitive, over the row's own facts ─────────────────────
     food = str(entry.parsed_food_name or "")
     old_q = normalize_quantity(str(entry.quantity or ""), food)
@@ -124,6 +148,11 @@ async def correct_quantity(db, *, user, entry_id: int, new_quantity_text: str,
         repaired = reprice_quantity(entry=entry, old_quantity=old_q,
                                     new_quantity=new_q)
     except RepairRefused as exc:
+        # ⛔ A REFUSAL UNWINDS THE RESERVATION. The claim was only flushed, so
+        # rolling back leaves NO claim behind — the user's corrected retry is
+        # not blocked by a claim guarding work that never happened.
+        if claim_id is not None:
+            await db.rollback()
         raise CorrectionRefused(str(exc)) from exc
 
     # ── MERGE: stated replaces, omitted preserves ───────────────────────────
@@ -142,7 +171,7 @@ async def correct_quantity(db, *, user, entry_id: int, new_quantity_text: str,
     updated = await update_food_entry(
         db, entry.id, int(user.id),
         ledger_source=CORRECTION_SOURCE,
-        claim_id=idempotency_claim_id,
+        claim_id=claim_id,                # completed in the SAME transaction
         authority=MutationAuthority.CANONICAL_OWNER,
         **changes)
     if updated is None:                                  # pragma: no cover

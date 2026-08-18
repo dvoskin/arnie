@@ -178,6 +178,7 @@ async def committed_result(db, record) -> Optional[dict]:
 async def claim_request(
     db, *, channel: str, command: str, user_id: int,
     client_key: Optional[str], payload: Any, turn_id: str,
+    commit: bool = True,
 ) -> Claim:
     """Claim this logical request, or report that it is already served.
 
@@ -186,6 +187,21 @@ async def claim_request(
 
     Raises `IdempotencyConflict` when the key was used for a different payload,
     and `IdempotencyInProgress` when the original delivery is still running.
+
+    ⭐ `commit=False` — RESERVATION INSIDE THE CALLER'S TRANSACTION *(B-1.8b.1,
+    Danny)*. The default commits the fresh claim before returning, which puts
+    the claim durably on disk BEFORE the write it guards: a crash between the
+    two leaves a completed-looking claim over work that never happened, and a
+    retry is refused. Canonical settlement abandoned that lifecycle
+    deliberately. With `commit=False` the claim row is only FLUSHED (under its
+    savepoint, unique index still the race authority) and the caller's single
+    commit lands claim + mutation + ledger event together — or rolls all three
+    back together. `update_food_entry(claim_id=...)` completes it via
+    `_complete_claim_in_txn` immediately before that one commit.
+
+    ⚠ REPLAY/HEAL PATHS STILL COMMIT under `commit=False`: they mutate only
+    the claim row's bookkeeping about work ALREADY durable, and their commit
+    cannot orphan anything.
     """
     from db.models import IdempotencyRecord
 
@@ -305,10 +321,16 @@ async def claim_request(
             f"original delivery never completed")
         existing.turn_id = turn_id
         existing.created_at = datetime.utcnow()
-        await db.commit()
+        if commit:
+            await db.commit()
+        else:
+            await db.flush()
         return Claim(key=key, turn_id=turn_id, record_id=existing.id)
 
-    await db.commit()
+    # ⛔ THE FRESH-CLAIM COMMIT IS THE CRASH WINDOW. Only when the caller does
+    # not own the transaction.
+    if commit:
+        await db.commit()
     return Claim(key=key, turn_id=turn_id, record_id=record.id)
 
 

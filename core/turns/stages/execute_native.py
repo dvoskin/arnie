@@ -120,11 +120,34 @@ class NativeExecutionStage:
         # authority this lane exists to delete.
         correction = await self._correction_route(db, user, ops)
         if correction is not None:
+            # ⛔⛔ EXACTLY ONCE, IN ONE TRANSACTION *(B-1.8b.1, Danny)*. The
+            # first cut wired `_claim` -> claim_processed_turn, which COMMITS
+            # the claim before the write — the pre-commit lifecycle canonical
+            # settlement deliberately abandoned, because a crash or refusal
+            # between claim and write leaves a claim guarding nothing and the
+            # user's retry is refused. This is the corrected shape:
+            #
+            #     derive key -> RESERVE claim (flushed, NOT committed)
+            #     -> repair -> update row -> totals -> canonical:correction
+            #     event -> COMPLETE claim -> ONE COMMIT
+            #
+            # `update_food_entry(claim_id=...)` already does the tail. A replay
+            # of the same turn finds the completed claim and is answered from
+            # it — one effective correction, one event, one completed claim.
+            # A failure anywhere before that commit rolls claim + mutation +
+            # event back TOGETHER, and the retry succeeds. No handler here
+            # (A8); refusals propagate and the transaction unwinds with them.
             from core.canonical_correction import correct_quantity
             entry_id, new_quantity = correction
             result = await correct_quantity(
                 db, user=user, entry_id=entry_id,
-                new_quantity_text=new_quantity)
+                new_quantity_text=new_quantity,
+                idempotency=(request.turn_id, request.text or ""))
+            if result is None:
+                # The claim says this exact turn already corrected the row.
+                logger.info("event=canonical_correction_replay user=%s "
+                            "entry=%s — already applied", user.id, entry_id)
+                raise ExactlyOnceRefusal(request.turn_id)
             logger.info("event=canonical_correction_settled entry=%s "
                         "ratio=%.4f", result.entry_id, result.ratio)
             return await self._publish_correction(db, user, result, request)
