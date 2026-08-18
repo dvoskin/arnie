@@ -247,3 +247,31 @@ async def test_the_failure_floor_still_answers_the_turns_it_is_for(monkeypatch):
     assert bubbles and any(is_recovery_text(b) for b in bubbles), (
         "the coordinator's failure floor no longer produces a recovery bubble "
         "— the duplicate assertions above are now vacuous")
+
+
+# ── A CANONICAL REFUSAL IS AN ANSWER, NOT AN OUTAGE (P17 live canary #2) ─────
+
+@pytest.mark.asyncio
+async def test_a_correction_refusal_is_answered_in_words_never_legacy_never_raised(
+        monkeypatch, legacy_spy):
+    """"Salty peanut" became a correction on a deleted row; correct_identity
+    refused; the refusal propagated (A8) and the client showed "Arnie's
+    temporarily unavailable" six times. Now: a sentence, no write, no legacy,
+    no raise — and a StaleUndo / ProductSelectionRefused get their own copy."""
+    from core.canonical_correction import (CorrectionRefused,
+                                           ProductSelectionRefused, StaleUndo)
+    r = await _run(monkeypatch, CorrectionRefused("entry 3029 does not exist"),
+                   legacy_spy=legacy_spy)
+    text = " ".join(r.response.bubbles)
+    assert "isn't on the board" in text and "does not exist" not in text
+    assert legacy_spy.calls == [], "a refusal reached the legacy executor"
+
+    r = await _run(monkeypatch, StaleUndo("undo of event 9 is stale"), legacy_spy=legacy_spy)
+    assert "out of date" in " ".join(r.response.bubbles)
+    r = await _run(monkeypatch, ProductSelectionRefused("candidate x not in universe"),
+                   legacy_spy=legacy_spy)
+    assert "scanned product" in " ".join(r.response.bubbles)
+    r = await _run(monkeypatch, CorrectionRefused("no local evidence-backed rung can price"),
+                   legacy_spy=legacy_spy)
+    assert "couldn't apply that correction" in " ".join(r.response.bubbles)
+    assert legacy_spy.calls == []

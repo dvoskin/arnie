@@ -289,6 +289,26 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
             state.response = Response.from_text("Already logged that one.")
         return _result_from_state(state, legacy_kwargs)
 
+    # ⭐ A CANONICAL REFUSAL IS AN ANSWER, NOT AN OUTAGE *(P17 live canary #2,
+    # 2026-08-18; CF2)*. "Salty peanut" — an answer to legacy's still-open
+    # flavor question — became update_food_entry on a row the user had already
+    # deleted; correct_identity refused (correctly: nothing to correct, no
+    # evidence to rebind to); the refusal PROPAGATED (A8, correctly, never
+    # legacy) — and the client rendered it as "Arnie's temporarily unavailable
+    # · Retry", six times across WS + REST retries (turn_metrics outcome
+    # error:CorrectionRefused). Non-mutating by construction, so it is
+    # answered here in words, the same way a duplicate is absorbed above: no
+    # write, no legacy, no raise. The exception's own text is developer copy;
+    # the sentence is chosen by refusal KIND.
+    from core.canonical_correction import CorrectionRefused
+    if isinstance(state.error, CorrectionRefused):
+        logger.info("event=canonical_refusal_answered turn=%s kind=%s reason=%s",
+                    getattr(request, "turn_id", "-"),
+                    type(state.error).__name__, state.error)
+        state.response = Response.from_text(_refusal_copy(state.error))
+        state.error = None
+        return _result_from_state(state, legacy_kwargs)
+
     if state.error is not None:
         raise state.error
 
@@ -329,6 +349,29 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
             return delegated
 
     return _result_from_state(state, legacy_kwargs)
+
+
+def _refusal_copy(exc) -> str:
+    """User-grade copy for a canonical correction refusal, by KIND. Honest and
+    bounded: says what did not happen and what would make it happen. Never
+    the exception text (developer copy), never a claim of success."""
+    from core.canonical_correction import (ProductSelectionRefused,
+                                           StaleUndo)
+    if isinstance(exc, StaleUndo):
+        return ("That undo is out of date — something changed on that entry "
+                "since. Undo the newer change first, or tell me what it "
+                "should say and I'll set it.")
+    if isinstance(exc, ProductSelectionRefused):
+        return ("I couldn't match that to the scanned product, so I left the "
+                "entry alone. Scan it again and tell me the amount.")
+    text = str(exc or "").lower()
+    if "does not exist" in text or "not this user's" in text:
+        return ("That entry isn't on the board any more, so there was nothing "
+                "to update. If you ate it, tell me the food and amount and "
+                "I'll log it fresh.")
+    return ("I couldn't apply that correction from what I know, so I left the "
+            "entry as it was. Tell me the food and the amount and I'll log it "
+            "fresh.")
 
 
 def _result_from_state(state, legacy_kwargs) -> Any:

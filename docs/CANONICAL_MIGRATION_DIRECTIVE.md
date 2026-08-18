@@ -364,8 +364,8 @@ CF1  POISONED MEMORY ROW ufm 1941501: "Grilled        M1 (memory quality) OPEN
      class as ufm#400 (13.2 C/100 g). Quarantine at
      read time via the disagreement test, or fix the
      row; NEVER by a calorie range.
-CF2  CANONICAL REFUSALS REACH THE USER AS GENERIC     rendering (after      OPEN
-     RECOVERY COPY: CorrectionRefused / StaleUndo /  B-1.8; not semantic)
+CF2  CANONICAL REFUSALS REACH THE USER AS GENERIC     rendering (after      PARTLY
+     RECOVERY COPY: CorrectionRefused / StaleUndo /  B-1.8; not semantic)  CLOSED*
      PricingRefused propagate (A8, correct) and the
      coordinator's failure floor answers with
      recovery_message("llm_error"). "Undo the newer
@@ -373,6 +373,15 @@ CF2  CANONICAL REFUSALS REACH THE USER AS GENERIC     rendering (after      OPEN
      what I know" never reach the user. Refusal
      stays canonical (closure criterion held); the
      COPY is the gap.
+     * 2026-08-18 (P17 live canary #2): it bit — a
+       CorrectionRefused surfaced on iOS as "Arnie's
+       temporarily unavailable · Retry" x6. The
+       entrypoint now ANSWERS a CorrectionRefused
+       (incl. StaleUndo, ProductSelectionRefused) in
+       user-grade words by refusal KIND, beside the
+       duplicate absorption: no write, no legacy, no
+       raise. PricingRefused at settle still takes
+       the generic floor — remaining half of CF2.
 CF3  ENTRY 2674 UNLEDGERED MUTATION: "Ground beef,   ledger invariant      OPEN
      seasoned" -> "Ground bison, seasoned" with NO   (I3-family)
      ledger event — one production write path does
