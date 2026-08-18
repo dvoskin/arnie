@@ -768,6 +768,62 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                                  what is missing is authoritative ACQUISITION
                                  of the semantic correction, not pricing.
                        B-1.8d    NEXT after c2 — twins + E2E + rollback/canary
+                                 + a PREREGISTERED stale-event twin *(Danny)*:
+                                 correction A then B; undo of A must NOT erase
+                                 B just because A's before-state exists. FOR
+                                 UPDATE solves concurrency, not stale-event
+                                 causality — needs a current-tip/state guard.
+
+                       ⭐⭐ c2.0 RECON, DONE — reshapes c2 *(2026-08-18)*:
+                         PRODUCT_VARIANT IS NOT MISSING A PARSER. IT IS
+                         MISSING A PERSISTED EXACT CANDIDATE UNIVERSE.
+                         · CandidateSet.candidates is TYPE-LOCKED to
+                           QuantityCandidate — there is no product candidate
+                           in the persisted universe at all. ProductCandidate
+                           exists as a semantic type OUTSIDE it.
+                         · SelectProductVariant.entity_id names a PRODUCT
+                           IDENTITY (off:...), not a snapshot
+                         · PREPARATION is real infrastructure: registered
+                           FieldSpec, pricing=IDENTITY, evidence=ONTOLOGY,
+                           its own unresolved_when. SetPreparation = "change
+                           THIS event's preparation" — entity preserved
+                           STRUCTURALLY, no string comparison
+                         · the ladder is a fixed 4-tuple loop, MEMORY first;
+                           a bound snapshot is today only a candidate rung
+                       ⛔⛔ TWO GUARDRAILS *(Danny)*, BOTH STRUCTURAL:
+                         1. do NOT weaken CandidateSet's type check into
+                            list[Any]. Replace it with a DISCRIMINATED model:
+                            candidate_kind = quantity | product; the set is
+                            structurally incapable of mixing kinds
+                         2. the producer must answer "WHERE DID THIS EXACT SET
+                            OF ALTERNATIVES COME FROM" in stable IDs and
+                            persisted evidence ONLY. c2.1's producer REOPENS an
+                            already-persisted exact universe (form A); it
+                            never assembles one from "similar / same brand /
+                            looks related / search again". A correction with
+                            no persisted universe and no exact mechanical
+                            relation REFUSES. Form B (build the universe at the
+                            moment exact evidence exists — the acquisition
+                            wire) is a LATER producer, not smuggled into c2.1
+                       SCHEMA INVARIANT for SelectProductVariant:
+                         entity_id            WHAT product was selected
+                         product_evidence_id  WHICH immutable observation
+                                              justified it
+                         serving_id           WHICH serving, if applicable
+                         Written TOGETHER at option generation; the answer
+                         path never resolves entity_id then looks up "latest".
+                         TEST: option from snapshot 123, snapshot 124 inserted
+                         later, tap old option -> settles 123.
+                       BOUND PRICING = an EVIDENCE CONSTRAINT, not a priority:
+                         bound=False  MEMORY -> PRODUCT -> ARTIFACT -> ESTIMATE
+                         bound=True   the specified snapshot ONLY -> scalable:
+                                      price · not scalable: REFUSE. No fallback.
+                       c2 ORDER: c2.1 discriminated universe + snapshot-bound
+                       ProductCandidate + PRODUCT_VARIANT FieldSpec + reopening
+                       producer · c2.2 tap -> stored patch -> exact candidate
+                       in exact revision -> exact snapshot -> BOUND pricing ·
+                       c2.3 SetPreparation: preserve entity, replace prep,
+                       evidence rebind.
                        ⛔ B-1.8 IS NOT CLOSED UNTIL c2. The frozen directive
                        names "actually it was the Elite one" and "actually it
                        was Cookies & Cream" as B-1.8's own examples; moving

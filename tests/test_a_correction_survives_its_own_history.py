@@ -260,3 +260,41 @@ async def test_two_concurrent_corrections_serialise_into_a_chain():
                 f"before-states are siblings, not a chain: {befores}")
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_redelivered_undo_restores_exactly_once(db, make_user):
+    """⛔ P1 *(review of ef796ac)*: the restore branch passed no claim, so the
+    same undo turn redelivered produced a SECOND restore mutation and event.
+    Now the B-1.8b.1 lifecycle: one restore, one event, one completed claim;
+    the replay is refused closed."""
+    from core.ledger_undo import _invert
+    from db.models import FoodEntry, IdempotencyRecord, LedgerEvent
+    from sqlalchemy import select
+
+    user = await make_user()
+    await _remember(db, user, "Chicken thigh",
+                    {"calories": 209.0, "protein": 26.0, "carbs": 0.0, "fat": 11.0})
+    row = await _canonical_row(db, user, name="Chicken breast", quantity="150 g")
+    await correct_identity(db, user=user, entry_id=row.id, new_identity="Chicken thigh")
+    event = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.entry_id == row.id, LedgerEvent.event_type == "updated",
+        LedgerEvent.source == CORRECTION_SOURCE))).scalars().one()
+    inp = _invert(event)["tool_calls"][0]["input"]
+    before = {k: v for k, v in inp.items() if k not in ("entry_id", "source")}
+
+    idem = ("ios:undo-1", "undo")
+    first = await restore_recorded_state(db, user=user, entry_id=row.id,
+                                         before=before, idempotency=idem)
+    again = await restore_recorded_state(db, user=user, entry_id=row.id,
+                                         before=before, idempotency=idem)
+    assert first is not None and again is None, "the redelivered undo was not refused"
+
+    restores = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.entry_id == row.id, LedgerEvent.event_type == "updated",
+        LedgerEvent.source == "ledger_undo:canonical"))).scalars().all()
+    assert len(restores) == 1
+    claims = (await db.execute(select(IdempotencyRecord).where(
+        IdempotencyRecord.user_id == user.id,
+        IdempotencyRecord.command == "restore"))).scalars().all()
+    assert len(claims) == 1 and claims[0].status == "completed"

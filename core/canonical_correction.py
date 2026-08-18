@@ -403,12 +403,20 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
 # no evidence, no claim of its own beyond the turn's.
 
 
-async def restore_recorded_state(db, *, user, entry_id: int,
-                                 before: dict) -> dict:
+async def restore_recorded_state(db, *, user, entry_id: int, before: dict,
+                                 idempotency: Optional[tuple] = None
+                                 ) -> Optional[dict]:
     """Write a recorded before-state back onto a canonical row, verbatim.
     Fields the before-state carries are restored; fields passed as None are
     CLEARED (a value the correction added must not survive its own undo).
-    One transaction through update_food_entry(RECORDED_REPLAY)."""
+    One transaction through update_food_entry(RECORDED_REPLAY).
+
+    ⛔ EXACTLY-ONCE, THE B-1.8b.1 LIFECYCLE *(review P1)*: the first cut of
+    this branch returned from the stage BEFORE any claim and passed no
+    claim_id, so the same undo turn redelivered produced a SECOND restore
+    mutation and event. Now: reserve (commit=False) -> restore -> update +
+    ledger -> complete claim -> ONE COMMIT. Returns None on a replay.
+    """
     from sqlalchemy import select
 
     from db.models import DailyLog, FoodEntry
@@ -423,6 +431,20 @@ async def restore_recorded_state(db, *, user, entry_id: int,
     if log is None or int(log.user_id) != int(user.id):
         raise CorrectionRefused(f"entry {entry_id} is not this user's")
 
+    claim_id = None
+    if idempotency:
+        from core.idempotency import claim_request
+        turn_id, message = idempotency
+        claim = await claim_request(
+            db, channel="canonical", command="restore", user_id=int(user.id),
+            client_key=str(turn_id), turn_id=str(turn_id),
+            payload={"entry_id": int(entry_id), "before": before,
+                     "message": message},
+            commit=False)
+        if claim.replay:
+            return None
+        claim_id = claim.record_id
+
     changes = {}
     for k, v in (before or {}).items():
         if k in ("entry_id", "source", "food_hint"):
@@ -430,7 +452,8 @@ async def restore_recorded_state(db, *, user, entry_id: int,
         changes["parsed_food_name" if k == "food_name" else k] = v
     updated = await update_food_entry(
         db, entry.id, int(user.id), ledger_source="ledger_undo:canonical",
-        authority=MutationAuthority.RECORDED_REPLAY, **changes)
+        claim_id=claim_id, authority=MutationAuthority.RECORDED_REPLAY,
+        **changes)
     if updated is None:                                  # pragma: no cover
         raise CorrectionRefused(f"entry {entry_id} vanished mid-restore")
     logger.info("event=canonical_state_restored entry=%s fields=%d",

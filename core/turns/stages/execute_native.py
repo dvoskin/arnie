@@ -149,7 +149,12 @@ class NativeExecutionStage:
                 before = {k: v for k, v in fields["replay"].items()
                           if k not in ("entry_id", "source", "food_hint")}
                 restored = await restore_recorded_state(
-                    db, user=user, entry_id=entry_id, before=before)
+                    db, user=user, entry_id=entry_id, before=before,
+                    idempotency=idem)
+                if restored is None:
+                    logger.info("event=canonical_restore_replay entry=%s",
+                                entry_id)
+                    raise ExactlyOnceRefusal(request.turn_id)
                 from core.execution_result import CallResult, ExecutionResult
                 from core.execution_result import LAST_EXECUTION
                 view = ExecutionResult(calls=(CallResult(
