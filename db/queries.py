@@ -2298,6 +2298,17 @@ class MutationAuthority(str, Enum):
     UNKNOWN = "unknown"
 
 
+#: Every evidence-owned and nutrition-panel column the CANONICAL OWNER may
+#: rewrite through `update_food_entry` — including to None. Declared once so a
+#: repair and the writer cannot disagree about what a "wholesale" rebind means.
+OWNER_WRITABLE = (
+    "fiber", "sugar", "sodium", "micronutrients_json",
+    "pricing_rung", "nutrition_evidence_id", "source_basis",
+    "basis_evidence_id", "conversion_evidence_ids_json",
+    "source_amount", "source_unit", "scaling_factor", "resolved_grams",
+    "product_evidence_id",
+)
+
 #: WHO MAY MUTATE A CANONICALLY OWNED ROW. Everything absent is refused,
 #: including UNKNOWN — the list is what may proceed, not what may not.
 AUTHORITY_OVER_CANONICAL = frozenset({
@@ -2495,21 +2506,19 @@ async def update_food_entry(
     # correction. Gated on authority: a legacy caller cannot reach these
     # columns through this function, so the receipt stays the owner's record.
     if authority == MutationAuthority.CANONICAL_OWNER:
-        for field in ("fiber", "sugar", "sodium", "micronutrients_json",
-                      "scaling_factor", "resolved_grams"):
-            if field in changes and changes[field] is not None:
-                setattr(entry, field, changes[field])
-        # ⭐ B-1.8c — AN IDENTITY REPAIR REWRITES THE RECEIPT'S IDENTITY HALF.
-        # The food changed, so the rung, evidence id, basis, source quantity
-        # and product snapshot are all NEW. `nutrition_evidence_id` and
-        # `product_evidence_id` may legitimately be set to None (a rebind from
-        # a product to a generic food clears the snapshot), so they are
-        # written when PRESENT rather than when non-None.
-        for field in ("pricing_rung", "source_basis", "source_amount",
-                      "source_unit"):
-            if field in changes and changes[field] is not None:
-                setattr(entry, field, changes[field])
-        for field in ("nutrition_evidence_id", "product_evidence_id"):
+        # ⛔⛔ PRESENT MEANS WRITE — INCLUDING AN EXPLICIT None *(review P1)*.
+        # For the owner, every evidence-owned and nutrition-panel field follows
+        # the field-merge contract exactly as the correction layer enforces it:
+        #     omitted  -> preserve
+        #     None     -> CLEAR
+        # An identity repair that rebinds "Barebells bar" to generic chicken
+        # must be able to clear product_evidence_id, basis_evidence_id, the
+        # conversion ids, resolved_grams and any panel field the new evidence
+        # does not supply. The first version wrote only non-None values, so a
+        # rebind was a partial OVERLAY: new nutrition over old fiber, old
+        # sodium, old basis evidence, old conversions — a row describing two
+        # foods at once.
+        for field in OWNER_WRITABLE:
             if field in changes:
                 setattr(entry, field, changes[field])
 
@@ -2529,8 +2538,15 @@ async def update_food_entry(
             entry_id=entry.id, daily_log_id=entry.daily_log_id,
             # `before` is the key `core.ledger_undo._invert` reads to roll a
             # food edit back.
-            payload={"changes": {k: v for k, v in changes.items()
-                                 if v is not None},
+            # ⛔⛔ EXPLICIT CLEARS ARE RECORDED *(review P1)*. This used to
+            # filter `v is not None`, so a repair that cleared
+            # product_evidence_id 42 -> NULL wrote NULL to the row and NOTHING
+            # to the ledger — and the M1.1 replay (created events replayed
+            # through updated events) could not reconstruct it. The ledger now
+            # carries the same distinction the merge contract does: a key
+            # ABSENT from `changes` was preserved; a key PRESENT with None was
+            # cleared. Replay applies both.
+            payload={"changes": dict(changes),
                      "before": before_state},
             source=ledger_source, commit=False)
     if claim_id is not None:
@@ -2636,8 +2652,15 @@ async def update_exercise_entry(
             entry_id=entry.id, daily_log_id=entry.daily_log_id,
             # `before` is the key `core.ledger_undo._invert` reads to roll an
             # exercise edit back.
-            payload={"changes": {k: v for k, v in changes.items()
-                                 if v is not None},
+            # ⛔⛔ EXPLICIT CLEARS ARE RECORDED *(review P1)*. This used to
+            # filter `v is not None`, so a repair that cleared
+            # product_evidence_id 42 -> NULL wrote NULL to the row and NOTHING
+            # to the ledger — and the M1.1 replay (created events replayed
+            # through updated events) could not reconstruct it. The ledger now
+            # carries the same distinction the merge contract does: a key
+            # ABSENT from `changes` was preserved; a key PRESENT with None was
+            # cleared. Replay applies both.
+            payload={"changes": dict(changes),
                      "before": before_state},
             source=ledger_source, commit=False)
     if claim_id is not None:

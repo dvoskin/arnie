@@ -142,16 +142,25 @@ class NativeExecutionStage:
             entry_id, fields = correction
             idem = (request.turn_id, request.text or "")
             if fields.get("food_name"):
-                # Identity (and possibly quantity): rebind evidence FIRST at
-                # the row's quantity, then apply the quantity ratio on top —
-                # each its own deterministic step, each receipted.
+                # ⛔⛔ IDENTITY + QUANTITY IS ONE CALL, ONE TRANSACTION *(review
+                # P1)*. The first cut chained correct_identity (commit) then
+                # correct_quantity (commit): a crash between them left the
+                # identity changed, the claim COMPLETED, and the quantity old —
+                # and the retry found the completed claim and refused. The
+                # quantity now rides INTO the rebind, priced once at that
+                # quantity on the rebound evidence: one write, one event, one
+                # claim, one commit.
+                #
+                # ⚠ product_evidence_id is NOT threaded here on purpose: no
+                # live producer yields one for a text correction yet
+                # (SelectProductVariant has no producer). The primitive accepts
+                # it; the LIVE variant path is not production-complete and is
+                # labelled so on the board.
                 result = await correct_identity(
                     db, user=user, entry_id=entry_id,
-                    new_identity=fields["food_name"], idempotency=idem)
-                if result is not None and fields.get("quantity"):
-                    result = await correct_quantity(
-                        db, user=user, entry_id=entry_id,
-                        new_quantity_text=fields["quantity"]) or result
+                    new_identity=fields["food_name"],
+                    new_quantity_text=fields.get("quantity"),
+                    idempotency=idem)
             else:
                 result = await correct_quantity(
                     db, user=user, entry_id=entry_id,

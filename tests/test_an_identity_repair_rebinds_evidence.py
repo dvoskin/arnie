@@ -202,3 +202,227 @@ def test_the_route_ignores_the_interpreters_numbers_and_dispatches_by_kind():
     from core import canonical_correction as cc
     src = inspect.getsource(cc.correct_identity) + inspect.getsource(cc.correct_quantity)
     assert 'inp.get("calories")' not in src and 'fields.get("calories")' not in src
+
+
+# ── THE THREE P1s, PINNED *(review of 40fcee5)* ─────────────────────────────
+
+@pytest.mark.asyncio
+async def test_identity_plus_quantity_is_one_write_one_event_one_claim(db, make_user):
+    """P1: "actually chicken thigh, and make it 200 g" — ONE call, priced once
+    at 200 g on the rebound evidence. One row mutation, ONE updated event, one
+    completed claim. The first cut chained two committing functions."""
+    from db.models import FoodEntry, IdempotencyRecord, LedgerEvent
+    from sqlalchemy import select
+
+    user = await make_user()
+    await _remember(db, user, "Chicken thigh",
+                    {"calories": 209.0, "protein": 26.0, "carbs": 0.0, "fat": 11.0})
+    row = await _canonical_row(db, user, name="Chicken breast", quantity="150 g")
+
+    result = await correct_identity(db, user=user, entry_id=row.id,
+                                    new_identity="Chicken thigh",
+                                    new_quantity_text="200 g",
+                                    idempotency=("ios:both-1", "actually chicken thigh, 200 g"))
+    fresh = await db.get(FoodEntry, row.id)
+    await db.refresh(fresh)
+    assert fresh.parsed_food_name == "Chicken thigh"
+    assert fresh.quantity == "200 g"
+    assert fresh.calories == pytest.approx(418.0, abs=0.5)      # 209 x 2.0, once
+    events = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.entry_id == row.id, LedgerEvent.event_type == "updated"
+    ))).scalars().all()
+    assert len(events) == 1, "identity+quantity produced more than one event"
+    claims = (await db.execute(select(IdempotencyRecord).where(
+        IdempotencyRecord.user_id == user.id))).scalars().all()
+    assert len(claims) == 1 and claims[0].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_a_rebind_replaces_the_whole_receipt_and_panel_including_absence(db, make_user):
+    """P1: a rebind is WHOLESALE. The old row carries fiber, sodium, micros,
+    resolved_grams, basis evidence, conversion ids and a product snapshot; the
+    new evidence supplies NONE of them. Every one must be CLEARED, not left
+    over — a row must never describe two foods at once."""
+    from db.models import FoodEntry
+    from skills.nutrition.product_store import append_product_evidence
+
+    user = await make_user()
+    snapshot = await append_product_evidence(db, record={
+        "code": "70004199", "product_name": "Barebell", "serving_size": "55.0g",
+        "serving_quantity": 55, "serving_quantity_unit": "g", "rev": 1,
+        "last_modified_t": 1, "nutrition_data_per": "100g",
+        "nutriments": {"energy-kcal_100g": 200, "proteins_100g": 20,
+                       "carbohydrates_100g": 18, "fat_100g": 7.3,
+                       "energy-kcal_serving": 110, "proteins_serving": 11,
+                       "carbohydrates_serving": 9.9, "fat_serving": 4}},
+        serving_unit="bar")
+    await _remember(db, user, "Chicken thigh",
+                    {"calories": 209.0, "protein": 26.0, "carbs": 0.0, "fat": 11.0})
+    row = await _canonical_row(db, user, name="Barebells bar", quantity="100 g")
+    # Dress the old row with everything a product row would carry.
+    from db.queries import MutationAuthority, update_food_entry
+    await update_food_entry(
+        db, row.id, user.id, authority=MutationAuthority.CANONICAL_OWNER,
+        fiber=4.0, sodium=300.0, micronutrients_json='{"iron": 2.0}',
+        resolved_grams=92.0, basis_evidence_id="usda:panel:1",
+        conversion_evidence_ids_json='["usda:173423"]',
+        product_evidence_id=snapshot.id, scaling_factor=1.8)
+
+    await correct_identity(db, user=user, entry_id=row.id,
+                           new_identity="Chicken thigh")   # generic; memory row
+    fresh = await db.get(FoodEntry, row.id)
+    await db.refresh(fresh)
+    assert fresh.parsed_food_name == "Chicken thigh"
+    assert fresh.pricing_rung == "memory"
+    for cleared in ("product_evidence_id", "basis_evidence_id",
+                    "conversion_evidence_ids_json", "resolved_grams",
+                    "micronutrients_json"):
+        assert getattr(fresh, cleared) is None, (
+            f"{cleared} survived the rebind — the row describes two foods")
+    # panel fields the new evidence lacks are cleared too, not inherited
+    assert fresh.fiber is None and fresh.sodium is None
+
+
+@pytest.mark.asyncio
+async def test_the_ledger_records_an_explicit_clear_so_replay_reproduces_it(db, make_user):
+    """P1: product -> generic clears product_evidence_id 42 -> NULL. The
+    `updated` event MUST carry that clear, or the M1.1 replay (created events
+    replayed through updated events) reconstructs a row that still points at
+    the snapshot. omitted = preserve; null = explicitly clear — in the ledger
+    exactly as in the merge contract."""
+    import json
+
+    from db.models import FoodEntry, LedgerEvent
+    from sqlalchemy import select
+    from skills.nutrition.product_store import append_product_evidence
+
+    user = await make_user()
+    snapshot = await append_product_evidence(db, record={
+        "code": "70004199", "product_name": "Barebell", "serving_size": "55.0g",
+        "serving_quantity": 55, "serving_quantity_unit": "g", "rev": 1,
+        "last_modified_t": 1, "nutrition_data_per": "100g",
+        "nutriments": {"energy-kcal_100g": 200, "proteins_100g": 20,
+                       "carbohydrates_100g": 18, "fat_100g": 7.3,
+                       "energy-kcal_serving": 110, "proteins_serving": 11,
+                       "carbohydrates_serving": 9.9, "fat_serving": 4}},
+        serving_unit="bar")
+    await _remember(db, user, "Chicken thigh",
+                    {"calories": 209.0, "protein": 26.0, "carbs": 0.0, "fat": 11.0})
+    row = await _canonical_row(db, user, name="Barebells bar", quantity="100 g")
+    from db.queries import MutationAuthority, update_food_entry
+    await update_food_entry(db, row.id, user.id,
+                            authority=MutationAuthority.CANONICAL_OWNER,
+                            product_evidence_id=snapshot.id)
+
+    await correct_identity(db, user=user, entry_id=row.id,
+                           new_identity="Chicken thigh")
+
+    event = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.entry_id == row.id, LedgerEvent.event_type == "updated",
+        LedgerEvent.source == CORRECTION_SOURCE))).scalars().one()
+    changes = json.loads(event.payload_json)["changes"]
+    assert "product_evidence_id" in changes and changes["product_evidence_id"] is None, (
+        "the ledger dropped the explicit clear — replay cannot reproduce it")
+
+    # And REPLAY the events, the M1.1 way: created -> updated, None = clear.
+    events = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.entry_id == row.id).order_by(LedgerEvent.created_at,
+                                                  LedgerEvent.id))).scalars().all()
+    state = {}
+    for ev in events:
+        p = json.loads(ev.payload_json or "{}")
+        if ev.event_type == "created":
+            state.update({k: v for k, v in p.items()})
+        elif ev.event_type == "updated":
+            state.update(p.get("changes") or {})       # None APPLIES as a clear
+    assert state.get("product_evidence_id") is None
+    assert state.get("parsed_food_name") == "Chicken thigh"
+    fresh = await db.get(FoodEntry, row.id)
+    await db.refresh(fresh)
+    assert fresh.product_evidence_id is None
+
+
+# ── THE CRASH TWIN *(Danny)*: identity + quantity, crash before the commit ──
+#
+# Postgres-only for the reason pinned in test_the_owner_corrects_what_it_owns:
+# pysqlite commits the outer transaction on savepoint release, so sqlite is
+# not an authoritative instrument for this boundary. Do not un-skip.
+_PG = __import__("os").getenv("TEST_POSTGRES_URL")
+_needs_pg = pytest.mark.skipif(
+    not _PG, reason="transaction-boundary proof: needs a real Postgres "
+                    "(TEST_POSTGRES_URL). SQLite is NOT an authoritative "
+                    "instrument here — do not un-skip.")
+
+
+@pytest.fixture
+async def pg_db():
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from db.database import Base, make_engine
+    engine = make_engine(_PG.replace("+asyncpg", "+psycopg"))
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with Session() as session:
+        yield session
+    await engine.dispose()
+
+
+@_needs_pg
+@pytest.mark.asyncio
+async def test_identity_plus_quantity_crash_before_commit_leaves_both_old_and_retry_applies_both(
+        pg_db, monkeypatch):
+    """identity + quantity, crash after the rebind is computed / before the
+    final commit -> OLD identity, OLD quantity, NO correction event, NO
+    completed claim. Retry applies BOTH. This is the twin that would have
+    caught the two-commit chain: there, the crash left identity NEW, quantity
+    OLD, and a completed claim that refused the retry."""
+    import json
+
+    from db.models import FoodEntry, IdempotencyRecord, LedgerEvent, User
+    from sqlalchemy import select
+    import db.queries as queries
+
+    db = pg_db
+    user = User(telegram_id="pg-both", name="pg"); db.add(user); await db.commit()
+    await _remember(db, user, "Chicken thigh",
+                    {"calories": 209.0, "protein": 26.0, "carbs": 0.0, "fat": 11.0})
+    row = await _canonical_row(db, user, name="Chicken breast", quantity="150 g")
+    row_id, user_id = int(row.id), int(user.id)
+
+    real_complete = queries._complete_claim_in_txn
+    async def _crash_at_commit(db_, claim_id, entry_id, daily_log_id):
+        await real_complete(db_, claim_id, entry_id, daily_log_id)
+        await db_.rollback()
+        raise RuntimeError("simulated crash before commit")
+    monkeypatch.setattr(queries, "_complete_claim_in_txn", _crash_at_commit)
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        await correct_identity(db, user=user, entry_id=row_id,
+                               new_identity="Chicken thigh",
+                               new_quantity_text="200 g",
+                               idempotency=("ios:both-crash", "chicken thigh 200 g"))
+    monkeypatch.setattr(queries, "_complete_claim_in_txn", real_complete)
+    await db.rollback(); await db.refresh(user)
+
+    fresh = (await db.execute(select(FoodEntry).where(FoodEntry.id == row_id)
+                              .execution_options(populate_existing=True))).scalar_one()
+    assert fresh.parsed_food_name == "Chicken breast", "identity changed despite the crash"
+    assert fresh.quantity == "150 g", "quantity changed despite the crash"
+    events = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.entry_id == row_id, LedgerEvent.event_type == "updated"))).scalars().all()
+    assert events == []
+    claims = (await db.execute(select(IdempotencyRecord).where(
+        IdempotencyRecord.user_id == user_id))).scalars().all()
+    assert not any(c.status == "completed" for c in claims)
+
+    # The retry — same turn — applies BOTH.
+    result = await correct_identity(db, user=user, entry_id=row_id,
+                                    new_identity="Chicken thigh",
+                                    new_quantity_text="200 g",
+                                    idempotency=("ios:both-crash", "chicken thigh 200 g"))
+    assert result is not None
+    fresh = (await db.execute(select(FoodEntry).where(FoodEntry.id == row_id)
+                              .execution_options(populate_existing=True))).scalar_one()
+    assert fresh.parsed_food_name == "Chicken thigh" and fresh.quantity == "200 g"
+    assert fresh.calories == pytest.approx(418.0, abs=0.5)

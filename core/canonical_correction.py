@@ -227,6 +227,7 @@ def _split_identity_words(identity: str) -> tuple:
 
 async def correct_identity(db, *, user, entry_id: int, new_identity: str,
                            product_evidence_id: Optional[int] = None,
+                           new_quantity_text: Optional[str] = None,
                            idempotency: Optional[tuple] = None
                            ) -> Optional[IdentityRepairResult]:
     """Rebind ONE canonically owned row to a different food identity — or a
@@ -237,6 +238,23 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
 
     Exactly-once in ONE transaction, the B-1.8b.1 lifecycle: reservation
     flushed, mutation + ledger event + claim completion share the commit.
+
+    ⛔⛔ IDENTITY + QUANTITY IS ONE TRANSACTION, NOT TWO *(review P1)*. The
+    first cut chained correct_identity (commit) then correct_quantity (commit)
+    — so "actually chicken thigh, and make it 200 g" could crash between them
+    with the identity changed, the claim COMPLETED, and the quantity still old;
+    the retry then found a completed claim and refused. That broke the
+    B-1.8b.1 invariant this module had just paid for. Now `new_quantity_text`
+    is priced AT THAT QUANTITY against the rebound evidence — one calculation,
+    one row mutation, one `updated` event, one claim, one commit.
+
+    ⛔⛔ THE REBIND IS WHOLESALE, INCLUDING EXPLICIT ABSENCE *(review P1)*.
+    Every evidence-owned and nutrition-panel field is REPLACED by the new
+    price — and a field the new evidence does not supply is CLEARED (written
+    as None), never left over from the old food. The first cut dropped None
+    values, so a rebind was an overlay: new calories over old fiber, old
+    sodium, old basis evidence, old conversion ids, old resolved mass — a row
+    describing two foods at once. Absence is a legitimate write.
     """
     from sqlalchemy import select
 
@@ -286,7 +304,11 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
     old_identity = str(entry.parsed_food_name or "")
     identity = new_identity or old_identity
     entity, preparation = _split_identity_words(identity)
-    quantity_text = str(entry.quantity or "")
+    # Field-merge: a stated quantity replaces, an omitted one preserves — and
+    # either way the price is computed ONCE, at that quantity, on the rebound
+    # evidence. No second pass, no second commit.
+    quantity_text = (str(new_quantity_text).strip() if new_quantity_text
+                     else str(entry.quantity or ""))
     consumed = normalize_quantity(quantity_text, identity) if quantity_text else None
     item = {"food_name": identity, "quantity": quantity_text}
     if product_evidence_id is not None:
@@ -310,18 +332,25 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
             f"{quantity_text!r} — an identity repair must rebind to evidence, "
             f"never re-estimate ({exc})") from exc
 
+    import json
+    conversion_ids = list(getattr(priced, "conversion_evidence_ids", ()) or ())
     changes = {
         "parsed_food_name": identity,
+        "quantity": quantity_text,
         "calories": float(priced.calories),
         "protein": priced.protein, "carbs": priced.carbs, "fats": priced.fats,
+        # ── the panel: replaced, ABSENT = CLEARED ───────────────────────────
         "fiber": priced.fiber, "sugar": priced.sugar, "sodium": priced.sodium,
-        # ⭐ THE RECEIPT IS REWRITTEN WHOLESALE — the food changed, so the
-        # nutrition evidence, basis and factor are all the NEW ones. This is
-        # the difference from a quantity repair, which moves the factor and
-        # keeps the evidence.
+        "micronutrients_json": (json.dumps(priced.micros)
+                                if priced.micros is not None else None),
+        # ── the receipt: replaced WHOLESALE, ABSENT = CLEARED ───────────────
         "pricing_rung": priced.rung.value,
         "nutrition_evidence_id": priced.evidence_id or None,
         "source_basis": priced.basis or None,
+        "basis_evidence_id": None,      # no basis-evidence producer yet; a
+                                        # stale one from the OLD food is wrong
+        "conversion_evidence_ids_json": (json.dumps(conversion_ids)
+                                         if conversion_ids else None),
         "scaling_factor": priced.scaling_factor,
         "resolved_grams": priced.resolved_grams,
         "source_amount": priced.source_amount,
@@ -329,11 +358,9 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
         "product_evidence_id": (int(product_evidence_id)
                                 if product_evidence_id is not None else None),
     }
-    if priced.micros is not None:
-        import json
-        changes["micronutrients_json"] = json.dumps(priced.micros)
-    changes = {k: v for k, v in changes.items() if v is not None
-               or k in ("nutrition_evidence_id", "product_evidence_id")}
+    # ⛔ NOTHING IS FILTERED. Every key above reaches update_food_entry, and
+    # for the owner authority a present None is a CLEAR. Filtering None here is
+    # exactly how the first cut became a partial overlay.
 
     updated = await update_food_entry(
         db, entry.id, int(user.id),

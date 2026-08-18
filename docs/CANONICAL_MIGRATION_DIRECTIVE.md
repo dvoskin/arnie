@@ -679,6 +679,32 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                      kind; the interpreter's numbers are IGNORED, never routed
                      to legacy where they would land. Never reinterprets
                      identity via quantity math.
+                     ⛔ THREE P1s CAUGHT ON REVIEW OF 40fcee5, ALL CLOSED:
+                       1. identity+quantity chained TWO committing calls — a
+                          crash between them left identity NEW, quantity OLD,
+                          claim COMPLETED, retry refused. Now ONE call: the
+                          quantity rides into the rebind, priced once. Crash
+                          twin on Postgres: both old, no event, no claim,
+                          retry applies BOTH.
+                       2. "wholesale" was an OVERLAY — None values were
+                          filtered, so old fiber/sodium/micros/resolved_grams/
+                          basis_evidence/conversion ids/snapshot survived a
+                          rebind. Now every OWNER_WRITABLE field is present in
+                          the write, None = CLEAR; a row never describes two
+                          foods.
+                       3. THE LEDGER DROPPED EXPLICIT CLEARS (`v is not None`)
+                          — a product->generic rebind cleared the snapshot on
+                          the row and recorded nothing, so the M1.1 replay
+                          could not reproduce it. The `updated` payload now
+                          carries the merge distinction: absent = preserved,
+                          None = cleared. Pinned by replaying the events.
+                     ⚠ LIVE PRODUCT-VARIANT CORRECTION IS NOT PRODUCTION-
+                       COMPLETE: the primitive accepts product_evidence_id;
+                       the live route does not thread one, because no
+                       producer yields it for a text correction
+                       (SelectProductVariant still has no producer). Generic
+                       identity repair is live; snapshot rebind is a proven
+                       primitive awaiting its producer.
              B-1.8d  twins + E2E + rollback proof
            ⚠ pre-P17f rows carry NO receipt: their quantity repair is the
            macro-ratio path (committed macros ARE the persisted facts) —
