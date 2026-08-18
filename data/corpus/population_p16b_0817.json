@@ -366,5 +366,2915 @@
   3017
  ],
  "checksum": "6247a33c55ed64f5",
- "why": "P16b. A rolling window cannot separate a PREDICATE gain from a drift in what people ate. Re-run with `--population p16b_0817` to measure this exact set."
+ "why": "P16b. A rolling window cannot separate a PREDICATE gain from a drift in what people ate. Re-run with `--population p16b_0817` to measure this exact set. M1.1 (2026-08-18): the id list was POINTERS and shrank when user 26 deleted rows 3016/3017 live. The fixture now carries INPUT FACTS: ledger `created` events REPLAYED through `updated` events (both payload shapes: changes{} and flat merge{}) up to the freeze instant — the state the 08-17 baseline measured (55 rows had been corrected before the freeze). Verified against all 359 surviving live rows: 358 byte-equal; entry 2674 differs with NO ledger event (an unledgered production mutation, recorded here and reported to the board); its live value is taken because that is what the baseline saw. 3016/3017 recovered from the immutable ledger.",
+ "rows": [
+  {
+   "entry_id": 2464,
+   "turn_id": "ios:ios:A67F946D-E5F5-4190-A685-B0617B230076",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Окрошка на айране с курицей",
+   "quantity": "300 г"
+  },
+  {
+   "entry_id": 2465,
+   "turn_id": "ios:ios:A67F946D-E5F5-4190-A685-B0617B230076",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Капучино на обычном молоке",
+   "quantity": "250 г"
+  },
+  {
+   "entry_id": 2467,
+   "turn_id": "ios:ios:F29CF723-88D7-46FD-B9FB-67310AD055B4",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Творог",
+   "quantity": "150 г"
+  },
+  {
+   "entry_id": 2468,
+   "turn_id": "ios:ios:355DACE6-5F85-4DC8-9CF1-274BBE0C8EAF",
+   "source": "legacy:ios",
+   "user_id": 5,
+   "food_name": "Oatmeal, plain",
+   "quantity": "5 tbsp dry (~1/3 cup)"
+  },
+  {
+   "entry_id": 2469,
+   "turn_id": "ios:h:c24361483a2d405503a9",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Cheesecake",
+   "quantity": "2.5 bites"
+  },
+  {
+   "entry_id": 2491,
+   "turn_id": "ios:ios:6445AF59-425D-4049-B357-6C92DE16E091",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Кефир",
+   "quantity": "200 мл"
+  },
+  {
+   "entry_id": 2492,
+   "turn_id": "ios:ios:13DA58DE-305F-4A0E-8C7C-0C68947E106F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 44,
+   "food_name": "Boiled egg",
+   "quantity": "1 egg"
+  },
+  {
+   "entry_id": 2493,
+   "turn_id": "ios:ios:5CE2398D-E83D-4349-8F9E-4900F3CE0A80",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 44,
+   "food_name": "Homemade miso soup",
+   "quantity": "1 bowl"
+  },
+  {
+   "entry_id": 2494,
+   "turn_id": "ios:ios:5CE2398D-E83D-4349-8F9E-4900F3CE0A80",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 44,
+   "food_name": "Rice",
+   "quantity": "2 tablespoons"
+  },
+  {
+   "entry_id": 2495,
+   "turn_id": "ios:ios:9BED3FAD-D926-40C3-A214-3EDD4D4CFB97",
+   "source": "legacy:ios",
+   "user_id": 44,
+   "food_name": "Pan-fried pork",
+   "quantity": "1 piece (~120g)"
+  },
+  {
+   "entry_id": 2496,
+   "turn_id": "ios:ios:2B550CD3-8E0E-425E-A785-B528DE04799A",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Plain bagel",
+   "quantity": "0.5 bagel"
+  },
+  {
+   "entry_id": 2497,
+   "turn_id": "ios:ios:2B550CD3-8E0E-425E-A785-B528DE04799A",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Whipped cream cheese",
+   "quantity": "1 tbsp"
+  },
+  {
+   "entry_id": 2498,
+   "turn_id": "ios:ios:44C0ED91-583C-4ABD-99C6-E1C801D30097",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Kazunori Hand Roll Set (6 piece)",
+   "quantity": "6 piece"
+  },
+  {
+   "entry_id": 2499,
+   "turn_id": "ios:ios:44C0ED91-583C-4ABD-99C6-E1C801D30097",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Scallop Sashimi",
+   "quantity": "1 piece"
+  },
+  {
+   "entry_id": 2500,
+   "turn_id": "ios:ios:44C0ED91-583C-4ABD-99C6-E1C801D30097",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Tuna Sashimi",
+   "quantity": "1 piece"
+  },
+  {
+   "entry_id": 2501,
+   "turn_id": "ios:ios:44C0ED91-583C-4ABD-99C6-E1C801D30097",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Toro Sashimi",
+   "quantity": "1 piece"
+  },
+  {
+   "entry_id": 2502,
+   "turn_id": "ios:ios:ED97CF57-7CE3-41D0-8E76-4E54179C62D6",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "1% cottage cheese",
+   "quantity": "180 cal"
+  },
+  {
+   "entry_id": 2503,
+   "turn_id": "ios:ios:347D93A0-DEF2-4EFE-9544-BE4A10831AD1",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Skirt steak, pan fried",
+   "quantity": "6oz"
+  },
+  {
+   "entry_id": 2505,
+   "turn_id": "ios:ios:8D8B8829-D793-4F87-8E28-2418FCBA6590",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Salad with chicken",
+   "quantity": "1 salad"
+  },
+  {
+   "entry_id": 2506,
+   "turn_id": "ios:ios:8D8B8829-D793-4F87-8E28-2418FCBA6590",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "French dressing",
+   "quantity": "2 tbsp"
+  },
+  {
+   "entry_id": 2507,
+   "turn_id": "ios:ios:8D8B8829-D793-4F87-8E28-2418FCBA6590",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Barebells Salty Peanut Protein Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2508,
+   "turn_id": "ios:ios:8D8B8829-D793-4F87-8E28-2418FCBA6590",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Quest Chips Sweet Chili",
+   "quantity": "1 regular bag"
+  },
+  {
+   "entry_id": 2509,
+   "turn_id": "ios:ios:725FF9AD-2E57-456B-9BD6-461022299146",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Corn on the cob",
+   "quantity": "1 medium ear"
+  },
+  {
+   "entry_id": 2515,
+   "turn_id": "ios:ios:A22887D3-5364-4276-B826-57ED90911B3D",
+   "source": "legacy:ios",
+   "user_id": 5,
+   "food_name": "Pret Oatmeal",
+   "quantity": "1/2 cup"
+  },
+  {
+   "entry_id": 2517,
+   "turn_id": "ios:ios:8EC77D9D-25A1-4954-84D6-4C50D9AC712F",
+   "source": "legacy:ios",
+   "user_id": 5,
+   "food_name": "Black coffee with half and half, 2 sugar",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2518,
+   "turn_id": "ios:ios:229F7D5D-7C37-4D9F-B6FB-0CD250BD15C8",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Chicken lollipop, roasted with BBQ marinade",
+   "quantity": "1 average drumette"
+  },
+  {
+   "entry_id": 2519,
+   "turn_id": "ios:ios:9FA30C92-A72A-41A2-9ECB-28B0E52ABC4A",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Chicken lollipop, roasted with BBQ marinade",
+   "quantity": "1 average drumette"
+  },
+  {
+   "entry_id": 2522,
+   "turn_id": "ios:ios:21DF1E8A-BFB7-498A-ABEB-33492676088B",
+   "source": "legacy:ios",
+   "user_id": 5,
+   "food_name": "Chocolate croissant",
+   "quantity": "1 croissant"
+  },
+  {
+   "entry_id": 2523,
+   "turn_id": "ios:ios:A4A9148A-5BB5-4DB3-AFF5-8CBAC9158B59",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Яйца пашот (2 шт)",
+   "quantity": "2 яйца"
+  },
+  {
+   "entry_id": 2524,
+   "turn_id": "ios:ios:A4A9148A-5BB5-4DB3-AFF5-8CBAC9158B59",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Форель запечённая в духовке",
+   "quantity": "150 г"
+  },
+  {
+   "entry_id": 2525,
+   "turn_id": "ios:ios:A4A9148A-5BB5-4DB3-AFF5-8CBAC9158B59",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Сыр моцарелла",
+   "quantity": "50 г"
+  },
+  {
+   "entry_id": 2526,
+   "turn_id": "ios:ios:A4A9148A-5BB5-4DB3-AFF5-8CBAC9158B59",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Перец сладкий",
+   "quantity": "30 г"
+  },
+  {
+   "entry_id": 2527,
+   "turn_id": "ios:ios:A4A9148A-5BB5-4DB3-AFF5-8CBAC9158B59",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Капучино на обычном молоке",
+   "quantity": "250 мл"
+  },
+  {
+   "entry_id": 2534,
+   "turn_id": "ios:ios:F3B2E09A-02A6-43C9-BC49-44A84BB09DDA",
+   "source": "legacy:ios",
+   "user_id": 5,
+   "food_name": "Chicken wrap, no bacon, ranch (Clinton Hall)",
+   "quantity": "1 wrap"
+  },
+  {
+   "entry_id": 2540,
+   "turn_id": "ios:ios:A7384201-D5E5-41BA-8CBE-AABEBBC00FBA",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Legendary Foods Sweet Roll Milk Chocolate",
+   "quantity": "1 roll"
+  },
+  {
+   "entry_id": 2549,
+   "turn_id": "ios:ios:DAAE3B04-24DE-4C69-820C-2571360B752D",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Limesalt Burrito Bowl, double chicken",
+   "quantity": "1 bowl"
+  },
+  {
+   "entry_id": 2552,
+   "turn_id": "ios:h:bcf92017f6da208873fc",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Рис отварной",
+   "quantity": "250 г"
+  },
+  {
+   "entry_id": 2562,
+   "turn_id": "ios:ios:BDFB58B0-E504-42C2-9A83-F43AC5924BD8",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Skirt steak, pan fried",
+   "quantity": "6oz"
+  },
+  {
+   "entry_id": 2563,
+   "turn_id": "ios:ios:BDFB58B0-E504-42C2-9A83-F43AC5924BD8",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "White rice, steamed",
+   "quantity": "100g cooked"
+  },
+  {
+   "entry_id": 2564,
+   "turn_id": "ios:ios:A37BE4EC-D7BB-465D-AAB9-90F61CC770D7",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Рыба",
+   "quantity": "1 порция (чуть больше ладони)"
+  },
+  {
+   "entry_id": 2565,
+   "turn_id": "ios:ios:A37BE4EC-D7BB-465D-AAB9-90F61CC770D7",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Бейгл",
+   "quantity": "0.5 бейгл"
+  },
+  {
+   "entry_id": 2566,
+   "turn_id": "ios:ios:A37BE4EC-D7BB-465D-AAB9-90F61CC770D7",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Авокадо",
+   "quantity": "0.5 авокадо"
+  },
+  {
+   "entry_id": 2567,
+   "turn_id": "ios:ios:D3B8A3A8-5C97-4F0C-BE3B-97EDA9A40695",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Shrimp, regular (not battered/fried)",
+   "quantity": "7 shrimp"
+  },
+  {
+   "entry_id": 2568,
+   "turn_id": "ios:ios:C5AD1469-EF4B-4A23-BA32-0D930AE7740F",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Corn on the cob, boiled",
+   "quantity": "half medium ear"
+  },
+  {
+   "entry_id": 2569,
+   "turn_id": "ios:ios:C5AD1469-EF4B-4A23-BA32-0D930AE7740F",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Royo Everything Bagel",
+   "quantity": "1 bagel"
+  },
+  {
+   "entry_id": 2572,
+   "turn_id": "ios:ios:749DA06B-4C46-4CC3-BF0B-0C9B30F2A82E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Cucumber",
+   "quantity": "1 medium"
+  },
+  {
+   "entry_id": 2573,
+   "turn_id": "ios:ios:9406A60A-7B25-4F17-A8D7-36A12BC1BDAE",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Sopressata slices",
+   "quantity": "3 slices"
+  },
+  {
+   "entry_id": 2574,
+   "turn_id": "ios:ios:51156105-DB30-4F38-A43E-A0DAF8ABE834",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Вареные яйца",
+   "quantity": "2 шт"
+  },
+  {
+   "entry_id": 2575,
+   "turn_id": "ios:ios:51156105-DB30-4F38-A43E-A0DAF8ABE834",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Чай",
+   "quantity": "1 чашка"
+  },
+  {
+   "entry_id": 2576,
+   "turn_id": "ios:ios:1769244F-6FA6-4475-90C2-AC52BAB28433",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Говядина жареная с сыром и луком",
+   "quantity": "150 г"
+  },
+  {
+   "entry_id": 2577,
+   "turn_id": "ios:ios:1769244F-6FA6-4475-90C2-AC52BAB28433",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Авокадо",
+   "quantity": "0.5 шт"
+  },
+  {
+   "entry_id": 2578,
+   "turn_id": "ios:ios:1769244F-6FA6-4475-90C2-AC52BAB28433",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Сырник со сметаной",
+   "quantity": "1 стандартный"
+  },
+  {
+   "entry_id": 2579,
+   "turn_id": "ios:ios:BE9801CA-549D-45AF-A3AB-510033FAD53E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Картофель молодой с маслом",
+   "quantity": "200 г"
+  },
+  {
+   "entry_id": 2580,
+   "turn_id": "ios:ios:BE9801CA-549D-45AF-A3AB-510033FAD53E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Лосось жареный",
+   "quantity": "100 г"
+  },
+  {
+   "entry_id": 2581,
+   "turn_id": "ios:ios:BE9801CA-549D-45AF-A3AB-510033FAD53E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Салат огурец помидор сельдерей укроп петрушка",
+   "quantity": "150 г"
+  },
+  {
+   "entry_id": 2582,
+   "turn_id": "ios:ios:BE9801CA-549D-45AF-A3AB-510033FAD53E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Капучино на обычном молоке",
+   "quantity": "250 мл"
+  },
+  {
+   "entry_id": 2583,
+   "turn_id": "ios:ios:BE9801CA-549D-45AF-A3AB-510033FAD53E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Шоколад",
+   "quantity": "50 г"
+  },
+  {
+   "entry_id": 2584,
+   "turn_id": "ios:ios:0E40B546-67FA-4E5E-AED0-8066BC9A3F0C",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Овощное рагу (картофель, курятина, перец, морковь, лук, кабачок)",
+   "quantity": "300 г"
+  },
+  {
+   "entry_id": 2585,
+   "turn_id": "ios:ios:58C38A1E-161B-488F-8C88-47868F4F99D9",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Pret Smoked Salmon, Quinoa & Avocado Pot",
+   "quantity": "1 pot"
+  },
+  {
+   "entry_id": 2586,
+   "turn_id": "ios:ios:35E6C8FA-F54B-44FB-8769-FE700001506B",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Quest Chips Spicy Sweet Chili",
+   "quantity": "1 bag"
+  },
+  {
+   "entry_id": 2587,
+   "turn_id": "ios:ios:0CBD14A0-6701-4154-9BB4-D07517C7D8C2",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Sun Chips (original)",
+   "quantity": "9 chips"
+  },
+  {
+   "entry_id": 2588,
+   "turn_id": "ios:ios:0CBD14A0-6701-4154-9BB4-D07517C7D8C2",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Wolfknights rice with egg",
+   "quantity": "1 plate"
+  },
+  {
+   "entry_id": 2590,
+   "turn_id": "ios:ios:0538978D-AB68-4589-8C5F-69F4B7BFD3C2",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Barebells Caramel Cashew Protein Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2592,
+   "turn_id": "ios:ios:CC6E9A5D-7373-480C-990C-BF88A097BCDD",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Barebells Salty Peanut Protein Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2593,
+   "turn_id": "ios:ios:186C4F3D-51C4-490E-BD35-B008AF9BDD83",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Chicken soup",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2594,
+   "turn_id": "ios:ios:FB939E42-A042-4EA4-815B-4B0C82FC70BD",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Dollar pizza slice, plain",
+   "quantity": "1 slice"
+  },
+  {
+   "entry_id": 2596,
+   "turn_id": "ios:ios:8BCAB610-09F6-455E-8CCB-BD484820C7D4",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Fritos",
+   "quantity": "10 chips"
+  },
+  {
+   "entry_id": 2597,
+   "turn_id": "ios:ios:247D5122-FA40-47CA-8D4E-9378EA60ECCC",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Broth-based vegetable soup with chicken",
+   "quantity": "1 bowl"
+  },
+  {
+   "entry_id": 2598,
+   "turn_id": "ios:ios:DF7A7E93-D360-439F-82D1-C8880688A97D",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Core Power Strawberry Banana Shake, 26g Protein",
+   "quantity": "14 oz"
+  },
+  {
+   "entry_id": 2599,
+   "turn_id": "ios:ios:DF7A7E93-D360-439F-82D1-C8880688A97D",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Gimme Snacks Teriyaki Seaweed Snacks",
+   "quantity": "1 pack"
+  },
+  {
+   "entry_id": 2600,
+   "turn_id": "ios:ios:7DA9E416-5A35-4E08-83D4-D9753F6A961A",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Parmesan cheese",
+   "quantity": "~21g (3/4 of 1in cube)"
+  },
+  {
+   "entry_id": 2601,
+   "turn_id": "ios:ios:BE92894F-2684-4C0D-BC40-27DD157572B5",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Ground turkey, 96% lean, pan-cooked",
+   "quantity": "150 g"
+  },
+  {
+   "entry_id": 2602,
+   "turn_id": "ios:ios:BE92894F-2684-4C0D-BC40-27DD157572B5",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "White rice, cooked",
+   "quantity": "100 g"
+  },
+  {
+   "entry_id": 2603,
+   "turn_id": "ios:h:87bb6091febe6389a9f3",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Toucan Coconut Milk Drink, Mango Flavor with Coconut Gel",
+   "quantity": "290 mL"
+  },
+  {
+   "entry_id": 2604,
+   "turn_id": "ios:ios:CE3A23DA-D0C1-4604-93FD-CFE3E82C32CD",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Legendary Foods Ranch Popped Protein Chips",
+   "quantity": "6 piece"
+  },
+  {
+   "entry_id": 2605,
+   "turn_id": "ios:ios:2D423D45-2726-4533-A0FD-149A0A3D4C2F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Happy Wolf chocolate chip bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2606,
+   "turn_id": "ios:ios:6D7BFFC2-2AC2-4D55-805A-00F4653D5BD7",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Черника",
+   "quantity": "100 г"
+  },
+  {
+   "entry_id": 2607,
+   "turn_id": "ios:ios:6D7BFFC2-2AC2-4D55-805A-00F4653D5BD7",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Сыр пармезан",
+   "quantity": "50 г"
+  },
+  {
+   "entry_id": 2608,
+   "turn_id": "ios:ios:A38124A4-AF8D-457C-A002-9C746EB37AE5",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Шакшука",
+   "quantity": "300 г"
+  },
+  {
+   "entry_id": 2609,
+   "turn_id": "ios:ios:A38124A4-AF8D-457C-A002-9C746EB37AE5",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Дорадо филе",
+   "quantity": "100 г"
+  },
+  {
+   "entry_id": 2610,
+   "turn_id": "ios:ios:3433BE6A-C779-49AC-8F66-B41E327E39D5",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Coffee with splash of whole milk and Splenda",
+   "quantity": "1 cup, splash of milk"
+  },
+  {
+   "entry_id": 2613,
+   "turn_id": "ios:335CF9DA-5D09-4533-A9F6-8549EEBAA208",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Lenwich Caesar Wrap, spinach wrap, no croutons",
+   "quantity": "1 wrap"
+  },
+  {
+   "entry_id": 2614,
+   "turn_id": "ios:9E9B059F-5C13-4DF2-BD66-74B483AFD8AE",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Ground turkey, 94% lean, pan-cooked",
+   "quantity": "200 g"
+  },
+  {
+   "entry_id": 2615,
+   "turn_id": "ios:9E9B059F-5C13-4DF2-BD66-74B483AFD8AE",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "White rice, cooked",
+   "quantity": "125 g"
+  },
+  {
+   "entry_id": 2616,
+   "turn_id": "ios:AE551CC8-4107-40B3-96CC-5913CF5F0D95",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Happy Wolf chocolate chip bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2617,
+   "turn_id": "ios:A4396955-018B-4655-B4D8-7F3A82C6A076",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Twizzlers",
+   "quantity": "6 piece"
+  },
+  {
+   "entry_id": 2618,
+   "turn_id": "ios:F281CF36-2FD5-4086-8967-98C683469C8E",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Ground turkey, 94% lean, pan-cooked",
+   "quantity": "200 g"
+  },
+  {
+   "entry_id": 2619,
+   "turn_id": "ios:F281CF36-2FD5-4086-8967-98C683469C8E",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "White rice, cooked",
+   "quantity": "125 g"
+  },
+  {
+   "entry_id": 2620,
+   "turn_id": "ios:h:026a59a0620abf7dbda4",
+   "source": "legacy:photo",
+   "user_id": 5,
+   "food_name": "CAVA Harissa Avocado Bowl (no grains, half black lentils, harissa, skhug, avocado)",
+   "quantity": "1 bowl"
+  },
+  {
+   "entry_id": 2621,
+   "turn_id": "ios:5D13F097-0171-4882-A209-2E372D5925B1",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Barebells Cookies and Caramel Protein Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2622,
+   "turn_id": "ios:D0E79CE6-690E-41F3-9DBA-094E98C9BC51",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Royo Plain Bagel",
+   "quantity": "1 bagel"
+  },
+  {
+   "entry_id": 2623,
+   "turn_id": "ios:57DA6EC3-52BD-437A-BE27-1A1E909CE39A",
+   "source": "legacy:ios",
+   "user_id": 140,
+   "food_name": "Scrambled eggs",
+   "quantity": "2 eggs"
+  },
+  {
+   "entry_id": 2624,
+   "turn_id": "ios:18C4818D-A5BD-4890-A393-6B3390CDCD6F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 140,
+   "food_name": "Chicken breast",
+   "quantity": "6 oz"
+  },
+  {
+   "entry_id": 2625,
+   "turn_id": "ios:18C4818D-A5BD-4890-A393-6B3390CDCD6F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 140,
+   "food_name": "Rice",
+   "quantity": "0.25 cup"
+  },
+  {
+   "entry_id": 2626,
+   "turn_id": "ios:18C4818D-A5BD-4890-A393-6B3390CDCD6F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 140,
+   "food_name": "Lettuce and tomato",
+   "quantity": "1 small side salad"
+  },
+  {
+   "entry_id": 2627,
+   "turn_id": "ios:A40AA096-9E23-4D3A-9134-34CD860149E4",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Parmesan cheese",
+   "quantity": "1 oz"
+  },
+  {
+   "entry_id": 2628,
+   "turn_id": "ios:3F73967B-7122-4F74-A51B-2B9FC02D5FB0",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Ground turkey, 94% lean, pan-cooked",
+   "quantity": "125 g"
+  },
+  {
+   "entry_id": 2629,
+   "turn_id": "ios:3F73967B-7122-4F74-A51B-2B9FC02D5FB0",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "White rice, cooked",
+   "quantity": "75 g"
+  },
+  {
+   "entry_id": 2630,
+   "turn_id": "ios:AAF09C50-522A-4122-B573-AF97F6443EFD",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Pret Chicken Parm Wrap",
+   "quantity": "1 wrap"
+  },
+  {
+   "entry_id": 2631,
+   "turn_id": "ios:B658156D-BA9D-4C61-A5C6-BF340A7BBC80",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Corn on the cob",
+   "quantity": "1 medium ear"
+  },
+  {
+   "entry_id": 2632,
+   "turn_id": "ios:5086A669-9EFE-483E-ACC9-5FBFEBD8C80C",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Arayes (meat-stuffed pita, grilled)",
+   "quantity": "2 piece"
+  },
+  {
+   "entry_id": 2635,
+   "turn_id": "ios:1F54BDAD-DF7B-4FCA-A223-E1FD9ABEAB8F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Royo Everything Bagel",
+   "quantity": "1 bagel"
+  },
+  {
+   "entry_id": 2636,
+   "turn_id": "ios:1F54BDAD-DF7B-4FCA-A223-E1FD9ABEAB8F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Mustard",
+   "quantity": "1 tsp"
+  },
+  {
+   "entry_id": 2637,
+   "turn_id": "ios:1F54BDAD-DF7B-4FCA-A223-E1FD9ABEAB8F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Corn on the cob, boiled",
+   "quantity": "1 ear"
+  },
+  {
+   "entry_id": 2638,
+   "turn_id": "ios:1A4A154F-BBEC-45EF-9B8A-B6E1B1384C0B",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "McDonald's Big Mac",
+   "quantity": "1 burger"
+  },
+  {
+   "entry_id": 2640,
+   "turn_id": "ios:79B95742-6845-4F77-B608-1A188AA75981",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Онигири",
+   "quantity": "1 piece"
+  },
+  {
+   "entry_id": 2641,
+   "turn_id": "ios:D077714E-4A2D-493E-8301-58FCD00E474A",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Онигири с лососем слабосоленым",
+   "quantity": "250 г"
+  },
+  {
+   "entry_id": 2643,
+   "turn_id": "ios:A5252C2A-42CC-4D7A-99D6-B448545A8B4E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Chicken Wings",
+   "quantity": "4 wing"
+  },
+  {
+   "entry_id": 2644,
+   "turn_id": "ios:A5252C2A-42CC-4D7A-99D6-B448545A8B4E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Protein Shake",
+   "quantity": "1 shake"
+  },
+  {
+   "entry_id": 2645,
+   "turn_id": "ios:A5252C2A-42CC-4D7A-99D6-B448545A8B4E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Pastry",
+   "quantity": "1 pastry"
+  },
+  {
+   "entry_id": 2650,
+   "turn_id": "ios:DFF8F304-D8E4-410F-811E-1B57CFEBBCA0",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)",
+   "quantity": "350 г (говядина ~100г)"
+  },
+  {
+   "entry_id": 2651,
+   "turn_id": "ios:8C9A200E-EC00-4AC7-AB22-EF5825EABB70",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Skirt steak, grilled with butter",
+   "quantity": "8 oz"
+  },
+  {
+   "entry_id": 2652,
+   "turn_id": "ios:8C9A200E-EC00-4AC7-AB22-EF5825EABB70",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Ground turkey, 96% lean, pan-cooked",
+   "quantity": "200 g"
+  },
+  {
+   "entry_id": 2653,
+   "turn_id": "ios:8C9A200E-EC00-4AC7-AB22-EF5825EABB70",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "White rice, cooked",
+   "quantity": "75 g"
+  },
+  {
+   "entry_id": 2654,
+   "turn_id": "ios:5C25DB08-8650-4A3A-B795-CA027DFBD753",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Parmesan cheese",
+   "quantity": "0.5 oz"
+  },
+  {
+   "entry_id": 2655,
+   "turn_id": "ios:296C0D64-2563-4EBF-BD17-F316D3A066F7",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Whiskey",
+   "quantity": "2 shot"
+  },
+  {
+   "entry_id": 2656,
+   "turn_id": "ios:4238FDFE-9276-4E73-B9F4-FCE596E2827F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Barebells Salty Peanut Protein Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2657,
+   "turn_id": "ios:BC2BC925-4F97-40E8-9339-5B00ECD8B0BB",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Magic Spoon Marshmallow Cereal Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2658,
+   "turn_id": "ios:F7276EC8-DABD-4A5D-8427-2A52F6E6AB50",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Ground turkey, 94% lean, pan-cooked",
+   "quantity": "200 g"
+  },
+  {
+   "entry_id": 2659,
+   "turn_id": "ios:FA1C0026-DA45-4708-A585-748EC331D89E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Corn",
+   "quantity": "1 ear"
+  },
+  {
+   "entry_id": 2660,
+   "turn_id": "ios:94A790FF-A256-4ADE-B97F-A6EC4C74C73E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Drizzlicious Cookies and Cream Bites",
+   "quantity": "2 bites"
+  },
+  {
+   "entry_id": 2661,
+   "turn_id": "ios:0A14D95E-1BEC-4AD4-B8E2-1A0FFFEF40C8",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Whiskey shot",
+   "quantity": "2 shot"
+  },
+  {
+   "entry_id": 2662,
+   "turn_id": "ios:3580C819-C14F-4DFF-9847-6CE174F666CF",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Small burger bun",
+   "quantity": "1 bun"
+  },
+  {
+   "entry_id": 2663,
+   "turn_id": "ios:D56B51FD-2409-4959-80FA-14DE3CA79E0A",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Stella Artois",
+   "quantity": "1 bottle (12oz)"
+  },
+  {
+   "entry_id": 2664,
+   "turn_id": "ios:D56B51FD-2409-4959-80FA-14DE3CA79E0A",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Grapes",
+   "quantity": "15 grapes"
+  },
+  {
+   "entry_id": 2665,
+   "turn_id": "ios:D56B51FD-2409-4959-80FA-14DE3CA79E0A",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Parmesan cheese",
+   "quantity": "2 oz"
+  },
+  {
+   "entry_id": 2666,
+   "turn_id": "ios:D56B51FD-2409-4959-80FA-14DE3CA79E0A",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Turkey deli slices",
+   "quantity": "3 slices (~85g)"
+  },
+  {
+   "entry_id": 2667,
+   "turn_id": "ios:D56B51FD-2409-4959-80FA-14DE3CA79E0A",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Grilled chicken",
+   "quantity": "3.5 oz"
+  },
+  {
+   "entry_id": 2668,
+   "turn_id": "ios:0BC24496-4A9E-4E6F-A89E-8ACA5E346A57",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Cognac French Dip Sandwich",
+   "quantity": "1 sandwich"
+  },
+  {
+   "entry_id": 2669,
+   "turn_id": "ios:DD5A701E-820E-4425-A557-7700BB280E28",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "McDonald's Big Mac",
+   "quantity": "1 burger"
+  },
+  {
+   "entry_id": 2670,
+   "turn_id": "ios:B0858BC3-F48A-4819-85D7-A2144AF6D9AD",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Рис",
+   "quantity": "200 г"
+  },
+  {
+   "entry_id": 2671,
+   "turn_id": "ios:B0858BC3-F48A-4819-85D7-A2144AF6D9AD",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Помидор",
+   "quantity": "50 г"
+  },
+  {
+   "entry_id": 2672,
+   "turn_id": "ios:B0858BC3-F48A-4819-85D7-A2144AF6D9AD",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Соевый соус",
+   "quantity": "30 мл"
+  },
+  {
+   "entry_id": 2673,
+   "turn_id": "ios:BC73243A-8FAF-4BC8-8B97-34149EBB1CD3",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Quest Cookies & Cream Protein Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2674,
+   "turn_id": "ios:h:085b0004503cb442c91b",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Ground bison, seasoned",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2675,
+   "turn_id": "ios:h:085b0004503cb442c91b",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Grilled chicken breast strips",
+   "quantity": "4 oz"
+  },
+  {
+   "entry_id": 2676,
+   "turn_id": "ios:h:085b0004503cb442c91b",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Broccoli veggie mix, sautéed",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2677,
+   "turn_id": "ios:h:085b0004503cb442c91b",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Avocado slices",
+   "quantity": "0.5 avocado"
+  },
+  {
+   "entry_id": 2678,
+   "turn_id": "ios:h:085b0004503cb442c91b",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "BBQ sauce",
+   "quantity": "3 tbsp"
+  },
+  {
+   "entry_id": 2680,
+   "turn_id": "ios:E14B5776-5CE8-4CE5-8831-43DA36882B4B",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "French fries, small restaurant style thin",
+   "quantity": "5.5 fries"
+  },
+  {
+   "entry_id": 2681,
+   "turn_id": "ios:351B50F7-026D-4276-9ABA-AE3D622F3F22",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Crab cake",
+   "quantity": "0.5 cake"
+  },
+  {
+   "entry_id": 2682,
+   "turn_id": "ios:EFC94D03-3C3E-4010-AA35-176D5D5B412C",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Шашлык из курятины",
+   "quantity": "250 г"
+  },
+  {
+   "entry_id": 2683,
+   "turn_id": "ios:EFC94D03-3C3E-4010-AA35-176D5D5B412C",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Перец гриль",
+   "quantity": "30 г"
+  },
+  {
+   "entry_id": 2684,
+   "turn_id": "ios:EFC94D03-3C3E-4010-AA35-176D5D5B412C",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Грибы гриль",
+   "quantity": "20 г"
+  },
+  {
+   "entry_id": 2685,
+   "turn_id": "ios:EFC94D03-3C3E-4010-AA35-176D5D5B412C",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Баклажан гриль",
+   "quantity": "50 г"
+  },
+  {
+   "entry_id": 2686,
+   "turn_id": "ios:EFC94D03-3C3E-4010-AA35-176D5D5B412C",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Блины с мясом",
+   "quantity": "100 г"
+  },
+  {
+   "entry_id": 2687,
+   "turn_id": "ios:C0505FC8-9154-4C86-9FC4-57E1BB487F19",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Grilled shrimp",
+   "quantity": "7 shrimp"
+  },
+  {
+   "entry_id": 2688,
+   "turn_id": "ios:C0505FC8-9154-4C86-9FC4-57E1BB487F19",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Greek salad, light feta and veggies",
+   "quantity": "0.5 small bowl"
+  },
+  {
+   "entry_id": 2689,
+   "turn_id": "ios:C0505FC8-9154-4C86-9FC4-57E1BB487F19",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "White wine",
+   "quantity": "1 glass"
+  },
+  {
+   "entry_id": 2690,
+   "turn_id": "ios:2F9655FD-CF7B-4E5D-AA2C-97173E6BE756",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "McChicken",
+   "quantity": "1 sandwich"
+  },
+  {
+   "entry_id": 2691,
+   "turn_id": "ios:7D254BDA-7A3F-443D-BA64-EA20B745103B",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Ferrero Rocher",
+   "quantity": "1 piece"
+  },
+  {
+   "entry_id": 2692,
+   "turn_id": "ios:F0F25AD7-982D-41D9-8714-6B557F7C219E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Pasta, from restaurant",
+   "quantity": "1.5 cup"
+  },
+  {
+   "entry_id": 2693,
+   "turn_id": "ios:F0F25AD7-982D-41D9-8714-6B557F7C219E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Baked clams",
+   "quantity": "4 pieces"
+  },
+  {
+   "entry_id": 2694,
+   "turn_id": "ios:F0F25AD7-982D-41D9-8714-6B557F7C219E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Shrimp",
+   "quantity": "5 pieces"
+  },
+  {
+   "entry_id": 2695,
+   "turn_id": "ios:F0F25AD7-982D-41D9-8714-6B557F7C219E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Oysters, raw or baked",
+   "quantity": "4 pieces"
+  },
+  {
+   "entry_id": 2696,
+   "turn_id": "ios:B394A5B6-1893-431A-B478-D39036B70511",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Happy Wolf Chocolate Chip Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2697,
+   "turn_id": "ios:45C008E5-31AA-493D-BA2A-06F857E633A3",
+   "source": "legacy:ios",
+   "user_id": 44,
+   "food_name": "De'Longhi XL cappuccino with lactose-free 2% milk and 1 tsp sugar",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2698,
+   "turn_id": "ios:88B54521-3FD0-4A10-9444-07C5C706CF6B",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 44,
+   "food_name": "Dr Pepper",
+   "quantity": "1 can (355ml)"
+  },
+  {
+   "entry_id": 2699,
+   "turn_id": "ios:665B9BFD-50C7-4D8D-A52A-15C42CB4E880",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Daisy Cottage Cheese",
+   "quantity": "190 g"
+  },
+  {
+   "entry_id": 2700,
+   "turn_id": "ios:665B9BFD-50C7-4D8D-A52A-15C42CB4E880",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Everything Bagel",
+   "quantity": "1 bagel"
+  },
+  {
+   "entry_id": 2701,
+   "turn_id": "ios:7ED649F6-D71C-454B-99BF-A029C9C5681A",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Latte with half and half, no sugar",
+   "quantity": "8 oz"
+  },
+  {
+   "entry_id": 2702,
+   "turn_id": "ios:05B309E5-7834-4770-BA1C-B0050D016BD6",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Starbucks Venti Iced Latte, Whole Milk",
+   "quantity": "1 venti (24 fl oz)"
+  },
+  {
+   "entry_id": 2706,
+   "turn_id": "ios:ADA29ADC-F330-4989-ACA8-FE1E49144193",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Egg bagel, scooped, toasted, with garlic cream cheese",
+   "quantity": "1 bagel"
+  },
+  {
+   "entry_id": 2707,
+   "turn_id": "ios:A9C91CCC-6E46-4368-A36E-5A82AF72403D",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Quest Chips Chili Lime",
+   "quantity": "1 bag"
+  },
+  {
+   "entry_id": 2711,
+   "turn_id": "ios:4CE07AE4-0391-43B2-B806-C6F837BAA859",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Black coffee",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2715,
+   "turn_id": "ios:F4B8369E-8750-45B9-A549-0AAD4F3F5B74",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Tuna Sashimi",
+   "quantity": "1 piece"
+  },
+  {
+   "entry_id": 2716,
+   "turn_id": "ios:F4B8369E-8750-45B9-A549-0AAD4F3F5B74",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Yellowtail Sashimi",
+   "quantity": "4 pieces"
+  },
+  {
+   "entry_id": 2717,
+   "turn_id": "ios:2C5ECCD8-637C-47CA-AC94-8D1A3CE173ED",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Bravo Pizza Vodka Slice, Square",
+   "quantity": "1 slice"
+  },
+  {
+   "entry_id": 2718,
+   "turn_id": "ios:6033AEEC-CB9E-4EA2-B5EE-2B6BBC133AE9",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Quest Chips Chili Lime",
+   "quantity": "1 bag"
+  },
+  {
+   "entry_id": 2720,
+   "turn_id": "ios:3273594C-59B1-4800-A187-E532449C7453",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Special Roll, (tuna, mango, cucumber, avocado, spicy mayo)",
+   "quantity": "1 piece"
+  },
+  {
+   "entry_id": 2721,
+   "turn_id": "ios:2FB9346B-579C-488B-8B43-2883D46FBBD2",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Sour Gummy Mini Burgers",
+   "quantity": "1 burger"
+  },
+  {
+   "entry_id": 2722,
+   "turn_id": "ios:AF4D0249-1B91-4ADD-B841-8CF0F167B58F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Курица в плове",
+   "quantity": "100 г"
+  },
+  {
+   "entry_id": 2723,
+   "turn_id": "ios:720B071D-9296-4929-A2E0-4C2955A5D1D5",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Плов (рис с маслом, морковь, чеснок, специи)",
+   "quantity": "200 г"
+  },
+  {
+   "entry_id": 2724,
+   "turn_id": "ios:720B071D-9296-4929-A2E0-4C2955A5D1D5",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Картофельное пюре",
+   "quantity": "200 г"
+  },
+  {
+   "entry_id": 2725,
+   "turn_id": "ios:720B071D-9296-4929-A2E0-4C2955A5D1D5",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Котлеты из индейки",
+   "quantity": "150 г"
+  },
+  {
+   "entry_id": 2726,
+   "turn_id": "ios:720B071D-9296-4929-A2E0-4C2955A5D1D5",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Перец сладкий, огурец, редис",
+   "quantity": "150 г"
+  },
+  {
+   "entry_id": 2727,
+   "turn_id": "ios:50D50CDC-3C1B-408F-BAE7-63BAD36DA7E2",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Творог",
+   "quantity": "200 г"
+  },
+  {
+   "entry_id": 2732,
+   "turn_id": "ios:54C8AC6F-5E8D-4798-BFA8-01D7A80264E0",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "White rice",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2733,
+   "turn_id": "ios:43B5FDB0-524C-4BDE-8872-89390843E4AE",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "Ground Beef",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2734,
+   "turn_id": "ios:DA6645BA-5748-47A4-B55B-B908161C78AF",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "Barebells bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2735,
+   "turn_id": "ios:B3C79AEC-177C-42B4-A9B4-100AACCC7DD7",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "Twizzlers",
+   "quantity": "3 piece"
+  },
+  {
+   "entry_id": 2736,
+   "turn_id": "ios:C8AD4871-0C5C-49AB-82B4-BCE77955B26E",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "White rice",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2737,
+   "turn_id": "ios:B58B0791-6771-4F32-B825-68FC382072D0",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "Grilled Chicken",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2738,
+   "turn_id": "ios:538642FF-EAA6-4111-A08E-FD628855DF8F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "Blueberries",
+   "quantity": "3 piece"
+  },
+  {
+   "entry_id": 2739,
+   "turn_id": "ios:538642FF-EAA6-4111-A08E-FD628855DF8F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "French fries",
+   "quantity": "5 piece"
+  },
+  {
+   "entry_id": 2740,
+   "turn_id": "ios:B1FE881F-CD90-4CB5-A1D4-839F5611C3D6",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "Homemade Burger",
+   "quantity": "1 burger"
+  },
+  {
+   "entry_id": 2741,
+   "turn_id": "ios:691714D4-E6DD-4B18-A0F5-0A8B11BE3918",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "Snickers Ice Cream Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2742,
+   "turn_id": "ios:691714D4-E6DD-4B18-A0F5-0A8B11BE3918",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "Pop-Tart",
+   "quantity": "1 pastry"
+  },
+  {
+   "entry_id": 2743,
+   "turn_id": "ios:39BC4989-53EA-4F4D-936F-0B6DD7D62B4F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "Challah bread",
+   "quantity": "1 piece"
+  },
+  {
+   "entry_id": 2744,
+   "turn_id": "ios:39BC4989-53EA-4F4D-936F-0B6DD7D62B4F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "Honey turkey slices",
+   "quantity": "3 slices"
+  },
+  {
+   "entry_id": 2745,
+   "turn_id": "ios:39BC4989-53EA-4F4D-936F-0B6DD7D62B4F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "Jalapenos",
+   "quantity": "1 small handful"
+  },
+  {
+   "entry_id": 2746,
+   "turn_id": "ios:A0C71031-53DA-480A-919D-BD147F5052B3",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "Mayo",
+   "quantity": "3 tbsp"
+  },
+  {
+   "entry_id": 2747,
+   "turn_id": "ios:D5ED734E-FFF1-4884-AB87-9F4A9ECFE929",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 143,
+   "food_name": "Trolli Gummy Candy",
+   "quantity": "6 piece"
+  },
+  {
+   "entry_id": 2748,
+   "turn_id": "ios:0EA4303A-A4BB-47B6-86B0-D6C4D487D44C",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Spicy Tuna Sushi Taco",
+   "quantity": "1 taco"
+  },
+  {
+   "entry_id": 2749,
+   "turn_id": "ios:0EA4303A-A4BB-47B6-86B0-D6C4D487D44C",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Le Pain Quotidien Brownie",
+   "quantity": "0.5 brownie"
+  },
+  {
+   "entry_id": 2750,
+   "turn_id": "ios:0EA4303A-A4BB-47B6-86B0-D6C4D487D44C",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Sun Chips (original)",
+   "quantity": "10 chips"
+  },
+  {
+   "entry_id": 2751,
+   "turn_id": "ios:B7B87756-C3B8-4C0C-865A-3E01559BC823",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Cali Roll",
+   "quantity": "8 piece"
+  },
+  {
+   "entry_id": 2752,
+   "turn_id": "ios:6BCC8BCC-453F-4BB8-9F86-EFD52001D6FC",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 44,
+   "food_name": "Dr Pepper",
+   "quantity": "1 can (355ml)"
+  },
+  {
+   "entry_id": 2753,
+   "turn_id": "ios:04E1603D-49C4-4D55-935F-7C8FA09EA641",
+   "source": "legacy:ios",
+   "user_id": 44,
+   "food_name": "De'Longhi XL cappuccino with lactose-free 2% milk and 1 tsp sugar",
+   "quantity": "2 cup"
+  },
+  {
+   "entry_id": 2754,
+   "turn_id": "ios:0E01ADC2-442C-4858-B5DE-C20384478E76",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Skirt steak, grilled",
+   "quantity": "6 oz"
+  },
+  {
+   "entry_id": 2755,
+   "turn_id": "ios:0E01ADC2-442C-4858-B5DE-C20384478E76",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Like Air White Cheddar Popcorn",
+   "quantity": "1 serving"
+  },
+  {
+   "entry_id": 2756,
+   "turn_id": "ios:0E01ADC2-442C-4858-B5DE-C20384478E76",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Corn on the cob, boiled",
+   "quantity": "1.5 ears"
+  },
+  {
+   "entry_id": 2757,
+   "turn_id": "ios:0E01ADC2-442C-4858-B5DE-C20384478E76",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Royo Everything Bagel",
+   "quantity": "1 bagel"
+  },
+  {
+   "entry_id": 2758,
+   "turn_id": "ios:0E01ADC2-442C-4858-B5DE-C20384478E76",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Parmesan cheese",
+   "quantity": "0.5 oz"
+  },
+  {
+   "entry_id": 2759,
+   "turn_id": "ios:BB52C08B-15DC-41E3-95EE-66586D1F1071",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Grilled Chicken Wings",
+   "quantity": "8 wings"
+  },
+  {
+   "entry_id": 2760,
+   "turn_id": "ios:C063DB2C-31A0-471E-9E36-6E77194A6305",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Heal Spot High Protein Instant Ramen, Classic",
+   "quantity": "1 serving (62g)"
+  },
+  {
+   "entry_id": 2761,
+   "turn_id": "ios:7E4DF7FC-1FE3-4C0B-80CA-4F90F2714EF5",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 44,
+   "food_name": "Mashed potatoes",
+   "quantity": "2 spoons (~110g)"
+  },
+  {
+   "entry_id": 2762,
+   "turn_id": "ios:7E4DF7FC-1FE3-4C0B-80CA-4F90F2714EF5",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 44,
+   "food_name": "Salmon steak, pan fried",
+   "quantity": "6 oz"
+  },
+  {
+   "entry_id": 2763,
+   "turn_id": "ios:7E4DF7FC-1FE3-4C0B-80CA-4F90F2714EF5",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 44,
+   "food_name": "Hot pickle",
+   "quantity": "1 pickle"
+  },
+  {
+   "entry_id": 2764,
+   "turn_id": "ios:6339B4FD-F340-497E-9B9D-69CA0806BEB6",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Quest Chips Sweet Chili",
+   "quantity": "1 bag"
+  },
+  {
+   "entry_id": 2765,
+   "turn_id": "ios:322A4457-E1BE-451F-90EA-993C6C1465BE",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Салями",
+   "quantity": "~50 г"
+  },
+  {
+   "entry_id": 2766,
+   "turn_id": "ios:322A4457-E1BE-451F-90EA-993C6C1465BE",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Сыр пармезан",
+   "quantity": "50 г"
+  },
+  {
+   "entry_id": 2767,
+   "turn_id": "ios:322A4457-E1BE-451F-90EA-993C6C1465BE",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Яичница (2 яйца)",
+   "quantity": "2 яйца"
+  },
+  {
+   "entry_id": 2768,
+   "turn_id": "ios:322A4457-E1BE-451F-90EA-993C6C1465BE",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Салат из авокадо, помидоров, зелени",
+   "quantity": "~150 г"
+  },
+  {
+   "entry_id": 2769,
+   "turn_id": "ios:5A03C06E-47FD-43C1-B97A-A16DC3155D01",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 44,
+   "food_name": "Salmon steak, pan fried",
+   "quantity": "8 oz"
+  },
+  {
+   "entry_id": 2770,
+   "turn_id": "ios:5A03C06E-47FD-43C1-B97A-A16DC3155D01",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 44,
+   "food_name": "Coffee",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2771,
+   "turn_id": "ios:5A03C06E-47FD-43C1-B97A-A16DC3155D01",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 44,
+   "food_name": "Coca-Cola",
+   "quantity": "1 can (355ml)"
+  },
+  {
+   "entry_id": 2772,
+   "turn_id": "ios:3E2254B7-0419-4213-B783-90DE4389217B",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Pret Porridge",
+   "quantity": "1 pot"
+  },
+  {
+   "entry_id": 2773,
+   "turn_id": "ios:3E2254B7-0419-4213-B783-90DE4389217B",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Sugar",
+   "quantity": "2 tbsp"
+  },
+  {
+   "entry_id": 2774,
+   "turn_id": "ios:75E3C2B7-D436-4ACB-A76C-C32BE570125F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Ризотто с морепродуктами (рис, сливочный соус)",
+   "quantity": "350 г"
+  },
+  {
+   "entry_id": 2775,
+   "turn_id": "ios:75E3C2B7-D436-4ACB-A76C-C32BE570125F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Креветки",
+   "quantity": "4 шт маленьких"
+  },
+  {
+   "entry_id": 2776,
+   "turn_id": "ios:75E3C2B7-D436-4ACB-A76C-C32BE570125F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Кальмар",
+   "quantity": "30 г"
+  },
+  {
+   "entry_id": 2777,
+   "turn_id": "ios:75E3C2B7-D436-4ACB-A76C-C32BE570125F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Гребешок",
+   "quantity": "40 г"
+  },
+  {
+   "entry_id": 2781,
+   "turn_id": "ios:F4A6DEBD-F69E-4AF6-9AD8-F236B7B45CBB",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Caribbean Jerk Chicken Wrap",
+   "quantity": "1 wrap"
+  },
+  {
+   "entry_id": 2782,
+   "turn_id": "ios:F4A6DEBD-F69E-4AF6-9AD8-F236B7B45CBB",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Ranch dressing",
+   "quantity": "2 tbsp"
+  },
+  {
+   "entry_id": 2783,
+   "turn_id": "ios:h:1b7bc396a3921501e884",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Cheese pizza slice, tomato sauce, mozzarella, basil, large slice",
+   "quantity": "20 min"
+  },
+  {
+   "entry_id": 2784,
+   "turn_id": "ios:4D35E17D-E29B-4124-8A91-BF0FDEE30FA1",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Творог 2%",
+   "quantity": "150 g"
+  },
+  {
+   "entry_id": 2785,
+   "turn_id": "ios:4D35E17D-E29B-4124-8A91-BF0FDEE30FA1",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Кофе со сливками без сахара",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2786,
+   "turn_id": "ios:457E65C9-60CC-4A3D-A346-54D27D50B875",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Almonds",
+   "quantity": "15 piece"
+  },
+  {
+   "entry_id": 2787,
+   "turn_id": "ios:C88F2FBD-52FC-4ADD-A4A9-B5D1D2ACBA16",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Barebells Salty Peanut Protein Bar",
+   "quantity": "1 slice"
+  },
+  {
+   "entry_id": 2788,
+   "turn_id": "ios:63698555-ACD7-4C89-9B62-CBEEAF705C10",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Quest Chips Buffalo Ranch",
+   "quantity": "1 bag"
+  },
+  {
+   "entry_id": 2792,
+   "turn_id": "ios:82BB6F9A-3651-4041-A038-DABB1BE987E1",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Паштет утиный",
+   "quantity": "100 г"
+  },
+  {
+   "entry_id": 2793,
+   "turn_id": "ios:82BB6F9A-3651-4041-A038-DABB1BE987E1",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Хлеб",
+   "quantity": "40 г"
+  },
+  {
+   "entry_id": 2794,
+   "turn_id": "ios:82BB6F9A-3651-4041-A038-DABB1BE987E1",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Картофель отварной",
+   "quantity": "100 г"
+  },
+  {
+   "entry_id": 2795,
+   "turn_id": "ios:82BB6F9A-3651-4041-A038-DABB1BE987E1",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Помидор",
+   "quantity": "50 г"
+  },
+  {
+   "entry_id": 2796,
+   "turn_id": "ios:h:8d5037f80197e725083f",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Protein puff cakes, chocolate drizzle",
+   "quantity": "7 puff cakes (~14g)"
+  },
+  {
+   "entry_id": 2797,
+   "turn_id": "ios:F54A8992-12E7-4ADD-B7E4-1FF4F0D89587",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Skirt steak, grilled with a little oil",
+   "quantity": "4 oz"
+  },
+  {
+   "entry_id": 2798,
+   "turn_id": "ios:6FD6723F-1300-46B3-BF0C-3889093ADE30",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Sushi Go White Tuna Bowl with Rice and Tempura Flakes",
+   "quantity": "3.88 oz"
+  },
+  {
+   "entry_id": 2799,
+   "turn_id": "ios:C7B44A31-C0A5-443C-9D21-F72B9BFC3CA4",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Dunkin Glazed Donut",
+   "quantity": "1 donut"
+  },
+  {
+   "entry_id": 2800,
+   "turn_id": "ios:17028253-02B5-45ED-9C4F-EF4F621CCE62",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Протеиновый шейк (протеиновый порошок)",
+   "quantity": "1 scoop"
+  },
+  {
+   "entry_id": 2801,
+   "turn_id": "ios:17028253-02B5-45ED-9C4F-EF4F621CCE62",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Миндальное молоко",
+   "quantity": "220 ml"
+  },
+  {
+   "entry_id": 2802,
+   "turn_id": "ios:17028253-02B5-45ED-9C4F-EF4F621CCE62",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Манго",
+   "quantity": "0.5 плода"
+  },
+  {
+   "entry_id": 2803,
+   "turn_id": "ios:67043C8D-723B-4FBF-9DF1-995CAB7A75FB",
+   "source": "legacy:ios",
+   "user_id": 5,
+   "food_name": "Peanut Butter Protein Smoothie",
+   "quantity": "1 regular (~16oz)"
+  },
+  {
+   "entry_id": 2804,
+   "turn_id": "ios:53F303DC-4A16-405D-96A2-52C19C72172A",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Ground turkey, 94% lean, pan-cooked with oil",
+   "quantity": "160 g"
+  },
+  {
+   "entry_id": 2805,
+   "turn_id": "ios:53F303DC-4A16-405D-96A2-52C19C72172A",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "White rice, steamed",
+   "quantity": "100 g"
+  },
+  {
+   "entry_id": 2806,
+   "turn_id": "ios:94210B17-1A9D-4B40-86B8-A7B7591FFE9F",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Barebells Protein Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2807,
+   "turn_id": "ios:A818A598-6CE5-4317-A3AD-05B5500E8A38",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Protein puff cakes, chocolate drizzle",
+   "quantity": "5 puff cakes"
+  },
+  {
+   "entry_id": 2808,
+   "turn_id": "ios:14E31D44-BCD7-489D-82E7-A8770A58B706",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Ground turkey, 94% lean, pan-cooked",
+   "quantity": "125 g"
+  },
+  {
+   "entry_id": 2809,
+   "turn_id": "ios:14E31D44-BCD7-489D-82E7-A8770A58B706",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "White rice, cooked",
+   "quantity": "75 g"
+  },
+  {
+   "entry_id": 2810,
+   "turn_id": "ios:14E31D44-BCD7-489D-82E7-A8770A58B706",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Royo Plain Bagel",
+   "quantity": "1 bagel"
+  },
+  {
+   "entry_id": 2811,
+   "turn_id": "ios:6DC6A2D8-824F-4C80-A682-C87DDCE05838",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Яйца пашот",
+   "quantity": "2 штуки"
+  },
+  {
+   "entry_id": 2814,
+   "turn_id": "ios:8F904628-823D-4BD7-9445-8DAD72C12EA5",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 76,
+   "food_name": "Протеиновый порошок в кофе",
+   "quantity": "2 scoop"
+  },
+  {
+   "entry_id": 2815,
+   "turn_id": "ios:463321BC-4A08-4C00-8BD8-7CABBB2BD03B",
+   "source": "legacy:ios",
+   "user_id": 76,
+   "food_name": "Творог домашнего приготовления",
+   "quantity": "150g"
+  },
+  {
+   "entry_id": 2816,
+   "turn_id": "ios:463321BC-4A08-4C00-8BD8-7CABBB2BD03B",
+   "source": "legacy:ios",
+   "user_id": 76,
+   "food_name": "Манго",
+   "quantity": "0.5 плода"
+  },
+  {
+   "entry_id": 2817,
+   "turn_id": "ios:cp-01",
+   "source": "canonical:create",
+   "user_id": 144,
+   "food_name": "Chicken breast",
+   "quantity": ""
+  },
+  {
+   "entry_id": 2818,
+   "turn_id": "ios:cp-02",
+   "source": "canonical:create",
+   "user_id": 144,
+   "food_name": "White rice",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2819,
+   "turn_id": "ios:cp-03",
+   "source": "canonical:create",
+   "user_id": 144,
+   "food_name": "White rice",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2820,
+   "turn_id": "ios:cp-04",
+   "source": "canonical:create",
+   "user_id": 144,
+   "food_name": "Black coffee",
+   "quantity": ""
+  },
+  {
+   "entry_id": 2821,
+   "turn_id": "ios:cp-05",
+   "source": "canonical:create",
+   "user_id": 144,
+   "food_name": "Greek yogurt",
+   "quantity": "150g"
+  },
+  {
+   "entry_id": 2822,
+   "turn_id": "ios:cp-06",
+   "source": "canonical:create",
+   "user_id": 144,
+   "food_name": "Гречка с курицей",
+   "quantity": "1 порция"
+  },
+  {
+   "entry_id": 2823,
+   "turn_id": "ios:cp-07",
+   "source": "canonical:create",
+   "user_id": 144,
+   "food_name": "Trader Joe's Yogurt",
+   "quantity": ""
+  },
+  {
+   "entry_id": 2824,
+   "turn_id": "ios:cp-08",
+   "source": "canonical:create",
+   "user_id": 144,
+   "food_name": "Cheat day burger platter",
+   "quantity": "1 platter"
+  },
+  {
+   "entry_id": 2825,
+   "turn_id": "ios:h:ce5e4f452be555ec7fa0",
+   "source": "canonical:create",
+   "user_id": 144,
+   "food_name": "Almonds",
+   "quantity": "small handful"
+  },
+  {
+   "entry_id": 2826,
+   "turn_id": "ios:5A501A5A-0902-4F90-877F-953DAC0954B3",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Barebells Salty Peanut Protein Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2827,
+   "turn_id": "ios:C7FAF70C-56E6-4128-B37F-F5F53DD9189A",
+   "source": "legacy:ios",
+   "user_id": 5,
+   "food_name": "Pret Chicken Parm Wrap",
+   "quantity": "1 wrap"
+  },
+  {
+   "entry_id": 2828,
+   "turn_id": "ios:C7FAF70C-56E6-4128-B37F-F5F53DD9189A",
+   "source": "legacy:ios",
+   "user_id": 5,
+   "food_name": "Turkey provolone sandwich on whole wheat, mayo and onion",
+   "quantity": "1 sandwich"
+  },
+  {
+   "entry_id": 2829,
+   "turn_id": "ios:E96ED2B1-996D-428F-8774-F736CB86BF59",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Вареные яйца",
+   "quantity": "2 шт"
+  },
+  {
+   "entry_id": 2830,
+   "turn_id": "ios:E96ED2B1-996D-428F-8774-F736CB86BF59",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Куриное филе вареное",
+   "quantity": "100 г"
+  },
+  {
+   "entry_id": 2831,
+   "turn_id": "ios:E96ED2B1-996D-428F-8774-F736CB86BF59",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Авокадо",
+   "quantity": "0.5 шт"
+  },
+  {
+   "entry_id": 2832,
+   "turn_id": "ios:E96ED2B1-996D-428F-8774-F736CB86BF59",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Клубника",
+   "quantity": "50 г"
+  },
+  {
+   "entry_id": 2833,
+   "turn_id": "ios:E96ED2B1-996D-428F-8774-F736CB86BF59",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Черника",
+   "quantity": "50 г"
+  },
+  {
+   "entry_id": 2834,
+   "turn_id": "ios:E96ED2B1-996D-428F-8774-F736CB86BF59",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Малина",
+   "quantity": "40 г"
+  },
+  {
+   "entry_id": 2835,
+   "turn_id": "ios:smoke-1785951864",
+   "source": "canonical:create",
+   "user_id": 144,
+   "food_name": "Smoke test chicken",
+   "quantity": "4 oz"
+  },
+  {
+   "entry_id": 2837,
+   "turn_id": "ios:8078D55A-9A26-4D03-B3B5-1D47874507EC",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Яблочный сок",
+   "quantity": "200 мл"
+  },
+  {
+   "entry_id": 2838,
+   "turn_id": "ios:C8065070-9D61-4CEA-9D28-432F3E8782D9",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Кукуруза варёная с маслом",
+   "quantity": "1 крупный початок (~100г зерен)"
+  },
+  {
+   "entry_id": 2839,
+   "turn_id": "ios:C8065070-9D61-4CEA-9D28-432F3E8782D9",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Гречка",
+   "quantity": "150 г"
+  },
+  {
+   "entry_id": 2840,
+   "turn_id": "ios:C8065070-9D61-4CEA-9D28-432F3E8782D9",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Котлеты куриные",
+   "quantity": "130 г"
+  },
+  {
+   "entry_id": 2841,
+   "turn_id": "ios:C8065070-9D61-4CEA-9D28-432F3E8782D9",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Редис",
+   "quantity": "40 г"
+  },
+  {
+   "entry_id": 2842,
+   "turn_id": "ios:C8065070-9D61-4CEA-9D28-432F3E8782D9",
+   "source": "legacy:ios",
+   "user_id": 3,
+   "food_name": "Помидор",
+   "quantity": "80 г"
+  },
+  {
+   "entry_id": 2848,
+   "turn_id": "ios:C6BD289E-FFB5-46E9-A944-B5FDBB371CA7",
+   "source": "legacy:ios",
+   "user_id": 5,
+   "food_name": "Regular slice of pizza",
+   "quantity": "1 slice"
+  },
+  {
+   "entry_id": 2850,
+   "turn_id": "ios:CC1F0270-3D4C-4338-A782-EEA01938F6CE",
+   "source": "legacy:ios",
+   "user_id": 5,
+   "food_name": "Quest Protein Chips Salsa Verde",
+   "quantity": "1 bag"
+  },
+  {
+   "entry_id": 2853,
+   "turn_id": "ios:044F1F61-EFD0-44A9-97B7-9A547B42E18A",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Turkey sandwich, whole wheat, tomato, lettuce, mustard",
+   "quantity": "1 sandwich"
+  },
+  {
+   "entry_id": 2854,
+   "turn_id": "ios:47D37F02-83E1-427C-BF79-86E368F03B61",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Doritos Protein Chips",
+   "quantity": "2 oz"
+  },
+  {
+   "entry_id": 2855,
+   "turn_id": "ios:DFC97A67-BD72-46BB-84FA-6ADED377DEB3",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Royo Everything Bagel",
+   "quantity": "0.5 bagel"
+  },
+  {
+   "entry_id": 2856,
+   "turn_id": "ios:E1AD526F-4A2E-4451-B859-1D625211870B",
+   "source": "legacy:ios",
+   "user_id": 5,
+   "food_name": "Quest Protein Chips Sour Cream & Onion",
+   "quantity": "2 bags"
+  },
+  {
+   "entry_id": 2857,
+   "turn_id": "ios:11F3257A-4A87-4AB0-AE0E-9E0B6DF4D86A",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Ground turkey",
+   "quantity": "150 g"
+  },
+  {
+   "entry_id": 2858,
+   "turn_id": "ios:11F3257A-4A87-4AB0-AE0E-9E0B6DF4D86A",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "White rice, steamed",
+   "quantity": "100 g"
+  },
+  {
+   "entry_id": 2859,
+   "turn_id": "ios:1DBF49B5-6985-4590-AB13-4FFD60C65E70",
+   "source": "legacy:ios",
+   "user_id": 5,
+   "food_name": "Archer's Jersey",
+   "quantity": "1 pack"
+  },
+  {
+   "entry_id": 2860,
+   "turn_id": "telegram:9149",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Chicken breast",
+   "quantity": "174g"
+  },
+  {
+   "entry_id": 2861,
+   "turn_id": "telegram:9155",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Salmon",
+   "quantity": "110g"
+  },
+  {
+   "entry_id": 2863,
+   "turn_id": "telegram:9160",
+   "source": "legacy:text",
+   "user_id": 26,
+   "food_name": "Ground chicken, assumed lean, 96% fat-free",
+   "quantity": "100 g"
+  },
+  {
+   "entry_id": 2866,
+   "turn_id": "ios:A9947665-D322-4BB0-96A9-11EBECE5CC40",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Яйца глазунью",
+   "quantity": "2 шт"
+  },
+  {
+   "entry_id": 2867,
+   "turn_id": "ios:A9947665-D322-4BB0-96A9-11EBECE5CC40",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Хамон",
+   "quantity": "100 г"
+  },
+  {
+   "entry_id": 2868,
+   "turn_id": "ios:A9947665-D322-4BB0-96A9-11EBECE5CC40",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Помидор",
+   "quantity": "70 г"
+  },
+  {
+   "entry_id": 2869,
+   "turn_id": "ios:A9947665-D322-4BB0-96A9-11EBECE5CC40",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Капучино на обычном молоке",
+   "quantity": "250 мл"
+  },
+  {
+   "entry_id": 2870,
+   "turn_id": "ios:A9947665-D322-4BB0-96A9-11EBECE5CC40",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Шоколад",
+   "quantity": "30 г"
+  },
+  {
+   "entry_id": 2876,
+   "turn_id": "ios:B26882C5-48C3-43D4-BB08-D94A662EABF7",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Chicken breast, grilled",
+   "quantity": "7 oz"
+  },
+  {
+   "entry_id": 2877,
+   "turn_id": "ios:B26882C5-48C3-43D4-BB08-D94A662EABF7",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Grilled peppers and onions",
+   "quantity": "1 portion"
+  },
+  {
+   "entry_id": 2878,
+   "turn_id": "ios:B26882C5-48C3-43D4-BB08-D94A662EABF7",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Barebells Salty Peanut Protein Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2879,
+   "turn_id": "ios:8CEBF648-8823-4DC6-A813-DBC08C113505",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Barebells Salty Peanut Protein Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2880,
+   "turn_id": "ios:8CEBF648-8823-4DC6-A813-DBC08C113505",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "White rice, steamed",
+   "quantity": "100 g"
+  },
+  {
+   "entry_id": 2881,
+   "turn_id": "ios:8CEBF648-8823-4DC6-A813-DBC08C113505",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Ground turkey, 94% lean, pan-cooked",
+   "quantity": "150 g"
+  },
+  {
+   "entry_id": 2882,
+   "turn_id": "ios:8CEBF648-8823-4DC6-A813-DBC08C113505",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Parm crisps",
+   "quantity": "1 serving"
+  },
+  {
+   "entry_id": 2883,
+   "turn_id": "ios:394C2757-5A2A-40EB-B5C7-0113C1C7DEDC",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Parm crisps",
+   "quantity": "1 serving"
+  },
+  {
+   "entry_id": 2884,
+   "turn_id": "ios:394C2757-5A2A-40EB-B5C7-0113C1C7DEDC",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Doritos Protein Chips, Flavored",
+   "quantity": "½ serving (2 oz)"
+  },
+  {
+   "entry_id": 2885,
+   "turn_id": "ios:394C2757-5A2A-40EB-B5C7-0113C1C7DEDC",
+   "source": "legacy:ios",
+   "user_id": 26,
+   "food_name": "Fage Total 2% with Strawberry",
+   "quantity": "1 container (5.3 oz)"
+  },
+  {
+   "entry_id": 2886,
+   "turn_id": "ios:FFDAFF1E-87FA-4DE3-9A05-A53F24340F40",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Royo Everything Bagel",
+   "quantity": "1 bagel"
+  },
+  {
+   "entry_id": 2904,
+   "turn_id": "ios:E74FAB80-61DD-4CB4-8FEB-85023F77BDCB",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Barebells Salty Peanut Protein Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2907,
+   "turn_id": "ios:136E5525-9943-4585-80E2-9ECFEFA83C88",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Barebells Caramel Cashew Protein Bar",
+   "quantity": "1 bar"
+  },
+  {
+   "entry_id": 2909,
+   "turn_id": "ios:B808A427-60D5-47F3-857E-0E37D56D05AB",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Макароны с томатом",
+   "quantity": "200 г"
+  },
+  {
+   "entry_id": 2910,
+   "turn_id": "ios:B808A427-60D5-47F3-857E-0E37D56D05AB",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Котлеты куриные",
+   "quantity": "150 г"
+  },
+  {
+   "entry_id": 2911,
+   "turn_id": "ios:B808A427-60D5-47F3-857E-0E37D56D05AB",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Помидор",
+   "quantity": "70 г"
+  },
+  {
+   "entry_id": 2912,
+   "turn_id": "ios:B808A427-60D5-47F3-857E-0E37D56D05AB",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Листья салата",
+   "quantity": "10 г"
+  },
+  {
+   "entry_id": 2923,
+   "turn_id": "ios:6B077B4E-572E-44C3-9F65-92FF802596BC",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Chicken, fried",
+   "quantity": "120g"
+  },
+  {
+   "entry_id": 2924,
+   "turn_id": "ios:723BA287-F832-4C0D-81AD-C3837540EAA8",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Salmon",
+   "quantity": "120g"
+  },
+  {
+   "entry_id": 2925,
+   "turn_id": "ios:5A6AF1E8-6EBA-4BCC-A703-5D6F14CA4DAA",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Cauliflower",
+   "quantity": "80g"
+  },
+  {
+   "entry_id": 2926,
+   "turn_id": "ios:2051D977-5A06-4B4D-BC6F-AAD64C0FC8BD",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Cauliflower",
+   "quantity": "80 g"
+  },
+  {
+   "entry_id": 2927,
+   "turn_id": "ios:8A5CC31C-300D-4313-954D-5589505D3932",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Tofu",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2928,
+   "turn_id": "ios:8A5CC31C-300D-4313-954D-5589505D3932",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Mushrooms",
+   "quantity": "0.5 cup"
+  },
+  {
+   "entry_id": 2929,
+   "turn_id": "ios:7D34BFA8-D576-4440-A060-4FC3B5C734CA",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Asparagus",
+   "quantity": "80g"
+  },
+  {
+   "entry_id": 2930,
+   "turn_id": "ios:8B806FF2-79A2-48DA-AC15-1BF699614D70",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Shrimp",
+   "quantity": "120g"
+  },
+  {
+   "entry_id": 2931,
+   "turn_id": "ios:221DF032-10F6-4B1A-BD76-2670FAF6E5DA",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Chicken, fried",
+   "quantity": "220g"
+  },
+  {
+   "entry_id": 2932,
+   "turn_id": "ios:DB14E34C-F7D3-46FF-9001-0F4F597EF768",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Mackerel",
+   "quantity": "80g"
+  },
+  {
+   "entry_id": 2933,
+   "turn_id": "ios:075780C4-1D39-4B16-BCBC-CEFF1449390F",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Chicken, fried",
+   "quantity": "120g"
+  },
+  {
+   "entry_id": 2934,
+   "turn_id": "ios:7AD84916-DD16-46DA-8950-35900E294013",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Chicken, roasted",
+   "quantity": "120g"
+  },
+  {
+   "entry_id": 2935,
+   "turn_id": "ios:934ED148-EDF4-4E15-881F-6517F25A2560",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Chicken wings",
+   "quantity": "64g"
+  },
+  {
+   "entry_id": 2936,
+   "turn_id": "ios:5237AE3A-FC5F-4831-ABEB-CB2C695B3722",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Salmon",
+   "quantity": "120g"
+  },
+  {
+   "entry_id": 2937,
+   "turn_id": "ios:EC20EBB2-3C79-4FC2-957B-FADE270896AE",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "French fries",
+   "quantity": "213 g"
+  },
+  {
+   "entry_id": 2938,
+   "turn_id": "ios:1B347EE1-F553-42F9-9EAE-CD43EFA8A8B9",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Eggplant",
+   "quantity": "200g"
+  },
+  {
+   "entry_id": 2939,
+   "turn_id": "ios:24BE0204-698E-4B14-8956-6ED7280ECCDA",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Ground turkey, 96% lean, pan-cooked",
+   "quantity": "250 g"
+  },
+  {
+   "entry_id": 2940,
+   "turn_id": "ios:24BE0204-698E-4B14-8956-6ED7280ECCDA",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Ground turkey, 96% lean",
+   "quantity": "250 g"
+  },
+  {
+   "entry_id": 2941,
+   "turn_id": "ios:24BE0204-698E-4B14-8956-6ED7280ECCDA",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "White rice, steamed",
+   "quantity": "125 g"
+  },
+  {
+   "entry_id": 2942,
+   "turn_id": "ios:FF0D27F1-336B-4350-A2A0-7FFE86D52329",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Chicken breast",
+   "quantity": "174g"
+  },
+  {
+   "entry_id": 2943,
+   "turn_id": "ios:5EE74CC4-FE00-4001-B126-9848F8D3BA13",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Halibut",
+   "quantity": "80g"
+  },
+  {
+   "entry_id": 2944,
+   "turn_id": "ios:DB75A1BE-B3A4-4C65-B911-F6C6A256240C",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Mackerel",
+   "quantity": "80g"
+  },
+  {
+   "entry_id": 2945,
+   "turn_id": "ios:F8F568B5-01EE-41AB-B7C2-3D5A7F6A7298",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Карбонара",
+   "quantity": "350 г"
+  },
+  {
+   "entry_id": 2946,
+   "turn_id": "ios:F8F568B5-01EE-41AB-B7C2-3D5A7F6A7298",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 3,
+   "food_name": "Пицца сырная",
+   "quantity": "150 г"
+  },
+  {
+   "entry_id": 2965,
+   "turn_id": "ios:11C44220-3AFC-4B7B-AFC7-A8EFC289F707",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Beef",
+   "quantity": "120g"
+  },
+  {
+   "entry_id": 2966,
+   "turn_id": "ios:565EC069-2E1A-4C61-BEFD-BC7361911CDD",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Fried chicken",
+   "quantity": "120g"
+  },
+  {
+   "entry_id": 2967,
+   "turn_id": "ios:1BBE5BDA-ED87-42A1-92BC-675CD56D69B0",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Oats",
+   "quantity": "200g"
+  },
+  {
+   "entry_id": 2968,
+   "turn_id": "ios:736BB07B-B479-415B-9135-CC5ACA053843",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Grilled Beef",
+   "quantity": "120g"
+  },
+  {
+   "entry_id": 2969,
+   "turn_id": "ios:6AA69267-F521-4CF8-AE57-F064E99201A2",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Protein shake, peanut butter banana chocolate whey",
+   "quantity": "1 shake"
+  },
+  {
+   "entry_id": 2970,
+   "turn_id": "ios:h:6776abb7ceed9263a9f2",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Grilled kielbasa sausage",
+   "quantity": "3 pieces"
+  },
+  {
+   "entry_id": 2971,
+   "turn_id": "ios:h:6776abb7ceed9263a9f2",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Scrambled eggs with peppers, onions, and cheese",
+   "quantity": "2 eggs"
+  },
+  {
+   "entry_id": 2972,
+   "turn_id": "ios:h:6776abb7ceed9263a9f2",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Home fries with peppers and onions",
+   "quantity": "1 cup"
+  },
+  {
+   "entry_id": 2973,
+   "turn_id": "ios:65F5767C-F78B-41B8-B1A2-DBC07DB2C95A",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Poke rice bowl with crab mix",
+   "quantity": "1 bowl"
+  },
+  {
+   "entry_id": 2974,
+   "turn_id": "ios:65F5767C-F78B-41B8-B1A2-DBC07DB2C95A",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Seaweed Salad",
+   "quantity": "1 tray"
+  },
+  {
+   "entry_id": 2975,
+   "turn_id": "ios:65F5767C-F78B-41B8-B1A2-DBC07DB2C95A",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 5,
+   "food_name": "Spicy White Tuna Poke Bowl, heavy sauce",
+   "quantity": "1 bowl"
+  },
+  {
+   "entry_id": 2982,
+   "turn_id": "telegram:9290",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "bananas",
+   "quantity": "2 piece"
+  },
+  {
+   "entry_id": 2983,
+   "turn_id": "telegram:9298",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Potato, fried",
+   "quantity": "200g"
+  },
+  {
+   "entry_id": 2984,
+   "turn_id": "telegram:9304",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Salmon, pan-cooked with oil",
+   "quantity": "150 g"
+  },
+  {
+   "entry_id": 2985,
+   "turn_id": "telegram:9307",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Mackerel",
+   "quantity": "100 g"
+  },
+  {
+   "entry_id": 2986,
+   "turn_id": "telegram:9316",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Chicken, grilled",
+   "quantity": "120g"
+  },
+  {
+   "entry_id": 2987,
+   "turn_id": "telegram:9321",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Eggs",
+   "quantity": "100g"
+  },
+  {
+   "entry_id": 2994,
+   "turn_id": "telegram:9357",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "Сметана 5%",
+   "quantity": "50g"
+  },
+  {
+   "entry_id": 2995,
+   "turn_id": "telegram:9359",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Сметана 5%",
+   "quantity": "200 g"
+  },
+  {
+   "entry_id": 2996,
+   "turn_id": "telegram:9365",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Сметана 5%",
+   "quantity": "150 g"
+  },
+  {
+   "entry_id": 3013,
+   "turn_id": "ios:D903D6CF-0923-449B-B937-DA24C0530782",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "Cucumber",
+   "quantity": "150 g"
+  },
+  {
+   "entry_id": 3014,
+   "turn_id": "ios:871148B5-6011-448C-949D-88D40D492573",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "white rice",
+   "quantity": "100 g"
+  },
+  {
+   "entry_id": 3016,
+   "turn_id": "ios:A5DAEE8E-BD7F-43EA-9927-7381B8852011",
+   "source": "structured_food:food_interpreter_v2",
+   "user_id": 26,
+   "food_name": "ground turkey",
+   "quantity": "150 g"
+  },
+  {
+   "entry_id": 3017,
+   "turn_id": "ios:FCA23080-7448-4041-95A1-89C2B2F9EF96",
+   "source": "canonical:create",
+   "user_id": 26,
+   "food_name": "fried chicken",
+   "quantity": "150 g"
+  }
+ ],
+ "facts_checksum": "56dac490a11ce7e7",
+ "kind": "input_facts",
+ "reconstructed_from_ledger": [
+  3016,
+  3017
+ ],
+ "unledgered_mutations_found": [
+  {
+   "entry_id": 2674,
+   "ledger_replay": [
+    "Ground beef, seasoned",
+    "1 cup"
+   ],
+   "live_at_freeze": [
+    "Ground bison, seasoned",
+    "1 cup"
+   ]
+  }
+ ],
+ "frozen_instant_utc": "2026-08-17T11:41:00"
 }

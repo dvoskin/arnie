@@ -240,15 +240,18 @@ async def measure(*, days: int, limit: int, population: dict = None) -> dict:
             # so a third of the population was disappearing without a word.
             # The missing ones all predate 2026-07-24 — a pre-ledger era, not a
             # live gap — which is exactly the kind of thing a silent drop hides.
-            coverage_of_population = (await db.execute(text(
-                "SELECT count(*), count(*) FILTER (WHERE EXISTS ("
-                "  SELECT 1 FROM ledger_events le WHERE le.entry_id = fe.id "
-                "  AND le.event_type = 'created')) "
-                "FROM food_entries fe "
-                f"WHERE {where}"
-            ), params)).one()
-            total_rows, ledgered = int(coverage_of_population[0]), int(
-                coverage_of_population[1])
+            if population and population.get("rows"):
+                total_rows = ledgered = len(population["rows"])
+            else:
+                coverage_of_population = (await db.execute(text(
+                    "SELECT count(*), count(*) FILTER (WHERE EXISTS ("
+                    "  SELECT 1 FROM ledger_events le WHERE le.entry_id = fe.id "
+                    "  AND le.event_type = 'created')) "
+                    "FROM food_entries fe "
+                    f"WHERE {where}"
+                ), params)).one()
+                total_rows, ledgered = int(coverage_of_population[0]), int(
+                    coverage_of_population[1])
             if total_rows and ledgered != total_rows:
                 return {
                     "window_days": days,
@@ -266,24 +269,45 @@ async def measure(*, days: int, limit: int, population: dict = None) -> dict:
             # row belongs to AND the writer that produced it, so grouping and
             # routing come from the same authoritative record rather than from
             # two guesses.
-            rows = (await db.execute(text(
-                "SELECT fe.id, le.turn_id, le.source, fe.parsed_food_name, "
-                "       fe.quantity, dl.user_id "
-                "FROM food_entries fe "
-                "JOIN daily_logs dl ON dl.id = fe.daily_log_id "
-                "JOIN ledger_events le ON le.entry_id = fe.id "
-                "     AND le.event_type = 'created' "
-                f"WHERE {where} "
-                "ORDER BY fe.timestamp DESC LIMIT :limit"
-            ), {**params, "limit": limit})).all()
+            # ⛔⛔ M1.1 — FROZEN MEANS FROZEN: A FIXTURE FREEZES INPUT FACTS,
+            # NOT POINTERS TO MUTABLE ROWS *(Danny, P1, 2026-08-18)*. The first
+            # p16b_0817 froze a list of food_entries ids. Two of them (3016,
+            # 3017) were deleted LIVE by the user the next day, the "frozen"
+            # population shrank 232 -> 230 meals, and the M1 commit explained
+            # the resulting 20.3 -> 20.0 as "memory drift" — over the top of the
+            # instrument's own population_drift report. A fixture that can
+            # shrink between preregistration and result is not a fixture.
+            #
+            # So a fixture that carries `rows` (the facts: entry id, turn,
+            # writer, food name, quantity, user) is measured FROM THOSE FACTS
+            # and never touches food_entries. The immutable ledger `created`
+            # events are the source of truth for reconstruction, and they held
+            # all 361 rows including the two the mutable table lost.
+            if population and population.get("rows"):
+                rows = [(int(r["entry_id"]), r.get("turn_id"), r.get("source"),
+                         r.get("food_name"), r.get("quantity"),
+                         int(r["user_id"])) for r in population["rows"]]
+                population_drift = None                # cannot drift, by construction
+            else:
+                rows = (await db.execute(text(
+                    "SELECT fe.id, le.turn_id, le.source, fe.parsed_food_name, "
+                    "       fe.quantity, dl.user_id "
+                    "FROM food_entries fe "
+                    "JOIN daily_logs dl ON dl.id = fe.daily_log_id "
+                    "JOIN ledger_events le ON le.entry_id = fe.id "
+                    "     AND le.event_type = 'created' "
+                    f"WHERE {where} "
+                    "ORDER BY fe.timestamp DESC LIMIT :limit"
+                ), {**params, "limit": limit})).all()
 
             # ⛔ A FROZEN POPULATION THAT SILENTLY SHRANK IS NOT FROZEN. A row
             # deleted since the freeze would quietly change every denominator
             # below, which is precisely the drift the freeze exists to remove —
             # so the count is checked against the manifest and reported, never
-            # assumed.
-            population_drift = None
-            if population:
+            # assumed. (Unreachable for a facts-carrying fixture — the point.)
+            population_drift = None if (population and population.get("rows")) \
+                else None
+            if population and not population.get("rows"):
                 found = {int(r[0]) for r in rows}
                 missing = sorted(set(entry_ids) - found)
                 if missing:
@@ -434,7 +458,13 @@ async def measure(*, days: int, limit: int, population: dict = None) -> dict:
             {"frozen": True, "name": population.get("name"),
              "frozen_at": population.get("frozen_at"),
              "entry_ids": len(population.get("entry_ids") or []),
-             "checksum": population.get("checksum")}
+             "checksum": population.get("checksum"),
+             # ⭐ M1.1 — a fixture is only frozen if it carries FACTS.
+             "self_contained": bool(population.get("rows")),
+             "kind": ("input_facts — cannot drift"
+                      if population.get("rows")
+                      else "row POINTERS — can shrink; NOT a valid "
+                           "preregistration fixture")}
             if population else
             {"frozen": False,
              "selector": f"rolling: fe.timestamp > now() - {days} days",

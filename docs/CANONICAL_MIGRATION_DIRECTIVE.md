@@ -351,15 +351,32 @@ HEAD                                   the commit carrying this line
                                        (git log -1 -- this file)
 GENERAL SETTLEMENT BACKEND             ✅ FROZEN          (§FREEZE)
 ONE-USER PRODUCTION CANARY             ✅ PASSED          (P12, both branches)
-CURRENT OWNERSHIP BASELINE             ~20.0%            (predicate 00cdcfd,
-                                                         population p16b_0817;
-                                                         was 20.3% @ a747b56 —
-                                                         same population, same
-                                                         decide(): memory read
-                                                         at MEASUREMENT time
-                                                         drifted, the
-                                                         instrument's own
-                                                         documented limitation)
+PREREGISTERED BASELINE                 ~20.3%            (predicate a747b56,
+                                                         232 meals / 361 rows,
+                                                         sha 6247a33c55ed64f5)
+CURRENT SURVIVOR AUDIT                 ~20.0%            (predicate 00cdcfd,
+                                                         230 meals / 359 rows)
+  ⛔⛔ THE "FROZEN" POPULATION IS NOT FROZEN — CORRECTED 08-18 *(Danny, P1)*.
+  The M1 commit called 20.3 -> 20.0 "memory drift". It was not: rows 3016 and
+  3017 (fried chicken 150 g, ground turkey 150 g) were DELETED by user 26 via
+  ios_edit at 22:35 on 08-17, and the arithmetic is fully explained by the
+  denominator — 45/222 = 20.27%, 44/220 = 20.00%. p16b_0817 froze POINTERS to
+  mutable production rows, not INPUT FACTS, so it can only shrink. The
+  instrument recorded population_drift={missing:[3016,3017]} and the commit
+  message wrote a different cause over the top of it. The preregistered
+  20.3% STAYS the baseline; 20.0% is the survivor audit; neither replaces the
+  other until M1.1 makes the fixture self-contained.
+  ✅ M1.1 DONE (2026-08-18): p16b_0817 now carries INPUT FACTS — ledger
+     `created` events replayed through `updated` events (both payload shapes)
+     to the freeze instant — and REPRODUCES 232 MEALS / 45 SUPPORTED / 20.3%
+     from a database that has since deleted two of its rows. Drift is now
+     impossible by construction. The preregistered anchor stands.
+     Two production findings surfaced by the reconstruction:
+       · 55 of 361 rows had been CORRECTED before the freeze — a naive
+         created-only rebuild mismatched 42 of them; replay was required
+       · entry 2674 (Ground beef -> Ground bison) mutated with NO LEDGER
+         EVENT — an unledgered production write, in violation of the ledger's
+         own invariant. Recorded in the fixture; not M1.1's to fix
 MEMORY QUALITY (M1, beside — never    2.7 pts of that   supported-but-
 subtracted from — ownership)          ownership are     implausible; 22 of
                                       WRONG (lower      31 memory-priced
@@ -1007,10 +1024,17 @@ later — the same discipline as the P12 canary preregistration.
 
 ```text
 POPULATION      p16b_0817 — the identical 232 meals, sha 6247a33c55ed64f5
-BASELINE        ~20.3%   predicate a747b56   (the preregistered anchor)
-                ~20.0%   predicate 00cdcfd   (re-read 08-18 during M1; same
-                         decide(), memory drift at measurement time — publish
-                         the P17 delta against BOTH, and say which)
+BASELINE        ~20.3%   predicate a747b56   THE PREREGISTERED ANCHOR — kept
+                ~20.0%   predicate 00cdcfd   a SURVIVOR AUDIT after two rows
+                         were deleted live (not memory drift — corrected). The
+                         P17 delta is published against the ANCHOR on the
+                         self-contained 232-meal fixture M1.1 produces. If
+                         reconstruction is impossible, old and new predicate
+                         run SIDE-BY-SIDE over the same survivor snapshot and
+                         the result is labelled a CONTEMPORANEOUS PAIRED DELTA,
+                         not the original preregistered experiment.
+✅ M1.1 UNBLOCKED THE REMEASURE: the fixture cannot shrink; the delta is
+   published against the preregistered 20.3% on the identical 232 meals.
 EXPECTED GAIN   +12.2 .. +24.8 pts  ->  ~32.5% .. ~45.1%
 PUBLISH         BOTH predicate commits, or it is not a figure
 
