@@ -1032,8 +1032,34 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                                   string: correction native -> undo native
                                   (ledger_undo:canonical, restore claim), no
                                   legacy executor.
-                                  CANARY #3: after env + deploy, replay
-                                  "actually … 8 oz" then "undo" on 3026 ⏳
+                                  CANARY #3 (c74ae98, lanes structured_food+
+                                  ledger_undo, allowlist 26) — ✅ CLEAN:
+                                  "Actually that was 8 oz grilled chicken" ->
+                                  "Updated the Grilled Chicken Breast to 8 oz,
+                                  307 cal." · event 2129 canonical:correction
+                                  · claim 83 completed · native (llm 1672 ms,
+                                  no tools stage). "Undo" -> "Rolled it back
+                                  to how it was." · event 2130 ledger_undo:
+                                  canonical · claim 84 restore completed · 30
+                                  ms, no llm, no legacy · row 3027 byte-
+                                  identical to the correction's before-state.
+                                  The stale-tip guard is on the production
+                                  path.
+                       ⛔⛔⛔ B-1.8 CLOSED 2026-08-18. Every closure criterion
+                       ✅ including the production canary. THREE canaries were
+                       needed and each found something the stage-level proofs
+                       could not: (1) the native planner had no board, (2) a
+                       committed correction rendered no reply, (3) undo was
+                       not a native lane. **Production CONFIRMS a decision; it
+                       also finds the wiring in front of the thing you proved.**
+                       ⚠ NOTED FOR M1, not B-1.8: ufm 1941501 prices "Grilled
+                       Chicken Breast" at 230 kcal / 16.5 g protein / 22.5 g
+                       carbs / 10 g sugar per 6 oz — a poisoned memory match
+                       settled it and the correction faithfully scaled the
+                       poison. Same class as ufm#400.
+                       NEXT: P17 scan/binding tranche (scan-bound pricing =
+                       the c2.2 evidence-constraint primitive) · P17g/h ·
+                       preregistered remeasure.
                                  ⚠ OBSERVED, NOT CHANGED: a propagated
                                  canonical refusal (CorrectionRefused /
                                  StaleUndo / PricingRefused) reaches the user
