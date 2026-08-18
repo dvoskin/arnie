@@ -172,3 +172,92 @@ def _isolate_turn_scoped_caches():
     for cache in (_FT._SPREAD_CACHE, _FT._RELEVANCE_CACHE,
                   _TE._INFLIGHT_FETCHES, _FL._SEEN, _OFF._BREAKER):
         cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_test_may_emit_an_impossible_funnel(request):
+    """Every `food_trace` finished anywhere in the suite must be self-consistent.
+
+    THE POINT IS THE CALL SITES THAT DO NOT EXIST YET. The funnel's counters are
+    written by half a dozen modules that never see each other's numbers —
+    `food_pipeline` sets `staged`, `commit_coordinator` sets `attempted` and
+    `written`, `conversation` and `api/chat` promote `committed` and stamp
+    `commit_visible`. Each is locally right; the record goes impossible only in
+    COMBINATION. So a per-feature test can pass while the trace it produced says
+    three rows committed out of two written, and that is precisely the shape
+    that reached production and started this work.
+
+    Checking at `finish()` catches it wherever it happens: any test that drives
+    any path — today's or a path added next year — fails if the record it leaves
+    contradicts itself. That is a stronger guarantee than any list of assertions
+    someone has to remember to extend.
+
+    A test may opt out with `@pytest.mark.allow_impossible_funnel` when the
+    impossible shape IS the thing under test. Opting out is deliberately
+    awkward: it should be visible in the test's own source that it is producing
+    telemetry the system considers broken.
+    """
+    from core import food_trace as _ft
+
+    if request.node.get_closest_marker("allow_impossible_funnel"):
+        yield
+        return
+
+    seen = []
+    original = _ft.finish
+
+    def _checked(trace=None):
+        result = original(trace)
+        target = result if result is not None else trace
+        try:
+            broken = target.impossible() if target is not None else ()
+        except Exception:
+            broken = ()
+        if broken:
+            seen.append((getattr(target, "turn_id", "?"), broken,
+                         target.log_line()))
+        return result
+
+    _ft.finish = _checked
+    try:
+        yield
+    finally:
+        _ft.finish = original
+
+    if seen:
+        report = "\n".join(
+            f"  turn={turn} violates {list(broken)}\n    {line}"
+            for turn, broken, line in seen)
+        raise AssertionError(
+            "this test finished a food_trace whose counts contradict each "
+            "other — the funnel claims a state no turn can reach:\n"
+            f"{report}")
+
+
+@pytest.fixture(autouse=True)
+def _no_test_inherits_an_ambient_trace():
+    """`CURRENT_TRACE` starts and ends empty for every test.
+
+    A LEAKED TRACE BLINDS EVERY TURN AFTER IT, silently. `food_trace.span`
+    defers to whatever is already ambient and an inner span deliberately does
+    NOT finish — two owners would emit a half-turn and blind the rest of it. So
+    a test that calls `begin()` and never `finish()`es leaves the contextvar
+    set, and the next test's span sees an owner, records its stages onto the
+    orphan, and emits nothing at all.
+
+    That is indistinguishable from "this code does not trace": tracing reads as
+    enabled, the logger is right, the handler is attached, and no line ever
+    arrives. It cost a full investigation to find, and it is order-dependent —
+    green under one shuffle seed and red under the next — which is exactly the
+    class of failure `_isolate_turn_scoped_caches` above exists to prevent for
+    caches.
+
+    Cleared on BOTH sides on purpose. Before, so a leak from an earlier test
+    cannot blind this one; after, so a leak from this one cannot blind the next
+    and the test that caused it is the test that fails.
+    """
+    from core.food_trace import CURRENT_TRACE
+
+    CURRENT_TRACE.set(None)
+    yield
+    CURRENT_TRACE.set(None)

@@ -9761,8 +9761,12 @@ of the other ten.** Every defect above was one term standing in for another:
 the clarifier's approval reported as a commit, the operation's revision
 reported as a repair count, observation rows reported as rounds. Fixing them
 one at a time left the funnel's terms still undefined, so the next collapse
-had nowhere to be caught. The names are now a CHAIN of strictly strengthening
-claims, and no two of them may be proxies for one another:
+had nowhere to be caught. The funnel is now **five state boundaries plus one
+execution counter** — and that split is the load-bearing part, because forcing
+all six onto one ladder is how the terms get misused next.
+
+The five boundaries are progressively stronger claims about the SAME item, so
+each count is a subset of the one above it, and no two may be proxies:
 
 ```text
 interpreted   the model produced an item
@@ -9771,6 +9775,15 @@ written       a row was flushed into the transaction
 committed     that transaction COMMITTED
 visible       the committed truth reached the reply (a `mark`)
 ```
+
+`attempted` is the execution counter and is deliberately **not** on that
+ladder. It counts what the executor TRIED — a fact about execution, not a
+state an item reached. That is why `attempted=3 written=2` is an ordinary
+partial write that must never be flagged, while `committed=3 written=2` is
+impossible. `written <= attempted` still holds, but as a BOUND (a row cannot
+be flushed by a write nobody made), not as membership. `visible` is likewise
+not a count — it is a timestamped `mark`, so it is checked as an implication,
+`visible ⇒ committed > 0`, rather than compared as a magnitude.
 
 Two terms were missing, and their absence was load-bearing:
 
@@ -9792,6 +9805,31 @@ terms DIVERGE. Every previous coordinator test handed the writer exactly as
 many items as it returned, which is where a correct implementation and three
 broken ones are indistinguishable. Its origin ledger fails when a THIRD ask
 origin reports `staged` without `interpreted`.
+
+**The invariants are now checked on the record itself, not per call site.**
+Every counter above is written by a different module, and each one is locally
+correct — the funnel goes impossible only in COMBINATION, which no single call
+site can see. `FoodTurnTrace.impossible()` runs where the whole record finally
+exists and returns the contradicted facts by name:
+
+```text
+items_staged    <= items_interpreted
+items_written   <= items_attempted
+items_committed <= items_written
+commit_visible  => items_committed > 0
+```
+
+It reports rather than raises — a tracer that raises changes the control flow
+of the turn it describes — and the log line carries the verdict as
+`funnel=ok` or `funnel=committed>written,…`, so a self-contradicting trace is
+greppable instead of inferred by comparing two fields. Two enforcement points
+sit either side of it: `record_ask` makes `interpreted` a REQUIRED argument, so
+the one impossible shape a single call site *can* build is refused at the
+signature; and an autouse fixture in `tests/conftest.py` fails any test in the
+suite that finishes a self-contradicting trace, so a call site added later
+cannot produce a shape nobody checks. Opting out needs
+`@pytest.mark.allow_impossible_funnel`, which is deliberately visible in the
+test's own source.
 
 Five things in the same capture read as defects and are **correct** —
 `stages` outrunning `total_ms`, `pricing.usda_search` at ask time,

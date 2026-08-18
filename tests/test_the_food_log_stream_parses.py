@@ -64,7 +64,7 @@ class TestTheTraceLine:
         food_trace.record(Stage.ROUTE, duration_ms=3.0)
         with food_trace.stage(Stage.INTERPRET):
             pass
-        food_trace.record_ask(questions=1, staged=1)
+        food_trace.record_ask(questions=1, interpreted=1, staged=1)
         food_trace.note(interpreter_model="claude-sonnet-5",
                         voice_profile="clarification",
                         voice_model="claude-sonnet-5")

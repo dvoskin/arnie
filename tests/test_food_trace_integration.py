@@ -89,8 +89,17 @@ def _structured_plan(*names):
 
 
 def _trace_lines(caplog):
+    """The trace lines, and ONLY those.
+
+    The trailing space matters. `event=food_trace_config` — the once-per-process
+    warning that `FOOD_TRACE_SALT` is unset — shares this prefix, so a substring
+    match collected it as a second "trace line" and the one-line-per-turn
+    assertion failed. Order-dependent by construction: the warning fires from
+    whichever test in the process reaches it first, so this file passed whenever
+    something else ran before it and failed whenever it ran first.
+    """
     return [r.message for r in caplog.records
-            if "event=food_trace" in r.message]
+            if r.message.startswith("event=food_trace ")]
 
 
 def _fields(line):
@@ -119,7 +128,13 @@ async def _drive(monkeypatch, caplog, *, plan, execution, results):
             food_trace.record(Stage.INTERPRET, duration_ms=5)
             food_trace.record(Stage.STAGE, duration_ms=1)
             food_trace.record(Stage.CLARIFY, duration_ms=1)
-            food_trace.note(items_staged=len(plan["tool_calls"]),
+            # `interpreted` TOO, because the real pipeline records both and a
+            # double that reports only `staged` builds `staged>interpreted` —
+            # a shape production cannot produce. A stub emitting impossible
+            # telemetry is worse than an inaccurate one: every assertion built
+            # on it is guarding a state no turn can reach.
+            food_trace.note(items_interpreted=len(plan["tool_calls"]),
+                            items_staged=len(plan["tool_calls"]),
                             items_ready=len(plan["tool_calls"]))
         return dict(plan)
 
@@ -214,6 +229,15 @@ async def test_a_blocked_write_does_not_count_as_committed(monkeypatch,
     assert fields["committed"] == "0", (
         "a blocked write was counted as a commit")
     assert fields["failed"] == "1"
+    # AND NOTHING BECAME VISIBLE, because nothing was committed. This turn does
+    # reach the commit render — to tell the user it could not log the item — and
+    # the mark used to be stamped there unconditionally. `commit_visible_ms` is
+    # a LATENCY, so that bad mark made a turn which committed nothing look like
+    # a fast one rather than a missing one: the direction that hides a problem.
+    assert fields["commit_visible_ms"] == "-", (
+        "a turn that committed nothing dated the moment its committed truth "
+        "became visible")
+    assert fields["funnel"] == "ok"
 
 
 @pytest.mark.asyncio

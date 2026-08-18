@@ -732,3 +732,4 @@ def test_a_missing_modality_fails_closed_rather_than_becoming_free_text():
         if False else AnswerResult(Outcome.REPAIR, reason="",
                                    modality=AnswerModality.COMMAND)
     assert _modality_of(declared) == "command"
+

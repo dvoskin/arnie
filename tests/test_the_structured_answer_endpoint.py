@@ -16,6 +16,7 @@ avoid.
 """
 import asyncio
 import json
+import os
 
 import pytest
 
@@ -297,3 +298,122 @@ async def test_a_crash_between_the_two_commits_does_not_write_twice(
     if retry.status_code == 200:
         assert retry.json()["entry_id"], (
             "the retry returned no row for a meal that exists")
+
+
+@pytest.mark.asyncio
+async def test_a_replay_does_not_date_a_commit_it_did_not_make(
+        client, edges, seeded, b1_live, density, monkeypatch):
+    """`commit_visible_ms` belongs to the turn that COMMITTED, not to every
+    turn that mentions the entry.
+
+    A replay returns the ORIGINAL entry's id — that is what makes it a replay —
+    so `entry_id` present was never evidence that this turn wrote anything. The
+    mark was guarded on it anyway, and the funnel said so:
+    `commit_visible_ms=9` on a turn reporting `written=0 committed=0`.
+
+    The direction is what makes it worth catching. Replays are fast by
+    construction, so those readings dragged the metric DOWN — a turn that did
+    not commit made real commits look quicker than they are. A missing number
+    is visibly missing; a wrong one that flatters the system is not.
+    """
+    import logging
+
+    from core import food_trace as _ft
+
+    # THE KILL SWITCH, PINNED. `food_trace.begin()` returns None when
+    # `FOOD_TRACE` is off, and then there is no trace, no line, and nothing for
+    # this test to read — a state indistinguishable from the defect it is
+    # looking for. A test about trace CONTENT must not inherit whether tracing
+    # is on from whatever ran before it.
+    monkeypatch.setenv("FOOD_TRACE", "true")
+    assert _ft.tracing_enabled(), "the kill switch is off; this test cannot see"
+
+    ids = await _open_question(edges, seeded)
+
+    # CAPTURED AT THE SOURCE LOGGER, NOT THROUGH `caplog`. Twice now this
+    # assertion has failed for reasons that had nothing to do with what it
+    # tests: `caplog` collects for the WHOLE test (so the ask in
+    # `_open_question` was counted as subject), and it captures by handler on
+    # the ROOT logger — which only works while `core.food_trace` still
+    # propagates and nothing has called `logging.disable()`. Under CI's
+    # shuffled order something upstream changes that, and the test saw ZERO
+    # lines for two requests that had both plainly emitted one.
+    #
+    # A handler on the logger itself is immune to all of it, and scoping it to
+    # the two POSTs removes the setup turn without needing to clear anything.
+    captured = []
+
+    class _Grab(logging.Handler):
+        def emit(self, record):
+            captured.append(record.getMessage())
+
+    # THE MODULE'S OWN LOGGER OBJECT, not one looked up by name. They are the
+    # same object right up until they are not, and `getLogger` by name gives no
+    # sign when they differ — the handler simply never fires and the test reads
+    # as "nothing was traced".
+    trace_log = _ft.logger
+    handler = _Grab(level=logging.INFO)
+    was_level, was_disabled = trace_log.level, trace_log.disabled
+    was_global = logging.root.manager.disable
+    trace_log.addHandler(handler)
+    trace_log.setLevel(logging.INFO)
+    trace_log.disabled = False
+    logging.disable(logging.NOTSET)     # a global disable outranks any handler
+    try:
+        applied = await client.post(ANSWER, json={**ids,
+                                                  "client_message_id": "tap-1"})
+        replayed = await client.post(ANSWER, json={**ids,
+                                                   "client_message_id": "tap-2"})
+    finally:
+        trace_log.removeHandler(handler)
+        trace_log.setLevel(was_level)
+        trace_log.disabled = was_disabled
+        logging.disable(was_global)
+
+    assert applied.json()["outcome"] == "applied"
+    assert replayed.json()["outcome"] == "replay", replayed.json()
+
+    lines = [m for m in captured if m.startswith("event=food_trace ")]
+    # DIAGNOSABLE ON FAILURE. This assertion has already failed twice for
+    # reasons in the capture rather than the product, and once under an
+    # ordering that could not be reproduced from the run that reported it —
+    # pytest-randomly's seed is not printed under `-q`. If it fails again, the
+    # next reader gets the state that decides it instead of another
+    # investigation from scratch.
+    assert len(lines) == 2, (
+        f"a replayed tap left no trace of its own — got {len(lines)} lines "
+        f"for two requests.\n"
+        f"  tracing_enabled={_ft.tracing_enabled()}\n"
+        f"  FOOD_TRACE={os.getenv('FOOD_TRACE')!r}\n"
+        f"  logger={_ft.logger.name!r} id={id(_ft.logger)} "
+        f"same_by_name={_ft.logger is logging.getLogger('core.food_trace')}\n"
+        f"  module={_ft.__name__!r} id={id(_ft)}\n"
+        f"  every record captured on core.food_trace: {captured}\n"
+        f"  matching lines: {lines}")
+
+    def field(line, key):
+        for token in line.split():
+            if token.startswith(f"{key}="):
+                return token[len(key) + 1:]
+        raise AssertionError(f"{key}= missing from {line}")
+
+    # THE INVARIANT OVER THE ACTUAL STREAM, not over a line count: no emitted
+    # line may date a commit's visibility on a turn that wrote nothing.
+    for line in lines:
+        if field(line, "commit_visible_ms") != "-":
+            assert int(field(line, "written")) > 0, (
+                f"this turn dated the moment its committed truth became "
+                f"visible, having written nothing: {line}")
+        assert field(line, "funnel") == "ok", line
+
+    wrote, replay = lines
+    assert field(wrote, "written") == "1"
+    assert field(wrote, "committed") == "1"
+    assert field(wrote, "commit_visible_ms") != "-", (
+        "the turn that actually committed lost its visibility measurement")
+
+    assert field(replay, "written") == "0", (
+        "a replay answered from storage counted as a second write")
+    assert field(replay, "committed") == "0"
+    assert field(replay, "stopped_at") == "execute", (
+        "the replay's line does not say where the turn ended")

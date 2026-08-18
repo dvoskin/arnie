@@ -1200,22 +1200,43 @@ async def _run_turn(
                 # re-read the commit result, so they cannot drift apart.
                 _b1_facts = _b1_ans.facts_for(_b1_out)
                 _b1_resp = Response.from_text(_b1_ans.copy_for(_b1_facts))
-                if getattr(_b1_facts, "entry_id", None):
-                    # WHEN THE COMMITTED TRUTH GOT WORDS — the same moment the
-                    # legacy commit render marks, so the two lanes' numbers mean
-                    # the same thing. Both this and `api/chat.py` now stamp it
-                    # strictly AFTER their `db.commit()`; the row is durable by
-                    # the time we claim a committed answer became visible.
-                    try:
-                        from core import food_trace as _b1_ft2
+                # WHEN THE COMMITTED TRUTH GOT WORDS — the same moment the
+                # legacy commit render marks, so the two lanes' numbers mean
+                # the same thing. Both this and `api/chat.py` stamp it strictly
+                # AFTER their `db.commit()`; the row is durable by the time we
+                # claim a committed answer became visible.
+                #
+                # `entry_id` IS NOT THE CONDITION ON ITS OWN — the third place
+                # this lane made that mistake. A REPLAY carries the ORIGINAL
+                # entry's id, which is the point of a replay, so `entry_id` is
+                # present on a turn that wrote nothing. The user retyping an
+                # offered option label reaches exactly this branch, and the
+                # mark dated a commit that happened on some earlier turn.
+                #
+                # It was invisible until now only because a replay recorded no
+                # stage and `finish()` emits nothing for a stageless trace.
+                # `core/b1_answer_turn.py` now records the replay so the turn
+                # has a line at all — which turns this from a silent wrong
+                # number into a `funnel=visible_without_commit` line, and into
+                # a test failure under the autouse invariant.
+                #
+                # Same condition as `api/chat.py`: what THIS turn wrote, read
+                # off the trace so the mark cannot disagree with the count it
+                # is about. Zero exactly when the coordinator never ran.
+                try:
+                    from core import food_trace as _b1_ft2
+                    _b1_vis = _b1_ft2.current()
+                    if getattr(_b1_facts, "entry_id", None) \
+                            and _b1_vis is not None \
+                            and _b1_vis.items_written > 0:
                         _b1_ft2.mark("commit_visible")
                         # `commit_or_load_existing` only flushed into the
                         # transaction that closed above; this is where the write
                         # actually became durable, so this is where the count
                         # earns the name `committed`.
                         _b1_ft2.committed_durably()
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
                 _b1_card = _b1_ans.card_for(_b1_facts)
                 if _b1_card is not None:
                     # ONE facts object, two renderings. The card cannot
@@ -3371,7 +3392,24 @@ async def _run_turn(
                 # before the sentence. With the early card still disabled this
                 # lands within a few ms of `complete_ms`, and that equality IS
                 # the finding rather than a measurement bug.
-                _ft_vis.mark("commit_visible")
+                #
+                # ONLY IF SOMETHING COMMITTED. A turn whose every write was
+                # BLOCKED still reaches this render — to say so — and stamping
+                # the mark there dated a moment that never happened. Because
+                # the field is a latency, that bad mark read as a FAST turn
+                # rather than a missing one, which is the direction that hides
+                # a problem instead of showing it. `api/chat.py` already guards
+                # its own mark on `entry_id`; this is the legacy lane earning
+                # the same condition rather than assuming it.
+                #
+                # Read off the trace instead of a local, so the mark cannot
+                # disagree with the count it is supposed to be about — the
+                # funnel's `visible => committed > 0` holds by construction
+                # here rather than by the two happening to be computed alike.
+                # `items_committed` is set above, in this same function.
+                _vis_trace = _ft_vis.current()
+                if _vis_trace is not None and _vis_trace.items_committed > 0:
+                    _ft_vis.mark("commit_visible")
                 # The food reply is final here — release the second-tier heads-up
                 # guard (and stop its timer sleeping) so it can never speak over
                 # the answer it was covering for.
