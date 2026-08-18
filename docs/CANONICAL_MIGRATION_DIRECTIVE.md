@@ -1658,7 +1658,53 @@ P17-LC3  ⛔→🔧 LIVE CANARY #3 *(2026-08-18, 897b7da live)* — THE BOUND
          STATUS: transport/binding invariants ✅ · bound refusal ✅ · bound
          production settlement ❌ · clarification preserves binding ❌ (CF9)
          · P17g ⛔ BLOCKED.
-P17g     ◻ eligibility predicate LAST — BLOCKED: canary #4 + CF9 both
+P17-UA   ◻ UNIT-ALIAS EVIDENCE *(Danny, 2026-08-18 — the fix for "2 bars",
+         verbatim)*: acquire the missing fact EXPLICITLY. The system knows
+         1 serving = 55 g; it must not invent 1 bar = 1 serving. Solution:
+         an evidence-backed unit-alias layer attached to the IMMUTABLE
+         product snapshot.
+         EVIDENCE HIERARCHY — accept bar -> serving ONLY from:
+           1. manufacturer/label evidence: "Serving size: 1 bar (55 g)"
+              (strongest)
+           2. package facts: net weight 55 g + package count 1 bar ->
+              deterministic 55 g / 1 bar
+           3. barcode catalog with EXPLICIT unit description: structured
+              serving text says "bar", not merely "55 g"
+           4. user confirmation FOR THIS CONSUMPTION: "The label lists a
+              55 g serving. Was each bar one full serving?" — "yes"
+              authorizes 2 bars = 110 g for THAT ENTRY; never silently
+              promoted to a global product fact.
+         ARCHITECTURE (snapshot-scoped): unit evidence rows keyed to the
+         exact snapshot id — consumer_unit "bar", consumer_units_per_
+         serving 1, provenance (manufacturer_label | package_facts |
+         catalog_serving_text | user_confirmed:<entry>), evidence capture
+         id. Pricing is then MECHANICAL: 2 bars x 1 serving/bar x 55 g/
+         serving = 110 g — every edge evidence-backed, no heuristic.
+         WHEN OFF LACKS THE NOUN: attempt deterministic enrichment at
+         acquisition (structured serving text -> package facts -> optional
+         label scan/OCR later) -> persist the exact relationship; if none
+         supplies "bar": ASK "The label gives nutrition per 55 g serving.
+         Is each bar one 55 g serving?" -> yes: settle THIS entry at 110 g
+         · no/unsure: request grams or servings · no response: remain
+         refused · NEVER memory or legacy.
+         PRODUCT-QUALITY (later): label capture after an incomplete scan —
+         "Scan the serving-size line" — turns missing provider data into
+         durable, auditable product evidence; future scans of that exact
+         snapshot then understand "2 bars" without guessing or re-asking.
+         => authoritative unit enrichment -> snapshot-scoped unit
+            equivalence -> deterministic scaling -> clarification only
+            when evidence remains incomplete.
+         SLICES: A) product_unit_evidence table (append-only, snapshot FK
+         RESTRICT, paired migration) + model + store · B) acquisition
+         producer for sources 2/3 (structured serving text / package
+         facts, deterministic parse; 70004199 has neither) + pricer
+         consumes the alias as a SOURCED measure · C) CF9 proper: a
+         BoundUnpriceable opens a pending quantity operation that HOLDS
+         the snapshot and asks the source-4 question; "yes" -> per-entry
+         alias -> bound settle; grams/servings -> bound settle; else stays
+         refused; the answer never re-acquires and never goes legacy ·
+         D) label capture (later).
+P17g     ◻ eligibility predicate LAST — BLOCKED: canary #4 + CF9/P17-UA both
 P17h     ◻ mutation + positive twins
 ```
 
