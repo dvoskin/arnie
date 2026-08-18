@@ -371,17 +371,30 @@ class NativeExecutionStage:
         ExecutionResult shape the legacy update path publishes."""
         from core.execution_result import (CallResult, ExecutionResult,
                                            LAST_EXECUTION)
+        # The receipt text IS the user's reply now (NativeRenderStage
+        # narrates a canonical correction from it — canary #2). Sentence case,
+        # the row's committed numbers, no internal rung words.
+        kcal = int(round(float(result.changes.get("calories", 0) or 0)))
         if hasattr(result, "ratio"):
             raw = {"entry_id": result.entry_id, "quantity": result.quantity_text}
-            text = (f"Updated to {result.quantity_text} "
-                    f"({result.changes.get('calories', 0):.0f} kcal)")
+            name = await self._row_name(db, result.entry_id)
+            text = (f"Updated the {name} to {result.quantity_text}, {kcal} cal."
+                    if name else
+                    f"Updated it to {result.quantity_text}, {kcal} cal.")
             correction = {"ratio": result.ratio, "method": result.method,
                           "owner": "canonical", "changes": result.changes}
         else:
             raw = {"entry_id": result.entry_id, "food_name": result.new_identity}
-            text = (f"Updated to {result.new_identity} "
-                    f"({result.changes.get('calories', 0):.0f} kcal, "
-                    f"{result.rung})")
+            qty = str(result.changes.get("quantity") or "").strip()
+            same_food = (str(result.new_identity or "").strip().lower()
+                         == str(result.old_identity or "").strip().lower())
+            if same_food:
+                # the interpreter echoed the name; what changed is the amount
+                text = (f"Updated the {result.new_identity} to {qty}, {kcal} cal."
+                        if qty else f"Updated the {result.new_identity}, {kcal} cal.")
+            else:
+                text = (f"Updated it to {result.new_identity}, {qty}, {kcal} cal."
+                        if qty else f"Updated it to {result.new_identity}, {kcal} cal.")
             correction = {"rebound_from": result.old_identity,
                           "rung": result.rung, "evidence_id": result.evidence_id,
                           "owner": "canonical", "changes": result.changes}
@@ -393,6 +406,18 @@ class NativeExecutionStage:
         return view
 
     # ── helpers ───────────────────────────────────────────────────────────────
+    async def _row_name(self, db, entry_id) -> str:
+        """The committed row's food name, for the correction receipt. A read
+        after the commit; failure degrades the copy, never the turn."""
+        try:
+            from sqlalchemy import select
+            from db.models import FoodEntry
+            name = (await db.execute(select(FoodEntry.parsed_food_name).where(
+                FoodEntry.id == int(entry_id)))).scalar_one_or_none()
+            return str(name or "").strip()
+        except Exception:                              # noqa: BLE001
+            return ""
+
     async def _claim(self, db, user, request, ops) -> bool:
         """True when this turn is first. A claim that cannot be taken (table
         missing, DB hiccup) must not block the write — the in-memory and

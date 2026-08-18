@@ -4626,7 +4626,12 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         # column writes.
         changes = {k: v for k, v in inp.items()
                    if k not in ("entry_id", "date", "expected_calories",
-                                "food_hint", "source", "basis", "_result")
+                                "food_hint", "source", "basis", "_result",
+                                # the undo plan's currency token (B-1.8d #4):
+                                # consumed by the canonical restore's tip
+                                # guard, never a column. Canary #2 wrote it
+                                # into a legacy ledger payload as a "change".
+                                "undoes_event_id")
                    and v is not None}
         # A CORRECTED IDENTITY IS A NEW RESOLUTION, NOT A NEW GUESS.
         #

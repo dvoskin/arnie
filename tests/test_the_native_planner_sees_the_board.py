@@ -154,3 +154,161 @@ async def test_end_to_end_the_correction_reaches_the_canonical_route(db, make_us
     events = (await db.execute(select(LedgerEvent).where(
         LedgerEvent.entry_id == row.id, LedgerEvent.source == CORRECTION_SOURCE))).scalars().all()
     assert len(events) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_committed_correction_renders_a_reply_not_the_recovery_bubble(
+        db, make_user):
+    """CANARY #2 (231fcf9, ios:0EE4B6BD): the correction COMMITTED (event 2110,
+    claim 80) and the user was told "Lost the thread there. Try one more
+    time" — the render stage produced NOTHING for a committed update, the
+    reply was empty, and delivery substituted the recovery bubble. A real
+    write reported as a failure is the phantom's mirror image."""
+    from core.canonical_writer import (CanonicalEvent, DirectOperation,
+                                       ResolvedFood, ResolvedMeal,
+                                       ResolutionStatus, write_canonical_meal)
+    from core.turns.stages.execute_native import NativeExecutionStage
+    from core.turns.stages.render_native import NativeRenderStage
+    from core.turns.stages.snapshot_builder import CommittedSnapshotStage
+    from db.models import DailyLog, FoodEntry
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    user = await make_user()
+    meal = ResolvedMeal(
+        operation_id=f"canary2_{user.id}", revision=0, user_id=user.id,
+        logging_day=dt.date(2026, 8, 18), user_timezone="America/New_York",
+        items=(ResolvedFood(
+            event=CanonicalEvent(id="e", domain="food", surface_text="grilled chicken",
+                                 resolution_status=ResolutionStatus.RESOLVED),
+            calories=257.0, protein=52.0, carbs=0.0, fats=6.0, quantity_text="6 oz",
+            attributes={"pricing": {"rung": "artifact", "evidence_id": "usda:1",
+                                    "basis": "per_100g"}}),))
+    await write_canonical_meal(db, operation=DirectOperation(meal), resolved_meal=meal)
+    await db.commit()
+    row = (await db.execute(select(FoodEntry).order_by(FoodEntry.id.desc()))).scalars().first()
+    log = (await db.execute(select(DailyLog).where(DailyLog.id == row.daily_log_id)
+                            .options(selectinload(DailyLog.food_entries))
+                            .execution_options(populate_existing=True))).scalar_one()
+
+    # the interpreter's op, as it really arrives: entry_id AND food_name AND its numbers
+    ops = [{"name": "update_food_entry",
+            "input": {"entry_id": row.id, "food_name": "grilled chicken",
+                      "quantity": "8 oz", "calories": 342.7, "protein": 69.2}}]
+
+    class _V:
+        disposition = "execute"; approved_operations = ops; clarification = None
+
+    req = _Req("actually the grilled chicken was 8 oz",
+               {"db": db, "user": user, "today_log": log, "messages": ()})
+    execution = await NativeExecutionStage().run(req, validation=_V())
+    assert execution.calls[0].committed
+    snapshot = await CommittedSnapshotStage().run(req, execution=execution)
+    response = await NativeRenderStage().run(req, plan=None, validation=_V(),
+                                             snapshot=snapshot)
+    assert response is not None and "".join(response.bubbles).strip(), \
+        "a COMMITTED correction rendered no reply — the user gets the recovery bubble"
+    text = " ".join(response.bubbles)
+    assert "8 oz" in text or "343" in text or "342" in text, text
+
+
+async def _canonical_chicken(db, user):
+    from core.canonical_writer import (CanonicalEvent, DirectOperation,
+                                       ResolvedFood, ResolvedMeal,
+                                       ResolutionStatus, write_canonical_meal)
+    from db.models import DailyLog, FoodEntry
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    meal = ResolvedMeal(
+        operation_id=f"e2e_{user.id}", revision=0, user_id=user.id,
+        logging_day=dt.date(2026, 8, 18), user_timezone="America/New_York",
+        items=(ResolvedFood(
+            event=CanonicalEvent(id="e", domain="food", surface_text="grilled chicken",
+                                 resolution_status=ResolutionStatus.RESOLVED),
+            calories=257.0, protein=52.0, carbs=0.0, fats=6.0, quantity_text="6 oz",
+            attributes={"pricing": {"rung": "artifact", "evidence_id": "usda:1",
+                                    "basis": "per_100g"}}),))
+    await write_canonical_meal(db, operation=DirectOperation(meal), resolved_meal=meal)
+    await db.commit()
+    row = (await db.execute(select(FoodEntry).order_by(FoodEntry.id.desc()))).scalars().first()
+    log = (await db.execute(select(DailyLog).where(DailyLog.id == row.daily_log_id)
+                            .options(selectinload(DailyLog.food_entries))
+                            .execution_options(populate_existing=True))).scalar_one()
+    return row, log
+
+
+async def _turn(db, user, log, text, turn_id):
+    """The REAL entrypoint — route -> plan -> validate -> execute -> snapshot
+    -> render — with the interpreter stubbed to read the board it is handed."""
+    from core.turns import entrypoint as E
+    req = E.build_request(turn_id=turn_id, user=user, platform="ios",
+                          source_type="ios", text=text, db=db, today_log=log,
+                          messages=[{"role": "assistant", "content": "Grilled chicken logged."}])
+    return await E.run_turn(
+        request=req, user=user, db=db, messages=req.metadata["messages"],
+        system="", platform="ios", in_onboarding=False, was_onboarding=False,
+        today_log=log, source_type="ios", on_image=None, on_interim=None,
+        on_text_bubble=None, on_tool_start=None, on_card=None, turn_id=turn_id)
+
+
+@pytest.mark.asyncio
+async def test_undo_executes_natively_and_the_stale_guard_is_on_the_path(
+        db, make_user, monkeypatch):
+    """CANARY #2: "Undo" ran through LEGACY (source ledger_undo:v1) because
+    LEDGER_UNDO was not an enabled native lane — so restore_recorded_state,
+    and the B-1.8d stale-tip guard, were not on the production path. With the
+    lane enabled: correction (native) -> undo (native, restore, source
+    ledger_undo:canonical, restore claim) -> a SECOND undo of the same event
+    is stale and refused non-mutating; the legacy executor never runs."""
+    import handlers.tool_executor as te
+    import core.food_turn as ft
+    from core.canonical_correction import CORRECTION_SOURCE
+    from db.models import FoodEntry, IdempotencyRecord, LedgerEvent
+    from sqlalchemy import select
+
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", "new_execute")
+    monkeypatch.setenv("TURN_COORDINATOR_LANES", "structured_food,ledger_undo")
+    monkeypatch.setenv("TURN_COORDINATOR_ALLOWLIST", "")
+    monkeypatch.setenv("STRUCTURED_FOOD", "true")
+
+    async def forbidden(*a, **k):
+        raise AssertionError("legacy executor invoked")
+    monkeypatch.setattr(te, "execute_tool_calls", forbidden)
+
+    async def stub(text, u, **kw):
+        target = next(b for b in kw["board"] if "chicken" in b["food"])
+        return {"action": "update", "say": "", "tool_calls": [
+            {"name": "update_food_entry",
+             "input": {"entry_id": target["id"], "food_name": "grilled chicken",
+                       "quantity": "8 oz", "calories": 342.7}}]}
+    monkeypatch.setattr(ft, "run", stub)
+    async def rel(text): return True
+    monkeypatch.setattr(ft, "food_relevance", rel)
+
+    user = await make_user()
+    row, log = await _canonical_chicken(db, user)
+    row_id = int(row.id)
+
+    r1 = await _turn(db, user, log, "actually the grilled chicken was 8 oz", "ios:e2e-corr")
+    assert "".join(r1.response.bubbles).strip()
+    mid = (await db.execute(select(FoodEntry).where(FoodEntry.id == row_id)
+                            .execution_options(populate_existing=True))).scalar_one()
+    assert mid.quantity == "8 oz"
+
+    r2 = await _turn(db, user, log, "undo", "ios:e2e-undo")
+    assert r2 is not None and "".join(r2.response.bubbles).strip()
+    after = (await db.execute(select(FoodEntry).where(FoodEntry.id == row_id)
+                              .execution_options(populate_existing=True))).scalar_one()
+    assert after.quantity == "6 oz" and after.calories == pytest.approx(257.0)
+    restores = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.entry_id == row_id,
+        LedgerEvent.source == "ledger_undo:canonical"))).scalars().all()
+    assert len(restores) == 1, "the undo did not run through the canonical restore"
+    legacy_undo = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.entry_id == row_id,
+        LedgerEvent.source == "ledger_undo:v1"))).scalars().all()
+    assert legacy_undo == []
+    claims = (await db.execute(select(IdempotencyRecord).where(
+        IdempotencyRecord.user_id == user.id,
+        IdempotencyRecord.command == "restore"))).scalars().all()
+    assert len(claims) == 1 and claims[0].status == "completed"

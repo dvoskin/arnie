@@ -105,6 +105,24 @@ def _committed_operations(operations, snapshot) -> list:
             if _identity(op.get("name"), op.get("input")) in committed]
 
 
+def _correction_reply(snapshot) -> str:
+    """The reply for a committed canonical correction / restore, from the
+    receipt the correction stage published — never from the plan's numbers.
+    Empty when this turn was not a correction (or nothing committed)."""
+    calls = getattr(getattr(snapshot, "execution", None), "calls", None) or ()
+    parts = []
+    for c in calls:
+        if not getattr(c, "committed", False):
+            continue
+        receipt = getattr(c, "correction", None)
+        if not isinstance(receipt, dict) or receipt.get("owner") != "canonical":
+            continue
+        text = str(getattr(c, "result_text", "") or "").strip()
+        if text:
+            parts.append(text)
+    return " ".join(parts)
+
+
 class NativeRenderStage:
     """Snapshot in, text out. Never reads the plan's numbers, and never
     invents a reply for a turn that wrote nothing."""
@@ -121,6 +139,22 @@ class NativeRenderStage:
             return None
 
         ops = list(getattr(validation, "approved_operations", ()) or ())
+
+        # ⭐ A CANONICAL CORRECTION NARRATES ITS OWN RECEIPT *(canary #2,
+        # 2026-08-18, ios:0EE4B6BD)*. The correction COMMITTED (event 2110,
+        # claim 80) and this stage returned None: the committed-operations
+        # match below keys a write on (name, food_name, entry_id) from the
+        # op's INPUT versus the call's raw_input, and a correction's op and
+        # its receipt need not spell the food the same way. The reply went
+        # out empty and delivery substituted "Lost the thread there" — a real
+        # write reported as a failure. The receipt the correction publishes
+        # (`CallResult.correction`, `result_text`) IS the committed truth, so
+        # it is narrated directly; the op<->call re-match is for batches of
+        # logs, where it belongs.
+        corrected = _correction_reply(snapshot)
+        if corrected:
+            return Response.from_text(corrected)
+
         # Nothing committed → say nothing. The day line alone ("You're at
         # 1500 with 700 left") reads as a confirmation of a write that was
         # entirely refused, so the turn is handed back instead.

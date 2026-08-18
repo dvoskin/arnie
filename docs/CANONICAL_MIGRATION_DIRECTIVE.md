@@ -1003,7 +1003,36 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                                   legacy executor instrumented to fail.
                                   MUTATION: wiring off -> 2 RED, the E2E one
                                   failing exactly the production way.
-                                  CANARY #2: after deploy, replay
+                                  CANARY #2 (231fcf9 live): THE LANE FIRED —
+                                  first canonical:correction in production
+                                  (event 2110, claim 80, row 3026 6->8 oz,
+                                  ratio-priced) — and two more findings:
+                                  (a) the reply was the "stall" recovery
+                                  bubble: NativeRenderStage returned None
+                                  for a committed correction (op<->call
+                                  identity re-match) -> empty reply ->
+                                  delivery substituted "Lost the thread".
+                                  FIX: the render stage narrates the
+                                  correction's own receipt (CallResult.
+                                  correction / result_text, user-grade copy
+                                  "Updated the grilled chicken to 8 oz, 343
+                                  cal."); turn_metrics.outcome now records
+                                  error:<Type> when a stage failed after
+                                  commit (it said ok — the instrument lied).
+                                  (b) "Undo" ran through LEGACY (source
+                                  ledger_undo:v1): LEDGER_UNDO was not an
+                                  enabled native lane, so restore_recorded_
+                                  state and the B-1.8d stale-tip guard were
+                                  NOT on the production path; legacy also
+                                  wrote undoes_event_id into a ledger payload
+                                  as a "change" (now stripped). FIX = config:
+                                  TURN_COORDINATOR_LANES=structured_food,
+                                  ledger_undo (Danny, Render). E2E proof
+                                  through the real entrypoint with that lane
+                                  string: correction native -> undo native
+                                  (ledger_undo:canonical, restore claim), no
+                                  legacy executor.
+                                  CANARY #3: after env + deploy, replay
                                   "actually … 8 oz" then "undo" on 3026 ⏳
                                  ⚠ OBSERVED, NOT CHANGED: a propagated
                                  canonical refusal (CorrectionRefused /

@@ -183,6 +183,15 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
         # makes `stages_json` mean anything.
         with _trace_active(_rt):
             state = await coordinator.run(request)
+        # ⛔ THE COORDINATOR CATCHES A STAGE FAILURE INTO state.error AND
+        # RETURNS. Measured 2026-08-18 (canary #2, ios:0EE4B6BD): the
+        # correction COMMITTED, a later stage raised, the user got the
+        # recovery bubble — and turn_metrics said outcome=ok, because only an
+        # exception that ESCAPED run() was ever recorded. The instrument said
+        # "ok" on every failed-after-commit turn. Read the state, not the
+        # exception path.
+        if getattr(state, "error", None) is not None:
+            _outcome = f"error:{type(state.error).__name__}"
     except Exception as exc:
         _outcome = f"error:{type(exc).__name__}"
         raise
