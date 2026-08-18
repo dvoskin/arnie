@@ -956,9 +956,55 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                                    8 ROLLBK  no flag: ownership decides;
                                              legacy row same shape ->
                                              _correction_route None         ✅
-                                             CANARY: GATED on manual deploy +
-                                             /health schema.in_sync with
-                                             corrrec001 present            ⏳
+                                             CANARY #1 (b8edc11 live, in_sync,
+                                             corrrec001) — FAILED, and the
+                                             failure was the point:      ⛔→🔧
+                                  ⭐⭐⭐ THE NATIVE PLANNER WAS BLIND. user 26,
+                                  "actually the grilled chicken breast was
+                                  8 oz" (ios:4DB2A7D6): native FoodPlanStage
+                                  called the interpreter with board=None —
+                                  build_request never carried board /
+                                  day_line / last_assistant / regulars /
+                                  thread_active; legacy computes all five
+                                  inline and the native stage read keys
+                                  nobody wrote. Blind -> ZERO ops ->
+                                  native_no_plan -> delegated to legacy ->
+                                  legacy re-interpreted WITH its board ->
+                                  update_food_entry(3026, 8 oz) under
+                                  INFERRED_INTERPRETATION -> firewall
+                                  REFUSED (ledger 2105 mutation_rejected).
+                                  "Undo" re-routed as the pending update
+                                  (structured_update / thread) -> refused
+                                  again (2107). Row 3026 untouched; 0
+                                  canonical:correction events fleet-wide.
+                                  ⚠ AND the reply + macro_card_patch said
+                                  "corrected: true, 8 oz, 343" for a write
+                                  the DB refused — the phantom-correction
+                                  class, in the legacy narrator.
+                                  THE PROOF GAP: B-1.8d fed ops straight to
+                                  NativeExecutionStage; nothing proved the
+                                  PLANNER in front of it could produce a
+                                  correction op on the live request shape.
+                                  FIX (root, one definition, both lanes'
+                                  shapes): core/turns/planner_inputs.py —
+                                  board_for / day_line_for / last_assistant_
+                                  of / thread_is_active / regulars_for;
+                                  FoodPlanStage derives them from db / user
+                                  / today_log / messages when the request
+                                  lacks them; build_request + chat_service
+                                  carry `messages`. tests/test_the_native_
+                                  planner_sees_the_board.py (4): the stub
+                                  interpreter RECORDS what it is handed
+                                  (board with the real row id, thread_active
+                                  True, last_assistant); explicit board not
+                                  overridden; build_request carries the
+                                  thread; E2E plan -> validate -> native
+                                  stage -> canonical correction with the
+                                  legacy executor instrumented to fail.
+                                  MUTATION: wiring off -> 2 RED, the E2E one
+                                  failing exactly the production way.
+                                  CANARY #2: after deploy, replay
+                                  "actually … 8 oz" then "undo" on 3026 ⏳
                                  ⚠ OBSERVED, NOT CHANGED: a propagated
                                  canonical refusal (CorrectionRefused /
                                  StaleUndo / PricingRefused) reaches the user

@@ -40,6 +40,22 @@ class FoodPlanStage:
         if run_interpreter is None:
             from core.food_turn import run as run_interpreter
         meta = request.metadata or {}
+        # ⛔⛔ THE INTERPRETER MUST SEE THE BOARD *(B-1.8 canary, 2026-08-18)*.
+        # These keys were read here and written by NOBODY: `build_request`
+        # carries db / user / today_log, not the derived board, day line,
+        # thread state or regulars legacy computes inline. Blind, the native
+        # interpreter could not name entry 3026 for "actually … 8 oz",
+        # produced no op, and the correction lane never fired (see
+        # core/turns/planner_inputs.py). Computed here from the same handles,
+        # unless the request already carries them (tests, shadow hooks).
+        if "board" not in meta:
+            from core.turns.planner_inputs import planner_inputs
+            derived = await planner_inputs(
+                text=request.text or "", db=meta.get("db"), user=meta.get("user"),
+                today_log=meta.get("today_log"), messages=meta.get("messages"),
+                has_pending=bool(meta.get("food_pending")
+                                 or meta.get("food_prior") is not None))
+            meta = {**meta, **derived}
         try:
             out = await run_interpreter(
                 request.text, meta.get("user"),

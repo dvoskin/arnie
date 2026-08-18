@@ -82,7 +82,8 @@ def build_request(*, turn_id: str, user, platform: str, source_type: str,
                   text: str, db=None, today_log=None,
                   in_onboarding: bool = False,
                   client_message_id: Optional[str] = None,
-                  food_prior=None, food_pending: bool = False):
+                  food_prior=None, food_pending: bool = False,
+                  messages=None):
     """The inbound message as the coordinator's own type.
 
     `metadata` carries the handles the route stage needs — the session, the
@@ -113,6 +114,9 @@ def build_request(*, turn_id: str, user, platform: str, source_type: str,
             "has_board": bool(getattr(today_log, "food_entries", None)),
             "food_prior": food_prior,
             "food_pending": bool(food_pending),
+            # the thread, so the native planner can derive `last_assistant`
+            # the way legacy does (B-1.8 canary: the planner was blind)
+            "messages": tuple(messages or ()),
         },
     )
 
