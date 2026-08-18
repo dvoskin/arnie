@@ -481,6 +481,40 @@ CF5b SCAN BINDING MUST DOMINATE CORRECTION CLAIMS   P17 (before P17g)     BUILT;
        DIRECT canary must be RERUN after deploy and
        must create a NEW bound row while the prior rows
        remain untouched.
+       REVIEW (Danny, same evening) — three findings,
+       two fixed before deploy, one narrowed:
+         P1 ✅ FIXED — snapshot identity was "enrichment"
+            for a lifted item (fail OPEN: keep the board
+            row's placeholder, continue) -> could commit
+            one product's NAME over another snapshot's
+            NUTRITION. Now AUTHORITATIVE: `_scan_lifted`
+            -> snapshot must load + usable name -> replace
+            -> else `ScanBoundIdentityUnavailable`, raised
+            before the predicate, zero write, no legacy,
+            answered in words. Proofs: Quest row + Barebells
+            snapshot -> committed name is EXACTLY the
+            snapshot's · missing/nameless/unreadable ->
+            zero write · replacement removed -> RED ·
+            fail-open return -> RED (AST + behavioural).
+         P2 ✅ FIXED — binding disposition counted only
+            log_food, so update(bar)+log(soup) under a
+            scan read as ONE food and the backstop refused
+            the whole turn (safe, but not "unchanged").
+            Now every food-affecting op counts
+            (`_FOOD_OPS`); twin: existing bar + scan +
+            "a bar and some soup" -> update+log -> binds
+            nothing -> general path unchanged (both ops
+            reach legacy, no product_evidence_id).
+            Reverting to log_food-only -> RED (3).
+         P2 ⚠ NARROWED — liquid chips are helper-proven
+            (display says ml when the record says ml) but
+            the PATH (per-ml ProductEvidence -> coverage ->
+            BoundUnpriceable -> ask -> ml chips -> settle)
+            is not: `_open` still gates on
+            coverage.serving_grams. The bound-ask path is
+            claimed for GRAM-BASED labels only; the liquid
+            path proof is registered under P17-UE / CF10
+            (below). No liquid claim ships in this commit.
 CF6  LANE PROMOTION RULE (learned from 3 canaries):  every future lane     RULE
      a proven CONSUMER (stage) is unreachable if the
      PRODUCER (planner) or RENDERER in front of it
@@ -515,6 +549,14 @@ CF9  A BOUND REFUSAL IS A DEAD-END WITHOUT THE ASK    P17 (before P17g)     OPEN
      with a product-bound item), so the answer settles
      bound. Preregistered by Danny as "ASK / REFUSE";
      REFUSE shipped first, ASK is owed.
+CF10a LIQUID BOUND-ASK PATH UNPROVEN (from the CF5b   P17-UE (with CF10)    OPEN
+     review): a per-ml label reaches `_open` only via
+     coverage.serving_grams; ml chip DISPLAY exists
+     (`_label_base_unit`), the PATH does not. Prove
+     per-ml ProductEvidence -> coverage ->
+     BoundUnpriceable -> ask -> [240 ml — 1 serving]
+     -> settle before claiming liquids; until then the
+     bound ask is claimed for gram-based labels only.
 CF10 INCOMPLETE PRODUCT RECORDS may provide serving   P17-UE — UNIT         OPEN
      mass without the physical consumer-unit          EVIDENCE COMPLETION
      relationship required for natural inputs such   (after P17g/h + the

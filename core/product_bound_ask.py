@@ -23,9 +23,18 @@ serving?" (a per-bar yes/no) while the chips read "2 servings" / "1 serving"
 (totals) — the affirmative answer to the QUESTION lexically matched the chip
 that logged HALF the food, and it looked confirmed. Serving-counts also read
 badly for a bag, a bottle or a scoop. So the display text is the mass first,
-"110 g — 2 servings" (ml for a per-ml label), and the semantic `value` stays
-"2 servings" so a text-channel user still types the label's words back
-(`_option_for_label` matches `send_value`, which is `value` when set).
+"110 g — 2 servings", and the semantic `value` stays "2 servings" so a
+text-channel user still types the label's words back (`_option_for_label`
+matches `send_value`, which is `value` when set).
+
+⚠ SCOPE OF PROOF *(review, 2026-08-18)*: the bound-ask PATH is proven for
+GRAM-BASED labels only. `_open` gates on `coverage.serving_grams`; a per-ml
+snapshot reaches this module only if the predicate reports a gram serving.
+The ml chip DISPLAY is helper-proven (`_label_base_unit`, `_label_options`,
+`_question` with base_unit="ml") and is display-ready; the liquid path
+(per-ml ProductEvidence -> coverage -> BoundUnpriceable -> ask -> ml chips ->
+settle) is NOT proven end to end and is registered under P17-UE (CF10) —
+liquids do not ship a claim here.
 
 Built on B-1's machinery, not beside it: the same `open_operation`, the same
 `quantity_field` / `build_interaction`, the same `b1_answer_turn` answer path,
@@ -117,7 +126,13 @@ async def _label_base_unit(db, product_evidence_id) -> str:
     """The label's own basis unit for the chips: "ml" when the persisted
     snapshot states its serving in millilitres (a liquid label; OFF's
     `nutrition_data_per='100ml'`), else "g". A LOCAL read of the record —
-    never a fetch — and any failure is "g", the common case."""
+    never a fetch — and any failure is "g", the common case.
+
+    ⚠ DISPLAY-READY, PATH-UNPROVEN for liquids (see the module docstring):
+    `_open` still receives `serving_grams` from coverage. Until P17-UE proves
+    the per-ml path, this can only ever return "ml" for a snapshot that ALSO
+    reached coverage as a gram serving — the honest description is "the
+    chips will say ml when the record says ml", not "liquids are supported"."""
     try:
         from db.models import ProductEvidenceRecord
         row = await db.get(ProductEvidenceRecord, int(product_evidence_id))

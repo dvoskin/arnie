@@ -82,49 +82,94 @@ def _scan_is_bound() -> bool:
         return False
 
 
+#: Every operation that names a food on the board. Binding disposition is
+#: decided over ALL of them *(review P2)*: "a bar and some soup" against a
+#: board that already holds the bar is [update, log] — two foods — and a scan
+#: names ONE product, so it binds nothing; counting only `log_food` called
+#: that turn bound and refused it whole (safe, but not "unchanged").
+_FOOD_OPS = frozenset({"log_food", "update_food_entry", "delete_food_entry"})
+
+
 def _scan_declined_to_bind(ops) -> bool:
     """True when the scan attached to this turn bound NOTHING by design: the
-    turn states several foods and a scan names one product. Mirrors
-    `_bind_scanned_product`'s own rule so the backstop and the binder agree
-    on what "bound" means. A turn with fewer than two food logs — one food,
-    or none (a correction) — is the scanned product's turn."""
-    return len(_food_inputs(ops)) >= 2
+    turn is about several foods and a scan names one product. Counts every
+    food-affecting operation, not just logs, so the backstop agrees with the
+    planner (the lift declines a mixed plan) and with `_bind_scanned_product`
+    (one item binds; several do not). A turn about fewer than two foods — one
+    food, or none — is the scanned product's turn."""
+    return sum(1 for op in (ops or ())
+               if isinstance(op, dict) and op.get("name") in _FOOD_OPS) >= 2
+
+
+class ScanBoundIdentityUnavailable(Exception):
+    """⛔⛔ CF5b (review P1) — FOR A LIFTED ITEM THE SNAPSHOT'S IDENTITY IS
+    AUTHORITATIVE, NOT ENRICHMENT. The planner lifted an implicit correction
+    into a log and left the BOARD ROW'S name on the item as a placeholder —
+    another product's identity. If the scanned snapshot cannot be loaded, or
+    carries no usable product name, continuing would commit one product's
+    NAME over another snapshot's NUTRITION (a Barebells scan misread against
+    a Quest row -> Barebells kcal under "Quest"). So the item does not settle:
+    typed refusal, raised BEFORE the predicate and before any write, answered
+    in words by the entrypoint. Zero mutation, no legacy."""
+
+    def __init__(self, snapshot_id, placeholder: str, reason: str):
+        self.snapshot_id = snapshot_id
+        self.placeholder = placeholder
+        self.reason = reason
+        super().__init__(
+            f"scan-lifted item {placeholder!r} cannot take the snapshot's "
+            f"identity (snapshot={snapshot_id}: {reason}) — refused, nothing "
+            f"written")
 
 
 async def _name_from_snapshot(db, ops) -> None:
     """CF5b: an item the planner LIFTED from an implicit correction carries a
-    placeholder name (the board row's). Replace it with the scanned
-    snapshot's own product_name — a LOCAL read of the persisted record, no
-    network — so the row is named and priced from one exact identity.
-    Mutates the op's OWN input (the source every downstream copy is made
-    from). A snapshot with no name leaves the placeholder; failure leaves it
-    too: naming is enrichment of the item, never a gate on it."""
+    placeholder name (the board row's — ANOTHER product's identity). Replace
+    it with the scanned snapshot's own product_name — a LOCAL read of the
+    persisted record, no network — so the row is named and priced from ONE
+    exact identity. Mutates the op's OWN input (the source every downstream
+    copy is made from).
+
+    ⛔ FAIL CLOSED *(review P1)*: for a `_scan_lifted` item the snapshot must
+    LOAD and must carry a USABLE name, or the item is refused
+    (`ScanBoundIdentityUnavailable`) — never settled under the placeholder.
+    Items the planner did not lift are untouched: their name is the
+    interpreter's own reading of the message, not another row's."""
     try:
         from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
         snapshot_id = SCANNED_PRODUCT_EVIDENCE.get()
     except Exception:                                    # noqa: BLE001
-        return
-    if snapshot_id is None:
-        return
+        snapshot_id = None
     for op in ops or ():
         inp = (op or {}).get("input") if isinstance(op, dict) else None
         if not (isinstance(inp, dict) and op.get("name") == "log_food"
                 and inp.get("_scan_lifted")):
             continue
+        placeholder = str(inp.get("food_name") or "")
+        if snapshot_id is None:
+            raise ScanBoundIdentityUnavailable(None, placeholder,
+                                               "no scan bound to this turn")
         try:
             from db.models import ProductEvidenceRecord
             row = await db.get(ProductEvidenceRecord, int(snapshot_id))
-            name = str(getattr(row, "product_name", "") or "").strip()
-            brand = str(getattr(row, "brands", "") or "").strip()
-            if name:
-                if brand and brand.lower() not in name.lower():
-                    name = f"{brand} {name}"
-                logger.info("event=scan_lift_named_from_snapshot snapshot=%s "
-                            "from=%r to=%r", snapshot_id, inp.get("food_name"),
-                            name)
-                inp["food_name"] = name
-        except Exception:                                # noqa: BLE001
-            logger.warning("scan lift: snapshot name unreadable", exc_info=True)
+        except Exception as exc:                         # noqa: BLE001
+            logger.warning("scan lift: snapshot %s unreadable", snapshot_id,
+                           exc_info=True)
+            raise ScanBoundIdentityUnavailable(
+                snapshot_id, placeholder, f"snapshot unreadable: {type(exc).__name__}")
+        if row is None:
+            raise ScanBoundIdentityUnavailable(snapshot_id, placeholder,
+                                               "snapshot missing")
+        name = str(getattr(row, "product_name", "") or "").strip()
+        if not name:
+            raise ScanBoundIdentityUnavailable(snapshot_id, placeholder,
+                                               "snapshot has no product name")
+        brand = str(getattr(row, "brands", "") or "").strip()
+        if brand and brand.lower() not in name.lower():
+            name = f"{brand} {name}"
+        logger.info("event=scan_lift_named_from_snapshot snapshot=%s from=%r "
+                    "to=%r", snapshot_id, placeholder, name)
+        inp["food_name"] = name
 
 
 class ExactlyOnceRefusal(RuntimeError):

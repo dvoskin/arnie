@@ -301,8 +301,10 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     # write, no legacy, no raise. The exception's own text is developer copy;
     # the sentence is chosen by refusal KIND.
     from core.canonical_correction import CorrectionRefused
-    from core.turns.stages.execute_native import ScanBoundNotLegacy
-    if isinstance(state.error, (CorrectionRefused, ScanBoundNotLegacy)):
+    from core.turns.stages.execute_native import (ScanBoundIdentityUnavailable,
+                                                  ScanBoundNotLegacy)
+    if isinstance(state.error, (CorrectionRefused, ScanBoundNotLegacy,
+                                ScanBoundIdentityUnavailable)):
         # CF5b: `ScanBoundNotLegacy` is answered here beside the correction
         # refusals — same contract: no write, no legacy, no raise, words.
         logger.info("event=canonical_refusal_answered turn=%s kind=%s reason=%s",
@@ -360,7 +362,12 @@ def _refusal_copy(exc) -> str:
     the exception text (developer copy), never a claim of success."""
     from core.canonical_correction import (ProductSelectionRefused,
                                            StaleUndo)
-    from core.turns.stages.execute_native import ScanBoundNotLegacy
+    from core.turns.stages.execute_native import (ScanBoundIdentityUnavailable,
+                                                  ScanBoundNotLegacy)
+    if isinstance(exc, ScanBoundIdentityUnavailable):
+        return ("I couldn't read the scanned product's details just now, so I "
+                "didn't log anything. Scan it again, or tell me the food and "
+                "the amount.")
     if isinstance(exc, ScanBoundNotLegacy):
         return ("I have the scanned product, but I read that as a change to "
                 "another entry, so I didn't touch anything. Tell me how much "

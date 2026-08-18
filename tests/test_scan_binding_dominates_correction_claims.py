@@ -98,7 +98,8 @@ async def _row_bytes(db, entry_id):
     return dict(r)
 
 
-def _the_misrouted_plan(entry_id: int) -> list:
+def _the_misrouted_plan(entry_id: int,
+                        food_hint: str = "Barebells Salty Peanut Protein Bar") -> list:
     """What the interpreter emitted on the production turn: ONE implicit
     correction of the board row, carrying the corrected TOTAL ("4 bar"), the
     row's name as `food_hint`, and the CAS seed — `_update_call`'s exact
@@ -106,7 +107,7 @@ def _the_misrouted_plan(entry_id: int) -> list:
     return [{"name": "update_food_entry",
              "input": {"entry_id": entry_id, "quantity": "4 bar",
                        "expected_calories": 400.0,
-                       "food_hint": "Barebells Salty Peanut Protein Bar",
+                       "food_hint": food_hint,
                        "source": "food_interpreter_v2"}}]
 
 
@@ -378,6 +379,184 @@ async def test_twin_scan_plus_unsupported_two_bars_reaches_the_cf9_ask_not_a_cor
     assert "55 g serving" in text and "how much did you have" in text, text
 
 
+# ═════ REVIEW P1 — SNAPSHOT IDENTITY IS AUTHORITATIVE FOR A LIFTED ITEM ═════
+#
+# The lifted item's placeholder name is the BOARD ROW'S — another product's
+# identity. If the snapshot's name were "enrichment", an unreadable snapshot
+# would commit one product's NAME over another snapshot's NUTRITION. It is
+# authoritative: load + usable name, or a typed refusal with zero write.
+
+@pytest.mark.asyncio
+async def test_p1_a_different_board_row_product_commits_exactly_the_snapshot_name(
+        db, make_user, monkeypatch, caplog):
+    """ADVERSARIAL: the interpreter misreads a Barebells scan as a correction
+    of a QUEST row. The committed row must be named EXACTLY the Barebells
+    snapshot's product — never "Quest" over Barebells nutrition."""
+    from db.models import FoodEntry
+    from sqlalchemy import select
+    caplog.set_level(logging.INFO)
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)                                  # Barebells
+    quest = await _legacy_barebells_row(db, log)                     # a row...
+    from db.models import FoodEntry as _FE
+    r = await db.get(_FE, quest); r.parsed_food_name = "Quest Protein Bar"; await db.commit()
+    before = await _row_bytes(db, quest)
+
+    _, execution, _ = await _run(db, user, log, "2 servings of the bar", snap.id,
+                                 _the_misrouted_plan(quest, food_hint="Quest Protein Bar"),
+                                 monkeypatch, turn_id="t:p1-quest")
+    assert execution.calls[0].committed
+    rows = (await db.execute(select(FoodEntry).where(FoodEntry.daily_log_id == log.id)
+                             .order_by(FoodEntry.id))).scalars().all()
+    new = rows[-1]
+    assert new.id != quest and await _row_bytes(db, quest) == before
+    assert new.parsed_food_name == BAREBELLS_PROD["product_name"], new.parsed_food_name
+    assert "quest" not in new.parsed_food_name.lower()
+    assert new.product_evidence_id == snap.id and new.calories == pytest.approx(220.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["missing", "nameless", "unreadable"])
+async def test_p1_an_unavailable_snapshot_identity_refuses_with_zero_write_and_no_legacy(
+        db, make_user, monkeypatch, caplog, failure):
+    """Snapshot missing / nameless / unreadable -> ScanBoundIdentityUnavailable,
+    raised before the predicate: zero rows, zero events, legacy never invoked,
+    the board row byte-identical."""
+    from db.models import FoodEntry, ProductEvidenceRecord
+    from sqlalchemy import select
+    from core.turns.stages import execute_native as stage_mod
+    from core.turns.stages.execute_native import ScanBoundIdentityUnavailable
+    caplog.set_level(logging.INFO)
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    existing = await _legacy_barebells_row(db, log)
+    before = await _row_bytes(db, existing)
+    events_before = len(await _events(db, user.id))
+    snapshot_id = snap.id
+    if failure == "missing":
+        snapshot_id = 999_999
+    elif failure == "nameless":
+        row = await db.get(ProductEvidenceRecord, snap.id)
+        row.product_name = ""; await db.commit()
+    elif failure == "unreadable":
+        # `_name_from_snapshot` is the only reader of the record on this path;
+        # break the read the way a dead connection would — the helper's own
+        # try/except turns it into the typed refusal, never a swallowed None
+        real_get = db.get
+        async def broken_get(model, ident, *a, **k):
+            if model is ProductEvidenceRecord:
+                raise RuntimeError("connection reset")
+            return await real_get(model, ident, *a, **k)
+        monkeypatch.setattr(db, "get", broken_get)
+
+    with pytest.raises(ScanBoundIdentityUnavailable) as ei:
+        await _run(db, user, log, "2 servings of Barebells bars", snapshot_id,
+                   _the_misrouted_plan(existing), monkeypatch, turn_id=f"t:p1-{failure}")
+    if failure == "unreadable":
+        monkeypatch.undo()
+    assert ei.value.placeholder == "Barebells Salty Peanut Protein Bar"
+    assert "settlement_route" not in caplog.text          # refused BEFORE the predicate
+    assert "route=ratio" not in caplog.text
+    assert await _row_bytes(db, existing) == before
+    rows = (await db.execute(select(FoodEntry).where(FoodEntry.daily_log_id == log.id))).scalars().all()
+    assert [r.id for r in rows] == [existing]
+    assert len(await _events(db, user.id)) == events_before
+
+
+def test_p1_the_identity_refusal_is_answered_in_words():
+    from core.turns.entrypoint import _refusal_copy
+    from core.turns.stages.execute_native import ScanBoundIdentityUnavailable
+    copy = _refusal_copy(ScanBoundIdentityUnavailable(1, "Quest", "snapshot missing"))
+    assert "didn't log anything" in copy and "Scan it again" in copy
+    assert "unavailable" not in copy.lower()
+
+
+def test_p1_the_helper_fails_closed_by_construction():
+    """The AST says it: `_name_from_snapshot` contains no bare `return`
+    that would let a lifted item continue unnamed, and raises the typed
+    refusal on every branch that cannot name."""
+    import ast
+    import inspect
+    from core.turns.stages import execute_native as m
+    tree = ast.parse(inspect.getsource(m._name_from_snapshot).lstrip())
+    raises = [n for n in ast.walk(tree) if isinstance(n, ast.Raise)
+              and isinstance(getattr(n.exc, "func", None), ast.Name)
+              and n.exc.func.id == "ScanBoundIdentityUnavailable"]
+    assert len(raises) >= 4, "missing / nameless / unreadable / unbound must each refuse"
+    # the only early exits are `continue` for NON-lifted items — never a
+    # `return` that leaves a lifted item under its placeholder
+    returns = [n for n in ast.walk(tree) if isinstance(n, ast.Return)]
+    assert not returns, "a bare return here fails OPEN"
+
+
+# ═════ REVIEW P2 — BINDING DISPOSITION COUNTS EVERY FOOD-AFFECTING OP ═══════
+
+def test_p2_a_mixed_update_plus_log_plan_is_two_foods_and_binds_nothing():
+    from core.turns.stages.execute_native import _scan_declined_to_bind
+    upd = {"name": "update_food_entry", "input": {"entry_id": 1, "quantity": "2 bar"}}
+    logf = {"name": "log_food", "input": {"food_name": "soup", "quantity": "1 bowl"}}
+    dele = {"name": "delete_food_entry", "input": {"entry_id": 1}}
+    assert _scan_declined_to_bind([upd, logf]) is True        # two foods -> unbound by design
+    assert _scan_declined_to_bind([dele, logf]) is True
+    assert _scan_declined_to_bind([upd]) is False              # one food (a correction): the scan's turn
+    assert _scan_declined_to_bind([logf]) is False
+
+
+@pytest.mark.asyncio
+async def test_p2_existing_bar_plus_scan_plus_a_bar_and_some_soup_keeps_the_general_path(
+        db, make_user, monkeypatch, caplog):
+    """The twin (Danny): existing bar on board + scan attached + "a bar and
+    some soup" -> planner emits update + log -> scan binds nothing -> the
+    existing general multi-food behaviour is UNCHANGED: no lift, no
+    ScanBoundNotLegacy, both ops reach the (stubbed) legacy executor with no
+    product_evidence_id, and the correction guard is not consulted (the ops
+    never enter correction_application through this stub)."""
+    import handlers.tool_executor as te
+    from core.execution_result import ExecutionResult
+    from core.turns.stages import execute_native as stage_mod
+    from core.turns.stages.execute_native import NativeExecutionStage
+    from core.turns.stages.food import FoodPlanStage, FoodValidationStage
+    from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+    caplog.set_level(logging.INFO)
+    seen = []
+    async def legacy(ops, *a, **k):
+        seen.append(ops); return ExecutionResult(calls=())
+    monkeypatch.setattr(te, "execute_tool_calls", legacy)
+    async def claim_ok(self, *a, **k): return True
+    monkeypatch.setattr(stage_mod.NativeExecutionStage, "_claim", claim_ok)
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    existing = await _legacy_barebells_row(db, log)
+    plan = [{"name": "update_food_entry",
+             "input": {"entry_id": existing, "quantity": "2 bar",
+                       "food_hint": "Barebells Salty Peanut Protein Bar"}},
+            {"name": "log_food", "input": {"food_name": "Mystery soup", "quantity": "1 bowl"}}]
+
+    async def stub(text, u, **kw):
+        return {"action": "log", "say": "", "tool_calls": plan}
+    req = _Req("a bar and some soup", {"db": db, "user": user, "today_log": log, "messages": ()},
+               turn_id=f"t:p2-mixed-{user.id}")
+    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    try:
+        typed = await FoodPlanStage(interpreter=stub).run(req)
+        assert [op["name"] for op in typed.operations] == ["update_food_entry", "log_food"]
+        assert "scan_rejects_correction_shape" not in caplog.text        # no lift
+        validation = await FoodValidationStage().run(req, plan=typed)
+        assert validation.disposition == "execute", validation
+        await NativeExecutionStage().run(req, validation=validation)     # no raise
+    finally:
+        SCANNED_PRODUCT_EVIDENCE.reset(token)
+    assert seen and [op["name"] for op in seen[0]] == ["update_food_entry", "log_food"]
+    assert all("product_evidence_id" not in op["input"] for op in seen[0])
+    assert "scan_binding_skipped" in caplog.text or "settlement_route" not in caplog.text
+
+
 # ═════ SCOPE: UNBOUND IS BYTE-IDENTICAL; MULTI-FOOD SCAN IS UNTOUCHED ═══════
 
 @pytest.mark.asyncio
@@ -446,6 +625,7 @@ def test_the_backstop_is_keyed_on_the_binding_not_the_attachment():
     logf = {"name": "log_food", "input": {"food_name": "x", "quantity": "1"}}
     upd = {"name": "update_food_entry", "input": {"entry_id": 1, "quantity": "4 bar"}}
     assert _scan_declined_to_bind([logf, logf]) is True        # two foods: unbound by design
+    assert _scan_declined_to_bind([upd, logf]) is True         # a food updated + a food logged: two foods
     assert _scan_declined_to_bind([logf]) is False             # one food: bound
     assert _scan_declined_to_bind([upd]) is False              # a correction: the scanned product's turn
     assert _scan_declined_to_bind([]) is False
