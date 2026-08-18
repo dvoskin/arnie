@@ -158,11 +158,16 @@ def test_unreadable_micros_are_left_alone_not_corrupted():
 
 # ── ANTI-COMPOUNDING: A TWICE-CORRECTED MEAL PRICES FROM ITS OWN HISTORY ────
 
-def test_two_corrections_compose_exactly():
-    """2 -> 3 -> 4 eggs must equal 2 -> 4 directly: the receipt's factor moves
-    with each correction, so repair N+1 reprices from repair N's state and the
-    numbers never drift."""
-    row = _Row(scaling_factor=0.92, resolved_grams=92.0)
+def test_two_corrections_compose_within_storage_rounding():
+    """⚠ BOUNDED, NOT EXACT *(review)*. Each repair rescales already-rounded
+    row values and rounds to 2 dp again, so A->B->C may differ from A->C by
+    storage rounding — bounded and tiny, never drift, because the RATIO is
+    exact and only 2-dp storage accumulates. Asserted with UNFRIENDLY values
+    (0.5-cent-ish macros, awkward ratios) at a stated tolerance, on every
+    field, so the claim is what the arithmetic actually guarantees."""
+    row = _Row(calories=187.37, protein=12.61, carbs=1.57, fats=13.19,
+               fiber=0.0, sugar=0.43, sodium=193.7,
+               scaling_factor=0.917, resolved_grams=91.7)
     first = reprice_quantity(entry=row, old_quantity=_q("2 eggs"),
                              new_quantity=_q("3 eggs"))
     after_first = _Row(
@@ -173,10 +178,84 @@ def test_two_corrections_compose_exactly():
         scaling_factor=first.receipt_updates["scaling_factor"],
         resolved_grams=first.receipt_updates["resolved_grams"])
     second = reprice_quantity(entry=after_first, old_quantity=_q("3 eggs"),
-                              new_quantity=_q("4 eggs"))
+                              new_quantity=_q("7 eggs"))
     direct = reprice_quantity(entry=row, old_quantity=_q("2 eggs"),
-                              new_quantity=_q("4 eggs"))
-    assert second.changes["calories"] == pytest.approx(
-        direct.changes["calories"], abs=0.01)
+                              new_quantity=_q("7 eggs"))
+    for name in second.changes:
+        assert second.changes[name] == pytest.approx(
+            direct.changes[name], abs=0.05), name   # two roundings of 0.005
+    # The receipt is carried at 6 dp, so it composes far tighter than macros.
     assert after_first.scaling_factor * second.ratio == pytest.approx(
         direct.receipt_updates["scaling_factor"], abs=1e-6)
+
+
+# ── THE TWO P1s, PINNED ─────────────────────────────────────────────────────
+
+def test_a_gram_correction_carries_the_resolved_mass_forward():
+    """⛔ P1: "6 oz -> 8 oz" on a RECEIPTED row. Macros and scaling_factor
+    moved; resolved_grams stayed at 6 oz — an internally inconsistent receipt.
+    The 6->8 twin above never caught it because its fixture had no receipt."""
+    row = _Row(calories=304.0, protein=34.0, carbs=0.0, fats=18.0,
+               fiber=None, sugar=None, sodium=100.0,
+               scaling_factor=1.701, resolved_grams=170.1)
+    repaired = reprice_quantity(entry=row,
+                                old_quantity=_q("6 oz", "salmon"),
+                                new_quantity=_q("8 oz", "salmon"))
+    assert repaired.receipt_updates["resolved_grams"] == pytest.approx(
+        226.8, abs=0.1), "resolved_grams did not follow the corrected mass"
+    assert repaired.receipt_updates["scaling_factor"] == pytest.approx(
+        1.701 * 8 / 6, abs=1e-4)
+
+
+def test_a_chained_bridge_prices_against_the_corrected_mass_not_the_stale_one():
+    """The consequence the stale mass would have caused: after 6 oz -> 8 oz,
+    a later "actually 200 g" must bridge from ~226.8 g, not from 170.1 g."""
+    row = _Row(calories=304.0, protein=34.0, carbs=0.0, fats=18.0,
+               fiber=None, sugar=None, sodium=100.0,
+               scaling_factor=1.701, resolved_grams=170.1)
+    first = reprice_quantity(entry=row, old_quantity=_q("6 oz", "salmon"),
+                             new_quantity=_q("8 oz", "salmon"))
+    after = _Row(calories=first.changes["calories"],
+                 protein=first.changes["protein"], carbs=0.0,
+                 fats=first.changes["fats"], fiber=None, sugar=None,
+                 sodium=first.changes["sodium"],
+                 scaling_factor=first.receipt_updates["scaling_factor"],
+                 resolved_grams=first.receipt_updates["resolved_grams"])
+    # A count-based row bridges via resolved_grams; simulate the same row
+    # having been priced from a count by asking a count->grams correction.
+    from skills.nutrition.models import NormalizedQuantity
+    old_count = NormalizedQuantity(amount=8, unit="oz", count=8.0,
+                                   unit_label="8 oz")
+    second = reprice_quantity(entry=after, old_quantity=old_count,
+                              new_quantity=_q("200 g", "salmon"))
+    assert second.ratio == pytest.approx(200 / 226.8, abs=1e-3), (
+        "the bridge priced against a stale resolved mass")
+
+
+def test_a_conflicting_size_is_a_semantic_repair_not_a_quantity_repair():
+    """⛔ P1: "2 large eggs -> 3 medium eggs". egg == egg, but a stated size
+    that conflicts changes the SERVING CLAIM — reusing large-egg evidence for
+    medium eggs is the exact binding the pricer already refuses."""
+    row = _Row(scaling_factor=0.92, resolved_grams=92.0)
+    with pytest.raises(RepairRefused, match="semantic repair"):
+        reprice_quantity(entry=row, old_quantity=_q("2 large eggs"),
+                         new_quantity=_q("3 medium eggs"))
+    # And a NEW size claim on an unsized meal is the same refusal.
+    with pytest.raises(RepairRefused, match="semantic repair"):
+        reprice_quantity(entry=row, old_quantity=_q("2 eggs"),
+                         new_quantity=_q("3 medium eggs"))
+
+
+def test_a_size_preserving_or_size_omitting_correction_still_repairs():
+    """The permitted shapes: same stated size, or the correction simply
+    omits the size — the meal's existing size claim is preserved."""
+    row = _Row(scaling_factor=0.92, resolved_grams=92.0)
+    same = reprice_quantity(entry=row, old_quantity=_q("2 large eggs"),
+                            new_quantity=_q("3 large eggs"))
+    omitted = reprice_quantity(entry=row, old_quantity=_q("2 large eggs"),
+                               new_quantity=_q("3 eggs"))
+    plain = reprice_quantity(entry=row, old_quantity=_q("2 eggs"),
+                             new_quantity=_q("3 eggs"))
+    for repaired in (same, omitted, plain):
+        assert repaired.method == "count_ratio"
+        assert repaired.ratio == pytest.approx(1.5)

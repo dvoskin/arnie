@@ -96,7 +96,13 @@ def _ratio(old_q, new_q, *, resolved_grams=None) -> tuple:
     resolved = _positive(resolved_grams)
 
     if old_grams and new_grams:
-        return new_grams / old_grams, "grams_ratio", None
+        # ⛔ THE CORRECTED MASS TRAVELS FORWARD *(review P1)*. Returning None
+        # here left `resolved_grams` at the OLD portion after "6 oz -> 8 oz"
+        # while macros and scaling_factor moved — an internally inconsistent
+        # receipt, and a later count->grams bridge would price against the
+        # stale mass. The receipt records what THIS row is priced at, so a
+        # gram correction IS the new resolved mass.
+        return new_grams / old_grams, "grams_ratio", new_grams
 
     if old_count and new_count:
         old_unit = str(getattr(old_q, "unit", "") or "")
@@ -105,6 +111,23 @@ def _ratio(old_q, new_q, *, resolved_grams=None) -> tuple:
                 f"the correction counts {getattr(new_q, 'unit', '')!r} and the "
                 f"meal counted {old_unit!r} — a count may only correct a count "
                 f"of the same thing")
+        # ⛔⛔ A CONFLICTING SIZE IS NOT AN AMOUNT CORRECTION *(review P1)*.
+        # `unit_matches` proves egg == egg; it cannot see that "3 MEDIUM eggs"
+        # against a meal priced from LARGE-egg evidence changes the serving
+        # claim, not the count. The pricer already refuses to bind a stated
+        # size to a different measure — a repair must hold the same line, or
+        # a correction reuses large-egg evidence for medium eggs.
+        #   2 large -> 3 large   ok        2 large -> 3 (unstated) ok, size kept
+        #   2 -> 3               ok        2 large -> 3 medium     REFUSE
+        #   2 -> 3 medium        REFUSE — a NEW size claim needs semantic repair
+        old_size = str(getattr(old_q, "size_descriptor", "") or "").lower()
+        new_size = str(getattr(new_q, "size_descriptor", "") or "").lower()
+        if new_size and new_size != old_size:
+            raise RepairRefused(
+                f"the correction states size {new_size!r} and the meal was "
+                f"priced as {old_size or 'unstated size'!r} — that changes the "
+                f"serving claim, not the amount; it is a semantic repair, not "
+                f"a quantity repair")
         ratio = new_count / old_count
         return ratio, "count_ratio", (resolved * ratio if resolved else None)
 
@@ -131,8 +154,15 @@ def reprice_quantity(*, entry, old_quantity, new_quantity) -> RepairedQuantity:
 
     ⭐ ONE RATIO, EVERY FIELD. The committed numbers were priced from evidence
     as a block and they move as a block — including micros, including the
-    receipt's own scaling_factor, which is what keeps a twice-corrected meal
-    repricing from ITS OWN history rather than compounding drift.
+    receipt's own scaling_factor, so a twice-corrected meal reprices from ITS
+    OWN history.
+
+    ⚠ COMPOSITION IS BOUNDED, NOT EXACT *(review)*. Each repair rescales the
+    already-ROUNDED row values and rounds again to 2 dp, so A->B->C may differ
+    from A->C by rounding — bounded, tiny, and NOT drift (the ratio is exact;
+    only storage rounding accumulates). Exact composition would need repricing
+    from an unrounded immutable source profile, which the P17f receipt does
+    not carry. Claimed as: bounded storage rounding, nothing more.
     """
     ratio, method, new_resolved = _ratio(
         old_quantity, new_quantity,
