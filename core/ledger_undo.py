@@ -108,7 +108,13 @@ def _invert(event) -> Optional[dict]:
             return _restore_plan(event)
         if etype == "updated" and event.entry_id and isinstance(p.get("before"), dict):
             before = p["before"]
-            inp = {"entry_id": event.entry_id, "source": UNDO_SOURCE}
+            # ⭐ B-1.8d #4 — THE INVERSE NAMES THE EVENT IT UNDOES. A lock
+            # serialises writers; it does not make an OLD inverse valid
+            # against a NEWER row. The restore checks this id is still the
+            # row's newest event, or refuses (StaleUndo) — so a tap on A's
+            # card after correction B cannot silently erase B.
+            inp = {"entry_id": event.entry_id, "source": UNDO_SOURCE,
+                   "undoes_event_id": int(event.id)}
             # ⭐ B-1.8d — THE WHOLE BEFORE-STATE, IDENTITY INCLUDED *(review
             # #3)*. This restored quantity + four macros and nothing else, so
             # "chicken breast -> chicken thigh -> undo" left the THIGH's name
@@ -161,7 +167,13 @@ def _invert(event) -> Optional[dict]:
                     "say": f"The {name} is back on today's log."}
         if etype == "updated" and event.entry_id and isinstance(p.get("before"), dict):
             before = p["before"]
-            inp = {"entry_id": event.entry_id, "source": UNDO_SOURCE}
+            # ⭐ B-1.8d #4 — THE INVERSE NAMES THE EVENT IT UNDOES. A lock
+            # serialises writers; it does not make an OLD inverse valid
+            # against a NEWER row. The restore checks this id is still the
+            # row's newest event, or refuses (StaleUndo) — so a tap on A's
+            # card after correction B cannot silently erase B.
+            inp = {"entry_id": event.entry_id, "source": UNDO_SOURCE,
+                   "undoes_event_id": int(event.id)}
             for k in ("sets", "reps", "weight", "duration_minutes"):
                 if before.get(k) is not None:
                     inp[k] = before[k]

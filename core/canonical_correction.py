@@ -41,6 +41,12 @@ class CorrectionRefused(Exception):
     firewall exists to refuse. Typed and reasoned so the turn can ASK."""
 
 
+class StaleUndo(CorrectionRefused):
+    """The inverse of an event that is no longer the row's newest event. A
+    lock serialises writers; it does not make an OLD inverse valid against a
+    NEWER state. Non-mutating: raised before any write."""
+
+
 class NotACanonicalRow(Exception):
     """The named row is not canonically owned. Not a refusal — routing: a
     legacy-owned row keeps its legacy correction path, untouched."""
@@ -574,11 +580,16 @@ async def restore_recorded_state(db, *, user, entry_id: int, before: dict,
     """
     from sqlalchemy import select
 
-    from db.models import DailyLog, FoodEntry
+    from db.models import DailyLog, FoodEntry, LedgerEvent
     from db.queries import MutationAuthority, update_food_entry
 
-    entry = (await db.execute(select(FoodEntry).where(
-        FoodEntry.id == int(entry_id)))).scalar_one_or_none()
+    before = dict(before or {})
+    undoes_event_id = before.pop("undoes_event_id", None)
+
+    # ⛔ FOR UPDATE, like every repair: the tip check below and the write must
+    # see one row state, or a correction landing between them re-opens the
+    # stale-undo door this guard closes.
+    entry = await _lock_row(db, int(entry_id))
     if entry is None:
         raise CorrectionRefused(f"entry {entry_id} does not exist")
     log = (await db.execute(select(DailyLog).where(
@@ -599,6 +610,33 @@ async def restore_recorded_state(db, *, user, entry_id: int, before: dict,
         if claim.replay:
             return None
         claim_id = claim.record_id
+
+    # ⛔⛔ B-1.8d #4 — A STALE UNDO CANNOT CLOBBER NEWER WORK *(preregistered,
+    # Danny)*. An inverse is "put back the whole before-state of event X".
+    # That is only true of the row while X is its NEWEST event: after a later
+    # correction B, applying A's inverse would restore pre-A AND erase B. FOR
+    # UPDATE cannot see this — it is causality, not concurrency. So the plan
+    # names X (`undoes_event_id`), and it applies only while X is the tip.
+    # An undo that names no event cannot prove it is current: refused.
+    # AFTER the claim: a same-turn redelivery of an undo that already
+    # applied is a REPLAY (None), not a stale attempt — exactly-once first,
+    # then causality.
+    if not undoes_event_id:
+        raise StaleUndo(
+            f"undo of entry {entry_id} names no event — an inverse that cannot "
+            f"prove it is current is refused, not applied")
+    tip = (await db.execute(
+        select(LedgerEvent.id).where(LedgerEvent.domain == "food",
+                                     LedgerEvent.entry_id == int(entry_id))
+        .order_by(LedgerEvent.id.desc()).limit(1))).scalar_one_or_none()
+    if tip is None or int(tip) != int(undoes_event_id):
+        logger.info("event=canonical_undo_stale entry=%s undoes=%s tip=%s",
+                    entry_id, undoes_event_id, tip)
+        raise StaleUndo(
+            f"undo of event {undoes_event_id} on entry {entry_id} is stale — "
+            f"the row's newest event is {tip}; undo that first, or the older "
+            f"inverse would erase the newer correction")
+
 
     changes = {}
     for k, v in (before or {}).items():

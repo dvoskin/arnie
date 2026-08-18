@@ -910,12 +910,65 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                                  snapshot-rebind PRIMITIVE is already valid;
                                  what is missing is authoritative ACQUISITION
                                  of the semantic correction, not pricing.
-                       B-1.8d    NEXT after c2 — twins + E2E + rollback/canary
-                                 + a PREREGISTERED stale-event twin *(Danny)*:
-                                 correction A then B; undo of A must NOT erase
-                                 B just because A's before-state exists. FOR
-                                 UPDATE solves concurrency, not stale-event
-                                 causality — needs a current-tip/state guard.
+                       B-1.8d    ⏳ PROOF, NOT ARCHITECTURE *(2026-08-18,
+                                 semantics frozen at c2.3)*. Local, unpushed:
+                                 ⭐⭐⭐ #4 STALE-EVENT UNDO — THE PREREGISTERED
+                                 TWIN FOUND A REAL HOLE, reachable through a
+                                 SHIPPED path: plan_for_event (tap-to-undo
+                                 backend) targets the event the user pointed
+                                 at; restore_recorded_state wrote A's whole
+                                 before-state verbatim -> undo A after B
+                                 restored pre-A AND erased B. Written RED
+                                 first (3 tests DID NOT RAISE), then the guard:
+                                 _invert stamps `undoes_event_id`; the restore
+                                 locks the row (FOR UPDATE, it had none) and
+                                 applies ONLY while that event is the row's
+                                 newest ledger event, else StaleUndo (a
+                                 CorrectionRefused; non-mutating). Claim
+                                 replay is checked BEFORE the tip (same-turn
+                                 redelivery = replay None; new-turn
+                                 redelivery = stale). An undo naming no event
+                                 is refused. Not a semantic tranche: the
+                                 guard the directive preregistered.
+                                 tests/test_a_stale_undo_cannot_erase_newer_
+                                 work.py (4) · tests/test_b18d_the_correction_
+                                 lane_is_proven.py (13, incl. 5 Postgres crash
+                                 twins RUN for real against local PG
+                                 arnie_test_pg — not skipped):
+                                   1 APPLY   q · id+q (one write, interpreter
+                                             numbers ignored) · product
+                                             variant · preparation        ✅
+                                   2 REPLAY  every kind: 1 event, 1 completed
+                                             claim, from the DB           ✅
+                                   3 UNDO    product-variant exact (snapshot
+                                             binding CLEARED)              ✅
+                                   4 STALE   above                          ✅
+                                   5 CRASH   id+q at reservation / staged /
+                                             before-commit; restore at staged
+                                             / before-commit -> nothing
+                                             durable, retry exactly once    ✅
+                                   6 CONCUR  existing PG chain twin         ✅
+                                   7 E2E     refusal PROPAGATES (A8) and the
+                                             legacy executor is instrumented
+                                             to FAIL if invoked: never
+                                             called (CorrectionRefused and
+                                             StaleUndo, through the stage)  ✅
+                                   8 ROLLBK  no flag: ownership decides;
+                                             legacy row same shape ->
+                                             _correction_route None         ✅
+                                             CANARY: GATED on manual deploy +
+                                             /health schema.in_sync with
+                                             corrrec001 present            ⏳
+                                 ⚠ OBSERVED, NOT CHANGED: a propagated
+                                 canonical refusal (CorrectionRefused /
+                                 StaleUndo / PricingRefused) reaches the user
+                                 as the coordinator's generic recovery line
+                                 (finalizer.recover -> recovery_message
+                                 "llm_error"), not "undo the newer correction
+                                 first". Refusal stays canonical (never
+                                 legacy) — the CLOSURE criterion — but the
+                                 copy is a rendering gap; noted for after
+                                 closure, not a semantic tranche.
 
                        ⭐⭐ c2.0 RECON, DONE — reshapes c2 *(2026-08-18)*:
                          PRODUCT_VARIANT IS NOT MISSING A PARSER. IT IS
