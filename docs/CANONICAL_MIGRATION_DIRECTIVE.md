@@ -1629,7 +1629,36 @@ P17-LC3  ⛔→🔧 LIVE CANARY #3 *(2026-08-18, 897b7da live)* — THE BOUND
            3. nothing else is honest — mapping "bar" -> serving without a
               stated fact is the frozen invariant.
          P17g stays blocked until a bound settle exists in production.
-P17g     ◻ eligibility predicate LAST — waits on canary #4 clean + CF9
+         ⛔⛔ DECIDED *(Danny, 2026-08-18)*: OPTION 1. "The refusal proves the
+         authority boundary is working; it does not prove P17 can own and
+         settle a scanned product in production." DO NOT translate bar ->
+         serving: the user-facing inconvenience is real and preferable to
+         silently violating CF4. The mechanical single-serve rule is
+         acceptable LATER only when evidence explicitly establishes
+         product_quantity == serving_quantity — never to rescue 70004199,
+         where that fact is absent. ORDER:
+           1. push unit-precedence fix (7d1926b) — servings/grams survive
+              interpretation unchanged                              ✅
+           2. deploy backend + compatible iOS build (386 is)         ⏳
+           3. CANARY #4 — direct authoritative quantity: scan 70004199
+              -> "2 servings of Barebells" -> snapshot stays bound ->
+              PRODUCT pricing -> 110 g deterministic scaling -> canonical
+              row committed -> row.product_evidence_id == acquired
+              snapshot id -> zero MEMORY reads -> zero legacy -> correct
+              rendered confirmation                                  ⏳
+           4. BUILD CF9 — bound clarification continuity: scan 70004199
+              -> "2 bars" -> BoundUnpriceable ASK -> snapshot SURVIVES
+              without reacquisition -> "2 servings" or "110 g" -> the
+              SAME bound snapshot settles canonically -> no legacy during
+              either turn                                            ⏳
+           5. run the complete two-turn production canary            ⏳
+           6. close CF9, then P17g                                   ⏳
+         Canary #4 proves the settlement MACHINERY; CF9 proves the actual
+         natural user JOURNEY. BOTH required before P17g is declared closed.
+         STATUS: transport/binding invariants ✅ · bound refusal ✅ · bound
+         production settlement ❌ · clarification preserves binding ❌ (CF9)
+         · P17g ⛔ BLOCKED.
+P17g     ◻ eligibility predicate LAST — BLOCKED: canary #4 + CF9 both
 P17h     ◻ mutation + positive twins
 ```
 
