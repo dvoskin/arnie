@@ -434,6 +434,19 @@ CF9  A BOUND REFUSAL IS A DEAD-END WITHOUT THE ASK    P17 (before P17g)     OPEN
      with a product-bound item), so the answer settles
      bound. Preregistered by Danny as "ASK / REFUSE";
      REFUSE shipped first, ASK is owed.
+CF10 INCOMPLETE PRODUCT RECORDS may provide serving   P17-UE — UNIT         OPEN
+     mass without the physical consumer-unit          EVIDENCE COMPLETION
+     relationship required for natural inputs such   (after P17g/h + the
+     as "1 Twizzler" or "2 bars". The missing fact is frozen remeasure;
+     not nutrition — it is the relationship between   before cohort
+     a physical consumer unit and the label's         expansion)
+     serving mass. Acquire it EXPLICITLY (structured
+     serving text · package count + net quantity ·
+     explicit single-serve equivalence · label image
+     with provenance · user package fact · user
+     measurement); never manufacture it from shape,
+     category, name, common sense or averages. Full
+     directive: §P17-UE below the P17 method.
 CF7  TEST_POSTGRES_URL FORM: the shared PG harness   tooling               RULE
      needs postgresql+psycopg://...; +asyncpg
      yields 174 connect() errors. Full-suite recipe:
@@ -480,9 +493,38 @@ subtracted from — ownership)          ownership are     implausible; 22 of
                                       bound)            meals UNJUDGEABLE
 BASELINE POPULATION                    ✅ FROZEN          361 rows / 232 meals,
                                                          sha 6247a33c55ed64f5
-P17 STATUS                             🟡 ACTIVE          c.3b HYDRATED at FDC
-                                                         release 15.3
+P17 STATUS                             🟡 ACTIVE          a–f, f.5, SB, iOS
+                                                         producer, UA A/B/C
+                                                         SHIPPED (7187742);
+                                                         P17g BLOCKED on a
+                                                         bound settle in prod
+B-1.8 CORRECTION LANE                  ✅ CLOSED 08-18    3 canaries; stale-
+                                                         undo guard on path
 ROLLOUT                                FROZEN — user 26 only
+
+⭐ CURRENT STATE — 2026-08-18, reconciled at 7187742 (deployed: see /health)
+    Transport / binding invariants        ✅  (scan -> snapshot -> bound turn)
+    Bound refusal                         ✅  (label-terms; non-mutating)
+    Unit-evidence hierarchy (P17-UA A/B)  ✅  (70004199 negative preserved)
+    CF9 bound ASK continuity (slice C)    ✅  built + 29 proofs; live ⏳
+    Bound production settlement           ❌  ZERO bound rows — the gate
+    Clarification preserves binding LIVE  ❌  two-turn canary owed
+    P17g                                  ⛔  BLOCKED on both canaries
+    CF10 / P17-UE                         ◻  registered; begins after remeasure
+
+⭐ SEQUENCE FROM HERE *(Danny, 2026-08-18 — verbatim)*:
+    P17-UA A/B  ✅
+    -> CF9 slice C  ✅ (pushed 7187742)
+    -> direct canary (scan -> "2 servings of Barebells" -> bound row)   ⏳
+    -> two-turn canary (scan -> "2 bars" -> ASK -> "2 servings" -> bound
+       row on the SAME held snapshot)                                  ⏳
+    -> P17g / P17h                                                     ⛔
+    -> frozen 232-meal remeasure (both predicate commits published)    ⏳
+    -> P17-UE unit-evidence completion (CF10)                          ◻
+    -> cohort expansion                                                ⛔
+  BOTH canaries required before P17g is declared closed. P17-UE must
+  complete before barcode rollout expands beyond the canary cohort, and it
+  must not alter the frozen population, predicate, 40% gate or attribution.
 
 NEXT
 
@@ -1744,7 +1786,28 @@ P17-UA   ◻ UNIT-ALIAS EVIDENCE *(Danny, 2026-08-18 — the fix for "2 bars",
          interpreter first, yields no op, delegates, and legacy's block
          calls b1_answer_turn — works, indirect; watch it live.
          · D) label capture (later).
-P17g     ◻ eligibility predicate LAST — BLOCKED: canary #4 + CF9/P17-UA both
+P17-CAN  ⏳ THE TWO PRODUCTION CANARIES *(both required, Danny)*, run on
+         7187742 (P17-UA A/B/C + CF9 live; /health must show produnit001):
+           DIRECT — scan 70004199 -> "2 servings of Barebells" -> exact
+             snapshot stays bound -> PRODUCT pricing -> 110 g deterministic
+             (label serving conversion) -> canonical row ->
+             row.product_evidence_id == acquired snapshot id -> zero MEMORY
+             reads -> zero legacy -> correct rendered confirmation
+           TWO-TURN — scan 70004199 -> "2 barebells bars" -> ASK in the
+             label's terms (snapshot persisted on the operation, zero write,
+             zero claim, zero legacy) -> tap "2 servings" (or type it) ->
+             the SAME held snapshot settles canonically -> row.product_
+             evidence_id == that snapshot -> no reacquisition -> zero MEMORY
+             -> zero legacy
+         The BOUND ROW — not the ask — clears the P17g gate.
+P17g     ◻ eligibility predicate LAST — BLOCKED until BOTH canaries commit a
+         bound row in production
+P17h     ◻ mutation + positive twins — after P17g
+P17-RM   ◻ frozen 232-meal remeasure — historical anchor 20.3% @ a747b56 +
+         paired contemporaneous predicate delta on the SAME run; publish
+         BOTH predicate commits; the 40% gate is unchanged
+P17-UE   ◻ unit-evidence completion (CF10; §P17-UE) — after the remeasure,
+         before cohort expansion
 P17h     ◻ mutation + positive twins
 ```
 
@@ -2060,6 +2123,175 @@ default a missing new-evidence basis to Per100g
 let fuzzy product search construct PRODUCT
 make `can_scale` disagree with the pricer
 ```
+
+### ⏭ §P17-UE — AUTHORITATIVE CONSUMER-UNIT EVIDENCE *(Danny, 2026-08-18; DIRECTIVE, verbatim)*
+
+> **PLACEMENT.** Registered as **CF10**. Owner: **P17-UE — UNIT EVIDENCE
+> COMPLETION**. Do not interrupt or expand CF9 slice C. P17-UE begins ONLY
+> after: (1) P17-UA A/B pushed · (2) CF9 holds the exact snapshot across
+> clarification · (3) the direct bound-settlement canary is clean · (4) the
+> two-turn ASK → answer → settlement canary is clean · (5) P17g/h closes ·
+> (6) the frozen 232-meal remeasure is published. P17-UE must complete
+> before barcode rollout expands beyond the existing canary cohort. It must
+> not alter the frozen P17 population, predicate, 40% gate, or P17
+> attribution.
+
+**Problem.** A scanned product may provide `serving_quantity = 30 g` without
+providing `3 pieces = 30 g`. In that state the system cannot authoritatively
+settle "1 Twizzler", "1 strand", "2 bars". The missing fact is not nutrition.
+It is the relationship between a physical consumer unit and the label's
+serving mass. The system must acquire that relationship explicitly. It must
+never manufacture it from product shape, category, product name, common
+sense or average weights.
+
+**Governing invariant.**
+
+```text
+Exact nutrition authority does not create consumer-unit quantity authority.
+
+NEVER:  bar ≈ serving · piece ≈ serving · Twizzler ≈ 10 g ·
+        single package ≈ one serving
+Allowed only when an admissible source explicitly supports the relationship.
+```
+
+**Target architecture.**
+
+```text
+exact barcode -> immutable ProductEvidence snapshot
+  -> consumer-unit evidence acquisition -> typed UnitRelationship
+  -> deterministic validation -> snapshot-scoped persistence
+  -> deterministic scaling
+
+LABEL: 3 pieces (30 g)
+PERSIST: consumer_unit=piece · consumer_units_per_serving=3 ·
+         serving_mass_g=30 · grams_per_consumer_unit=10 ·
+         provenance=structured_label
+THEN:  1 piece × 30 g / 3 pieces = 10 g
+```
+
+The model may extract or verbalize the relationship. It may not authorize
+the arithmetic or persistence.
+
+**Evidence hierarchy — use the first complete admissible source.**
+
+1. **Structured serving text** — "3 pieces (30 g)", "2 cookies (28 g)",
+   "1 bottle (355 ml)", "about 12 chips (28 g)". Persist the exact count,
+   printed noun, mass and original source text. If the label says `about`,
+   preserve the qualifier — never silently convert approximate label evidence
+   into exact evidence.
+2. **Explicit package count plus net quantity** — only when the SAME product
+   evidence explicitly states both: `package_count = 6 bars`,
+   `net_quantity = 330 g` → 330 g / 6 bars = 55 g/bar (mechanical
+   derivation). Do not use package appearance, category or a product title
+   containing a number as package-count evidence.
+3. **Explicit single-serve equivalence** — `product_quantity ==
+   serving_quantity` AND `package_count == 1` → one package may equal one
+   serving. `product_quantity == serving_quantity` ALONE is insufficient if
+   the package count or physical unit remains unknown.
+4. **Manufacturer-label image** — if structured fields are incomplete, use
+   the exact product's serving-size label image. The model/vision layer
+   returns a CANDIDATE only: `{raw_text, consumer_unit, consumer_unit_count,
+   serving_mass, serving_mass_unit, image_reference, image_region,
+   confidence}`. The image, crop/reference and extracted raw text remain
+   attached as provenance. A model assertion without the source image is not
+   evidence. If extraction is incomplete, conflicting or visually ambiguous:
+   do not persist automatically; ask the user to confirm the printed
+   relationship.
+5. **User-confirmed package fact** — "The nutrition is listed per 30 g. How
+   many pieces does the package say are in one serving?" A reply such as
+   "3 pieces" may authorize the current entry. Persist as
+   `provenance=user_supplied_package_fact`, `scope=current entry or held
+   clarification`. Never automatically promoted to globally verified product
+   evidence.
+6. **User measurement** — if the package genuinely gives grams only: "If you
+   can weigh one piece, send me its weight." A measured answer may authorize
+   that entry: `1 piece = 9 g`, `provenance=user_measurement`,
+   `scope=current consumption`. Never promoted to a universal product fact.
+
+**Language resolution is not mass authority.** Morphology may be normalised
+(piece/pieces, strand/strands, serving/servings), but different nouns are
+not automatically equivalent. For an exact Twizzlers product: user noun
+"Twizzler", label noun "strand" — do not silently assert Twizzler = strand.
+If no explicit product-scoped alias exists, ask: "By one Twizzler, do you
+mean one individual strand?" A confirmation may bind the current request's
+noun to the label unit. It does not create new mass evidence; the label
+relationship still supplies the mass.
+
+**Required state behaviour.**
+
+```text
+complete structured evidence:  scan -> "1 piece" -> resolve product-scoped
+    UnitRelationship -> deterministic scaling -> canonical bound settlement
+incomplete, label image available:  scan -> "1 piece" -> structured evidence
+    incomplete -> inspect exact label image -> extract candidate -> validate
+    or confirm -> settle against the same snapshot
+no complete evidence:  scan -> "1 piece" -> ASK for piece count, serving
+    count or grams -> hold exact product snapshot -> answer supplies quantity
+    authority -> settle bound
+NEVER: incomplete unit evidence -> MEMORY -> generic artifact -> estimated
+       average piece weight -> legacy
+```
+
+**Persistence.** Store unit relationships separately from nutrition values
+and serving rows. Minimum fields: `product_evidence_id, consumer_unit,
+consumer_unit_normalized, consumer_unit_count, serving_quantity,
+serving_unit, relationship_kind, source_kind, source_text, source_reference,
+source_revision_or_hash, is_approximate, verification_state, created_at`.
+Use rational count-to-serving arithmetic (`requested_units /
+consumer_units_per_serving`); do not prematurely round grams or nutrients —
+round only at the presentation boundary. A ProductEvidence snapshot remains
+immutable: new or corrected unit evidence creates a new relationship/version;
+it never rewrites historical provenance. *(P17-UA's `product_unit_evidence`
+is the seed of this table; P17-UE completes the fields and sources.)*
+
+**Conflict policy.** If admissible sources disagree (structured label 3
+pieces = 30 g vs image label 4 pieces = 30 g): do not select whichever is
+more convenient. Return a typed `ConflictingUnitEvidence`, then ask the user
+to scan the current package label or enter grams. A newer image must not
+silently rewrite rows settled under an older snapshot.
+
+**Required proofs.** Positive fixtures: 3 pieces (30 g) → 1 piece = 10 g,
+3 pieces = 1 serving, 6 pieces = 2 servings · 2 cookies (28 g) → 1 cookie =
+14 g · 1 bottle (355 ml) → 1 bottle = 355 ml. Real negative fixture: OFF
+70004199 (55 g serving, no bar noun, no package-count relationship) must
+produce NO bar → serving relationship; "2 bars" must remain BoundUnpriceable
+and must ASK. Natural-language: evidence "3 strands = 30 g" → "1 strand" →
+10 g; "1 Twizzler" requires an explicit product-scoped noun alias or
+clarification — the product name must not manufacture the alias. Label-image:
+structured record incomplete + label image explicitly states 3 pieces (30 g)
+→ candidate extracted with source reference → deterministic validator accepts
+→ one piece settles as 10 g. MUTATIONS: remove the printed piece count → RED;
+change 3 to an unreadable value → refusal/ASK, never settlement; remove the
+image reference → candidate cannot become durable evidence; replace the exact
+barcode image with another product's image → RED. Safety: zero MEMORY reads
+on a bound unit-evidence settlement; zero legacy; no nutrition write before
+quantity authority exists; held snapshot survives the clarification; another
+user cannot consume the relationship or held ASK; an old ASK cannot bind a
+newer scan; duplicate confirmation creates one row; failed settlement does
+not consume the held ASK; successful settlement consumes it exactly once;
+committed row retains the exact `product_evidence_id` and unit-evidence
+provenance.
+
+**User experience.** Keep it short. Preferred: "The label gives nutrition per
+30 g. How many pieces does it list per serving?" · image needing
+confirmation: "The label appears to say 3 pieces equal 30 g. Is that
+correct?" · noun differs: "By one Twizzler, do you mean one individual
+strand?" · evidence unavailable: "I can log it accurately in grams or
+servings, but the product record doesn't say how much one piece weighs." Do
+not expose internal terms (BoundUnpriceable, rung, snapshot, authority).
+
+**Closure criteria — P17-UE closes only when:** (1) explicit count-plus-mass
+serving text settles deterministically · (2) real incomplete records remain
+negative · (3) label-image extraction is provenance-backed and cannot
+authorize unsupported values · (4) user clarification retains the exact
+product snapshot · (5) natural product nouns cannot manufacture physical-unit
+equivalence · (6) replay, isolation and conflict proofs are green · (7)
+SQLite and live Postgres suites are green · (8) a production canary commits
+a bound packaged-food row using an explicit physical-unit relationship ·
+(9) the committed row points to the exact product snapshot and unit-evidence
+source · (10) no heuristic unit conversion, MEMORY read or legacy execution
+occurs. **Do not change the 40% ownership gate or reinterpret the frozen P17
+remeasure after seeing P17-UE results.**
 
 ### PRODUCT CAPABILITY PLACEMENT — NOT EXECUTABLE SEQUENCING
 
@@ -6371,7 +6603,7 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-18 against the DUPLICATE-SEMANTICS SLICE AND THE BACKEND
+Last reconciled 2026-08-18 (7187742: P17-SB, iOS producer, P17-UA A/B/C, CF9, CF10/P17-UE registered) against the DUPLICATE-SEMANTICS SLICE AND THE BACKEND
 FREEZE. What was actually re-read and corrected, rather than date-bumped: the
 corrected-sequencing board's P12 line, which claimed the canary "has not
 started" — it has run and passed on both settlement branches · the "immediate
