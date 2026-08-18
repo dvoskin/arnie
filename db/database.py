@@ -468,6 +468,7 @@ async def _migrate(conn):
         ("food_entries", "source_amount", "FLOAT"),
         ("food_entries", "source_unit", "VARCHAR"),
         ("food_entries", "scaling_factor", "FLOAT"),
+        ("food_entries", "resolved_grams", "FLOAT"),   # corrrec001
         ("food_entries", "product_evidence_id", "INTEGER"),
         # ── 2026-07-17: activation gates — when the user earned the Log/Coach
         #    tabs (null = locked). SQLite-only net — Postgres handled by paired

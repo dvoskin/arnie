@@ -60,6 +60,20 @@ def _bind_scanned_product(items: list) -> list:
     return items
 
 
+def _correction_input(ops) -> Optional[dict]:
+    """The ONE `update_food_entry` input when the turn is exactly that, else
+    None. B-1.8b is deliberately narrow: a single correction naming a row.
+    A turn that mixes logs and updates, or corrects several rows, is not this
+    slice and routes to legacy whole."""
+    if len(ops or []) != 1:
+        return None
+    op = ops[0] or {}
+    if op.get("name") != "update_food_entry":
+        return None
+    inp = dict(op.get("input") or {})
+    return inp if inp.get("entry_id") is not None else None
+
+
 class ExactlyOnceRefusal(RuntimeError):
     """The turn was already executed. Not an error the user should see — the
     renderer replays the prior answer."""
@@ -94,6 +108,26 @@ class NativeExecutionStage:
         # door this slice opened.
         from core.execution_result import LAST_EXECUTION
         LAST_EXECUTION.set(None)
+
+        # ⭐ B-1.8b — A CORRECTION ON A CANONICAL ROW IS THE OWNER'S TO MAKE.
+        # Decided BEFORE the legacy claim, like settlement, and for the same
+        # reason: a canonically owned row must never reach the legacy executor,
+        # whose INFERRED_INTERPRETATION the firewall refuses. `_correction_route`
+        # answers a pure ownership question; `correct_quantity` then either
+        # writes or RAISES — CorrectionRefused PROPAGATES exactly as
+        # PricingRefused does (A8: no handler here, by AST gate), because a
+        # canonical refusal that fell through to legacy would be the dual
+        # authority this lane exists to delete.
+        correction = await self._correction_route(db, user, ops)
+        if correction is not None:
+            from core.canonical_correction import correct_quantity
+            entry_id, new_quantity = correction
+            result = await correct_quantity(
+                db, user=user, entry_id=entry_id,
+                new_quantity_text=new_quantity)
+            logger.info("event=canonical_correction_settled entry=%s "
+                        "ratio=%.4f", result.entry_id, result.ratio)
+            return await self._publish_correction(db, user, result, request)
 
         # ⭐ A1/A11 — ROUTING HAPPENS BEFORE THE CLAIM, AND IT IS PURE.
         # `Unsupported` must reach the UNTOUCHED legacy path: not a canonical
@@ -206,6 +240,62 @@ class NativeExecutionStage:
         if not isinstance(coverage, Supported):
             return None
         return GeneralSettlementOwner(), coverage
+
+    async def _correction_route(self, db, user, ops):
+        """`(entry_id, new_quantity_text)` when this turn is ONE quantity
+        correction of a CANONICALLY OWNED row, else None (legacy, untouched).
+
+        ⛔ THREE CONDITIONS, ALL EXPLICIT: the shape (exactly one
+        update_food_entry naming a row and a quantity), the ownership (the
+        row's `created` ledger event names a canonical writer), and the field
+        (quantity only — identity/product-variant repair is B-1.8c). A row
+        legacy created keeps its legacy correction path exactly as today.
+
+        ⚠ A ROUTING FAILURE ROUTES TO LEGACY, LOUDLY — this try covers only
+        the DECISION. `correct_quantity` itself runs outside it, so its
+        refusals propagate.
+        """
+        inp = _correction_input(ops)
+        if not inp or not str(inp.get("quantity") or "").strip():
+            return None
+        # Quantity-only: a correction that also renames the food or moves the
+        # day is not this slice yet.
+        if any(inp.get(k) not in (None, "") for k in
+               ("food_name", "date", "meal_type", "calories", "protein",
+                "carbs", "fats")):
+            return None
+        try:
+            from core.canonical_correction import creating_source_of
+            owner = await creating_source_of(db, int(inp["entry_id"]))
+        except Exception:                              # noqa: BLE001
+            logger.warning("correction ownership check failed; legacy",
+                           exc_info=True)
+            return None
+        if not (owner and str(owner).startswith("canonical:")):
+            return None
+        logger.info("event=correction_route user=%s entry=%s owner=%s",
+                    getattr(user, "id", None), inp["entry_id"], owner)
+        return int(inp["entry_id"]), str(inp["quantity"])
+
+    async def _publish_correction(self, db, user, result, request):
+        """The execution view for a correction, so the user SEES it. Reuses
+        the shared executor's card/snapshot machinery through the same
+        ExecutionResult shape the legacy update path publishes."""
+        from core.execution_result import (CallResult, ExecutionResult,
+                                           LAST_EXECUTION)
+        call = CallResult(
+            name="update_food_entry",
+            raw_input={"entry_id": result.entry_id,
+                       "quantity": result.quantity_text},
+            status="committed",
+            result_text=(f"Updated to {result.quantity_text} "
+                         f"({result.changes.get('calories', 0):.0f} kcal)"),
+            entry_id=result.entry_id,
+            correction={"ratio": result.ratio, "method": result.method,
+                        "owner": "canonical", "changes": result.changes})
+        view = ExecutionResult(calls=(call,))
+        LAST_EXECUTION.set(view)
+        return view
 
     # ── helpers ───────────────────────────────────────────────────────────────
     async def _claim(self, db, user, request, ops) -> bool:

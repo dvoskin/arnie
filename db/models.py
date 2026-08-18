@@ -251,6 +251,12 @@ class FoodEntry(Base):
     source_amount = Column(Float)                  # 1.0 (bar) | 100.0 (g)
     source_unit = Column(String)
     scaling_factor = Column(Float)
+    #: ⭐ B-1.8b — the mass THIS row is priced at, when a sourced conversion
+    #: supplied one. The repair primitive's count->grams bridge divides by it.
+    #: Settlement has put it in the receipt payload since P17f, but neither the
+    #: column nor the writer's forwarding existed — found by the first test
+    #: that needed it. Paired with alembic corrrec001.
+    resolved_grams = Column(Float)
     # ⛔ RESTRICT: a meal from six months ago must not be able to LOSE the
     # evidence it cites. "Append-only" is a database guarantee, not a habit of
     # the current repository code.

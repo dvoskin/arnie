@@ -370,6 +370,7 @@ async def write_canonical_meal(db, *, operation, resolved_meal
             "source_amount": _pricing.get("source_amount"),
             "source_unit": _pricing.get("source_unit"),
             "scaling_factor": _pricing.get("scaling_factor"),
+            "resolved_grams": _pricing.get("resolved_grams"),
             "product_evidence_id": _pricing.get("product_evidence_id"),
         }.items() if v not in (None, "", [])}
         entry = await add_food_entry(

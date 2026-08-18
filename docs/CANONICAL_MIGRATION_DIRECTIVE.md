@@ -606,10 +606,37 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                      reprice; committed macros × a deterministic ratio; both
                      the receipted path and the ratio path for pre-P17f rows
                      (which is ALL current production rows); refusals typed
-             B-1.8b  routing + the write: correction turn on a canonically
-                     owned meal -> bind via owning()/ledger -> authority
-                     CANONICAL_OWNER -> canonical:correction event ->
-                     idempotent claim, revision++ -> day totals
+             B-1.8a  ✅ primitive (f349c7b, corrected d0d8d1b: resolved
+                     mass carries forward on gram repair; a conflicting or
+                     newly-stated SIZE refuses as semantic repair; composition
+                     claimed as bounded storage rounding, not exact)
+             B-1.8b  ✅ routing + the write: correction turn on a
+                     canonically owned meal -> bind via owning()/ledger ->
+                     authority CANONICAL_OWNER -> canonical:correction event
+                     -> idempotent claim, revision++ -> day totals.
+                     ⛔⛔ THE FIELD-MERGE CONTRACT *(Danny, verbatim)*:
+                         new field STATED    -> replace that field
+                         new field OMITTED   -> PRESERVE the existing field
+                         conflicting field   -> semantic repair path / refuse
+                     "2 large eggs" corrected by "actually 3 eggs" is 3 LARGE
+                     eggs. The write must never collapse canonical semantics
+                     to the correction's bare words and lose `large` — this
+                     rule governs size, preparation, product variant, and
+                     every future correction chain.
+                     LANDED: correct_quantity() is the FIRST caller of
+                     MutationAuthority.CANONICAL_OWNER; the native stage's
+                     `_correction_route` (one update_food_entry, quantity-
+                     only, canonical row) sends it there before the legacy
+                     claim; CorrectionRefused PROPAGATES (A8 re-asserted).
+                     Firewall untouched — proven: the row the owner just
+                     corrected still refuses INFERRED_INTERPRETATION.
+                     ⚠ FOUND BY THE FIRST TEST: `resolved_grams` was never a
+                     COLUMN — in the receipt payload since P17f, never
+                     forwarded by the writer, never migrated; the models-vs-
+                     migrations gate could not see it because NEITHER side had
+                     it. Paired add: model + writer + _migrate + corrrec001.
+                     Only the owner authority may write panel + receipt
+                     columns through update_food_entry.
              B-1.8c  identity + product-variant repair (rebind snapshot /
                      evidence; quantity machinery unchanged)
              B-1.8d  twins + E2E + rollback proof

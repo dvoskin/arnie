@@ -2488,6 +2488,18 @@ async def update_food_entry(
         if field in changes and changes[field] is not None:
             setattr(entry, field, changes[field])
 
+    # ⭐ B-1.8b — THE CANONICAL OWNER MAY REWRITE THE PANEL AND THE RECEIPT.
+    # A repair supplies EXACT rescaled fiber/sugar/sodium/micros (the calorie-
+    # ratio rescale above becomes a no-op because the numbers already agree),
+    # and moves the P17f receipt's factor and resolved mass with the
+    # correction. Gated on authority: a legacy caller cannot reach these
+    # columns through this function, so the receipt stays the owner's record.
+    if authority == MutationAuthority.CANONICAL_OWNER:
+        for field in ("fiber", "sugar", "sodium", "micronutrients_json",
+                      "scaling_factor", "resolved_grams"):
+            if field in changes and changes[field] is not None:
+                setattr(entry, field, changes[field])
+
     moved = bool(new_log_id and new_log_id != old_log_id)
     if moved:
         entry.daily_log_id = new_log_id
