@@ -665,7 +665,7 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                      it. Paired add: model + writer + _migrate + corrrec001.
                      Only the owner authority may write panel + receipt
                      columns through update_food_entry.
-             B-1.8c  ✅ identity + product-variant repair — REBIND evidence,
+             B-1.8c  ⛔ NO-GO (a54219f) — identity + product-variant repair — REBIND evidence,
                      then price. Recon fixed the shape: no live path builds
                      SelectProductVariant/SetPreparation yet, and an identity
                      correction arrives as update_food_entry(food_name=...,
@@ -698,6 +698,40 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                           could not reproduce it. The `updated` payload now
                           carries the merge distinction: absent = preserved,
                           None = cleared. Pinned by replaying the events.
+                     ⛔⛔ SECOND ADVERSARIAL PASS *(Danny)* — SEVEN GAPS, and
+                     the fix is ONE STRUCTURAL CHANGE, not seven patches:
+                       #2b the generic calorie-ratio rescale in update_food_entry
+                           runs BEFORE the owner write, so a rebind RESCALES THE
+                           OLD FOOD'S MICROS INTO THE NEW FOOD; the owner write
+                           only overrides fields the new evidence supplies
+                       #3  ledger undo restores quantity + 4 macros ONLY — not
+                           food_name, not the receipt, not the panel. Breast ->
+                           thigh -> undo = a HYBRID row. Also true of every
+                           B-1.8b quantity correction: macros undone, the new
+                           scaling_factor/resolved_grams left behind
+                       #5  NO revision on FoodEntry, NO row lock in the repair.
+                           Two correction turns both read "2 eggs" and last-
+                           writer-wins; their `before` states describe the same
+                           ancestor, not a chain. The board says revision++
+                           and nothing implements it
+                       #6  a product snapshot is a CANDIDATE RUNG, not a binding
+                           fact — supplied alongside an unrelated identity, no
+                           relationship check; the ladder still runs MEMORY
+                           first
+                       #7  the merge contract stops at quantity — identity is
+                           replaced as a composed string; omitted PREPARATION is
+                           not preserved; no SelectProductVariant/SetPreparation
+                           producer
+                       +   stale metadata: estimated_flag, micros_estimated,
+                           alcohol_units, processing_level survive a rebind
+                           (wine -> chicken keeps the wine's alcohol)
+                     THE FIX: one semantic correction patch; lock/version the
+                     row -> reserve ONE claim -> compute the COMPLETE final row
+                     + COMPLETE final receipt from the pre-state -> write ONCE
+                     -> record full BEFORE + explicit AFTER/clears -> totals ->
+                     complete claim -> ONE COMMIT. B-1.8d then proves apply ->
+                     replay -> undo -> redo/crash -> concurrent correction, not
+                     happy paths.
                      ⚠ LIVE PRODUCT-VARIANT CORRECTION IS NOT PRODUCTION-
                        COMPLETE: the primitive accepts product_evidence_id;
                        the live route does not thread one, because no
