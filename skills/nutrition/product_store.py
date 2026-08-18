@@ -166,4 +166,7 @@ def _to_evidence(row):
         serving_unit=row.serving_unit or "",
         package_unit=row.package_unit or "",
         servings_per_package=row.servings_per_package,
-        source_id=json.loads(row.source_reference_json).get("source_id", ""))
+        source_id=json.loads(row.source_reference_json).get("source_id", ""),
+        dataset_id=str(json.loads(row.source_reference_json).get("dataset_id", "") or ""),
+        record_version=(f"rev:{row.provider_revision}@{row.provider_modified_at}"
+                        if row.provider_revision not in (None, "") else ""))

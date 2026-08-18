@@ -430,13 +430,24 @@ class NativeExecutionStage:
         unit = str(getattr(coverage, "unit", "") or "").strip()
         qty = str(item.get("quantity") or "").strip()
         what = food or getattr(coverage, "label", "") or "that"
+        grams = getattr(coverage, "serving_grams", None)
+        # THE ASK IS IN THE LABEL'S OWN TERMS. With a unit noun: count those.
+        # Without one but with a stated serving mass (the P17d probe's OFF
+        # shape — "55.0g", no noun): the label's serving is a sourced
+        # conversion, so "2 servings" or a gram weight prices; "2 bars" does
+        # not, because nothing on the record says a bar is a serving.
+        if unit:
+            how = f"how many {unit}s"
+        elif grams:
+            how = (f"the label lists a {grams:g} g serving — how many servings, "
+                   f"or how many grams")
+        else:
+            how = "what was the weight"
         if not qty:
-            text = (f"Got the scanned {what}. How much did you have"
-                    f"{f' — how many {unit}s' if unit else ''}?")
+            text = f"Got the scanned {what}. How much did you have — {how}?"
         else:
             text = (f"Got the scanned {what}, but I can't price {qty} of it "
-                    f"from the label"
-                    f"{f' — how many {unit}s was it' if unit else ' — what was the weight'}?")
+                    f"from the label — {how}?")
         logger.info("event=scan_bound_refused turn=%s food=%r quantity=%r "
                     "unit=%r reason=%s", getattr(request, "turn_id", "-"),
                     food, qty, unit, getattr(coverage, "reason", ""))

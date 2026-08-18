@@ -268,3 +268,142 @@ async def test_a_multi_item_scan_turn_binds_nothing_and_takes_the_general_path(
            {"name": "log_food", "input": {"food_name": f"Mystery soup u{user.id}", "quantity": "1 bowl"}}]
     await _native(db, user, log, "a bar and some soup", snap.id, ops, monkeypatch, forbid_legacy=False)
     assert seen and all("product_evidence_id" not in op["input"] for op in seen[0])
+
+
+# ═════ LIVE CANARY #1 (2026-08-18) — the two production shapes, verbatim ═════
+
+#: OFF 70004199 as production acquired it: per-100 g, a 55 g serving, NO unit
+#: noun, NO product quantity (the P17d probe's exact shape).
+BAREBELLS_PROD = {
+    "code": "70004199", "product_name": "Barebell salty peanut protein bar",
+    "brands": "Barebell", "serving_size": "55.0g", "serving_quantity": "55",
+    "serving_quantity_unit": "g", "rev": 1, "last_modified_t": 1724712330,
+    "nutrition_data_per": "100g",
+    "nutriments": {"energy-kcal_100g": 200, "proteins_100g": 20,
+                   "carbohydrates_100g": 18, "fat_100g": 8, "fiber_100g": 3}}
+
+
+async def _prod_snapshot(db):
+    from skills.nutrition.product_store import append_product_evidence
+    return await append_product_evidence(db, record=dict(BAREBELLS_PROD))  # no serving_unit
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("qty,expect", [
+    ("2 servings", "product"),      # the LABEL'S own serving — sourced conversion
+    ("1 serving", "product"),
+    ("half a serving", "product"),
+    ("110 g", "product"),
+    ("2 bars", "bound_unpriceable"),   # nothing on the record says a bar is a serving
+    ("2 cups", "bound_unpriceable"),
+])
+async def test_the_labels_own_serving_is_a_sourced_conversion(db, make_user, qty, expect):
+    """LIVE CANARY #1: '2 barebell bars' was refused — correctly, the record
+    has no unit noun — but the label DOES state a 55 g serving and the pricer
+    offered no way to count it. Now the label's serving is a sourced
+    conversion under the noun 'serving' (provenance = our immutable
+    snapshot); bars/cups still refuse, honestly."""
+    from core.general_settlement import BoundUnpriceable, Supported, coverage_for
+    user = await make_user()
+    snap = await _prod_snapshot(db)
+    verdict = await coverage_for(db, user_id=user.id,
+                                 items=[_item(qty, "Barebell salty peanut protein bar", snap.id)])
+    if expect == "product":
+        assert isinstance(verdict, Supported) and verdict.expected_source == "product", verdict
+    else:
+        assert isinstance(verdict, BoundUnpriceable), verdict
+        assert verdict.serving_grams == 55.0 and verdict.unit == ""
+
+
+@pytest.mark.asyncio
+async def test_two_servings_settle_bound_with_the_snapshot_and_conversion_on_the_row(
+        db, make_user, monkeypatch):
+    from db.models import FoodEntry
+    from sqlalchemy import select
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    ops = [{"name": "log_food", "input": {"food_name": "Barebell salty peanut protein bar",
+                                          "quantity": "2 servings", "calories": 999.0}}]
+    execution, response = await _native(db, user, log, "2 servings of the barebells", snap.id, ops, monkeypatch)
+    assert execution.calls[0].committed
+    row = (await db.execute(select(FoodEntry).order_by(FoodEntry.id.desc()))).scalars().first()
+    assert row.product_evidence_id == snap.id and row.pricing_rung == "product"
+    assert row.calories == pytest.approx(220.0)
+    assert row.resolved_grams == pytest.approx(110.0)          # 2 x the label's 55 g
+    assert row.conversion_evidence_ids_json and "off:70004199" in row.conversion_evidence_ids_json
+    assert "".join(response.bubbles).strip()
+
+
+@pytest.mark.asyncio
+async def test_two_bars_are_refused_in_the_labels_own_terms(db, make_user, monkeypatch):
+    """The refusal copy offers what the label KNOWS: 'the label lists a 55 g
+    serving — how many servings, or how many grams?' — not 'what was the
+    weight'."""
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    ops = [{"name": "log_food", "input": {"food_name": "Barebells Protein Bar",
+                                          "quantity": "2 bar", "calories": 400.0}}]
+    execution, response = await _native(db, user, log, "2 barebell bars", snap.id, ops, monkeypatch)
+    assert not execution.calls[0].committed
+    text = " ".join(response.bubbles)
+    assert "55 g serving" in text and "servings" in text and "grams" in text, text
+
+
+@pytest.mark.asyncio
+async def test_a_scan_answers_the_interpreters_flavor_question(db, make_user, monkeypatch):
+    """LIVE CANARY #1, turn 2: the interpreter returned action=ask about
+    FLAVOR ('Salty Peanut or Caramel Cashew?') for a scan-bound bar — an
+    identity question the snapshot has answered — so the native lane had no
+    op and delegated to legacy. Now the plan stage approves the single item
+    and the bound predicate decides the quantity. Payload verbatim from the
+    production log."""
+    from core.turns.stages.food import FoodPlanStage, FoodValidationStage
+    from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+    user = await make_user()
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    interpreter_ask = {
+        "action": "ask",
+        "items": [{"food": "Barebells Protein Bar", "amount": 2, "unit": "serving",
+                   "calories": 400, "protein": 40, "carbs": 38, "fats": 15,
+                   "branded": True, "basis": "regular"}],
+        "ambiguities": [{"item": "Barebells Protein Bar", "field": "identity",
+                         "impact_cal": 0, "impact_protein": 0,
+                         "assumed": "need flavor to pick between Salty Peanut and Caramel Cashew"}],
+        "points": [{"label": "Barebells Protein Bar", "qs": ["Salty Peanut or Caramel Cashew?"]}],
+        "ready": [], "tool_calls": []}
+
+    async def stub(text, u, **kw):
+        return interpreter_ask
+    req = _Req("2 servings of barebells", {"db": db, "user": user, "today_log": log, "messages": ()})
+    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    try:
+        plan = await FoodPlanStage(interpreter=stub).run(req)
+        validation = await FoodValidationStage().run(req, plan=plan)
+    finally:
+        SCANNED_PRODUCT_EVIDENCE.reset(token)
+    assert validation.disposition == "execute", validation
+    assert validation.approved_operations[0]["name"] == "log_food"
+    assert validation.approved_operations[0]["input"]["quantity"] == "2 serving"
+
+    # UNBOUND, the same ask stays an ask — a scan is the only thing that
+    # answers identity here
+    plan_unbound = await FoodPlanStage(interpreter=stub).run(req)
+    v2 = await FoodValidationStage().run(req, plan=plan_unbound)
+    assert v2.disposition == "ask"
+
+    # and a QUANTITY ambiguity is NOT answered by a scan
+    qty_ask = dict(interpreter_ask, ambiguities=[{"item": "Barebells Protein Bar",
+                                                  "field": "quantity", "impact_cal": 200}])
+    async def stub_q(text, u, **kw):
+        return qty_ask
+    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    try:
+        v3 = await FoodValidationStage().run(req, plan=await FoodPlanStage(interpreter=stub_q).run(req))
+    finally:
+        SCANNED_PRODUCT_EVIDENCE.reset(token)
+    assert v3.disposition == "ask"

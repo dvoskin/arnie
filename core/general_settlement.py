@@ -254,6 +254,7 @@ class BoundUnpriceable(Unsupported):
     know. The honest answer is ASK / REFUSE, in the label's own units."""
     unit: str = ""
     label: str = ""
+    serving_grams: Optional[float] = None
 
 
 Coverage = Union[Supported, Unsupported]
@@ -283,6 +284,9 @@ class ItemFacts:
     #: Presentation, for the ASK/REFUSE copy: what the label calls one unit.
     product_unit: str = ""
     product_label: str = ""
+    #: The label's own serving mass, when it states one — the honest ASK
+    #: offers it ("the label lists a 55 g serving — how many servings?").
+    product_serving_grams: Optional[float] = None
 
 
 async def look(db, *, user_id: int, item: dict) -> ItemFacts:
@@ -340,6 +344,7 @@ async def look(db, *, user_id: int, item: dict) -> ItemFacts:
     # label price this amount", not three.
     product_bound = product_scales = False
     product_unit = product_label = ""
+    product_serving_grams = None
     pid = item.get("product_evidence_id")
     if pid:
         product_bound = True
@@ -354,6 +359,7 @@ async def look(db, *, user_id: int, item: dict) -> ItemFacts:
                 product_unit = str(getattr(ev, "serving_unit", "") or
                                    getattr(ev, "package_unit", "") or "")
                 product_label = str(getattr(ev, "identifier", "") or "")
+                product_serving_grams = getattr(ev, "serving_grams", None)
                 if quantity_text and source_basis is not None:
                     consumed = normalize_quantity(quantity_text, identity)
                     product_scales = bool(can_scale(
@@ -374,6 +380,7 @@ async def look(db, *, user_id: int, item: dict) -> ItemFacts:
                       and evidence_for(entity, preparation) is not None),
         product_bound=product_bound, product_scales=product_scales,
         product_unit=product_unit, product_label=product_label,
+        product_serving_grams=product_serving_grams,
     )
 
 
@@ -401,7 +408,8 @@ def decide(facts: ItemFacts) -> Coverage:
              "— exact nutrition x estimated mass is not authoritative")
             if facts.has_quantity else
             "scan-bound with no stated quantity",
-            unit=facts.product_unit, label=facts.product_label)
+            unit=facts.product_unit, label=facts.product_label,
+            serving_grams=facts.product_serving_grams)
     if not facts.has_identity:
         return Unsupported("no canonical identity")
     if not facts.has_quantity:

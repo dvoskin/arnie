@@ -343,6 +343,30 @@ async def stamp_canonical_identity(out, db, user_id=None) -> None:
                                 if i.get("canonical_entity_id")))
 
 
+#: The interpreter's identity-class ambiguity fields — the ones a barcode
+#: settles. Same vocabulary `core.food_turn` uses for the branded strict-mode
+#: rule; not a new taxonomy.
+_IDENTITY_FIELDS = frozenset({"identity", "brand", "variant", "flavor", "flavour",
+                              "product_identity", "product_line", "product_variant"})
+
+
+def _scan_answers_the_identity(out) -> bool:
+    """True when a scan is bound to this turn, the interpreter staged exactly
+    ONE item, and every ambiguity it reported is identity-class."""
+    try:
+        from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+        if SCANNED_PRODUCT_EVIDENCE.get() is None:
+            return False
+    except Exception:                                    # noqa: BLE001
+        return False
+    items = [it for it in (out.get("items") or []) if isinstance(it, dict)]
+    if len(items) != 1:
+        return False
+    fields = [str(a.get("field") or "").strip().lower()
+              for a in (out.get("ambiguities") or []) if isinstance(a, dict)]
+    return bool(fields) and all(f in _IDENTITY_FIELDS for f in fields)
+
+
 def plan_from_interpretation(out) -> TurnPlan:
     """Lift an interpreter result into a typed plan. Pure — no model call.
 
@@ -364,6 +388,27 @@ def plan_from_interpretation(out) -> TurnPlan:
         return TurnPlan(operations=(), response_intent="pass",
                         planner_version=FOOD_PLANNER_VERSION)
     action = out.get("action")
+    # ⭐ P17 iOS producer, LIVE CANARY #1 (2026-08-18): A BARCODE PROVES WHAT.
+    # The interpreter, which reads prose only, asked "Salty Peanut or Caramel
+    # Cashew?" about a SCAN-BOUND bar — an identity question the snapshot has
+    # already answered — produced no operation, and the turn fell to legacy
+    # (native_no_plan). A scan-bound single item whose ONLY ambiguities are
+    # identity-class is not ambiguous: the item is approved as a log operation
+    # and the bound predicate decides the QUANTITY (Supported("product") or
+    # BoundUnpriceable), which is the one thing a barcode cannot prove.
+    # Any other ambiguity (quantity, prep, consumed) still asks.
+    if action == "ask" and _scan_answers_the_identity(out):
+        from core.food_turn import _log_call
+        items = [it for it in (out.get("items") or []) if isinstance(it, dict)]
+        call = _log_call(items[0]) if items else None
+        if call is not None:
+            logger.info("event=scan_answers_identity item=%r ambiguities=%s",
+                        items[0].get("food"),
+                        [a.get("field") for a in (out.get("ambiguities") or [])])
+            return TurnPlan(operations=(call,), response_intent="log",
+                            ambiguities=(),
+                            narration_hint=str(out.get("say") or ""),
+                            planner_version=FOOD_PLANNER_VERSION)
     if action == "ask":
         return TurnPlan(
             # AN ASK IS NOT AN EMPTY TURN (audit A1). `core.food_turn` returns

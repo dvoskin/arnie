@@ -487,10 +487,15 @@ def product_evidence_from_off(record: dict, *, serving_unit: str = "",
 
         serving_unit given    -> per-serving evidence, identity-gated counts
         serving_unit absent   -> per-100 g evidence + serving mass as a
-                                 CONVERSION INPUT. Gram portions price; a bare
-                                 count does not, until a binding step (product
-                                 variant selection, a scan flow that keeps its
-                                 unit) supplies what the thing is called.
+                                 CONVERSION INPUT. Gram portions price; a count
+                                 of a FOREIGN noun ("2 bars", "2 bottles") does
+                                 not, until a binding step (product variant
+                                 selection, a scan flow that keeps its unit)
+                                 supplies what the thing is called. A count of
+                                 the label's OWN unit ("2 servings") DOES price
+                                 — the label states that mass — see
+                                 `canonical_pricing._product_measures`
+                                 (P17 live canary #1, 2026-08-18).
 
     That is a narrower capability than dropping the gate, on purpose.
 
@@ -553,6 +558,8 @@ def product_evidence_from_off(record: dict, *, serving_unit: str = "",
     rev = record.get("rev")
     modified = record.get("last_modified_t")
     source_id = f"off:{code}#rev:{rev}@{modified}"
+    # the version this snapshot pins — provenance for the label's own serving
+    record_version = f"rev:{rev}@{modified}" if rev is not None else ""
 
     try:
         if per_serving and serving_unit:
@@ -564,12 +571,14 @@ def product_evidence_from_off(record: dict, *, serving_unit: str = "",
                 # — OFF states '355 ml', never 'bottle'. The RELATION is OFF's.
                 package_unit=str(package_unit).strip().lower(),
                 servings_per_package=servings_per_package,
-                source_id=source_id)
+                source_id=source_id, dataset_id="off",
+                record_version=record_version)
         if not per100g:
             return None
         return ProductEvidence(
             identifier=f"off:{code}", per100g=per100g,
-            serving_grams=serving_grams, source_id=source_id)
+            serving_grams=serving_grams, source_id=source_id,
+            dataset_id="off", record_version=record_version)
     except ValueError as exc:
         # ⛔ A RECORD WHOSE TWO BASES CONTRADICT IS REFUSED, NOT RAISED THROUGH.
         # `ProductEvidence.__post_init__` catches per-serving vs per-100 g

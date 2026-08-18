@@ -224,6 +224,12 @@ class ProductEvidence:
     package_unit: str = ""
     servings_per_package: Optional[float] = None
     source_id: str = ""
+    #: PROVENANCE AS DATA (P17 live canary #1): the provider dataset and the
+    #: record VERSION this snapshot pins (OFF: "rev:<n>@<modified_t>"), set by
+    #: the producer/store so the label's own serving can be a SOURCED
+    #: conversion. Empty = no version named = no authoritative conversion.
+    dataset_id: str = ""
+    record_version: str = ""
 
     def __post_init__(self):
         """⛔⛔ BOTH BASES MAY EXIST, AND IF THEY DO THEY MUST AGREE *(P17b.1)*.
@@ -457,12 +463,34 @@ def _candidate_measures(winner: dict) -> tuple:
 def _product_measures(ev: "ProductEvidence") -> tuple:
     """A product's own serving panel as a conversion, when it states one.
 
-    ⚠ `serving_unit` IS REQUIRED. A mass with no unit cannot be matched against
-    what the user counted, and matching it against ANY count is exactly how "one
-    piece of a roll" becomes "one whole roll".
+    ⚠ A mass with no unit noun is NOT matched against ANY count — that is how
+    "one piece of a roll" becomes "one whole roll" — but the label's serving
+    IS a unit the label names: "serving". A user counting the label's own
+    servings ("2 servings", "half a serving") is counting a thing the record
+    states the mass of, so that measure is offered under the noun "serving"
+    when the caller supplied no other. "2 bars" still does not match it —
+    nothing on this record says a bar is a serving — and refuses, honestly.
+
+    ⭐ PROVENANCE IS THE SNAPSHOT. `as_basis_conversion` fails closed without
+    a dataset + version + record key; a crowd record has no releases, but OUR
+    store does: the persisted snapshot is append-only, fingerprinted and
+    revision-stamped, and `source_id` (off:<code>#rev:<n>@<t>) names exactly
+    that version. So the panel measure is AUTHORITATIVE within the snapshot —
+    which is what "the meal reads its own referenced snapshot" means.
+    *(P17 live canary #1, 2026-08-18: OFF 70004199 states a 55 g serving and
+    no unit noun; "2 servings" priced by a heuristic and refused.)*
     """
-    measure = measure_from_panel(ev.serving_unit, ev.serving_grams,
-                                 source_id=ev.identifier)
+    # ⛔ NO STRING PARSING HERE — the zero-rule AST gate forbids string
+    # comparison in this module, and it is right: provenance is DATA the
+    # producer sets on the evidence (`dataset_id`, `record_version`), never
+    # something the pricer re-derives from an identifier's spelling.
+    serving_text = ev.serving_unit or "1 serving"
+    measure = measure_from_panel(
+        serving_text, ev.serving_grams, source_id=ev.identifier,
+        dataset_id=ev.dataset_id, dataset_version=ev.record_version,
+        record_key=ev.identifier, record_version=ev.record_version,
+        immutable_within_version=bool(ev.record_version),
+        data_type="product_panel")
     return (measure,) if measure else ()
 
 

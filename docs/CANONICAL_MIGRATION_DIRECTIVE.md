@@ -1473,9 +1473,67 @@ P17-iOS  ✅ BARCODE PRODUCER *(2026-08-18, GO Danny; transport only)*
          behaviour test.
          ⚠ DEPLOY IMPLICATION: the live canary needs THIS backend commit,
          not 90a5304 — 90a5304's WS handler would drop the iOS field.
-P17g     ◻ eligibility predicate LAST — waits on: deploy backend + iOS
-         TestFlight build (p17/barcode-transport) -> preregistered live
-         canary clean -> P17g
+P17-LC1  ⛔→🔧 LIVE CANARY #1 *(2026-08-18, backend 7ef684d, iOS build
+         386 on Danny's phone)* — THE TRANSPORT WORKED END TO END: scan ->
+         product_acquired code=70004199 snapshot=1 -> native lane ->
+         BoundUnpriceable. Two PRODUCER findings, both honest, both fixed:
+           1. THE LABEL HAS NO UNIT NOUN. OFF 70004199 as acquired: per-
+              100 g, serving 55 g, no "bar", no product_quantity — the
+              P17d probe's exact shape. "2 bars" is NOT authoritative from
+              this record and the refusal was CORRECT — but the copy asked
+              "what was the weight" while the label DOES state a 55 g
+              serving, and the pricer offered no way to count it
+              (`_product_measures` needed a noun). FIX: the label's own
+              serving is a SOURCED conversion under the noun "serving"
+              (P17 precedence class 3), provenance = OUR SNAPSHOT — the
+              OFF revision is mutable at OFF, but rev@modified_t is pinned
+              by the append-only, fingerprinted, FK-RESTRICT store (the
+              P17f invariant), which is the source/version contract the DO
+              NOT list demands before asserting immutability. "2 servings"
+              / "half a serving" / "110 g" now price bound (110 g resolved,
+              conversion id off:70004199 on the row); "2 bars" / "2 cups"
+              still refuse. The refusal is in the label's terms: "the label
+              lists a 55 g serving — how many servings, or how many grams?"
+              P17d REFINED, not loosened: a count of a FOREIGN noun still
+              cannot multiply the label; a count of the label's OWN unit
+              can. (Directive P17d text and off.py docstring amended.)
+           2. THE INTERPRETER ASKED FLAVOR FOR A SCAN-BOUND ITEM ("Salty
+              Peanut or Caramel Cashew?") -> no op -> native_no_plan ->
+              LEGACY. A barcode proves WHAT: the plan stage now approves a
+              scan-bound SINGLE item whose only ambiguities are identity-
+              class (identity/brand/variant/flavor — food_turn's own
+              vocabulary) and lets the bound predicate decide the QUANTITY.
+              Unbound, the same ask stays an ask; a quantity ambiguity is
+              NOT answered by a scan (proven). Aligned with P17d: the
+              "sibling ambiguity is not exact PRODUCT" clause is about NO
+              barcode. The op is built by `core.food_turn._log_call` — the
+              SAME item->op builder the native ConfirmReplayPlanStage already
+              imports ("one item->call codepath"); food_turn is the
+              interpretation boundary both lanes consume, not legacy
+              run_turn. Follow-up, not semantic: give that builder a public
+              name (two native stages now import an underscore name).
+         PREREGISTRATION CORRECTED (recorded, not rewritten): step 2 said
+         "2 barebells bars -> label-unit scaling"; that assumed the label
+         names its unit. It does not. The honest step 2 for THIS record is
+         "2 servings of the barebells" (or grams); "2 bars" yields the
+         deterministic ask in the label's terms. Step 4's "2 cups": the
+         interpreter coerced "cups" -> "bar" (msg='2 cups of barbells',
+         unit=bar), so that arm is not reproducible through the model; the
+         heuristic-mass refusal is proven at the live shape ("2 handfuls",
+         "2 cups" straight into the stage) instead.
+         PROOFS: tests/test_a_scan_is_binding.py +9 (20 total): OFF prod
+         shape matrix · 2 servings settle bound with snapshot id AND
+         conversion on the row · 2 bars refused in the label's terms ·
+         the interpreter's flavor-ask payload VERBATIM -> execute (unbound
+         -> ask; quantity ambiguity -> ask).
+         Also proven live: no MEMORY read on the bound turn (turn_metrics
+         stages: pricing.usda_search + llm only), zero food writes, zero
+         claims, no legacy execution on the refused turn.
+         CANARY #2 (after deploy): scan -> "2 servings of the barebells"
+         -> row product_evidence_id == snapshot id, resolved_grams 110,
+         conversion off:70004199 · scan -> "2 barebell bars" -> ask names
+         the 55 g serving, zero write/claim/legacy.
+P17g     ◻ eligibility predicate LAST — waits on canary #2 clean
 P17h     ◻ mutation + positive twins
 ```
 
@@ -1634,6 +1692,13 @@ user-history prior by itself
 If a label says `1 bar = 200 kcal` and the user consumed one of that exact bar,
 the authoritative path is direct per-bar scaling. Do not route through grams
 merely because grams also exist.
+
+*(Refined 2026-08-18, live canary #1.)* When the label states a serving MASS
+and no unit noun (OFF's usual shape: `serving_size 55.0g`), the label's own
+serving is still a unit the label names — "serving" — and a count of it is a
+SOURCED conversion (precedence class 3, provenance = the immutable snapshot).
+A count of a FOREIGN noun ("2 bars", "2 bottles") is not, and refuses; the ask
+is in the label's terms.
 
 **P17d does NOT own product-family ambiguity.** `"Barebells bar"` with an
 unstated flavor is not exact PRODUCT merely because OFF returns plausible
