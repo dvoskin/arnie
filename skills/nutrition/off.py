@@ -44,7 +44,10 @@ _SAL_URL = "https://search.openfoodfacts.org/search"
 # re-search. The barcode is what makes a stored resolution a claim about one
 # product, so a correction, an answer or a memory row can point at it instead
 # of at a string that has since been edited.
-_FIELDS = "code,product_name,brands,nutriments,serving_size,quantity"
+_FIELDS = ("code,product_name,brands,nutriments,serving_size,quantity,"
+           # P17-UA source 2 (package facts) needs the structured package mass
+           "product_quantity,product_quantity_unit,serving_quantity,"
+           "serving_quantity_unit,nutrition_data_per")
 # OFF asks for a descriptive UA so they can contact abusers instead of blocking.
 _UA = "Arnie/1.0 (nutrition coach; contact: support@tryarnie.com)"
 # Transient statuses worth retrying: 503 (the observed flake), 502, 429 (rate cap).
@@ -469,6 +472,67 @@ async def fetch_product(barcode: str) -> Optional[dict]:
                        code, product.get("code"))
         return None
     return product
+
+
+#: A serving/quantity text that NAMES a consumer unit: "<count> <noun>" with an
+#: optional "(<mass><unit>)" tail. The noun is alphabetic and NOT a mass or
+#: volume unit — "55.0g", "55 g", "355 ml" name no unit and match nothing.
+_UNIT_TEXT = re.compile(
+    r"^\s*(?P<count>\d+(?:\.\d+)?)?\s*(?P<noun>[a-zA-Z][a-zA-Z\-]*)"
+    r"(?:\s*\(\s*(?P<mass>\d+(?:\.\d+)?)\s*(?P<munit>g|grams?|ml|oz)\s*\))?\s*$",
+    re.I)
+_NOT_A_NOUN = frozenset({"g", "gram", "grams", "kg", "mg", "oz", "ounce", "ounces",
+                         "lb", "lbs", "ml", "l", "litre", "liter", "cl", "kcal",
+                         "cal", "serving", "servings", "portion", "portions"})
+
+
+def _consumer_unit_from_text(text: str):
+    """(noun, count) when a structured serving/quantity text NAMES a consumer
+    unit — "1 bar (55 g)" -> ("bar", 1.0); "55.0g" -> None. Deterministic:
+    no synonyms, no inference, no plural folding beyond a trailing 's'."""
+    m = _UNIT_TEXT.match(str(text or ""))
+    if not m:
+        return None
+    noun = m.group("noun").lower()
+    if noun in _NOT_A_NOUN:
+        return None
+    if noun.endswith("s") and noun[:-1] and noun[:-1] not in _NOT_A_NOUN:
+        noun = noun[:-1]
+    count = float(m.group("count")) if m.group("count") else 1.0
+    return (noun, count) if count > 0 else None
+
+
+def consumer_unit_alias_from_off(record: dict):
+    """⭐ P17-UA sources 2/3, from the OFF record ALONE, deterministically:
+
+        3. catalog structured serving text names the unit:
+             serving_size "1 bar (55 g)"        -> bar, 1 per serving
+             serving_size "2 cookies (30 g)"    -> cookie, 2 per serving
+        2. package facts: quantity text names the unit AND the package mass
+           equals the serving mass:
+             quantity "1 bar", product_quantity 55, serving_quantity 55
+                                                -> bar, 1 per serving
+
+    Returns (unit, units_per_serving, provenance, source_reference) or None.
+    OFF 70004199 ("55.0g", no quantity) yields None — nothing on that record
+    says a bar is a serving, and this function does not say it either.
+    """
+    rec = record or {}
+    serving_g = _num(rec.get("serving_quantity"))
+    parsed = _consumer_unit_from_text(rec.get("serving_size"))
+    if parsed and serving_g:
+        noun, count = parsed
+        return (noun, count, "catalog_serving_text",
+                {"field": "serving_size", "text": str(rec.get("serving_size")),
+                 "serving_quantity": serving_g})
+    parsed = _consumer_unit_from_text(rec.get("quantity"))
+    package_g = _num(rec.get("product_quantity"))
+    if parsed and serving_g and package_g and abs(package_g - serving_g) < 1e-6:
+        noun, count = parsed
+        return (noun, count, "package_facts",
+                {"field": "quantity", "text": str(rec.get("quantity")),
+                 "product_quantity": package_g, "serving_quantity": serving_g})
+    return None
 
 
 def product_evidence_from_off(record: dict, *, serving_unit: str = "",

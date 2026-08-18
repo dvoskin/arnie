@@ -121,14 +121,112 @@ async def append_product_evidence(db, *, record: dict, serving_unit: str = "",
     return row
 
 
-async def load_product_evidence(db, evidence_id: int):
-    """The snapshot a meal used, BY ID, back as a pricing input. SETTLEMENT'S
-    ONLY VERB. Returns None for an unknown id — a missing snapshot is a
-    declined rung, never a fetch."""
+#: The evidence kinds a consumer-unit alias may carry (P17-UA hierarchy).
+UNIT_PROVENANCE = ("manufacturer_label", "package_facts",
+                   "catalog_serving_text", "user_confirmed")
+
+
+async def append_unit_evidence(db, *, product_evidence_id: int,
+                               consumer_unit: str, units_per_serving: float,
+                               provenance: str, source_reference: dict,
+                               scope: str = "snapshot", user_id=None,
+                               entry_id=None):
+    """⭐ P17-UA — persist what a consumer unit MEANS for one exact snapshot,
+    from named evidence. APPEND-ONLY and idempotent by fact: the same
+    (snapshot, unit, scope, fact) lands on the same row. `provenance` must be
+    one of UNIT_PROVENANCE; a `user_confirmed` fact is scope=consumption and
+    carries the user and entry it was confirmed for — it is never a global
+    product fact."""
+    import json as _json
+
+    from sqlalchemy import select
+
+    from db.models import ProductUnitEvidence
+
+    unit = str(consumer_unit or "").strip().lower()
+    if not unit or unit in _MASS_VOLUME_UNITS:
+        raise ValueError(f"not a consumer unit: {consumer_unit!r}")
+    if provenance not in UNIT_PROVENANCE:
+        raise ValueError(f"unknown unit provenance {provenance!r}")
+    if scope not in ("snapshot", "consumption"):
+        raise ValueError(f"unknown scope {scope!r}")
+    if provenance == "user_confirmed" and (scope != "consumption" or not user_id):
+        raise ValueError("a user confirmation is consumption-scoped and names "
+                         "the user — it is never a global product fact")
+    ups = float(units_per_serving)
+    if not (ups > 0):
+        raise ValueError("units_per_serving must be positive")
+    facts = {"unit": unit, "ups": round(ups, 6), "provenance": provenance,
+             "scope": scope, "user_id": user_id, "entry_id": entry_id,
+             "source": source_reference}
+    fingerprint = _fingerprint(facts)
+    existing = (await db.execute(select(ProductUnitEvidence).where(
+        ProductUnitEvidence.product_evidence_id == int(product_evidence_id),
+        ProductUnitEvidence.consumer_unit == unit,
+        ProductUnitEvidence.scope == scope,
+        ProductUnitEvidence.source_fingerprint == fingerprint,
+    ))).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    row = ProductUnitEvidence(
+        product_evidence_id=int(product_evidence_id), consumer_unit=unit,
+        consumer_units_per_serving=ups, provenance=provenance, scope=scope,
+        user_id=user_id, entry_id=entry_id,
+        source_reference_json=_json.dumps(source_reference or {}, sort_keys=True),
+        source_fingerprint=fingerprint)
+    db.add(row)
+    await db.flush()
+    logger.info("event=product_unit_evidence_appended snapshot=%s unit=%s ups=%s "
+                "provenance=%s scope=%s id=%s", product_evidence_id, unit, ups,
+                provenance, scope, row.id)
+    return row
+
+
+_MASS_VOLUME_UNITS = frozenset({"g", "gram", "grams", "kg", "mg", "oz", "ounce",
+                                "ounces", "lb", "lbs", "ml", "l", "litre",
+                                "liter", "fl oz", "cl", "kcal", "cal"})
+
+
+async def unit_aliases_for(db, product_evidence_id: int, *, user_id=None,
+                           entry_id=None) -> tuple:
+    """The snapshot-scoped aliases for one snapshot, plus — ONLY when both
+    are named — the consumption-scoped confirmation for this user AND entry.
+    Returned as `UnitAlias` tuples for `ProductEvidence.unit_aliases`."""
+    from sqlalchemy import or_, select
+
+    from db.models import ProductUnitEvidence
+
+    q = select(ProductUnitEvidence).where(
+        ProductUnitEvidence.product_evidence_id == int(product_evidence_id))
+    if user_id is not None and entry_id is not None:
+        q = q.where(or_(ProductUnitEvidence.scope == "snapshot",
+                        (ProductUnitEvidence.scope == "consumption")
+                        & (ProductUnitEvidence.user_id == int(user_id))
+                        & (ProductUnitEvidence.entry_id == int(entry_id))))
+    else:
+        q = q.where(ProductUnitEvidence.scope == "snapshot")
+    rows = (await db.execute(q.order_by(ProductUnitEvidence.id))).scalars().all()
+    from core.canonical_pricing import UnitAlias
+    return tuple(UnitAlias(unit=r.consumer_unit,
+                           units_per_serving=float(r.consumer_units_per_serving),
+                           provenance=r.provenance, evidence_id=int(r.id),
+                           scope=r.scope) for r in rows)
+
+
+async def load_product_evidence(db, evidence_id: int, *, user_id=None,
+                                entry_id=None):
+    """The snapshot a meal used, BY ID, back as a pricing input — WITH its
+    unit aliases (P17-UA). SETTLEMENT'S ONLY VERB. Returns None for an
+    unknown id — a missing snapshot is a declined rung, never a fetch."""
     from db.models import ProductEvidenceRecord
 
     row = await db.get(ProductEvidenceRecord, int(evidence_id))
-    return _to_evidence(row) if row is not None else None
+    if row is None:
+        return None
+    ev = _to_evidence(row)
+    aliases = await unit_aliases_for(db, int(evidence_id), user_id=user_id,
+                                     entry_id=entry_id)
+    return ev.with_unit_aliases(aliases) if aliases else ev
 
 
 async def latest_product_evidence(db, barcode: str):

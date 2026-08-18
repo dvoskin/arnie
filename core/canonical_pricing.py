@@ -193,6 +193,20 @@ class MemoryEvidence:
 
 
 @dataclass(frozen=True)
+class UnitAlias:
+    """⭐ P17-UA — what ONE consumer unit means for ONE exact snapshot, from
+    named evidence: `unit` x `units_per_serving` = one label serving. Never
+    invented; carried on `ProductEvidence.unit_aliases` and consumed by
+    `_product_measures` as a SOURCED conversion (the alias evidence row is
+    the source)."""
+    unit: str
+    units_per_serving: float
+    provenance: str
+    evidence_id: int
+    scope: str = "snapshot"
+
+
+@dataclass(frozen=True)
 class ProductEvidence:
     """An EXACT authoritative product: barcode, GTIN, or a provider record
     identified by one.
@@ -230,6 +244,13 @@ class ProductEvidence:
     #: conversion. Empty = no version named = no authoritative conversion.
     dataset_id: str = ""
     record_version: str = ""
+    #: P17-UA — evidence-backed consumer-unit aliases (bar -> serving), each
+    #: naming its evidence row. Empty means the label names no consumer unit
+    #: and no confirmation exists: a count of a foreign noun REFUSES.
+    unit_aliases: tuple = ()
+
+    def with_unit_aliases(self, aliases: tuple) -> "ProductEvidence":
+        return dataclasses.replace(self, unit_aliases=tuple(aliases or ()))
 
     def __post_init__(self):
         """⛔⛔ BOTH BASES MAY EXIST, AND IF THEY DO THEY MUST AGREE *(P17b.1)*.
@@ -491,7 +512,30 @@ def _product_measures(ev: "ProductEvidence") -> tuple:
         record_key=ev.identifier, record_version=ev.record_version,
         immutable_within_version=bool(ev.record_version),
         data_type="product_panel")
-    return (measure,) if measure else ()
+    out = [measure] if measure else []
+    # ⭐ P17-UA — EVIDENCE-BACKED CONSUMER UNITS. An alias says "1 bar = 1
+    # serving" FROM NAMED EVIDENCE (label text, package facts, or the user's
+    # confirmation for this consumption); combined with the label's serving
+    # mass it is a sourced conversion: grams_per_unit = serving_g /
+    # units_per_serving. The alias evidence ROW is the version we can name —
+    # append-only, so immutable within it. No alias, no measure: "2 bars"
+    # against a label that names no bar still refuses.
+    if ev.serving_grams:
+        for alias in (ev.unit_aliases or ()):
+            if not alias.units_per_serving:
+                continue
+            m = measure_from_panel(
+                f"1 {alias.unit}", float(ev.serving_grams) / float(alias.units_per_serving),
+                source_id=f"unit_evidence:{alias.evidence_id}",
+                dataset_id="product_unit_evidence",
+                dataset_version=str(alias.evidence_id),
+                record_key=f"{ev.identifier}#{alias.unit}",
+                record_version=str(alias.evidence_id),
+                immutable_within_version=True,
+                data_type=f"unit_alias:{alias.provenance}")
+            if m:
+                out.append(m)
+    return tuple(out)
 
 
 def _apply(profile, factor: float):

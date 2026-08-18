@@ -1694,11 +1694,19 @@ P17-UA   ◻ UNIT-ALIAS EVIDENCE *(Danny, 2026-08-18 — the fix for "2 bars",
          => authoritative unit enrichment -> snapshot-scoped unit
             equivalence -> deterministic scaling -> clarification only
             when evidence remains incomplete.
-         SLICES: A) product_unit_evidence table (append-only, snapshot FK
-         RESTRICT, paired migration) + model + store · B) acquisition
-         producer for sources 2/3 (structured serving text / package
-         facts, deterministic parse; 70004199 has neither) + pricer
-         consumes the alias as a SOURCED measure · C) CF9 proper: a
+         SLICES: A) ✅ product_unit_evidence table (append-only, snapshot FK
+         RESTRICT, migration produnit001 — /health must show it applied)
+         + model + store (provenance-typed; a user_confirmed row is
+         consumption-scoped, user+entry named, never global) · B) ✅
+         acquisition producer for sources 2/3 (strict deterministic parse
+         of OFF serving_size / quantity+product_quantity; "1 bar (55 g)"
+         -> bar x1; "55.0g" -> nothing; 70004199 yields NO alias) +
+         pricer consumes an alias as a SOURCED conversion (grams_per_unit =
+         serving_g / units_per_serving; provenance = the alias evidence
+         row); "2 bars" -> 110 g ONLY with an alias, refuses without;
+         receipt on the row names unit_evidence:<id>. tests/test_a_
+         consumer_unit_is_evidence_not_a_guess.py (7) + PG migration gate.
+         · C) CF9 proper: a
          BoundUnpriceable opens a pending quantity operation that HOLDS
          the snapshot and asks the source-4 question; "yes" -> per-entry
          alias -> bound settle; grams/servings -> bound settle; else stays

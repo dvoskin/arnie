@@ -356,8 +356,10 @@ async def look(db, *, user_id: int, item: dict) -> ItemFacts:
             declared = _from_product(ev) if ev is not None else None
             if declared is not None:
                 _profile, _rung, _eid, _raw, source_basis, measures = declared
+                _aliases = tuple(getattr(ev, "unit_aliases", ()) or ())
                 product_unit = str(getattr(ev, "serving_unit", "") or
-                                   getattr(ev, "package_unit", "") or "")
+                                   getattr(ev, "package_unit", "") or
+                                   (_aliases[0].unit if _aliases else "") or "")
                 product_label = str(getattr(ev, "identifier", "") or "")
                 product_serving_grams = getattr(ev, "serving_grams", None)
                 if quantity_text and source_basis is not None:

@@ -1968,3 +1968,53 @@ class ProductEvidenceRecord(Base):
     #: Structured provenance: {dataset_id, record_key, rev, modified_t, ...}.
     source_reference_json = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class ProductUnitEvidence(Base):
+    """⭐ P17-UA — WHAT A CONSUMER UNIT MEANS FOR ONE EXACT SNAPSHOT *(Danny,
+    2026-08-18)*. The snapshot knows `1 serving = 55 g`; it must not invent
+    `1 bar = 1 serving`. This table holds that second equality ONLY when
+    evidence establishes it, keyed to the immutable snapshot it is about:
+
+        consumer_unit "bar" x consumer_units_per_serving 1  ->  1 bar = 1 serving
+
+    Pricing is then mechanical: 2 bars x 1 serving/bar x 55 g/serving = 110 g,
+    every edge evidence-backed. PROVENANCE is the whole point:
+
+        manufacturer_label     "Serving size: 1 bar (55 g)"        strongest
+        package_facts          net weight 55 g + count 1 bar -> 55 g/bar
+        catalog_serving_text   structured serving text SAYS "bar"
+        user_confirmed         "Was each bar one full serving?" -> yes,
+                               FOR THAT CONSUMPTION ONLY (scope=consumption,
+                               user_id + entry_id set) — never silently
+                               promoted to a global product fact
+
+    APPEND-ONLY, like the snapshot it hangs off. RESTRICT: evidence a meal
+    priced through cannot be deleted from under it.
+    """
+    __tablename__ = "product_unit_evidence"
+    __table_args__ = (
+        Index("ix_product_unit_evidence_snapshot", "product_evidence_id",
+              "consumer_unit"),
+        UniqueConstraint("product_evidence_id", "consumer_unit", "scope",
+                         "source_fingerprint",
+                         name="uq_product_unit_evidence_fact"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    product_evidence_id = Column(Integer,
+                                 ForeignKey("product_evidence.id",
+                                            ondelete="RESTRICT"),
+                                 nullable=False)
+    consumer_unit = Column(String, nullable=False)          # "bar", lower
+    consumer_units_per_serving = Column(Float, nullable=False)  # 1.0
+    #: manufacturer_label | package_facts | catalog_serving_text | user_confirmed
+    provenance = Column(String, nullable=False)
+    #: snapshot (a fact about the product) | consumption (this entry only)
+    scope = Column(String, nullable=False, server_default="snapshot")
+    user_id = Column(Integer, nullable=True)                # consumption scope
+    entry_id = Column(Integer, nullable=True)               # consumption scope
+    #: What established it — the serving text, the package fields, the turn.
+    source_reference_json = Column(Text, nullable=False)
+    source_fingerprint = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())

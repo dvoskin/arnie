@@ -69,6 +69,25 @@ async def acquire_product_evidence(db, barcode, *, serving_unit: str = "",
             if row is not None:
                 logger.info("event=product_acquired code=%s snapshot=%s "
                             "rev=%s", code, row.id, row.provider_revision)
+                # ⭐ P17-UA — deterministic unit enrichment AT ACQUISITION:
+                # if the record's structured serving/quantity text names a
+                # consumer unit (sources 2/3), persist that fact beside the
+                # snapshot. If it does not, nothing is persisted and the
+                # bound path will ASK (source 4). Failure here binds nothing
+                # extra and costs nothing.
+                try:
+                    from skills.nutrition.off import consumer_unit_alias_from_off
+                    from skills.nutrition.product_store import append_unit_evidence
+                    alias = consumer_unit_alias_from_off(record)
+                    if alias is not None:
+                        unit, ups, provenance, ref = alias
+                        await append_unit_evidence(
+                            db, product_evidence_id=int(row.id),
+                            consumer_unit=unit, units_per_serving=ups,
+                            provenance=provenance, source_reference=ref)
+                except Exception:                        # noqa: BLE001
+                    logger.warning("acquisition: unit enrichment failed for %s",
+                                   code, exc_info=True)
                 return int(row.id)
         except Exception:                                # noqa: BLE001
             logger.warning("acquisition: persist failed for %s", code,
