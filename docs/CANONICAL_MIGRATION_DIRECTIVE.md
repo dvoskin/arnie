@@ -351,8 +351,19 @@ HEAD                                   the commit carrying this line
                                        (git log -1 -- this file)
 GENERAL SETTLEMENT BACKEND             ✅ FROZEN          (§FREEZE)
 ONE-USER PRODUCTION CANARY             ✅ PASSED          (P12, both branches)
-CURRENT OWNERSHIP BASELINE             ~20.3%            (predicate a747b56,
-                                                         population p16b_0817)
+CURRENT OWNERSHIP BASELINE             ~20.0%            (predicate 00cdcfd,
+                                                         population p16b_0817;
+                                                         was 20.3% @ a747b56 —
+                                                         same population, same
+                                                         decide(): memory read
+                                                         at MEASUREMENT time
+                                                         drifted, the
+                                                         instrument's own
+                                                         documented limitation)
+MEMORY QUALITY (M1, beside — never    2.7 pts of that   supported-but-
+subtracted from — ownership)          ownership are     implausible; 22 of
+                                      WRONG (lower      31 memory-priced
+                                      bound)            meals UNJUDGEABLE
 BASELINE POPULATION                    ✅ FROZEN          361 rows / 232 meals,
                                                          sha 6247a33c55ed64f5
 P17 STATUS                             🟡 ACTIVE          c.3b HYDRATED at FDC
@@ -996,7 +1007,10 @@ later — the same discipline as the P12 canary preregistration.
 
 ```text
 POPULATION      p16b_0817 — the identical 232 meals, sha 6247a33c55ed64f5
-BASELINE        ~20.3%   predicate a747b56
+BASELINE        ~20.3%   predicate a747b56   (the preregistered anchor)
+                ~20.0%   predicate 00cdcfd   (re-read 08-18 during M1; same
+                         decide(), memory drift at measurement time — publish
+                         the P17 delta against BOTH, and say which)
 EXPECTED GAIN   +12.2 .. +24.8 pts  ->  ~32.5% .. ~45.1%
 PUBLISH         BOTH predicate commits, or it is not a figure
 

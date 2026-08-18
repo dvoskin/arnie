@@ -228,6 +228,7 @@ async def measure(*, days: int, limit: int, population: dict = None) -> dict:
     #: function returns before attribution runs, and a NameError there would
     #: read as an instrument crash rather than as "not computed".
     attribution_result: dict = {}
+    memory_audit: dict = {}
     try:
         session = async_sessionmaker(engine, expire_on_commit=False)
         async with session() as db:
@@ -367,6 +368,11 @@ async def measure(*, days: int, limit: int, population: dict = None) -> dict:
                 structured=[k for k, c in _class.items() if c == "structured"],
                 chat_meals=sum(1 for c in _class.values()
                                if c in ("structured", "legacy")))
+            memory_audit = await audit_supported_memory(
+                db, meals=meals, verdicts=verdicts,
+                structured=[k for k, c in _class.items() if c == "structured"],
+                chat_meals=sum(1 for c in _class.values()
+                               if c in ("structured", "legacy")))
     finally:
         await engine.dispose()
 
@@ -485,6 +491,7 @@ async def measure(*, days: int, limit: int, population: dict = None) -> dict:
         "settled_by": dict(settled_by),
         "why_structured_meals_decline": dict(declines.most_common()),
         "P16_miss_attribution": attribution,
+        "M1_supported_memory_audit": memory_audit,
         "limits": [
             "meals are grouped by ledger_events.turn_id; a row with no created "
             "event cannot be grouped and is counted as its own meal",
@@ -791,6 +798,142 @@ def _meal_recovers(records: list, mechanism: str, *, flip: dict) -> bool:
         if not isinstance(decide(facts), Supported):
             return False
     return True
+
+
+# ══ M1 — THE MECHANISM OWNERSHIP CANNOT SEE ═══════════════════════════════
+#
+# ⛔⛔ A POISONED MEMORY ROW IS SUPPORTED AND WRONG *(found in production
+# 2026-08-18, user 26)*. "Grilled chicken breast, 10 oz" settled canonically at
+# 383 kcal / 37 g CARBS — chicken has none. The P17f receipt made it one query
+# to diagnose: rung=memory, evidence fdc 1941501, and that user_food_matches row
+# (cached 06-28) holds 135 kcal / 13.2 C per 100 g. Canonical faithfully reused
+# a bad memory row, and every downstream number was correct RELATIVE TO IT.
+#
+# ⭐ NEITHER OWNERSHIP NOR THE P17 REMEASURE CAN SEE THIS. `decide()` supports a
+# memory row on EXISTENCE; ownership = routing x support; so a wrong memory row
+# is counted as a WIN. P16's attribution runs only over DECLINING items — a
+# supported meal never enters it. This is a fourth memory mechanism beside the
+# three P16 names, and it needs its own pass, over the SUPPORTED meals.
+#
+# ⛔ THE PREDICATE IS EVIDENCE-SHAPED, NOT A FOOD-NAME LIST. The zero-rule
+# forbids name branches and it is right; "chicken has no carbs" is a hand list.
+# The test is SAME IDENTITY, TWO SOURCES: does the memory row for entity E
+# disagree materially with the committed artifact's evidence for entity E? No
+# taxonomy, no category — the artifact's own per-100g profile is the reference,
+# and where the artifact has no evidence for E the row is UNJUDGEABLE, reported
+# as such rather than passed.
+
+#: Disagreement tolerances, per 100 g, for the same identity. Deliberately
+#: coarse: a memory row 20% off the artifact on calories is a rounding/prep
+#: difference; 40 g of carbs where the artifact says 0.5 is a different food.
+_MEMORY_DIVERGENCE = {"calories": (0.35, 40.0),   # (relative, absolute floor)
+                      "carbs": (0.50, 8.0),
+                      "protein": (0.40, 8.0),
+                      "fat": (0.50, 6.0)}
+
+
+def memory_row_diverges(memory: dict, artifact: dict) -> tuple:
+    """(diverges: bool, worst_field, detail). PURE.
+
+    A field diverges when |memory - artifact| exceeds BOTH the relative and
+    the absolute tolerance — relative alone flags 0.5 vs 1.2 g carbs; absolute
+    alone flags nothing on high-calorie foods. Any one field diverging marks
+    the row: a chicken breast with the right calories and 13 g of carbs is
+    still not chicken.
+    """
+    worst = None
+    for field, (rel, floor) in _MEMORY_DIVERGENCE.items():
+        m = memory.get(field)
+        a = artifact.get(field)
+        if m is None or a is None:
+            continue
+        gap = abs(float(m) - float(a))
+        base = max(abs(float(a)), 1.0)
+        if gap > floor and gap / base > rel:
+            score = gap / base
+            if worst is None or score > worst[1]:
+                worst = (field, score, float(m), float(a))
+    if worst is None:
+        return False, "", {}
+    field, score, m, a = worst
+    return True, field, {"field": field, "memory": m, "artifact": a,
+                         "ratio": round(score, 2)}
+
+
+async def audit_supported_memory(db, *, meals: dict, verdicts: dict,
+                                 structured: list, chat_meals: int) -> dict:
+    """Every SUPPORTED structured meal whose items were priced from MEMORY:
+    is the memory row consistent with the artifact's own evidence for the
+    same identity? Reports meals that would have been supported-and-wrong."""
+    from core.canonical_pricing import _ranker_query, _from_artifact
+    from core.canonical_pricing_inputs import _memory
+    from core.general_settlement import Supported, decide, look
+    from skills.nutrition.pricing_artifact import evidence_for, split_identity
+
+    denominator = max(int(chat_meals), 1)
+    supported = [k for k in structured if isinstance(verdicts.get(k), Supported)]
+    memory_priced_meals = 0
+    unjudgeable_meals = 0
+    diverging_meals = []
+    examples = []
+    for key in supported:
+        meal = meals[key]
+        meal_memory = False
+        meal_unjudgeable = False
+        meal_diverges = None
+        for item in meal["items"]:
+            facts = await look(db, user_id=int(meal["user_id"]), item=item)
+            verdict = decide(facts)
+            if not (isinstance(verdict, Supported)
+                    and verdict.expected_source == "memory"):
+                continue
+            meal_memory = True
+            identity = str(item.get("food_name") or "")
+            entity, prep = split_identity(identity)
+            try:
+                memory = await _memory(db, int(meal["user_id"]), identity, "")
+            except Exception:                            # noqa: BLE001
+                memory = None
+            per100 = dict(getattr(memory, "per100g", None) or {}) if memory else {}
+            art = evidence_for(entity, prep)
+            chosen = _from_artifact(art, query=_ranker_query(entity, prep)) if art else None
+            if not per100 or not chosen:
+                meal_unjudgeable = True
+                continue
+            _profile, _rung, _eid, raw_art, _basis, _measures = chosen
+            diverges, field, detail = memory_row_diverges(per100, raw_art or {})
+            if diverges:
+                meal_diverges = {"identity": identity[:48], **detail,
+                                 "memory_source_id": getattr(memory, "source_id", "")}
+                break
+        if not meal_memory:
+            continue
+        memory_priced_meals += 1
+        if meal_diverges:
+            diverging_meals.append(key)
+            if len(examples) < 8:
+                examples.append(meal_diverges)
+        elif meal_unjudgeable:
+            unjudgeable_meals += 1
+    return {
+        "mechanism": "MEMORY:row_present_but_implausible",
+        "supported_structured_meals": len(supported),
+        "memory_priced_supported_meals": memory_priced_meals,
+        "diverging_meals": len(diverging_meals),
+        "ownership_points_that_are_WRONG": round(
+            100.0 * len(diverging_meals) / denominator, 1),
+        "unjudgeable_meals_no_artifact_reference": unjudgeable_meals,
+        "examples": examples,
+        "predicate": "same identity, two sources — the memory row vs the "
+                     "committed artifact's own per-100g evidence for that "
+                     "entity; a row diverging past BOTH a relative and an "
+                     "absolute tolerance on any macro is implausible. No "
+                     "food-name list.",
+        "reading": "These meals are COUNTED AS OWNED by C and are priced from "
+                   "a memory row the artifact contradicts. Ownership cannot see "
+                   "them; the P17 remeasure inherits them; a canary would find "
+                   "them. Rank against Δ(M|P17) like any other mechanism.",
+    }
 
 
 async def attribute_misses(db, *, meals: dict, verdicts: dict,
