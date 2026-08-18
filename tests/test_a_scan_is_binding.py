@@ -354,7 +354,8 @@ async def test_two_bars_are_refused_in_the_labels_own_terms(db, make_user, monke
     execution, response = await _native(db, user, log, "2 barebell bars", snap.id, ops, monkeypatch)
     assert not execution.calls[0].committed
     text = " ".join(response.bubbles)
-    assert "55 g serving" in text and "each bar" in text, text     # the ask, in the label's terms
+    assert "55 g serving" in text and "whether a bar is one serving" in text \
+        and "how much did you have" in text, text     # the ask names the unknown, asks the total
 
 
 @pytest.mark.asyncio
@@ -541,7 +542,8 @@ async def test_two_bars_opens_an_ask_that_holds_the_snapshot_and_the_answer_sett
     assert not execution.calls[0].committed
     assert execution.calls[0].correction["refusal"] == "scan_bound_ask"
     text = " ".join(response.bubbles)
-    assert "55 g serving" in text and "each bar" in text, text
+    assert "55 g serving" in text and "whether a bar is one serving" in text, text
+    assert "is each bar" not in text, "the per-bar yes/no is the trap: an affirmative matched the 1-serving chip"
     assert getattr(response, "interaction", None), "the ask must reach the client as an interaction"
     # nothing written; the OPERATION is persisted with the snapshot on its item
     assert (await db.execute(select(FoodEntry).where(FoodEntry.daily_log_id == log.id))).scalars().all() == []
@@ -601,7 +603,7 @@ async def test_the_bound_ask_chip_settles_the_same_snapshot(db, make_user, monke
     receipt = execution.calls[0].correction
     wire = receipt["interaction"]
     field = wire["groups"][0]["fields"][0]
-    two = next(o for o in field["options"] if o["label"].startswith("2 servings"))
+    two = next(o for o in field["options"] if o["option_id"] == "opt_label_serving_2")
     op_row = (await db.execute(select(PendingOperation).where(
         PendingOperation.user_id == user.id))).scalars().one()
     turn = await b1_answer_turn.handle(
@@ -761,7 +763,7 @@ async def test_an_expired_ask_ignores_free_text_but_a_tap_still_lands(db, make_u
                                        message="had some rice") is None
     assert await _rows(db, log) == []
     wire = ex.calls[0].correction["interaction"]; field = wire["groups"][0]["fields"][0]
-    two = next(o for o in field["options"] if o["label"] == "2 servings")
+    two = next(o for o in field["options"] if o["option_id"] == "opt_label_serving_2")
     t = await b1_answer_turn.handle(db, user=user, source_turn_id=f"e2-{user.id}",
                                     field_id=field["field_id"], option_id=two["option_id"], revision=0)
     assert t is not None and t.outcome is Outcome.APPLIED, t

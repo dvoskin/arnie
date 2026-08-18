@@ -3,17 +3,29 @@
     scan 70004199 -> "2 bars"
         -> BoundUnpriceable (the label names no bar)
         -> THIS: open a canonical quantity operation whose stored item CARRIES
-           the snapshot id, and ask in the label's terms:
-               "The label gives nutrition per 55 g serving. Is each bar one
-                55 g serving?"   [2 servings (110 g)]  [1 serving (55 g)]  free text
+           the snapshot id, and ask in the label's terms, NAMING THE UNKNOWN:
+               "Got the scanned Barebells … The label gives nutrition per 55 g
+                serving, but doesn't say whether a bar is one serving — how
+                much did you have?"
+                    [110 g — 2 servings]   [55 g — 1 serving]   free text
         -> the answer — a tap, "2 servings", "110 g" — settles the SAME bound
            snapshot canonically: no reacquisition, no MEMORY, no legacy.
 
 Danny's hierarchy, source 4: the user's confirmation authorises the quantity
-FOR THIS CONSUMPTION. Choosing "2 servings (110 g)" is the user STATING the
+FOR THIS CONSUMPTION. Choosing "110 g — 2 servings" is the user STATING the
 quantity in the label's own unit — precedence class 1 — so the settle prices
 from the panel's own serving conversion. Nothing here translates bar into
 serving on the user's behalf: the option says what it is, and the user picks.
+
+⛔ THE CHIPS LEAD WITH THE LABEL'S BASE UNIT *(Danny, 2026-08-18, after the
+first two-turn canary)*. The question used to ask "is each bar one 55 g
+serving?" (a per-bar yes/no) while the chips read "2 servings" / "1 serving"
+(totals) — the affirmative answer to the QUESTION lexically matched the chip
+that logged HALF the food, and it looked confirmed. Serving-counts also read
+badly for a bag, a bottle or a scoop. So the display text is the mass first,
+"110 g — 2 servings" (ml for a per-ml label), and the semantic `value` stays
+"2 servings" so a text-channel user still types the label's words back
+(`_option_for_label` matches `send_value`, which is `value` when set).
 
 Built on B-1's machinery, not beside it: the same `open_operation`, the same
 `quantity_field` / `build_interaction`, the same `b1_answer_turn` answer path,
@@ -36,11 +48,13 @@ logger = logging.getLogger(__name__)
 
 
 def _label_options(*, field, serving_grams: float, unit: str,
-                   stated_count: Optional[float]) -> tuple:
+                   stated_count: Optional[float],
+                   base_unit: str = "g") -> tuple:
     """Options in the label's OWN terms. The user's stated count first (so
-    "2 bars" is offered as "2 servings (110 g)"), then one serving. Every
+    "2 bars" is offered as "110 g — 2 servings"), then one serving. Every
     option is a MASS the label states — a user-stated exact quantity once
-    chosen — never a bar->serving equivalence asserted by us."""
+    chosen — never a bar->serving equivalence asserted by us. `base_unit` is
+    the label's own basis ("g", or "ml" for a liquid) and leads the chip."""
     from core.semantics import (CandidateSource, CanonicalQuantity,
                                 ClarificationOption, Confidence, Dimension,
                                 Provenance, SetQuantity)
@@ -54,11 +68,14 @@ def _label_options(*, field, serving_grams: float, unit: str,
         grams = Decimal(str(serving_grams)) * Decimal(str(n))
         n_txt = (str(int(n)) if float(n).is_integer() else f"{n:g}")
         plural = "serving" if n == 1.0 else "servings"
-        # The label is what a user would TYPE BACK on a text channel — the
-        # answer path matches an offered label exactly — so it is the label's
-        # own words ("2 servings"); the mass rides in the patch and the
-        # introduction already states the serving size.
-        label = f"{n_txt} {plural}"
+        # DISPLAY leads with the label's base unit — the one thing that is
+        # unambiguous for every product and never asserts bar = serving; the
+        # semantic VALUE is the label's own words ("2 servings"), which is
+        # what a user TYPES BACK on a text channel — `_option_for_label`
+        # matches `send_value` (= value when set) exactly, so both routes
+        # keep working while the chip says what it is.
+        words = f"{n_txt} {plural}"
+        label = f"{float(grams):g} {base_unit} — {words}"
         # THE SEMANTIC OBJECT IS THE PATCH, NOT THE LABEL: quantity = n x
         # unit "serving" (a COUNT of the label's own unit). The settle path
         # resolves it through the panel's serving conversion — sourced,
@@ -71,7 +88,7 @@ def _label_options(*, field, serving_grams: float, unit: str,
             provenance=Provenance.USER_SELECTED,
             confidence=Confidence(score=1.0, basis=f"label serving x {n_txt}"))
         options.append(ClarificationOption(
-            label=label, option_id=f"opt_label_serving_{n_txt}",
+            label=label, value=words, option_id=f"opt_label_serving_{n_txt}",
             field_id=field.field_id,
             patch=SetQuantity(event_id=field.event_id, field_id=field.field_id,
                               quantity=q, provenance=Provenance.USER_SELECTED),
@@ -80,14 +97,36 @@ def _label_options(*, field, serving_grams: float, unit: str,
 
 
 def _question(*, food: str, unit_word: str, serving_grams: float,
-              stated_quantity: str) -> str:
+              stated_quantity: str, base_unit: str = "g") -> str:
+    """The ask, in the label's terms, NAMING THE UNKNOWN and asking for the
+    TOTAL — so the chips (totals) answer the question that was asked. Never
+    a per-unit yes/no: "is each bar one serving?" invited "yes", and "yes"
+    read as the one-serving chip."""
     g = f"{serving_grams:g}"
     if unit_word:
-        return (f"Got the scanned {food}. The label gives nutrition per {g} g "
-                f"serving — is each {unit_word} one {g} g serving?")
-    return (f"Got the scanned {food}. The label gives nutrition per {g} g "
-            f"serving, and I can't price {stated_quantity} from it — how many "
-            f"servings, or how many grams?")
+        return (f"Got the scanned {food}. The label gives nutrition per {g} "
+                f"{base_unit} serving, but doesn't say whether a {unit_word} "
+                f"is one serving — how much did you have?")
+    unit_name = "millilitres" if base_unit == "ml" else "grams"
+    return (f"Got the scanned {food}. The label gives nutrition per {g} "
+            f"{base_unit} serving, and I can't price {stated_quantity} from "
+            f"it — how much did you have, in servings or {unit_name}?")
+
+
+async def _label_base_unit(db, product_evidence_id) -> str:
+    """The label's own basis unit for the chips: "ml" when the persisted
+    snapshot states its serving in millilitres (a liquid label; OFF's
+    `nutrition_data_per='100ml'`), else "g". A LOCAL read of the record —
+    never a fetch — and any failure is "g", the common case."""
+    try:
+        from db.models import ProductEvidenceRecord
+        row = await db.get(ProductEvidenceRecord, int(product_evidence_id))
+        if row is not None and getattr(row, "serving_ml", None) and not \
+                getattr(row, "serving_mass_g", None):
+            return "ml"
+    except Exception:                                    # noqa: BLE001
+        pass
+    return "g"
 
 
 async def open_bound_quantity_ask(db, *, user, item: dict, coverage,
@@ -161,10 +200,12 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
         logger.warning("could not check/cancel a prior ask", exc_info=True)
 
     operation_id = _operation_id_for(user, turn_id)
+    base_unit = await _label_base_unit(db, pid)
     field_probe = qc.quantity_field(operation_id=operation_id, revision=0,
                                     item=staged_item)
     options = _label_options(field=field_probe, serving_grams=float(serving_grams),
-                             unit=unit_word, stated_count=stated_count)
+                             unit=unit_word, stated_count=stated_count,
+                             base_unit=base_unit)
     field = qc.quantity_field(operation_id=operation_id, revision=0,
                               item=staged_item, options=options)
     interaction = qc.build_interaction(
@@ -172,7 +213,8 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
         options=field.options,
         introduction=_question(food=food or "that", unit_word=unit_word,
                                serving_grams=float(serving_grams),
-                               stated_quantity=quantity_text or "that"),
+                               stated_quantity=quantity_text or "that",
+                               base_unit=base_unit),
         ask_preparation=False)
     try:
         await open_operation(db, user=user, interpreter_item=interpreter_item,

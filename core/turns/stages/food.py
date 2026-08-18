@@ -381,6 +381,97 @@ def _scan_is_bound() -> bool:
         return False
 
 
+def _lift_bound_correction_to_log(ops, message: str):
+    """CF5b: the ONE implicit `update_food_entry` of a scan-bound turn, as a
+    fresh `log_food` of the scanned product in the user's stated quantity — or
+    None when the plan is not that shape.
+
+    SCOPED NARROWLY *(Danny)*: exact scan binding exists (the caller checked);
+    the plan contains exactly ONE food update; it is an IMPLICIT correction
+    (a board row the interpreter picked), not an explicit, separately
+    addressed one (a move-to-date, a delete, a mixed plan) — those are left
+    alone for the executor's own guards; unbound updates are byte-identical
+    in behaviour because this is never called for them.
+
+        update_food_entry -> lift to log_food
+                          -> identity from the exact scanned SNAPSHOT
+                          -> quantity restored from the user's LITERAL message
+                          -> existing row target DISCARDED
+                          -> the existing bound predicate owns the result
+
+    ⛔ THE QUANTITY IS "2 servings" FROM THE USER'S TEXT, NEVER THE PLANNER'S
+    "4 bar" — that was the corrected TOTAL computed against the old row, not
+    the statement. `_restore_user_stated_unit` reads the label's vocabulary
+    (servings / g / oz) off the message; otherwise the count + the noun the
+    user said ("2 bar"), which the bound predicate cannot price and so ASKS
+    (BoundUnpriceable -> CF9). Nothing here guesses a mass or a noun.
+
+    ⭐ IDENTITY: the planner is DB-free, so the item is marked `_scan_lifted`
+    and carries the interpreter's name only as a placeholder; the execution
+    stage's `_canonical_route` reads the snapshot's own product_name onto the
+    item BEFORE the predicate runs (see `_name_from_snapshot`). The row is
+    then named and priced from the same exact snapshot."""
+    if len(ops or ()) != 1:
+        return None
+    op = ops[0] or {}
+    if not isinstance(op, dict) or op.get("name") != "update_food_entry":
+        return None
+    inp = dict(op.get("input") or {})
+    if inp.get("entry_id") is None or inp.get("date"):
+        return None
+    placeholder = str(inp.get("food_name") or inp.get("food_hint") or "").strip()
+    if not placeholder:
+        return None
+    from core.food_turn import _log_call
+    call = _log_call({"food": placeholder, "amount": None, "unit": ""})
+    if call is None:
+        return None
+    call["input"]["quantity"] = ""
+    _restore_user_stated_unit(call, message)
+    if not call["input"].get("quantity"):
+        _n = _leading_count(message)
+        if _n is not None:
+            call["input"]["quantity"] = f"{_n} {_unit_word(message) or 'piece'}"
+    call["input"]["_scan_lifted"] = True
+    call["input"]["is_packaged"] = True
+    logger.info("event=scan_rejects_correction_shape entry=%s food=%r "
+                "stated=%r — a scan is a fresh statement about the scanned "
+                "product, not a correction of another row",
+                inp.get("entry_id"), placeholder, call["input"].get("quantity"))
+    return call
+
+
+_COUNT_RE = __import__("re").compile(
+    r"(?<![\w.])(\d+(?:\.\d+)?|a|an|one|two|three|four|five|six|half(?: a| an)?)\s+"
+    r"(?:(?:of\s+)?(?:the\s+)?[\w'\-]+\s+)?([a-z]+)", __import__("re").I)
+
+
+def _leading_count(message: str):
+    """The count the user stated, if the message opens with one ("2 …", "two
+    …"); None otherwise. A count, not a mass — the unit is read separately."""
+    m = _COUNT_RE.search(message or "")
+    if not m:
+        return None
+    head = m.group(1).lower()
+    if head.startswith("half"):
+        return "0.5"
+    return str(_WORDS.get(head, head))
+
+
+def _unit_word(message: str):
+    """The unit noun the count qualifies ("bars" in "2 barebells bars", "bar"
+    in "2 bar"), singularised; None when unreadable. Only the noun the user
+    said — never a label serving, never a mass — so the bound predicate sees a
+    heuristic-count quantity and refuses/asks rather than pricing it."""
+    text = (message or "").strip().lower()
+    for noun in ("bars", "bar", "pieces", "piece", "bags", "bag", "bottles",
+                 "bottle", "cans", "can", "scoops", "scoop", "packs", "pack",
+                 "cups", "cup", "slices", "slice", "cookies", "cookie"):
+        if __import__("re").search(rf"\b{noun}\b", text):
+            return noun[:-1] if noun.endswith("s") and noun not in ("glass",) else noun
+    return None
+
+
 #: The label's own quantity vocabulary — the two things a manufacturer panel
 #: states without a product noun: its serving, and mass.
 _LABEL_UNIT_RE = __import__("re").compile(
@@ -485,6 +576,43 @@ def plan_from_interpretation(out) -> TurnPlan:
                         items[0].get("food"),
                         [a.get("field") for a in (out.get("ambiguities") or [])])
             return TurnPlan(operations=(call,), response_intent="log",
+                            ambiguities=(),
+                            narration_hint=str(out.get("say") or ""),
+                            planner_version=FOOD_PLANNER_VERSION)
+    # ⛔⛔ CF5b — SCAN BINDING DOMINATES CORRECTION CLAIMS *(Danny, 2026-08-18,
+    # P1 authority violation; production turn ios:D3B7757E)*. The user scanned
+    # 70004199 and typed "2 servings of Barebells bars"; a legacy Barebells row
+    # was already on the board, so the interpreter read the message as "make
+    # that 4 bars" and emitted update_food_entry(3030, "4 bar"). Every
+    # scan-binding check downstream keys on `log_food` — `_food_inputs` drops
+    # an update op — so the bound predicate NEVER RAN (no settlement_route
+    # line), `_correction_route` declined a legacy row, and the op reached the
+    # legacy executor's ratio arm: heuristic bar-mass x2 = 800 kcal committed
+    # against an exact label. CF4 and CF5 broken in one turn, through a shape
+    # neither guarded.
+    #
+    #     scan acquired exact snapshot
+    #     -> correction route discarded binding
+    #     -> heuristic ratio mutation committed
+    #     -> bound predicate never ran
+    #
+    # A SCAN ATTACHMENT MEANS A NEW EXACT-PRODUCT REPORT. It must not mutate an
+    # old row merely because that product already appears on the board. So at
+    # the correction-claim boundary — here, before the plan is typed — a bound
+    # turn's implicit correction is NOT eligible: the single update op is
+    # lifted to a fresh `log_food` of the same food, in the user's stated
+    # quantity, and continues through bound-item planning, where the predicate
+    # settles it (Supported(product)) or asks in the label's terms
+    # (BoundUnpriceable -> the CF9 ask). Snapshot preserved; nothing here
+    # guesses a mass or a noun. An UNBOUND update op is untouched — implicit
+    # correction is legitimate when nothing outranks it. Ratio correction is
+    # not weakened globally; the exclusion is exactly "implicit correction
+    # cannot outrank explicit scan binding".
+    if action in ("update", "log") and _scan_is_bound():
+        lifted = _lift_bound_correction_to_log(
+            tuple(out.get("tool_calls") or ()), out.get("_message") or "")
+        if lifted is not None:
+            return TurnPlan(operations=(lifted,), response_intent="log",
                             ambiguities=(),
                             narration_hint=str(out.get("say") or ""),
                             planner_version=FOOD_PLANNER_VERSION)

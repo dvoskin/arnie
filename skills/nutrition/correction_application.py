@@ -186,6 +186,37 @@ def scale_by_ratio(committed: Mapping, ratio: float) -> Optional[dict]:
     return out or None
 
 
+class ScanBoundCorrectionRefused(RuntimeError):
+    """⛔⛔ CF5b — defence in depth *(Danny, 2026-08-18)*. A scan-bound turn
+    reached correction application. This module scales a row by RATIO or by
+    a stored basis — heuristic mass either way for a count like "bar" — and
+    on the production turn that motivated this class it multiplied an exact
+    label by 2.000 and committed 800 kcal, discarding the snapshot silently.
+    The primary router (the planner-side lift) makes this unreachable; this
+    invariant means an upstream misclassification commits NOTHING: raised
+    before any arithmetic, zero mutation, and the snapshot is named in the
+    message so it is never silently discarded again."""
+
+    def __init__(self, snapshot_id, food_name: str):
+        self.snapshot_id = snapshot_id
+        self.food_name = food_name
+        super().__init__(
+            f"scan-bound turn (snapshot {snapshot_id}) reached correction "
+            f"application for {food_name!r} — refused, nothing scaled")
+
+
+def _refuse_if_scan_bound(food_name: str) -> None:
+    try:
+        from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+        sid = SCANNED_PRODUCT_EVIDENCE.get()
+    except Exception:                                    # noqa: BLE001
+        return
+    if sid is not None:
+        logger.warning("event=correction_apply outcome=refused "
+                       "reason=scan_bound snapshot=%s food=%r", sid, food_name)
+        raise ScanBoundCorrectionRefused(sid, food_name)
+
+
 def apply_portion(*, food_name: str, old_quantity: str, new_quantity: str,
                   committed: Mapping, per100: Optional[Mapping] = None,
                   serving_text: str = "") -> Optional[dict]:
@@ -203,6 +234,7 @@ def apply_portion(*, food_name: str, old_quantity: str, new_quantity: str,
     "1 bag" -> "a couple handfuls" with no basis to anchor either end, and the
     caller falls back to what it does today.
     """
+    _refuse_if_scan_bound(food_name)
     new_grams = _grams(new_quantity, food_name, serving_text)
     if new_grams is None:
         return None
@@ -252,6 +284,7 @@ def apply_count_correction(*, food_name: str, old_quantity: str,
     mass and scale a 110-calorie bar to 2,750. It rejects a bare unit and a
     cross-dimension pair, so a portion can never become a package.
     """
+    _refuse_if_scan_bound(food_name)
     try:
         from skills.nutrition.normalize import (count_units_compatible,
                                                 normalize_quantity)
@@ -358,6 +391,7 @@ def apply_serving_count_correction(*, food_name: str, old_quantity: str,
         matters is that a disagreement is never resolved in favour of the
         wording.
     """
+    _refuse_if_scan_bound(food_name)
     try:
         from skills.nutrition.models import COUNT_BASIS_UNIT
         from skills.nutrition.normalize import (_serving_count,

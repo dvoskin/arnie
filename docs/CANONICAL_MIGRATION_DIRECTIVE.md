@@ -400,6 +400,87 @@ CF5  SCAN IS BINDING like a tap (Danny): settle-time P17-SB (scan/binding) CLOSE
      snapshot. Use the c2.2 primitive
      (assemble/price bound=True): SCAN-BOUND -> that
      snapshot only -> price or refuse.
+CF5b SCAN BINDING MUST DOMINATE CORRECTION CLAIMS   P17 (before P17g)     BUILT;
+     *(Danny, 2026-08-18 — verbatim; P1 AUTHORITY                          live
+     VIOLATION, not a routing inconvenience)*.                              canary
+     A scan-bound turn cannot be claimed by                                 OWED
+     implicit correction, ratio correction or legacy
+     mutation before the bound predicate runs.
+       PRODUCTION (turn ios:D3B7757E, 21:01, the
+       DIRECT canary): scan acquired exact snapshot
+       (product_acquired code=70004199 snapshot=1 at
+       21:01:04) -> correction route discarded binding
+       (interpreter emitted update_food_entry(3030,
+       "4 bar") against the legacy Barebells row on the
+       board) -> heuristic ratio mutation committed
+       (correction_apply route=ratio ratio=2.000
+       cal=800.0) -> bound predicate NEVER RAN (no
+       settlement_route line). Every scan-binding check
+       keyed on log_food; the update op fell through
+       the native stage to the legacy executor. CF4
+       and CF5 broken in one turn. The two-turn canary
+       56 s later on the SAME product REFUSED the same
+       heuristic (BoundUnpriceable) — the invariant
+       works; a shape in front of it did not carry it.
+       REQUIRED ARCHITECTURE, at the correction-claim
+       boundary:
+         if turn carries SCANNED_PRODUCT_EVIDENCE:
+             implicit correction eligibility = false
+             ratio correction eligibility = false
+             preserve snapshot
+             continue through fresh bound-item planning
+       A scan attachment means a NEW exact-product
+       report. It must not mutate an old row merely
+       because that product already appears on the
+       board. Defence in depth inside correction
+       execution: scan-bound turn reaches
+       correction_application -> typed invariant
+       failure -> zero mutation -> never silently
+       discard snapshot. The executor guard is not the
+       primary router; it prevents another 800-calorie
+       commit if upstream classification regresses.
+       PREREGISTERED PROOF: EXISTING row 3030 =
+       Barebells 400 cal; TURN scan 70004199 -> "2
+       servings of Barebells"; REQUIRE row 3030
+       byte-identical · zero correction event · zero
+       ratio route · settlement_route = Supported ·
+       new row committed · product_evidence_id =
+       acquired snapshot · resolved 110 g · ~220 cal ·
+       pricing_rung = product · zero MEMORY · zero
+       legacy. TWINS: remove scan exclusion from
+       correction claim -> RED · remove executor
+       invariant -> adversarial misroute commits
+       nothing · same food already on board must not
+       change the result · scan + unsupported "2 bars"
+       -> BoundUnpriceable + CF9 ASK, not correction.
+       Do not weaken ratio correction globally: the
+       defect is narrower and stronger — IMPLICIT
+       CORRECTION CANNOT OUTRANK EXPLICIT SCAN BINDING.
+       Scope (Danny): exact scan binding exists · plan
+       contains exactly one food update · no explicit,
+       separately addressed correction · unbound
+       updates byte-identical. Scanning-to-correct, if
+       ever supported, is a distinct explicit
+       interaction with a named target — never
+       inferred from ordinary scanner attachment.
+       BUILT (this commit): planner lift
+       `_lift_bound_correction_to_log` (identity from
+       the exact snapshot via `_name_from_snapshot`,
+       quantity from the user's LITERAL message — "2
+       servings", never the planner's "4 bar" total) ·
+       native backstop `ScanBoundNotLegacy` before the
+       legacy claim, keyed on the BINDING not the
+       attachment (a multi-food scan turn binds nothing
+       by design) · `ScanBoundCorrectionRefused` in all
+       three correction_application arms · answered in
+       words at the entrypoint's refusal seam. Proof:
+       tests/test_scan_binding_dominates_correction_
+       claims.py — every mutation seen RED (A: 3 twins ·
+       B: 1 · C: 1 · D multi-item: 1). P17g remains
+       blocked; the two-turn canary stays valid; the
+       DIRECT canary must be RERUN after deploy and
+       must create a NEW bound row while the prior rows
+       remain untouched.
 CF6  LANE PROMOTION RULE (learned from 3 canaries):  every future lane     RULE
      a proven CONSUMER (stage) is unreachable if the
      PRODUCER (planner) or RENDERER in front of it
@@ -507,17 +588,33 @@ ROLLOUT                                FROZEN — user 26 only
     Bound refusal                         ✅  (label-terms; non-mutating)
     Unit-evidence hierarchy (P17-UA A/B)  ✅  (70004199 negative preserved)
     CF9 bound ASK continuity (slice C)    ✅  built + 29 proofs; live ⏳
-    Bound production settlement           ❌  ZERO bound rows — the gate
-    Clarification preserves binding LIVE  ❌  two-turn canary owed
-    P17g                                  ⛔  BLOCKED on both canaries
+    Bound production settlement           🟡  FIRST BOUND ROW IN PROD: 3031
+                                              (two-turn canary, 21:02:29,
+                                              rung=product, snapshot 1,
+                                              off:70004199) — but 1 serving
+                                              tapped for 2 eaten (ask copy
+                                              defect, fixed this commit)
+    Clarification preserves binding LIVE  ✅  two-turn canary PASSED (op 87
+                                              held snapshot 1; chip settled
+                                              bound; no legacy, no MEMORY)
+    DIRECT canary                         ❌  FAILED — MISROUTED (CF5b): the
+                                              bound turn became a ratio
+                                              correction of legacy row 3030
+                                              (400 -> 800). Fix built; RERUN
+                                              after deploy
+    P17g                                  ⛔  BLOCKED on the direct canary
     CF10 / P17-UE                         ◻  registered; begins after remeasure
 
 ⭐ SEQUENCE FROM HERE *(Danny, 2026-08-18 — verbatim)*:
     P17-UA A/B  ✅
     -> CF9 slice C  ✅ (pushed 7187742)
-    -> direct canary (scan -> "2 servings of Barebells" -> bound row)   ⏳
     -> two-turn canary (scan -> "2 bars" -> ASK -> "2 servings" -> bound
-       row on the SAME held snapshot)                                  ⏳
+       row on the SAME held snapshot)                                  ✅ 3031
+    -> CF5b (scan binding dominates correction claims) built + proven  ✅ (this
+       — the direct canary's failure class; ask copy names the unknown,      commit)
+       chips lead with the label's unit ([110 g — 2 servings])
+    -> DEPLOY, then RERUN the direct canary (scan -> "2 servings of
+       Barebells" -> a NEW bound row; 3030/3031 untouched)              ⏳
     -> P17g / P17h                                                     ⛔
     -> frozen 232-meal remeasure (both predicate commits published)    ⏳
     -> P17-UE unit-evidence completion (CF10)                          ◻

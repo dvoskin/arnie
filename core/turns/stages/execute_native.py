@@ -74,9 +74,78 @@ def _correction_input(ops) -> Optional[dict]:
     return inp if inp.get("entry_id") is not None else None
 
 
+def _scan_is_bound() -> bool:
+    try:
+        from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+        return SCANNED_PRODUCT_EVIDENCE.get() is not None
+    except Exception:                                    # noqa: BLE001
+        return False
+
+
+def _scan_declined_to_bind(ops) -> bool:
+    """True when the scan attached to this turn bound NOTHING by design: the
+    turn states several foods and a scan names one product. Mirrors
+    `_bind_scanned_product`'s own rule so the backstop and the binder agree
+    on what "bound" means. A turn with fewer than two food logs — one food,
+    or none (a correction) — is the scanned product's turn."""
+    return len(_food_inputs(ops)) >= 2
+
+
+async def _name_from_snapshot(db, ops) -> None:
+    """CF5b: an item the planner LIFTED from an implicit correction carries a
+    placeholder name (the board row's). Replace it with the scanned
+    snapshot's own product_name — a LOCAL read of the persisted record, no
+    network — so the row is named and priced from one exact identity.
+    Mutates the op's OWN input (the source every downstream copy is made
+    from). A snapshot with no name leaves the placeholder; failure leaves it
+    too: naming is enrichment of the item, never a gate on it."""
+    try:
+        from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+        snapshot_id = SCANNED_PRODUCT_EVIDENCE.get()
+    except Exception:                                    # noqa: BLE001
+        return
+    if snapshot_id is None:
+        return
+    for op in ops or ():
+        inp = (op or {}).get("input") if isinstance(op, dict) else None
+        if not (isinstance(inp, dict) and op.get("name") == "log_food"
+                and inp.get("_scan_lifted")):
+            continue
+        try:
+            from db.models import ProductEvidenceRecord
+            row = await db.get(ProductEvidenceRecord, int(snapshot_id))
+            name = str(getattr(row, "product_name", "") or "").strip()
+            brand = str(getattr(row, "brands", "") or "").strip()
+            if name:
+                if brand and brand.lower() not in name.lower():
+                    name = f"{brand} {name}"
+                logger.info("event=scan_lift_named_from_snapshot snapshot=%s "
+                            "from=%r to=%r", snapshot_id, inp.get("food_name"),
+                            name)
+                inp["food_name"] = name
+        except Exception:                                # noqa: BLE001
+            logger.warning("scan lift: snapshot name unreadable", exc_info=True)
+
+
 class ExactlyOnceRefusal(RuntimeError):
     """The turn was already executed. Not an error the user should see — the
     renderer replays the prior answer."""
+
+
+class ScanBoundNotLegacy(Exception):
+    """CF5b: a scan-bound turn was about to reach the legacy executor. Raised
+    BEFORE the legacy claim and before any write — non-mutating by
+    construction. The entrypoint answers it in words (no legacy, no raise to
+    the user); it is a `CorrectionRefused` sibling in behaviour, typed apart
+    so the copy can say what happened: the scanned product was read as a
+    change to another entry."""
+
+    def __init__(self, turn_id: str, op_names):
+        self.turn_id = turn_id
+        self.op_names = tuple(op_names or ())
+        super().__init__(
+            f"scan-bound turn {turn_id} would reach the legacy executor "
+            f"(ops={list(self.op_names)}) — refused, nothing written")
 
 
 class NativeExecutionStage:
@@ -286,6 +355,30 @@ class NativeExecutionStage:
             LAST_EXECUTION.set(view)
             return view
 
+        # ⛔⛔ CF5b BACKSTOP — A SCAN-BOUND TURN NEVER REACHES THE LEGACY
+        # EXECUTOR *(Danny, 2026-08-18)*. Production turn ios:D3B7757E: the
+        # scan bound (product_acquired 21:01:04), the planner emitted an
+        # implicit ratio correction of a legacy row, no branch above claimed
+        # it, and it fell through HERE to `execute_tool_calls`, whose portion
+        # arm scaled an exact label by a heuristic bar-mass (800 kcal). The
+        # planner-side lift (`_lift_bound_correction_to_log`) is the primary
+        # router and makes this unreachable in normal operation; this line
+        # is defence in depth so an upstream misclassification commits
+        # NOTHING: zero mutation, zero legacy, a typed refusal the entrypoint
+        # answers in user-grade words (`canonical_refusal_answered`), never
+        # the failure floor. A8: no handler here — it PROPAGATES.
+        #
+        # ⚠ KEYED ON THE BINDING, NOT THE ATTACHMENT. A scan names ONE product:
+        # a multi-food turn ("a bar and some soup") binds nothing by design
+        # (`scan_binding_skipped`) and legitimately takes the general path,
+        # unbound — the negative twin `test_a_multi_item_scan_turn_binds_
+        # nothing_and_takes_the_general_path` holds it. Every OTHER shape
+        # under a scan (one food; or no food at all, i.e. the correction that
+        # motivated this) is the scanned product's turn and stays canonical.
+        if _scan_is_bound() and not _scan_declined_to_bind(ops):
+            raise ScanBoundNotLegacy(request.turn_id, [
+                str((op or {}).get("name") or "") for op in ops])
+
         # LEGACY ONLY FROM HERE. The ProcessedTurn claim belongs to the lane
         # that has no claim of its own.
         if not await self._claim(db, user, request, ops):
@@ -317,6 +410,14 @@ class NativeExecutionStage:
 
         if not settlement_cohort(getattr(user, "id", None)):
             return None
+        # ⭐ CF5b — a lifted item is NAMED FROM THE SNAPSHOT before the
+        # predicate reads it: identity from the exact scanned product, not
+        # from the board row the interpreter had picked to mutate. Applied to
+        # the OPS' own inputs — `_food_inputs` COPIES, and settlement builds
+        # its items from the ops again, so a name set on this route's copy
+        # would never reach the row (found on review; the proof now asserts
+        # the snapshot's exact name on the committed row).
+        await _name_from_snapshot(db, ops)
         calls = _bind_scanned_product(_food_inputs(ops))
         if not calls or len(calls) != len(ops):
             return None
