@@ -90,6 +90,10 @@ class FoodPlanStage:
         await stamp_canonical_identity(
             out, meta.get("db"),
             user_id=getattr(meta.get("user"), "id", None))
+        if isinstance(out, dict):
+            # the user's words, for the bound-scan unit restoration; not a
+            # field the interpreter produces, so it cannot be spoofed by one
+            out = {**out, "_message": request.text or ""}
         return plan_from_interpretation(out)
 
 
@@ -377,6 +381,57 @@ def _scan_is_bound() -> bool:
         return False
 
 
+#: The label's own quantity vocabulary — the two things a manufacturer panel
+#: states without a product noun: its serving, and mass.
+_LABEL_UNIT_RE = __import__("re").compile(
+    r"(?<![\w.])((?:\d+(?:\.\d+)?|a|an|one|two|three|four|five|six|half(?: a| an)?)\s*"
+    r"(servings?|g|grams?|oz|ounces?)|(?:half(?: a| an)?|a|an|one)\s+serving)\b",
+    __import__("re").I)
+_WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
+
+
+def _restore_user_stated_unit(call: dict, message: str) -> None:
+    """⛔ THE USER'S STATED UNIT OUTRANKS THE INTERPRETER'S REWRITE — for a
+    scan-bound item, and only against the LABEL'S OWN vocabulary.
+
+    P17 live canary #3 (2026-08-18): the user typed "2 servings of the
+    Barebells"; the interpreter's item said unit="bar" (it treats bar and
+    serving as synonyms for this product); the bound predicate saw "2 bar",
+    could not price it from a label that names no bar, and asked "how many
+    servings?" about a message that had SAID servings. P17 precedence puts a
+    user-stated quantity FIRST; an interpreter normalisation is not the user.
+
+    Narrow by construction: only when a scan is bound, only when the user's
+    text literally states the label's units (serving(s) / grams / oz), and
+    only to REPLACE the op's quantity with what they typed. "2 barebells
+    bars" is untouched and still asks. Nothing here guesses a mass or a
+    noun."""
+    if not isinstance(call, dict) or call.get("name") != "log_food":
+        return
+    inp = call.get("input") or {}
+    m = _LABEL_UNIT_RE.search(message or "")
+    if not m:
+        return
+    phrase = m.group(0).strip().lower()
+    stated_unit = (m.group(2) or "serving").lower()
+    unit = "serving" if stated_unit.startswith("serving") else stated_unit
+    current = str(inp.get("quantity") or "").lower()
+    if unit == "serving" and "serving" in current:
+        return
+    if unit != "serving" and current.split()[-1:] == [unit]:
+        return
+    # the amount, as the user said it
+    head = phrase.split()[0]
+    if head.startswith("half"):
+        amount = "0.5"
+    else:
+        amount = str(_WORDS.get(head, head))
+    inp["quantity"] = f"{amount} {unit}"
+    inp["quantity_provenance"] = "user_stated"
+    logger.info("event=scan_user_unit_restored from=%r to=%r message=%r",
+                current, inp["quantity"], message)
+
+
 def _scan_answers_the_identity(out) -> bool:
     """True when a scan is bound to this turn, the interpreter staged exactly
     ONE item, and every ambiguity it reported is identity-class."""
@@ -425,6 +480,7 @@ def plan_from_interpretation(out) -> TurnPlan:
         items = [it for it in (out.get("items") or []) if isinstance(it, dict)]
         call = _log_call(items[0]) if items else None
         if call is not None:
+            _restore_user_stated_unit(call, out.get("_message") or "")
             logger.info("event=scan_answers_identity item=%r ambiguities=%s",
                         items[0].get("food"),
                         [a.get("field") for a in (out.get("ambiguities") or [])])
@@ -446,8 +502,11 @@ def plan_from_interpretation(out) -> TurnPlan:
                              else "ask"),
             ambiguities=(out,),
             planner_version=FOOD_PLANNER_VERSION)
+    ops = tuple(out.get("tool_calls") or ())
+    if _scan_is_bound() and len(ops) == 1:
+        _restore_user_stated_unit(ops[0], out.get("_message") or "")
     return TurnPlan(
-        operations=tuple(out.get("tool_calls") or ()),
+        operations=ops,
         response_intent=action or "",
         ambiguities=(),
         narration_hint=str(out.get("say") or ""),

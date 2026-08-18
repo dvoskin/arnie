@@ -441,3 +441,36 @@ async def test_a_bound_scan_is_not_an_answer_to_an_open_question(db, make_user, 
     # unbound: the prior travels
     await FoodPlanStage(interpreter=spy).run(req)
     assert seen[-1] == stale_prior
+
+
+@pytest.mark.asyncio
+async def test_the_users_stated_serving_outranks_the_interpreters_bar(db, make_user, monkeypatch):
+    """LIVE CANARY #3 (19:33): the user typed "2 servings of the Barebells";
+    the interpreter's item said unit=bar; the bound predicate saw "2 bar" and
+    asked "how many servings?" about a message that had SAID servings. For a
+    scan-bound item the user's stated LABEL unit wins over the interpreter's
+    rewrite (P17 precedence class 1): the turn settles bound at 2 x 55 g.
+    "2 barebells bars" is untouched and still asks."""
+    from db.models import FoodEntry
+    from sqlalchemy import select
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    # the interpreter's op, verbatim shape: unit rewritten to "bar"
+    ops = [{"name": "log_food", "input": {"food_name": "Barebells Protein Bar",
+                                          "quantity": "2 bar", "calories": 400.0, "protein": 40.0}}]
+    execution, response = await _native(db, user, log, "2 servings of the Barebells", snap.id, ops, monkeypatch)
+    assert execution.calls[0].committed, execution.calls[0]
+    row = (await db.execute(select(FoodEntry).order_by(FoodEntry.id.desc()))).scalars().first()
+    assert row.product_evidence_id == snap.id and row.pricing_rung == "product"
+    assert row.quantity == "2 serving" and row.resolved_grams == pytest.approx(110.0)
+    assert row.calories == pytest.approx(220.0)                     # the label, not 400
+
+    # the same rewrite with the user's OWN word being "bars" stays a refusal
+    execution2, response2 = await _native(db, user, log, "2 barebells bars", snap.id,
+                                          [{"name": "log_food", "input": {"food_name": "Barebells Protein Bar",
+                                                                          "quantity": "2 bar", "calories": 400.0}}],
+                                          monkeypatch)
+    assert not execution2.calls[0].committed
+    assert "55 g serving" in " ".join(response2.bubbles)

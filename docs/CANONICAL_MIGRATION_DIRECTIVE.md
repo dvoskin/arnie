@@ -425,6 +425,15 @@ CF8  LEGACY NARRATOR CLAIMS ACTIONS IT DID NOT TAKE:  legacy (not this      OPEN
      pending ask with a log_date stays open until
      the NEXT day and hijacks every same-food message
      as an "answer".
+CF9  A BOUND REFUSAL IS A DEAD-END WITHOUT THE ASK    P17 (before P17g)     OPEN
+     ARM: the scan chip is consumed by the message it
+     rides; the user's answer to "how many servings?"
+     arrives unbound -> legacy -> a guess row. Fix =
+     BoundUnpriceable opens a pending quantity
+     operation that HOLDS the snapshot (B-1 machinery
+     with a product-bound item), so the answer settles
+     bound. Preregistered by Danny as "ASK / REFUSE";
+     REFUSE shipped first, ASK is owed.
 CF7  TEST_POSTGRES_URL FORM: the shared PG harness   tooling               RULE
      needs postgresql+psycopg://...; +asyncpg
      yields 174 connect() errors. Full-suite recipe:
@@ -1578,7 +1587,49 @@ P17-LC2  ⛔→🔧 LIVE CANARY #2 *(2026-08-18, e7da0da live, build 386)* —
          narrator claims actions it did not take (see CF8).
          CANARY #3 (after deploy): scan -> "2 servings of the barebells"
          -> bound settle; scan -> "2 barebell bars" -> label-terms ask.
-P17g     ◻ eligibility predicate LAST — waits on canary #3 clean
+P17-LC3  ⛔→🔧 LIVE CANARY #3 *(2026-08-18, 897b7da live)* — THE BOUND
+         PATH FIRED ON BOTH SCAN TURNS (single metric row each, no legacy,
+         the label-terms ask rendered) — and the ask was about "2 bar" for
+         a message that SAID "2 servings of the Barebells": the interpreter
+         rewrote the user's unit (item unit=bar; it treats bar and serving
+         as synonyms for this product), so the honest quantity never
+         reached the predicate. FIX (narrow, deterministic): for a scan-
+         bound single item, the user's STATED label unit (serving(s) /
+         grams / oz, literally in their text) outranks the interpreter's
+         rewrite — P17 precedence class 1 over a normalisation. "2 barebells
+         bars" is untouched and still asks. Proof: the 19:33 op shape
+         (unit=bar) + the user's sentence -> settles bound at 110 g.
+         ⚠ THE REMAINING DEAD-END, REGISTERED (CF9): the chip is spent by
+         the message it rides, so the ANSWER to a bound refusal ("2
+         servings") arrives UNBOUND and goes to legacy (turns 9291, 9293:
+         legacy asked flavor, then logged a 400-cal guess row 3030). The
+         REFUSE arm proved the invariants; the ASK arm Danny specified is
+         what makes it usable: BoundUnpriceable should open a pending
+         quantity operation that HOLDS the snapshot so the answer settles
+         bound. B-1's machinery with a product-bound item — its own
+         tranche, before P17g widens anything.
+         CANARY #4 (after deploy): scan -> "2 servings of the barebells" ->
+         bound settle, row product_evidence_id == snapshot 1, resolved_grams
+         110, conversion off:70004199, calories 220 (not 400).
+         ⛔ GATE STATUS, STATED PLAINLY *(Danny asked)*: NOT CLEARED. Proven
+         live are INVARIANTS (transport, bound decision, no memory read, no
+         legacy on a bound turn, non-mutating refusal, refusal rendered).
+         The preregistered OUTCOME — a bound settle with product_evidence_id
+         on the row — has NOT happened: zero bound rows exist; every attempt
+         reached the predicate as "2 bar", and this label names no bar. The
+         refusal is CORRECT under the frozen rules (CF4 / P17-SA: "a bar is
+         one serving" is not a fact this record states) — which means the
+         canonical lane cannot settle the most natural post-scan phrase from
+         OFF's data shape; it can only ask. Danny's decision, on the record:
+           1. accept the ask for foreign nouns (honest) -> needs the unit
+              fix (this commit) + CF9 (the ASK arm holding the snapshot)
+           2. additive mechanical single-serve rule when the provider
+              states product_quantity == serving_quantity (not on this
+              record; helps records that state it)
+           3. nothing else is honest — mapping "bar" -> serving without a
+              stated fact is the frozen invariant.
+         P17g stays blocked until a bound settle exists in production.
+P17g     ◻ eligibility predicate LAST — waits on canary #4 clean + CF9
 P17h     ◻ mutation + positive twins
 ```
 
