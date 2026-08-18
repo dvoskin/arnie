@@ -463,6 +463,18 @@ class CandidateSource(str, Enum):
 
 #: Bumped when a patch's stored shape changes in a way older code would
 #: misread. Read on load and failed closed, never guessed at.
+#:
+#: ⚠ NOT BUMPED FOR B-1.8c2.1, AND THE REASON IS ON RECORD. SelectProductVariant
+#: gained `product_evidence_id` (its own type-level `SCHEMA_VERSION` = 2 below
+#: says so). This GLOBAL number rides the WIRE on every patch of every kind —
+#: the B-1.9 golden fixture is "the artefact Swift is built against", and it
+#: pins schema_version=1 on set_quantity options the client already receives.
+#: Bumping here would have changed the wire for a type that did not change.
+#: Proven before deciding: ZERO persisted select_product_variant patches in
+#: production across every payload-carrying table (there was no producer), so
+#: the changed type has no stored instances to migrate; a v1-shaped payload
+#: (product_evidence_id absent -> 0) parses as UNBOUND and may never enter
+#: bound pricing.
 PATCH_SCHEMA_VERSION = 1
 
 
@@ -612,19 +624,40 @@ class SelectEntity(SemanticPatch):
 
 @dataclass(frozen=True)
 class SelectProductVariant(SemanticPatch):
-    """Which catalog product/serving — stable ids, e.g. off:3017620422003."""
+    """Which catalog product/serving — stable ids, e.g. off:3017620422003.
+
+    ⛔ THE THREE IDS, AND WHAT EACH MEANS *(B-1.8c2.1, Danny)*:
+        entity_id            WHAT product was selected
+        product_evidence_id  WHICH immutable observation justified it
+        serving_id           WHICH serving, if applicable
+    Written TOGETHER when the option is generated from an exact candidate.
+    The answer path binds `product_evidence_id` — it never resolves
+    `entity_id` and then looks up the "latest" snapshot, which would settle
+    evidence the user never saw. 0 means "no snapshot bound", which the
+    correction machinery treats as NOT an exact selection.
+    """
     entity_id: str = ""
     serving_id: str = ""
+    product_evidence_id: int = 0
 
     patch_type: ClassVar[str] = "select_product_variant"
+    #: THIS TYPE's shape version — bumped when THIS payload changes, so the
+    #: global PATCH_SCHEMA_VERSION (which rides every patch's wire) does not
+    #: have to move for a type Swift never receives yet. 2 = carries
+    #: product_evidence_id. A payload without it parses as 0 = UNBOUND.
+    SCHEMA_VERSION: ClassVar[int] = 2
 
     def __post_init__(self):
         super().__post_init__()
         if not self.entity_id:
             raise ValueError("SelectProductVariant needs the product's id")
+        object.__setattr__(self, "product_evidence_id",
+                           int(self.product_evidence_id or 0))
 
     def _value_payload(self) -> dict:
-        return {"entity_id": self.entity_id, "serving_id": self.serving_id}
+        return {"entity_id": self.entity_id, "serving_id": self.serving_id,
+                "product_evidence_id": self.product_evidence_id,
+                "type_schema_version": self.SCHEMA_VERSION}
 
     @classmethod
     def _from_values(cls, data: dict) -> "SelectProductVariant":
@@ -633,7 +666,8 @@ class SelectProductVariant(SemanticPatch):
                    provenance=Provenance(data.get("provenance")
                                          or Provenance.UNKNOWN),
                    entity_id=data.get("entity_id") or "",
-                   serving_id=data.get("serving_id") or "")
+                   serving_id=data.get("serving_id") or "",
+                   product_evidence_id=int(data.get("product_evidence_id") or 0))
 
 
 @dataclass(frozen=True)
@@ -2763,6 +2797,78 @@ class EstimateEvidence:
                                     for x in d.get("considered", ())))
 
 
+@dataclass(frozen=True)
+class ExactProductCandidate:
+    """ONE EXACT PRODUCT, AS AN IMMUTABLE OBSERVATION *(B-1.8c2.1)*.
+
+    ⛔⛔ NOT `skills.nutrition.candidate_sets.ProductCandidate`. That class is a
+    SEARCH-RESULT shape — identity_score, brand_score, match_grade, "generated
+    from raw search results" per its own docstring — the fuzzy OFF layer that
+    §P17-SA forbids from ever constructing PRODUCT. It has no snapshot binding
+    because it was never exact. THIS class has no scores at all: it names one
+    persisted `product_evidence` snapshot and the identity that snapshot is
+    about, and that is the whole claim.
+
+    ⛔ THE THREE IDS ARE WRITTEN TOGETHER, ONCE, AT GENERATION *(Danny)*:
+        entity_id             WHAT product was selected     (off:<code>)
+        product_evidence_id   WHICH immutable observation justified it
+        serving_id            WHICH serving, if applicable
+    An answer path that resolved entity_id and then looked up the "latest"
+    snapshot would settle evidence the user never saw. The candidate IS the
+    snapshot reference; there is nothing to look up.
+    """
+    candidate_id: str
+    entity_id: str
+    product_evidence_id: int
+    label: str = ""
+    serving_id: str = ""
+    semantic_hash: str = ""
+
+    def __post_init__(self):
+        if not self.candidate_id:
+            raise ValueError("an exact product candidate needs a candidate_id")
+        if not str(self.entity_id or "").strip():
+            raise ValueError("an exact product candidate needs the product's "
+                             "entity_id — the WHAT")
+        try:
+            pev = int(self.product_evidence_id)
+        except (TypeError, ValueError):
+            pev = 0
+        if pev <= 0:
+            raise ValueError(
+                "an exact product candidate needs a persisted "
+                "product_evidence_id — the WHICH observation. A candidate "
+                "without one is a search result, and search results may not "
+                "enter the exact universe")
+        object.__setattr__(self, "product_evidence_id", pev)
+        if not self.semantic_hash:
+            import hashlib as _hashlib
+            object.__setattr__(
+                self, "semantic_hash",
+                _hashlib.sha256(f"{self.entity_id}|{pev}|{self.serving_id}"
+                                .encode()).hexdigest()[:16])
+
+    def to_payload(self) -> dict:
+        return {"candidate_id": self.candidate_id, "entity_id": self.entity_id,
+                "product_evidence_id": self.product_evidence_id,
+                "label": self.label, "serving_id": self.serving_id,
+                "semantic_hash": self.semantic_hash}
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "ExactProductCandidate":
+        return cls(candidate_id=d.get("candidate_id") or "",
+                   entity_id=d.get("entity_id") or "",
+                   product_evidence_id=d.get("product_evidence_id") or 0,
+                   label=d.get("label") or "",
+                   serving_id=d.get("serving_id") or "",
+                   semantic_hash=d.get("semantic_hash") or "")
+
+
+#: The discriminator. A CandidateSet holds ONE kind, declared.
+CANDIDATE_KINDS = {"quantity": QuantityCandidate,
+                   "product": ExactProductCandidate}
+
+
 @dataclass(frozen=True, kw_only=True)
 class CandidateSet:
     """EVERY candidate generated, not the handful that survived.
@@ -2802,6 +2908,13 @@ class CandidateSet:
     #: Inputs that could not form a candidate. Diagnostics, NOT universe
     #: members — see `CandidateGenerationRejection`.
     rejections: tuple = ()
+    #: THE DISCRIMINATOR *(B-1.8c2.1)*. "quantity" (the only kind that existed
+    #: before) or "product". Every candidate in the set must be of the
+    #: declared kind — a PRODUCT_VARIANT field is structurally incapable of
+    #: holding QuantityCandidates and vice versa. Never a mixed set. The
+    #: quantity lock below caught a real boundary; this REPLACES it with an
+    #: explicit model rather than weakening it into list[Any].
+    candidate_kind: str = "quantity"
 
     def __post_init__(self):
         # TUPLES, copied. A caller keeping the list it passed in could
@@ -2810,7 +2923,11 @@ class CandidateSet:
         object.__setattr__(self, "rejections", tuple(self.rejections or ()))
         object.__setattr__(self, "interaction_revision",
                            int(self.interaction_revision))
-        for name, want in (("candidates", QuantityCandidate),
+        if self.candidate_kind not in CANDIDATE_KINDS:
+            raise ValueError(
+                f"candidate_kind {self.candidate_kind!r} is not one of "
+                f"{sorted(CANDIDATE_KINDS)} — a set declares ONE kind")
+        for name, want in (("candidates", CANDIDATE_KINDS[self.candidate_kind]),
                            ("rejections", CandidateGenerationRejection)):
             bad = [type(x).__name__ for x in getattr(self, name)
                    if not isinstance(x, want)]
@@ -2864,6 +2981,22 @@ class CandidateSet:
             raise ValueError(
                 f"the set is filed for user {self.user_id} but its context is "
                 f"about user {self.context.user_id}")
+        # ⭐ B-1.8c2.1 — THE SUBJECT INVARIANT IS KIND-AWARE. A QUANTITY set is
+        # about ONE food, and every candidate must be about it. A PRODUCT set
+        # is a set of DIFFERENT exact products offered as alternatives — that
+        # is its whole meaning — so "every member is about the set's entity"
+        # would refuse the only sets the field can have. Its invariant is
+        # instead that every member names a persisted snapshot (enforced at
+        # candidate construction) and that the set declares its kind.
+        if self.candidate_kind == "product":
+            for c in self.candidates:
+                if not str(c.entity_id or "").startswith("off:") \
+                        and ":" not in str(c.entity_id or ""):
+                    raise ValueError(
+                        f"exact product candidate {c.candidate_id!r} names "
+                        f"{c.entity_id!r}, not a namespaced exact id — a bare "
+                        f"name is not a product identity")
+            return
         entity = self.context.canonical_entity_id or ""
         for c in self.candidates:
             if c.canonical_entity_id != entity:

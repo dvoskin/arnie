@@ -232,10 +232,27 @@ def register(spec: FieldSpec) -> FieldSpec:
             f"PATCH_TYPES — an answer that cannot be stored as a typed patch "
             f"is an answer recovered later by sniffing which keys are present")
 
+    # ⭐ B-1.8c2.1 — WHERE AN ENUMERATED FIELD'S ANSWERS COME FROM is a
+    # contract, not a special case *(Danny)*. `Evidence` says WHEN a field may
+    # be offered; it does not say where its answers live — ADDED_FAT_IDENTITY
+    # is GENERATED-offered with an ontology-shaped answer set, and that is
+    # legitimate. So the rule is on the VOCABULARY, and it is two-sided:
+    #     static vocabulary          -> the answers are known before any turn
+    #                                   (preparation, the added-fat trio)
+    #     NO static vocabulary       -> the answers ARE the persisted candidate
+    #                                   universe for THIS operation, and the
+    #                                   spec must say how membership is
+    #                                   checked (`supported_vocabulary` names
+    #                                   the universe reader). A syntactic
+    #                                   grammar in `vocabulary` would be a LIE
+    #                                   about what answers exist — off:999...
+    #                                   would look valid though never offered
     if spec.value_space is ValueSpace.ENUMERATED and not spec.vocabulary:
-        raise ContractViolation(
-            f"{key} is enumerated and declares no vocabulary — 'the answers "
-            f"are whatever a producer emits' is not a value space")
+        if spec.supported_vocabulary is None:
+            raise ContractViolation(
+                f"{key} is enumerated and declares neither a static vocabulary "
+                f"nor a persisted-universe membership check — 'the answers are "
+                f"whatever a producer emits' is not a value space")
 
     if spec.activation is Activation.CONDITIONAL and spec.active_when is None:
         raise ContractViolation(
@@ -306,6 +323,11 @@ def _check_the_domain_can_consume(spec: FieldSpec) -> None:
     one domain's private detail.
     """
     if spec.value_space is not ValueSpace.ENUMERATED:
+        return
+    if not spec.vocabulary:
+        # No static vocabulary: the answers are the persisted universe and the
+        # domain acts on exactly those, checked at answer time by the reader
+        # `supported_vocabulary` names. Nothing static to compare here.
         return
     if spec.supported_vocabulary is None:
         raise ContractViolation(

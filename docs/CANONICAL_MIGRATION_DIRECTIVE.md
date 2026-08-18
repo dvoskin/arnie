@@ -750,6 +750,29 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                                  ✅ serialized concurrent correction*
                                  ✅ exact undo/replay*
                                  ✅ stale metadata cleared*
+                       B-1.8c2.1 ✅ the persisted exact candidate universe:
+                                 ExactProductCandidate (NOT the fuzzy search-
+                                 result ProductCandidate — different epistemic
+                                 states, never to be merged) · discriminated
+                                 CandidateSet(candidate_kind) · rode the
+                                 candidate_kind column that already existed ·
+                                 SelectProductVariant carries the three ids ·
+                                 PRODUCT_VARIANT registered · reopening
+                                 producer that REFUSES without a persisted set
+                                 · verify-not-trust binding check
+                                 REGISTRY CONTRACT SHARPENED: Evidence = WHEN
+                                 answers may be offered; Vocabulary = WHERE
+                                 valid answers come from. Static vocabulary
+                                 -> known before the turn; none -> the
+                                 persisted universe + a declared membership
+                                 reader. Added-fat stays GENERATED+static.
+                                 SCHEMA: PATCH_SCHEMA_VERSION NOT bumped — it
+                                 rides the WIRE on every patch and the B-1.9
+                                 golden pins it for Swift; the changed type
+                                 carries its own SCHEMA_VERSION=2 instead.
+                                 Zero persisted select_product_variant patches
+                                 in production, proven. A v1-shaped payload
+                                 (evidence id 0) is UNBOUND, never weakly bound.
                        B-1.8c2   ⏳ PRODUCER-BOUND SEMANTIC REPAIR — the ONE
                                  remaining capability (#6 and #7 collapsed):
                                    -> a producer emits typed

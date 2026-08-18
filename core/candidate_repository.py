@@ -129,7 +129,12 @@ async def ensure_candidate_set(db, universe, *, domain: str = "food") -> str:
     for position, cand in enumerate(universe.candidates):
         db.add(CandidateRow(
             candidate_set_id=set_id, candidate_id=cand.candidate_id,
-            candidate_kind="quantity", position=position,
+            # ⭐ B-1.8c2.1 — THE DECLARED KIND, not a hard-coded "quantity".
+            # The column existed with that default all along; only the model
+            # was locked. A product set persists as candidate_kind="product",
+            # and hydration below dispatches on it.
+            candidate_kind=getattr(universe, "candidate_kind", "quantity"),
+            position=position,
             semantic_hash=cand.semantic_hash,
             # THE PAYLOAD CARRIES NO EVIDENCE. `candidate_evidence_records` is
             # the sole durable authority for it — two copies meant replay
@@ -141,7 +146,10 @@ async def ensure_candidate_set(db, universe, *, domain: str = "food") -> str:
     await db.flush()
 
     for cand in universe.candidates:
-        for index, ev in enumerate(cand.evidence):
+        # An exact product candidate carries no evidence TUPLE: its evidence
+        # IS the persisted snapshot it names (product_evidence_id, FK RESTRICT
+        # from the receipt). Nothing to record here for it.
+        for index, ev in enumerate(getattr(cand, "evidence", ()) or ()):
             db.add(CandidateEvidenceRow(
                 candidate_set_id=set_id, candidate_id=cand.candidate_id,
                 evidence_index=index, source_type=ev.source_type.value,
@@ -183,6 +191,14 @@ def _assert_same_universe(existing, universe) -> None:
 
 
 def _candidate_payload_without_evidence(cand) -> dict:
+    """The row payload for either kind. A product candidate carries no
+    evidence tuple to strip — its evidence IS the snapshot id it names."""
+    if hasattr(cand, "product_evidence_id"):
+        return cand.to_payload()
+    return _quantity_payload_without_evidence(cand)
+
+
+def _quantity_payload_without_evidence(cand) -> dict:
     payload = cand.to_payload()
     payload.pop("evidence", None)
     return payload
@@ -351,6 +367,76 @@ async def load_by_decision_id(db, decision_id: str, *,
                       decision_id=decision_id)
 
 
+def _kind_of(candidate_rows) -> str:
+    """The set's ONE kind, read from its rows. Mixed rows are a corrupt set and
+    refuse loudly rather than hydrating half of one thing."""
+    kinds = {str(getattr(c, "candidate_kind", "") or "quantity")
+             for c in candidate_rows}
+    if len(kinds) > 1:
+        raise ValueError(f"candidate set holds MIXED kinds {sorted(kinds)} — "
+                         f"a set declares one kind; refusing to hydrate")
+    return kinds.pop() if kinds else "quantity"
+
+
+def _hydrate_candidate(row, by_candidate):
+    from core.semantics import ExactProductCandidate, QuantityCandidate
+    if str(getattr(row, "candidate_kind", "") or "quantity") == "product":
+        return ExactProductCandidate.from_payload(row.payload)
+    return QuantityCandidate.from_payload(
+        {**row.payload, "evidence": by_candidate.get(row.candidate_id, [])})
+
+
+async def load_universe(db, candidate_set_id: str, *, user_id: int):
+    """The persisted CandidateSet ITSELF — no decision, no presented options.
+
+    ⭐ B-1.8c2.1 — THE LOADER THE REOPENING PRODUCER NEEDS, and the one the
+    store never had: `load` returns a DECISION RECORD and yields None when no
+    selection decision exists, because quantity universes are generated,
+    decided and shown in one turn. A product universe is persisted at
+    acquisition and REOPENED later — possibly before any decision, possibly
+    days later for a correction — so it needs a decision-free read.
+
+    `user_id` IS REQUIRED AND CHECKED, exactly as `load`: a set must never
+    become readable merely because someone supplied its id.
+    """
+    from sqlalchemy import select
+
+    from core.semantics import (CandidateGenerationRejection, CandidateSet,
+                                EvidenceContext)
+    from db.models import CandidateEvidenceRow, CandidateRow, CandidateSetRow
+
+    row = (await db.execute(select(CandidateSetRow).where(
+        CandidateSetRow.candidate_set_id == candidate_set_id,
+        CandidateSetRow.user_id == user_id))).scalar_one_or_none()
+    if row is None:
+        return None
+    candidate_rows = (await db.execute(
+        select(CandidateRow)
+        .where(CandidateRow.candidate_set_id == candidate_set_id)
+        .order_by(CandidateRow.position))).scalars().all()
+    evidence_rows = (await db.execute(
+        select(CandidateEvidenceRow)
+        .where(CandidateEvidenceRow.candidate_set_id == candidate_set_id)
+        .order_by(CandidateEvidenceRow.evidence_index))).scalars().all()
+    by_candidate: dict = {}
+    for evidence in evidence_rows:
+        by_candidate.setdefault(evidence.candidate_id, []).append(evidence.payload)
+    return CandidateSet(
+        candidate_set_id=row.candidate_set_id, operation_id=row.operation_id,
+        user_id=row.user_id,
+        context=EvidenceContext(user_id=row.user_id,
+                                canonical_entity_id=row.subject_entity_id or "",
+                                product_variant_id=row.subject_variant_id),
+        interaction_revision=row.interaction_revision, field_id=row.field_id,
+        generator_version=row.generator_version,
+        generation_input_fingerprint=row.generation_input_fingerprint,
+        candidate_kind=_kind_of(candidate_rows),
+        candidates=tuple(_hydrate_candidate(c, by_candidate)
+                         for c in candidate_rows),
+        rejections=tuple(CandidateGenerationRejection.from_payload(r)
+                         for r in (row.rejections or ())))
+
+
 async def load(db, candidate_set_id: str, *, user_id: int,
                decision_id: Optional[str] = None) -> Optional[Any]:
     """Rebuild a `CandidateDecisionRecord` FROM STORAGE. No regeneration.
@@ -414,10 +500,9 @@ async def load(db, candidate_set_id: str, *, user_id: int,
         interaction_revision=row.interaction_revision, field_id=row.field_id,
         generator_version=row.generator_version,
         generation_input_fingerprint=row.generation_input_fingerprint,
+        candidate_kind=_kind_of(candidate_rows),
         candidates=tuple(
-            QuantityCandidate.from_payload(
-                {**c.payload, "evidence": by_candidate.get(c.candidate_id,
-                                                           [])})
+            _hydrate_candidate(c, by_candidate)
             for c in candidate_rows),
         rejections=tuple(CandidateGenerationRejection.from_payload(r)
                          for r in (row.rejections or ())))

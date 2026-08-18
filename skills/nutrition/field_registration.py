@@ -69,6 +69,42 @@ def register_all() -> None:
         unresolved_when=_preparation_unresolved,
         caption="Preparation", order=20))
 
+    # ── B-1.8c2.1: PRODUCT_VARIANT — registered, and GENERATED ─────────
+    #
+    # ⭐ IT WAS NEVER MISSING A PARSER; IT WAS MISSING A PERSISTED EXACT
+    # CANDIDATE UNIVERSE (c2.0 recon). The field exists in the enum and the
+    # typed patch (SelectProductVariant) has been serializable for weeks;
+    # nothing REGISTERED it, so no producer could be asked for it and no
+    # tapped option could carry it. IDENTITY pricing: the answer changes WHICH
+    # PRODUCT we price, and — unlike every other identity field — it BINDS
+    # the evidence universe to one persisted snapshot rather than merely
+    # renaming the food (see canonical_pricing bound pricing).
+    #
+    # GENERATED, and the generation rule is the strictest in this registry:
+    # the producer REOPENS an already-persisted exact universe. It never
+    # assembles one from "similar / same brand / looks related / search
+    # again" — a barcode proves a product, not its siblings — and a
+    # correction with no persisted universe REFUSES rather than synthesizes.
+    #
+    # THE VALUE SPACE, HONESTLY *(Danny)*: ENUMERATED + GENERATED. Its answers
+    # are NOT a static list — they are the persisted exact CandidateSet for
+    # THIS operation, and membership is checked at answer time against that
+    # set. No `vocabulary` is declared, on purpose: a grammar like `off:<gtin>`
+    # would be syntactic validity, not the set of valid answers, and would make
+    # the registry claim off:999... exists though it was never offered.
+    register(FieldSpec(
+        attribute=ClarificationAttribute.PRODUCT_VARIANT,
+        value_space=ValueSpace.ENUMERATED,
+        patch_type="select_product_variant",
+        pricing=Pricing.IDENTITY,
+        evidence=Evidence.GENERATED,
+        # No static vocabulary. THIS names how membership is checked: the
+        # persisted exact universe's members, per operation.
+        supported_vocabulary=lambda: __import__(
+            "skills.nutrition.product_variant_clarification",
+            fromlist=["exact_universe_members"]).exact_universe_members,
+        caption="Which product", order=15))
+
     # ── B-1.6: the first CONDITIONAL pair ────────────────────────────────
     #
     # THE DEPENDENCY IS DATA ON THE SPEC. The alternative — the one this
