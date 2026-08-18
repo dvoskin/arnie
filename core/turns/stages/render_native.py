@@ -106,16 +106,19 @@ def _committed_operations(operations, snapshot) -> list:
 
 
 def _correction_reply(snapshot) -> str:
-    """The reply for a committed canonical correction / restore, from the
-    receipt the correction stage published — never from the plan's numbers.
-    Empty when this turn was not a correction (or nothing committed)."""
+    """The reply for a canonical receipt the execution stage published — a
+    committed correction / restore, OR a canonical REFUSAL (P17 scan/binding:
+    scan-bound but unpriceable) — never from the plan's numbers. A refusal is
+    never narrated as a write: `committed` is False and no snapshot entity
+    names it; it carries its own user-grade copy. Empty when this turn was
+    neither."""
     calls = getattr(getattr(snapshot, "execution", None), "calls", None) or ()
     parts = []
     for c in calls:
-        if not getattr(c, "committed", False):
-            continue
         receipt = getattr(c, "correction", None)
         if not isinstance(receipt, dict) or receipt.get("owner") != "canonical":
+            continue
+        if not (getattr(c, "committed", False) or receipt.get("refusal")):
             continue
         text = str(getattr(c, "result_text", "") or "").strip()
         if text:

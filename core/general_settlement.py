@@ -245,6 +245,17 @@ class Unsupported:
     reason: str
 
 
+@dataclass(frozen=True)
+class BoundUnpriceable(Unsupported):
+    """⛔ CF5 — A SCAN-BOUND ITEM THAT CANNOT BE PRICED AUTHORITATIVELY IS A
+    CANONICAL REFUSAL, NEVER A LEGACY FALLBACK. Nutrition authority is
+    established (the label); quantity authority is not ("2 cups" of a bar).
+    Legacy would estimate — the scan would be inert and the user would never
+    know. The honest answer is ASK / REFUSE, in the label's own units."""
+    unit: str = ""
+    label: str = ""
+
+
 Coverage = Union[Supported, Unsupported]
 
 
@@ -261,6 +272,17 @@ class ItemFacts:
     has_mass: bool
     has_memory: bool
     has_artifact: bool
+    # ── P17 scan/binding (CF5): a SCAN-BOUND item is judged by its snapshot ──
+    #: The item carries a persisted exact ProductEvidence snapshot.
+    product_bound: bool = False
+    #: That snapshot's label scales the stated quantity AUTHORITATIVELY —
+    #: user-stated exact mass, the label's own units, or a sourced conversion.
+    #: A heuristic mass does NOT count (CF4: exact nutrition x estimated mass
+    #: != authoritative settlement).
+    product_scales: bool = False
+    #: Presentation, for the ASK/REFUSE copy: what the label calls one unit.
+    product_unit: str = ""
+    product_label: str = ""
 
 
 async def look(db, *, user_id: int, item: dict) -> ItemFacts:
@@ -309,6 +331,39 @@ async def look(db, *, user_id: int, item: dict) -> ItemFacts:
             logger.warning("coverage: could not normalize %r", quantity_text,
                            exc_info=True)
 
+    # ⭐ P17 SCAN/BINDING — THE SNAPSHOT'S OWN VERDICT, THROUGH THE ONE
+    # RESOLVER. A bound item is judged the way settlement will price it:
+    # `_from_product` declares the label's basis + sourced measures and
+    # `can_scale(authoritative_only=True)` asks whether the stated quantity
+    # meets it WITHOUT a heuristic mass. Same function P17g reads, same
+    # function `price(bound=True)` enforces — one definition of "can this
+    # label price this amount", not three.
+    product_bound = product_scales = False
+    product_unit = product_label = ""
+    pid = item.get("product_evidence_id")
+    if pid:
+        product_bound = True
+        try:
+            from core.canonical_pricing import _from_product
+            from core.canonical_pricing_inputs import _product
+            from skills.nutrition.scaling import can_scale
+            ev = await _product(db, pid)
+            declared = _from_product(ev) if ev is not None else None
+            if declared is not None:
+                _profile, _rung, _eid, _raw, source_basis, measures = declared
+                product_unit = str(getattr(ev, "serving_unit", "") or
+                                   getattr(ev, "package_unit", "") or "")
+                product_label = str(getattr(ev, "identifier", "") or "")
+                if quantity_text and source_basis is not None:
+                    consumed = normalize_quantity(quantity_text, identity)
+                    product_scales = bool(can_scale(
+                        source_basis, consumed, measures,
+                        authoritative_only=True))
+        except Exception:                              # noqa: BLE001
+            # an unreadable snapshot is NOT "scales": bound and unpriceable
+            logger.warning("coverage: product snapshot %s unreadable", pid,
+                           exc_info=True)
+
     return ItemFacts(
         identity=identity, entity=entity, preparation=preparation,
         has_identity=bool(entity),
@@ -317,6 +372,8 @@ async def look(db, *, user_id: int, item: dict) -> ItemFacts:
         has_memory=memory is not None,
         has_artifact=(bool(entity)
                       and evidence_for(entity, preparation) is not None),
+        product_bound=product_bound, product_scales=product_scales,
+        product_unit=product_unit, product_label=product_label,
     )
 
 
@@ -328,6 +385,23 @@ def decide(facts: ItemFacts) -> Coverage:
     loosening this function. If a later reader is tempted to return `Supported`
     for a food with no local evidence, the thing to change is the artifact.
     """
+    # ⭐ P17 SCAN/BINDING — A BOUND ITEM IS DECIDED BY ITS SNAPSHOT, before
+    # any general branch: identity is the label's (a scan needs no canonical
+    # entity), and mass is irrelevant when the label counts its own units.
+    #     scales authoritatively   -> Supported("product")   -> settle BOUND
+    #     stated but heuristic     -> BoundUnpriceable        -> ASK / REFUSE
+    #     no quantity at all       -> BoundUnpriceable        -> ASK / REFUSE
+    # NEVER Unsupported-plain: that routes to legacy and the scan is lost.
+    if facts.product_bound:
+        if facts.product_scales:
+            return Supported("product", "scan-bound; the label scales the "
+                                        "stated quantity authoritatively")
+        return BoundUnpriceable(
+            ("scan-bound but the stated quantity only scales by a heuristic "
+             "— exact nutrition x estimated mass is not authoritative")
+            if facts.has_quantity else
+            "scan-bound with no stated quantity",
+            unit=facts.product_unit, label=facts.product_label)
     if not facts.has_identity:
         return Unsupported("no canonical identity")
     if not facts.has_quantity:
@@ -568,6 +642,9 @@ class GeneralSettlementOwner:
                                 priced.analysis, "source_amount", None),
                             "source_unit": getattr(
                                 priced.analysis, "source_unit", "") or None,
+                            # the bound snapshot, on the row (P17 scan/binding)
+                            "product_evidence_id": getattr(
+                                priced, "product_evidence_id", None),
                         }.items() if v not in (None, [], "")},
                     }})
                 for index, priced in enumerate(resolved)),
@@ -600,18 +677,30 @@ class GeneralSettlementOwner:
         quantity_text = str(item.get("quantity") or "").strip()
         consumed = normalize_quantity(quantity_text, identity)
 
+        # ⛔⛔ CF5 — SCAN IS BINDING, like a tap *(Danny)*: a scanned barcode is
+        # the user's own exact identifier, verified at acquisition
+        # (scanned code <-> canonical_code <-> persisted ProductEvidence). Once
+        # the item carries that snapshot the evidence universe is CONSTRAINED
+        # to it: MEMORY is never read, never ranked. Before this, a memory row
+        # for the same name could outrank the scan and the ladder ran
+        #     scan -> MEMORY -> PRODUCT
+        # which is the NEVER of the P17 scan/binding tranche. Same primitive
+        # B-1.8c2.2 built for a tapped selection.
+        bound = bool(item.get("product_evidence_id"))
         inputs = await assemble(
             db, user_id=int(user.id), entity=entity, preparation=preparation,
             identity=identity, item=item,
-            basis_grams=getattr(consumed, "grams", None))
+            basis_grams=getattr(consumed, "grams", None), bound=bound)
         analysis = price(entity=identity, preparation=preparation,
-                         consumed=consumed, **inputs)
+                         consumed=consumed, bound=bound, **inputs)
         return _Priced(
             identity=identity, entity_id=str(
                 item.get("canonical_entity_id") or item.get("entity_id") or ""),
             quantity=to_canonical(consumed), quantity_text=quantity_text,
             meal_type=item.get("meal_type") or None, analysis=analysis,
-            provenance=_provenance())
+            provenance=_provenance(),
+            product_evidence_id=(int(item["product_evidence_id"])
+                                 if bound else None))
 
 
 def execution_view(result, items) -> object:
@@ -764,6 +853,10 @@ class _Priced:
     meal_type: Optional[str]
     analysis: object
     provenance: object
+    #: P17 scan/binding — the exact snapshot a BOUND item was priced from,
+    #: carried to the row's receipt so "the meal reads its own referenced
+    #: snapshot" is true of the ROW, not only of the price. None when unbound.
+    product_evidence_id: Optional[int] = None
 
 
 def _provenance():

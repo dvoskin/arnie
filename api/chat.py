@@ -243,21 +243,14 @@ async def _backfill_city(identity: str, lat: float, lng: float) -> None:
         city = await _reverse_geocode(lat, lng)
         if not city:
             return
-        # ⭐ P17f.5 — SET UNCONDITIONALLY, EVERY TURN, the PRIOR_REPLY_UNSEEN
-        # lesson: a reused task's stale snapshot id from an earlier scan must
-        # never bind to this turn's food.
-        from skills.nutrition.product_acquisition import (
-            SCANNED_PRODUCT_EVIDENCE, acquire_product_evidence)
-        SCANNED_PRODUCT_EVIDENCE.set(None)
+        # ⚠ P17f.5 (ba8e62a) landed a copy of the barcode-acquisition block
+        # HERE too, referencing a `barcode` name this function does not have.
+        # The NameError was swallowed by the blanket except below, so the city
+        # backfill silently never ran after that commit. Found 2026-08-18 while
+        # reading the ingress for the scan/binding tranche. Acquisition lives in
+        # `_coached_reply` only — the turn path, at ingress, once.
         async with AsyncSessionLocal() as db:
             user = await resolve_user(db, identity)
-            if barcode:
-                # ACQUISITION TIME: network here, at ingress, BEFORE the turn —
-                # never at settlement. Failure binds nothing and costs nothing.
-                snapshot_id = await acquire_product_evidence(db, barcode)
-                if snapshot_id is not None:
-                    SCANNED_PRODUCT_EVIDENCE.set(snapshot_id)
-                await db.commit()   # the snapshot survives even if the turn dies
             if user and not user.city:
                 user.city = city
                 await db.commit()

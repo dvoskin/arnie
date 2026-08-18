@@ -810,6 +810,23 @@ def price(*, entity: str, preparation: str = "", consumed=None,
                     "event=rung_unscalable food=%s rung=%s basis=%s — %s",
                     entity, rung.value, _basis_name(source_basis), exc)
                 continue
+            # ⛔⛔ CF4 — EXACT PRODUCT x HEURISTIC MASS != AUTHORITATIVE
+            # SETTLEMENT *(Danny, P17 scan/binding)*. A bound item has exact
+            # NUTRITION authority (the label) but that says nothing about
+            # QUANTITY authority: "2 cups" of a peanut bar normalizes to 260 g
+            # from a vessel table, and scaling the label by an invented mass
+            # would commit an exact-looking number nobody measured. Nutrition
+            # authority != quantity authority. Under `bound` the resolver's
+            # verdict is binding: user-stated exact, the label's own units, or
+            # a sourced conversion — a heuristic path REFUSES (ASK / REFUSE
+            # upstream), it does not fall to another rung.
+            if bound and not resolution.authoritative:
+                raise PricingRefused(
+                    f"{entity!r} is bound to an exact product but the stated "
+                    f"quantity {getattr(consumed, 'unit_label', '') or getattr(consumed, 'unit', '')!r} "
+                    f"only scales by a heuristic ({resolution.path}) — exact "
+                    f"nutrition x estimated mass is not an authoritative "
+                    f"settlement; ask for the amount in the label's units")
             # ⛔ SCALED THROUGH THE RESOLVER'S OWN FACTOR, not by re-deriving
             # one. Calling `scale_profile` again here would ask `_factor` a
             # second time with the ORIGINAL portion — which is exactly the

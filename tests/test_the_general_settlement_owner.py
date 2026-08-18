@@ -52,7 +52,10 @@ def test_a11_the_predicate_is_pure_and_touches_nothing():
     tree = ast.parse(inspect.getsource(decide)).body[0]
     called = {node.func.id for node in ast.walk(tree)
               if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
-    assert called <= {"Supported", "Unsupported"}, (
+    # the three VERDICT constructors and nothing else — BoundUnpriceable is a
+    # verdict (P17 scan/binding: scan-bound but not authoritatively priceable),
+    # not a lookup; adding a name here requires it to be a dataclass verdict
+    assert called <= {"Supported", "Unsupported", "BoundUnpriceable"}, (
         f"the predicate calls {called} — it must decide from facts alone")
     assert not [n for n in ast.walk(tree) if isinstance(n, ast.Await)], (
         "the predicate awaits something — it is no longer pre-settlement")

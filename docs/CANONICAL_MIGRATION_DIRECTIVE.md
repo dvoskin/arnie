@@ -379,13 +379,13 @@ CF3  ENTRY 2674 UNLEDGERED MUTATION: "Ground beef,   ledger invariant      OPEN
      not record. Found by M1.1. Owner is the ledger
      invariant; do not derail a tranche for it, do
      not lose it either.
-CF4  HEURISTIC MASS x EXACT PRODUCT: "2 cups" of a   P17 authority         OPEN
+CF4  HEURISTIC MASS x EXACT PRODUCT: "2 cups" of a   P17-SB (scan/binding) CLOSED*
      peanut bar -> vessel heuristic 260 g -> the     tranche
      PRODUCT rung scales an exact label from an
      estimated mass. INVARIANT (Danny): exact
      product evidence x heuristic quantity
      conversion != authoritative settlement.
-CF5  SCAN IS BINDING like a tap (Danny): settle-time P17 scan/binding      OPEN
+CF5  SCAN IS BINDING like a tap (Danny): settle-time P17-SB (scan/binding) CLOSED*
      _bind_scanned_product still runs the UNBOUND   tranche (NEXT)
      ladder — a memory row can outrank the scanned
      snapshot. Use the c2.2 primitive
@@ -402,6 +402,10 @@ CF6  LANE PROMOTION RULE (learned from 3 canaries):  every future lane     RULE
      thread there" = EMPTY reply (kind "stall"),
      not an exception; turn_metrics.outcome now
      records error:<Type> for a caught stage error.
+     * CLOSED in the P17-SB commit for the BOUND path (price(bound) refuses
+       heuristic scaling; settle binds a scanned item). The UNBOUND general
+       ladder still scales ARTIFACT/MEMORY by heuristic mass — that is the
+       predicate question P17g owns, not a reopening of CF4.
 CF7  TEST_POSTGRES_URL FORM: the shared PG harness   tooling               RULE
      needs postgresql+psycopg://...; +asyncpg
      yields 174 connect() errors. Full-suite recipe:
@@ -1353,7 +1357,59 @@ P17f     ✅ persisted immutable evidence. product_evidence is
              providers — a NULL component exempts a row from
              UNIQUE in both Postgres and SQLite
          Dark: nothing writes product_evidence_id until P17f.5
-P17g     ◻ eligibility predicate LAST
+P17f.5   ✅ backend barcode wire (api/chat.py barcode -> acquisition at
+         ingress -> SCANNED_PRODUCT_EVIDENCE -> _bind_scanned_product).
+         ⚠ FOUND 08-18: ba8e62a also pasted the acquisition block into
+         _backfill_city, where `barcode` is unbound -> NameError inside
+         `except: pass` -> the CITY BACKFILL silently never ran since.
+         Removed in the scan/binding commit.
+P17-SB   ✅ SCAN/BINDING *(2026-08-18, GO Danny; takes CF4 + CF5, obeys
+         CF6)* — A SCAN IS BINDING, LIKE A TAP:
+           verified barcode -> persisted snapshot -> SCAN-BOUND item
+           -> predicate judged BY THE SNAPSHOT (look(): _from_product +
+              can_scale(authoritative_only=True), the ONE resolver)
+                scales authoritatively -> Supported("product")
+                heuristic / no quantity -> BoundUnpriceable (a NEW
+                verdict; NEVER plain Unsupported, which routes to legacy
+                and loses the scan)
+           -> settle: assemble(bound=True) never READS memory / artifact
+              / estimate; price(bound=True) prices THAT snapshot only and
+              REFUSES a heuristic scaling path (CF4)
+           -> the bound snapshot id lands on the ROW (product_evidence_id
+              was NEVER written by settlement before — the correction
+              path wrote it, settle did not; "the meal reads its own
+              referenced snapshot" is now true of the row)
+           -> BoundUnpriceable: NativeExecutionStage publishes a
+              canonical REFUSAL view (blocked call, owner canonical,
+              user-grade copy in the label's units: "Got the scanned
+              Barebells bar, but I can't price 2 cups of it from the
+              label — how many bars was it?"); nothing written, nothing
+              claimed, legacy executor never invoked; NativeRenderStage
+              narrates it (the same receipt path as corrections)
+         NEVER scan -> MEMORY -> PRODUCT (spy: zero _memory reads on a
+         bound settle) · NEVER exact product x heuristic mass ->
+         authoritative (2 cups / 2 handfuls refused; 2 bars / 110 g
+         price) · NEVER scan-bound -> legacy.
+         nutrition authority != quantity authority, kept explicit:
+         Supported("product") is the ONLY branch of decide() that does
+         not require has_mass — because the label counts its own units.
+         PROOFS tests/test_a_scan_is_binding.py (11): predicate matrix ·
+         bound item not judged by memory/artifact · pricer bound vs
+         unbound on the same "2 cups" · settle spy · LIVE SHAPE (CF6):
+         plan -> validate -> native stage -> render for "2 bars"
+         (settles bound, row carries snapshot id, reply) and "2 cups"
+         (refused, no row/claim/event, reply names "bar", legacy
+         forbidden) · multi-item scan binds nothing.
+         MUTATION: pricer authority check off -> RED; settlement bound
+         off -> RED (2); route BoundUnpriceable -> legacy -> RED.
+         A11 purity gate widened by NAME to the third verdict type.
+         ⏳ LIVE-PATH CANARY: needs a client that sends `barcode` on
+         ChatRequest — iOS does not yet (P17g GO condition). Runnable
+         via the API with Danny's token; his call.
+         The frozen 232-meal population carries no product_evidence_id,
+         so decide()'s new branch is inert on the remeasure. 40% gate
+         unchanged.
+P17g     ◻ eligibility predicate LAST — NEXT
 P17h     ◻ mutation + positive twins
 ```
 

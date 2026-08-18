@@ -236,6 +236,14 @@ class NativeExecutionStage:
             # any write, so there is no row and no ledger event to undo.
             owner, coverage = settlement
             items = _bind_scanned_product(_food_inputs(ops))
+            if owner is None:
+                # SCAN-BOUND, UNPRICEABLE (P17 scan/binding, CF5): canonical
+                # owns the answer and the answer is a refusal. Nothing
+                # written, nothing claimed — the user's retry ("2 bars") is a
+                # fresh turn with the same scan.
+                view = self._publish_bound_refusal(coverage, items, request)
+                LAST_EXECUTION.set(view)
+                return view
             # ⭐ THE MESSAGE TRAVELS WITH THE MEAL (A12). Canonical's idempotency
             # is keyed on what the USER TYPED, not on the turn id and not on the
             # model's plan — so `settle` needs the text, and this is the only
@@ -308,6 +316,13 @@ class NativeExecutionStage:
                     user.id, type(coverage).__name__,
                     getattr(coverage, "reason", ""))
         if not isinstance(coverage, Supported):
+            # ⛔⛔ CF5 — A SCAN-BOUND ITEM NEVER FALLS TO LEGACY. Legacy would
+            # estimate the food and the scan would be silently inert. The
+            # verdict travels back so `run` answers canonically: no write, no
+            # claim, and the user is told what is missing in the LABEL'S units.
+            from core.general_settlement import BoundUnpriceable
+            if isinstance(coverage, BoundUnpriceable):
+                return None, coverage
             return None
         return GeneralSettlementOwner(), coverage
 
@@ -404,6 +419,34 @@ class NativeExecutionStage:
         view = ExecutionResult(calls=(call,))
         LAST_EXECUTION.set(view)
         return view
+
+    def _publish_bound_refusal(self, coverage, items, request):
+        """The execution view for a scan-bound refusal: ONE blocked call
+        carrying user-grade copy in the label's units. Non-mutating by
+        construction — nothing here touched the database."""
+        from core.execution_result import CallResult, ExecutionResult
+        item = (items or [{}])[0]
+        food = str(item.get("food_name") or item.get("food") or "").strip()
+        unit = str(getattr(coverage, "unit", "") or "").strip()
+        qty = str(item.get("quantity") or "").strip()
+        what = food or getattr(coverage, "label", "") or "that"
+        if not qty:
+            text = (f"Got the scanned {what}. How much did you have"
+                    f"{f' — how many {unit}s' if unit else ''}?")
+        else:
+            text = (f"Got the scanned {what}, but I can't price {qty} of it "
+                    f"from the label"
+                    f"{f' — how many {unit}s was it' if unit else ' — what was the weight'}?")
+        logger.info("event=scan_bound_refused turn=%s food=%r quantity=%r "
+                    "unit=%r reason=%s", getattr(request, "turn_id", "-"),
+                    food, qty, unit, getattr(coverage, "reason", ""))
+        call = CallResult(
+            name="log_food", raw_input=dict(item), status="blocked",
+            result_text=text, entry_id=None,
+            correction={"owner": "canonical", "refusal": "scan_bound_unpriceable",
+                        "reason": getattr(coverage, "reason", ""),
+                        "unit": unit})
+        return ExecutionResult(calls=(call,))
 
     # ── helpers ───────────────────────────────────────────────────────────────
     async def _row_name(self, db, entry_id) -> str:
