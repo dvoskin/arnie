@@ -138,9 +138,29 @@ class NativeExecutionStage:
             # event back TOGETHER, and the retry succeeds. No handler here
             # (A8); refusals propagate and the transaction unwinds with them.
             from core.canonical_correction import (correct_identity,
-                                                   correct_quantity)
+                                                   correct_quantity,
+                                                   restore_recorded_state)
             entry_id, fields = correction
             idem = (request.turn_id, request.text or "")
+            if fields.get("replay") is not None:
+                # Verbatim restore of the ledger's before-state. The undo
+                # plan already carries every restorable field (and explicit
+                # None for fields the correction ADDED); nothing is priced.
+                before = {k: v for k, v in fields["replay"].items()
+                          if k not in ("entry_id", "source", "food_hint")}
+                restored = await restore_recorded_state(
+                    db, user=user, entry_id=entry_id, before=before)
+                from core.execution_result import CallResult, ExecutionResult
+                from core.execution_result import LAST_EXECUTION
+                view = ExecutionResult(calls=(CallResult(
+                    name="update_food_entry",
+                    raw_input={"entry_id": entry_id, **before},
+                    status="committed", entry_id=entry_id,
+                    result_text="Rolled it back to how it was.",
+                    correction={"owner": "canonical", "restore": True,
+                                "fields": sorted(restored)}),))
+                LAST_EXECUTION.set(view)
+                return view
             if fields.get("food_name"):
                 # ⛔⛔ IDENTITY + QUANTITY IS ONE CALL, ONE TRANSACTION *(review
                 # P1)*. The first cut chained correct_identity (commit) then
@@ -303,12 +323,18 @@ class NativeExecutionStage:
         inp = _correction_input(ops)
         if not inp:
             return None
+        # ⛔ B-1.8d — AN UNDO IS A RESTORE, NOT A REPAIR *(review #3)*. The
+        # ledger_undo plan lifts to an update_food_entry op stamped
+        # source=ledger_undo:*; sending THAT through the repair path would
+        # re-price the restored identity instead of putting back the recorded
+        # numbers. Detected here, before any kind dispatch.
+        replay = str(inp.get("source") or "").startswith("ledger_undo:")
         quantity = str(inp.get("quantity") or "").strip()
         food_name = str(inp.get("food_name") or "").strip()
         # ⭐ B-1.8c — TWO REPAIR KINDS, ONE ROUTE. Quantity-only -> the ratio
         # repair (B-1.8b). Identity (with or without a quantity) -> the rebind
         # repair. Day moves and meal re-slots are not this lane yet.
-        if not quantity and not food_name:
+        if not replay and not quantity and not food_name:
             return None
         if any(inp.get(k) not in (None, "") for k in ("date", "meal_type")):
             return None
@@ -331,7 +357,8 @@ class NativeExecutionStage:
                     getattr(user, "id", None), inp["entry_id"], owner,
                     "identity" if food_name else "quantity")
         return (int(inp["entry_id"]),
-                {"quantity": quantity or None, "food_name": food_name or None})
+                {"quantity": quantity or None, "food_name": food_name or None,
+                 "replay": dict(inp) if replay else None})
 
     async def _publish_correction(self, db, user, result, request):
         """The execution view for a correction, so the user SEES it. Reuses

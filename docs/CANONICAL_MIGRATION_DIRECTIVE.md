@@ -665,7 +665,7 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                      it. Paired add: model + writer + _migrate + corrrec001.
                      Only the owner authority may write panel + receipt
                      columns through update_food_entry.
-             B-1.8c  ⛔ NO-GO (a54219f) — identity + product-variant repair — REBIND evidence,
+             B-1.8c  identity + product-variant repair — REBIND evidence,
                      then price. Recon fixed the shape: no live path builds
                      SelectProductVariant/SetPreparation yet, and an identity
                      correction arrives as update_food_entry(food_name=...,
@@ -698,6 +698,13 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                           could not reproduce it. The `updated` payload now
                           carries the merge distinction: absent = preserved,
                           None = cleared. Pinned by replaying the events.
+                     ⭐ #5 DESIGN CHOICE, AGREED: NO revision/CAS column. FOR
+                     UPDATE at the repair's READ (not only the write), held
+                     through the single commit, is the ONE serialization
+                     mechanism; a revision column would be a second one
+                     guarding the same property. Proof: two concurrent
+                     "actually 3 eggs" against "2 eggs" land at 270 not 405,
+                     and the before-states read ["2 eggs","3 eggs"] — a chain.
                      ⛔⛔ SECOND ADVERSARIAL PASS *(Danny)* — SEVEN GAPS, and
                      the fix is ONE STRUCTURAL CHANGE, not seven patches:
                        #2b the generic calorie-ratio rescale in update_food_entry
@@ -732,6 +739,41 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                      complete claim -> ONE COMMIT. B-1.8d then proves apply ->
                      replay -> undo -> redo/crash -> concurrent correction, not
                      happy paths.
+                     ⭐⭐ STATE AFTER THE SECOND PASS *(Danny, verbatim)*:
+                       B-1.8a    ✅ repair primitive
+                       B-1.8b    ✅ quantity write
+                       B-1.8b.1  ✅ transactional exactly-once
+                       B-1.8c1   ✅ generic identity repair
+                                 ✅ identity + quantity atomic
+                                 ✅ wholesale receipt/panel replacement
+                                 ✅ explicit NULL history
+                                 ✅ serialized concurrent correction*
+                                 ✅ exact undo/replay*
+                                 ✅ stale metadata cleared*
+                       B-1.8c2   ⏳ PRODUCER-BOUND SEMANTIC REPAIR — the ONE
+                                 remaining capability (#6 and #7 collapsed):
+                                   -> a producer emits typed
+                                      SelectProductVariant / SetPreparation
+                                   -> binds the exact snapshot / semantic field
+                                   -> snapshot <-> identity compatibility
+                                      ENFORCED
+                                   -> omitted semantic fields PRESERVED
+                                   -> canonical repair CONSUMES that binding,
+                                      and once it says "this exact snapshot",
+                                      PRODUCT is BINDING, not merely another
+                                      rung in MEMORY -> PRODUCT -> ARTIFACT
+                                 The correction machinery must not invent this
+                                 contract before its producer exists. The
+                                 snapshot-rebind PRIMITIVE is already valid;
+                                 what is missing is authoritative ACQUISITION
+                                 of the semantic correction, not pricing.
+                       B-1.8d    NEXT after c2 — twins + E2E + rollback/canary
+                       ⛔ B-1.8 IS NOT CLOSED UNTIL c2. The frozen directive
+                       names "actually it was the Elite one" and "actually it
+                       was Cookies & Cream" as B-1.8's own examples; moving
+                       them out now — after discovering the producer does not
+                       exist — would move the rollout goalposts. It stays.
+                       * = local, pending independent verification
                      ⚠ LIVE PRODUCT-VARIANT CORRECTION IS NOT PRODUCTION-
                        COMPLETE: the primitive accepts product_evidence_id;
                        the live route does not thread one, because no

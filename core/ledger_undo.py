@@ -109,9 +109,34 @@ def _invert(event) -> Optional[dict]:
         if etype == "updated" and event.entry_id and isinstance(p.get("before"), dict):
             before = p["before"]
             inp = {"entry_id": event.entry_id, "source": UNDO_SOURCE}
-            for k in ("quantity", "calories", "protein", "carbs", "fats"):
-                if before.get(k) is not None:
+            # ⭐ B-1.8d — THE WHOLE BEFORE-STATE, IDENTITY INCLUDED *(review
+            # #3)*. This restored quantity + four macros and nothing else, so
+            # "chicken breast -> chicken thigh -> undo" left the THIGH's name
+            # and receipt over the BREAST's macros: a hybrid row. The
+            # before-state now carries the panel, the receipt and the row
+            # metadata (see _entry_event_payload); every field it recorded is
+            # restored, and a field it did NOT record is restored to None so
+            # a value the correction ADDED (a new resolved_grams, a new
+            # snapshot) does not survive its own undo. `food_name` maps back
+            # to the row's column name at the executor.
+            _RESTORABLE = ("food_name", "quantity", "calories", "protein",
+                           "carbs", "fats", "fiber", "sugar", "sodium",
+                           "micronutrients_json", "pricing_rung",
+                           "nutrition_evidence_id", "source_basis",
+                           "basis_evidence_id", "conversion_evidence_ids_json",
+                           "source_amount", "source_unit", "scaling_factor",
+                           "resolved_grams", "product_evidence_id",
+                           "estimated_flag", "micros_estimated",
+                           "alcohol_units", "processing_level")
+            changed = set((p.get("changes") or {}).keys())
+            for k in _RESTORABLE:
+                if k in before:
                     inp[k] = before[k]
+                elif k in changed or (k == "food_name"
+                                      and "parsed_food_name" in changed):
+                    # the correction SET a field the before-state lacked;
+                    # undo must CLEAR it, not preserve the corrected value
+                    inp[k] = None
             if len(inp) <= 2:
                 return None
             hint = before.get("food_name") or "that"

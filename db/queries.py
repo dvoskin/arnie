@@ -2307,6 +2307,8 @@ OWNER_WRITABLE = (
     "basis_evidence_id", "conversion_evidence_ids_json",
     "source_amount", "source_unit", "scaling_factor", "resolved_grams",
     "product_evidence_id",
+    # row metadata that describes the FOOD, so a rebind resets it
+    "estimated_flag", "micros_estimated", "alcohol_units", "processing_level",
 )
 
 #: WHO MAY MUTATE A CANONICALLY OWNED ROW. Everything absent is refused,
@@ -2369,6 +2371,24 @@ async def creating_source(db: AsyncSession, entry_id: int) -> Optional[str]:
     return row[0] if row else None
 
 
+async def lock_food_entry(db: AsyncSession, entry_id: int):
+    """The row, LOCKED for the rest of this transaction on Postgres.
+
+    ⭐ B-1.8d — THE ONE ROW-LOCK PRIMITIVE FOR REPAIR *(review #5)*. The
+    repair COMPUTES from what it read: locking only the write would still let
+    two corrections compute 3-from-2 in parallel and the second overwrite the
+    first. So the read that feeds the ratio / rebind is the locked read;
+    update_food_entry then re-acquires the same lock inside the same
+    transaction (a no-op). Lives HERE, in the repository, because the shared-
+    lock gate is right that a boundary only one caller uses is a boundary the
+    next caller routes around. SQLite has no FOR UPDATE and is single-writer.
+    """
+    stmt = select(FoodEntry).where(FoodEntry.id == int(entry_id))
+    if db.bind.dialect.name == "postgresql":
+        stmt = stmt.with_for_update()
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def update_food_entry(
     db: AsyncSession, entry_id: int, user_id: int,
     ledger_source: Optional[str] = None, claim_id: Optional[int] = None,
@@ -2385,7 +2405,18 @@ async def update_food_entry(
     so a process dying in between left a rescaled entry whose original macros
     existed nowhere.
     """
-    result = await db.execute(select(FoodEntry).where(FoodEntry.id == entry_id))
+    _stmt = select(FoodEntry).where(FoodEntry.id == entry_id)
+    if authority in (MutationAuthority.CANONICAL_OWNER,
+                     MutationAuthority.RECORDED_REPLAY) \
+            and db.bind.dialect.name == "postgresql":
+        # ⭐ B-1.8d — SERIALISE CORRECTIONS OF ONE ROW *(review #5)*. Two
+        # correction turns that both read "2 eggs" and each computed 3 from
+        # that state would last-writer-win, and their ledger before-states
+        # would describe the SAME ancestor instead of a chain. FOR UPDATE makes
+        # the second wait and read the first's committed state. SQLite has no
+        # FOR UPDATE and is single-writer regardless.
+        _stmt = _stmt.with_for_update()
+    result = await db.execute(_stmt)
     entry = result.scalar_one_or_none()
     if not entry:
         return None
@@ -2455,7 +2486,16 @@ async def update_food_entry(
     # after "make it 200g". (The iOS editor deliberately doesn't display
     # micros — it relies on this.) Ratio guard: only when both sides are
     # positive and the change is a real rescale, not a hand-corrected zero.
-    if "calories" in changes:
+    # ⛔⛔ THE GENERIC RATIO RESCALE IS FOR LEGACY EDITS ONLY *(B-1.8d, review
+    # #2b)*. It ran BEFORE the owner write, so an identity rebind rescaled the
+    # OLD food's fiber/sugar/sodium/micros by the NEW food's calorie ratio, and
+    # the owner write then overrode only the panel fields the new evidence
+    # supplied — the old micros, rescaled into the new food. The owner and a
+    # recorded replay hand this function COMPLETE, EXACT values; nothing may
+    # be derived on their behalf.
+    _exact_caller = authority in (MutationAuthority.CANONICAL_OWNER,
+                                  MutationAuthority.RECORDED_REPLAY)
+    if "calories" in changes and not _exact_caller:
         _old_cal = float(entry.calories or 0)
         _new_cal = float(changes["calories"] or 0)
         if _old_cal > 0 and _new_cal > 0 and abs(_new_cal - _old_cal) > 0.5:
@@ -2505,7 +2545,13 @@ async def update_food_entry(
     # and moves the P17f receipt's factor and resolved mass with the
     # correction. Gated on authority: a legacy caller cannot reach these
     # columns through this function, so the receipt stays the owner's record.
-    if authority == MutationAuthority.CANONICAL_OWNER:
+    if authority in (MutationAuthority.CANONICAL_OWNER,
+                     MutationAuthority.RECORDED_REPLAY):
+        # RECORDED_REPLAY too *(B-1.8d, review #3)*: undo replays a recorded
+        # before-state, and that state now carries the whole row. An undo that
+        # could restore only four macros would leave the corrected receipt
+        # and panel behind — the hybrid row. Replaying a fact the ledger
+        # wrote is exactly what the authority means.
         # ⛔⛔ PRESENT MEANS WRITE — INCLUDING AN EXPLICIT None *(review P1)*.
         # For the owner, every evidence-owned and nutrition-panel field follows
         # the field-merge contract exactly as the correction layer enforces it:
@@ -3681,7 +3727,33 @@ def _entry_event_payload(entry) -> dict:
                       ("sets", "sets"), ("reps", "reps"),
                       ("weight_kg", "weight"),
                       ("duration_minutes", "duration_minutes"),
-                      ("is_cardio", "is_cardio")):
+                      ("is_cardio", "is_cardio"),
+                      # ⭐ B-1.8d — THE PANEL, THE RECEIPT AND THE ROW METADATA
+                      # *(review #3)*. Undo restored quantity + four macros and
+                      # nothing else, so "breast -> thigh -> undo" produced a
+                      # HYBRID: the thigh's name, the breast's macros, the
+                      # thigh's receipt. And every B-1.8b quantity correction
+                      # undid the macros while leaving its scaling_factor and
+                      # resolved_grams behind. One vocabulary, one builder: what
+                      # `created` records and what `updated.before` records is
+                      # the SAME shape, and it is the whole row that a
+                      # correction can touch.
+                      ("fiber", "fiber"), ("sugar", "sugar"), ("sodium", "sodium"),
+                      ("micronutrients_json", "micronutrients_json"),
+                      ("pricing_rung", "pricing_rung"),
+                      ("nutrition_evidence_id", "nutrition_evidence_id"),
+                      ("source_basis", "source_basis"),
+                      ("basis_evidence_id", "basis_evidence_id"),
+                      ("conversion_evidence_ids_json", "conversion_evidence_ids_json"),
+                      ("source_amount", "source_amount"),
+                      ("source_unit", "source_unit"),
+                      ("scaling_factor", "scaling_factor"),
+                      ("resolved_grams", "resolved_grams"),
+                      ("product_evidence_id", "product_evidence_id"),
+                      ("estimated_flag", "estimated_flag"),
+                      ("micros_estimated", "micros_estimated"),
+                      ("alcohol_units", "alcohol_units"),
+                      ("processing_level", "processing_level")):
         value = getattr(entry, attr, None)
         if value is not None:
             payload[key] = value

@@ -79,6 +79,15 @@ def _merge_quantity_text(old_text: str, old_q, new_q) -> str:
     return new_words or old_text
 
 
+async def _lock_row(db, entry_id: int):
+    """The repository's shared row lock — see db.queries.lock_food_entry. The
+    shared-lock gate forbids taking the SELECT-FOR-UPDATE lock anywhere in
+    core/, and it is right: B-1.6 retraction and B-1.8 repair need the
+    identical guarantee, so it lives in one place."""
+    from db.queries import lock_food_entry
+    return await lock_food_entry(db, entry_id)
+
+
 async def creating_source_of(db, entry_id: int) -> Optional[str]:
     from db.queries import creating_source
     return await creating_source(db, int(entry_id))
@@ -107,9 +116,7 @@ async def correct_quantity(db, *, user, entry_id: int, new_quantity_text: str,
     from db.queries import MutationAuthority, update_food_entry
     from skills.nutrition.normalize import normalize_quantity
 
-    entry = (await db.execute(
-        select(FoodEntry).where(FoodEntry.id == int(entry_id))
-    )).scalar_one_or_none()
+    entry = await _lock_row(db, entry_id)
     if entry is None:
         raise CorrectionRefused(f"entry {entry_id} does not exist")
     log = (await db.execute(
@@ -264,9 +271,7 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
     from db.queries import MutationAuthority, update_food_entry
     from skills.nutrition.normalize import normalize_quantity
 
-    entry = (await db.execute(
-        select(FoodEntry).where(FoodEntry.id == int(entry_id))
-    )).scalar_one_or_none()
+    entry = await _lock_row(db, entry_id)
     if entry is None:
         raise CorrectionRefused(f"entry {entry_id} does not exist")
     log = (await db.execute(
@@ -357,6 +362,15 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
         "source_unit": priced.source_unit or None,
         "product_evidence_id": (int(product_evidence_id)
                                 if product_evidence_id is not None else None),
+        # ── row METADATA that describes the OLD food *(stale-metadata audit)* ─
+        # A wine -> chicken rebind must not keep the wine's alcohol; an
+        # estimate -> artifact rebind is no longer an estimate; the old NOVA
+        # class describes a food this row no longer is. Reset to what the new
+        # price says, or to absent.
+        "estimated_flag": priced.rung.value == "estimate",
+        "micros_estimated": bool(priced.micros_estimated),
+        "alcohol_units": None,
+        "processing_level": None,
     }
     # ⛔ NOTHING IS FILTERED. Every key above reaches update_food_entry, and
     # for the owner authority a present None is a CLEAR. Filtering None here is
@@ -376,3 +390,49 @@ async def correct_identity(db, *, user, entry_id: int, new_identity: str,
                                 new_identity=identity, rung=priced.rung.value,
                                 evidence_id=priced.evidence_id or "",
                                 changes=changes)
+
+
+# ══ B-1.8d — UNDO IS A RESTORE, NOT A REPAIR ═════════════════════════════════
+#
+# ⛔ AN UNDO THAT REACHED THE REPAIR PATH WOULD RE-PRICE THE RESTORED FOOD. The
+# ledger_undo plan lifts to an update_food_entry op naming the row; the native
+# stage's correction route would happily hand that to correct_identity, which
+# rebinds evidence and prices anew — so "undo" would compute a FRESH price for
+# the old identity instead of putting back the recorded numbers. A restore
+# writes the ledger's before-state VERBATIM under RECORDED_REPLAY. No pricing,
+# no evidence, no claim of its own beyond the turn's.
+
+
+async def restore_recorded_state(db, *, user, entry_id: int,
+                                 before: dict) -> dict:
+    """Write a recorded before-state back onto a canonical row, verbatim.
+    Fields the before-state carries are restored; fields passed as None are
+    CLEARED (a value the correction added must not survive its own undo).
+    One transaction through update_food_entry(RECORDED_REPLAY)."""
+    from sqlalchemy import select
+
+    from db.models import DailyLog, FoodEntry
+    from db.queries import MutationAuthority, update_food_entry
+
+    entry = (await db.execute(select(FoodEntry).where(
+        FoodEntry.id == int(entry_id)))).scalar_one_or_none()
+    if entry is None:
+        raise CorrectionRefused(f"entry {entry_id} does not exist")
+    log = (await db.execute(select(DailyLog).where(
+        DailyLog.id == entry.daily_log_id))).scalar_one_or_none()
+    if log is None or int(log.user_id) != int(user.id):
+        raise CorrectionRefused(f"entry {entry_id} is not this user's")
+
+    changes = {}
+    for k, v in (before or {}).items():
+        if k in ("entry_id", "source", "food_hint"):
+            continue
+        changes["parsed_food_name" if k == "food_name" else k] = v
+    updated = await update_food_entry(
+        db, entry.id, int(user.id), ledger_source="ledger_undo:canonical",
+        authority=MutationAuthority.RECORDED_REPLAY, **changes)
+    if updated is None:                                  # pragma: no cover
+        raise CorrectionRefused(f"entry {entry_id} vanished mid-restore")
+    logger.info("event=canonical_state_restored entry=%s fields=%d",
+                entry.id, len(changes))
+    return changes
