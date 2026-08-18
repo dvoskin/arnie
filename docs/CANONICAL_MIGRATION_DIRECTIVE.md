@@ -665,8 +665,20 @@ D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
                      it. Paired add: model + writer + _migrate + corrrec001.
                      Only the owner authority may write panel + receipt
                      columns through update_food_entry.
-             B-1.8c  identity + product-variant repair (rebind snapshot /
-                     evidence; quantity machinery unchanged)
+             B-1.8c  ✅ identity + product-variant repair — REBIND evidence,
+                     then price. Recon fixed the shape: no live path builds
+                     SelectProductVariant/SetPreparation yet, and an identity
+                     correction arrives as update_food_entry(food_name=...,
+                     calories=...) — the interpreter's RE-ESTIMATE. So the
+                     repair takes ONLY the new identity, keeps the row's
+                     quantity (omitted -> preserved), and reprices through
+                     the same assemble()->price() seam settlement uses with
+                     THE ESTIMATE RUNG WITHHELD: evidence-backed rung or a
+                     typed refusal. Receipt rewritten WHOLESALE (new rung,
+                     evidence, basis, factor, snapshot). Route dispatches by
+                     kind; the interpreter's numbers are IGNORED, never routed
+                     to legacy where they would land. Never reinterprets
+                     identity via quantity math.
              B-1.8d  twins + E2E + rollback proof
            ⚠ pre-P17f rows carry NO receipt: their quantity repair is the
            macro-ratio path (committed macros ARE the persisted facts) —
@@ -1035,6 +1047,24 @@ BASELINE        ~20.3%   predicate a747b56   THE PREREGISTERED ANCHOR — kept
                          not the original preregistered experiment.
 ✅ M1.1 UNBLOCKED THE REMEASURE: the fixture cannot shrink; the delta is
    published against the preregistered 20.3% on the identical 232 meals.
+⭐ BUT M1.1 FROZE THE INPUT POPULATION, NOT THE EVIDENCE STATE *(Danny)*. The
+   instrument still executes coverage_for() against the LIVE database, so
+   between now and the remeasure memory/evidence rows can change and a meal's
+   answer can move for reasons other than P17g. TWO NUMBERS AT REMEASURE:
+     1. HISTORICAL ANCHOR      20.3% @ pre-P17 predicate -> X% @ P17,
+                              same frozen 232 inputs (the preregistered headline)
+     2. PAIRED CONTEMPORANEOUS pre-P17 predicate NOW vs P17 predicate NOW,
+                              same 232 inputs, same evidence state, same run —
+                              only the eligibility predicate differs. THE
+                              STRONGEST CAUSAL ANSWER to "what did P17 change".
+   If they agree, excellent. If 20.3->42.0 historical but 20.8->42.0 paired,
+   0.5 pts is evidence drift and 21.2 is P17. Evidence is NOT frozen wholesale
+   unless it falls out cheaply — paired evaluation is cleaner.
+⚠ LEDGER-INVARIANT DEFECT, TRACKED SEPARATELY (not M1.1's, not B-1.8's):
+   entry 2674 mutated "Ground beef, seasoned" -> "Ground bison, seasoned" with
+   NO ledger event — an unledgered production write. Every food mutation is
+   supposed to record an event; one path does not. Owner: the ledger
+   invariant (I3-family). Do not derail the correction track for it.
 EXPECTED GAIN   +12.2 .. +24.8 pts  ->  ~32.5% .. ~45.1%
 PUBLISH         BOTH predicate commits, or it is not a figure
 

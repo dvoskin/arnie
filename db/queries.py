@@ -2499,6 +2499,19 @@ async def update_food_entry(
                       "scaling_factor", "resolved_grams"):
             if field in changes and changes[field] is not None:
                 setattr(entry, field, changes[field])
+        # ⭐ B-1.8c — AN IDENTITY REPAIR REWRITES THE RECEIPT'S IDENTITY HALF.
+        # The food changed, so the rung, evidence id, basis, source quantity
+        # and product snapshot are all NEW. `nutrition_evidence_id` and
+        # `product_evidence_id` may legitimately be set to None (a rebind from
+        # a product to a generic food clears the snapshot), so they are
+        # written when PRESENT rather than when non-None.
+        for field in ("pricing_rung", "source_basis", "source_amount",
+                      "source_unit"):
+            if field in changes and changes[field] is not None:
+                setattr(entry, field, changes[field])
+        for field in ("nutrition_evidence_id", "product_evidence_id"):
+            if field in changes:
+                setattr(entry, field, changes[field])
 
     moved = bool(new_log_id and new_log_id != old_log_id)
     if moved:

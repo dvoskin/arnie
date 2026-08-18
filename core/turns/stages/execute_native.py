@@ -137,19 +137,32 @@ class NativeExecutionStage:
             # A failure anywhere before that commit rolls claim + mutation +
             # event back TOGETHER, and the retry succeeds. No handler here
             # (A8); refusals propagate and the transaction unwinds with them.
-            from core.canonical_correction import correct_quantity
-            entry_id, new_quantity = correction
-            result = await correct_quantity(
-                db, user=user, entry_id=entry_id,
-                new_quantity_text=new_quantity,
-                idempotency=(request.turn_id, request.text or ""))
+            from core.canonical_correction import (correct_identity,
+                                                   correct_quantity)
+            entry_id, fields = correction
+            idem = (request.turn_id, request.text or "")
+            if fields.get("food_name"):
+                # Identity (and possibly quantity): rebind evidence FIRST at
+                # the row's quantity, then apply the quantity ratio on top —
+                # each its own deterministic step, each receipted.
+                result = await correct_identity(
+                    db, user=user, entry_id=entry_id,
+                    new_identity=fields["food_name"], idempotency=idem)
+                if result is not None and fields.get("quantity"):
+                    result = await correct_quantity(
+                        db, user=user, entry_id=entry_id,
+                        new_quantity_text=fields["quantity"]) or result
+            else:
+                result = await correct_quantity(
+                    db, user=user, entry_id=entry_id,
+                    new_quantity_text=fields["quantity"], idempotency=idem)
             if result is None:
                 # The claim says this exact turn already corrected the row.
                 logger.info("event=canonical_correction_replay user=%s "
                             "entry=%s — already applied", user.id, entry_id)
                 raise ExactlyOnceRefusal(request.turn_id)
-            logger.info("event=canonical_correction_settled entry=%s "
-                        "ratio=%.4f", result.entry_id, result.ratio)
+            logger.info("event=canonical_correction_settled entry=%s kind=%s",
+                        result.entry_id, type(result).__name__)
             return await self._publish_correction(db, user, result, request)
 
         # ⭐ A1/A11 — ROUTING HAPPENS BEFORE THE CLAIM, AND IT IS PURE.
@@ -279,14 +292,23 @@ class NativeExecutionStage:
         refusals propagate.
         """
         inp = _correction_input(ops)
-        if not inp or not str(inp.get("quantity") or "").strip():
+        if not inp:
             return None
-        # Quantity-only: a correction that also renames the food or moves the
-        # day is not this slice yet.
-        if any(inp.get(k) not in (None, "") for k in
-               ("food_name", "date", "meal_type", "calories", "protein",
-                "carbs", "fats")):
+        quantity = str(inp.get("quantity") or "").strip()
+        food_name = str(inp.get("food_name") or "").strip()
+        # ⭐ B-1.8c — TWO REPAIR KINDS, ONE ROUTE. Quantity-only -> the ratio
+        # repair (B-1.8b). Identity (with or without a quantity) -> the rebind
+        # repair. Day moves and meal re-slots are not this lane yet.
+        if not quantity and not food_name:
             return None
+        if any(inp.get(k) not in (None, "") for k in ("date", "meal_type")):
+            return None
+        # ⛔⛔ THE INTERPRETER'S NUMBERS ARE IGNORED, NOT ROUTED AWAY. The
+        # correction tool hands over calories/protein/... it re-estimated. A
+        # canonical repair NEVER accepts them: a quantity repair derives its
+        # ratio from the row, an identity repair reprices from local evidence.
+        # Their presence must not send the turn to legacy — that would let the
+        # very numbers we refuse land on the row through the other door.
         try:
             from core.canonical_correction import creating_source_of
             owner = await creating_source_of(db, int(inp["entry_id"]))
@@ -296,9 +318,11 @@ class NativeExecutionStage:
             return None
         if not (owner and str(owner).startswith("canonical:")):
             return None
-        logger.info("event=correction_route user=%s entry=%s owner=%s",
-                    getattr(user, "id", None), inp["entry_id"], owner)
-        return int(inp["entry_id"]), str(inp["quantity"])
+        logger.info("event=correction_route user=%s entry=%s owner=%s kind=%s",
+                    getattr(user, "id", None), inp["entry_id"], owner,
+                    "identity" if food_name else "quantity")
+        return (int(inp["entry_id"]),
+                {"quantity": quantity or None, "food_name": food_name or None})
 
     async def _publish_correction(self, db, user, result, request):
         """The execution view for a correction, so the user SEES it. Reuses
@@ -306,16 +330,23 @@ class NativeExecutionStage:
         ExecutionResult shape the legacy update path publishes."""
         from core.execution_result import (CallResult, ExecutionResult,
                                            LAST_EXECUTION)
+        if hasattr(result, "ratio"):
+            raw = {"entry_id": result.entry_id, "quantity": result.quantity_text}
+            text = (f"Updated to {result.quantity_text} "
+                    f"({result.changes.get('calories', 0):.0f} kcal)")
+            correction = {"ratio": result.ratio, "method": result.method,
+                          "owner": "canonical", "changes": result.changes}
+        else:
+            raw = {"entry_id": result.entry_id, "food_name": result.new_identity}
+            text = (f"Updated to {result.new_identity} "
+                    f"({result.changes.get('calories', 0):.0f} kcal, "
+                    f"{result.rung})")
+            correction = {"rebound_from": result.old_identity,
+                          "rung": result.rung, "evidence_id": result.evidence_id,
+                          "owner": "canonical", "changes": result.changes}
         call = CallResult(
-            name="update_food_entry",
-            raw_input={"entry_id": result.entry_id,
-                       "quantity": result.quantity_text},
-            status="committed",
-            result_text=(f"Updated to {result.quantity_text} "
-                         f"({result.changes.get('calories', 0):.0f} kcal)"),
-            entry_id=result.entry_id,
-            correction={"ratio": result.ratio, "method": result.method,
-                        "owner": "canonical", "changes": result.changes})
+            name="update_food_entry", raw_input=raw, status="committed",
+            result_text=text, entry_id=result.entry_id, correction=correction)
         view = ExecutionResult(calls=(call,))
         LAST_EXECUTION.set(view)
         return view
