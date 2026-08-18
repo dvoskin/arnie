@@ -267,12 +267,25 @@ class _Validation:
 # that savepoint releases (the repo's conftest already documents this for the
 # crash tests), so a rollback leaves the claim durable — the exact defect these
 # tests exist to catch, but manufactured by the test engine. On Postgres the
-# same code rolls the claim back to zero. Transaction-boundary truth lives in
-# the database production runs; these run there or not at all.
+# same code rolls the claim back to zero.
+#
+# ⛔⛔ THE GUARANTEE, STATED PRECISELY *(Danny)* — THIS IS NOT DUAL-ENGINE
+# TRANSACTIONAL PARITY:
+#
+#     Production Postgres PROVES atomic correction + claim behaviour.
+#     SQLite is NOT AN AUTHORITATIVE INSTRUMENT for this crash boundary.
+#
+# Do NOT "fix" this skip by making these tests run on the sqlite fixture: they
+# would go RED for a reason that is the driver's, not the code's, and the next
+# person would then loosen an assertion to make them green — a false result
+# either way. The skip IS the correct statement of what sqlite can measure.
 _PG = __import__("os").getenv("TEST_POSTGRES_URL")
 _needs_pg = pytest.mark.skipif(
     not _PG, reason="transaction-boundary proof: needs a real Postgres "
-                    "(TEST_POSTGRES_URL) — sqlite commits on savepoint release")
+                    "(TEST_POSTGRES_URL). SQLite is NOT an authoritative "
+                    "instrument here — pysqlite commits the outer transaction "
+                    "on savepoint release, so it would report a durable claim "
+                    "the production engine does not keep. Do not un-skip.")
 
 
 @pytest.fixture
