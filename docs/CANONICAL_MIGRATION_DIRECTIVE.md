@@ -1403,13 +1403,45 @@ P17-SB   ✅ SCAN/BINDING *(2026-08-18, GO Danny; takes CF4 + CF5, obeys
          MUTATION: pricer authority check off -> RED; settlement bound
          off -> RED (2); route BoundUnpriceable -> legacy -> RED.
          A11 purity gate widened by NAME to the third verdict type.
-         ⏳ LIVE-PATH CANARY: needs a client that sends `barcode` on
-         ChatRequest — iOS does not yet (P17g GO condition). Runnable
-         via the API with Danny's token; his call.
+         STATE *(Danny, 2026-08-18)*:
+           P17 SCAN/BINDING IMPLEMENTATION     ✅
+           CF4                                ✅
+           CF5                                ✅
+           CF6 backend/live-shape proofs      ✅
+           LIVE iOS PRODUCER                  ⏳  (barcode on ChatRequest)
+           LIVE CANARY                        ⏳  (deferred — option (b))
+           P17g                               BLOCKED only on the iOS field
+         ⛔ WHY DEFERRED, NOT RUN VIA THE API *(Danny)*: option (a) — curl
+         with a token — would prove the backend endpoint can ingest a
+         barcode; it would NOT prove the production producer that
+         matters. CF6 exists because stage-level / live-shape substitutes
+         miss wiring defects — learned three times in B-1.8. The canary
+         waits for the real producer.
+         ⭐ PREREGISTERED LIVE CANARY (run when iOS ships the field):
+           1. scan Barebells 70004199
+           2. "2 barebells bars"
+              -> PRODUCT-bound · exact snapshot · label-unit scaling
+              -> product_evidence_id PERSISTED ON THE ROW and EQUAL TO
+                 THE ACQUISITION SNAPSHOT ID from that scan (inspect the
+                 row: not merely pricing_rung=product) · no MEMORY read
+                 (turn_metrics/log: no memory rung consulted)
+           3. scan the same product again
+           4. "2 cups of barebells"
+              -> BoundUnpriceable · ZERO food write · ZERO claim · ZERO
+                 legacy execution · the user gets the deterministic
+                 quantity clarification in the label's units
+           Every "zero" is asserted from food_entries / ledger_events /
+           idempotency_records, never from reply text.
          The frozen 232-meal population carries no product_evidence_id,
          so decide()'s new branch is inert on the remeasure. 40% gate
          unchanged.
-P17g     ◻ eligibility predicate LAST — NEXT
+         ⭐ _backfill_city REGRESSION (its own, per Danny — `except: pass`
+         hid a dead path): tests/test_the_city_backfill_actually_runs.py
+         — behaviour (an empty city gets filled) + STRUCTURE (an AST
+         free-name check: every name the body reads is bound; the pasted
+         `barcode` fails BY NAME — mutation-checked).
+P17g     ◻ eligibility predicate LAST — BLOCKED on iOS barcode field ->
+         live canary -> P17g
 P17h     ◻ mutation + positive twins
 ```
 
