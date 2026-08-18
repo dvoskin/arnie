@@ -1440,8 +1440,42 @@ P17-SB   ✅ SCAN/BINDING *(2026-08-18, GO Danny; takes CF4 + CF5, obeys
          — behaviour (an empty city gets filled) + STRUCTURE (an AST
          free-name check: every name the body reads is bound; the pasted
          `barcode` fails BY NAME — mutation-checked).
-P17g     ◻ eligibility predicate LAST — BLOCKED on iOS barcode field ->
-         live canary -> P17g
+P17-iOS  ✅ BARCODE PRODUCER *(2026-08-18, GO Danny; transport only)*
+         iOS: arnie-ios branch p17/barcode-transport @ 23f5b2c (off
+         b1b/structured-clarification). The scan is an ATTACHMENT: the raw
+         code is staged on the composer (chip; the on-device lookup only
+         decorates it, never the wire) and rides the NEXT send as
+         `barcode` — REST body AND the WebSocket frame — consumed by that
+         send, carried by the REST fallback and a same-id retry, and by a
+         queued batch. The user's words carry the quantity. NO product
+         prose is composed on-device any more (the retired
+         sendScannedProduct put OFF macros into the message — iOS-side
+         product authority; gone). ArnieTests/BarcodeTransportTests (4;
+         mutation: dropping the code from send() -> 2 RED).
+         ⛔⛔ BACKEND FINDING WHILE WIRING IT: EVERY WEBSOCKET TURN HAS
+         RAISED NameError SINCE ba8e62a. The acquisition block was pasted
+         into THREE functions; only _coached_reply got the parameter.
+         `_stream_turn` (the WS turn = every iOS turn) read `barcode` as
+         a global that does not exist -> the handler answered
+         {"type":"error"} -> iOS silently fell back to REST /chat. That is
+         why production kept working and why nobody saw it: every iOS
+         turn since P17f.5 paid a failed WS round-trip first, and
+         coalescing never ran. AND the WS handler never read `barcode`
+         from the frame at all — the P17f.5 field existed on REST only,
+         a dead transport for the producer that matters (CF6, exactly).
+         FIXED: the frame carries `barcode` (sanitised like ChatRequest),
+         the coalesced turn carries it, `_stream_turn` takes it.
+         tests/test_the_chat_ingress_binds_every_name.py: an AST free-
+         name gate over EVERY function in api/chat.py (mutation: the
+         original paste is named: {'_stream_turn': {'barcode'}}) + a WS-
+         frame transport proof (barcode -> _stream_turn -> acquisition ->
+         SCANNED_PRODUCT_EVIDENCE bound for the turn) + the _backfill_city
+         behaviour test.
+         ⚠ DEPLOY IMPLICATION: the live canary needs THIS backend commit,
+         not 90a5304 — 90a5304's WS handler would drop the iOS field.
+P17g     ◻ eligibility predicate LAST — waits on: deploy backend + iOS
+         TestFlight build (p17/barcode-transport) -> preregistered live
+         canary clean -> P17g
 P17h     ◻ mutation + positive twins
 ```
 

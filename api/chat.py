@@ -841,6 +841,11 @@ async def chat_stream(ws: WebSocket):
             data = await ws.receive_json()
             message = ((data or {}).get("message") or "").strip()
             client_msg_id = ((data or {}).get("client_msg_id") or "").strip() or None
+            # ⭐ THE RAW BARCODE RIDES THE FRAME, sanitised exactly as the REST
+            # ChatRequest field is (digits, 6..14) — never reconstructed from
+            # prose. iOS turns are WS turns; a field only the REST route read
+            # was a dead transport (P17f.5 shipped it REST-only).
+            barcode = ChatRequest._digits_or_none((data or {}).get("barcode"))
             try:
                 identity = verify_session_token((data or {}).get("token") or "")
             except HTTPException:
@@ -872,13 +877,20 @@ async def chat_stream(ws: WebSocket):
             if _debounce_running(_key):
                 _pending["unseen"] = True
             _pending["client_msg_id"] = client_msg_id
+            # a scan in the window binds the coalesced turn (one product, one
+            # turn); the newest frame's code wins, a frame without one does
+            # not erase an earlier one in the same window
+            if barcode:
+                _pending["barcode"] = barcode
 
             async def _run_coalesced(combined: str, _id=identity) -> None:
                 _unseen = bool(_pending.pop("unseen", False))
+                _code = _pending.pop("barcode", None)
                 try:
                     await _stream_turn(ws, _id, combined,
                                        client_msg_id=_pending.get("client_msg_id"),
-                                       prior_reply_unseen=_unseen)
+                                       prior_reply_unseen=_unseen,
+                                       barcode=_code)
                 except WebSocketDisconnect:
                     pass          # they left mid-window; nothing to deliver to
                 except Exception as e:
@@ -911,7 +923,15 @@ async def chat_stream(ws: WebSocket):
 
 async def _stream_turn(ws: WebSocket, identity: str, message: str,
                        client_msg_id: Optional[str] = None,
-                       prior_reply_unseen: Optional[bool] = None) -> None:
+                       prior_reply_unseen: Optional[bool] = None,
+                       barcode: Optional[str] = None) -> None:
+    # ⛔⛔ `barcode` WAS READ HERE AND NEVER A PARAMETER *(ba8e62a, found
+    # 2026-08-18)*: the acquisition block was pasted into three functions and
+    # only `_coached_reply` got the argument. Every WebSocket turn since raised
+    # NameError, the handler answered {"type": "error"}, and iOS silently fell
+    # back to REST /chat — which is why production kept working and why nobody
+    # saw it. Coalescing never ran, and every iOS turn paid a failed WS
+    # round-trip first. See tests/test_the_stream_turn_binds_every_name.py.
     lock = _locks.setdefault(identity, asyncio.Lock())
     # See _coached_reply: a lock already held means they were still typing
     # while the previous turn ran, so this message is not a reply to it.
