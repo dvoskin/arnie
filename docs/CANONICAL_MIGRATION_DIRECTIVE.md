@@ -406,6 +406,16 @@ CF6  LANE PROMOTION RULE (learned from 3 canaries):  every future lane     RULE
        heuristic scaling; settle binds a scanned item). The UNBOUND general
        ladder still scales ARTIFACT/MEMORY by heuristic mass — that is the
        predicate question P17g owns, not a reopening of CF4.
+CF8  LEGACY NARRATOR CLAIMS ACTIONS IT DID NOT TAKE:  legacy (not this      OPEN
+     2026-08-18 user 26 — "Clear my day" x2 replied   program's; recorded
+     "Day's cleared" with NO tool call and NO deleted  because canaries hit
+     ledger event (row 3028 survived both); "Two       it repeatedly)
+     servings … logged" x2 with NO row written. The
+     phantom class the migration exists to delete,
+     alive in the legacy narrator. Also: a legacy
+     pending ask with a log_date stays open until
+     the NEXT day and hijacks every same-food message
+     as an "answer".
 CF7  TEST_POSTGRES_URL FORM: the shared PG harness   tooling               RULE
      needs postgresql+psycopg://...; +asyncpg
      yields 174 connect() errors. Full-suite recipe:
@@ -1533,7 +1543,33 @@ P17-LC1  ⛔→🔧 LIVE CANARY #1 *(2026-08-18, backend 7ef684d, iOS build
          -> row product_evidence_id == snapshot id, resolved_grams 110,
          conversion off:70004199 · scan -> "2 barebell bars" -> ask names
          the 55 g serving, zero write/claim/legacy.
-P17g     ◻ eligibility predicate LAST — waits on canary #2 clean
+P17-LC2  ⛔→🔧 LIVE CANARY #2 *(2026-08-18, e7da0da live, build 386)* —
+         the chip works, the scan rides the frame (product_acquired
+         70004199 at 19:04:16 and 19:05:08, turn_native) — and EVERY turn
+         still went legacy. reason=pending_clarification: legacy's flavor
+         question from 18:10 ("Salty Peanut or Caramel Cashew?",
+         pending_questions 2198) carries a log_date, so pending_expired
+         keeps it LIVE UNTIL TOMORROW, and every later Barebells message
+         was routed as its ANSWER: the interpreter ran with the prior and
+         either "pass"ed (19:04, 19:08) or re-asked and run() refused the
+         re-ask (reask_refused, 19:05) -> None -> no op -> native_no_plan
+         -> legacy narrated ("already logged" / "logged" with NO row —
+         phantom). The bound predicate never got a turn. A LEGACY PENDING
+         QUESTION IN FRONT OF THE PRODUCER — the third producer-side layer
+         the canaries have found (planner inputs, interpreter identity
+         ask, now the pending prior).
+         FIX (root, small): a scan-bound turn is a fresh, exact statement,
+         not an answer — FoodPlanStage interprets it COLD (no prior). The
+         pending row is left as it is (legacy's row, legacy's expiry); it
+         just cannot hijack a bound turn. Unbound turns still carry the
+         prior. Proof: the 19:05 shape (stale prior + bound scan) -> the
+         interpreter receives prior=None -> op; unbound -> prior travels.
+         ALSO SEEN, legacy CF: "Clear my day" x2 said "Day's cleared" with
+         NO tool call and no deleted event; "logged" x2 with no row. The
+         narrator claims actions it did not take (see CF8).
+         CANARY #3 (after deploy): scan -> "2 servings of the barebells"
+         -> bound settle; scan -> "2 barebell bars" -> label-terms ask.
+P17g     ◻ eligibility predicate LAST — waits on canary #3 clean
 P17h     ◻ mutation + positive twins
 ```
 

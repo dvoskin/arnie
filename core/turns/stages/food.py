@@ -56,10 +56,29 @@ class FoodPlanStage:
                 has_pending=bool(meta.get("food_pending")
                                  or meta.get("food_prior") is not None))
             meta = {**meta, **derived}
+        # ⛔⛔ A SCAN-BOUND TURN IS A FRESH, EXACT STATEMENT — NOT AN ANSWER TO
+        # WHATEVER QUESTION IS OPEN *(P17 live canary #2, 2026-08-18)*. Legacy
+        # had asked "Salty Peanut or Caramel Cashew?" at 18:10; that pending
+        # carries a log_date, so it stays live until tomorrow, and every later
+        # Barebells message was routed as its ANSWER: the interpreter ran with
+        # the prior, either "pass"ed or re-asked and `run()` refused the re-ask
+        # (reask_refused) -> None -> no op -> native_no_plan -> legacy. The
+        # scan had bound (product_acquired) and the bound predicate never got
+        # a turn. A barcode is the strongest identity statement the user can
+        # make; an open identity question does not outrank it. So a bound turn
+        # is interpreted cold — no prior — and the pending question is left
+        # exactly as it is (legacy's row, legacy's expiry); it simply does not
+        # get to hijack this turn.
+        prior = meta.get("food_prior")
+        if prior is not None and _scan_is_bound():
+            logger.info("event=scan_ignores_pending_prior turn=%s — a bound "
+                        "scan is a fresh statement, not an answer",
+                        getattr(request, "turn_id", "-"))
+            prior = None
         try:
             out = await run_interpreter(
                 request.text, meta.get("user"),
-                prior=meta.get("food_prior"),
+                prior=prior,
                 day_line=meta.get("day_line", ""),
                 board=meta.get("board"),
                 last_assistant=meta.get("last_assistant", ""),
@@ -350,14 +369,18 @@ _IDENTITY_FIELDS = frozenset({"identity", "brand", "variant", "flavor", "flavour
                               "product_identity", "product_line", "product_variant"})
 
 
+def _scan_is_bound() -> bool:
+    try:
+        from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+        return SCANNED_PRODUCT_EVIDENCE.get() is not None
+    except Exception:                                    # noqa: BLE001
+        return False
+
+
 def _scan_answers_the_identity(out) -> bool:
     """True when a scan is bound to this turn, the interpreter staged exactly
     ONE item, and every ambiguity it reported is identity-class."""
-    try:
-        from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
-        if SCANNED_PRODUCT_EVIDENCE.get() is None:
-            return False
-    except Exception:                                    # noqa: BLE001
+    if not _scan_is_bound():
         return False
     items = [it for it in (out.get("items") or []) if isinstance(it, dict)]
     if len(items) != 1:

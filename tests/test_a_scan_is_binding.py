@@ -407,3 +407,37 @@ async def test_a_scan_answers_the_interpreters_flavor_question(db, make_user, mo
     finally:
         SCANNED_PRODUCT_EVIDENCE.reset(token)
     assert v3.disposition == "ask"
+
+
+@pytest.mark.asyncio
+async def test_a_bound_scan_is_not_an_answer_to_an_open_question(db, make_user, monkeypatch):
+    """LIVE CANARY #2 (2026-08-18): legacy's flavor question stayed open (its
+    log_date keeps it live until tomorrow) and every later Barebells message
+    was routed as its ANSWER — the interpreter got the prior, passed or
+    re-asked, run() refused, no op, legacy. With a scan bound the plan stage
+    interprets COLD: the interpreter is handed NO prior. Unbound, the prior
+    still travels (an open question is still an open question)."""
+    from core.turns.stages.food import FoodPlanStage
+    from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+    user = await make_user()
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    seen = []
+    async def spy(text, u, **kw):
+        seen.append(kw.get("prior"))
+        return {"action": "log", "tool_calls": [{"name": "log_food", "input": {
+            "food_name": "Barebells Protein Bar", "quantity": "2 servings"}}]}
+    stale_prior = {"kind": "ask", "question": "Salty Peanut or Caramel Cashew?", "log_date": "2026-08-18"}
+    req = _Req("2 servings of Barebells bars", {"db": db, "user": user, "today_log": log,
+                                               "messages": (), "food_prior": stale_prior,
+                                               "food_pending": True})
+    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    try:
+        plan = await FoodPlanStage(interpreter=spy).run(req)
+    finally:
+        SCANNED_PRODUCT_EVIDENCE.reset(token)
+    assert seen == [None], "a bound scan handed the interpreter the stale prior"
+    assert plan.operations and plan.operations[0]["name"] == "log_food"
+    # unbound: the prior travels
+    await FoodPlanStage(interpreter=spy).run(req)
+    assert seen[-1] == stale_prior
