@@ -574,7 +574,49 @@ C. B-1.7c  COMPOSITION   chicken + olive oil = two canonical contributions.
                          Depends on B.
 
 INDEPENDENT REPAIR TRACK — parallel to both
-D. B-1.8   CANONICAL CORRECTION / REPAIR.
+D. B-1.8   CANONICAL CORRECTION / REPAIR — 🟡 ACTIVE *(GO Danny,
+           2026-08-17: highest-value use of the P17g wait — a hard rollout
+           gate under EVERY measurement outcome)*.
+
+           THE CORE CONTRACT *(Danny, verbatim)*:
+             correction -> bind existing canonical event -> load persisted
+             evidence snapshot / pricing receipt -> change ONLY the corrected
+             semantic fact -> deterministic reprice -> mutate ledger/day
+             totals -> preserve provenance -> never fall back to legacy.
+           THE CRUCIAL PROOF: correction REUSES what Arnie already knew.
+           "2 eggs -> 3 eggs" changes the scaling factor against the stored
+           evidence — it never rediscovers USDA, never invokes a provider.
+           Scope is canonical MUTATION, not conversation UX.
+
+           ⭐ THE ARCHITECTURE ALREADY PAID FOR MOST OF THIS:
+             MutationAuthority.CANONICAL_OWNER   reserved by the firewall,
+                                                 never yet exercised
+             MealIntent.CORRECTION               exists, never constructed —
+                                                 ledger_source canonical:correction
+             owning()                            binds a settled meal to its
+                                                 operation (recent window)
+             P17f receipt + snapshots            the reprice arithmetic:
+                                                 scaling_factor, resolved_grams,
+                                                 source basis, evidence ids
+           B-1.8 is the path that EXERCISES the authority the firewall
+           reserves — the firewall itself is untouched, as frozen.
+
+           SLICES, dark-first like P17:
+             B-1.8a  the repair PRIMITIVE — pure, receipt-driven quantity
+                     reprice; committed macros × a deterministic ratio; both
+                     the receipted path and the ratio path for pre-P17f rows
+                     (which is ALL current production rows); refusals typed
+             B-1.8b  routing + the write: correction turn on a canonically
+                     owned meal -> bind via owning()/ledger -> authority
+                     CANONICAL_OWNER -> canonical:correction event ->
+                     idempotent claim, revision++ -> day totals
+             B-1.8c  identity + product-variant repair (rebind snapshot /
+                     evidence; quantity machinery unchanged)
+             B-1.8d  twins + E2E + rollback proof
+           ⚠ pre-P17f rows carry NO receipt: their quantity repair is the
+           macro-ratio path (committed macros ARE the persisted facts) —
+           evidence-preserving by construction, and typed refusal where no
+           deterministic ratio exists (cross-dimension without evidence).
            Must handle more than amount corrections:
              "actually that was 8 oz"
              "actually it was 3 eggs"
