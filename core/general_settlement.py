@@ -310,7 +310,12 @@ async def look(db, *, user_id: int, item: dict) -> ItemFacts:
     entity_id = str(item.get("canonical_entity_id") or "")
 
     memory = None
-    if identity:
+    # ⛔ A BOUND ITEM NEVER READS MEMORY — not even for existence. The verdict
+    # for a scan-bound item comes from its snapshot alone (below); a memory
+    # lookup here would be a read whose result cannot matter, and "never
+    # consulted" is only true mechanically when the read never happens
+    # (the CF9 two-turn proof's spy caught this one).
+    if identity and not item.get("product_evidence_id"):
         try:
             memory = await _memory(db, user_id, identity, entity_id)
         except Exception:                              # noqa: BLE001
@@ -378,7 +383,7 @@ async def look(db, *, user_id: int, item: dict) -> ItemFacts:
         has_quantity=bool(quantity_text),
         has_mass=bool(grams and float(grams) > 0),
         has_memory=memory is not None,
-        has_artifact=(bool(entity)
+        has_artifact=(bool(entity) and not item.get("product_evidence_id")
                       and evidence_for(entity, preparation) is not None),
         product_bound=product_bound, product_scales=product_scales,
         product_unit=product_unit, product_label=product_label,

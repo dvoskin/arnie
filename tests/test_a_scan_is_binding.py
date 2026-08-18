@@ -167,7 +167,8 @@ async def _log(db, user):
                              .execution_options(populate_existing=True))).scalar_one()
 
 
-async def _native(db, user, log, text, snapshot_id, ops, monkeypatch, forbid_legacy=True):
+async def _native(db, user, log, text, snapshot_id, ops, monkeypatch, forbid_legacy=True,
+                  turn_id="t:scan"):
     """The native chain with the interpreter stubbed to return `ops`, the
     scan bound through the SAME contextvar api/chat.py sets, and the legacy
     executor instrumented to fail if invoked."""
@@ -186,7 +187,8 @@ async def _native(db, user, log, text, snapshot_id, ops, monkeypatch, forbid_leg
     async def stub(text, u, **kw):
         return {"action": "log", "say": "", "tool_calls": ops}
 
-    req = _Req(text, {"db": db, "user": user, "today_log": log, "messages": ()})
+    req = _Req(text, {"db": db, "user": user, "today_log": log, "messages": ()},
+               turn_id=f"{turn_id}-{user.id}")
     token = SCANNED_PRODUCT_EVIDENCE.set(snapshot_id)
     try:
         plan = await FoodPlanStage(interpreter=stub).run(req)
@@ -235,14 +237,16 @@ async def test_live_shape_two_cups_is_refused_in_the_labels_units_never_legacy(
                                           "calories": 999.0}}]
     execution, response = await _native(db, user, log, "2 cups of barebells", snap.id, ops, monkeypatch)
     assert execution is not None and not execution.calls[0].committed
-    assert execution.calls[0].correction["refusal"] == "scan_bound_unpriceable"
+    # the label states a serving, so the refusal is now an ASK holding the
+    # snapshot (CF9); a label with nothing to ask with keeps the plain refusal
+    assert execution.calls[0].correction["refusal"] in ("scan_bound_ask", "scan_bound_unpriceable")
     assert len((await db.execute(select(FoodEntry))).scalars().all()) == n_rows
     assert (await db.execute(select(IdempotencyRecord).where(
         IdempotencyRecord.user_id == user.id))).scalars().all() == []
     assert (await db.execute(select(LedgerEvent).where(
         LedgerEvent.user_id == user.id, LedgerEvent.domain == "food"))).scalars().all() == []
     text = " ".join(response.bubbles)
-    assert "bar" in text and "2 cups" in text, text
+    assert "55 g serving" in text, text
 
 
 @pytest.mark.asyncio
@@ -350,7 +354,7 @@ async def test_two_bars_are_refused_in_the_labels_own_terms(db, make_user, monke
     execution, response = await _native(db, user, log, "2 barebell bars", snap.id, ops, monkeypatch)
     assert not execution.calls[0].committed
     text = " ".join(response.bubbles)
-    assert "55 g serving" in text and "servings" in text and "grams" in text, text
+    assert "55 g serving" in text and "each bar" in text, text     # the ask, in the label's terms
 
 
 @pytest.mark.asyncio
@@ -471,6 +475,296 @@ async def test_the_users_stated_serving_outranks_the_interpreters_bar(db, make_u
     execution2, response2 = await _native(db, user, log, "2 barebells bars", snap.id,
                                           [{"name": "log_food", "input": {"food_name": "Barebells Protein Bar",
                                                                           "quantity": "2 bar", "calories": 400.0}}],
-                                          monkeypatch)
+                                          monkeypatch, turn_id=f"t:scan-bars-{user.id}")
     assert not execution2.calls[0].committed
     assert "55 g serving" in " ".join(response2.bubbles)
+
+
+# ═════ CF9 / P17-UA slice C — THE ASK HOLDS THE SNAPSHOT (the natural journey) ═
+
+@pytest.mark.asyncio
+async def test_two_bars_opens_an_ask_that_holds_the_snapshot_and_the_answer_settles_bound(
+        db, make_user, monkeypatch):
+    """scan -> "2 bars" -> BoundUnpriceable -> an ASK in the label's terms is
+    PERSISTED with the snapshot on its stored item -> the answer "2 servings"
+    (a later turn, NO scan) settles the SAME snapshot canonically: no
+    reacquisition (spy = 0), no MEMORY read (spy = 0), no legacy (forbidden),
+    row.product_evidence_id == the snapshot, 110 g from the label's serving."""
+    import handlers.tool_executor as te
+    from core import b1_answer_turn, canonical_pricing_inputs as inputs
+    from core.clarification_answer import Outcome
+    from core.turns.stages.execute_native import NativeExecutionStage
+    from core.turns.stages.render_native import NativeRenderStage
+    from core.turns.stages.snapshot_builder import CommittedSnapshotStage
+    from db.models import FoodEntry, PendingOperation
+    from skills.nutrition import product_acquisition as acq
+    from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+    from sqlalchemy import select
+
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)                       # 70004199 as it really is
+    # a memory row for the same name — must never be read on the bound path
+    await _remember(db, user, "Barebells Salty Peanut Protein Bar",
+                    {"calories": 9000, "protein": 1, "carbs": 1, "fat": 1}, fdc=f"60{user.id}")
+
+    async def forbidden(*a, **k):
+        raise AssertionError("legacy executor invoked")
+    monkeypatch.setattr(te, "execute_tool_calls", forbidden)
+    acquisitions, memory_reads = [], []
+    real_acquire = acq.acquire_product_evidence
+    async def spy_acquire(*a, **k):
+        acquisitions.append(a); return await real_acquire(*a, **k)
+    monkeypatch.setattr(acq, "acquire_product_evidence", spy_acquire)
+    real_mem = inputs._memory
+    async def spy_mem(*a, **k):
+        import traceback
+        memory_reads.append([f.name for f in traceback.extract_stack()[:-1]][-4:])
+        return await real_mem(*a, **k)
+    monkeypatch.setattr(inputs, "_memory", spy_mem)
+
+    # ── TURN 1: scan + "2 bars" -> the interpreter's op shape (unit=bar) ──
+    ops = [{"name": "log_food", "input": {"food_name": "Barebells Salty Peanut Protein Bar",
+                                          "quantity": "2 bar", "calories": 400.0, "protein": 40.0}}]
+    class _V:
+        disposition = "execute"; approved_operations = ops; clarification = None
+    req = _Req("2 barebells bars", {"db": db, "user": user, "today_log": log, "messages": ()},
+               turn_id=f"ios:cf9-{user.id}")
+    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    try:
+        execution = await NativeExecutionStage().run(req, validation=_V())
+        snapshot = await CommittedSnapshotStage().run(req, execution=execution)
+        response = await NativeRenderStage().run(req, plan=None, validation=_V(), snapshot=snapshot)
+    finally:
+        SCANNED_PRODUCT_EVIDENCE.reset(token)
+    assert not execution.calls[0].committed
+    assert execution.calls[0].correction["refusal"] == "scan_bound_ask"
+    text = " ".join(response.bubbles)
+    assert "55 g serving" in text and "each bar" in text, text
+    assert getattr(response, "interaction", None), "the ask must reach the client as an interaction"
+    # nothing written; the OPERATION is persisted with the snapshot on its item
+    assert (await db.execute(select(FoodEntry).where(FoodEntry.daily_log_id == log.id))).scalars().all() == []
+    op = (await db.execute(select(PendingOperation).where(
+        PendingOperation.user_id == user.id))).scalars().one()
+    import json
+    stored = json.loads(op.canonical_payload)
+    assert stored["item"]["product_evidence_id"] == snap.id
+    assert op.status == "awaiting_answer"
+
+    # ── TURN 2: the answer, a LATER turn with NO scan attached ──
+    turn = await b1_answer_turn.handle(db, user=user, source_turn_id=f"ios:cf9-ans-{user.id}",
+                                       message="2 servings")
+    assert turn is not None and turn.outcome is Outcome.APPLIED, turn
+    await db.commit()
+    row = (await db.execute(select(FoodEntry).where(FoodEntry.daily_log_id == log.id))).scalars().one()
+    assert row.product_evidence_id == snap.id, "the answer did not settle the held snapshot"
+    assert row.pricing_rung == "product"
+    assert row.calories == pytest.approx(220.0)            # the label, not the 400 guess, not 9000
+    # "2 servings" chosen = a user-stated mass of 110 g (class 1): scaled 1.1x
+    # from per-100 g; no conversion was needed, so resolved_grams is unset
+    assert row.scaling_factor == pytest.approx(1.1)
+    assert acquisitions == [], "the answer re-acquired the product"
+    assert memory_reads == [], "the bound answer READ memory"
+
+
+@pytest.mark.asyncio
+async def test_the_bound_ask_chip_settles_the_same_snapshot(db, make_user, monkeypatch):
+    """The tap path: the option '2 servings (110 g)' by id -> settles bound."""
+    import handlers.tool_executor as te
+    from core import b1_answer_turn
+    from core.clarification_answer import Outcome
+    from core.turns.stages.execute_native import NativeExecutionStage
+    from db.models import FoodEntry, PendingOperation
+    from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+    from sqlalchemy import select
+    import json
+
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    async def forbidden(*a, **k):
+        raise AssertionError("legacy executor invoked")
+    monkeypatch.setattr(te, "execute_tool_calls", forbidden)
+    ops = [{"name": "log_food", "input": {"food_name": "Barebells bar", "quantity": "2 bar",
+                                          "calories": 400.0}}]
+    class _V:
+        disposition = "execute"; approved_operations = ops; clarification = None
+    req = _Req("2 barebells bars", {"db": db, "user": user, "today_log": log, "messages": ()},
+               turn_id=f"ios:cf9tap-{user.id}")
+    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    try:
+        execution = await NativeExecutionStage().run(req, validation=_V())
+    finally:
+        SCANNED_PRODUCT_EVIDENCE.reset(token)
+    receipt = execution.calls[0].correction
+    wire = receipt["interaction"]
+    field = wire["groups"][0]["fields"][0]
+    two = next(o for o in field["options"] if o["label"].startswith("2 servings"))
+    op_row = (await db.execute(select(PendingOperation).where(
+        PendingOperation.user_id == user.id))).scalars().one()
+    turn = await b1_answer_turn.handle(
+        db, user=user, source_turn_id=f"ios:cf9tap-ans-{user.id}",
+        field_id=field["field_id"], option_id=two["option_id"], revision=0)
+    assert turn is not None and turn.outcome is Outcome.APPLIED, turn
+    await db.commit()
+    row = (await db.execute(select(FoodEntry).where(FoodEntry.daily_log_id == log.id))).scalars().one()
+    assert row.product_evidence_id == snap.id and row.calories == pytest.approx(220.0)
+
+
+# ═════ CF9 REPLAY / SAFETY (Danny's closure list) ═══════════════════════════
+
+async def _open_bound_ask(db, user, log, snap, monkeypatch, *, turn_id, qty="2 bar"):
+    """Turn 1 helper: scan + '2 bars' -> the ask; returns the execution."""
+    from core.turns.stages.execute_native import NativeExecutionStage
+    from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+    ops = [{"name": "log_food", "input": {"food_name": "Barebells Salty Peanut Protein Bar",
+                                          "quantity": qty, "calories": 400.0}}]
+    class _V:
+        disposition = "execute"; approved_operations = ops; clarification = None
+    req = _Req("2 barebells bars", {"db": db, "user": user, "today_log": log, "messages": ()},
+               turn_id=turn_id)
+    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    try:
+        execution = await NativeExecutionStage().run(req, validation=_V())
+    finally:
+        SCANNED_PRODUCT_EVIDENCE.reset(token)
+    await db.commit()
+    return execution
+
+
+async def _rows(db, log):
+    """Core-table read by log id captured up front — safe after a rollback."""
+    from db.models import FoodEntry
+    from sqlalchemy import select
+    log_id = log if isinstance(log, int) else int(log.__dict__.get("id") or log.id)
+    t = FoodEntry.__table__
+    return (await db.execute(select(t).where(t.c.daily_log_id == log_id))).mappings().all()
+
+
+@pytest.mark.asyncio
+async def test_turn_one_takes_no_claim_and_a_duplicate_answer_makes_one_row(db, make_user, monkeypatch):
+    import handlers.tool_executor as te
+    from core import b1_answer_turn
+    from core.clarification_answer import Outcome
+    from db.models import IdempotencyRecord
+    from sqlalchemy import select
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    async def forbidden(*a, **k): raise AssertionError("legacy executor invoked")
+    monkeypatch.setattr(te, "execute_tool_calls", forbidden)
+    log = await _log(db, user); snap = await _prod_snapshot(db)
+    ex = await _open_bound_ask(db, user, log, snap, monkeypatch, turn_id=f"ios:cf9s1-{user.id}")
+    assert ex.calls[0].correction["refusal"] == "scan_bound_ask"
+    # zero food write, ZERO settlement claim on turn 1
+    assert await _rows(db, log) == []
+    assert (await db.execute(select(IdempotencyRecord).where(
+        IdempotencyRecord.user_id == user.id))).scalars().all() == []
+    # answer, then the SAME answer again under a new turn id
+    t1 = await b1_answer_turn.handle(db, user=user, source_turn_id=f"a1-{user.id}", message="2 servings")
+    assert t1.outcome is Outcome.APPLIED
+    await db.commit()
+    t2 = await b1_answer_turn.handle(db, user=user, source_turn_id=f"a2-{user.id}", message="2 servings")
+    assert t2 is not None and t2.outcome is Outcome.REPLAY, t2
+    await db.commit()
+    rows = await _rows(db, log)
+    assert len(rows) == 1 and rows[0]["product_evidence_id"] == snap.id
+
+
+@pytest.mark.asyncio
+async def test_another_user_cannot_answer_the_ask(db, make_user, monkeypatch):
+    import handlers.tool_executor as te
+    from core import b1_answer_turn
+    owner, other = await make_user("cf9-owner"), await make_user("cf9-other")
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(owner.id))
+    async def forbidden(*a, **k): raise AssertionError("legacy executor invoked")
+    monkeypatch.setattr(te, "execute_tool_calls", forbidden)
+    log = await _log(db, owner); snap = await _prod_snapshot(db)
+    await _open_bound_ask(db, owner, log, snap, monkeypatch, turn_id=f"ios:cf9u-{owner.id}")
+    assert await b1_answer_turn.handle(db, user=other, source_turn_id="x", message="2 servings") is None
+    assert await _rows(db, log) == []
+
+
+@pytest.mark.asyncio
+async def test_a_failed_settlement_does_not_consume_the_ask(db, make_user, monkeypatch):
+    """"2 cups" is a heuristic mass -> the bound settle REFUSES -> no row, the
+    ask is still awaiting -> "2 servings" then settles it."""
+    import handlers.tool_executor as te
+    from core import b1_answer_turn
+    from core.clarification_answer import Outcome
+    from core.b1_quantity_operation import owning
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    async def forbidden(*a, **k): raise AssertionError("legacy executor invoked")
+    monkeypatch.setattr(te, "execute_tool_calls", forbidden)
+    log = await _log(db, user); snap = await _prod_snapshot(db)
+    await _open_bound_ask(db, user, log, snap, monkeypatch, turn_id=f"ios:cf9f-{user.id}")
+    user_id = int(user.id); log_id = int(log.id)
+    bad = await b1_answer_turn.handle(db, user=user, source_turn_id=f"b-{user_id}", message="2 cups")
+    assert bad is not None and bad.outcome is Outcome.REFUSED, bad
+    await db.rollback()
+    await db.refresh(user)               # the rollback expired the ORM user
+    assert await _rows(db, log_id) == []
+    owned = await owning(db, user)
+    assert owned is not None and owned.awaiting, "a failed settle consumed the ask"
+    good = await b1_answer_turn.handle(db, user=user, source_turn_id=f"g-{user.id}", message="2 servings")
+    assert good.outcome is Outcome.APPLIED
+    await db.commit()
+    rows = await _rows(db, log)
+    assert len(rows) == 1 and rows[0]["product_evidence_id"] == snap.id
+
+
+@pytest.mark.asyncio
+async def test_a_new_scan_supersedes_the_open_ask(db, make_user, monkeypatch):
+    import handlers.tool_executor as te
+    from core.b1_quantity_operation import owning
+    from db.models import PendingOperation
+    from sqlalchemy import select
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    async def forbidden(*a, **k): raise AssertionError("legacy executor invoked")
+    monkeypatch.setattr(te, "execute_tool_calls", forbidden)
+    log = await _log(db, user); snap = await _prod_snapshot(db)
+    await _open_bound_ask(db, user, log, snap, monkeypatch, turn_id=f"ios:cf9n1-{user.id}")
+    await _open_bound_ask(db, user, log, snap, monkeypatch, turn_id=f"ios:cf9n2-{user.id}")
+    ops = (await db.execute(select(PendingOperation).where(
+        PendingOperation.user_id == user.id).order_by(PendingOperation.id))).scalars().all()
+    assert len(ops) == 2
+    assert ops[0].status != "awaiting_answer", "the old ask was not superseded"
+    owned = await owning(db, user)
+    assert owned is not None and owned.operation_id == ops[1].operation_id
+
+
+@pytest.mark.asyncio
+async def test_an_expired_ask_ignores_free_text_but_a_tap_still_lands(db, make_user, monkeypatch):
+    """B-1's contract, applied to the bound ask: after expiry, unaddressed
+    prose is a NEW report (left alone, no write); an addressed tap is still an
+    answer to the question it names."""
+    import handlers.tool_executor as te
+    from datetime import timedelta
+    from core import b1_answer_turn
+    from core.clarification_answer import Outcome
+    from core.clock import now as _now
+    from db.models import PendingOperation
+    from sqlalchemy import select, update
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    async def forbidden(*a, **k): raise AssertionError("legacy executor invoked")
+    monkeypatch.setattr(te, "execute_tool_calls", forbidden)
+    log = await _log(db, user); snap = await _prod_snapshot(db)
+    ex = await _open_bound_ask(db, user, log, snap, monkeypatch, turn_id=f"ios:cf9e-{user.id}")
+    await db.execute(update(PendingOperation).where(PendingOperation.user_id == user.id)
+                     .values(expires_at=_now() - timedelta(hours=1)))
+    await db.commit()
+    assert await b1_answer_turn.handle(db, user=user, source_turn_id=f"e1-{user.id}",
+                                       message="had some rice") is None
+    assert await _rows(db, log) == []
+    wire = ex.calls[0].correction["interaction"]; field = wire["groups"][0]["fields"][0]
+    two = next(o for o in field["options"] if o["label"] == "2 servings")
+    t = await b1_answer_turn.handle(db, user=user, source_turn_id=f"e2-{user.id}",
+                                    field_id=field["field_id"], option_id=two["option_id"], revision=0)
+    assert t is not None and t.outcome is Outcome.APPLIED, t
+    await db.commit()
+    rows = await _rows(db, log)
+    assert len(rows) == 1 and rows[0]["product_evidence_id"] == snap.id

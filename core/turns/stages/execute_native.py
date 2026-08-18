@@ -238,10 +238,24 @@ class NativeExecutionStage:
             items = _bind_scanned_product(_food_inputs(ops))
             if owner is None:
                 # SCAN-BOUND, UNPRICEABLE (P17 scan/binding, CF5): canonical
-                # owns the answer and the answer is a refusal. Nothing
-                # written, nothing claimed — the user's retry ("2 bars") is a
-                # fresh turn with the same scan.
-                view = self._publish_bound_refusal(coverage, items, request)
+                # owns the answer. ⭐ CF9 / P17-UA slice C: the answer is an
+                # ASK THAT HOLDS THE SNAPSHOT — a durable canonical quantity
+                # operation whose stored item carries product_evidence_id, so
+                # "2 servings" / "110 g" / a tap settles the SAME snapshot,
+                # never re-acquired, never legacy. Nothing written, nothing
+                # claimed on this turn. If the label offers nothing to ask
+                # with, the plain refusal stands.
+                # (no handler here — A8; `open_bound_quantity_ask` never
+                # raises: any failure inside it is "no ask", and the plain
+                # refusal stands)
+                from core.product_bound_ask import open_bound_quantity_ask
+                ask = await open_bound_quantity_ask(
+                    db, user=user, item=items[0], coverage=coverage,
+                    turn_id=request.turn_id,
+                    channel=str(getattr(request, "platform", "") or ""),
+                    locale=str(getattr(user, "locale", "") or "en"))
+                view = self._publish_bound_refusal(coverage, items, request,
+                                                   ask=ask)
                 LAST_EXECUTION.set(view)
                 return view
             # ⭐ THE MESSAGE TRAVELS WITH THE MEAL (A12). Canonical's idempotency
@@ -420,12 +434,26 @@ class NativeExecutionStage:
         LAST_EXECUTION.set(view)
         return view
 
-    def _publish_bound_refusal(self, coverage, items, request):
+    def _publish_bound_refusal(self, coverage, items, request, ask=None):
         """The execution view for a scan-bound refusal: ONE blocked call
-        carrying user-grade copy in the label's units. Non-mutating by
-        construction — nothing here touched the database."""
+        carrying user-grade copy in the label's units — and, when the ask
+        was opened, the interaction the client answers by id (CF9). The
+        turn itself wrote nothing; the operation row is the ask's."""
         from core.execution_result import CallResult, ExecutionResult
         item = (items or [{}])[0]
+        if ask is not None:
+            from core.b1_quantity_operation import wire_payload_for
+            text = str(getattr(ask.interaction, "introduction", "") or "").strip()
+            call = CallResult(
+                name="log_food", raw_input=dict(item), status="blocked",
+                result_text=text, entry_id=None,
+                correction={"owner": "canonical", "refusal": "scan_bound_ask",
+                            "operation_id": ask.operation_id,
+                            "interaction": wire_payload_for(ask.interaction,
+                                                            locale=ask.locale)})
+            logger.info("event=scan_bound_ask turn=%s operation=%s",
+                        getattr(request, "turn_id", "-"), ask.operation_id)
+            return ExecutionResult(calls=(call,))
         food = str(item.get("food_name") or item.get("food") or "").strip()
         unit = str(getattr(coverage, "unit", "") or "").strip()
         qty = str(item.get("quantity") or "").strip()

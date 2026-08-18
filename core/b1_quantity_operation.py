@@ -1483,11 +1483,15 @@ async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
         # Without this the estimate rung hands its own numbers through and
         # 50 g and 100 g both commit 200 kcal — B-1.75's contract inverted.
         _basis_grams = _grams_of(_ask_time_quantity(item), item)
+        # ⭐ CF9 / P17-UA: a stored item that carries a snapshot was a SCAN;
+        # the answer settles BOUND — that snapshot only, MEMORY never read.
+        _bound = bool(item.get("product_evidence_id"))
         _inputs = await assemble(
             db, user_id=user.id,
             entity=str(item.get("food") or item.get("name") or "").strip(),
             preparation=resolved.preparation_id or "",
-            identity=food_name, item=item, basis_grams=_basis_grams)
+            identity=food_name, item=item, basis_grams=_basis_grams,
+            bound=_bound)
         # PricingRefused PROPAGATES. It is raised BEFORE any write below, so
         # a refusal is non-mutating by construction rather than by a handler
         # remembering to be careful: no food row, no ledger event, and the
@@ -1495,7 +1499,7 @@ async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
         # number is the exact failure being deleted — see `refuse_or_return`.
         analysis = price(entity=food_name, preparation=resolved.preparation_id,
                          consumed=_consumed_quantity(patch.quantity),
-                         **_inputs)
+                         bound=_bound, **_inputs)
 
     zone = str(getattr(safe_timezone(user.timezone), "zone", "UTC"))
     revision = owned.revision + 1
@@ -1534,7 +1538,25 @@ async def settle(db, *, user, owned: OwnedOperation, resolved: ResolvedFields,
             # The RESOLVER priced it; the user chose the portion. Two axes,
             # deliberately not collapsed (B-0b).
             nutrition_provenance=NutritionProvenance.SERVER_RESOLVED,
-            raw_input=food_name),))
+            raw_input=food_name,
+            # ⭐ THE PRICING RECEIPT, the same one general settlement writes
+            # (P17f): rung, evidence, basis, conversion, and — for a scan-bound
+            # answer (CF9) — the SNAPSHOT the row was priced from. B-1 rows
+            # carried none of this before; "which facts did this meal use" was
+            # unanswerable for every clarified meal.
+            attributes={"pricing": {k: v for k, v in {
+                "rung": getattr(getattr(analysis, "rung", None), "value", None),
+                "evidence_id": getattr(analysis, "evidence_id", "") or None,
+                "basis": getattr(analysis, "basis", "") or None,
+                "scaling_factor": getattr(analysis, "scaling_factor", None),
+                "resolved_grams": getattr(analysis, "resolved_grams", None),
+                "conversion_evidence_ids": list(getattr(
+                    analysis, "conversion_evidence_ids", ()) or ()) or None,
+                "source_amount": getattr(analysis, "source_amount", None),
+                "source_unit": getattr(analysis, "source_unit", "") or None,
+                "product_evidence_id": (int(item["product_evidence_id"])
+                                        if _bound else None),
+            }.items() if v not in (None, [], "")}}),))
 
     # THE REAL PENDING OPERATION, at the revision the answer produces. The
     # claim is `(operation_id, revision)`, so a duplicate delivery of the same
@@ -1916,12 +1938,38 @@ def _consumed_quantity(canonical):
     grams = getattr(canonical, "grams", None)
     grams = float(grams) if grams is not None else None
     amount = getattr(canonical, "amount", None)
+    unit = str(getattr(canonical, "unit_id", "") or "g")
+    # ⭐ A MASS THE USER STATED OR CHOSE IS EXACT (P17 precedence class 1).
+    # A CanonicalQuantity whose dimension is MASS carries the user's own
+    # answer — "110 g", or the tapped "2 servings (110 g)" option — and
+    # `mass_is_exact` is how `resolve_scaling` recognises class 1. Without
+    # the marking, a BOUND settle (CF9) refused the user's own answer as a
+    # heuristic mass. Marked as a mass conversion — the same source the
+    # normalizer stamps on "110 g" typed — never invented for a count.
+    dim = str(getattr(getattr(canonical, "dimension", None), "value",
+                      getattr(canonical, "dimension", "")) or "").lower()
+    exact_mass = (grams is not None and dim == "mass"
+                  and unit.lower() in ("g", "gram", "grams", "kg", "oz", "lb", "lbs"))
+    count = (float(canonical.count) if getattr(canonical, "count", None)
+             is not None else None)
+    # A COUNT of a named unit ("2 servings") reaches the resolver AS a count
+    # with its unit — the label's own serving conversion resolves it — not as
+    # a pre-multiplied mass; the mass on the quantity is derived, not stated.
+    if dim in ("count", "volume") and count:
+        # the derived mass rides for the unbound heuristic path (as before);
+        # `normalization_source` stays empty, so it is NEVER read as exact
+        return NormalizedQuantity(
+            amount=float(amount) if amount is not None else count,
+            unit=unit, grams=grams, count=count, unit_label=f"{count:g} {unit}",
+            user_stated_amount=count, user_stated_unit=unit)
     return NormalizedQuantity(
         amount=float(amount) if amount is not None else (grams or 0.0),
-        unit=str(getattr(canonical, "unit_id", "") or "g"),
+        unit=unit,
         grams=grams,
-        count=(float(canonical.count) if getattr(canonical, "count", None)
-               is not None else None))
+        count=count,
+        normalization_source=("mass_conversion" if exact_mass else ""),
+        user_stated_amount=(float(amount) if (exact_mass and amount is not None) else None),
+        user_stated_unit=(unit if exact_mass else ""))
 
 
 def _is_estimated(analysis) -> bool:

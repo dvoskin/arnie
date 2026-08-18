@@ -319,12 +319,46 @@ def answer_from_text(interaction, *, field_id: str, text: str,
 
     from skills.nutrition.quantity_clarification import _quantity
 
+    # ⛔⛔ THE USER SAID "2 CUPS", NOT "260 G" *(CF9 safety proof, 2026-08-18)*.
+    # This used to collapse every answer to a MASS in grams stamped
+    # USER_STATED — so a vessel-heuristic 260 g was indistinguishable from a
+    # typed "260 g", and a BOUND settle (exact product) priced a heuristic
+    # mass as class-1 authority: exact nutrition x estimated mass, the CF4
+    # violation, through the answer door. Now the quantity keeps the user's
+    # UNIT and DIMENSION whenever the mass was not stated exactly; the grams
+    # ride as a DERIVED value. Unbound settlement still prices from those
+    # grams exactly as before (the heuristic path); bound settlement sees a
+    # count of "cups", finds no sourced measure, and refuses. What the user
+    # said is what is recorded.
+    quantity = _quantity(grams, provenance=Provenance.USER_STATED,
+                         confidence=1.0, basis="the user said so")
+    try:
+        from skills.nutrition.normalize import normalize_quantity
+        nq = normalize_quantity(said, food_name or "")
+    except Exception:                                    # noqa: BLE001
+        nq = None
+    if nq is not None and not getattr(nq, "mass_is_exact", False):
+        from dataclasses import replace as _replace
+        from decimal import Decimal as _D
+
+        from core.semantics import Dimension
+        stated_unit = str(getattr(nq, "unit", "") or "").strip()
+        stated_amount = getattr(nq, "count", None) or getattr(nq, "amount", None)
+        if stated_unit and stated_amount and stated_unit.lower() not in (
+                "g", "gram", "grams", "kg", "oz", "ounce", "ounces", "lb", "lbs"):
+            dim = (Dimension.VOLUME if getattr(nq, "milliliters", None)
+                   else Dimension.COUNT)
+            quantity = _replace(
+                quantity, unit_id=stated_unit, dimension=dim,
+                amount=_D(str(stated_amount)), count=_D(str(stated_amount)),
+                milliliters=(_D(str(nq.milliliters)) if getattr(nq, "milliliters", None) else None),
+                confidence=_replace(quantity.confidence,
+                                    basis="the user said so (mass derived, not stated)"))
     return AnswerResult(
         Outcome.APPLIED, modality=AnswerModality.USER_TEXT,
         patch=SetQuantity(
             event_id=field.event_id, field_id=field.field_id,
-            quantity=_quantity(grams, provenance=Provenance.USER_STATED,
-                               confidence=1.0, basis="the user said so"),
+            quantity=quantity,
             provenance=Provenance.USER_STATED))
 
 

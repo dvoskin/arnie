@@ -1706,12 +1706,44 @@ P17-UA   ◻ UNIT-ALIAS EVIDENCE *(Danny, 2026-08-18 — the fix for "2 bars",
          row); "2 bars" -> 110 g ONLY with an alias, refuses without;
          receipt on the row names unit_evidence:<id>. tests/test_a_
          consumer_unit_is_evidence_not_a_guess.py (7) + PG migration gate.
-         · C) CF9 proper: a
-         BoundUnpriceable opens a pending quantity operation that HOLDS
-         the snapshot and asks the source-4 question; "yes" -> per-entry
-         alias -> bound settle; grams/servings -> bound settle; else stays
-         refused; the answer never re-acquires and never goes legacy ·
-         D) label capture (later).
+         · C) ✅ CF9 proper *(local, unpushed until green)*: a
+         BoundUnpriceable opens a durable canonical quantity operation
+         (core/product_bound_ask.py, on B-1's own open_operation /
+         quantity_field / build_interaction / answer path / settle) whose
+         stored item CARRIES product_evidence_id; the ask is in the
+         label's terms ("The label gives nutrition per 55 g serving — is
+         each bar one 55 g serving?") with options whose SEMANTIC object
+         is the patch — quantity 2 x unit "serving" (COUNT), display "2
+         servings" — never a pre-multiplied mass and never the label
+         string. B-1's settle prices BOUND when the stored item carries a
+         snapshot and now writes the pricing receipt (B-1 rows never had
+         one). Closure proofs (Danny's list; tests/test_a_scan_is_
+         binding.py, 29): TURN 1 ask + snapshot persisted + zero write +
+         zero claim + zero legacy · TURN 2 typed "2 servings" -> same held
+         snapshot, 110 g via the label's serving conversion, bound row,
+         product_evidence_id == snapshot, no reacquisition (spy 0), zero
+         MEMORY reads (spy 0 — the PREDICATE was reading memory for bound
+         items; fixed), zero legacy · TURN 2 tap -> identical · duplicate
+         answer -> ONE row (REPLAY) · expired ask ignores prose, tap still
+         lands · another user cannot answer · a new scan supersedes the
+         open ask · failed settle ("2 cups") does NOT consume the ask ·
+         success consumes exactly once.
+         ⭐⭐ FOUND BY THE SAFETY PROOFS: `answer_from_text` collapsed EVERY
+         answer to a MASS in grams stamped USER_STATED — "2 cups" -> 260 g
+         (vessel heuristic) was indistinguishable from typed "260 g", so a
+         BOUND settle priced a heuristic mass as class-1 authority through
+         the answer door (CF4). Fixed at the source: a non-exact mass keeps
+         the user's unit/dimension; grams ride as DERIVED; unbound B-1
+         prices as before, bound refuses.
+         ⚠ NOT YET: the "yes" is not persisted as user_confirmed unit
+         evidence (needs the confirmation keyed to the operation before
+         the entry exists — produnit002 — and its own answer semantics);
+         the receipt still names the snapshot + the panel conversion.
+         ⚠ The native lane does not check for an owning canonical
+         operation before interpreting: a typed answer reaches the
+         interpreter first, yields no op, delegates, and legacy's block
+         calls b1_answer_turn — works, indirect; watch it live.
+         · D) label capture (later).
 P17g     ◻ eligibility predicate LAST — BLOCKED: canary #4 + CF9/P17-UA both
 P17h     ◻ mutation + positive twins
 ```

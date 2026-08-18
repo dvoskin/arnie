@@ -156,7 +156,19 @@ class NativeRenderStage:
         # logs, where it belongs.
         corrected = _correction_reply(snapshot)
         if corrected:
-            return Response.from_text(corrected)
+            resp = Response.from_text(corrected)
+            # CF9: a bound ask carries its interaction so a native client can
+            # answer by id (POST /chat/answer); the sentence is the same for
+            # every channel.
+            for c in (getattr(getattr(snapshot, "execution", None), "calls", None) or ()):
+                receipt = getattr(c, "correction", None) or {}
+                if isinstance(receipt, dict) and receipt.get("interaction"):
+                    try:
+                        resp.interaction = receipt["interaction"]
+                    except Exception:                    # noqa: BLE001
+                        pass
+                    break
+            return resp
 
         # Nothing committed → say nothing. The day line alone ("You're at
         # 1500 with 700 left") reads as a confirmation of a write that was
