@@ -156,11 +156,17 @@ class _Req:
 
 
 async def _log(db, user):
+    """⛔ THE APP'S OWN TODAY, NOT A PINNED DATE. This helper pinned
+    `dt.date(2026, 8, 18)` while the canonical writer resolves the LOGGING
+    DAY for itself — so at 00:02 UTC on the 19th the writer wrote to a
+    different DailyLog than the fixture handed out, and five tests that
+    query `daily_log_id == log.id` went red on a tree that had been green
+    hours earlier. A fixture that pins a date is a test that expires."""
     from db.models import DailyLog
-    from db.queries import get_or_create_log_for_date
+    from db.queries import get_or_create_today_log
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
-    log = await get_or_create_log_for_date(db, user.id, dt.date(2026, 8, 18))
+    log = await get_or_create_today_log(db, user.id)
     await db.commit()
     return (await db.execute(select(DailyLog).where(DailyLog.id == log.id)
                              .options(selectinload(DailyLog.food_entries))

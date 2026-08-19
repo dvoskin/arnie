@@ -451,19 +451,24 @@ def _same_quantity(old: str, new: str) -> bool:
     return False
 
 
+from skills.nutrition.correction_application import ScanBoundCorrectionRefused
+
+
 async def _apply_portion_correction(db, user, entry_id: int, inp: dict,
                                     changes: dict) -> None:
     """Rewrite `changes`' macros as arithmetic on what the row already holds.
 
     Mutates `changes` in place when it succeeds and leaves it untouched when it
     does not — the caller's existing path IS the fallback, so a decline costs
-    the correction nothing. Never raises for the same reason.
+    the correction nothing. Never raises for the same reason, with ONE typed
+    exception: `ScanBoundCorrectionRefused` PROPAGATES (CF5b review). A decline
+    is "the caller's numbers stand"; that refusal means the numbers must not
+    stand, so swallowing it writes the disagreement it exists to prevent.
     """
+    from skills.nutrition.correction_application import (
+        apply_count_correction, apply_portion, apply_serving_count_correction)
     try:
         from db.models import FoodEntry as _FE_p
-        from skills.nutrition.correction_application import (
-            apply_count_correction, apply_portion,
-            apply_serving_count_correction)
 
         row = await db.get(_FE_p, int(entry_id))
         if row is None:
@@ -536,6 +541,16 @@ async def _apply_portion_correction(db, user, entry_id: int, inp: dict,
         # rescale.
         for column, value in scaled.items():
             changes[column] = value
+    except ScanBoundCorrectionRefused:
+        # ⛔⛔ THE TYPED INVARIANT PROPAGATES *(CF5b review)*. Swallowing it
+        # here is strictly worse than not having it: this function's contract
+        # is "leaves `changes` untouched on failure, the caller's path IS the
+        # fallback" — and the caller's path applies the new QUANTITY with the
+        # model's own macros, so a refusal became a row reading "9 chips"
+        # beside the whole bag's calories. A portion and a value allowed to
+        # disagree, which is the class this function exists to end. A guard
+        # that cannot stop the write must not pretend to.
+        raise
     except Exception as e:
         logger.warning(f"portion correction not applied: {e}")
 
@@ -3600,6 +3615,17 @@ async def _execute_tool_calls(
                 or r.startswith("Failed to")
             ))
             per_call.append((name, food_name, ok))
+        except ScanBoundCorrectionRefused:
+            # ⛔⛔ THE TYPED INVARIANT PROPAGATES THROUGH THE LOOP TOO *(CF5b
+            # review)*. This handler turns a failure into `results[name] =
+            # "Error: ..."` and carries on — a per-tool degradation that is
+            # right for an enrichment hiccup and wrong for an authority
+            # violation. A scan-bound turn that reached correction
+            # application means the ROUTING is wrong, and the caller must see
+            # that rather than read a string. Nothing was written: the
+            # refusal is raised before any arithmetic and this call never
+            # reached the row.
+            raise
         except Exception as e:
             logger.error(f"Tool {name} failed: {e}", exc_info=True)
             results[name] = f"Error: {e}"

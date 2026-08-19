@@ -168,12 +168,21 @@ def test_a_single_item_turn_binds_the_snapshot():
     from core.turns.stages.execute_native import (_bind_scanned_product,
                                                   _food_inputs)
 
-    token = SCANNED_PRODUCT_EVIDENCE.set(42)
+    # ⭐ CF5b review — THE BINDER STAMPS WHAT THE DECISION SAYS. Attachment
+    # alone no longer binds, so the real composition is exercised here:
+    # attach -> decide from the turn's ops -> stamp.
+    from core.turns.stages.execute_native import _decide_scan_binding
+    from skills.nutrition.product_acquisition import attach, begin_turn
+
+    begin_turn()
+    attach(42)
+    ops = _ops("Barebells bar")
+    _decide_scan_binding(ops)
     try:
-        items = _bind_scanned_product(_food_inputs(_ops("Barebells bar")))
+        items = _bind_scanned_product(_food_inputs(ops))
         assert items[0]["product_evidence_id"] == 42
     finally:
-        SCANNED_PRODUCT_EVIDENCE.reset(token)
+        begin_turn()
 
 
 def test_a_multi_item_turn_binds_nothing():
@@ -182,13 +191,23 @@ def test_a_multi_item_turn_binds_nothing():
     from core.turns.stages.execute_native import (_bind_scanned_product,
                                                   _food_inputs)
 
-    token = SCANNED_PRODUCT_EVIDENCE.set(42)
+    # ⚠ AND THIS TEST MUST BE ABLE TO FAIL. Once attachment stopped binding,
+    # asserting "no stamp" with no decision made passed vacuously — nothing
+    # stamps without a decision. So the decision is made here exactly as the
+    # stage makes it, and the single-item twin above proves stamping DOES
+    # happen when the decision says bound.
+    from core.turns.stages.execute_native import _decide_scan_binding
+    from skills.nutrition.product_acquisition import attach, begin_turn
+
+    begin_turn()
+    attach(42)
+    ops = _ops("Barebells bar", "banana")
+    _decide_scan_binding(ops)
     try:
-        items = _bind_scanned_product(
-            _food_inputs(_ops("Barebells bar", "banana")))
+        items = _bind_scanned_product(_food_inputs(ops))
         assert all("product_evidence_id" not in i for i in items)
     finally:
-        SCANNED_PRODUCT_EVIDENCE.reset(token)
+        begin_turn()
 
 
 def test_no_scan_no_binding():
@@ -230,9 +249,15 @@ async def test_the_whole_wire_prices_two_bars_with_settlement_offline(
     monkeypatch.setattr(off_mod, "fetch_product", _dead)
     monkeypatch.setattr(off_mod, "_get_json", _dead)
 
-    token = SCANNED_PRODUCT_EVIDENCE.set(snapshot_id)
+    from core.turns.stages.execute_native import _decide_scan_binding
+    from skills.nutrition.product_acquisition import attach, begin_turn
+
+    begin_turn()
+    attach(snapshot_id)
+    _ops_single = _ops("Barebells bar")
+    _decide_scan_binding(_ops_single)
     try:
-        items = _bind_scanned_product(_food_inputs(_ops("Barebells bar")))
+        items = _bind_scanned_product(_food_inputs(_ops_single))
         evidence = await assemble(db, user_id=user.id, entity="barebells bar",
                                   preparation="", identity="Barebells bar",
                                   item=items[0])
@@ -245,4 +270,4 @@ async def test_the_whole_wire_prices_two_bars_with_settlement_offline(
         assert priced.rung is Rung.PRODUCT
         assert priced.calories == pytest.approx(220.0)
     finally:
-        SCANNED_PRODUCT_EVIDENCE.reset(token)
+        begin_turn()

@@ -46,11 +46,20 @@ def _bind_scanned_product(items: list) -> list:
     smearing one product's evidence across foods it does not describe.
     `assemble()` loads the reference locally; nothing here fetches.
     """
-    from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+    from skills.nutrition.product_acquisition import (SCANNED_PRODUCT_EVIDENCE,
+                                                       scan_is_bound)
 
     snapshot_id = SCANNED_PRODUCT_EVIDENCE.get()
     if snapshot_id is not None and items:
-        if len(items) == 1:
+        # ⛔ CF5b review — THE DECISION IS THE AUTHORITY, not this function's
+        # own count. `_food_inputs` filters to log_food, so a mixed
+        # [update, log] turn arrives here as ONE item and would stamp a
+        # binding the turn does not have.
+        if not scan_is_bound():
+            logger.info(
+                "event=scan_binding_skipped items=%d snapshot=%s — the scan "
+                "bound nothing on this turn", len(items), snapshot_id)
+        elif len(items) == 1:
             items[0]["product_evidence_id"] = snapshot_id
         else:
             logger.info(
@@ -74,12 +83,37 @@ def _correction_input(ops) -> Optional[dict]:
     return inp if inp.get("entry_id") is not None else None
 
 
-def _scan_is_bound() -> bool:
+def _scan_is_attached() -> bool:
+    """A barcode rode this turn. NOT a binding — see `scan_is_bound`."""
     try:
         from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
         return SCANNED_PRODUCT_EVIDENCE.get() is not None
     except Exception:                                    # noqa: BLE001
         return False
+
+
+def _scan_bound() -> bool:
+    """Did this turn's scan actually BIND? The single question, one answer,
+    read off the explicit state — never re-derived from operation shape."""
+    try:
+        from skills.nutrition.product_acquisition import scan_is_bound
+        return scan_is_bound()
+    except Exception:                                    # noqa: BLE001
+        return False
+
+
+def _decide_scan_binding(ops) -> None:
+    """⛔ THE ONE BINDING DECISION *(CF5b review)*. Made here because this is
+    the first place the turn's OPERATIONS are known, recorded on the explicit
+    state, and read by every downstream guard — the backstop below, the
+    binder, and `correction_application`'s invariant. Operation counting is
+    this decision's INPUT, never a second definition of "bound" living at a
+    guard site."""
+    try:
+        from skills.nutrition.product_acquisition import decide_binding
+        decide_binding(bound=not _scan_declined_to_bind(ops))
+    except Exception:                                    # noqa: BLE001
+        logger.warning("scan binding decision failed", exc_info=True)
 
 
 #: Every operation that names a food on the board. Binding disposition is
@@ -222,6 +256,11 @@ class NativeExecutionStage:
         # door this slice opened.
         from core.execution_result import LAST_EXECUTION
         LAST_EXECUTION.set(None)
+
+        # ⛔⛔ CF5b review — DECIDE THE BINDING BEFORE ANY GUARD READS IT. A
+        # scan names ONE product: this turn either binds it or binds nothing,
+        # and that answer is recorded once, here, on the explicit state.
+        _decide_scan_binding(ops)
 
         # ⭐ B-1.8b — A CORRECTION ON A CANONICAL ROW IS THE OWNER'S TO MAKE.
         # Decided BEFORE the legacy claim, like settlement, and for the same
@@ -420,7 +459,7 @@ class NativeExecutionStage:
         # nothing_and_takes_the_general_path` holds it. Every OTHER shape
         # under a scan (one food; or no food at all, i.e. the correction that
         # motivated this) is the scanned product's turn and stays canonical.
-        if _scan_is_bound() and not _scan_declined_to_bind(ops):
+        if _scan_bound():
             raise ScanBoundNotLegacy(request.turn_id, [
                 str((op or {}).get("name") or "") for op in ops])
 

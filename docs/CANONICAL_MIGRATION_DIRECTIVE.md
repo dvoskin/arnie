@@ -506,6 +506,70 @@ CF5b SCAN BINDING MUST DOMINATE CORRECTION CLAIMS   P17 (before P17g)     BUILT;
             nothing -> general path unchanged (both ops
             reach legacy, no product_evidence_id).
             Reverting to log_food-only -> RED (3).
+         P2b ✅ FIXED — ATTACHMENT IS NOT BINDING. The
+            mixed-plan twin had STUBBED the legacy
+            executor and its own docstring admitted "the
+            correction guard is not consulted" — it
+            asserted the claim it was meant to test.
+            Driven through the REAL executor the claim was
+            FALSE: log "1 bag" (210 kcal), then a scan
+            attached + [update(bag -> "9 chips"),
+            log(soup)] — the scan binds NOTHING, but the
+            guard read the ATTACHMENT, raised, and
+            `_apply_portion_correction`'s bare except left
+            `changes` untouched, so the row was written
+            "9 chips" beside the WHOLE BAG's 210 kcal
+            (unbound: 90.1). A portion and a value allowed
+            to disagree — the class that function exists to
+            end, reintroduced by a guard. NOT a safe
+            failure: it is an incorrect write.
+            Now binding is an EXPLICIT STATE, decided once
+            and read by every guard:
+              None · ATTACHED · BOUND(snapshot_id) ·
+              SKIPPED_MULTI_ITEM · CONSUMED
+            `product_acquisition.begin_turn()` clears BOTH
+            the attachment and the decision at ingress
+            (one door; ingress no longer sets the id
+            directly); `attach()` records ATTACHED;
+            `decide_binding()` is the ONE decision, made in
+            `NativeExecutionStage.run` where the turn's ops
+            are first known; `scan_is_bound()` is the ONE
+            reader. Operation counting (`_FOOD_OPS`) is the
+            decision's INPUT and is consulted exactly once
+            — asserted by AST, so no guard grows a second
+            definition. The planner still reads the
+            ATTACHMENT (the decision needs ops that do not
+            exist yet) and scopes itself; that is
+            documented at the reader.
+            And the typed invariant PROPAGATES: re-raised
+            in `_apply_portion_correction` AND in the
+            executor's per-tool dispatch loop, which would
+            otherwise turn an authority violation into
+            `results[name] = "Error: ..."` and carry on.
+            Proofs (real executor, nothing stubbed but the
+            enrichment network): mixed turn byte-identical
+            to its unbound twin, on the corrected row AND
+            the soup, neither carrying product_evidence_id,
+            no refusal, no "portion correction not applied"
+            warning · a genuinely bound correction raises
+            and the row does not move · binding state does
+            not leak into the next turn across settle /
+            refuse / crash · the four-state matrix · AST
+            gates for the re-raise order and the single
+            decision point. Mutations seen RED: guard reads
+            attachment (1) · swallow in the applier (3) ·
+            swallow in the loop (2) · begin_turn forgets
+            the decision (5) · binder trusts its own count
+            (2).
+         ⚠ ALSO FOUND: `tests/test_a_scan_is_binding.py`'s
+            `_log` fixture PINNED `dt.date(2026, 8, 18)`
+            while the canonical writer resolves the logging
+            day itself — at 00:02 UTC on the 19th the two
+            disagreed and FIVE tests in that file went red
+            on a tree that had been green hours earlier.
+            The 9639 run was time-dependent. Fixture now
+            uses `get_or_create_today_log`; a fixture that
+            pins a date is a test that expires.
          P2 ⚠ NARROWED — liquid chips are helper-proven
             (display says ml when the record says ml) but
             the PATH (per-ml ProductEvidence -> coverage ->

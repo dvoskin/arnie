@@ -79,8 +79,7 @@ async def _legacy_barebells_row(db, log, *, calories=400.0, quantity="2 bar"):
                     parsed_food_name="Barebells Salty Peanut Protein Bar",
                     quantity=quantity, calories=calories, protein=40.0,
                     carbs=40.0, fats=14.0, estimated_flag=True,
-                    confidence_score=0.65, source_type="text",
-                    timestamp=dt.datetime(2026, 8, 18, 19, 39, 12))
+                    confidence_score=0.65, source_type="text")
     db.add(row)
     await db.flush()
     db.add(LedgerEvent(user_id=log.user_id, domain="food", event_type="created",
@@ -263,11 +262,14 @@ async def test_twin_removing_the_executor_invariant_an_adversarial_misroute_comm
     mutation. Driven straight at the module — the shape the legacy
     executor's portion arm calls."""
     from skills.nutrition import correction_application as ca
-    from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+    from skills.nutrition.product_acquisition import (SCAN_BINDING,
+                                                      SCANNED_PRODUCT_EVIDENCE,
+                                                      ScanBinding)
     caplog.set_level(logging.INFO)
     snap = await _prod_snapshot(db)
     committed = {"calories": 400.0, "protein": 40.0, "carbs": 40.0, "fats": 14.0}
     token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    binding = SCAN_BINDING.set(ScanBinding("bound", snap.id))
     try:
         for arm, kw in (
             (ca.apply_portion, {}),
@@ -283,6 +285,7 @@ async def test_twin_removing_the_executor_invariant_an_adversarial_misroute_comm
         assert "reason=scan_bound" in caplog.text
     finally:
         SCANNED_PRODUCT_EVIDENCE.reset(token)
+        SCAN_BINDING.reset(binding)
     # UNBOUND, the same arithmetic still applies — ratio correction is not
     # weakened globally
     scaled = ca.apply_portion(food_name="Barebells Salty Peanut Protein Bar",
@@ -506,55 +509,335 @@ def test_p2_a_mixed_update_plus_log_plan_is_two_foods_and_binds_nothing():
     assert _scan_declined_to_bind([logf]) is False
 
 
-@pytest.mark.asyncio
-async def test_p2_existing_bar_plus_scan_plus_a_bar_and_some_soup_keeps_the_general_path(
-        db, make_user, monkeypatch, caplog):
-    """The twin (Danny): existing bar on board + scan attached + "a bar and
-    some soup" -> planner emits update + log -> scan binds nothing -> the
-    existing general multi-food behaviour is UNCHANGED: no lift, no
-    ScanBoundNotLegacy, both ops reach the (stubbed) legacy executor with no
-    product_evidence_id, and the correction guard is not consulted (the ops
-    never enter correction_application through this stub)."""
-    import handlers.tool_executor as te
-    from core.execution_result import ExecutionResult
-    from core.turns.stages import execute_native as stage_mod
-    from core.turns.stages.execute_native import NativeExecutionStage
-    from core.turns.stages.food import FoodPlanStage, FoodValidationStage
-    from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
-    caplog.set_level(logging.INFO)
-    seen = []
-    async def legacy(ops, *a, **k):
-        seen.append(ops); return ExecutionResult(calls=())
-    monkeypatch.setattr(te, "execute_tool_calls", legacy)
-    async def claim_ok(self, *a, **k): return True
-    monkeypatch.setattr(stage_mod.NativeExecutionStage, "_claim", claim_ok)
-    user = await make_user()
-    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
-    log = await _log(db, user)
-    snap = await _prod_snapshot(db)
-    existing = await _legacy_barebells_row(db, log)
-    plan = [{"name": "update_food_entry",
-             "input": {"entry_id": existing, "quantity": "2 bar",
-                       "food_hint": "Barebells Salty Peanut Protein Bar"}},
-            {"name": "log_food", "input": {"food_name": "Mystery soup", "quantity": "1 bowl"}}]
+# ── the real executor, because a stub cannot see this ───────────────────────
+#
+# The first version of this twin replaced `execute_tool_calls` with a
+# recording stub and its own docstring admitted "the correction guard is not
+# consulted" — so it asserted the claim it was supposed to test. Driven
+# through the REAL executor the claim was FALSE: the guard read the
+# ATTACHMENT, raised inside `_apply_portion_correction`, the bare except
+# swallowed it, and the row was written "9 chips" beside the whole bag's
+# 210 kcal (unbound: 90.1). Nothing is stubbed here but the enrichment
+# network, and the assertions are on the row.
 
-    async def stub(text, u, **kw):
-        return {"action": "log", "say": "", "tool_calls": plan}
-    req = _Req("a bar and some soup", {"db": db, "user": user, "today_log": log, "messages": ()},
-               turn_id=f"t:p2-mixed-{user.id}")
-    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
-    try:
-        typed = await FoodPlanStage(interpreter=stub).run(req)
-        assert [op["name"] for op in typed.operations] == ["update_food_entry", "log_food"]
-        assert "scan_rejects_correction_shape" not in caplog.text        # no lift
-        validation = await FoodValidationStage().run(req, plan=typed)
-        assert validation.disposition == "execute", validation
-        await NativeExecutionStage().run(req, validation=validation)     # no raise
-    finally:
-        SCANNED_PRODUCT_EVIDENCE.reset(token)
-    assert seen and [op["name"] for op in seen[0]] == ["update_food_entry", "log_food"]
-    assert all("product_evidence_id" not in op["input"] for op in seen[0])
-    assert "scan_binding_skipped" in caplog.text or "settlement_route" not in caplog.text
+_PER100 = {"calories": 536, "protein": 7.1, "carbs": 64.3, "fat": 26.8,
+           "sodium": 571}
+
+
+class _Analysis:
+    calories = 210.0; protein = 3.0; carbs = 25.0; fat = 10.0
+    fiber = 2.0; sugar = 2.0; sodium = 224.0
+    fdc_id = "167625"; confidence = "likely"; source = "usda"
+    protein_density = None; satiety = None; quality = None
+    per100 = dict(_PER100); serving_text = "28 g (about 15 chips)"
+    micros: dict = {}; micros_estimated = False; coach_note = ""
+    enrichment_source = "usda"; provenance = None
+
+
+@pytest.fixture
+def priced(monkeypatch):
+    async def _analyze(db, user, food_name, inp, *a, **k):
+        return _Analysis()
+    monkeypatch.setattr("handlers.tool_executor._analyze_food", _analyze)
+    return _Analysis
+
+
+async def _loaded(db, user_id):
+    from db.models import User
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    return (await db.execute(select(User).where(User.id == user_id)
+                             .options(selectinload(User.preferences)))).scalars().one()
+
+
+async def _today(db, user):
+    from db.queries import get_or_create_today_log
+    return await get_or_create_today_log(db, user.id)
+
+
+async def _mixed_turn_through_the_real_executor(db, user, snapshot_id):
+    """log "1 bag"; then a MIXED turn [update(bag -> "9 chips"), log(soup)]
+    with the scan attached exactly as ingress attaches it. Returns the
+    corrected row's columns."""
+    from db.models import FoodEntry
+    from handlers.tool_executor import execute_tool_calls
+    from skills.nutrition.product_acquisition import attach, begin_turn
+    from sqlalchemy import select
+
+    begin_turn()
+    await execute_tool_calls(
+        [{"name": "log_food", "input": {"food_name": "Sun Chips Harvest Cheddar",
+                                        "quantity": "1 bag", "calories": 210,
+                                        "protein": 3, "carbs": 25, "fats": 10}}],
+        user, await _today(db, user), db)
+    log = await _today(db, user)
+    row = (await db.execute(select(FoodEntry).where(
+        FoodEntry.daily_log_id == log.id))).scalars().first()
+
+    begin_turn()
+    attach(snapshot_id)                       # ATTACHED — the decision is the stage's
+    await execute_tool_calls(
+        [{"name": "update_food_entry",
+          "input": {"entry_id": row.id, "quantity": "9 chips"}},
+         {"name": "log_food", "input": {"food_name": "Mystery soup",
+                                        "quantity": "1 bowl"}}],
+        user, await _today(db, user), db)
+    await db.refresh(row)
+    return {"calories": row.calories, "protein": row.protein,
+            "carbs": row.carbs, "fats": row.fats, "quantity": row.quantity,
+            "product_evidence_id": row.product_evidence_id}
+
+
+@pytest.mark.asyncio
+async def test_p2_a_mixed_multi_food_scan_turn_is_byte_identical_to_its_unbound_twin(
+        db, make_user, monkeypatch, caplog, priced):
+    """Danny's required proof: existing bar row + scan attachment +
+    update(bar) + log(soup) -> binding SKIPPED -> the real legacy executor
+    runs -> the correction result is byte-identical to the same unbound twin,
+    the soup is byte-identical, neither carries a product_evidence_id, no
+    ScanBoundCorrectionRefused, and no "portion correction not applied"
+    warning."""
+    from db.models import FoodEntry
+    from sqlalchemy import select
+    caplog.set_level(logging.WARNING)
+    snap = await _prod_snapshot(db)
+
+    unbound_user = await _loaded(db, (await make_user(telegram_id="cf5b-u")).id)
+    unbound = await _mixed_turn_through_the_real_executor(db, unbound_user, None)
+
+    attached_user = await _loaded(db, (await make_user(telegram_id="cf5b-a")).id)
+    attached = await _mixed_turn_through_the_real_executor(db, attached_user, snap.id)
+
+    assert unbound == attached, (
+        f"a scan that bound NOTHING changed the correction: {unbound} != {attached}")
+    assert unbound["calories"] == pytest.approx(90.1)     # the deterministic rescale
+    assert attached["product_evidence_id"] is None
+
+    soups = {}
+    for label, u in (("unbound", unbound_user), ("attached", attached_user)):
+        log = await _today(db, u)
+        rows = (await db.execute(select(FoodEntry).where(
+            FoodEntry.daily_log_id == log.id).order_by(FoodEntry.id))).scalars().all()
+        soup = [r for r in rows if "soup" in (r.parsed_food_name or "").lower()][0]
+        soups[label] = {"quantity": soup.quantity, "calories": soup.calories,
+                        "product_evidence_id": soup.product_evidence_id}
+    assert soups["unbound"] == soups["attached"], soups
+    assert soups["attached"]["product_evidence_id"] is None
+
+    warnings = [str(r.message) for r in caplog.records]
+    assert not [w for w in warnings if "portion correction not applied" in w], warnings
+    assert not [w for w in warnings if "scan-bound turn" in w], warnings
+
+
+@pytest.mark.asyncio
+async def test_p2_the_typed_invariant_propagates_and_is_never_swallowed(
+        db, make_user, monkeypatch, priced):
+    """Requirement 1: if a genuinely BOUND turn ever reaches correction
+    application, the refusal must reach the caller — not become a warning
+    while the row takes the model's macros beside a new portion."""
+    from db.models import FoodEntry
+    from handlers.tool_executor import execute_tool_calls
+    from skills.nutrition.correction_application import ScanBoundCorrectionRefused
+    from skills.nutrition.product_acquisition import (SCAN_BINDING, ScanBinding,
+                                                      attach, begin_turn)
+    from sqlalchemy import select
+    user = await _loaded(db, (await make_user(telegram_id="cf5b-p")).id)
+    snap = await _prod_snapshot(db)
+    begin_turn()
+    await execute_tool_calls(
+        [{"name": "log_food", "input": {"food_name": "Sun Chips Harvest Cheddar",
+                                        "quantity": "1 bag", "calories": 210,
+                                        "protein": 3, "carbs": 25, "fats": 10}}],
+        user, await _today(db, user), db)
+    log = await _today(db, user)
+    row = (await db.execute(select(FoodEntry).where(
+        FoodEntry.daily_log_id == log.id))).scalars().first()
+    before = {"calories": row.calories, "quantity": row.quantity}
+
+    begin_turn()
+    attach(snap.id)
+    SCAN_BINDING.set(ScanBinding("bound", snap.id))       # the misroute, adversarially
+    with pytest.raises(ScanBoundCorrectionRefused):
+        await execute_tool_calls(
+            [{"name": "update_food_entry",
+              "input": {"entry_id": row.id, "quantity": "9 chips"}}],
+            user, await _today(db, user), db)
+    await db.refresh(row)
+    assert {"calories": row.calories, "quantity": row.quantity} == before, (
+        "the refusal was swallowed and the row moved anyway")
+
+
+def test_p2_the_executor_reraises_the_typed_invariant_by_construction():
+    """AST: `_apply_portion_correction` holds an except that RE-RAISES
+    ScanBoundCorrectionRefused, ahead of the broad handler."""
+    import ast
+    import inspect
+    from handlers import tool_executor as te
+    fn = ast.parse(inspect.getsource(te._apply_portion_correction).lstrip()).body[0]
+    handlers = [n for n in ast.walk(fn) if isinstance(n, ast.ExceptHandler)]
+    typed = [h for h in handlers
+             if isinstance(h.type, ast.Name) and h.type.id == "ScanBoundCorrectionRefused"]
+    assert typed, "the typed invariant is not re-raised — it can be swallowed"
+    assert any(isinstance(n, ast.Raise) and n.exc is None
+               for h in typed for n in ast.walk(h)), "caught but not re-raised"
+    broad = [h for h in handlers if h.type is None
+             or (isinstance(h.type, ast.Name) and h.type.id == "Exception")]
+    assert broad and typed[0].lineno < broad[0].lineno, (
+        "the broad handler precedes the typed one and would swallow it")
+
+
+# ═════ REQUIREMENT 2 — THE BINDING STATE DOES NOT LEAK ACROSS TURNS ═════════
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("how_turn_a_ends", ["settles", "refuses", "crashes"])
+async def test_p2_binding_state_does_not_leak_into_the_next_turn(
+        db, make_user, monkeypatch, priced, how_turn_a_ends):
+    """Turn A: scanned, binding active — settling, refusing, or crashing.
+    Turn B: an ordinary UNSCANNED correction. B must behave exactly like the
+    baseline, with no snapshot and no binding left over."""
+    from db.models import FoodEntry
+    from handlers.tool_executor import execute_tool_calls
+    from skills.nutrition.product_acquisition import (SCAN_BINDING,
+                                                      SCANNED_PRODUCT_EVIDENCE,
+                                                      ScanBinding, attach,
+                                                      begin_turn, scan_is_bound)
+    from sqlalchemy import select
+    user = await _loaded(db, (await make_user(telegram_id=f"cf5b-l{how_turn_a_ends[0]}")).id)
+    snap = await _prod_snapshot(db)
+
+    begin_turn()
+    await execute_tool_calls(
+        [{"name": "log_food", "input": {"food_name": "Sun Chips Harvest Cheddar",
+                                        "quantity": "1 bag", "calories": 210,
+                                        "protein": 3, "carbs": 25, "fats": 10}}],
+        user, await _today(db, user), db)
+    log = await _today(db, user)
+    row = (await db.execute(select(FoodEntry).where(
+        FoodEntry.daily_log_id == log.id))).scalars().first()
+
+    # ── TURN A: scanned, bound, ending three different ways ──
+    begin_turn()
+    attach(snap.id)
+    SCAN_BINDING.set(ScanBinding("bound", snap.id))
+    assert scan_is_bound()
+    if how_turn_a_ends == "refuses":
+        from skills.nutrition.correction_application import ScanBoundCorrectionRefused
+        with pytest.raises(ScanBoundCorrectionRefused):
+            await execute_tool_calls(
+                [{"name": "update_food_entry",
+                  "input": {"entry_id": row.id, "quantity": "9 chips"}}],
+                user, log, db)
+    elif how_turn_a_ends == "crashes":
+        try:
+            raise RuntimeError("turn A died mid-flight")
+        except RuntimeError:
+            pass
+
+    # ── TURN B: ingress runs, as it does unconditionally, every turn ──
+    begin_turn()
+    assert SCANNED_PRODUCT_EVIDENCE.get() is None
+    assert SCAN_BINDING.get() is None
+    assert not scan_is_bound()
+    await execute_tool_calls(
+        [{"name": "update_food_entry",
+          "input": {"entry_id": row.id, "quantity": "9 chips"}}],
+        user, await _today(db, user), db)
+    await db.refresh(row)
+    assert row.quantity == "9 chips"
+    assert row.calories == pytest.approx(90.1), (
+        "turn B did not behave like the unscanned baseline — binding leaked")
+    assert row.product_evidence_id is None
+
+
+def test_p2_the_ingress_clears_both_the_attachment_and_the_decision():
+    """`begin_turn` is the ONE reset, and ingress calls it — an ingress that
+    cleared only the id would leave a stale "bound" to be read as this
+    turn's."""
+    import ast
+    import inspect
+    from pathlib import Path
+    from skills.nutrition import product_acquisition as pa
+    src = inspect.getsource(pa.begin_turn)
+    assert "SCANNED_PRODUCT_EVIDENCE.set(None)" in src and "SCAN_BINDING.set(None)" in src
+    chat = Path("api/chat.py").read_text()
+    tree = ast.parse(chat)
+    called = {n.func.id for n in ast.walk(tree)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    assert "_begin_scan_turn" in called, "ingress does not clear the binding state"
+    assert "SCANNED_PRODUCT_EVIDENCE.set" not in chat, (
+        "ingress sets the attachment directly — the reset must be the one door")
+
+
+# ═════ REQUIREMENT 3 — THE STATE IS THE FINAL AUTHORITY ════════════════════
+
+def test_p2_the_final_proof_matrix_of_binding_states():
+    """single scanned log -> BOUND · scan-bound correction shape -> lifted or
+    refused · multi-food scan -> SKIPPED_MULTI_ITEM · next unscanned turn ->
+    no binding state · typed invariant -> propagates, never swallowed."""
+    from skills.nutrition.product_acquisition import (ATTACHED, BOUND,
+                                                      SKIPPED_MULTI_ITEM,
+                                                      SCAN_BINDING, attach,
+                                                      begin_turn, decide_binding,
+                                                      scan_is_bound)
+    logf = {"name": "log_food", "input": {"food_name": "x", "quantity": "1 bar"}}
+    upd = {"name": "update_food_entry", "input": {"entry_id": 1, "quantity": "2 bar"}}
+    soup = {"name": "log_food", "input": {"food_name": "soup", "quantity": "1 bowl"}}
+    from core.turns.stages.execute_native import _scan_declined_to_bind
+
+    def _decide(ops):
+        begin_turn(); attach(7)
+        assert SCAN_BINDING.get().kind == ATTACHED
+        decide_binding(bound=not _scan_declined_to_bind(ops))
+        return SCAN_BINDING.get().kind
+
+    assert _decide([logf]) == BOUND                       # single scanned log
+    assert _decide([upd]) == BOUND                        # correction shape: the scan's turn
+    assert _decide([upd, soup]) == SKIPPED_MULTI_ITEM     # multi-food
+    assert _decide([logf, soup]) == SKIPPED_MULTI_ITEM
+    begin_turn()                                          # the next, unscanned turn
+    assert SCAN_BINDING.get() is None and not scan_is_bound()
+
+
+def test_p2_the_binder_stamps_only_what_the_decision_says_is_bound():
+    """`_bind_scanned_product` receives `_food_inputs`' output, which filters
+    to log_food — so a MIXED [update, log] turn arrives here as ONE item and
+    the old "len(items) == 1" rule would stamp a binding this turn does not
+    have. The decision is the authority. (Redundant today because
+    `_canonical_route` rejects the length mismatch first; proven because an
+    unproven guard is indistinguishable from a dead one.)"""
+    from core.turns.stages.execute_native import _bind_scanned_product
+    from skills.nutrition.product_acquisition import (SCAN_BINDING, ScanBinding,
+                                                      SCANNED_PRODUCT_EVIDENCE,
+                                                      attach, begin_turn)
+    begin_turn()
+    attach(7)
+    SCAN_BINDING.set(ScanBinding("skipped_multi_item", 7))
+    items = [{"food_name": "soup", "quantity": "1 bowl"}]
+    assert "product_evidence_id" not in _bind_scanned_product(items)[0], (
+        "the binder stamped a snapshot the decision said binds nothing")
+    SCAN_BINDING.set(ScanBinding("bound", 7))
+    assert _bind_scanned_product(
+        [{"food_name": "bar", "quantity": "1 bar"}])[0]["product_evidence_id"] == 7
+    begin_turn()
+    assert SCANNED_PRODUCT_EVIDENCE.get() is None
+
+
+def test_p2_no_guard_re_derives_binding_from_operation_shape():
+    """`_FOOD_OPS` counting is the DECISION's input and appears once, at the
+    decision. Guards read the state."""
+    import ast
+    import inspect
+    from core.turns.stages import execute_native as m
+    src = inspect.getsource(m)
+    tree = ast.parse(src)
+    callers = [n for n in ast.walk(tree)
+               if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+               and n.func.id == "_scan_declined_to_bind"]
+    assert len(callers) == 1, (
+        "operation counting is consulted more than once — a second definition "
+        "of whether binding occurred")
+    run_src = inspect.getsource(m.NativeExecutionStage.run)
+    assert "_scan_bound()" in run_src and "_scan_declined_to_bind" not in run_src
 
 
 # ═════ SCOPE: UNBOUND IS BYTE-IDENTICAL; MULTI-FOOD SCAN IS UNTOUCHED ═══════

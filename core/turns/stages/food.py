@@ -374,6 +374,13 @@ _IDENTITY_FIELDS = frozenset({"identity", "brand", "variant", "flavor", "flavour
 
 
 def _scan_is_bound() -> bool:
+    """⚠ ATTACHMENT, and deliberately so *(CF5b review)*. The binding DECISION
+    needs the turn's operations, which do not exist until this stage has
+    produced them — so the planner reads the attachment and SCOPES ITSELF:
+    the lift takes exactly one implicit update, `_scan_answers_the_identity`
+    exactly one item. Guards that run after the plan (the legacy backstop,
+    the binder, correction application) read the decided state via
+    `product_acquisition.scan_is_bound`, never this."""
     try:
         from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
         return SCANNED_PRODUCT_EVIDENCE.get() is not None

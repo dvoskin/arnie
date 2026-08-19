@@ -206,12 +206,20 @@ class ScanBoundCorrectionRefused(RuntimeError):
 
 
 def _refuse_if_scan_bound(food_name: str) -> None:
+    """⛔ READS THE BINDING DECISION, NOT THE ATTACHMENT *(CF5b review)*. A
+    mixed multi-food turn carries a scan that bound NOTHING; refusing there
+    changed a correction this guard has no business touching — measured: the
+    row took "9 chips" beside the whole bag's 210 kcal, where unbound it
+    correctly rescales to 90.1."""
     try:
-        from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
-        sid = SCANNED_PRODUCT_EVIDENCE.get()
+        from skills.nutrition.product_acquisition import (SCAN_BINDING,
+                                                          scan_is_bound)
+        bound = scan_is_bound()
+        state = SCAN_BINDING.get()
+        sid = getattr(state, "snapshot_id", None)
     except Exception:                                    # noqa: BLE001
         return
-    if sid is not None:
+    if bound:
         logger.warning("event=correction_apply outcome=refused "
                        "reason=scan_bound snapshot=%s food=%r", sid, food_name)
         raise ScanBoundCorrectionRefused(sid, food_name)

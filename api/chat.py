@@ -330,16 +330,18 @@ async def _coached_reply(identity: str, text: str, source_type: str,
         # lesson: a reused task's stale snapshot id from an earlier scan must
         # never bind to this turn's food.
         from skills.nutrition.product_acquisition import (
-            SCANNED_PRODUCT_EVIDENCE, acquire_product_evidence)
-        SCANNED_PRODUCT_EVIDENCE.set(None)
+            acquire_product_evidence, attach as _attach_scan,
+            begin_turn as _begin_scan_turn)
+        # BOTH the attachment and the binding DECISION, cleared unconditionally
+        # (CF5b review): a stale "bound" would be read as this turn's binding.
+        _begin_scan_turn()
         async with AsyncSessionLocal() as db:
             user = await resolve_user(db, identity)
             if barcode:
                 # ACQUISITION TIME: network here, at ingress, BEFORE the turn —
                 # never at settlement. Failure binds nothing and costs nothing.
                 snapshot_id = await acquire_product_evidence(db, barcode)
-                if snapshot_id is not None:
-                    SCANNED_PRODUCT_EVIDENCE.set(snapshot_id)
+                _attach_scan(snapshot_id)
                 await db.commit()   # the snapshot survives even if the turn dies
             if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
                 # Persist coords NOW; the city reverse-geocode is network I/O
@@ -952,16 +954,18 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
         # lesson: a reused task's stale snapshot id from an earlier scan must
         # never bind to this turn's food.
         from skills.nutrition.product_acquisition import (
-            SCANNED_PRODUCT_EVIDENCE, acquire_product_evidence)
-        SCANNED_PRODUCT_EVIDENCE.set(None)
+            acquire_product_evidence, attach as _attach_scan,
+            begin_turn as _begin_scan_turn)
+        # BOTH the attachment and the binding DECISION, cleared unconditionally
+        # (CF5b review): a stale "bound" would be read as this turn's binding.
+        _begin_scan_turn()
         async with AsyncSessionLocal() as db:
             user = await resolve_user(db, identity)
             if barcode:
                 # ACQUISITION TIME: network here, at ingress, BEFORE the turn —
                 # never at settlement. Failure binds nothing and costs nothing.
                 snapshot_id = await acquire_product_evidence(db, barcode)
-                if snapshot_id is not None:
-                    SCANNED_PRODUCT_EVIDENCE.set(snapshot_id)
+                _attach_scan(snapshot_id)
                 await db.commit()   # the snapshot survives even if the turn dies
 
             async def on_bubble(text: str) -> None:
