@@ -356,6 +356,39 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     # one would ask the question twice.
     _bubbles = getattr(state.response, "bubbles", None)
     if state.execution is None and not _bubbles:
+        # ⛔⛔ CF5c — A SCANNED TURN NEVER DELEGATES *(production, 2026-08-19
+        # 13:40, the direct P17g canary's first send)*. The scan bound
+        # (product_acquired snapshot=1), the interpreter hit an Anthropic
+        # RateLimitError and produced NO plan, the authority correctly ruled
+        # UNDECIDABLE (foods=0) — and then this block handed the SCANNED turn
+        # to legacy, because `require_shape` (which would have refused it)
+        # lives in NativeExecutionStage.run, which a disposition="pass" never
+        # reaches. Legacy ALSO rate-limited, so nothing was written; had it
+        # not, the scanned product would have been re-interpreted as prose
+        # without its snapshot — the exact escape CF5c exists to close, one
+        # layer up. So the authority is consulted HERE, before any delegation:
+        # an attached scan with no executable plan is answered in words
+        # (UNDECIDABLE -> ScanAuthorityRefusal), never delegated. An UNSCANNED
+        # empty turn still delegates exactly as before — that branch is
+        # legitimate and unchanged.
+        from core.scan_authority import (ScanAuthorityRefusal, require_shape,
+                                         scan_attached)
+        if scan_attached():
+            try:
+                require_shape(())
+            except ScanAuthorityRefusal as exc:
+                logger.info("event=scan_refuses_delegation turn=%s reason=%s",
+                            getattr(request, "turn_id", "-"), exc.reason)
+                state.response = Response.from_text(_refusal_copy(exc))
+                return _result_from_state(state, legacy_kwargs)
+            # a BOUND scan with no ops reached here without the zero-op
+            # branch (the plan never executed): refuse rather than delegate
+            logger.info("event=scan_refuses_delegation turn=%s reason=no_plan",
+                        getattr(request, "turn_id", "-"))
+            state.response = Response.from_text(_refusal_copy(
+                ScanAuthorityRefusal("no_quantity_ask",
+                                     "a scanned turn produced no plan")))
+            return _result_from_state(state, legacy_kwargs)
         logger.info(
             "event=native_no_plan turn=%s — the native lane produced nothing "
             "executable and nothing to say; delegating to legacy BEFORE any "
@@ -401,8 +434,9 @@ def _refusal_copy(exc) -> str:
             return ("I have the scanned product, but I couldn't tell how it "
                     "fits what you asked for, so I left everything as it was. "
                     "Tell me the food and the amount and I'll log it.")
-        return ("Something went wrong reading that scan, so I didn't change "
-                "anything. Scan it again, or tell me the food and the amount.")
+        return ("I have the scanned product but couldn't work out the rest of "
+                "that message just now, so I didn't log anything. Send it once "
+                "more with the amount, or scan it again.")
     if isinstance(exc, ScanBindingDecisionUnavailable):
         return ("Something went wrong reading that scan, so I didn't change "
                 "anything. Scan it again, or tell me the food and the amount "

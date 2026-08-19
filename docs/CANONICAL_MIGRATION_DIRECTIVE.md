@@ -919,6 +919,45 @@ CF5c ONE SCAN AUTHORITY — the guard-placement fix   P17 (before P17g)     BUIL
        skipped · locale/cohort from the retry · unreadable
        payload reused. Suite 9722 passed, PYTEST_EXIT=0,
        frozen tree 8dd049b41aa3. oneask001 unchanged.
+       DEPLOYED 193141352ad1 2026-08-19 13:38; /health
+       commit + oneask001 applied=expected in_sync,
+       settlement reachable, user 26 in cohort ✅.
+       FIRST CANARY ATTEMPT (13:40–13:44) — NOT A CF5c
+       FAILURE; the canary never ran:
+         · 13:40, 13:41: REAL scans (product_acquired
+           snapshot=1 ×2), CF5c engaged (replay
+           suppressed, b1 claim declined), then the
+           interpreter hit an ANTHROPIC RateLimitError ->
+           no plan -> authority ruled UNDECIDABLE
+           (foods=0) -> ZERO writes. Legacy also rate-
+           limited -> "Wires crossed". 
+         · 13:42, 13:44: NO barcode (the chip is consumed
+           on send; Danny re-sent bare text) -> the
+           ordinary unscanned legacy path priced from
+           MEMORY/USDA: rows 3034 (400) and 3035 (800,
+           doubled off 3034). Not CF5c turns.
+         · no second UPC reached the server; one snapshot.
+         · the in-app EDIT SHEET is a LEGACY write
+           (ios_edit): 3031 became 110 g / 400 kcal (label
+           says 220) with resolved_grams still 55 — my
+           instruction said "edit the entry"; the
+           canonical path is TYPING the correction.
+       ⭐ ONE REAL GAP, FIXED: UNDECIDABLE on an EMPTY
+       plan fell to legacy — `require_shape` lives in
+       NativeExecutionStage.run, which a "pass"
+       disposition never reaches, so run_turn's
+       native_no_plan delegated a SCANNED turn (safe only
+       because legacy also failed). Now run_turn consults
+       the authority BEFORE delegating: a scanned
+       empty-plan turn refuses in words
+       (scan_refuses_delegation); an unscanned one
+       delegates exactly as before. Four proofs + the
+       AST order gate; mutation RED. Suite 9726 passed,
+       PYTEST_EXIT=0, frozen tree ec3b46952b07.
+       REPAIR before retry: delete 3034, 3035; correct
+       3031 by TYPING "make the Barebells 2 servings"
+       (canonical) — verify 220 kcal, snapshot 1
+       retained, canonical:correction event.
 CF6  LANE PROMOTION RULE (learned from 3 canaries):  every future lane     RULE
      a proven CONSUMER (stage) is unreachable if the
      PRODUCER (planner) or RENDERER in front of it

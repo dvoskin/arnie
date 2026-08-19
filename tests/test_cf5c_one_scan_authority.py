@@ -2289,3 +2289,127 @@ async def test_a_reused_ask_renders_entirely_from_persisted_state(db, make_user,
                                      cohort="scan_bound")
     assert again.reused
     assert again.locale == "ru" and again.cohort == "allowlist", (again.locale, again.cohort)
+
+
+# ═════ PRODUCTION 2026-08-19 13:40 — a scanned empty-plan turn must NOT delegate ═
+#
+# The direct P17g canary's first send: product_acquired snapshot=1, the
+# interpreter raised RateLimitError, NO plan, the authority ruled UNDECIDABLE
+# (foods=0) — and `run_turn`'s `native_no_plan` block handed the SCANNED turn
+# to legacy, because `require_shape` lives in NativeExecutionStage.run which
+# a disposition="pass" never reaches. Legacy also rate-limited so nothing was
+# written; had it not, the scanned product would have been re-interpreted as
+# prose without its snapshot. The same escape one layer up.
+
+def _tail_state(error=None, execution=None, response=None, request=None):
+    import types
+    return types.SimpleNamespace(
+        error=error, execution=execution, response=response,
+        request=request, health_flags=(), snapshot=None, phase=None,
+        route=None, plan=None, validation=None, context=None)
+
+
+def _tail_request(turn_id="ios:RL-1"):
+    from core.turns.models import TurnRequest
+    return TurnRequest(turn_id=turn_id, user_id=26, platform="ios",
+                       source_type="ios", text="2 servings of Barebells", metadata={})
+
+
+async def _run_tail(monkeypatch, state, legacy_spy):
+    import types
+    import core.turns.factory as F
+    from core.turns.stages import execute as E
+
+    class _Coordinator:
+        route_stage = types.SimpleNamespace(decision=None)
+        async def run(self, request):
+            return state
+    async def _build(request, **kwargs):
+        return _Coordinator()
+    monkeypatch.setattr(F, "build_coordinator", _build)
+    monkeypatch.setattr(E, "LegacyExecutionStage", legacy_spy)
+    from core.turns.entrypoint import run_turn
+    return await run_turn(request=state.request)
+
+
+class _LegacySpy:
+    calls = []
+    def __init__(self, **kwargs):
+        _LegacySpy.calls.append(kwargs)
+    async def run(self, request):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_prod_0819_a_scanned_turn_with_no_plan_refuses_in_words_and_never_delegates(
+        monkeypatch, caplog):
+    """scan attached + UNDECIDABLE (no plan, the model failed) -> a typed
+    refusal answered in words; LegacyExecutionStage is NEVER constructed."""
+    from skills.nutrition.product_acquisition import (SCAN_BINDING, ScanBinding,
+                                                      attach, begin_turn)
+    caplog.set_level(logging.INFO)
+    _LegacySpy.calls.clear()
+    req = _tail_request()
+    begin_turn(); attach(1)
+    SCAN_BINDING.set(ScanBinding("undecidable", 1))      # what the gate recorded
+    try:
+        result = await _run_tail(monkeypatch, _tail_state(request=req), _LegacySpy)
+    finally:
+        begin_turn()
+    bubbles = list(getattr(result.response, "bubbles", None) or [])
+    assert bubbles and any(b.strip() for b in bubbles), result
+    text = " ".join(bubbles).lower()
+    assert "scanned product" in text, text
+    assert "wires crossed" not in text and "lost the thread" not in text
+    assert _LegacySpy.calls == [], "a scanned turn was delegated to legacy"
+    assert "scan_refuses_delegation" in caplog.text
+    assert "native_no_plan" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_prod_0819_a_scanned_BOUND_turn_with_no_plan_also_refuses(monkeypatch, caplog):
+    """Even if the gate had said BOUND, an empty plan at this seam refuses —
+    the zero-op CF9 branch lives in the execution stage, which never ran."""
+    from skills.nutrition.product_acquisition import (SCAN_BINDING, ScanBinding,
+                                                      attach, begin_turn)
+    caplog.set_level(logging.INFO)
+    _LegacySpy.calls.clear()
+    req = _tail_request("ios:RL-2")
+    begin_turn(); attach(1)
+    SCAN_BINDING.set(ScanBinding("bound", 1))
+    try:
+        result = await _run_tail(monkeypatch, _tail_state(request=req), _LegacySpy)
+    finally:
+        begin_turn()
+    assert list(getattr(result.response, "bubbles", None) or [])
+    assert _LegacySpy.calls == []
+    assert "scan_refuses_delegation" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_prod_0819_an_unscanned_empty_turn_still_delegates(monkeypatch, caplog):
+    """The twin: no scan -> `native_no_plan` delegation exactly as before."""
+    from skills.nutrition.product_acquisition import begin_turn
+    caplog.set_level(logging.INFO)
+    _LegacySpy.calls.clear()
+    begin_turn()
+    req = _tail_request("ios:RL-3")
+    await _run_tail(monkeypatch, _tail_state(request=req), _LegacySpy)
+    assert len(_LegacySpy.calls) == 1
+    assert "native_no_plan" in caplog.text
+    assert "scan_refuses_delegation" not in caplog.text
+
+
+def test_prod_0819_the_entrypoint_consults_the_authority_before_delegating():
+    """AST: in run_turn, `scan_attached` / `require_shape` are called BEFORE
+    the LegacyExecutionStage import in the no-plan block."""
+    import ast
+    import inspect
+    from core.turns import entrypoint as ep
+    tree = ast.parse(inspect.getsource(ep.run_turn).lstrip())
+    consult = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Call)
+               and getattr(n.func, "id", None) in ("scan_attached", "require_shape")]
+    legacy = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
+              and any(a.name == "LegacyExecutionStage" for a in n.names)]
+    assert consult and legacy and min(consult) < min(legacy), (
+        "the no-plan block can delegate a scanned turn before asking the authority")
