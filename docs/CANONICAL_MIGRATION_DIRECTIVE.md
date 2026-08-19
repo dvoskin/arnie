@@ -661,6 +661,60 @@ CF5c ONE SCAN AUTHORITY — the guard-placement fix   P17 (before P17g)     BUIL
        widening safe) · unbound log keeps the
        interpreter's name. Six mutations seen RED.
        Suite 9667 passed, PYTEST_EXIT=0, frozen tree.
+       REVIEW of da32929 (Danny) — the "complete plan"
+       proof was against a SYNTHETIC clarification
+       shape the live ask producer does not emit
+       (`{"items":..,"ambiguities":..}`); the primary
+       ask origin returns {tool_calls, deferred_calls,
+       questions, b1_material, points}. With partial
+       commit OFF a one-food quantity ask has ZERO
+       approved writes and read as "no food"
+       (UNDECIDABLE -> refused instead of CF9); ON, a
+       two-food ask exposing one ready write read as
+       BOUND. FIXED: `FoodSubject` + `TurnPlan.food_
+       subjects`/`open_fields`, normalised ONCE in
+       `plan_from_interpretation` from the producer's
+       real keys; `ValidationResult.plan` carries it;
+       CF5c reads ONLY the typed subjects and refuses a
+       plan without them. Real-producer proofs (`FT.run`,
+       model mocked) under BOTH FOOD_PARTIAL_COMMIT
+       settings: one-ready-plus-one-held ->
+       SKIPPED_MULTI_ITEM; the live quantity-only ask
+       -> BOUND -> CF9 opens holding the snapshot; the
+       re-ask origin normalises too; each carrier proven
+       as the SOLE carrier of a food (the sweep found
+       deferred_calls and b1_material each redundant with
+       the labels on the fixtures — green under
+       mutation until then). An unnamed `update_food_
+       entry` (entry_id only — `_update_call`'s live
+       shape) is one subject keyed entry:<id>.
+       CLEANUP: `decide_binding` removed, `scan_is_bound`
+       a mechanical delegate, AST gate against
+       production callers · CONSUMED applied after
+       normal bound settlement and after the ordinary
+       BoundUnpriceable ask · the correction backstop
+       RAISES on an unreadable authority (was `return`
+       — fail-open).
+       PRE-SHIP (Danny) — OCCURRENCE IS THE UNIT, NAME
+       IS ONLY THE CROSS-CARRIER LINK: name-keyed dedupe
+       collapsed two SEPARATE same-name operations
+       (one ready, one held) to one subject -> BOUND ->
+       the ready write through on a turn with two food
+       intents. Now: within a carrier, occurrences are
+       distinct by a stable id (op:carrier:index ·
+       entry:<id> · staged:<staged_item_id> ·
+       interp:<i>); across carriers a LABEL (question,
+       point) attaches to every same-name occurrence or
+       creates one only when nothing else names the
+       food. Twins: one subject mirrored through seven
+       carriers -> 1 · two independently represented
+       same-name subjects -> 2 -> SKIPPED_MULTI_ITEM ·
+       two same-name ready writes -> 2, refused under
+       BOUND. Eight mutations seen RED (each confirmed
+       APPLIED — a mutation whose anchor no longer
+       matches reports the unmutated tree's green as
+       evidence). Suite 9684 passed, PYTEST_EXIT=0,
+       frozen tree fdb5a8226fc8.
 CF6  LANE PROMOTION RULE (learned from 3 canaries):  every future lane     RULE
      a proven CONSUMER (stage) is unreachable if the
      PRODUCER (planner) or RENDERER in front of it

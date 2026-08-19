@@ -148,24 +148,22 @@ def suppresses_replay_and_prior() -> bool:
 # ── POST-PLAN ───────────────────────────────────────────────────────────────
 
 def foods_in_plan(plan) -> int:
-    """How many foods this turn is ABOUT, read off the complete plan.
+    """How many foods this turn is ABOUT — read off the TYPED subjects only.
 
-    ⛔ THE COMPLETE PLAN, NOT THE APPROVED WRITES. `FoodValidationStage`
-    approves only the READY items of an ask — a two-food clarification can
-    expose exactly one approved operation, and counting those would bind a
-    scan to a turn naming two foods. The clarification's own item list is the
-    other half of the truth, so the count is the MAX of the two views: the
-    most foods any view of this turn shows. Conservative in the safe
-    direction — more foods means the scan binds nothing."""
-    views = []
-    ops = tuple(getattr(plan, "operations", ()) or ())
-    views.append(sum(1 for op in ops
-                     if isinstance(op, dict) and op.get("name") in FOOD_OPS))
-    for amb in tuple(getattr(plan, "ambiguities", ()) or ()):
-        if isinstance(amb, dict):
-            items = [i for i in (amb.get("items") or []) if isinstance(i, dict)]
-            views.append(len(items))
-    return max(views) if views else 0
+    ⛔ NOT the approved writes, NOT the ambiguities dict, NOT a max() over
+    heterogeneous shapes *(review of da32929)*. The first cut walked
+    `plan.operations` and `plan.ambiguities[].items` — a shape the live
+    producer does not emit: its ask carries foods in `tool_calls`,
+    `deferred_calls`, `questions[].item`, `b1_material` and `points`, and none
+    of those is complete alone. So `plan_from_interpretation` normalises the
+    producer's WHOLE output once into `TurnPlan.food_subjects`, and this is a
+    length. A plan without the attribute (a hand-built stub, an older
+    producer) counts as UNKNOWN — refused, not guessed."""
+    subjects = getattr(plan, "food_subjects", None)
+    if subjects is None:
+        raise ValueError("plan carries no food_subjects — the producer-to-plan "
+                         "contract was not honoured")
+    return len(tuple(subjects))
 
 
 def decide_from_plan(plan) -> Optional[str]:
@@ -247,25 +245,23 @@ def require_shape(ops) -> None:
             f"{[op.get('name') for op in ops]}")
 
 
-def quantity_only_ask_item(clarification) -> Optional[dict]:
-    """The single item of a clarification whose ONLY open question is
-    quantity, or None. The CF9 case: one consumed product, the amount
-    unknown — a durable ask holding the snapshot, not a refusal.
+def quantity_only_subject(plan):
+    """The single food subject whose ONLY open field is quantity, or None.
+    The CF9 case: one consumed product, the amount unknown — a durable ask
+    holding the snapshot, not a refusal.
 
-    Anything else — several items, an identity or preparation question
-    alongside, a clarification that names no item — is "another ambiguity"
+    Read off the TYPED subjects. Anything else — several subjects, an
+    identity or preparation question beside the amount, an unnamed open
+    field, no open field at all — is "another ambiguity" (or no question)
     and the caller refuses instead."""
-    if not isinstance(clarification, dict):
+    subjects = tuple(getattr(plan, "food_subjects", None) or ())
+    if len(subjects) != 1:
         return None
-    items = [i for i in (clarification.get("items") or []) if isinstance(i, dict)]
-    if len(items) != 1:
-        return None
-    fields = [str(a.get("field") or "").strip().lower()
-              for a in (clarification.get("ambiguities") or [])
-              if isinstance(a, dict)]
+    sub = subjects[0]
+    fields = tuple(getattr(sub, "open_fields", ()) or ())
     if not fields or not all(f in QUANTITY_FIELDS for f in fields):
         return None
-    return items[0]
+    return sub
 
 
 def consume() -> None:

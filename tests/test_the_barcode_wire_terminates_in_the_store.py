@@ -165,15 +165,26 @@ def _ops(*names):
 
 
 
-class _Plan:
-    """Plan-shaped stub for the CF5c gate — the decision is made from the
-    COMPLETE plan, so a test that wants a binding must present one."""
-
-    def __init__(self, ops=()):
-        self.operations = tuple(ops)
-        self.ambiguities = ()
-        self.response_intent = "log"
-
+def _Plan(ops=(), ambiguities=(), intent="log", **producer):
+    """A REAL plan, through the real normaliser. Builds an interpreter-shaped
+    dict — the producer's own keys — and lifts it with
+    `plan_from_interpretation`, so `food_subjects` is exactly what production
+    would carry. Extra producer keys (`deferred_calls`, `questions`,
+    `b1_material`, `points`) pass straight through."""
+    from core.turns.stages.food import plan_from_interpretation
+    out = {"action": intent, "tool_calls": list(ops), "say": ""}
+    if intent == "ask":
+        # the primary ask origin's shape: no top-level items/ambiguities
+        out.setdefault("questions", [])
+    for amb in ambiguities:
+        # legacy fixture shape {"items": [...], "ambiguities": [...]} — kept
+        # readable for tests that still use it, but the SUBJECTS come from the
+        # dict's own keys via the normaliser, never from a max() over views
+        if isinstance(amb, dict):
+            out.setdefault("items", []).extend(amb.get("items") or [])
+            out.setdefault("ambiguities", []).extend(amb.get("ambiguities") or [])
+    out.update(producer)
+    return plan_from_interpretation(out)
 
 def _decide(ops=()):
     from core.scan_authority import decide_from_plan

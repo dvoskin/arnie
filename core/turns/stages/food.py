@@ -563,8 +563,235 @@ def _scan_answers_the_identity(out) -> bool:
     return bool(fields) and all(f in _IDENTITY_FIELDS for f in fields)
 
 
+#: The producer's ask carries its foods in as many as FIVE places. Named here
+#: once so the normaliser and the tests share one list, and so a sixth key
+#: added to the producer is a one-line change here rather than a silent hole.
+_SUBJECT_SOURCES = ("tool_calls", "deferred_calls", "questions",
+                    "b1_material", "items", "points")
+
+
+def _norm_key(name: str) -> str:
+    """The dedupe key for a food name — the shared normaliser, so 'Barebells
+    bar' and 'barebells bars' are one subject, exactly as dedup sees them.
+    Falls back to a lowercase strip if the normaliser is unavailable, never
+    to the raw string."""
+    try:
+        from skills.nutrition.food_dedup import normalize_food_name
+        k = normalize_food_name(name)
+        if k:
+            return k
+    except Exception:                                    # noqa: BLE001
+        pass
+    return " ".join(str(name or "").lower().split())
+
+
+def food_subjects_of(out) -> tuple:
+    """⛔ CF5c — THE COMPLETE SET OF FOODS A PLAN IS ABOUT, from the producer's
+    REAL output shape, normalised once.
+
+    `core.food_turn.run` returns an ask as
+
+        {"action": "ask", "tool_calls": <ready writes>,
+         "deferred_calls": <held writes>, "questions": [{"item": label,..}],
+         "b1_material": {"staged_items": (...), "items": <interpretation>},
+         "points": [{"label": ..., "qs": [...]}]}
+
+    — no top-level `items`, no `ambiguities`. The remaining foods live in the
+    DEFERRED writes and the NESTED material. With partial commit OFF every
+    write is deferred, so a one-food quantity ask has ZERO ready operations;
+    with it ON, a two-food ask exposes ONE ready write. A gate that reads any
+    one of these views alone is wrong in both directions: it refuses the
+    legitimate scanned quantity ask as "no food", or binds a two-food turn.
+
+    ⛔⛔ OCCURRENCE, NOT NAME, IS THE UNIT *(Danny, pre-ship review)*. A first
+    cut keyed every subject by normalised name, so two SEPARATE Barebells
+    operations — one ready, one held — collapsed to ONE subject and the turn
+    read as BOUND: the ready write went through although there were two food
+    intents, contradicting "BOUND = exactly one log_food". Names normalise
+    identically; occurrences do not merge because of it.
+
+    So the rule is:
+      · WITHIN a carrier, occurrences are distinct by a stable correlation id
+        — the op's carrier + position (or `entry_id` for an update/delete),
+        the staged item's `staged_item_id`, the interpretation's position.
+        Two ops are two subjects, whatever their names.
+      · ACROSS carriers, NAME is the fallback that links a LABEL (a question,
+        a point — carriers that have no id) to an occurrence that already
+        exists, and links the raw interpretation's positional rows to the
+        writes built from them. A label matching several same-name occurrences
+        attaches to all of them (it is a question about that food; it does
+        not create a third).
+      · a label naming a food no carrier has yet is its own subject.
+
+    One Barebells mirrored through every carrier -> 1. Two independently
+    represented Barebells -> 2 -> SKIPPED_MULTI_ITEM."""
+    from core.turns.models import FoodSubject
+    if not isinstance(out, dict):
+        return ()
+    # occurrence key -> {"name", "roles": [...], "fields": set, "nk": name key}
+    found: dict = {}
+    order: list = []
+
+    def _put(occ_key, name, role, fields=()):
+        name = str(name or "").strip()
+        rec = found.get(occ_key)
+        if rec is None:
+            rec = {"name": name or occ_key, "roles": [], "fields": set(),
+                   "nk": _norm_key(name) if name else ""}
+            found[occ_key] = rec
+            order.append(occ_key)
+        elif name and not rec["nk"]:
+            rec["name"], rec["nk"] = name, _norm_key(name)
+        if role not in rec["roles"]:
+            rec["roles"].append(role)
+        rec["fields"].update(f for f in fields if f)
+        return rec
+
+    def _by_name(name):
+        nk = _norm_key(name)
+        return [k for k in order if nk and found[k]["nk"] == nk]
+
+    def _link_or_put(name, role, fields=()):
+        """A LABEL carrier: attach to every same-name occurrence, or create
+        one subject if none exists. Never a second occurrence by name."""
+        matches = _by_name(name)
+        if matches:
+            for k in matches:
+                _put(k, name, role, fields)
+            return
+        nk = _norm_key(name)
+        if nk:
+            _put(f"label:{nk}", name, role, fields)
+
+    def _write(call, carrier, index, role):
+        inp = (call or {}).get("input") if isinstance(call, dict) else None
+        if not isinstance(inp, dict):
+            return
+        kind = call.get("name")
+        if kind not in ("log_food", "update_food_entry", "delete_food_entry"):
+            return
+        name = (inp.get("food_name") or inp.get("food_hint")
+                or inp.get("food") or "")
+        eid = inp.get("entry_id")
+        # ⛔ A CORRECTION OR DELETE THAT NAMES NO FOOD IS STILL ABOUT ONE — the
+        # board row it targets. `_update_call` emits exactly this shape when
+        # the interpreter does not rename ("make it 4"). Keyed on the row so
+        # two edits of the same row are one subject.
+        occ = (f"entry:{eid}" if kind != "log_food" and eid is not None
+               else f"op:{carrier}:{index}")
+        _put(occ, name if name else (f"entry {eid}" if eid is not None else ""),
+             role)
+
+    for i, call in enumerate(out.get("tool_calls") or ()):
+        _write(call, "ready", i, "ready")
+    for i, call in enumerate(out.get("deferred_calls") or ()):
+        _write(call, "held", i, "held")
+
+    material = out.get("b1_material")
+    if isinstance(material, dict):
+        for i, it in enumerate(material.get("staged_items") or ()):
+            nm = (getattr(it, "food", None) or getattr(it, "name", None)
+                  or (it.get("food") if isinstance(it, dict) else None))
+            sid = (getattr(it, "staged_item_id", None)
+                   or (it.get("staged_item_id") if isinstance(it, dict) else None))
+            ambs = getattr(it, "ambiguities", None) or (
+                it.get("ambiguities") if isinstance(it, dict) else None) or ()
+            fields = [str(getattr(a, "field", None) or
+                          (a.get("field") if isinstance(a, dict) else "") or "")
+                      .strip().lower() for a in ambs]
+            if not nm:
+                continue
+            # a staged row that names a food a WRITE already carries is the
+            # same occurrence seen through typed staging, not a second food;
+            # a staged row naming something no write carries is its own
+            matches = _by_name(nm)
+            if matches and len(matches) == 1:
+                _put(matches[0], nm, "staged", fields)
+            else:
+                _put(f"staged:{sid or i}", nm, "staged", fields)
+        # the raw interpretation is positional and PRECEDES the writes in the
+        # producer — its rows are the foods the writes were built from. A row
+        # whose name matches exactly one write is that write; a row matching
+        # none is a food the interpreter parsed but wrote nothing for (the
+        # corn); a row matching several is ambiguous and attaches to none —
+        # the writes already count it.
+        for i, it in enumerate(material.get("items") or ()):
+            if not isinstance(it, dict):
+                continue
+            nm = it.get("food") or it.get("name")
+            if not nm:
+                continue
+            matches = _by_name(nm)
+            if len(matches) == 1:
+                _put(matches[0], nm, "interpreted")
+            elif not matches:
+                _put(f"interp:{i}", nm, "interpreted")
+
+    for it in out.get("items") or ():
+        if isinstance(it, dict):
+            nm = it.get("food") or it.get("name")
+            fields = [str(a.get("field") or "").strip().lower()
+                      for a in (out.get("ambiguities") or [])
+                      if isinstance(a, dict)
+                      and str(a.get("item") or a.get("food") or "") in
+                      ("", str(nm or ""))]
+            _link_or_put(nm, "interpreted", fields)
+
+    # LABEL carriers last: they reference foods, they do not introduce
+    # occurrences unless nothing else names the food at all
+    for q in out.get("questions") or ():
+        if isinstance(q, dict):
+            _link_or_put(q.get("item"), "asked",
+                         _fields_in_question(q.get("text")))
+    for pt in out.get("points") or ():
+        if isinstance(pt, dict):
+            qs = pt.get("qs") if isinstance(pt.get("qs"), list) else [pt.get("q")]
+            _link_or_put(pt.get("label"), "asked",
+                         _fields_in_question(" ".join(str(x) for x in qs if x)))
+
+    return tuple(FoodSubject(name=found[k]["name"], role=found[k]["roles"][0],
+                             open_fields=tuple(sorted(found[k]["fields"])),
+                             key=k)
+                 for k in order)
+
+
+#: The words a quantity question is made of. Read off the QUESTION TEXT because
+#: the live producer's `questions[]` carry a label and a sentence, not a field
+#: id — "How much…?" / "How many…?" / "…serving…" is a quantity question; a
+#: flavour or brand question is not. Conservative: a question that names none
+#: of these is recorded with an unnamed open field, which is "another
+#: ambiguity" to the CF9 test and refuses rather than asks.
+_QTY_WORDS = ("how much", "how many", "serving", "servings", "grams", "oz",
+              "ounce", "portion", "amount", "quantity", "cups", "pieces",
+              "slices", "how big", "size")
+
+
+def _fields_in_question(text) -> tuple:
+    t = " ".join(str(text or "").lower().split())
+    if not t:
+        return ()
+    if any(w in t for w in _QTY_WORDS):
+        return ("quantity",)
+    return ("unknown",)
+
+
 def plan_from_interpretation(out) -> TurnPlan:
     """Lift an interpreter result into a typed plan. Pure — no model call.
+
+    ⛔ CF5c: EVERY plan leaving here carries `food_subjects` — the producer's
+    COMPLETE interpretation normalised once (see `food_subjects_of`). The
+    body below decides the operations and the intent; this wrapper stamps the
+    subjects on whichever plan it returns, so no branch can forget them and
+    no consumer has to reach back into the interpreter's dict."""
+    from dataclasses import replace as _replace
+    plan = _plan_from_interpretation(out)
+    subjects = food_subjects_of(out)
+    open_fields = tuple(sorted({f for sub in subjects for f in sub.open_fields}))
+    return _replace(plan, food_subjects=subjects, open_fields=open_fields)
+
+
+def _plan_from_interpretation(out) -> TurnPlan:
+    """The untyped body — see `plan_from_interpretation`.
 
     Split out of `FoodPlanStage.run` so shadow observation can lift the plan
     THE TURN ALREADY COMPUTED instead of running the interpreter a second time.
@@ -707,10 +934,11 @@ class FoodValidationStage:
                 disposition="ask",
                 approved_operations=(ops if intent == "ask" else ()),
                 clarification=(plan.ambiguities[0] if plan.ambiguities else None),
-                policy_version=self.POLICY_VERSION)
+                policy_version=self.POLICY_VERSION, plan=plan)
         if ops:
             return ValidationResult(disposition="execute",
                                     approved_operations=ops,
-                                    policy_version=self.POLICY_VERSION)
+                                    policy_version=self.POLICY_VERSION,
+                                    plan=plan)
         return ValidationResult(disposition="pass",
-                                policy_version=self.POLICY_VERSION)
+                                policy_version=self.POLICY_VERSION, plan=plan)

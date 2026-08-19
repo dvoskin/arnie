@@ -68,16 +68,26 @@ from tests.test_a_scan_is_binding import (BAREBELLS_PROD, _Req, _log,
 
 
 
-class _Plan:
-    """Plan-shaped stub for the CF5c gate. Production always runs
-    `FoodValidationStage`, which is where the decision lives, so a test that
-    hand-builds a ValidationResult must still present a plan to the gate."""
-
-    def __init__(self, ops=(), ambiguities=(), intent="log"):
-        self.operations = tuple(ops)
-        self.ambiguities = tuple(ambiguities)
-        self.response_intent = intent
-
+def _Plan(ops=(), ambiguities=(), intent="log", **producer):
+    """A REAL plan, through the real normaliser. Builds an interpreter-shaped
+    dict — the producer's own keys — and lifts it with
+    `plan_from_interpretation`, so `food_subjects` is exactly what production
+    would carry. Extra producer keys (`deferred_calls`, `questions`,
+    `b1_material`, `points`) pass straight through."""
+    from core.turns.stages.food import plan_from_interpretation
+    out = {"action": intent, "tool_calls": list(ops), "say": ""}
+    if intent == "ask":
+        # the primary ask origin's shape: no top-level items/ambiguities
+        out.setdefault("questions", [])
+    for amb in ambiguities:
+        # legacy fixture shape {"items": [...], "ambiguities": [...]} — kept
+        # readable for tests that still use it, but the SUBJECTS come from the
+        # dict's own keys via the normaliser, never from a max() over views
+        if isinstance(amb, dict):
+            out.setdefault("items", []).extend(amb.get("items") or [])
+            out.setdefault("ambiguities", []).extend(amb.get("ambiguities") or [])
+    out.update(producer)
+    return plan_from_interpretation(out)
 
 def _decide(ops=(), ambiguities=()):
     from core.scan_authority import decide_from_plan
@@ -1130,12 +1140,19 @@ def test_the_backstop_is_keyed_on_the_binding_not_the_attachment():
                                                       UNDECIDABLE, attach,
                                                       begin_turn)
     logf = {"name": "log_food", "input": {"food_name": "x", "quantity": "1"}}
+    logg = {"name": "log_food", "input": {"food_name": "y", "quantity": "1"}}
     upd = {"name": "update_food_entry", "input": {"entry_id": 1, "quantity": "4 bar"}}
 
     def _d(ops, ambiguities=()):
         begin_turn(); attach(7)
         return _decide(ops, ambiguities)
 
+    assert _d([logf, logg]) == SKIPPED_MULTI_ITEM
+    # ⛔ TWO OPERATIONS ARE TWO SUBJECTS, whatever their names *(Danny, pre-
+    # ship)*. An earlier version of this line asserted BOUND here — "same
+    # food twice: one subject" — which would let ONE ready write through on
+    # a turn with TWO food intents. Occurrence is the unit; name is only the
+    # cross-carrier link.
     assert _d([logf, logf]) == SKIPPED_MULTI_ITEM
     assert _d([upd, logf]) == SKIPPED_MULTI_ITEM
     assert _d([logf]) == BOUND

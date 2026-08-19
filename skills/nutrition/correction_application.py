@@ -215,8 +215,17 @@ def _refuse_if_scan_bound(food_name: str) -> None:
         from core.scan_authority import is_bound, snapshot_id
         bound = is_bound()
         sid = snapshot_id()
-    except Exception:                                    # noqa: BLE001
-        return
+    except Exception as exc:                             # noqa: BLE001
+        # ⛔ FAIL CLOSED *(CF5c cleanup)*. This used to `return` — a backstop
+        # advertised as fail-closed that fell open the moment it could not
+        # read the authority. An unreadable authority is an UNKNOWN about
+        # binding, and correction arithmetic under an unknown binding is the
+        # exact write this guard exists to stop.
+        logger.warning("event=correction_apply outcome=refused "
+                       "reason=authority_unreadable food=%r", food_name,
+                       exc_info=True)
+        raise ScanBoundCorrectionRefused(
+            None, food_name) from exc
     if bound:
         logger.warning("event=correction_apply outcome=refused "
                        "reason=scan_bound snapshot=%s food=%r", sid, food_name)

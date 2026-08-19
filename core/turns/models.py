@@ -88,6 +88,27 @@ class RouteDecision:
 
 
 @dataclass(frozen=True)
+class FoodSubject:
+    """⛔ CF5c — ONE FOOD THIS TURN IS ABOUT, whatever the producer did with
+    it. A plan names its foods in as many as five places — the ready writes,
+    the deferred writes, the asked question labels, the staged material and
+    the raw interpretation — and no single one of them is complete: the
+    validation stage approves only the READY items of an ask, the deferred
+    ones ride a different key, the asked ones ride only a label. A gate that
+    counted any ONE of those views could bind a scan to a two-food turn, or
+    read a one-food ask as no food at all.
+
+    So the producer's COMPLETE interpretation is normalised ONCE, here, into a
+    typed list — and the scan authority reads only this. `role` says where the
+    subject came from; `open_fields` says which questions are still open on
+    it (empty for a write that is ready)."""
+    name: str
+    role: str                     # ready | held | asked | staged | interpreted
+    open_fields: tuple = ()       # e.g. ("quantity",) — the fields still asked
+    key: str = ""                 # the normalised identity used to dedupe
+
+
+@dataclass(frozen=True)
 class TurnPlan:
     operations: tuple = ()
     response_intent: str = ""
@@ -97,6 +118,16 @@ class TurnPlan:
     # line) and its numbers are tokens filled from the committed snapshot.
     narration_hint: str = ""
     planner_version: str = ""
+    # ⛔ CF5c — THE COMPLETE SET OF FOODS THIS TURN IS ABOUT, deduplicated by
+    # normalised name, with the fields still open on each. Populated by
+    # `plan_from_interpretation` from the producer's whole output; read by
+    # `core.scan_authority` and by nothing that would re-derive it. Empty for a
+    # plan that is not about food (undo, deterministic, pass).
+    food_subjects: tuple = ()
+    # The union of open fields across the subjects — "what is still being
+    # asked" — so a consumer can tell "quantity is the only unknown" without
+    # walking the subjects itself.
+    open_fields: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -105,6 +136,11 @@ class ValidationResult:
     approved_operations: tuple = ()
     clarification: Optional[Any] = None
     policy_version: str = ""
+    # ⛔ CF5c — the plan this validation was made from, so execution can read
+    # the TYPED food subjects (`plan.food_subjects`) without reaching back into
+    # the interpreter's dict. `approved_operations` is a SUBSET of the plan
+    # (an ask approves only the ready writes); the subjects are the whole.
+    plan: Optional[Any] = None
 
 
 @dataclass(frozen=True)

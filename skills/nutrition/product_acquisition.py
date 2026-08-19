@@ -107,25 +107,6 @@ def attach(snapshot_id: Optional[int]) -> None:
     SCAN_BINDING.set(ScanBinding(ATTACHED, int(snapshot_id)))
 
 
-def decide_binding(*, bound: bool) -> Optional[ScanBinding]:
-    """The ONE decision point: does this turn's scan bind? Called once, from
-    the execution stage, which is the first place the turn's operations are
-    known. Returns the new state (None when no scan is attached)."""
-    current = SCAN_BINDING.get()
-    snapshot_id = (current.snapshot_id if current is not None
-                   else SCANNED_PRODUCT_EVIDENCE.get())
-    if snapshot_id is None:
-        return None
-    # A turn whose attachment was set without `attach()` still decides: the
-    # ID is the attachment's truth, the STATE is the binding's. Deriving the
-    # missing ATTACHED here keeps the decision total rather than silently
-    # leaving a scanned turn undecided.
-    state = ScanBinding(BOUND if bound else SKIPPED_MULTI_ITEM, snapshot_id)
-    SCAN_BINDING.set(state)
-    logger.info("event=scan_binding_decided state=%s", state)
-    return state
-
-
 def consume_binding() -> None:
     """The binding has been settled, or handed to an ask that holds the
     snapshot. It is no longer live for this turn's later stages."""
@@ -135,13 +116,13 @@ def consume_binding() -> None:
 
 
 def scan_is_bound() -> bool:
-    """True only when the scan attached to this turn actually BOUND. The one
-    reader of the disposition, so "is this turn bound" has a single answer."""
-    try:
-        state = SCAN_BINDING.get()
-    except Exception:                                    # noqa: BLE001
-        return False
-    return bool(state is not None and state.is_bound)
+    """MECHANICAL DELEGATE to `core.scan_authority.is_bound` *(CF5c cleanup)*.
+    This used to be a second reader with its own fail-open (`except: return
+    False`); it now has no logic of its own, so there is exactly one place
+    that answers "is this turn bound". Kept only so callers that imported it
+    keep working; new code imports the authority."""
+    from core.scan_authority import is_bound
+    return is_bound()
 
 
 async def acquire_product_evidence(db, barcode, *, serving_unit: str = "",

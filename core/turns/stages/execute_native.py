@@ -404,6 +404,11 @@ class NativeExecutionStage:
                     locale=str(getattr(user, "locale", "") or "en"))
                 view = self._publish_bound_refusal(coverage, items, request,
                                                    ask=ask)
+                # CF5c lifecycle: BOUND -> CONSUMED once the ask HOLDS the
+                # snapshot (or the refusal has been rendered) — the binding is
+                # no longer live for later stages of this turn.
+                from core.scan_authority import consume
+                consume()
                 LAST_EXECUTION.set(view)
                 return view
             # ⭐ THE MESSAGE TRAVELS WITH THE MEAL (A12). Canonical's idempotency
@@ -431,6 +436,11 @@ class NativeExecutionStage:
             from core.general_settlement import execution_view
 
             view = execution_view(result, items)
+            # CF5c lifecycle: BOUND -> CONSUMED once the bound meal has
+            # SETTLED. Whatever runs after this in the turn sees a consumed
+            # binding, not a live one.
+            from core.scan_authority import consume
+            consume()
             LAST_EXECUTION.set(view)
             return view
 
@@ -497,15 +507,23 @@ class NativeExecutionStage:
             asked, not turned away.
         """
         from core.scan_authority import (ScanAuthorityRefusal, is_bound,
-                                         quantity_only_ask_item, snapshot_id)
+                                         quantity_only_subject, snapshot_id)
         if not is_bound():
             return None                       # unscanned, or bound nothing
-        item = quantity_only_ask_item(getattr(validation, "clarification", None))
-        if item is None:
+        # the TYPED subjects ride the plan, which the validation stage
+        # carries forward — CF5c reads only that normalised view
+        plan = getattr(validation, "plan", None)
+        if plan is None:
+            raise ScanAuthorityRefusal(
+                "no_plan", "a scanned zero-operation turn reached execution "
+                           "without its plan")
+        sub = quantity_only_subject(plan)
+        if sub is None:
             raise ScanAuthorityRefusal(
                 "no_quantity_ask",
                 "a scanned turn produced no operation and no answerable "
                 "quantity question")
+        item = {"food": sub.name}
         if db is None or user is None:
             raise ScanAuthorityRefusal("no_session",
                                        "no database handle for a bound ask")
