@@ -32,11 +32,11 @@ import logging
 
 import pytest
 
-from tests.test_a_scan_is_binding import (BAREBELLS_PROD, _Req, _log,
-                                          _prod_snapshot)
+from tests.test_a_scan_is_binding import (BAREBELLS_PROD, _Req, _ev, _fake_ev,
+                                          _log, _prod_snapshot)
 
 
-def _Plan(ops=(), ambiguities=(), intent="log", **producer):
+def _Plan(ops=(), ambiguities=(), intent="log", message="I had some of this", **producer):
     """A REAL plan, through the real normaliser. Builds an interpreter-shaped
     dict — the producer's own keys — and lifts it with
     `plan_from_interpretation`, so `food_subjects` is exactly what production
@@ -57,6 +57,7 @@ def _Plan(ops=(), ambiguities=(), intent="log", **producer):
         elif isinstance(amb, dict):
             out.setdefault("ambiguities", []).append(amb)
     out.update(producer)
+    out.setdefault("_message", message)
     return plan_from_interpretation(out)
 
 class _V:
@@ -83,16 +84,24 @@ async def _rows(db, log):
 # ═════ 1 — SCAN + "yes" MUST NOT REPLAY AN OLDER CONFIRMED FOOD ════════════
 
 @pytest.mark.asyncio
-async def test_cf5c_a_scan_suppresses_confirm_replay(db, make_user, monkeypatch,
-                                                     caplog):
-    """⛔ THE UPSTREAM HOLE. `ConfirmReplayPlanStage` runs BEFORE the
-    interpreter, before the plan, before any binding decision — so scan +
-    "yes" would log an EARLIER confirmed food verbatim and then attach THIS
-    scan's snapshot to it: one product's nutrition under another product's
-    name. Every identity guard lives downstream of this stage and none of
-    them would have seen it."""
+async def test_cf5c_a_scan_plus_yes_to_a_confirm_is_a_prior_conflict(db, make_user,
+                                                                     monkeypatch, caplog):
+    """⛔ THE UPSTREAM HOLE, CLOSED WHERE THE DECISION LIVES. `ConfirmReplay
+    PlanStage` runs BEFORE the interpreter — so scan + "yes" could log an
+    EARLIER confirmed food and then attach THIS scan's snapshot to it: one
+    product's nutrition under another product's name.
+
+    ⛔ P17 CLOSURE PHASE 1: the replay is NOT suppressed any more (that
+    decided binding from the attachment, before any plan existed, and it
+    denied the user their "yes"). The replay runs, the replayed items are
+    typed as subjects with `origin="confirm_replay"`, and the authority rules
+    SKIPPED_MULTI_ITEM: the earlier turn's statement is not something a
+    barcode attached to THIS turn can bind to. The chicken logs as it would
+    unscanned; the snapshot binds nothing; the reply says so."""
+    from core.scan_authority import decide_from_plan, scan_unused_note
     from core.turns.stages.food import FoodPlanStage
-    from skills.nutrition.product_acquisition import attach, begin_turn
+    from skills.nutrition.product_acquisition import (SKIPPED_MULTI_ITEM,
+                                                      attach, begin_turn)
     caplog.set_level(logging.INFO)
     user = await make_user()
     log = await _log(db, user)
@@ -106,23 +115,29 @@ async def test_cf5c_a_scan_suppresses_confirm_replay(db, make_user, monkeypatch,
                        "messages": (), "food_prior": prior,
                        "board": [], "day_line": "", "regulars": None})
 
-    async def interpreter_must_run(text, u, **kw):
-        return {"action": "log", "say": "", "tool_calls": [
-            {"name": "log_food",
-             "input": {"food_name": "Barebells", "quantity": "1 bar"}}]}
+    async def interpreter_must_not_run(text, u, **kw):
+        raise AssertionError("the confirm replay was suppressed — Phase 1 "
+                             "keeps it; the AUTHORITY decides binding")
 
     begin_turn()
-    attach(snap.id)
+    attach(_ev(snap))
     try:
-        plan = await FoodPlanStage(interpreter=interpreter_must_run).run(req)
+        plan = await FoodPlanStage(interpreter=interpreter_must_not_run).run(req)
+        assert plan.origin == "confirm_replay", plan.origin
+        # the replayed food IS the plan the planner produced (attachment-blind)
+        names = [op["input"].get("food_name", "") for op in plan.operations]
+        assert any("chicken" in n.lower() for n in names), names
+        # and the authority rules PRIOR_CONFLICT — refused, never executed;
+        # P17 closure Phase 1 (review round 2): a scan-attached "yes" must not
+        # execute an earlier action, and it is not a generic "skipped" either
+        from skills.nutrition.product_acquisition import (DISP_REFUSED,
+                                                          PRIOR_CONFLICT)
+        d = decide_from_plan(plan, _ev(snap))
+        assert d.outcome == PRIOR_CONFLICT and d.disposition == DISP_REFUSED
+        assert "origin=confirm_replay" in caplog.text
+        assert scan_unused_note() is None          # refused, not discarded
     finally:
         begin_turn()
-
-    assert "scan_suppresses_confirm_replay" in caplog.text
-    names = [op["input"].get("food_name", "") for op in plan.operations]
-    assert not any("chicken" in n.lower() for n in names), (
-        f"the scan was absorbed by a replay of an older confirmed meal: {names}")
-    assert any("barebells" in n.lower() for n in names), names
 
 
 @pytest.mark.asyncio
@@ -179,7 +194,7 @@ async def test_cf5c_a_two_food_ask_with_one_ready_item_does_not_bind(
                {"db": db, "user": user, "today_log": log, "messages": ()})
 
     begin_turn()
-    attach(snap.id)
+    attach(_ev(snap))
     try:
         validation = await FoodValidationStage().run(req, plan=plan)
         assert len(validation.approved_operations) == 1     # the trap
@@ -235,7 +250,7 @@ async def test_cf5c_zero_ops_with_quantity_the_only_unknown_opens_the_cf9_ask(
 
     from core.scan_authority import decide_from_plan
     begin_turn()
-    attach(snap.id)
+    attach(_ev(snap))
     try:
         decide_from_plan(plan)
         execution = await NativeExecutionStage().run(
@@ -286,7 +301,7 @@ async def test_cf5c_zero_ops_with_another_ambiguity_refuses_without_legacy(
     req = _Req("barebells?", {"db": db, "user": user, "today_log": log,
                               "messages": ()}, turn_id=f"ios:cf5c-ref-{user.id}")
     begin_turn()
-    attach(snap.id)
+    attach(_ev(snap))
     try:
         decide_from_plan(plan)
         with pytest.raises(ScanAuthorityRefusal) as ei:
@@ -362,7 +377,7 @@ async def test_cf5c_a_bound_update_never_reaches_the_correction_route(
     req = _Req("make it 4", {"db": db, "user": user, "today_log": log,
                              "messages": ()}, turn_id=f"ios:cf5c-upd-{user.id}")
     begin_turn()
-    attach(snap.id)
+    attach(_ev(snap))
     try:
         decide_from_plan(_Plan(upd))
         with pytest.raises(ScanAuthorityRefusal) as ei:
@@ -387,7 +402,7 @@ async def _settle_one_log(db, user, log, snap, monkeypatch, *, food_name,
                {"db": db, "user": user, "today_log": log, "messages": ()},
                turn_id=f"{turn_id}-{user.id}")
     begin_turn()
-    attach(snap.id)
+    attach(_ev(snap))
     try:
         decide_from_plan(_Plan(ops))
         return await NativeExecutionStage().run(req, validation=_V(ops))
@@ -581,9 +596,9 @@ async def test_cf5c_live_producer_one_ready_plus_one_held_is_skipped_multi_item(
     names = sorted(s.name.lower() for s in plan.food_subjects)
     assert names == ["alpha", "bravo"], plan.food_subjects
 
-    begin_turn(); attach(7)
+    begin_turn(); attach(_fake_ev(7))
     try:
-        assert decide_from_plan(plan) == SKIPPED_MULTI_ITEM
+        assert decide_from_plan(plan).outcome == SKIPPED_MULTI_ITEM
         assert SCAN_BINDING.get().kind == SKIPPED_MULTI_ITEM
     finally:
         begin_turn()
@@ -632,9 +647,9 @@ async def test_cf5c_live_producer_quantity_only_ask_is_bound_and_opens_cf9(
     req = _Req("barebells", {"db": db, "user": user, "today_log": log,
                              "messages": ()},
                turn_id=f"ios:cf5c-live-{partial_commit}-{user.id}")
-    begin_turn(); attach(snap.id)
+    begin_turn(); attach(_ev(snap))
     try:
-        assert decide_from_plan(plan) == BOUND
+        assert decide_from_plan(plan).outcome == BOUND
         execution = await NativeExecutionStage().run(
             req, validation=_V([], clarification=out, disposition="ask",
                                plan=plan))
@@ -764,9 +779,9 @@ def test_cf5c_two_independently_represented_same_name_subjects_are_two():
     # the label attached to BOTH occurrences (a question about that food),
     # not to a third subject — inferred from prose here (no typed record)
     assert all("quantity?" in s.open_fields for s in plan.food_subjects)
-    begin_turn(); attach(7)
+    begin_turn(); attach(_fake_ev(7))
     try:
-        assert decide_from_plan(plan) == SKIPPED_MULTI_ITEM
+        assert decide_from_plan(plan).outcome == SKIPPED_MULTI_ITEM
     finally:
         begin_turn()
 
@@ -782,7 +797,7 @@ def test_cf5c_two_same_name_ready_writes_are_two_and_refuse_under_bound():
     a = {"name": "log_food", "input": {"food_name": "Barebells Bar", "quantity": "1 bar"}}
     plan = plan_from_interpretation({"action": "log", "tool_calls": [a, dict(a)]})
     assert len(plan.food_subjects) == 2
-    begin_turn(); attach(7)
+    begin_turn(); attach(_fake_ev(7))
     SCAN_BINDING.set(ScanBinding("bound", 7))          # adversarially
     try:
         with pytest.raises(ScanAuthorityRefusal) as ei:
@@ -838,7 +853,7 @@ async def test_cf5c_a_settled_bound_meal_is_CONSUMED_and_so_is_the_ordinary_ask(
     plan = _Plan(ops)
     req = _Req("2 servings", {"db": db, "user": user, "today_log": log, "messages": ()},
                turn_id=f"ios:cf5c-consumed-a-{user.id}")
-    begin_turn(); attach(snap.id); decide_from_plan(plan)
+    begin_turn(); attach(_ev(snap)); decide_from_plan(plan)
     ex = await NativeExecutionStage().run(req, validation=_V(ops, plan=plan))
     assert ex.calls[0].committed
     assert SCAN_BINDING.get().kind == CONSUMED, SCAN_BINDING.get()
@@ -849,7 +864,7 @@ async def test_cf5c_a_settled_bound_meal_is_CONSUMED_and_so_is_the_ordinary_ask(
     plan2 = _Plan(ops2)
     req2 = _Req("2 bars", {"db": db, "user": user, "today_log": log, "messages": ()},
                 turn_id=f"ios:cf5c-consumed-b-{user.id}")
-    begin_turn(); attach(snap.id); decide_from_plan(plan2)
+    begin_turn(); attach(_ev(snap)); decide_from_plan(plan2)
     ex2 = await NativeExecutionStage().run(req2, validation=_V(ops2, plan=plan2))
     assert not ex2.calls[0].committed
     assert ex2.calls[0].correction["refusal"] == "scan_bound_ask"
@@ -976,7 +991,7 @@ async def test_b1_an_open_ask_cannot_claim_a_scanned_text_message(
         FoodEntry.daily_log_id == log.id))).scalars().all())
 
     # a NEW scan rides the next free-text message
-    begin_turn(); attach(snap.id)
+    begin_turn(); attach(_ev(snap))
     try:
         out = await b1_answer_turn.handle(db, user=user,
                                           source_turn_id=f"ios:b1-scan-{user.id}",
@@ -1011,7 +1026,7 @@ async def test_b1_a_chip_tap_with_a_scan_attached_is_still_an_answer(
                                turn_id=f"ios:b1-tap-{user.id}")
     field = ex.calls[0].correction["interaction"]["groups"][0]["fields"][0]
     two = next(o for o in field["options"] if o["option_id"] == "opt_label_serving_2")
-    begin_turn(); attach(snap.id)                    # the tap rides the scan too
+    begin_turn(); attach(_ev(snap))                    # the tap rides the scan too
     try:
         turn = await b1_answer_turn.handle(
             db, user=user, source_turn_id=f"ios:b1-tapans-{user.id}",
@@ -1060,7 +1075,7 @@ async def test_b2_a_named_or_scanned_product_with_no_consumption_does_not_open_a
     assert plan.food_subjects[0].consumed is False, plan.food_subjects
     req = _Req(message, {"db": db, "user": user, "today_log": log, "messages": ()},
                turn_id=f"ios:b2-{abs(hash(message)) % 10**6}-{user.id}")
-    begin_turn(); attach(snap.id)
+    begin_turn(); attach(_ev(snap))
     try:
         decide_from_plan(plan)
         with pytest.raises(ScanAuthorityRefusal) as ei:
@@ -1106,7 +1121,7 @@ async def test_leak_a_an_inferred_quantity_field_does_not_open_the_ask(
     assert plan.open_fields == ("quantity?",)          # inferred, marked
     req = _Req("had a barebells", {"db": db, "user": user, "today_log": log,
                                    "messages": ()}, turn_id=f"ios:leak-a-{user.id}")
-    begin_turn(); attach(snap.id)
+    begin_turn(); attach(_ev(snap))
     try:
         decide_from_plan(plan)
         with pytest.raises(ScanAuthorityRefusal) as ei:
@@ -1218,7 +1233,7 @@ async def test_b3_a_failed_supersede_refuses_rather_than_opening_beside(
                turn_id=f"ios:b3-second-{user.id}")
     import logging as _lg
     caplog = None
-    begin_turn(); attach(snap.id); decide_from_plan(plan)
+    begin_turn(); attach(_ev(snap)); decide_from_plan(plan)
     try:
         with pytest.raises(BoundAskNotSingular) as ei:
             await NativeExecutionStage().run(req, validation=_V(ops, plan=plan))
@@ -1278,7 +1293,7 @@ async def test_b3_concurrent_scans_leave_at_most_one_active_ask(monkeypatch):
                                                               begin_turn)
             async with factory() as s:
                 user = await s.get(User, uid)
-                begin_turn(); attach(sid); SCAN_BINDING.set(ScanBinding("bound", sid))
+                begin_turn(); attach(_fake_ev(sid)); SCAN_BINDING.set(ScanBinding("bound", sid))
                 item = {"food_name": BAREBELLS_PROD["product_name"], "quantity": "2 bar",
                         "product_evidence_id": sid}
                 cov = await coverage_for(s, user_id=uid, items=[item])
@@ -1388,7 +1403,7 @@ async def test_b4_a_hidden_second_subject_prevents_every_scan_transform(
         return interpreter_out
     req = _Req("2 servings of barebells and some soup",
                {"db": db, "user": user, "today_log": log, "messages": ()})
-    begin_turn(); attach(snap.id)
+    begin_turn(); attach(_ev(snap))
     try:
         raw = await FoodPlanStage(interpreter=stub).run(req)
         # the PLANNER did nothing scan-specific
@@ -1432,7 +1447,7 @@ async def test_b4_the_same_plan_with_one_subject_is_transformed_after_the_decisi
         return interpreter_out
     req = _Req("2 servings of barebells",
                {"db": db, "user": user, "today_log": log, "messages": ()})
-    begin_turn(); attach(snap.id)
+    begin_turn(); attach(_ev(snap))
     try:
         raw = await FoodPlanStage(interpreter=stub).run(req)
         assert raw.response_intent == "ask" and not raw.operations      # untouched
@@ -1498,15 +1513,18 @@ async def test_b5_binding_for_snapshot_a_cannot_settle_using_attachment_b(
     plan = _Plan(ops)
     req = _Req("2 servings", {"db": db, "user": user, "today_log": log, "messages": ()},
                turn_id=f"ios:b5-{user.id}")
-    begin_turn(); attach(snap_a.id); decide_from_plan(plan)
+    begin_turn(); attach(_ev(snap_a)); decide_from_plan(plan, _ev(snap_a))
     assert SCAN_BINDING.get().snapshot_id == snap_a.id
-    # the attachment is swapped UNDER the decision
-    SCANNED_PRODUCT_EVIDENCE.set(snap_b.id)
+    # a SECOND, different attachment arrives UNDER the decision: P17 closure
+    # Phase 1 — two distinct attachments are an ATTACHMENT_CONFLICT, whenever
+    # the second arrives; it dominates every reader and refuses before any
+    # write. (The decision record for A is kept for audit.)
+    attach(_ev(snap_b))
     try:
         assert snapshot_id() == snap_a.id, "a reader followed the attachment, not the decision"
         with pytest.raises(ScanAuthorityRefusal) as ei:
             await NativeExecutionStage().run(req, validation=_V(ops, plan=plan))
-        assert ei.value.reason == "snapshot_mismatch"
+        assert ei.value.reason == "attachment_conflict"
     finally:
         begin_turn()
     assert await _rows(db, log) == []
@@ -1732,7 +1750,7 @@ async def test_b3_the_bound_wrapper_refuses_a_same_id_ask_bound_to_another_snaps
     tid = f"ios:b3-swap-{user.id}"
     await _open_bound_ask(db, user, log, snap_a, monkeypatch, turn_id=tid)   # bound to A
     # the SAME turn id, now with snapshot B attached
-    begin_turn(); attach(snap_b.id); SCAN_BINDING.set(ScanBinding("bound", snap_b.id))
+    begin_turn(); attach(_ev(snap_b)); SCAN_BINDING.set(ScanBinding("bound", snap_b.id))
     try:
         item = {"food_name": "Quest Protein Bar", "quantity": "2 bar",
                 "product_evidence_id": snap_b.id}
@@ -1768,7 +1786,7 @@ async def test_b3_the_bound_wrapper_renders_the_stored_interaction_on_reuse(
     tid = f"ios:b3-wrap-{user.id}"
     item = {"food_name": BAREBELLS_PROD["product_name"], "quantity": "2 bar",
             "product_evidence_id": snap.id}
-    begin_turn(); attach(snap.id); SCAN_BINDING.set(ScanBinding("bound", snap.id))
+    begin_turn(); attach(_ev(snap)); SCAN_BINDING.set(ScanBinding("bound", snap.id))
     try:
         cov = await coverage_for(db, user_id=user.id, items=[item])
         first = await open_bound_quantity_ask(db, user=user, item=item, coverage=cov,
@@ -1832,7 +1850,7 @@ async def test_b3_an_absent_stored_snapshot_is_not_a_match(db, make_user, monkey
     # the bound wrapper on the SAME turn id
     item = {"food_name": BAREBELLS_PROD["product_name"], "quantity": "2 bar",
             "product_evidence_id": snap.id}
-    begin_turn(); attach(snap.id); SCAN_BINDING.set(ScanBinding("bound", snap.id))
+    begin_turn(); attach(_ev(snap)); SCAN_BINDING.set(ScanBinding("bound", snap.id))
     try:
         cov = await coverage_for(db, user_id=user.id, items=[item])
         with pytest.raises(BoundAskNotSingular):
@@ -1939,7 +1957,7 @@ async def test_f3_the_bound_wrapper_renders_the_openresult_interaction_and_f4_re
         return fake_open
 
 
-    begin_turn(); attach(snap.id); SCAN_BINDING.set(ScanBinding("bound", snap.id))
+    begin_turn(); attach(_ev(snap)); SCAN_BINDING.set(ScanBinding("bound", snap.id))
     try:
         cov = await coverage_for(db, user_id=user.id, items=[item])
         # F3: stored interaction wins
@@ -1996,7 +2014,7 @@ async def test_b4_a_hidden_second_subject_also_prevents_the_correction_lift(
         return interpreter_out
     req = _Req("2 servings of Barebells bars and some soup",
                {"db": db, "user": user, "today_log": log, "messages": ()})
-    begin_turn(); attach(snap.id)
+    begin_turn(); attach(_ev(snap))
     try:
         raw = await FoodPlanStage(interpreter=stub).run(req)
         assert raw.operations[0]["name"] == "update_food_entry"      # planner blind
@@ -2010,7 +2028,7 @@ async def test_b4_a_hidden_second_subject_also_prevents_the_correction_lift(
 
     # and the twin: drop the soup -> BOUND -> the lift fires, post-decision
     interpreter_out["deferred_calls"] = []
-    begin_turn(); attach(snap.id)
+    begin_turn(); attach(_ev(snap))
     try:
         raw = await FoodPlanStage(interpreter=stub).run(req)
         v = await FoodValidationStage().run(req, plan=raw)
@@ -2108,7 +2126,7 @@ async def test_race_same_operation_id_with_snapshots_a_and_b_one_owns_the_row(mo
                                                               attach, begin_turn)
             async with factory() as s:
                 user = await s.get(User, uid)
-                begin_turn(); attach(snapshot_id)
+                begin_turn(); attach(_fake_ev(snapshot_id))
                 SCAN_BINDING.set(ScanBinding("bound", snapshot_id))
                 item = {"food_name": food, "quantity": "2 bar",
                         "product_evidence_id": snapshot_id}
@@ -2350,7 +2368,7 @@ async def test_prod_0819_a_scanned_turn_with_no_plan_refuses_in_words_and_never_
     caplog.set_level(logging.INFO)
     _LegacySpy.calls.clear()
     req = _tail_request()
-    begin_turn(); attach(1)
+    begin_turn(); attach(_fake_ev(1))
     SCAN_BINDING.set(ScanBinding("undecidable", 1))      # what the gate recorded
     try:
         result = await _run_tail(monkeypatch, _tail_state(request=req), _LegacySpy)
@@ -2375,7 +2393,7 @@ async def test_prod_0819_a_scanned_BOUND_turn_with_no_plan_also_refuses(monkeypa
     caplog.set_level(logging.INFO)
     _LegacySpy.calls.clear()
     req = _tail_request("ios:RL-2")
-    begin_turn(); attach(1)
+    begin_turn(); attach(_fake_ev(1))
     SCAN_BINDING.set(ScanBinding("bound", 1))
     try:
         result = await _run_tail(monkeypatch, _tail_state(request=req), _LegacySpy)
@@ -2426,66 +2444,88 @@ def test_prod_0819_the_entrypoint_consults_the_authority_before_delegating():
 # INTENT line (`scan_bound=True`) — never product data.
 
 @pytest.mark.asyncio
-async def test_prod_0819_the_interpreter_is_told_a_scan_is_attached(monkeypatch):
-    """The REAL producer: with the scan intent line in the user turn, the
-    model's payload is a LOG of the named food, not a phantom update. (The
-    model is mocked to echo what it was told — the assertion is that the
-    intent line REACHES the prompt, typed, and is absent unscanned.)"""
+async def test_phase1_no_scan_instruction_reaches_the_interpreter(monkeypatch):
+    """⛔ P17 CLOSURE PHASE 1 — THE PROMPT OVERREACH IS GONE (supersedes
+    9cf29b9). A "SCAN ATTACHED: … NOT a correction of any entry on the board;
+    do not emit an update" line was added to the interpreter's user turn on
+    2026-08-19 and removed the same evening: it was keyed on the ATTACHMENT,
+    ahead of the typed binding decision, and it rewrites the UNRELATED
+    clauses of a mixed turn ("make the chicken 8 oz" while a bar is scanned).
+
+    The model sees the user's words and the board, exactly as it would with
+    no barcode. Binding is decided afterwards, from the complete plan."""
     import json as _json
     import core.food_turn as FT
     seen = {}
+
     async def fc(messages, system, tools=True, max_tokens=0, model=None, **k):
-        seen["user"] = messages[-1]["content"] if messages else ""
+        seen["user"] = str(messages[-1]["content"] if messages else "")
+        seen["system"] = str(system)
         return {"text": _json.dumps({"action": "log", "items": [
-            {"food": "Barebells", "amount": 2, "unit": "serving", "calories": 220}]}),
-                "raw_content": [], "tool_calls": []}
+            {"food": "Barebells", "amount": 2, "unit": "serving",
+             "calories": 220}]}), "raw_content": [], "tool_calls": []}
+
     monkeypatch.setattr(FT, "chat", fc)
     from types import SimpleNamespace as NS
     user = NS(preferences=NS(food_logging_mode="strict"))
-    out = await FT.run("2 servings of Barebells", user, scan_bound=True)
-    assert "SCAN ATTACHED" in str(seen["user"])
-    assert "NOT a correction" in str(seen["user"])
-    assert "entry_id" in str(seen["user"])            # the phantom-id warning
-    # ⚠ NOT A LICENCE TO LOG (Danny): the scan settles identity only; the
-    # interpreter must still ask about material ambiguity exactly as it would
-    # unscanned — the line must NOT instruct a commit
-    line = str(seen["user"]).split("SCAN ATTACHED")[1]
-    assert "ask when that is material" in line
-    assert "log it as a new item" not in line.lower()
-    assert 'action "log"' not in line.lower() and "action \\\"log\\\"" not in line
-    assert "Barebell" not in str(seen["user"]).split("SCAN ATTACHED")[1], (
-        "the intent line must carry NO product prose — the label's facts reach "
-        "only settlement")
-    seen.clear()
-    await FT.run("2 servings of Barebells", user, scan_bound=False)
-    assert "SCAN ATTACHED" not in str(seen["user"])
+    from skills.nutrition.product_acquisition import attach, begin_turn
+    begin_turn()
+    attach(_fake_ev(7))
+    try:
+        await FT.run("2 servings of Barebells", user)
+    finally:
+        begin_turn()
+    blob = seen["user"] + seen["system"]
+    for banned in ("SCAN ATTACHED", "scanned a product barcode",
+                   "NOT a correction of any entry"):
+        assert banned not in blob, f"a scan instruction reached the prompt: {banned}"
+
+
+def test_phase1_the_interpreter_takes_no_scan_parameter():
+    """By construction: `core.food_turn.run` and `_run_untraced` expose no
+    scan/binding parameter at all, so no future caller can reintroduce
+    attachment-keyed prompting through the signature."""
+    import inspect
+    import core.food_turn as FT
+    for fn in (FT.run, FT._run_untraced):
+        params = set(inspect.signature(fn).parameters)
+        assert not {p for p in params if "scan" in p or "bound" in p}, (
+            f"{fn.__name__} exposes a scan parameter: {sorted(params)}")
 
 
 @pytest.mark.asyncio
-async def test_prod_0819_the_planner_passes_scan_intent_from_the_attachment(
+async def test_phase1_the_planner_is_attachment_blind_scanned_or_not(
         db, make_user, monkeypatch):
-    """FoodPlanStage passes `scan_bound=True` to the interpreter iff a scan is
-    attached — keyed on attachment (the decision needs this call's plan)."""
+    """The planner hands the interpreter the SAME kwargs whether or not a
+    barcode rode the turn — including the pending prior, which the CF5c hook
+    used to drop on attachment."""
     from core.turns.stages.food import FoodPlanStage
     from skills.nutrition.product_acquisition import attach, begin_turn
     user = await make_user()
     log = await _log(db, user)
     snap = await _prod_snapshot(db)
-    got = {}
+    calls = []
+
     async def stub(text, u, **kw):
-        got.update(kw)
+        calls.append(dict(kw))
         return {"action": "log", "tool_calls": []}
+
+    prior = {"kind": "ask", "question": "Salty Peanut or Caramel Cashew?"}
     req = _Req("2 servings of Barebells",
-               {"db": db, "user": user, "today_log": log, "messages": ()})
-    begin_turn(); attach(snap.id)
+               {"db": db, "user": user, "today_log": log, "messages": (),
+                "food_prior": prior, "food_pending": True})
+    begin_turn()
+    attach(_ev(snap))
     try:
         await FoodPlanStage(interpreter=stub).run(req)
-        assert got.get("scan_bound") is True
     finally:
         begin_turn()
-    got.clear()
     await FoodPlanStage(interpreter=stub).run(req)
-    assert got.get("scan_bound") is False
+    assert len(calls) == 2
+    assert calls[0] == calls[1], (
+        f"the planner read the attachment: scanned={calls[0]} "
+        f"unscanned={calls[1]}")
+    assert calls[0].get("prior") == prior, "the pending prior was suppressed"
 
 
 def test_prod_0819_an_update_of_a_phantom_row_is_one_subject_at_the_normaliser():

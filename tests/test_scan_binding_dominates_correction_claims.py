@@ -63,12 +63,12 @@ import logging
 
 import pytest
 
-from tests.test_a_scan_is_binding import (BAREBELLS_PROD, _Req, _log,
-                                          _prod_snapshot)
+from tests.test_a_scan_is_binding import (BAREBELLS_PROD, _Req, _ev, _fake_ev,
+                                          _log, _prod_snapshot)
 
 
 
-def _Plan(ops=(), ambiguities=(), intent="log", **producer):
+def _Plan(ops=(), ambiguities=(), intent="log", message="I had some of this", **producer):
     """A REAL plan, through the real normaliser. Builds an interpreter-shaped
     dict — the producer's own keys — and lifts it with
     `plan_from_interpretation`, so `food_subjects` is exactly what production
@@ -87,11 +87,13 @@ def _Plan(ops=(), ambiguities=(), intent="log", **producer):
             out.setdefault("items", []).extend(amb.get("items") or [])
             out.setdefault("ambiguities", []).extend(amb.get("ambiguities") or [])
     out.update(producer)
+    out.setdefault("_message", message)
     return plan_from_interpretation(out)
 
-def _decide(ops=(), ambiguities=()):
-    from core.scan_authority import decide_from_plan
-    return decide_from_plan(_Plan(ops, ambiguities))
+def _decide(ops=(), ambiguities=(), message="I had some of this"):
+    from core.scan_authority import decide_from_plan, evidence as _evidence
+    d = decide_from_plan(_Plan(ops, ambiguities, message=message), _evidence())
+    return d.outcome if d is not None else None
 
 
 # ── the board: a LEGACY Barebells row, exactly the production shape ──────────
@@ -304,7 +306,7 @@ async def test_twin_removing_the_executor_invariant_an_adversarial_misroute_comm
     caplog.set_level(logging.INFO)
     snap = await _prod_snapshot(db)
     committed = {"calories": 400.0, "protein": 40.0, "carbs": 40.0, "fats": 14.0}
-    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    token = SCANNED_PRODUCT_EVIDENCE.set(_ev(snap))
     binding = SCAN_BINDING.set(ScanBinding("bound", snap.id))
     try:
         for arm, kw in (
@@ -460,11 +462,21 @@ async def test_p1_a_different_board_row_product_commits_exactly_the_snapshot_nam
 @pytest.mark.parametrize("failure", ["missing", "nameless", "unreadable"])
 async def test_p1_an_unavailable_snapshot_identity_refuses_with_zero_write_and_no_legacy(
         db, make_user, monkeypatch, caplog, failure):
-    """Snapshot missing / nameless / unreadable -> ScanBoundIdentityUnavailable,
-    raised before the predicate: zero rows, zero events, legacy never invoked,
-    the board row byte-identical."""
+    """Snapshot missing / nameless / unreadable -> a TYPED refusal raised
+    before the predicate: zero rows, zero events, legacy never invoked, the
+    board row byte-identical.
+
+    ⛔ P17 CLOSURE PHASE 1 moved WHERE two of the three are caught, not
+    whether. The authority now compares the user's words with the snapshot's
+    own identity, so a snapshot it cannot read at all (missing, unreadable)
+    is `identity_unknown` -> UNDECIDABLE -> `ScanAuthorityRefusal`, refused at
+    the gate. A snapshot that reads but has no usable NAME still binds (the
+    brand identifies it) and is caught one layer later, by the identity
+    helper, as `ScanBoundIdentityUnavailable`. Both are fail-closed, and the
+    zero-mutation assertions below are identical for all three."""
     from db.models import FoodEntry, ProductEvidenceRecord
     from sqlalchemy import select
+    from core.scan_authority import ScanAuthorityRefusal
     from core.turns.stages import execute_native as stage_mod
     from core.turns.stages.execute_native import ScanBoundIdentityUnavailable
     caplog.set_level(logging.INFO)
@@ -492,12 +504,17 @@ async def test_p1_an_unavailable_snapshot_identity_refuses_with_zero_write_and_n
             return await real_get(model, ident, *a, **k)
         monkeypatch.setattr(db, "get", broken_get)
 
-    with pytest.raises(ScanBoundIdentityUnavailable) as ei:
+    expected = (ScanBoundIdentityUnavailable if failure == "nameless"
+                else ScanAuthorityRefusal)
+    with pytest.raises(expected) as ei:
         await _run(db, user, log, "2 servings of Barebells bars", snapshot_id,
                    _the_misrouted_plan(existing), monkeypatch, turn_id=f"t:p1-{failure}")
     if failure == "unreadable":
         monkeypatch.undo()
-    assert ei.value.placeholder == "Barebells Salty Peanut Protein Bar"
+    if failure == "nameless":
+        assert ei.value.placeholder == "Barebells Salty Peanut Protein Bar"
+    else:
+        assert ei.value.reason == "identity_unknown", ei.value.reason
     assert "settlement_route" not in caplog.text          # refused BEFORE the predicate
     assert "route=ratio" not in caplog.text
     assert await _row_bytes(db, existing) == before
@@ -525,7 +542,14 @@ def test_p1_the_helper_fails_closed_by_construction():
     raises = [n for n in ast.walk(tree) if isinstance(n, ast.Raise)
               and isinstance(getattr(n.exc, "func", None), ast.Name)
               and n.exc.func.id == "ScanBoundIdentityUnavailable"]
-    assert len(raises) >= 4, "missing / nameless / unreadable / unbound must each refuse"
+    # P17 closure Phase 1: the helper reads the VERIFIED evidence the gate
+    # ruled on and never reloads the row; a missing/unreadable snapshot is
+    # refused at the gate (identity_unknown). What remains here: no bound
+    # evidence, and evidence with no usable product name.
+    assert len(raises) >= 2, "no-bound-evidence / nameless must each refuse"
+    assert "require_bound_evidence" in inspect.getsource(m._name_from_snapshot)
+    assert "db.get(" not in inspect.getsource(m._name_from_snapshot), (
+        "the helper reloads the row — consumers accept only VerifiedScanEvidence")
     # ⚠ ONE early return is legitimate under CF5c — the UNBOUND turn, where
     # the interpreter's name stands exactly as it always has. What must never
     # exist is a return INSIDE the per-item loop: that would leave a BOUND
@@ -701,7 +725,7 @@ async def test_p2_the_typed_invariant_propagates_and_is_never_swallowed(
     before = {"calories": row.calories, "quantity": row.quantity}
 
     begin_turn()
-    attach(snap.id)
+    attach(_ev(snap))
     SCAN_BINDING.set(ScanBinding("bound", snap.id))       # the misroute, adversarially
     with pytest.raises(ScanBoundCorrectionRefused):
         await execute_tool_calls(
@@ -763,7 +787,7 @@ async def test_p2_binding_state_does_not_leak_into_the_next_turn(
 
     # ── TURN A: scanned, bound, ending three different ways ──
     begin_turn()
-    attach(snap.id)
+    attach(_ev(snap))
     SCAN_BINDING.set(ScanBinding("bound", snap.id))
     assert scan_is_bound()
     if how_turn_a_ends == "refuses":
@@ -804,7 +828,9 @@ def test_p2_the_ingress_clears_both_the_attachment_and_the_decision():
     from pathlib import Path
     from skills.nutrition import product_acquisition as pa
     src = inspect.getsource(pa.begin_turn)
-    assert "SCANNED_PRODUCT_EVIDENCE.set(None)" in src and "SCAN_BINDING.set(None)" in src
+    # P17 closure Phase 1: ONE store — a fresh holder replaces the whole scan
+    # state (attachment, evidence, decision) in one assignment
+    assert "SCAN_TURN.set(ScanTurnState())" in src, src
     chat = Path("api/chat.py").read_text()
     tree = ast.parse(chat)
     called = {n.func.id for n in ast.walk(tree)
@@ -900,7 +926,7 @@ async def test_r3_a_decision_that_returns_without_deciding_also_refuses(
     # the gate never runs at all — the state stays ATTACHED, which the
     # authority reads as UNDECIDABLE rather than as "binds nothing"
     import core.scan_authority as sa
-    monkeypatch.setattr(sa, "decide_from_plan", lambda plan: None)
+    monkeypatch.setattr(sa, "decide_from_plan", lambda plan, ev=None: None)
 
     with pytest.raises(ScanAuthorityRefusal):
         await _run(db, user, log, "2 servings of Barebells bars", snap.id,
@@ -1015,7 +1041,7 @@ def test_p2_the_final_proof_matrix_of_binding_states_CF5C():
     soup = {"name": "log_food", "input": {"food_name": "soup", "quantity": "1 bowl"}}
 
     def _d(ops, ambiguities=()):
-        begin_turn(); attach(7)
+        begin_turn(); attach(_fake_ev(7))
         assert SCAN_BINDING.get().kind == ATTACHED        # attached, not yet decided
         _decide(ops, ambiguities)
         return SCAN_BINDING.get().kind
@@ -1042,8 +1068,8 @@ def test_p2_the_binder_stamps_only_what_the_decision_says_is_bound():
                                                       SCANNED_PRODUCT_EVIDENCE,
                                                       attach, begin_turn)
     begin_turn()
-    attach(7)
-    SCAN_BINDING.set(ScanBinding("skipped_multi_item", 7))
+    attach(_fake_ev(7))
+    SCAN_BINDING.set(ScanBinding("multi_item", 7))
     items = [{"food_name": "soup", "quantity": "1 bowl"}]
     assert "product_evidence_id" not in _bind_scanned_product(items)[0], (
         "the binder stamped a snapshot the decision said binds nothing")
@@ -1149,7 +1175,7 @@ def test_the_backstop_is_keyed_on_the_binding_not_the_attachment():
     upd = {"name": "update_food_entry", "input": {"entry_id": 1, "quantity": "4 bar"}}
 
     def _d(ops, ambiguities=()):
-        begin_turn(); attach(7)
+        begin_turn(); attach(_fake_ev(7))
         return _decide(ops, ambiguities)
 
     assert _d([logf, logg]) == SKIPPED_MULTI_ITEM

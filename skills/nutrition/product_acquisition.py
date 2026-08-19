@@ -28,101 +28,478 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-#: The snapshot id acquired for THIS turn, or None. Set UNCONDITIONALLY at
-#: ingress every turn — the `PRIOR_REPLY_UNSEEN` lesson: a reused task's stale
-#: value from an earlier turn must never leak into this one.
-SCANNED_PRODUCT_EVIDENCE: ContextVar[Optional[int]] = ContextVar(
-    "SCANNED_PRODUCT_EVIDENCE", default=None)
+# ═══════════════════════════════════════════════════════════════════════════
+# THE SCAN STATE OF ONE TURN *(P17 closure directive, Phase 1 — Danny's design)*
+#
+#     UnverifiedScanAttachment            what ingress has: a snapshot id
+#             ↓ repository validation     ONE database read, in one place
+#     VerifiedScanEvidence                immutable: id · provider · code ·
+#                                         revision · fingerprint · brand ·
+#                                         product identity
+#             ↓ pure classification       core.scan_authority.decide_from_plan
+#     ScanDecision                        outcome · evidence · disposition ·
+#                                         reason — immutable, kept for audit
+#
+# Rules *(verbatim from the review)*:
+#   · same snapshot id but different metadata is a CONFLICT, not a duplicate;
+#     only field-identical evidence dedupes
+#   · several distinct attachments produce an explicit ATTACHMENT_CONFLICT —
+#     not a fake evidence sentinel
+#   · a live turn with only a partial object fails closed; arbitrary partial
+#     evidence is never silently "completed" from the database
+#   · a persisted canonical-operation retry reconstructs evidence from its
+#     stored snapshot reference + fingerprint through a SEPARATELY NAMED
+#     repository path (`evidence_from_stored_reference`)
+#   · downstream consumers accept only VerifiedScanEvidence; none reloads or
+#     reinterprets it
+#   · a DISCARDED decision keeps its evidence for logs; it cannot confer
+#     settlement authority — only `require_bound_evidence()` exposes evidence
+#     to settlement
+#   · the state is REQUEST-SCOPED: a fresh holder per ingress, claimed by the
+#     request's turn id at `run_turn`; a holder claimed by another turn is
+#     stale and discarded, never read
+# ═══════════════════════════════════════════════════════════════════════════
 
-#: ⛔⛔ ATTACHMENT IS NOT BINDING *(CF5b review, 2026-08-18)*.
-#: `SCANNED_PRODUCT_EVIDENCE` says a barcode was ATTACHED to this turn. It does
-#: NOT say the scan BOUND to the food being settled — a scan names ONE product,
-#: so a turn about several foods binds nothing at all. Reading the attachment
-#: as if it were a binding is how a guard meant for bound turns changed a turn
-#: it had bound nothing to. MEASURED against the real executor:
-#:
-#:     log "1 bag" (210 kcal); then, with a scan attached, a MIXED turn
-#:     [update(bag -> "9 chips"), log(soup)]. The scan binds NOTHING (two
-#:     foods) — but the correction guard read the ATTACHMENT and raised, and
-#:     `_apply_portion_correction`'s bare except left `changes` untouched, so
-#:     the row was written "9 chips" beside the WHOLE BAG's 210 kcal.
-#:     Unbound, the identical turn correctly rescales to 90.1 kcal.
-#:
-#: A portion and a value allowed to disagree — the class this codebase fixed
-#: once already. So the DECISION is represented explicitly, in ONE place, and
-#: every downstream guard reads THIS rather than re-deriving it:
-#:
-#:     None                 no scan on this turn
-#:     ATTACHED             a barcode was acquired; no decision made yet
-#:     BOUND(snapshot_id)   the scan binds the single food this turn settles
-#:     SKIPPED_MULTI_ITEM   attached, but several foods — it binds nothing
-#:     CONSUMED             the binding has been settled or handed to an ask
-#:
-#: Operation counting is a planner INPUT to the decision, made once in
-#: `NativeExecutionStage.run`; it is never a second definition of "bound".
+
 @dataclass(frozen=True)
-class ScanBinding:
-    """What the scan attached to this turn actually did."""
-    kind: str
-    snapshot_id: Optional[int] = None
+class UnverifiedScanAttachment:
+    """What ingress hands over when it has only an id (tests, older callers).
+    Carries no authority: the repository validates it into evidence, once."""
+    snapshot_id: int
+
+
+@dataclass(frozen=True)
+class VerifiedScanEvidence:
+    """The immutable statement of WHICH snapshot rode this turn — built from
+    the persisted row (acquisition, or the repository path) and handed, as
+    is, to every consumer. `disagrees_with_row` lets a consumer that holds a
+    row prove it is the same evidence; `identical` is the dedupe test."""
+    snapshot_id: int
+    provider: str
+    code: str
+    revision: str
+    fingerprint: str
+    brand: str
+    product_name: str
+
+    def __post_init__(self):
+        # ⛔ NO PARTIAL EVIDENCE. A live turn with a half-filled object fails
+        # closed at construction rather than somewhere downstream.
+        if not (isinstance(self.snapshot_id, int) and self.snapshot_id > 0):
+            raise ValueError("VerifiedScanEvidence requires a snapshot id")
+        for name in ("provider", "code", "fingerprint"):
+            if not str(getattr(self, name) or "").strip():
+                raise ValueError(f"VerifiedScanEvidence requires {name}")
+
+    @classmethod
+    def from_row(cls, row) -> "VerifiedScanEvidence":
+        return cls(snapshot_id=int(getattr(row, "id")),
+                   provider=str(getattr(row, "provider", "") or ""),
+                   code=str(getattr(row, "canonical_code", "") or ""),
+                   revision=str(getattr(row, "provider_revision", "") or ""),
+                   fingerprint=str(getattr(row, "source_fingerprint", "") or ""),
+                   brand=str(getattr(row, "brands", "") or ""),
+                   product_name=str(getattr(row, "product_name", "") or ""))
+
+    def identical(self, other) -> bool:
+        return isinstance(other, VerifiedScanEvidence) and other == self
+
+    def disagrees_with_row(self, row) -> str:
+        """'' when the persisted row IS this evidence, else the first field
+        that disagrees — a refusal names it."""
+        if row is None:
+            return "missing"
+        checks = (("snapshot_id", int(getattr(row, "id", -1)), int(self.snapshot_id)),
+                  ("provider", str(getattr(row, "provider", "") or ""), self.provider),
+                  ("code", str(getattr(row, "canonical_code", "") or ""), self.code),
+                  ("revision", str(getattr(row, "provider_revision", "") or ""), self.revision),
+                  ("fingerprint", str(getattr(row, "source_fingerprint", "") or ""), self.fingerprint))
+        for name, theirs, mine in checks:
+            if theirs != mine:
+                return name
+        return ""
+
+
+# outcomes of the authority's decision
+BOUND = "bound"
+MULTI_ITEM = "multi_item"
+EXPLICIT_OTHER_FOOD = "explicit_other_food"
+PRIOR_CONFLICT = "prior_conflict"
+IDENTITY_CONFLICT = "identity_conflict"
+ATTACHMENT_CONFLICT = "attachment_conflict"
+UNDECIDABLE = "undecidable"
+#: compatibility alias — logs emit the semantic outcome (`multi_item`)
+SKIPPED_MULTI_ITEM = MULTI_ITEM
+#: pre-decision / post-settlement markers reported by `ScanBinding.kind`
+ATTACHED = "attached"
+CONSUMED = "consumed"
+
+# dispositions of a decision
+DISP_BOUND = "BOUND"
+DISP_DISCARDED = "DISCARDED"
+DISP_REFUSED = "REFUSED"
+
+
+@dataclass(frozen=True)
+class ScanDecision:
+    """The authority's immutable ruling for this turn. `evidence` is retained
+    whatever the disposition — audit, logs, the reply note — but only a
+    BOUND disposition lets `require_bound_evidence()` hand it to settlement."""
+    outcome: str
+    evidence: Optional[VerifiedScanEvidence]
+    disposition: str
+    reason: str = ""
 
     @property
     def is_bound(self) -> bool:
-        return self.kind == "bound"
+        return self.disposition == DISP_BOUND and self.outcome == BOUND
+
+    @property
+    def snapshot_id(self) -> Optional[int]:
+        return self.evidence.snapshot_id if self.evidence is not None else None
+
+
+@dataclass
+class ScanTurnState:
+    """ONE holder per request. Everything the turn knows about its scan lives
+    here, and nowhere else; `begin_turn()` creates a fresh one at ingress and
+    `claim()` binds it to the request's turn id."""
+    claimed_by: Optional[str] = None
+    attachments: list = None                 # every attach call, for audit
+    unverified: Optional[UnverifiedScanAttachment] = None
+    evidence: Optional[VerifiedScanEvidence] = None
+    attachment_conflict: Optional[str] = None
+    verification_failure: Optional[str] = None
+    decision: Optional[ScanDecision] = None
+    consumed: bool = False
+
+    def __post_init__(self):
+        if self.attachments is None:
+            self.attachments = []
+
+    @property
+    def attached(self) -> bool:
+        return (self.unverified is not None or self.evidence is not None
+                or self.attachment_conflict is not None)
+
+    @property
+    def attached_snapshot_id(self) -> Optional[int]:
+        if self.evidence is not None:
+            return int(self.evidence.snapshot_id)
+        if self.unverified is not None:
+            return int(self.unverified.snapshot_id)
+        return None
+
+
+SCAN_TURN: ContextVar[Optional[ScanTurnState]] = ContextVar("SCAN_TURN",
+                                                            default=None)
+#: the evidence acquisition built from the row it just persisted/loaded —
+#: consumed by `attach_acquired()` so ingress hands the holder VERIFIED
+#: evidence without a second read. Cleared at `begin_turn`.
+_LAST_ACQUIRED: ContextVar[Optional[VerifiedScanEvidence]] = ContextVar(
+    "_LAST_ACQUIRED", default=None)
+
+
+def begin_turn() -> None:
+    """A FRESH holder, unconditionally, at ingress — the PRIOR_REPLY_UNSEEN
+    lesson applied to the whole scan state. Called at ingress before anything
+    else, and by tests that need a clean turn."""
+    SCAN_TURN.set(ScanTurnState())
+    _LAST_ACQUIRED.set(None)
+
+
+def state() -> Optional[ScanTurnState]:
+    return SCAN_TURN.get()
+
+
+def claim(turn_id: str) -> ScanTurnState:
+    """⛔ REQUEST-SCOPED. `run_turn` claims the holder for its request. A
+    holder already claimed by ANOTHER turn id outlived its request (an ingress
+    that forgot `begin_turn`): it is discarded — logged, never read — and a
+    fresh empty holder takes its place. Same id: idempotent."""
+    st = SCAN_TURN.get()
+    tid = str(turn_id or "")
+    if st is None:
+        st = ScanTurnState()
+        SCAN_TURN.set(st)
+    elif st.claimed_by not in (None, tid):
+        logger.warning("event=scan_state_stale_discarded claimed_by=%s now=%s",
+                       st.claimed_by, tid)
+        st = ScanTurnState()
+        SCAN_TURN.set(st)
+    st.claimed_by = tid
+    return st
+
+
+def attach(snapshot) -> None:
+    """A barcode was acquired for this turn. `snapshot` is the
+    `VerifiedScanEvidence` acquisition built from the persisted row, or a bare
+    snapshot id / `UnverifiedScanAttachment` (tests, older callers) that the
+    repository path validates once, in the validation stage.
+
+    ⛔ TWO DIFFERENT ATTACHMENTS IN ONE TURN REFUSE: a second attach with
+    another id, OR the same id with different metadata, is a turn with two
+    product statements and no way to know which one the words are about. Both
+    stay in `attachments` for audit; neither is the turn's evidence; the turn
+    is ATTACHMENT_CONFLICT. Only field-identical evidence dedupes."""
+    if snapshot is None:
+        return
+    st = SCAN_TURN.get()
+    if st is None:
+        st = ScanTurnState()
+        SCAN_TURN.set(st)
+    if isinstance(snapshot, VerifiedScanEvidence):
+        item = snapshot
+    elif isinstance(snapshot, UnverifiedScanAttachment):
+        item = snapshot
+    else:
+        item = UnverifiedScanAttachment(int(snapshot))
+    st.attachments.append(item)
+    if st.attachment_conflict is not None:
+        return                                       # already refused; stays so
+    existing = st.evidence if st.evidence is not None else st.unverified
+    if existing is None:
+        if isinstance(item, VerifiedScanEvidence):
+            st.evidence = item
+        else:
+            st.unverified = item
+        return
+    # a second attachment: identical dedupes, anything else conflicts
+    if isinstance(existing, VerifiedScanEvidence) and isinstance(item, VerifiedScanEvidence):
+        if existing.identical(item):
+            return
+        why = ("same id, different metadata"
+               if existing.snapshot_id == item.snapshot_id else "two snapshots")
+    elif isinstance(existing, UnverifiedScanAttachment) and isinstance(item, UnverifiedScanAttachment):
+        if existing.snapshot_id == item.snapshot_id:
+            return
+        why = "two snapshots"
+    else:
+        # one verified, one bare id: the same id is the same attachment seen
+        # twice at different levels of proof — keep the VERIFIED one. A
+        # different id is two attachments.
+        a, b = (existing, item) if isinstance(existing, VerifiedScanEvidence) else (item, existing)
+        if a.snapshot_id == b.snapshot_id:
+            st.evidence, st.unverified = a, None
+            return
+        why = "two snapshots"
+    logger.warning("event=scan_attachment_conflict reason=%r attachments=%s",
+                   why, [getattr(x, "snapshot_id", None) for x in st.attachments])
+    st.attachment_conflict = why
+    st.evidence, st.unverified = None, None
+
+
+async def verify(db) -> Optional[VerifiedScanEvidence]:
+    """⛔ THE ONE REPOSITORY VALIDATION. A bare attachment becomes evidence by
+    ONE read of its persisted row; evidence acquisition already built from the
+    row needs no read. Anything that cannot be verified is recorded as a
+    verification failure and the turn fails closed (UNDECIDABLE)."""
+    st = SCAN_TURN.get()
+    if st is None or st.attachment_conflict is not None:
+        return None
+    if st.evidence is not None:
+        return st.evidence
+    if st.unverified is None:
+        return None
+    if db is None:
+        st.verification_failure = "no_session"
+        return None
+    try:
+        from db.models import ProductEvidenceRecord
+        row = await db.get(ProductEvidenceRecord, int(st.unverified.snapshot_id))
+    except Exception as exc:                             # noqa: BLE001
+        logger.warning("scan verify: snapshot %s unreadable",
+                       st.unverified.snapshot_id, exc_info=True)
+        st.verification_failure = f"unreadable:{type(exc).__name__}"
+        return None
+    if row is None:
+        st.verification_failure = "missing"
+        return None
+    try:
+        st.evidence = VerifiedScanEvidence.from_row(row)
+    except ValueError as exc:
+        st.verification_failure = f"partial:{exc}"
+        return None
+    return st.evidence
+
+
+async def evidence_from_stored_reference(db, snapshot_id, fingerprint: str
+                                         ) -> Optional[VerifiedScanEvidence]:
+    """⛔ THE SEPARATELY NAMED RECONSTRUCTION PATH for a persisted canonical-
+    operation retry (the CF9 answer turn): the stored operation references a
+    snapshot id AND the fingerprint of the facts it held. Both must match the
+    persisted row, or nothing is returned — a reprice against changed facts is
+    not the operation the user answered."""
+    if db is None or snapshot_id is None or not fingerprint:
+        return None
+    try:
+        from db.models import ProductEvidenceRecord
+        row = await db.get(ProductEvidenceRecord, int(snapshot_id))
+    except Exception:                                    # noqa: BLE001
+        logger.warning("scan evidence: stored reference %s unreadable",
+                       snapshot_id, exc_info=True)
+        return None
+    if row is None or str(getattr(row, "source_fingerprint", "") or "") != str(fingerprint):
+        return None
+    try:
+        return VerifiedScanEvidence.from_row(row)
+    except ValueError:
+        return None
+
+
+def decide(decision: ScanDecision) -> ScanDecision:
+    """Record the authority's ruling. Immutable once set for this turn."""
+    st = SCAN_TURN.get()
+    if st is None:
+        st = ScanTurnState()
+        SCAN_TURN.set(st)
+    st.decision = decision
+    return decision
+
+
+def consume_binding() -> None:
+    """The binding has been settled, or handed to an ask that holds the
+    snapshot. It is no longer live for this turn's later stages."""
+    st = SCAN_TURN.get()
+    if st is not None and st.decision is not None and st.decision.is_bound:
+        st.consumed = True
+
+
+def scan_is_bound() -> bool:
+    """MECHANICAL DELEGATE to `core.scan_authority.is_bound` *(CF5c cleanup)*.
+    Kept only so callers that imported it keep working."""
+    from core.scan_authority import is_bound
+    return is_bound()
+
+
+@dataclass(frozen=True)
+class ScanBinding:
+    """A READ-ONLY VIEW of the holder for log lines and for tests that still
+    read `.kind` / `.snapshot_id` — built by `binding_view()`; never the
+    store. `kind` is the decision outcome, `attached` before a decision,
+    `consumed` after settlement."""
+    kind: str
+    snapshot_id: Optional[int] = None
+    reason: Optional[str] = None
+
+    @property
+    def is_bound(self) -> bool:
+        return self.kind == BOUND
 
     def __str__(self) -> str:                            # for log lines
         return (f"{self.kind}({self.snapshot_id})" if self.snapshot_id
                 else self.kind)
 
 
-ATTACHED = "attached"
-BOUND = "bound"
-SKIPPED_MULTI_ITEM = "skipped_multi_item"
-CONSUMED = "consumed"
-#: ⛔ CF5c — "I could not tell" is NOT "it binds nothing". The second is a
-#: decision every downstream reader may act on; the first is the absence of
-#: one, and a reader that conflates them proceeds on an unknown about
-#: AUTHORITY. Recorded explicitly so `core.scan_authority` can refuse it.
-UNDECIDABLE = "undecidable"
+# ── COMPATIBILITY ADAPTERS (tests only; production never imports them) ──────
+#
+# The historical contextvars `SCANNED_PRODUCT_EVIDENCE` (the attached id) and
+# `SCAN_BINDING` (the binding record) are kept as ADAPTERS over the one holder
+# so the existing proof suites keep driving the real state. They are views,
+# not stores: `get` reads the holder, `set`/`reset` translate into the
+# holder's own operations and return/restore the holder object as the token.
+# An AST gate asserts no production module references either name.
 
-SCAN_BINDING: ContextVar[Optional[ScanBinding]] = ContextVar(
-    "SCAN_BINDING", default=None)
+def _fork_holder():
+    """The adapters' `set` works on a NEW holder (a copy of the current one) so
+    `reset(token)` restores the UNTOUCHED previous holder — mutating the same
+    object in place would make reset a no-op, and an "unscanned" second run
+    would silently inherit the first run's attachment."""
+    prev = SCAN_TURN.get()
+    if prev is None:
+        nxt = ScanTurnState()
+    else:
+        nxt = ScanTurnState(claimed_by=prev.claimed_by,
+                            attachments=list(prev.attachments),
+                            unverified=prev.unverified, evidence=prev.evidence,
+                            attachment_conflict=prev.attachment_conflict,
+                            verification_failure=prev.verification_failure,
+                            decision=prev.decision, consumed=prev.consumed)
+    SCAN_TURN.set(nxt)
+    return prev
 
 
-def begin_turn() -> None:
-    """Clear BOTH the attachment and the binding decision, unconditionally,
-    at ingress — the PRIOR_REPLY_UNSEEN lesson applied to the decision as
-    well as the id. A stale "bound" from an earlier scan would otherwise be
-    read as THIS turn's binding, which is the same leak one level up. Called
-    at ingress before anything else, and by tests that need a clean turn."""
-    SCANNED_PRODUCT_EVIDENCE.set(None)
-    SCAN_BINDING.set(None)
+class _AttachmentAdapter:
+    def get(self) -> Optional[int]:
+        st = SCAN_TURN.get()
+        return st.attached_snapshot_id if st is not None else None
+
+    def set(self, snapshot_id):
+        prev = _fork_holder()
+        if snapshot_id is None:
+            begin_turn()
+        else:
+            attach(snapshot_id)
+        return prev
+
+    def reset(self, token) -> None:
+        SCAN_TURN.set(token)
 
 
-def attach(snapshot_id: Optional[int]) -> None:
-    """A barcode was acquired for this turn. ATTACHED, not yet bound."""
+class _BindingAdapter:
+    def get(self) -> Optional[ScanBinding]:
+        return binding_view()
+
+    def set(self, view):
+        prev = _fork_holder()
+        if view is None:
+            begin_turn()
+            return prev
+        st = SCAN_TURN.get()
+        if st is None or not st.attached:
+            if getattr(view, "snapshot_id", None) is not None:
+                attach(int(view.snapshot_id))
+            st = SCAN_TURN.get()
+        kind = getattr(view, "kind", None)
+        reason = getattr(view, "reason", None) or "adapter"
+        if kind == ATTACHED:
+            st.decision, st.consumed = None, False
+        elif kind == CONSUMED:
+            st.decision = ScanDecision(BOUND, st.evidence, DISP_BOUND, reason)
+            st.consumed = True
+        elif kind == BOUND:
+            st.decision = ScanDecision(BOUND, st.evidence, DISP_BOUND, reason)
+        elif kind in (MULTI_ITEM, EXPLICIT_OTHER_FOOD):
+            st.decision = ScanDecision(kind, st.evidence, DISP_DISCARDED, reason)
+        else:
+            st.decision = ScanDecision(kind, st.evidence, DISP_REFUSED, reason)
+        return prev
+
+    def reset(self, token) -> None:
+        SCAN_TURN.set(token)
+
+
+SCANNED_PRODUCT_EVIDENCE = _AttachmentAdapter()
+SCAN_BINDING = _BindingAdapter()
+
+
+def binding_view() -> Optional[ScanBinding]:
+    st = SCAN_TURN.get()
+    if st is None or not st.attached:
+        return None
+    if st.attachment_conflict is not None and st.decision is None:
+        return ScanBinding(ATTACHMENT_CONFLICT, None, st.attachment_conflict)
+    if st.decision is None:
+        return ScanBinding(ATTACHED, st.attached_snapshot_id)
+    if st.consumed and st.decision.is_bound:
+        return ScanBinding(CONSUMED, st.decision.snapshot_id, st.decision.reason)
+    return ScanBinding(st.decision.outcome, st.decision.snapshot_id,
+                       st.decision.reason)
+
+
+def attach_acquired(snapshot_id) -> None:
+    """Ingress: attach what `acquire_product_evidence` just returned. If the
+    evidence object acquisition built carries this very id, THAT is attached
+    (verified, complete); otherwise the bare id is attached unverified and the
+    validation stage's single repository read validates it."""
     if snapshot_id is None:
         return
-    SCANNED_PRODUCT_EVIDENCE.set(int(snapshot_id))
-    SCAN_BINDING.set(ScanBinding(ATTACHED, int(snapshot_id)))
-
-
-def consume_binding() -> None:
-    """The binding has been settled, or handed to an ask that holds the
-    snapshot. It is no longer live for this turn's later stages."""
-    current = SCAN_BINDING.get()
-    if current is not None and current.is_bound:
-        SCAN_BINDING.set(ScanBinding(CONSUMED, current.snapshot_id))
-
-
-def scan_is_bound() -> bool:
-    """MECHANICAL DELEGATE to `core.scan_authority.is_bound` *(CF5c cleanup)*.
-    This used to be a second reader with its own fail-open (`except: return
-    False`); it now has no logic of its own, so there is exactly one place
-    that answers "is this turn bound". Kept only so callers that imported it
-    keep working; new code imports the authority."""
-    from core.scan_authority import is_bound
-    return is_bound()
+    ev = _LAST_ACQUIRED.get()
+    _LAST_ACQUIRED.set(None)
+    if ev is not None and int(ev.snapshot_id) == int(snapshot_id):
+        attach(ev)
+    else:
+        attach(UnverifiedScanAttachment(int(snapshot_id)))
 
 
 async def acquire_product_evidence(db, barcode, *, serving_unit: str = "",
@@ -160,6 +537,7 @@ async def acquire_product_evidence(db, barcode, *, serving_unit: str = "",
             if row is not None:
                 logger.info("event=product_acquired code=%s snapshot=%s "
                             "rev=%s", code, row.id, row.provider_revision)
+                _LAST_ACQUIRED.set(VerifiedScanEvidence.from_row(row))
                 # ⭐ P17-UA — deterministic unit enrichment AT ACQUISITION:
                 # if the record's structured serving/quantity text names a
                 # consumer unit (sources 2/3), persist that fact beside the
@@ -193,5 +571,6 @@ async def acquire_product_evidence(db, barcode, *, serving_unit: str = "",
     if existing is not None:
         logger.info("event=product_acquired code=%s snapshot=%s source=local",
                     code, existing.id)
+        _LAST_ACQUIRED.set(VerifiedScanEvidence.from_row(existing))
         return int(existing.id)
     return None

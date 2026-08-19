@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.test_a_scan_is_binding import _fake_ev
+
 from skills.nutrition.product_acquisition import (SCANNED_PRODUCT_EVIDENCE,
                                                   acquire_product_evidence)
 
@@ -186,9 +188,14 @@ def _Plan(ops=(), ambiguities=(), intent="log", **producer):
     out.update(producer)
     return plan_from_interpretation(out)
 
-def _decide(ops=()):
-    from core.scan_authority import decide_from_plan
-    return decide_from_plan(_Plan(ops))
+def _decide(ops=(), message="I had some of this"):
+    from core.scan_authority import decide_from_plan, evidence as _evidence
+    out = _Plan(ops)
+    d = decide_from_plan(out if out.source and out.source.get("_message") else
+                         __import__("dataclasses").replace(
+                             out, source={**(out.source or {}), "_message": message}),
+                         _evidence())
+    return d.outcome if d is not None else None
 
 
 def test_a_single_item_turn_binds_the_snapshot():
@@ -201,7 +208,7 @@ def test_a_single_item_turn_binds_the_snapshot():
     from skills.nutrition.product_acquisition import attach, begin_turn
 
     begin_turn()
-    attach(42)
+    attach(_fake_ev(42))
     ops = _ops("Barebells bar")
     _decide(ops)
     try:
@@ -225,7 +232,7 @@ def test_a_multi_item_turn_binds_nothing():
     from skills.nutrition.product_acquisition import attach, begin_turn
 
     begin_turn()
-    attach(42)
+    attach(_fake_ev(42))
     ops = _ops("Barebells bar", "banana")
     _decide(ops)
     try:
@@ -274,12 +281,13 @@ async def test_the_whole_wire_prices_two_bars_with_settlement_offline(
     monkeypatch.setattr(off_mod, "fetch_product", _dead)
     monkeypatch.setattr(off_mod, "_get_json", _dead)
 
-    from skills.nutrition.product_acquisition import attach, begin_turn
+    from skills.nutrition.product_acquisition import attach_acquired, begin_turn
 
-    begin_turn()
-    attach(snapshot_id)
+    # ⛔ begin_turn() would clear the evidence acquisition just built; the
+    # production ingress order is begin_turn -> acquire -> attach_acquired.
+    attach_acquired(snapshot_id)       # the VERIFIED evidence acquisition built
     _ops_single = _ops("Barebells bar")
-    _decide(_ops_single)
+    _decide(_ops_single, message="I had 2 barebells bars")
     try:
         items = _bind_scanned_product(_food_inputs(_ops_single))
         evidence = await assemble(db, user_id=user.id, entity="barebells bar",

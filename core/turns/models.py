@@ -114,6 +114,14 @@ class FoodSubject:
     # decided to log it); a label-only subject inherits the message's
     # `consumption_state` and is asserted only when that says CONSUMED.
     consumed: bool = False
+    # ⛔ P17 closure Phase 1 — EVERY producer label for this occurrence, across
+    # the carriers (the write's food_name / food_hint, the raw interpretation
+    # row, the question label). The scan authority verifies each against the
+    # user's LITERAL message and compares only the verified mention with the
+    # evidence — a relabelled write ("Caramel Cashew" over a user who wrote
+    # "Salty Peanut") cannot hide the user's words when another carrier kept
+    # them, and a producer that kept none yields no verifiable mention.
+    labels: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -142,6 +150,14 @@ class TurnPlan:
     # planner saw — AFTER the authority has said BOUND, never before. The
     # planner itself is attachment-blind. Not read by anything else.
     source: Any = None
+    # ⛔ P17 closure Phase 1 — WHERE THIS PLAN'S STATEMENT CAME FROM:
+    # "interpreter" (the user's words, parsed this turn), "confirm_replay"
+    # (a "yes" replaying an EARLIER turn's confirmed items) or another
+    # deterministic producer. The scan authority reads it: a replayed plan is
+    # the earlier turn's statement, and a barcode attached to the "yes" can
+    # never bind to it — the scan stays its own subject and the multi-item
+    # policy decides. Replaces the attachment-keyed pre-plan suppression.
+    origin: str = ""
 
 
 @dataclass(frozen=True)

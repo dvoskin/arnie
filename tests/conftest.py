@@ -165,10 +165,17 @@ def _isolate_turn_scoped_caches():
     import handlers.tool_executor as _TE
     import core.food_ledger as _FL
     import skills.nutrition.off as _OFF
+    # ⛔ P17 closure Phase 1 — the SCAN STATE is request-scoped in production
+    # (`begin_turn()` at every ingress creates a fresh holder). A test is a
+    # request: it starts with a fresh holder and leaves none behind, so no
+    # test inherits another's attachment, evidence or decision.
+    from skills.nutrition.product_acquisition import begin_turn as _scan_begin
     for cache in (_FT._SPREAD_CACHE, _FT._RELEVANCE_CACHE,
                   _TE._INFLIGHT_FETCHES, _FL._SEEN, _OFF._BREAKER):
         cache.clear()
+    _scan_begin()
     yield
     for cache in (_FT._SPREAD_CACHE, _FT._RELEVANCE_CACHE,
                   _TE._INFLIGHT_FETCHES, _FL._SEEN, _OFF._BREAKER):
         cache.clear()
+    _scan_begin()

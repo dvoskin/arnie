@@ -130,6 +130,15 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     already has its own recovery and swallowing an exception here would hide a
     failure the legacy path was prepared to report honestly.
     """
+    # ⛔ P17 closure Phase 1 — REQUEST-SCOPED SCAN STATE. The holder ingress
+    # created is claimed for THIS request's turn id; a holder still claimed by
+    # an earlier turn (an ingress that forgot `begin_turn`) is stale and is
+    # discarded unread. Nothing below can see another request's scan.
+    try:
+        from core.scan_authority import claim as _claim_scan
+        _claim_scan(getattr(request, "turn_id", "") or "")
+    except Exception:                                    # noqa: BLE001
+        logger.warning("scan state: claim failed", exc_info=True)
     from core.request_trace import RequestTrace, active as _trace_active
     from core.request_trace import current_trace
     from core.turn_identity import CURRENT_TURN_ID
@@ -434,6 +443,35 @@ def _refusal_copy(exc) -> str:
             return ("I have the scanned product, but I couldn't tell how it "
                     "fits what you asked for, so I left everything as it was. "
                     "Tell me the food and the amount and I'll log it.")
+        if exc.reason == "identity_unknown":
+            return ("I couldn't read the scanned product's details just now, "
+                    "so I didn't log anything. Scan it again, or tell me the "
+                    "food and the amount.")
+        if exc.reason == "prior_conflict":
+            # a scan arrived with an answer to an EARLIER question: neither
+            # the earlier action nor the scan is executed on a guess
+            return ("You've got an open question from before and a scanned "
+                    "product in the same message, so I didn't apply either. "
+                    "Answer the question on its own, or send the scanned "
+                    "product with how much you had.")
+        if exc.reason == "attachment_conflict":
+            return ("Two different products came through on that message, so "
+                    "I didn't log anything. Scan one at a time and tell me "
+                    "the amount.")
+        if exc.reason == "no_fresh_statement":
+            return ("Got the scanned product. I haven't logged it — tell me "
+                    "if you had it and how much, and I'll log it from the "
+                    "label.")
+        if exc.reason in ("consumption_negated", "consumption_question"):
+            return ("Got the scanned product — I haven't logged it, since "
+                    "that didn't sound like you ate it. Tell me if you did "
+                    "and how much.")
+        if exc.reason == "identity_conflict":
+            # P17 closure Phase 1 / invariant 6: the words and the barcode
+            # name different products. Neither is chosen, nothing is written.
+            return ("The product you scanned isn't the one you described, so "
+                    "I didn't log either. Tell me which one you had — or scan "
+                    "the right one and send the amount.")
         return ("I have the scanned product but couldn't work out the rest of "
                 "that message just now, so I didn't log anything. Send it once "
                 "more with the amount, or scan it again.")
@@ -485,6 +523,20 @@ def _result_from_state(state, legacy_kwargs) -> Any:
     response = state.response
     if response is None or not hasattr(response, "bubbles"):
         response = Response.from_text("") if response is None else response
+    # ⛔ P17 closure Phase 1 — a scan that bound nothing is SAID SO. The
+    # authority ruled SKIPPED_MULTI_ITEM (the scan was its own subject beside
+    # the turn's statement, or the turn was a replay); the turn ran exactly
+    # as unscanned, and an exact snapshot must not vanish behind a reply that
+    # reads like a log. Appended as its own bubble so the turn's own words
+    # are untouched.
+    try:
+        from core.scan_authority import scan_unused_note
+        note = scan_unused_note()
+    except Exception:                                    # noqa: BLE001
+        note = None
+    if note and getattr(response, "bubbles", None) is not None:
+        if note not in response.bubbles:
+            response.bubbles.append(note)
 
     return TurnResult(
         response=response,

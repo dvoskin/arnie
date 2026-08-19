@@ -156,7 +156,7 @@ class _Req:
 
 
 
-def _Plan(ops=(), ambiguities=(), intent="log", **producer):
+def _Plan(ops=(), ambiguities=(), intent="log", message="I had some of this", **producer):
     """A REAL plan, through the real normaliser. Builds an interpreter-shaped
     dict — the producer's own keys — and lifts it with
     `plan_from_interpretation`, so `food_subjects` is exactly what production
@@ -175,11 +175,16 @@ def _Plan(ops=(), ambiguities=(), intent="log", **producer):
             out.setdefault("items", []).extend(amb.get("items") or [])
             out.setdefault("ambiguities", []).extend(amb.get("ambiguities") or [])
     out.update(producer)
+    out.setdefault("_message", message)
     return plan_from_interpretation(out)
 
-def _decide(ops=(), ambiguities=()):
-    from core.scan_authority import decide_from_plan
-    return decide_from_plan(_Plan(ops, ambiguities))
+def _decide(ops=(), ambiguities=(), message="I had some of this"):
+    """Decide over a plan that carries the user's words and the VERIFIED
+    evidence of the attached snapshot (the holder's, as the stage hands in).
+    Returns the OUTCOME string (the historical contract of this helper)."""
+    from core.scan_authority import decide_from_plan, evidence as _evidence
+    d = decide_from_plan(_Plan(ops, ambiguities, message=message), _evidence())
+    return d.outcome if d is not None else None
 
 
 async def _log(db, user):
@@ -325,6 +330,23 @@ async def _prod_snapshot(db):
     return await append_product_evidence(db, record=dict(BAREBELLS_PROD))  # no serving_unit
 
 
+def _ev(row):
+    """VerifiedScanEvidence from a persisted snapshot row — what acquisition
+    hands to `attach()` in production."""
+    from skills.nutrition.product_acquisition import VerifiedScanEvidence
+    return VerifiedScanEvidence.from_row(row)
+
+
+def _fake_ev(sid, name="Barebell salty peanut protein bar", brand="Barebell",
+             code="70004199", fingerprint=None):
+    """COMPLETE evidence for a synthetic snapshot id (tests that never touch
+    the database). Never a partial object — the constructor refuses those."""
+    from skills.nutrition.product_acquisition import VerifiedScanEvidence
+    return VerifiedScanEvidence(snapshot_id=int(sid), provider="off", code=code,
+                                revision="1", fingerprint=fingerprint or f"fp{sid}",
+                                brand=brand, product_name=name)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("qty,expect", [
     ("2 servings", "product"),      # the LABEL'S own serving — sourced conversion
@@ -418,7 +440,7 @@ async def test_a_scan_answers_the_interpreters_flavor_question(db, make_user, mo
     async def stub(text, u, **kw):
         return interpreter_ask
     req = _Req("2 servings of barebells", {"db": db, "user": user, "today_log": log, "messages": ()})
-    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    token = SCANNED_PRODUCT_EVIDENCE.set(_ev(snap))
     try:
         plan = await FoodPlanStage(interpreter=stub).run(req)
         validation = await FoodValidationStage().run(req, plan=plan)
@@ -439,7 +461,7 @@ async def test_a_scan_answers_the_interpreters_flavor_question(db, make_user, mo
                                                   "field": "quantity", "impact_cal": 200}])
     async def stub_q(text, u, **kw):
         return qty_ask
-    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    token = SCANNED_PRODUCT_EVIDENCE.set(_ev(snap))
     try:
         v3 = await FoodValidationStage().run(req, plan=await FoodPlanStage(interpreter=stub_q).run(req))
     finally:
@@ -448,37 +470,59 @@ async def test_a_scan_answers_the_interpreters_flavor_question(db, make_user, mo
 
 
 @pytest.mark.asyncio
-async def test_a_bound_scan_is_not_an_answer_to_an_open_question(db, make_user, monkeypatch):
+async def test_a_scanned_turn_with_an_open_question_is_decided_not_suppressed(
+        db, make_user, monkeypatch):
     """LIVE CANARY #2 (2026-08-18): legacy's flavor question stayed open (its
     log_date keeps it live until tomorrow) and every later Barebells message
     was routed as its ANSWER — the interpreter got the prior, passed or
-    re-asked, run() refused, no op, legacy. With a scan bound the plan stage
-    interprets COLD: the interpreter is handed NO prior. Unbound, the prior
-    still travels (an open question is still an open question)."""
+    re-asked, run() refused, no op, legacy.
+
+    ⛔ P17 CLOSURE PHASE 1 SUPERSEDES THE FIX, NOT THE INVARIANT. The first
+    fix suppressed the prior whenever a barcode was attached — a binding
+    decision taken from the ATTACHMENT, before any plan existed. Now the
+    planner is attachment-blind: the prior TRAVELS, the interpreter reads the
+    message exactly as it would unscanned, and the authority decides from the
+    COMPLETE plan. The invariant that matters is unchanged and proven here:
+    a scanned turn is never silently lost to an open question — it either
+    binds (the plan is about the scanned product) or refuses in words."""
+    from core.scan_authority import decide_from_plan
     from core.turns.stages.food import FoodPlanStage
-    from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
+    from skills.nutrition.product_acquisition import (BOUND, attach,
+                                                      begin_turn)
     user = await make_user()
     log = await _log(db, user)
     snap = await _prod_snapshot(db)
     seen = []
+
     async def spy(text, u, **kw):
         seen.append(kw.get("prior"))
-        return {"action": "log", "tool_calls": [{"name": "log_food", "input": {
-            "food_name": "Barebells Protein Bar", "quantity": "2 servings"}}]}
-    stale_prior = {"kind": "ask", "question": "Salty Peanut or Caramel Cashew?", "log_date": "2026-08-18"}
-    req = _Req("2 servings of Barebells bars", {"db": db, "user": user, "today_log": log,
-                                               "messages": (), "food_prior": stale_prior,
-                                               "food_pending": True})
-    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+        return {"action": "log", "_message": text, "tool_calls": [
+            {"name": "log_food", "input": {"food_name": "Barebells Protein Bar",
+                                           "quantity": "2 servings"}}]}
+
+    stale_prior = {"kind": "ask", "question": "Salty Peanut or Caramel Cashew?",
+                   "log_date": "2026-08-18"}
+    req = _Req("2 servings of Barebells bars",
+               {"db": db, "user": user, "today_log": log, "messages": (),
+                "food_prior": stale_prior, "food_pending": True})
+    begin_turn()
+    attach(_ev(snap))
     try:
         plan = await FoodPlanStage(interpreter=spy).run(req)
+        # the prior TRAVELLED — the planner did not consult the attachment
+        assert seen == [stale_prior], (
+            "the planner suppressed the prior on attachment — Phase 1 removed "
+            "that hook; binding is decided from the plan, not before it")
+        # and the authority binds it, because the statement is about the
+        # scanned product
+        assert decide_from_plan(plan).outcome == BOUND
     finally:
-        SCANNED_PRODUCT_EVIDENCE.reset(token)
-    assert seen == [None], "a bound scan handed the interpreter the stale prior"
+        begin_turn()
     assert plan.operations and plan.operations[0]["name"] == "log_food"
-    # unbound: the prior travels
+    # unbound: identical planner behaviour — the prior travels either way
+    seen.clear()
     await FoodPlanStage(interpreter=spy).run(req)
-    assert seen[-1] == stale_prior
+    assert seen == [stale_prior]
 
 
 @pytest.mark.asyncio
@@ -565,7 +609,7 @@ async def test_two_bars_opens_an_ask_that_holds_the_snapshot_and_the_answer_sett
         disposition = "execute"; approved_operations = ops; clarification = None
     req = _Req("2 barebells bars", {"db": db, "user": user, "today_log": log, "messages": ()},
                turn_id=f"ios:cf9-{user.id}")
-    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    token = SCANNED_PRODUCT_EVIDENCE.set(_ev(snap))
     _decide(ops)
     try:
         execution = await NativeExecutionStage().run(req, validation=_V())
@@ -629,7 +673,7 @@ async def test_the_bound_ask_chip_settles_the_same_snapshot(db, make_user, monke
         disposition = "execute"; approved_operations = ops; clarification = None
     req = _Req("2 barebells bars", {"db": db, "user": user, "today_log": log, "messages": ()},
                turn_id=f"ios:cf9tap-{user.id}")
-    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    token = SCANNED_PRODUCT_EVIDENCE.set(_ev(snap))
     _decide(ops)
     try:
         execution = await NativeExecutionStage().run(req, validation=_V())
@@ -662,8 +706,8 @@ async def _open_bound_ask(db, user, log, snap, monkeypatch, *, turn_id, qty="2 b
         disposition = "execute"; approved_operations = ops; clarification = None
     req = _Req("2 barebells bars", {"db": db, "user": user, "today_log": log, "messages": ()},
                turn_id=turn_id)
-    token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
-    _decide(ops)
+    token = SCANNED_PRODUCT_EVIDENCE.set(_ev(snap))
+    _decide(ops, message="2 barebells bars")
     try:
         execution = await NativeExecutionStage().run(req, validation=_V())
     finally:

@@ -46,10 +46,11 @@ def _bind_scanned_product(items: list) -> list:
     smearing one product's evidence across foods it does not describe.
     `assemble()` loads the reference locally; nothing here fetches.
     """
-    from core.scan_authority import ScanAuthorityRefusal, is_bound, snapshot_id
+    from core.scan_authority import (ScanAuthorityRefusal, is_bound,
+                                     require_bound_evidence, scan_attached,
+                                     snapshot_id)
 
-    sid = snapshot_id()
-    if sid is None or not items:
+    if not scan_attached() or not items:
         return items
     # ⛔ CF5c BACKSTOP, NOT A DECISION. This function no longer asks "how many
     # items are there?" — `_food_inputs` filters to log_food, so a mixed
@@ -61,13 +62,17 @@ def _bind_scanned_product(items: list) -> list:
     if not is_bound():
         logger.info(
             "event=scan_binding_skipped items=%d snapshot=%s — the authority "
-            "says this scan binds nothing", len(items), sid)
+            "says this scan binds nothing", len(items), snapshot_id())
         return items
     if len(items) != 1:
         raise ScanAuthorityRefusal(
             "impossible_shape",
             f"BOUND with {len(items)} food items reaching the binder")
-    items[0]["product_evidence_id"] = sid
+    # ⛔ P17 closure Phase 1 — the ONLY door to settlement authority: the
+    # VERIFIED evidence of a BOUND decision. Nothing here reloads a row.
+    ev = require_bound_evidence()
+    items[0]["product_evidence_id"] = int(ev.snapshot_id)
+    items[0]["product_evidence_fingerprint"] = ev.fingerprint
     return items
 
 
@@ -158,38 +163,32 @@ async def _name_from_snapshot(db, ops) -> None:
     item is refused (`ScanBoundIdentityUnavailable`) — never settled under a
     name the scan did not confirm. On an UNBOUND turn nothing here applies:
     the interpreter's name stands, exactly as before."""
-    from core.scan_authority import is_bound, snapshot_id as _sid
+    from core.scan_authority import is_bound, require_bound_evidence
     if not is_bound():
         return
-    snapshot_id = _sid()
+    # ⛔ P17 closure Phase 1 — the identity comes from the VERIFIED evidence
+    # the gate ruled on (one repository read, at the gate); this function
+    # does NOT reload the row and cannot disagree with the decision. Evidence
+    # with no usable product name still refuses: an identity the scan did not
+    # confirm is never written.
+    try:
+        ev = require_bound_evidence()
+    except Exception as exc:                             # noqa: BLE001
+        raise ScanBoundIdentityUnavailable(None, "", f"no bound evidence: {exc}")
     for op in ops or ():
         inp = (op or {}).get("input") if isinstance(op, dict) else None
         if not (isinstance(inp, dict) and op.get("name") == "log_food"):
             continue
         placeholder = str(inp.get("food_name") or "")
-        if snapshot_id is None:
-            raise ScanBoundIdentityUnavailable(None, placeholder,
-                                               "no scan bound to this turn")
-        try:
-            from db.models import ProductEvidenceRecord
-            row = await db.get(ProductEvidenceRecord, int(snapshot_id))
-        except Exception as exc:                         # noqa: BLE001
-            logger.warning("scan lift: snapshot %s unreadable", snapshot_id,
-                           exc_info=True)
-            raise ScanBoundIdentityUnavailable(
-                snapshot_id, placeholder, f"snapshot unreadable: {type(exc).__name__}")
-        if row is None:
-            raise ScanBoundIdentityUnavailable(snapshot_id, placeholder,
-                                               "snapshot missing")
-        name = str(getattr(row, "product_name", "") or "").strip()
+        name = str(ev.product_name or "").strip()
         if not name:
-            raise ScanBoundIdentityUnavailable(snapshot_id, placeholder,
+            raise ScanBoundIdentityUnavailable(ev.snapshot_id, placeholder,
                                                "snapshot has no product name")
-        brand = str(getattr(row, "brands", "") or "").strip()
+        brand = str(ev.brand or "").strip()
         if brand and brand.lower() not in name.lower():
             name = f"{brand} {name}"
         logger.info("event=scan_lift_named_from_snapshot snapshot=%s from=%r "
-                    "to=%r", snapshot_id, placeholder, name)
+                    "to=%r", ev.snapshot_id, placeholder, name)
         inp["food_name"] = name
 
 
@@ -534,9 +533,12 @@ class NativeExecutionStage:
         if db is None or user is None:
             raise ScanAuthorityRefusal("no_session",
                                        "no database handle for a bound ask")
-        sid = snapshot_id()
+        from core.scan_authority import require_bound_evidence
+        ev = require_bound_evidence()
+        sid = int(ev.snapshot_id)
         staged = dict(item)
         staged["product_evidence_id"] = sid
+        staged["product_evidence_fingerprint"] = ev.fingerprint
         staged.setdefault("food_name", staged.get("food") or "")
         await _name_from_snapshot(db, [{"name": "log_food", "input": staged}])
         from core.general_settlement import BoundUnpriceable, coverage_for

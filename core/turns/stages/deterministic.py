@@ -37,16 +37,30 @@ REPLAY_SOURCE = "structured_food:confirm_replay"
 _REPLAY_LIMIT = 8
 
 
-def _lift(plan: Optional[dict], version: str) -> TurnPlan:
+def _lift(plan: Optional[dict], version: str, origin: str = "deterministic") -> TurnPlan:
     """Interpreter-shaped dict → typed plan. An empty/None plan is a `pass`,
-    which routes the turn back to the conversational lane."""
+    which routes the turn back to the conversational lane.
+
+    ⛔ P17 closure Phase 1 — a deterministic plan carries its TYPED food
+    subjects and its `origin` exactly as an interpreter plan does, so the
+    scan authority can count it. Before this, a confirm replay reached the
+    authority with no subjects at all and an attached scan was refused as
+    "undecidable" — or, one design earlier, suppressed before the plan
+    existed. Now it is counted: the replayed items are the earlier turn's
+    statement, the scan is its own subject, and the multi-item policy rules."""
     if not plan or not plan.get("tool_calls"):
         return TurnPlan(operations=(), response_intent="pass",
-                        planner_version=version)
+                        planner_version=version, origin=origin)
+    from core.turns.stages.food import food_subjects_of
+    subjects = food_subjects_of(plan)
     return TurnPlan(operations=tuple(plan.get("tool_calls") or ()),
                     response_intent=plan.get("action") or "",
                     narration_hint=str(plan.get("say") or ""),
-                    planner_version=version)
+                    planner_version=version,
+                    food_subjects=subjects,
+                    open_fields=tuple(sorted({f for sub in subjects
+                                              for f in sub.open_fields})),
+                    origin=origin)
 
 
 class UndoPlanStage:
@@ -93,7 +107,7 @@ class ConfirmReplayPlanStage:
                              for it in prior["items"][:_REPLAY_LIMIT])
                  if c is not None]
         return _lift({"action": "log", "tool_calls": calls},
-                     REPLAY_PLANNER_VERSION)
+                     REPLAY_PLANNER_VERSION, origin="confirm_replay")
 
 
 class DeterministicValidationStage(FoodValidationStage):

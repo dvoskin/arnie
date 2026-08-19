@@ -29,33 +29,28 @@ class FoodPlanStage:
         self._interpreter = interpreter
 
     async def run(self, request, context=None, route=None) -> TurnPlan:
-        # ⛔⛔ CF5c PRE-PLAN HOOK — AN ATTACHED SCAN SUPPRESSES CONFIRM REPLAY
-        # *(Danny, 2026-08-19)*. "yes" to an open confirm replays the stashed
-        # items VERBATIM, so scan + "yes" would log an EARLIER confirmed food
-        # and then attach THIS scan's snapshot to it: one product's nutrition
-        # committed under another product's name. That is the identity failure
-        # the snapshot guards exist to prevent, arriving through a door
-        # upstream of all of them — the replay stage runs before the
-        # interpreter, before the plan, before any binding decision.
+        # ⛔⛔ P17 CLOSURE PHASE 1 — NO PRE-PLAN HOOK. THE PLANNER IS
+        # ATTACHMENT-BLIND, ALL THE WAY DOWN *(Danny's directive, 2026-08-19
+        # evening; supersedes the CF5c hook that suppressed confirm replay and
+        # the pending prior on attachment)*. A barcode attachment must not
+        # alter how THIS message is read: the confirm replay runs if the user
+        # said "yes", the pending prior is consulted if one is open, and the
+        # interpreter is told nothing about the scan. Every subject the turn
+        # names — replayed, prior-answered, freshly parsed — survives into the
+        # typed plan, and `core.scan_authority.decide_from_plan` reads ALL of
+        # them: a replayed plan is an earlier turn's statement the scan can
+        # never bind to; a prior-answer plan binds only if it is ABOUT the
+        # scanned product; a mixed turn keeps every clause. Suppressing replay
+        # or prior "because a barcode exists" decided binding BEFORE the plan
+        # existed, from the attachment, which is the CF5b frame one level up.
         #
-        # Keyed on ATTACHMENT, deliberately: the disposition is not decided
-        # until the plan exists, and the whole point is that the earlier
-        # question must not shape this turn's plan. The confirm is left
-        # exactly as it is — its own row, its own expiry; it simply does not
-        # get to absorb a scanned turn.
-        from core.scan_authority import suppresses_replay_and_prior
-        if suppresses_replay_and_prior():
-            logger.info("event=scan_suppresses_confirm_replay turn=%s — a "
-                        "scan is a fresh exact statement, not a 'yes' to an "
-                        "older meal", getattr(request, "turn_id", "-"))
-        else:
-            # A "yes" answering an open confirm is already decided (P0.2 Phase 3):
-            # replay the stashed items rather than paying for a re-parse. Anything
-            # else answering a confirm is a correction, and falls through.
-            from core.turns.stages.deterministic import ConfirmReplayPlanStage
-            replay = await ConfirmReplayPlanStage().run(request, context, route)
-            if replay is not None:
-                return replay
+        # A "yes" answering an open confirm is already decided (P0.2 Phase 3):
+        # replay the stashed items rather than paying for a re-parse. Anything
+        # else answering a confirm is a correction, and falls through.
+        from core.turns.stages.deterministic import ConfirmReplayPlanStage
+        replay = await ConfirmReplayPlanStage().run(request, context, route)
+        if replay is not None:
+            return replay
         run_interpreter = self._interpreter
         if run_interpreter is None:
             from core.food_turn import run as run_interpreter
@@ -76,25 +71,16 @@ class FoodPlanStage:
                 has_pending=bool(meta.get("food_pending")
                                  or meta.get("food_prior") is not None))
             meta = {**meta, **derived}
-        # ⛔⛔ A SCAN-BOUND TURN IS A FRESH, EXACT STATEMENT — NOT AN ANSWER TO
-        # WHATEVER QUESTION IS OPEN *(P17 live canary #2, 2026-08-18)*. Legacy
-        # had asked "Salty Peanut or Caramel Cashew?" at 18:10; that pending
-        # carries a log_date, so it stays live until tomorrow, and every later
-        # Barebells message was routed as its ANSWER: the interpreter ran with
-        # the prior, either "pass"ed or re-asked and `run()` refused the re-ask
-        # (reask_refused) -> None -> no op -> native_no_plan -> legacy. The
-        # scan had bound (product_acquired) and the bound predicate never got
-        # a turn. A barcode is the strongest identity statement the user can
-        # make; an open identity question does not outrank it. So a bound turn
-        # is interpreted cold — no prior — and the pending question is left
-        # exactly as it is (legacy's row, legacy's expiry); it simply does not
-        # get to hijack this turn.
+        # The pending prior is passed as-is *(P17 closure Phase 1)*. The
+        # earlier hook dropped it on attachment ("a scan is not an answer");
+        # that decided binding from the attachment before any plan existed.
+        # The interpreter now runs with whatever is open and the authority
+        # rules on the COMPLETE plan: a prior-answer subject that is the
+        # scanned product binds (the barcode answers an open identity
+        # question); one that is another food is a second subject; an
+        # interpreter that re-asks or passes yields no plan and the scanned
+        # turn refuses in words — fail closed, never silent, never legacy.
         prior = meta.get("food_prior")
-        if prior is not None and suppresses_replay_and_prior():
-            logger.info("event=scan_ignores_pending_prior turn=%s — a scanned "
-                        "turn is a fresh statement, not an answer",
-                        getattr(request, "turn_id", "-"))
-            prior = None
         try:
             out = await run_interpreter(
                 request.text, meta.get("user"),
@@ -103,11 +89,7 @@ class FoodPlanStage:
                 board=meta.get("board"),
                 last_assistant=meta.get("last_assistant", ""),
                 regulars=meta.get("regulars"),
-                thread_active=bool(meta.get("thread_active")),
-                # CF5c: a typed INTENT line, from the attachment (the binding
-                # decision needs the plan this call produces). Not product
-                # prose — the label's facts reach only settlement.
-                scan_bound=suppresses_replay_and_prior())
+                thread_active=bool(meta.get("thread_active")))
         except Exception as e:
             logger.warning(f"food plan stage failed: {e}")
             out = None
@@ -646,11 +628,15 @@ def food_subjects_of(out) -> tuple:
         if rec is None:
             rec = {"name": name or occ_key, "roles": [], "fields": set(),
                    "nk": _norm_key(name) if name else "",
-                   "consumed": False}
+                   "consumed": False, "labels": []}
             found[occ_key] = rec
             order.append(occ_key)
         elif name and not rec["nk"]:
             rec["name"], rec["nk"] = name, _norm_key(name)
+        # every producer label for this occurrence, in the order seen (P17
+        # closure Phase 1: the authority verifies them against the message)
+        if name and name not in rec["labels"]:
+            rec["labels"].append(name)
         if role not in rec["roles"]:
             rec["roles"].append(role)
         rec["fields"].update(f for f in fields if f)
@@ -710,8 +696,15 @@ def food_subjects_of(out) -> tuple:
         # board row it targets. `_update_call` emits exactly this shape when
         # the interpreter does not rename ("make it 4"). Keyed on the row so
         # two edits of the same row are one subject.
-        occ = (f"entry:{eid}" if kind != "log_food" and eid is not None
-               else f"op:{carrier}:{index}")
+        # ⛔ P17 closure Phase 1 — a write the interpreter joined from a
+        # pending prior's stash (`_prior_held`, set in `_settle_deferred`) is
+        # an EARLIER turn's statement: keyed `prior:` so the scan authority
+        # can tell it from this turn's fresh subjects.
+        if inp.get("_prior_held"):
+            occ = f"prior:{carrier}:{index}"
+        else:
+            occ = (f"entry:{eid}" if kind != "log_food" and eid is not None
+                   else f"op:{carrier}:{index}")
         _put(occ, name if name else (f"entry {eid}" if eid is not None else ""),
              role)
 
@@ -748,17 +741,24 @@ def food_subjects_of(out) -> tuple:
         # none is a food the interpreter parsed but wrote nothing for (the
         # corn); a row matching several is ambiguous and attaches to none —
         # the writes already count it.
-        for i, it in enumerate(material.get("items") or ()):
-            if not isinstance(it, dict):
-                continue
+        raw_rows = [it for it in (material.get("items") or ())
+                    if isinstance(it, dict) and (it.get("food") or it.get("name"))]
+        write_keys = [k for k in order if k.startswith(("op:", "entry:"))]
+        for i, it in enumerate(raw_rows):
             nm = it.get("food") or it.get("name")
-            if not nm:
-                continue
             explicit = it.get("consumed")
             c = (bool(explicit) if isinstance(explicit, bool) else None)
             matches = _by_name(nm)
             if len(matches) == 1:
                 _put(matches[0], nm, "interpreted", consumed=c)
+            elif not matches and len(raw_rows) == 1 and len(write_keys) == 1:
+                # ⛔ P17 closure Phase 1 — ONE raw row, ONE write, names
+                # differ: the write was RELABELLED from the row it was built
+                # from (a board-row name, a canonical name). Positional
+                # correlation keeps them one occurrence, and the row's label
+                # — the words closest to the user's — rides on it for the
+                # authority to verify against the message.
+                _put(write_keys[0], nm, "interpreted", consumed=c)
             elif not matches:
                 _put(f"interp:{i}", nm, "interpreted", consumed=c)
 
@@ -815,7 +815,8 @@ def food_subjects_of(out) -> tuple:
 
     return tuple(FoodSubject(name=found[k]["name"], role=found[k]["roles"][0],
                              open_fields=tuple(sorted(found[k]["fields"])),
-                             key=k, consumed=bool(found[k]["consumed"]))
+                             key=k, consumed=bool(found[k]["consumed"]),
+                             labels=tuple(found[k]["labels"]))
                  for k in order)
 
 
@@ -866,7 +867,8 @@ def plan_from_interpretation(out) -> TurnPlan:
     subjects = food_subjects_of(out)
     open_fields = tuple(sorted({f for sub in subjects for f in sub.open_fields}))
     return _replace(plan, food_subjects=subjects, open_fields=open_fields,
-                    source=out if isinstance(out, dict) else None)
+                    source=out if isinstance(out, dict) else None,
+                    origin="interpreter")
 
 
 def _plan_from_interpretation(out) -> TurnPlan:
@@ -981,6 +983,23 @@ def bind_plan(plan) -> TurnPlan:
     from core.scan_authority import is_bound
     if not is_bound():
         return plan
+    # ⛔ P17 closure Phase 1 — a BOUND plan binds the FRESH statement only.
+    # Writes the interpreter joined from a pending prior's stash are an
+    # earlier action: they are shed here, after the decision, so no executor
+    # answers the prior on a scanned turn and the pending operation stays
+    # byte-identical. (A plan that was ONLY prior-held writes never gets here:
+    # the authority ruled PRIOR_CONFLICT.)
+    ops_all = tuple(plan.operations or ())
+    fresh_ops = tuple(op for op in ops_all
+                      if not (isinstance(op, dict)
+                              and (op.get("input") or {}).get("_prior_held")))
+    if len(fresh_ops) != len(ops_all):
+        logger.info("event=scan_bound_sheds_prior_held shed=%d kept=%d",
+                    len(ops_all) - len(fresh_ops), len(fresh_ops))
+        plan = _replace(plan, operations=fresh_ops,
+                        food_subjects=tuple(
+                            sub for sub in (plan.food_subjects or ())
+                            if not str(getattr(sub, "key", "")).startswith("prior:")))
     out = getattr(plan, "source", None)
     if not isinstance(out, dict):
         return plan
@@ -1055,12 +1074,25 @@ class FoodValidationStage:
         # naming two foods can expose exactly one approved operation.
         #
         # Every downstream reader consumes this decision; none re-derives it.
-        from core.scan_authority import decide_from_plan
-        decide_from_plan(plan)
+        # ⛔ P17 CLOSURE PHASE 1 — THE GATE. Three steps, in this order, and
+        # nothing between them reads the attachment:
+        #   1. the ONE repository validation turns the attachment into
+        #      VerifiedScanEvidence (a bare id is read once; evidence
+        #      acquisition built needs no read; anything unverifiable fails
+        #      closed as UNDECIDABLE);
+        #   2. the pure classification over the COMPLETE typed plan + the
+        #      verified evidence records an immutable ScanDecision;
+        #   3. a REFUSED decision is RAISED HERE — before execution, never as
+        #      an executor backstop — and answered in words at the seam.
+        from core.scan_authority import decide_from_plan, raise_if_refused
+        from skills.nutrition.product_acquisition import verify as _verify_scan
+        ev = await _verify_scan((request.metadata or {}).get("db"))
+        decide_from_plan(plan, ev)
+        raise_if_refused()
         # ⛔ CF5c-B4 — the scan-specific transforms run HERE, after the
         # decision and only for a BOUND plan. `bind_plan` returns any other
-        # plan untouched, so a turn the authority classified
-        # SKIPPED_MULTI_ITEM is validated exactly as an unscanned one.
+        # plan untouched, so a turn the authority classified MULTI_ITEM is
+        # validated exactly as an unscanned one.
         plan = bind_plan(plan)
         intent = getattr(plan, "response_intent", "") or ""
         ops = tuple(getattr(plan, "operations", ()) or ())

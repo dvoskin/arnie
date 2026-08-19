@@ -330,7 +330,7 @@ async def _coached_reply(identity: str, text: str, source_type: str,
         # lesson: a reused task's stale snapshot id from an earlier scan must
         # never bind to this turn's food.
         from skills.nutrition.product_acquisition import (
-            acquire_product_evidence, attach as _attach_scan,
+            acquire_product_evidence, attach_acquired as _attach_scan,
             begin_turn as _begin_scan_turn)
         # BOTH the attachment and the binding DECISION, cleared unconditionally
         # (CF5b review): a stale "bound" would be read as this turn's binding.
@@ -954,7 +954,7 @@ async def _stream_turn(ws: WebSocket, identity: str, message: str,
         # lesson: a reused task's stale snapshot id from an earlier scan must
         # never bind to this turn's food.
         from skills.nutrition.product_acquisition import (
-            acquire_product_evidence, attach as _attach_scan,
+            acquire_product_evidence, attach_acquired as _attach_scan,
             begin_turn as _begin_scan_turn)
         # BOTH the attachment and the binding DECISION, cleared unconditionally
         # (CF5b review): a stale "bound" would be read as this turn's binding.
