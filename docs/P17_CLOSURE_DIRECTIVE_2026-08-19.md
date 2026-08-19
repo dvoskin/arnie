@@ -500,3 +500,14 @@ No phase is complete because code was pushed or CI started. It is complete only 
 * **Remaining blockers**: Phases 2–6, canaries A/B/C, Phase 8, and the two preserved deploy blockers.
 * **P17g: BLOCKED**
 * **END-TO-END SCAN: BLOCKED**
+
+## Phase 1 fourth review round — the quantity grammar is one typed parser (2026-08-20)
+
+* **Exact SHA**: `2edab8c` (on `504b0cd`; `b3324dd` confirmed docs-only).
+* **Files materially changed**: `core/scan_authority.py` (the `AmountPhrase` dataclass and `parse_amount_phrases()`; `fresh_statement_signal` and `unaccounted_identity` both read its spans; the hand-written `_AMOUNT_RE` and the global quantifier list are retired) · the Phase 1 proof file.
+* **Invariant established**: one grammar produces typed spans and both readers consume them, so the amount signal and the identity accounting cannot disagree. Only a quantifier INSIDE a parsed quantifier span is accounted as a quantifier — "2 bars from ONE" and "2 bars by ONE" are identity claims about ONE and refuse — while multi-word quantifiers the parser recognises ("a couple of bars", "a few bars") are accounted everywhere and bind.
+* **Focused tests and mutations**: Phase 1 file 91 passed; seven scan suites 264 passed. **Mutations D1–D6 each printed `applied` and went RED**; D5's first anchor matched nothing — no `applied` was printed, so that green was the unmutated tree's and was discarded, then rerun red against both deictic-head branches. 50 mutations across the phase.
+* **Full suite**: 9821 passed / 25 skipped / 17 deselected / 4 xfailed, `PYTEST_EXIT=0`, fingerprint `6c63cadf9599` before = after, `TEST_POSTGRES_URL` set (both PG races ran).
+* **Migration impact**: none. **Deploy status**: NOT deployed; not deploy-approved. Phase 2 paused.
+* **Remaining blockers**: Phases 2–6, canaries A/B/C, Phase 8, and the two preserved deploy blockers.
+* **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED**
