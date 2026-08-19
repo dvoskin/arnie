@@ -1,3 +1,5 @@
+> ⭐⭐⭐ **P17 EXECUTION AUTHORITY (2026-08-19 evening): `docs/P17_CLOSURE_DIRECTIVE_2026-08-19.md`** — Danny's P17 closure directive (Phases 0–8, invariants, frozen incident facts, canaries A/B/C, definition of done). It governs P17 from here; this file remains the evidence register (CF5b–CF15). Phase reports are appended to that file.
+
 # Phase B–F directive: complete clarification migration, finish conversational food, then extend the canonical backend to workouts
 
 > **Augmented directive — plan-of-record.** Received 2026-08-05, augmented
