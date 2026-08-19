@@ -1012,26 +1012,100 @@ CF5c ONE SCAN AUTHORITY — the guard-placement fix   P17 (before P17g)     BUIL
        PYTEST_EXIT=0, frozen tree 588eede7dd64. The
        $4.14 credit is STILL to be topped up (13:40 WAS
        a RateLimitError).
-CF14 A CONSUMPTION ASK ON A SCANNED TURN LOSES THE      P17 / CF9 family     OPEN
-     BINDING *(found reasoning about the 15:57 canary,  (after P17g; before  (non-
-     2026-08-19)*. CF9 holds the snapshot across a       cohort expansion)    blocking
-     QUANTITY ask only (BoundUnpriceable -> durable                           for the
-     operation carrying product_evidence_id). If the                          canary)
-     interpreter asks whether the user ATE the scanned
-     product (no consumption verb — "2 servings of
-     Barebells"), that ask is an ordinary pending
-     question that stashes NO snapshot; the answer
+CF14 ANY CLARIFICATION OPENED ON A BOUND SCAN MUST       P17 / CF9 family     OPEN —
+     DURABLY HOLD THE SNAPSHOT — NOT ONLY QUANTITY         REQUIRED BEFORE      REQUIRED
+     *(found reasoning about the 15:57 canary, 2026-08-  BROAD BARCODE        before
+     19; Danny elevated it the same evening: "any          ROLLOUT (after P17g, scan
+     clarification opened on a bound scan — not just       before any cohort    expansion
+     quantity — must durably hold the snapshot.            expansion)
+     Consumption, preparation, or another material
+     field cannot use the ordinary pending-question
+     route and lose binding. That must close before
+     broad barcode rollout.")*
+     CF9 holds the snapshot across a QUANTITY ask only
+     (BoundUnpriceable -> durable operation carrying
+     product_evidence_id). If the interpreter asks about
+     any OTHER material field, that ask is today an
+     ordinary pending question that stashes NO snapshot
+     (e.g. "did you eat it?" on "2 servings of
+     Barebells" — no consumption verb); the answer
      arrives as free text with no chip (consumed on the
      first send) -> unbound -> legacy/unbound ladder.
      Same dead-end class as CF9, different field.
-     Required: the bound ASK holder generalises to any
-     material field the interpreter asks on a BOUND
-     single-product turn (consumption, preparation),
-     not only quantity — or the scanned turn refuses in
-     words when the policy would ask a non-quantity
-     question, never asks unbound. Canary wording for
-     P17g states consumption ("had 2 servings of
-     Barebells") so the direct proof is reachable.
+     Required: ONE bound-clarification holder for every
+     material field the policy asks on a BOUND single-
+     product turn (consumption, preparation, quantity,
+     …) — the operation carries product_evidence_id and
+     the answer re-enters bound; until it exists the
+     scanned turn must never ask unbound (refuse in
+     words). P17g canary wording states consumption AND
+     quantity so nothing material is open ("I had 2
+     servings." + the UPC, no brand word).
+CF15 THE SCANNED CODE WAS NEVER A PRODUCT CODE —         P17 producer +       OPEN —
+     "70004199" IS NOT A BAREBELLS GTIN; THE PRODUCER     acquisition          TRACE
+     ACCEPTS NON-GTIN SYMBOLOGIES AND FIRES ON THE FIRST  provenance (before   DONE,
+     FRAME *(traced 2026-08-19 evening after Danny: "I    P17g camera proof;   FIX NOT
+     scanned a different Barebells product earlier and    before scan          SHIPPED
+     it just loaded the same corrupted Barebells          expansion)
+     information … a green suite here is not deploy
+     approval … Do not let the prompt patch be accepted
+     as the fix for the Salty Peanut incident.")*
+     EVIDENCE (read from prod + OFF, not from replies):
+     (1) production has ONE product snapshot ever — id 1,
+     canonical_code 70004199, created 08-18 18:10:00 UTC;
+     every scan turn since (08-18 18:10, 21:01, 21:02;
+     08-19 13:40, 13:41, 15:57) carried 70004199 — NO
+     second code ever reached the server; acquisition is
+     keyed by the received code (dedupe predicate =
+     provider+code+rev+fingerprint), so the server bound
+     exactly what it was given and could not have mixed
+     two codes. (2) OFF 70004199 = "Barebell salty peanut
+     protein bar", brand "Barebell", creator FOODVISOR
+     (app auto-creation), rev 1 (2024-08-26, never
+     edited), no photo, no category, country Norway;
+     per-100g = 200 kcal / P20 / C18 / F8 with serving
+     55 g — those are the real bar's PER-BAR label
+     numbers in the per-100g slot (real: ~364 kcal/100 g,
+     200 kcal/bar: OFF 0850000429604 macrofactor rev 38;
+     0850000429086 kiliweb rev 157 = 381/100 g, 210/bar).
+     => "2 servings" bound to this record prices 220 kcal
+     where the bar says 400. (3) all 60 Barebells
+     products in OFF (US 0850000429xxx, EU 7340001800xxx)
+     are 13-digit GTINs; 70004199 is an 8-digit string
+     with a VALID EAN-8 check digit — something phones
+     read off Barebells wrappers: an unrelated Foodvisor
+     user in Norway produced it from a Salty Peanut
+     wrapper, Danny's camera produced it from a Salty
+     Peanut AND from a different flavour. (4) iOS
+     BarcodeScannerView accepts ean8, ean13, upce,
+     pdf417, code128, code39, code93, interleaved2of5,
+     takes `metadataObjects.first` on the FIRST frame,
+     no multi-frame confirmation, no GTIN preference; the
+     chip label is looked up by the SAME code (so the
+     preview "loaded the same Salty Peanut info"); the
+     wire carries digits only — the server cannot tell a
+     GTIN from a Code-39/ITF short read. (5) NOT YET
+     DETERMINED (needs the wrappers or a symbology-
+     logging build): whether 70004199 is a printed
+     secondary code on the wrapper or a decoder false
+     positive of a non-GTIN symbology.
+     REQUIRED (not shipped; Danny's decision on policy):
+     producer — GTIN-only symbologies for food scans
+     (ean8/ean13/upce), prefer 12/13-digit over 8 when
+     both are seen, N consistent frames, SEND the
+     symbology + raw string with the code; server —
+     persist symbology + OFF provenance (creator, rev,
+     states, photo) in source_reference_json and log it
+     on product_acquired; an acquisition stage timing in
+     turn_metrics.stages_json (the OFF fetch is untimed
+     today); policy for low-trust records (auto-created,
+     rev 1, photo-less) = accept-and-mark / decline-to-
+     bind / bind-identity-but-ask — OPEN.
+     CANARY CONSEQUENCE: P17g must NOT be proven on
+     70004199 — the "exact scanned flavour" would be a
+     junk identity with wrong numbers; use the wrapper's
+     real UPC. A typed UPC proves the SERVER path, not
+     the camera producer.
 CF13 A TYPED, DATE-REFERENCED CORRECTION BECOMES A NEW   legacy correction     OPEN
      DATED LOG *(2026-08-19 14:59, user 26)*:            lane (not this        (non-
      "yesterday's Barebells was 2 servings" -> the       program's; recorded   blocking)
