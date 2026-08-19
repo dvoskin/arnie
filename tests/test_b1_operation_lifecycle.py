@@ -121,10 +121,10 @@ def _priced(monkeypatch):
 async def _open(sessions, user, turn_id="t_1"):
     async with sessions() as s:
         u = await s.get(User, user.id)
-        op = await b1.open_operation(
+        op = (await b1.open_operation(
             s, user=u, interpreter_item=ITEM,
             interaction=_interaction(f"chat_quantity:{user.id}:{turn_id}"),
-            turn_id=turn_id, cohort="allowlist")
+            turn_id=turn_id, cohort="allowlist")).operation_id
         await s.commit()
     return op
 

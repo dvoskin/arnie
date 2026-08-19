@@ -658,3 +658,141 @@ async def test_the_reply_does_not_ask_about_something_we_never_raised(
         assert prep not in shown, (
             f"the reply asked about preparation on a QUANTITY field "
             f"({prep!r} appears): {shown!r}")
+
+
+# ═════ CF5c-B3 (review of 2db22e1) — ordinary retry through the REAL path ═════
+
+@pytest.mark.asyncio
+async def test_a_redelivered_message_is_the_answer_to_its_own_open_ask(
+        edges, b1_live):
+    """The SAME message redelivered (same transport id) on the ORDINARY path:
+    the open ask's answer-claim takes it BEFORE ownership is re-attempted,
+    and re-asks. One row, no second operation, no legacy question. This is
+    the redelivery shape `run_chat_turn` actually produces — `open_operation`
+    is never re-entered here, so "same op id -> same ask" at the seam is
+    proven by the direct twin below, which is the only way to reach it on
+    the ordinary path short of the lost-insert race (the PG test)."""
+    import db.database as D
+    from db.models import PendingOperation, PendingQuestion
+    from sqlalchemy import select
+    edges.plans.append(B1_ELIGIBLE)
+    edges.plans.append(B1_ELIGIBLE)
+    await say(b1_live, "I had some chicken breast", platform=CAPABLE, msg_id=777001)
+    second = await say(b1_live, "I had some chicken breast", platform=CAPABLE, msg_id=777001)
+    async with D.AsyncSessionLocal() as s:
+        rows_ = (await s.execute(select(PendingOperation).where(
+            PendingOperation.user_id == b1_live))).scalars().all()
+        pqs = (await s.execute(select(PendingQuestion).where(
+            PendingQuestion.user_id == b1_live,
+            PendingQuestion.answered_at.is_(None),
+            PendingQuestion.kind == "food_structured_ask"))).scalars().all()
+    assert len(rows_) == 1 and rows_[0].status == "awaiting_answer"
+    assert not pqs
+    assert "chicken" in " ".join(second.response.bubbles).lower()
+
+
+@pytest.mark.asyncio
+async def test_try_take_ownership_twice_for_one_turn_renders_the_stored_ask(
+        edges, b1_live, monkeypatch):
+    """The seam's reuse on the ORDINARY path, through `try_take_ownership`
+    with a REAL material (the producer's own, captured from a live ask
+    turn): the second call for the SAME turn id returns a CanonicalAsk whose
+    wire payload EQUALS the persisted one — the stored interaction, not a
+    locally rebuilt object — and writes no second row."""
+    import json as _json
+    import db.database as D
+    from core import b1_quantity_operation as b1q
+    from core import food_turn as FT
+    from db.models import PendingOperation
+    from db.queries import reload_user
+    from sqlalchemy import select
+
+    # capture the REAL material the producer builds for this ask
+    captured = {}
+    real_material = FT._b1_material
+    def spy(data, *, message, mode):
+        m = real_material(data, message=message, mode=mode)
+        captured["material"] = m
+        return m
+    monkeypatch.setattr(FT, "_b1_material", spy)
+    # a turn that opens the ask the ordinary way, then the SAME turn id again,
+    # directly at try_take_ownership (the redelivery path is claimed by the
+    # open ask's answer-claim first — see the test above)
+    edges.plans.append(B1_ELIGIBLE)
+    await say(b1_live, "I had some chicken breast", platform=CAPABLE, msg_id=777002)
+    material = captured.get("material")
+    assert material, "the producer built no b1_material for an eligible ask"
+    async with D.AsyncSessionLocal() as s:
+        row = (await s.execute(select(PendingOperation).where(
+            PendingOperation.user_id == b1_live))).scalars().one()
+        stored_wire = _json.loads(row.canonical_payload)["interaction"]
+        user = await reload_user(s, b1_live)
+        again = await b1q.try_take_ownership(
+            s, user=user, material=material, turn_id="telegram:777002",
+            channel=CAPABLE, locale="en")
+        await s.commit()
+        rows_ = (await s.execute(select(PendingOperation).where(
+            PendingOperation.user_id == b1_live))).scalars().all()
+    assert again is not None, "the second call for the same turn declined"
+    assert again.operation_id == row.operation_id
+    assert len(rows_) == 1
+    returned_wire = again.wire_payload()
+    stored_opts = [o["option_id"] for g in stored_wire["groups"]
+                   for f in g["fields"] for o in f["options"]]
+    wire_opts = [o["option_id"] for g in returned_wire["groups"]
+                 for f in g["fields"] for o in f["options"]]
+    assert wire_opts == stored_opts, (wire_opts, stored_opts)
+    assert returned_wire["operation_id"] == stored_wire["operation_id"]
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_b1_open_refused_by_the_seam_never_becomes_a_legacy_question(
+        edges, b1_live, monkeypatch):
+    """`OpenedElsewhere` / `PriorAskNotReleased` from the seam on the ORDINARY
+    path: the turn answers in words, records NO legacy question, opens NO
+    second operation. One canonical ask from the winner + one legacy question
+    from the loser is the invariant lost above the database constraint."""
+    import db.database as D
+    from core import b1_quantity_operation as b1q
+    from db.models import PendingOperation, PendingQuestion
+    from sqlalchemy import select
+
+    # No ask is open when the message arrives (else B-1's answer-claim takes
+    # it, correctly, before ownership is ever attempted). The SEAM itself
+    # raises: the race window where a winner lands between our release read
+    # and our insert.
+    real_open = b1q.open_operation
+    async def _elsewhere(*a, **k):
+        raise b1q.OpenedElsewhere("another ask owns this user")
+    monkeypatch.setattr(b1q, "open_operation", _elsewhere)
+    edges.plans.append(B1_ELIGIBLE)
+    resp = await say(b1_live, "I had some chicken breast", platform=CAPABLE)
+    monkeypatch.setattr(b1q, "open_operation", real_open)
+
+    text = " ".join(resp.response.bubbles)
+    assert "already got a question open" in text.lower(), text
+    assert "how much chicken" not in text.lower(), text      # NOT the legacy ask
+    # ⛔ FULLY NON-MUTATING *(Danny)*: zero tool calls, zero food rows, zero
+    # legacy question, zero operation — and the SESSION IS USABLE afterwards
+    # (the race path rolled back; the turn still committed its own log and a
+    # next write on a fresh session succeeds).
+    assert resp.tool_calls == [], resp.tool_calls
+    from db.models import FoodEntry, PendingOperation, PendingQuestion, ConversationLog
+    async with D.AsyncSessionLocal() as s:
+        after = (await s.execute(select(PendingOperation).where(
+            PendingOperation.user_id == b1_live))).scalars().all()
+        pqs = (await s.execute(select(PendingQuestion).where(
+            PendingQuestion.user_id == b1_live,
+            PendingQuestion.answered_at.is_(None),
+            PendingQuestion.kind == "food_structured_ask"))).scalars().all()
+        foods = (await s.execute(select(FoodEntry))).scalars().all()
+        logs = (await s.execute(select(ConversationLog).where(
+            ConversationLog.user_id == b1_live))).scalars().all()
+    assert after == []                       # nothing opened by the loser
+    assert not pqs, "a legacy question was recorded on a canonical refusal"
+    assert foods == [], [f.parsed_food_name for f in foods]
+    assert logs, "the turn's own conversation log did not commit — the session was poisoned"
+    # and the very next ordinary turn works (the session/engine is healthy)
+    edges.plans.append(B1_ELIGIBLE)
+    nxt = await say(b1_live, "I had some chicken breast", platform=CAPABLE)
+    assert nxt.response.bubbles

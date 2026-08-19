@@ -832,6 +832,93 @@ CF5c ONE SCAN AUTHORITY — the guard-placement fix   P17 (before P17g)     BUIL
        Four mutations RED (`applied`). PG race on the
        real engine green. Suite 9709 passed,
        PYTEST_EXIT=0, frozen tree b71b92258e09.
+       REVIEW of 2db22e1 (Danny) — B3's two remaining
+       identity paths; oneask001 unchanged:
+         · same-id race reuse trusted only the op id; the
+           wrapper then returned its NEWLY BUILT
+           interaction, not the winner's stored one —
+           concurrent retries on one turn with snapshots A
+           and B could persist A and render B; and the
+           pre-read guard accepted an ABSENT stored
+           snapshot as a match.
+         · OpenedElsewhere / PriorAskNotReleased were safe
+           for bound asks but ordinary B-1 let them reach
+           the blanket catch and fall to LEGACY — one
+           canonical ask from the winner + one legacy
+           question from the loser, single-owner lost
+           above the DB constraint.
+       FIX — one typed `OpenResult` from `open_operation`
+       (created/reused, the STORED interaction and item,
+       revision, a `semantic_fingerprint` over interaction
+       payload + item). Every reuse compares the persisted
+       fingerprint to what this call would store; a
+       mismatch is OpenedElsewhere even on the same op id.
+       The lost-race path reuses ONLY when the winner IS
+       this operation; both consumers render the
+       OpenResult interaction; the wrapper's snapshot-id-
+       only pre-read shortcut is REMOVED (reuse decided in
+       one place, one comparison) and absence refuses.
+       `core.conversation` catches the two typed refusals
+       ahead of the blanket catch, answers in words, and
+       records NO legacy question (`_b1_refused`).
+       PROOF CORRECTIONS: the ordinary retry goes through
+       `try_take_ownership` with a REAL captured producer
+       material, stored vs returned wire compared (the
+       earlier test called open_operation directly and
+       built the interaction with op id "x"); the
+       redelivery-through-run_chat_turn test is kept
+       honest (the answer-claim takes a redelivery first,
+       so the seam is reached only via the direct twin or
+       the PG race); the SUBJECT_SOURCES gate counts only
+       reads ON `out` and derives its converse from the
+       code (it counted any receiver and hardcoded the
+       seven names). ⭐ F2/F3/F4 ("render the stored
+       interaction", "absence refuses") became
+       UNREACHABLE from any call site once the seam's
+       fingerprint made every reuse semantically identical
+       — proven at the boundary they guard by handing each
+       consumer an OpenResult that differs from its local
+       build; the house semantics layer refused two fakes
+       (an option on a foreign field; a revision disagreeing
+       with its field ids) — correctly. ⭐ C9's option-
+       producer ratchet counted `_sft["options"] = []` as
+       a new PRODUCER; the store was dropped (clearing
+       `questions` removes the chip row), the baseline was
+       not raised. Six mutations RED (`applied`). PG race
+       green. Suite 9717 passed, PYTEST_EXIT=0, frozen
+       tree a921c59e0f25.
+       PRE-DEPLOY DETAILS (Danny, provisional approval):
+         · fingerprint CANONICAL (sorted keys, compact,
+           ASCII, allow_nan=False, NO default=str) and
+           VERSIONED (`fp1:` prefix, FINGERPRINT_VERSION);
+           unserialisable -> FingerprintUnreadable, never
+           a guess. `_stored_open_result` verifies row
+           user / domain / source_turn_id before decoding;
+           unreadable JSON / wrong slice / non-dict item ->
+           FingerprintUnreadable -> refusal at both
+           consumers and in core.conversation.
+         · OpenResult carries locale + cohort from the
+           ROW; both consumers build the CanonicalAsk from
+           `opened.*` only — a reused request renders
+           entirely from persisted state (proven: open
+           ru/allowlist, retry en/scan_bound -> renders
+           ru/allowlist).
+         · the ordinary typed refusal is FULLY non-
+           mutating through run_chat_turn: zero tool
+           calls, zero food rows, zero legacy question,
+           zero operation, the turn's own conversation log
+           committed (session not poisoned after the race
+           rollback), and the next turn works.
+         · REQUIRED RACE PROOF on real PG: same operation
+           id, snapshots A and B concurrently -> exactly
+           one row; the winner's returned wire == stored
+           wire BYTE FOR BYTE; the loser refuses — the
+           post-read race cannot bypass the fingerprint.
+       Five more mutations RED (`applied`): version prefix
+       dropped · default=str fail-open · ownership check
+       skipped · locale/cohort from the retry · unreadable
+       payload reused. Suite 9722 passed, PYTEST_EXIT=0,
+       frozen tree 8dd049b41aa3. oneask001 unchanged.
 CF6  LANE PROMOTION RULE (learned from 3 canaries):  every future lane     RULE
      a proven CONSUMER (stage) is unreachable if the
      PRODUCER (planner) or RENDERER in front of it

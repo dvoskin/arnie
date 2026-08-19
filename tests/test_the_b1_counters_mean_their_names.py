@@ -90,10 +90,10 @@ class TestTheOperationCarriesWhatTheAnswerTurnNeeds:
     @pytest.mark.asyncio
     async def test_the_cohort_survives_the_turn_boundary(self, session):
         db, user = session
-        operation_id = await b1.open_operation(
+        operation_id = (await b1.open_operation(
             db, user=user, interpreter_item=ITEM,
             interaction=_interaction("chat_quantity:1:t1"),
-            turn_id="t1", cohort="allowlist", locale="en")
+            turn_id="t1", cohort="allowlist", locale="en")).operation_id
         await db.commit()
 
         owned = await b1.owning(db, user)

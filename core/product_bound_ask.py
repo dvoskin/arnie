@@ -224,29 +224,15 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
     #   3. the insert races and loses       -> reload and return the winner.
     #   4. the DB holds a partial unique index: one active awaiting operation
     #      per (user, domain) — the constraint the code was pretending to be.
-    from core.b1_quantity_operation import owning
-    try:
-        prior = await owning(db, user)
-    except Exception as exc:                             # noqa: BLE001
-        # ownership UNKNOWN is not "no prior": opening beside an unreadable
-        # ask is the exact race this exists to close
-        raise BoundAskNotSingular(
-            f"could not read the open operation: {type(exc).__name__}") from exc
-    if prior is not None and prior.awaiting and prior.operation_id == operation_id:
-        # same turn, same ask — but VERIFY the persisted item is bound to THIS
-        # snapshot before rendering it as this scan's question
-        stored_pid = (getattr(prior, "item", None) or {}).get("product_evidence_id")
-        if stored_pid is not None and int(stored_pid) != int(pid):
-            raise BoundAskNotSingular(
-                f"operation {operation_id} is awaiting for snapshot "
-                f"{stored_pid}, not {pid}")
-        logger.info("event=bound_ask_idempotent operation=%s — same turn, "
-                    "same ask, same snapshot", operation_id)
-        return _ask_from_owned(prior, channel=channel, locale=locale)
-    # a DIFFERENT prior is released by `open_operation` itself — the ONE
-    # insert site for every B-1 ask, bound or ordinary — so supersede has one
-    # owner (`_release_prior_awaiting`); a failure there is
-    # PriorAskNotReleased, mapped below to this module's refusal.
+    # ⛔ NO PRE-READ SHORTCUT *(review of 2db22e1, round 2)*. An earlier cut
+    # looked up the user's open operation here and, on a same-id match,
+    # returned it after checking only the SNAPSHOT id — before the
+    # interaction was built, so it could not compare semantics. A retry that
+    # rebuilt a DIFFERENT question for the same turn and snapshot was reused
+    # as if identical. Reuse is decided in exactly ONE place: `open_operation`
+    # holds both the built interaction and the stored row and compares their
+    # FINGERPRINTS; this wrapper then verifies the snapshot on what it
+    # returns. One path, one comparison — the same for bound and ordinary.
 
     base_unit = await _label_base_unit(db, pid)
     field_probe = qc.quantity_field(operation_id=operation_id, revision=0,
@@ -264,7 +250,8 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
                                stated_quantity=quantity_text or "that",
                                base_unit=base_unit),
         ask_preparation=False)
-    from core.b1_quantity_operation import OpenedElsewhere, PriorAskNotReleased
+    from core.b1_quantity_operation import (FingerprintUnreadable, OpenedElsewhere,
+                                            PriorAskNotReleased)
     # ⛔ OPEN / REUSE / RACE ARE RESOLVED AT THE SHARED SEAM *(review of
     # 22b9e7a)*: `open_operation` is the one insert site for every B-1 ask.
     # It reuses the SAME operation id if already awaiting, releases a
@@ -275,23 +262,40 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
     # first cut returned "whichever ask currently owns the user", which could
     # put product B's question in product A's reply.
     try:
-        await open_operation(db, user=user, interpreter_item=interpreter_item,
-                             interaction=interaction, turn_id=turn_id,
-                             cohort="scan_bound", locale=locale)
+        opened = await open_operation(
+            db, user=user, interpreter_item=interpreter_item,
+            interaction=interaction, turn_id=turn_id,
+            cohort="scan_bound", locale=locale)
     except PriorAskNotReleased as exc:
         raise BoundAskNotSingular(f"could not supersede: {exc}") from exc
     except OpenedElsewhere as exc:
         raise BoundAskNotSingular(f"another ask owns this user: {exc}") from exc
+    except FingerprintUnreadable as exc:
+        raise BoundAskNotSingular(f"stored ask unreadable: {exc}") from exc
     except Exception:                                    # noqa: BLE001
         logger.warning("event=bound_ask_not_persisted turn=%s — keeping the "
                        "plain refusal", turn_id, exc_info=True)
         return None
-    logger.info("event=bound_ask_opened operation=%s snapshot=%s food=%r "
-                "stated=%r options=%d", operation_id, pid, food, quantity_text,
-                len(field.options))
-    return CanonicalAsk(operation_id=operation_id, revision=0,
-                        interaction=interaction, locale=locale,
-                        cohort="scan_bound", capability=channel or "")
+    # ⛔ RENDER WHAT PERSISTED, AND IT MUST BE THIS SNAPSHOT *(review of
+    # 2db22e1)*. On a reuse `opened.interaction` is the STORED interaction
+    # (fingerprint-checked at the seam); the wrapper previously returned the
+    # object it had just built, so a same-turn race could persist snapshot A
+    # and render B. Exact snapshot match is required for a bound ask; absence
+    # is not a match.
+    stored_pid = (opened.item or {}).get("product_evidence_id")
+    if stored_pid is None or int(stored_pid) != int(pid):
+        raise BoundAskNotSingular(
+            f"operation {operation_id} persisted snapshot {stored_pid!r}, "
+            f"this scan is {pid}")
+    logger.info("event=bound_ask_%s operation=%s snapshot=%s food=%r "
+                "stated=%r options=%d",
+                "opened" if opened.created else "reused", operation_id, pid,
+                food, quantity_text, len(field.options))
+    return CanonicalAsk(operation_id=opened.operation_id,
+                        revision=opened.revision,
+                        interaction=opened.interaction,
+                        locale=opened.locale, cohort=opened.cohort,
+                        capability=channel or "")
 
 
 class BoundAskNotSingular(Exception):
@@ -302,14 +306,3 @@ class BoundAskNotSingular(Exception):
     beside an unknown."""
 
 
-def _ask_from_owned(owned, *, channel: str, locale: str):
-    """The CanonicalAsk for an operation that already exists — the idempotent
-    return and the race-loser's return. Rebuilt from the stored interaction so
-    the wire renders the SAME question and the SAME option ids."""
-    from core.b1_quantity_operation import CanonicalAsk
-    row = getattr(owned, "row", None)
-    return CanonicalAsk(operation_id=owned.operation_id,
-                        revision=int(getattr(row, "revision", 0) or 0),
-                        interaction=owned.interaction,
-                        locale=locale, cohort="scan_bound",
-                        capability=channel or "")

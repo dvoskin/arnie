@@ -1172,8 +1172,10 @@ async def test_b3_a_same_turn_retry_returns_the_same_ask(db, make_user, monkeypa
     ex2 = await _open_bound_ask(db, user, log, snap, monkeypatch, turn_id=tid)
     op2 = ex2.calls[0].correction["interaction"]["operation_id"]
     assert op1 == op2
-    assert "bound_ask_idempotent" in caplog.text
-    assert "bound_ask_superseded" not in caplog.text
+    # reuse is decided at the SEAM now (fingerprint-checked) and surfaced by
+    # the wrapper as `bound_ask_reused`; nothing was superseded or released
+    assert "b1_open_reused" in caplog.text and "bound_ask_reused" in caplog.text
+    assert "b1_prior_released" not in caplog.text
     ops = (await db.execute(select(PendingOperation).where(
         PendingOperation.user_id == user.id))).scalars().all()
     assert len(ops) == 1 and ops[0].status == "awaiting_answer"
@@ -1582,36 +1584,86 @@ async def test_b3_a_release_that_reports_not_ok_refuses_by_value(
 
 
 @pytest.mark.asyncio
-async def test_b3_ordinary_b1_open_reuses_the_same_operation_id(
+async def test_b3_open_operation_returns_a_typed_result_and_reuse_renders_the_stored_one(
         db, make_user, monkeypatch, caplog):
-    """"Same op id -> same ask" at the SHARED seam, for an ORDINARY (non-
-    bound) B-1 ask — it was true only for the product-bound wrapper."""
-    from core.b1_quantity_operation import open_operation
+    """The seam returns OpenResult. A second call for the SAME turn with the
+    SAME semantics is `reused`, its interaction is the STORED one (decoded
+    from the row), its fingerprint matches — and no second row exists. The
+    interaction here is built with the row's COMPUTED operation id, not a
+    placeholder (the earlier version built it with "x", so it never proved
+    the wire's operation_id equalled the row's)."""
+    from core.b1_quantity_operation import (OpenResult, _operation_id_for,
+                                            open_operation, semantic_fingerprint)
+    from core.food_pipeline import stage_items
     from db.models import PendingOperation
     from skills.nutrition import quantity_clarification as qc
-    from core.food_pipeline import stage_items
     from sqlalchemy import select
     caplog.set_level(logging.INFO)
     user = await make_user()
+    tid = f"ios:b3-seam-{user.id}"
+    op_id = _operation_id_for(user, tid)
     staged = stage_items({"items": [{"food": "Oatmeal", "amount": 1, "unit": "cup",
-                                     "calories": 150}]}, turn_id="t", message="oatmeal",
+                                     "calories": 150}]}, turn_id=tid, message="oatmeal",
                          mode="strict")[0]
-    field = qc.quantity_field(operation_id="x", revision=0, item=staged)
-    interaction = qc.build_interaction(operation_id="x", revision=0, item=staged,
+    field = qc.quantity_field(operation_id=op_id, revision=0, item=staged)
+    interaction = qc.build_interaction(operation_id=op_id, revision=0, item=staged,
                                        options=field.options,
                                        introduction="How much?", ask_preparation=False)
-    tid = f"ios:b3-ord-{user.id}"
-    a = await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
-                             interaction=interaction, turn_id=tid, locale="en")
+    item = {"food": "Oatmeal", "amount": 1, "unit": "cup"}
+    first = await open_operation(db, user=user, interpreter_item=item,
+                                 interaction=interaction, turn_id=tid, locale="en")
     await db.commit()
-    b = await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
-                             interaction=interaction, turn_id=tid, locale="en")
-    assert a == b
+    assert isinstance(first, OpenResult) and first.created
+    assert first.operation_id == op_id
+    second = await open_operation(db, user=user, interpreter_item=item,
+                                  interaction=interaction, turn_id=tid, locale="en")
+    assert second.reused and second.operation_id == op_id
+    assert second.fingerprint == first.fingerprint == semantic_fingerprint(interaction, item)
     assert "b1_open_reused" in caplog.text
-    assert "b1_prior_released" not in caplog.text        # it did NOT release itself
+    assert "b1_prior_released" not in caplog.text
     rows = (await db.execute(select(PendingOperation).where(
         PendingOperation.user_id == user.id))).scalars().all()
     assert len(rows) == 1
+    import json as _json
+    stored = _json.loads(rows[0].canonical_payload)["interaction"]
+    assert second.interaction.to_payload()["operation_id"] == stored["operation_id"] == op_id
+    assert ([o["option_id"] for g in second.interaction.to_payload()["groups"]
+             for f in g["fields"] for o in f["options"]]
+            == [o["option_id"] for g in stored["groups"]
+                for f in g["fields"] for o in f["options"]])
+
+
+@pytest.mark.asyncio
+async def test_b3_same_turn_different_semantics_is_not_a_reuse(db, make_user):
+    """Same operation id (same turn), DIFFERENT snapshot / question: the
+    persisted payload's fingerprint differs -> OpenedElsewhere, not a reuse.
+    Concurrent retries with snapshots A and B cannot persist A and render B."""
+    from core.b1_quantity_operation import (OpenedElsewhere, _operation_id_for,
+                                            open_operation)
+    from core.food_pipeline import stage_items
+    from skills.nutrition import quantity_clarification as qc
+    user = await make_user()
+    tid = f"ios:b3-sem-{user.id}"
+    op_id = _operation_id_for(user, tid)
+    def _build(food, pid):
+        staged = stage_items({"items": [{"food": food, "amount": 2, "unit": "bar",
+                                         "calories": 200}]}, turn_id=tid, message=food,
+                             mode="strict")[0]
+        field = qc.quantity_field(operation_id=op_id, revision=0, item=staged)
+        inter = qc.build_interaction(operation_id=op_id, revision=0, item=staged,
+                                     options=field.options, introduction="How much?",
+                                     ask_preparation=False)
+        return inter, {"food": food, "amount": 2, "unit": "bar",
+                       "product_evidence_id": pid}
+    ia, item_a = _build("Barebells bar", 1)
+    ib, item_b = _build("Quest bar", 2)
+    first = await open_operation(db, user=user, interpreter_item=item_a,
+                                 interaction=ia, turn_id=tid, locale="en")
+    await db.commit()
+    assert first.created
+    with pytest.raises(OpenedElsewhere, match="DIFFERENT semantic payload"):
+        await open_operation(db, user=user, interpreter_item=item_b,
+                             interaction=ib, turn_id=tid, locale="en")
 
 
 @pytest.mark.asyncio
@@ -1692,6 +1744,227 @@ async def test_b3_the_bound_wrapper_refuses_a_same_id_ask_bound_to_another_snaps
         begin_turn()
 
 
+# ── F2/F3/F4: what the wrapper and try_take_ownership RENDER on reuse ──────
+
+@pytest.mark.asyncio
+async def test_b3_the_bound_wrapper_renders_the_stored_interaction_on_reuse(
+        db, make_user, monkeypatch):
+    """Same turn, same snapshot, retried through the WRAPPER: the CanonicalAsk
+    it returns carries the STORED interaction (decoded from the row), not the
+    one it just built. Proven by making the rebuilt one DIFFER (a different
+    introduction) and asserting the returned wire equals the row, not the
+    rebuild."""
+    import json as _json
+    from core import product_bound_ask as pba
+    from core.general_settlement import coverage_for
+    from core.product_bound_ask import open_bound_quantity_ask
+    from db.models import PendingOperation
+    from skills.nutrition.product_acquisition import (SCAN_BINDING, ScanBinding,
+                                                      attach, begin_turn)
+    from sqlalchemy import select
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    snap = await _prod_snapshot(db)
+    tid = f"ios:b3-wrap-{user.id}"
+    item = {"food_name": BAREBELLS_PROD["product_name"], "quantity": "2 bar",
+            "product_evidence_id": snap.id}
+    begin_turn(); attach(snap.id); SCAN_BINDING.set(ScanBinding("bound", snap.id))
+    try:
+        cov = await coverage_for(db, user_id=user.id, items=[item])
+        first = await open_bound_quantity_ask(db, user=user, item=item, coverage=cov,
+                                              turn_id=tid, channel="ios", locale="en")
+        await db.commit()
+        row = (await db.execute(select(PendingOperation).where(
+            PendingOperation.user_id == user.id))).scalars().one()
+        stored = _json.loads(row.canonical_payload)["interaction"]
+        # now make the wrapper BUILD something different on the retry: a
+        # different question text. The fingerprint covers the interaction, so
+        # a differing rebuild must NOT be silently reused either — it refuses.
+        real_q = pba._question
+        monkeypatch.setattr(pba, "_question", lambda **k: "A DIFFERENT QUESTION?")
+        from core.product_bound_ask import BoundAskNotSingular
+        with pytest.raises(BoundAskNotSingular):
+            await open_bound_quantity_ask(db, user=user, item=item, coverage=cov,
+                                          turn_id=tid, channel="ios", locale="en")
+        monkeypatch.setattr(pba, "_question", real_q)
+        # and an IDENTICAL rebuild reuses — returning the STORED wire
+        second = await open_bound_quantity_ask(db, user=user, item=item, coverage=cov,
+                                               turn_id=tid, channel="ios", locale="en")
+    finally:
+        begin_turn()
+    assert second.operation_id == first.operation_id == row.operation_id
+    # the STORED interaction, whole: the semantic payload the row holds is
+    # what the retry returned (to_payload is the full shape; wire_payload is
+    # the label-only client view)
+    assert second.interaction.to_payload() == stored
+
+
+@pytest.mark.asyncio
+async def test_b3_an_absent_stored_snapshot_is_not_a_match(db, make_user, monkeypatch):
+    """The persisted item carries NO product_evidence_id (an ordinary B-1 ask
+    opened for this turn). A bound retry on the same turn id must REFUSE —
+    absence is not a match — both at the pre-read guard and at the post-open
+    check."""
+    from core.b1_quantity_operation import _operation_id_for, open_operation
+    from core.food_pipeline import stage_items
+    from core.general_settlement import coverage_for
+    from core.product_bound_ask import BoundAskNotSingular, open_bound_quantity_ask
+    from skills.nutrition import quantity_clarification as qc
+    from skills.nutrition.product_acquisition import (SCAN_BINDING, ScanBinding,
+                                                      attach, begin_turn)
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    snap = await _prod_snapshot(db)
+    tid = f"ios:b3-absent-{user.id}"
+    op_id = _operation_id_for(user, tid)
+    # an ORDINARY ask on this turn — its item has no snapshot
+    staged = stage_items({"items": [{"food": "Barebells bar", "amount": 2, "unit": "bar",
+                                     "calories": 200}]}, turn_id=tid, message="bar",
+                         mode="strict")[0]
+    field = qc.quantity_field(operation_id=op_id, revision=0, item=staged)
+    inter = qc.build_interaction(operation_id=op_id, revision=0, item=staged,
+                                 options=field.options, introduction="How much?",
+                                 ask_preparation=False)
+    await open_operation(db, user=user, interpreter_item={"food": "Barebells bar",
+                                                           "amount": 2, "unit": "bar"},
+                         interaction=inter, turn_id=tid, locale="en")
+    await db.commit()
+    # the bound wrapper on the SAME turn id
+    item = {"food_name": BAREBELLS_PROD["product_name"], "quantity": "2 bar",
+            "product_evidence_id": snap.id}
+    begin_turn(); attach(snap.id); SCAN_BINDING.set(ScanBinding("bound", snap.id))
+    try:
+        cov = await coverage_for(db, user_id=user.id, items=[item])
+        with pytest.raises(BoundAskNotSingular):
+            await open_bound_quantity_ask(db, user=user, item=item, coverage=cov,
+                                          turn_id=tid, channel="ios", locale="en")
+    finally:
+        begin_turn()
+
+
+# ── F2/F3/F4 AT THE BOUNDARY THEY GUARD ─────────────────────────────────────
+#
+# Under the seam's fingerprint check a reuse is semantically identical to the
+# row by construction, so "render stored vs render rebuilt" cannot be told
+# apart at any call site, and an absent stored snapshot is refused upstream
+# (bound pid != no pid -> different fingerprint). Those guards are defence in
+# depth for a seam that returns something other than what it checked; they
+# are proven HERE by handing each consumer an OpenResult that differs from the
+# local build — the only way to reach them — because a guard that cannot be
+# reached must be proven directly or removed, never trusted.
+
+@pytest.mark.asyncio
+async def test_f2_try_take_ownership_renders_the_openresult_interaction_not_its_own(
+        db, make_user, monkeypatch):
+    """Hand `try_take_ownership` a seam that returns an OpenResult carrying a
+    DIFFERENT stored interaction. The CanonicalAsk must carry the STORED one
+    — the seam's answer — not the interaction it built locally."""
+    from core import b1_quantity_operation as b1q
+    from core.food_pipeline import derive_semantics, stage_items
+    from skills.nutrition import quantity_clarification as qc
+    from types import SimpleNamespace as NS
+    user = await make_user()
+    monkeypatch.setenv("B1_QUANTITY_ALLOWLIST", str(user.id))
+    monkeypatch.setenv("B1_QUANTITY_MODE", "allowlist")
+    # a VAGUE quantity, so B-1 has something to ask ("a cup" is stated and
+    # declines with quantity_already_stated — correctly)
+    data = {"items": [{"food": "Oatmeal", "amount": 1, "unit": "bowl", "calories": 150}]}
+    staged, _group = stage_items(data, turn_id="t", message="had some oatmeal",
+                                 mode="moderate")
+    staged = derive_semantics(staged, data, message="had some oatmeal", mode="moderate")
+    material = {"staged_items": tuple(staged), "items": data["items"],
+                "message": "had some oatmeal", "identity_evidence": False}
+    # the seam returns a STORED interaction that is visibly different
+    captured = {}
+    async def fake_open(db_, *, user, interpreter_item, interaction, **k):
+        captured["built"] = interaction
+        # re-serialise the SAME interaction with a different introduction
+        # (revision unchanged: field ids derive from it)
+        from core.semantics import ClarificationInteraction
+        payload = interaction.to_payload()
+        payload["introduction"] = "THE STORED QUESTION"
+        stored = ClarificationInteraction.from_payload(payload)
+        return b1q.OpenResult(operation_id=interaction.operation_id, created=False,
+                              interaction=stored, item=dict(interpreter_item),
+                              revision=0, fingerprint="stored")
+    monkeypatch.setattr(b1q, "open_operation", fake_open)
+    ask = await b1q.try_take_ownership(db, user=user, material=material,
+                                       turn_id=f"ios:f2-{user.id}", channel="telegram",
+                                       locale="en")
+    assert ask is not None, "B-1 declined an eligible vague-quantity ask — the render path was not reached"
+    assert ask.interaction.introduction == "THE STORED QUESTION"
+    assert captured["built"].introduction != "THE STORED QUESTION"
+
+
+@pytest.mark.asyncio
+async def test_f3_the_bound_wrapper_renders_the_openresult_interaction_and_f4_refuses_absence(
+        db, make_user, monkeypatch):
+    """Same at the wrapper: (F3) a seam returning a different stored
+    interaction -> the wrapper renders THAT; (F4) a seam returning an item
+    with NO product_evidence_id -> refused, absence is not a match."""
+    from core import b1_quantity_operation as b1q
+    from core import product_bound_ask as pba
+    from core.general_settlement import coverage_for
+    from core.product_bound_ask import BoundAskNotSingular, open_bound_quantity_ask
+    from skills.nutrition import quantity_clarification as qc
+    from skills.nutrition.product_acquisition import (SCAN_BINDING, ScanBinding,
+                                                      attach, begin_turn)
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    snap = await _prod_snapshot(db)
+    item = {"food_name": BAREBELLS_PROD["product_name"], "quantity": "2 bar",
+            "product_evidence_id": snap.id}
+
+    def _fake(stored_pid):
+        async def fake_open(db_, *, user, interpreter_item, interaction, **k):
+            # the STORED interaction: the same interaction the wrapper built,
+            # re-serialised with a different introduction and revision — so
+            # every field/option id stays consistent (the semantics layer
+            # refuses an option sitting on a field it does not answer)
+            from core.semantics import ClarificationInteraction
+            payload = interaction.to_payload()
+            payload["introduction"] = "THE STORED BOUND QUESTION"
+            # revision stays 0: the semantics layer derives field ids from it
+            # and refuses an interaction whose revision disagrees with its
+            # fields' — correctly
+            stored = ClarificationInteraction.from_payload(payload)
+            it = dict(interpreter_item)
+            if stored_pid is None:
+                it.pop("product_evidence_id", None)
+            else:
+                it["product_evidence_id"] = stored_pid
+            return b1q.OpenResult(operation_id=interaction.operation_id, created=False,
+                                  interaction=stored, item=it, revision=0,
+                                  fingerprint="stored")
+        return fake_open
+
+
+    begin_turn(); attach(snap.id); SCAN_BINDING.set(ScanBinding("bound", snap.id))
+    try:
+        cov = await coverage_for(db, user_id=user.id, items=[item])
+        # F3: stored interaction wins
+        monkeypatch.setattr(b1q, "open_operation", _fake(snap.id))
+        ask = await open_bound_quantity_ask(db, user=user, item=item, coverage=cov,
+                                            turn_id=f"ios:f3-{user.id}", channel="ios",
+                                            locale="en")
+        assert ask is not None
+        assert ask.interaction.introduction == "THE STORED BOUND QUESTION"
+        # F4: absence refuses
+        monkeypatch.setattr(b1q, "open_operation", _fake(None))
+        with pytest.raises(BoundAskNotSingular):
+            await open_bound_quantity_ask(db, user=user, item=item, coverage=cov,
+                                          turn_id=f"ios:f4-{user.id}", channel="ios",
+                                          locale="en")
+        # and a DIFFERENT snapshot refuses too
+        monkeypatch.setattr(b1q, "open_operation", _fake(snap.id + 999))
+        with pytest.raises(BoundAskNotSingular):
+            await open_bound_quantity_ask(db, user=user, item=item, coverage=cov,
+                                          turn_id=f"ios:f4b-{user.id}", channel="ios",
+                                          locale="en")
+    finally:
+        begin_turn()
+
+
 # ── the two proof gaps ──────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -1758,21 +2031,261 @@ def test_subject_sources_is_a_gate_not_a_claim():
     import inspect
     from core.turns.stages import food as m
     tree = ast.parse(inspect.getsource(m.food_subjects_of).lstrip())
+    # ⚠ ONLY reads whose RECEIVER is `out` — the producer dict. The first
+    # version counted every `.get(...)` regardless of receiver (so `it.get(
+    # "food")` on an item satisfied it) and hardcoded the same seven names
+    # for its converse, so a newly read undeclared producer key passed.
     read = set()
     for n in ast.walk(tree):
-        # out.get("key") / out["key"]
         if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
                 and n.func.attr == "get" and n.args
+                and isinstance(n.func.value, ast.Name) and n.func.value.id == "out"
                 and isinstance(n.args[0], ast.Constant)):
             read.add(n.args[0].value)
-        if (isinstance(n, ast.Subscript) and isinstance(n.slice, ast.Constant)):
+        if (isinstance(n, ast.Subscript) and isinstance(n.slice, ast.Constant)
+                and isinstance(n.value, ast.Name) and n.value.id == "out"):
             read.add(n.slice.value)
     missing = [k for k in m.SUBJECT_SOURCES if k not in read]
     assert not missing, f"SUBJECT_SOURCES names keys the normaliser never reads: {missing}"
-    # and the converse: the producer keys the normaliser reads off `out` are
-    # all declared, so a new read is a deliberate contract change
-    declared = set(m.SUBJECT_SOURCES) | {"_message", "_thread_active", "action"}
-    undeclared = [k for k in read if isinstance(k, str) and k in (
-        "tool_calls", "deferred_calls", "questions", "points", "b1_material",
-        "items", "ambiguities") and k not in declared]
-    assert not undeclared, undeclared
+    # the converse, DERIVED from the code: every producer key read off `out`
+    # must be declared, except the turn-context keys that are not food
+    # sources. A new `out.get("<x>")` in the normaliser fails here until it
+    # is declared — which is the contract change being made explicit.
+    context_keys = {"_message", "_thread_active", "action", "say", "kind"}
+    undeclared = sorted(k for k in read
+                        if isinstance(k, str) and not k.startswith("_")
+                        and k not in set(m.SUBJECT_SOURCES) and k not in context_keys)
+    assert not undeclared, (
+        f"the normaliser reads producer keys not declared in SUBJECT_SOURCES: "
+        f"{undeclared}")
+
+
+# ═════ REQUIRED RACE PROOF — same op id, snapshots A and B, concurrently ════
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not __import__("os").getenv("TEST_POSTGRES_URL"),
+                    reason="the post-read race needs two real connections")
+async def test_race_same_operation_id_with_snapshots_a_and_b_one_owns_the_row(monkeypatch):
+    """Two workers, the SAME turn id (so the same operation id), one bound to
+    snapshot A and one to snapshot B, submitted at once. Exactly ONE snapshot
+    owns the row; its returned wire equals the stored wire BYTE FOR BYTE; the
+    other request REFUSES (OpenedElsewhere -> BoundAskNotSingular) — it does
+    not get the winner's ask rendered as its own, and it does not get its own
+    rendered over the winner's row. This is the post-read race that the
+    operation-id check alone cannot catch; the fingerprint can."""
+    import asyncio
+    import json as _json
+    import os
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from db.database import make_engine
+    from db.models import Base, PendingOperation, User, UserPreferences
+    from skills.nutrition.product_store import append_product_evidence
+
+    engine = make_engine(os.environ["TEST_POSTGRES_URL"], pool_size=5, max_overflow=5)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with factory() as s:
+            u = User(telegram_id="cf5c-ab", onboarding_completed=True)
+            s.add(u); await s.flush()
+            s.add(UserPreferences(user_id=u.id, proactive_messaging_enabled=False))
+            snap_a = await append_product_evidence(s, record=dict(BAREBELLS_PROD))
+            snap_b = await append_product_evidence(s, record=dict(
+                BAREBELLS_PROD, code="70004200", product_name="Quest Protein Bar",
+                brands="Quest", rev=2))
+            await s.commit()
+            uid, a_id, b_id = u.id, snap_a.id, snap_b.id
+        monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(uid))
+        TURN = "ios:race-AB"
+
+        async def one(snapshot_id, food):
+            from core.general_settlement import coverage_for
+            from core.product_bound_ask import BoundAskNotSingular, open_bound_quantity_ask
+            from skills.nutrition.product_acquisition import (SCAN_BINDING, ScanBinding,
+                                                              attach, begin_turn)
+            async with factory() as s:
+                user = await s.get(User, uid)
+                begin_turn(); attach(snapshot_id)
+                SCAN_BINDING.set(ScanBinding("bound", snapshot_id))
+                item = {"food_name": food, "quantity": "2 bar",
+                        "product_evidence_id": snapshot_id}
+                cov = await coverage_for(s, user_id=uid, items=[item])
+                try:
+                    ask = await open_bound_quantity_ask(
+                        s, user=user, item=item, coverage=cov, turn_id=TURN,
+                        channel="ios", locale="en")
+                    await s.commit()
+                    return ("ask", snapshot_id, ask)
+                except BoundAskNotSingular as exc:
+                    await s.rollback()
+                    return ("refused", snapshot_id, str(exc))
+                finally:
+                    begin_turn()
+
+        results = await asyncio.gather(
+            one(a_id, BAREBELLS_PROD["product_name"]), one(b_id, "Quest Protein Bar"),
+            return_exceptions=True)
+        for r in results:
+            assert not isinstance(r, Exception), r
+
+        async with factory() as s:
+            rows = (await s.execute(select(PendingOperation).where(
+                PendingOperation.user_id == uid))).scalars().all()
+        assert len(rows) == 1, [(r.operation_id, r.status) for r in rows]
+        row = rows[0]
+        stored = _json.loads(row.canonical_payload)
+        stored_pid = int(stored["item"]["product_evidence_id"])
+        stored_wire_bytes = _json.dumps(stored["interaction"], sort_keys=True,
+                                        separators=(",", ":")).encode()
+
+        asks = [r for r in results if r[0] == "ask"]
+        refusals = [r for r in results if r[0] == "refused"]
+        # the post-read race can resolve two ways, both correct:
+        #   (i) one wins, one refuses; or (ii) both "win" in sequence — the
+        #   second SUPERSEDED the first (different turn? no — same turn id,
+        #   so it cannot: same id means reuse-or-refuse, never supersede).
+        # So: exactly one ask, exactly one refusal.
+        assert len(asks) == 1 and len(refusals) == 1, results
+        kind, winner_pid, ask = asks[0]
+        assert winner_pid == stored_pid, (winner_pid, stored_pid)
+        returned_wire_bytes = _json.dumps(ask.interaction.to_payload(), sort_keys=True,
+                                          separators=(",", ":")).encode()
+        assert returned_wire_bytes == stored_wire_bytes      # byte for byte
+        assert ask.operation_id == row.operation_id
+        _, loser_pid, reason = refusals[0]
+        assert loser_pid != stored_pid
+        assert "DIFFERENT semantic payload" in reason or "another ask owns" in reason, reason
+    finally:
+        await engine.dispose()
+
+
+# ═════ Danny's three pre-deploy details, as gates ═══════════════════════════
+
+def test_fp_is_canonical_versioned_and_fails_closed():
+    """(1) canonical: key order and whitespace do not change it; versioned:
+    the prefix names the rule; fail-closed: a non-serialisable payload raises
+    FingerprintUnreadable rather than str()-ing into a match."""
+    from core.b1_quantity_operation import (FINGERPRINT_VERSION, FingerprintUnreadable,
+                                            semantic_fingerprint)
+    from core.semantics import ClarificationInteraction
+    from skills.nutrition import quantity_clarification as qc
+    from core.food_pipeline import stage_items
+    items, _g = stage_items({"items": [{"food": "Oatmeal", "amount": 1, "unit": "bowl",
+                                        "calories": 150}]}, turn_id="t", message="x",
+                            mode="strict")
+    field = qc.quantity_field(operation_id="chat_quantity:1:t", revision=0, item=items[0])
+    inter = qc.build_interaction(operation_id="chat_quantity:1:t", revision=0,
+                                 item=items[0], options=field.options,
+                                 introduction="How much?", ask_preparation=False)
+    a = semantic_fingerprint(inter, {"food": "Oatmeal", "amount": 1, "unit": "bowl"})
+    b = semantic_fingerprint(inter, {"unit": "bowl", "amount": 1, "food": "Oatmeal"})
+    assert a == b and a.startswith(FINGERPRINT_VERSION + ":")
+    # round-trip through JSON (what the row holds) is identical
+    again = ClarificationInteraction.from_payload(inter.to_payload())
+    assert semantic_fingerprint(again, {"food": "Oatmeal", "amount": 1, "unit": "bowl"}) == a
+    # a different snapshot is a different fingerprint
+    assert (semantic_fingerprint(inter, {"food": "Oatmeal", "product_evidence_id": 1})
+            != semantic_fingerprint(inter, {"food": "Oatmeal", "product_evidence_id": 2}))
+    # fail closed
+    with pytest.raises(FingerprintUnreadable):
+        semantic_fingerprint(inter, {"food": "Oatmeal", "nan": float("nan")})
+    with pytest.raises(FingerprintUnreadable):
+        semantic_fingerprint(inter, {"food": "Oatmeal", "obj": object()})
+
+
+@pytest.mark.asyncio
+async def test_reuse_verifies_row_ownership_user_domain_turn(db, make_user):
+    """(1b) a row reached by operation id is still checked against the
+    request's user, domain and turn before anything in it is rendered."""
+    from core.b1_quantity_operation import (OpenedElsewhere, _operation_id_for,
+                                            _stored_open_result, open_operation)
+    from core.food_pipeline import stage_items
+    from db.models import PendingOperation
+    from skills.nutrition import quantity_clarification as qc
+    from sqlalchemy import select
+    user = await make_user()
+    tid = f"ios:own-{user.id}"
+    op_id = _operation_id_for(user, tid)
+    items, _g = stage_items({"items": [{"food": "Oatmeal", "amount": 1, "unit": "bowl",
+                                        "calories": 150}]}, turn_id=tid, message="x",
+                            mode="strict")
+    field = qc.quantity_field(operation_id=op_id, revision=0, item=items[0])
+    inter = qc.build_interaction(operation_id=op_id, revision=0, item=items[0],
+                                 options=field.options, introduction="How much?",
+                                 ask_preparation=False)
+    await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                         interaction=inter, turn_id=tid, locale="en", cohort="allowlist")
+    await db.commit()
+    row = (await db.execute(select(PendingOperation).where(
+        PendingOperation.operation_id == op_id))).scalars().one()
+    ok = _stored_open_result(row, created=False, expect_user_id=user.id, expect_turn_id=tid)
+    assert ok.locale == "en" and ok.cohort == "allowlist"        # (2) rendering facts
+    with pytest.raises(OpenedElsewhere, match="belongs to user"):
+        _stored_open_result(row, created=False, expect_user_id=user.id + 99, expect_turn_id=tid)
+    with pytest.raises(OpenedElsewhere, match="opened on turn"):
+        _stored_open_result(row, created=False, expect_user_id=user.id,
+                            expect_turn_id="ios:someone-elses-turn")
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_stored_payload_refuses_not_reuses(db, make_user, monkeypatch):
+    """(1c) the stored payload cannot be decoded -> FingerprintUnreadable, a
+    refusal at both consumers, never a partial reuse."""
+    from core.b1_quantity_operation import (FingerprintUnreadable, _operation_id_for,
+                                            open_operation)
+    from core.food_pipeline import stage_items
+    from db.models import PendingOperation
+    from skills.nutrition import quantity_clarification as qc
+    from sqlalchemy import select, update
+    user = await make_user()
+    tid = f"ios:unread-{user.id}"
+    op_id = _operation_id_for(user, tid)
+    items, _g = stage_items({"items": [{"food": "Oatmeal", "amount": 1, "unit": "bowl",
+                                        "calories": 150}]}, turn_id=tid, message="x",
+                            mode="strict")
+    field = qc.quantity_field(operation_id=op_id, revision=0, item=items[0])
+    inter = qc.build_interaction(operation_id=op_id, revision=0, item=items[0],
+                                 options=field.options, introduction="How much?",
+                                 ask_preparation=False)
+    await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                         interaction=inter, turn_id=tid, locale="en")
+    await db.commit()
+    await db.execute(update(PendingOperation).where(
+        PendingOperation.operation_id == op_id).values(canonical_payload="{not json"))
+    await db.commit()
+    with pytest.raises(FingerprintUnreadable):
+        await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                             interaction=inter, turn_id=tid, locale="en")
+
+
+@pytest.mark.asyncio
+async def test_a_reused_ask_renders_entirely_from_persisted_state(db, make_user, monkeypatch):
+    """(2) locale and cohort on a reuse come from the ROW, not the retry: open
+    with locale=ru cohort=allowlist, retry with locale=en cohort=scan_bound ->
+    the CanonicalAsk carries ru / allowlist."""
+    from core import b1_quantity_operation as b1q
+    from core.food_pipeline import stage_items
+    from skills.nutrition import quantity_clarification as qc
+    user = await make_user()
+    tid = f"ios:persist-{user.id}"
+    op_id = b1q._operation_id_for(user, tid)
+    items, _g = stage_items({"items": [{"food": "Oatmeal", "amount": 1, "unit": "bowl",
+                                        "calories": 150}]}, turn_id=tid, message="x",
+                            mode="strict")
+    field = qc.quantity_field(operation_id=op_id, revision=0, item=items[0])
+    inter = qc.build_interaction(operation_id=op_id, revision=0, item=items[0],
+                                 options=field.options, introduction="How much?",
+                                 ask_preparation=False)
+    first = await b1q.open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                                     interaction=inter, turn_id=tid, locale="ru",
+                                     cohort="allowlist")
+    await db.commit()
+    assert first.created and first.locale == "ru" and first.cohort == "allowlist"
+    again = await b1q.open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                                     interaction=inter, turn_id=tid, locale="en",
+                                     cohort="scan_bound")
+    assert again.reused
+    assert again.locale == "ru" and again.cohort == "allowlist", (again.locale, again.cohort)

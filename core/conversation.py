@@ -1763,6 +1763,7 @@ async def _run_turn(
                         # contract and vaporize the notice).
                         _sft["_held_stash"] = _sft_prior["items"]
             _b1_ask = None
+            _b1_refused = False      # CF5c-B3: a typed canonical refusal, not a decline
             if _sft and _sft["action"] == "ask":
                 # ── B-1: does the canonical quantity path own this turn? ──
                 #
@@ -1822,6 +1823,29 @@ async def _run_turn(
                             locale=command_locale(
                                 getattr(_prefs, "preferred_language", None),
                                 _user_text or ""))
+                except (_b1.OpenedElsewhere, _b1.PriorAskNotReleased,
+                        _b1.FingerprintUnreadable) as _b1_exc:
+                    # ⛔⛔ NOT A DECLINE — A CANONICAL REFUSAL *(review of
+                    # 2db22e1)*. Another canonical ask already owns this user
+                    # (the winner of a race, or a prior that could not be
+                    # released). Falling to the legacy ask here would put ONE
+                    # canonical question from the winner and ONE legacy
+                    # question from the loser on the same user — the single-
+                    # owner invariant lost ABOVE the database constraint. So
+                    # the turn answers in words, records no legacy question,
+                    # writes nothing. `_b1_refused` suppresses the legacy ask
+                    # record below; the copy names the situation.
+                    logger.info("event=b1_open_refused kind=%s user=%s reason=%s",
+                                type(_b1_exc).__name__, user.id, _b1_exc)
+                    _b1_ask = None
+                    _b1_refused = True
+                    _sft["text"] = ("I've already got a question open for you "
+                                    "— answer that one first, or tell me the "
+                                    "food and the amount and I'll log it.")
+                    # the refusal ships no chip row: clearing `questions` is
+                    # what removes it (the C9 ratchet counts an `["options"]`
+                    # store as an option PRODUCER, and this is not one)
+                    _sft["questions"] = []
                 except Exception:
                     # DECLINED, NOT FAILED. Nothing was persisted — the
                     # operation is created as the last step — so the turn
@@ -1905,7 +1929,8 @@ async def _run_turn(
             # one question in two stores, which is precisely the condition
             # (`payload_json` vs `pending_operations`) this migration exists
             # to end — and the answer turn would then have to pick.
-            if _sft and _sft["action"] == "ask" and _b1_ask is None:
+            if (_sft and _sft["action"] == "ask" and _b1_ask is None
+                    and not _b1_refused):
                 try:
                     from db.queries import record_pending_question
                     _pq_s = await record_pending_question(

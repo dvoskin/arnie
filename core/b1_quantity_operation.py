@@ -300,8 +300,136 @@ class PriorAskNotReleased(RuntimeError):
 class OpenedElsewhere(RuntimeError):
     """The insert lost a race and the operation now awaiting for this user is
     NOT this one (a different turn, so a different product's question) — or
-    this operation id exists in a non-reusable state. The caller must not
-    present the other operation as its own; it refuses."""
+    this operation id exists in a non-reusable state, or it exists with a
+    DIFFERENT semantic payload (same turn id, different snapshot/question).
+    The caller must not present the other operation as its own; it refuses.
+    Never legacy: a canonical ask that lost to another canonical ask must not
+    become a legacy question beside it."""
+
+
+class OpenResult:
+    """⛔ THE TYPED RESULT OF `open_operation` *(review of 2db22e1)*.
+
+    `created`  this call inserted the row; `interaction` is the one it built.
+    `reused`   the row already existed (same turn retry, or a lost insert
+               race to the SAME operation) — and its persisted semantic
+               payload FINGERPRINT-MATCHES what this call would have stored.
+               `interaction` is the STORED one, decoded from the row, so the
+               caller renders what persisted — never the object it just
+               built, which is how snapshot A could persist while B rendered.
+
+    A reuse whose stored payload does NOT match is not a reuse; it is
+    `OpenedElsewhere`, whatever the operation id says."""
+
+    __slots__ = ("operation_id", "created", "interaction", "item",
+                 "revision", "fingerprint", "locale", "cohort")
+
+    def __init__(self, *, operation_id: str, created: bool, interaction,
+                 item: dict, revision: int, fingerprint: str,
+                 locale: str = "en", cohort: str = ""):
+        self.operation_id = operation_id
+        self.created = created
+        self.interaction = interaction
+        self.item = dict(item or {})
+        self.revision = int(revision or 0)
+        self.fingerprint = fingerprint
+        # ⛔ EVERY RENDERING FACT A CONSUMER NEEDS *(Danny)*: a reused request
+        # renders ENTIRELY from persisted state — the language the question
+        # was asked in and the cohort it was asked under are on the row, not
+        # on the retry.
+        self.locale = locale
+        self.cohort = cohort
+
+    @property
+    def reused(self) -> bool:
+        return not self.created
+
+
+#: The fingerprint's serialisation contract, VERSIONED. A change to how the
+#: body is canonicalised (key order, float form, a field added to what counts
+#: as "meaning") bumps this, so a fingerprint computed under the old rule can
+#: never silently equal one computed under the new — they differ in the prefix
+#: before they differ in the hash.
+FINGERPRINT_VERSION = "fp1"
+
+
+class FingerprintUnreadable(RuntimeError):
+    """The persisted payload cannot be fingerprinted (unreadable JSON, an
+    interaction that does not decode, a non-canonical value). FAIL CLOSED: a
+    reuse that cannot prove it matches is not a reuse."""
+
+
+def _canonical_json(obj) -> str:
+    """Canonical serialisation for the fingerprint: sorted keys, no
+    whitespace, ASCII-escaped, and NO lossy fallback — a value JSON cannot
+    represent is an error, not `str()`'d into something that happens to
+    compare equal."""
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=True, allow_nan=False)
+
+
+def semantic_fingerprint(interaction, interpreter_item: dict) -> str:
+    """What an ask MEANS, hashed: the wire interaction (question, fields,
+    option ids and patches) and the interpreter item (food, quantity, and for
+    a bound ask the product_evidence_id). Two asks with the same operation id
+    and different fingerprints are two different questions, and only one of
+    them persisted. Canonical and versioned (see FINGERPRINT_VERSION); raises
+    FingerprintUnreadable rather than returning a guess."""
+    import hashlib
+
+    try:
+        body = _canonical_json({"v": FINGERPRINT_VERSION,
+                                "interaction": interaction.to_payload(),
+                                "item": dict(interpreter_item or {})})
+    except (TypeError, ValueError) as exc:
+        raise FingerprintUnreadable(
+            f"payload is not canonically serialisable: {exc}") from exc
+    return f"{FINGERPRINT_VERSION}:" + hashlib.sha256(
+        body.encode("utf-8")).hexdigest()[:24]
+
+
+def _stored_open_result(row, *, created: bool, expect_user_id: int,
+                        expect_turn_id: str) -> "OpenResult":
+    """Decode a persisted row into the OpenResult the caller renders from.
+
+    ⛔ OWNERSHIP IS VERIFIED, NOT ASSUMED *(Danny)*: the row must belong to
+    THIS user, THIS domain and THIS turn — an operation id is derived from
+    (user, turn) but a row reached by id is still checked against the request
+    before anything in it is rendered. Unreadable -> FingerprintUnreadable,
+    never a partial result."""
+    from core.semantics import ClarificationInteraction
+
+    if int(getattr(row, "user_id", -1)) != int(expect_user_id):
+        raise OpenedElsewhere(
+            f"operation {row.operation_id} belongs to user {row.user_id}, "
+            f"not {expect_user_id}")
+    if str(getattr(row, "domain", "") or "") != DOMAIN:
+        raise OpenedElsewhere(
+            f"operation {row.operation_id} is domain {row.domain!r}, not {DOMAIN!r}")
+    if expect_turn_id and str(getattr(row, "source_turn_id", "") or "") != expect_turn_id:
+        raise OpenedElsewhere(
+            f"operation {row.operation_id} was opened on turn "
+            f"{row.source_turn_id!r}, not {expect_turn_id!r}")
+    try:
+        data = json.loads(row.canonical_payload or "{}")
+        if data.get("slice") != "b1_quantity":
+            raise ValueError(f"slice {data.get('slice')!r} is not b1_quantity")
+        interaction = ClarificationInteraction.from_payload(data.get("interaction") or {})
+        item = data.get("item") or {}
+        if not isinstance(item, dict):
+            raise ValueError("stored item is not a dict")
+        fp = semantic_fingerprint(interaction, item)
+    except FingerprintUnreadable:
+        raise
+    except Exception as exc:                             # noqa: BLE001
+        raise FingerprintUnreadable(
+            f"stored payload for {row.operation_id} is unreadable: "
+            f"{type(exc).__name__}: {exc}") from exc
+    return OpenResult(operation_id=row.operation_id, created=created,
+                      interaction=interaction, item=item,
+                      revision=int(row.revision or 0), fingerprint=fp,
+                      locale=str(data.get("locale") or "en"),
+                      cohort=str(data.get("cohort") or ""))
 
 
 async def _release_prior_awaiting(db, *, user, keep: str) -> None:
@@ -360,7 +488,7 @@ async def _release_prior_awaiting(db, *, user, keep: str) -> None:
 async def open_operation(db, *, user, interpreter_item: dict, interaction,
                          turn_id: str, cohort: str = "",
                          locale: str = "en", decision_id: str = "",
-                         candidate_set_id: str = "") -> str:
+                         candidate_set_id: str = "") -> "OpenResult":
     """Take ownership of this meal. Call ONLY after the rollout gate said yes.
 
     `interpreter_item` is the interpreter's own reading — the food name and
@@ -412,24 +540,43 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
     #            a DIFFERENT turn is a different product's question, and
     #            returning it would render product B's ask in product A's
     #            reply — `OpenedElsewhere`, and the caller refuses.
+    mine = semantic_fingerprint(interaction, interpreter_item)   # may raise FingerprintUnreadable
+    uid = int(user.id)            # captured early: a rollback below expires `user`
+
+    def _reuse_if_same(row, *, why: str) -> "OpenResult":
+        """The row exists for THIS operation id. It is a reuse ONLY if it is
+        awaiting, belongs to THIS user/domain/turn, AND its persisted
+        semantics match what this call would have stored — same question,
+        same item, same snapshot. The operation id is derived from (user,
+        turn), and two requests on one turn with different snapshots share
+        it; the id alone proves nothing. An unreadable stored payload is
+        FingerprintUnreadable — a refusal, not a reuse."""
+        if not (row.status == AWAITING and row.storage_status == "active"):
+            raise OpenedElsewhere(
+                f"operation {operation_id} exists but is {row.status}/"
+                f"{row.storage_status} — not reusable")
+        stored = _stored_open_result(row, created=False, expect_user_id=uid,
+                                     expect_turn_id=turn_id)
+        if stored.fingerprint != mine:
+            raise OpenedElsewhere(
+                f"operation {operation_id} is awaiting with a DIFFERENT "
+                f"semantic payload (stored {stored.fingerprint}, mine {mine}) "
+                f"— {why}")
+        logger.info("event=b1_open_reused operation=%s how=%s fingerprint=%s",
+                    operation_id, why, mine)
+        return stored
+
     existing = await repo.load_operation(db, operation_id)
     if existing is not None:
-        if (existing.status == AWAITING and existing.storage_status == "active"):
-            logger.info("event=b1_open_reused operation=%s — same turn, same "
-                        "ask", operation_id)
-            return operation_id
-        raise OpenedElsewhere(
-            f"operation {operation_id} exists but is {existing.status}/"
-            f"{existing.storage_status} — not reusable")
+        return _reuse_if_same(existing, why="same turn, same ask")
     await _release_prior_awaiting(db, user=user, keep=operation_id)
-    uid = int(user.id)            # captured: a rollback below expires `user`
     payload = _encode(interaction, interpreter_item, locale or "en",
                       decision_id=decision_id,
                       candidate_set_id=candidate_set_id,
                       asked_at=_now().isoformat(),
                       cohort=cohort or "")
     try:
-        await repo.create_operation(
+        row = await repo.create_operation(
             db, operation_id=operation_id, user_id=uid, status=AWAITING,
             storage_status="active", domain=DOMAIN, source_turn_id=turn_id,
             payload=payload,
@@ -440,15 +587,26 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
     except IntegrityError as exc:
         await db.rollback()
         winner = await repo.load_operation(db, operation_id)
-        if (winner is not None and winner.status == AWAITING
-                and winner.storage_status == "active"):
-            # the SAME operation landed from another worker: reuse it
-            logger.info("event=b1_open_race_reused operation=%s", operation_id)
-            return operation_id
-        # a different operation holds the user: NOT ours to return
-        raise OpenedElsewhere(
-            f"insert of {operation_id} lost the race to another awaiting "
-            f"operation for user {uid}") from exc
+        if winner is None:
+            # a DIFFERENT operation holds the user (the partial unique index
+            # fired): NOT ours to return, and never legacy
+            raise OpenedElsewhere(
+                f"insert of {operation_id} lost the race to another awaiting "
+                f"operation for user {uid}") from exc
+        # the SAME operation id landed from another worker — reuse ONLY if it
+        # persisted what we would have (same snapshot, same question)
+        try:
+            return _reuse_if_same(winner, why="lost the insert race to myself")
+        except OpenedElsewhere:
+            raise
+        except Exception as e:                           # noqa: BLE001
+            raise OpenedElsewhere(
+                f"lost the race and the winner's payload is unreadable: "
+                f"{type(e).__name__}") from e
+    result = OpenResult(operation_id=operation_id, created=True,
+                        interaction=interaction, item=dict(interpreter_item),
+                        revision=0, fingerprint=mine,
+                        locale=locale or "en", cohort=cohort or "")
     from core import b1_metrics
     b1_metrics.shown(operation_id=operation_id, user_id=uid, cohort=cohort,
                      locale=locale or "en",
@@ -461,7 +619,7 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
         _ft.note(operation_id=operation_id)
     except Exception:
         pass
-    return operation_id
+    return result
 
 
 #: How long an unanswered question stays answerable. Past it the operation
@@ -923,14 +1081,25 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
         introduction=_introduction(item),
         ask_preparation=ClarificationAttribute.PREPARATION in unresolved)
 
-    await open_operation(db, user=user, interpreter_item=interpreter_item,
-                         interaction=interaction, turn_id=turn_id,
-                         cohort=cohort, locale=locale,
-                         decision_id=decision_id,
-                         candidate_set_id=candidate_set_id)
-    return CanonicalAsk(operation_id=operation_id, revision=0,
-                        interaction=interaction, locale=locale,
-                        cohort=cohort, capability=lane.capability)
+    # ⛔ RENDER WHAT PERSISTED *(review of 2db22e1)*. `open_operation` returns
+    # an OpenResult; on a reuse its `interaction` is the STORED one, decoded
+    # from the row and fingerprint-checked against what this call built. The
+    # first cut returned the locally built interaction whatever the seam did,
+    # so a same-turn race could persist one question and render another.
+    # `OpenedElsewhere` / `PriorAskNotReleased` PROPAGATE as canonical
+    # refusals — `core.conversation` answers them in words; they must never
+    # reach the blanket catch that falls to legacy, because one canonical ask
+    # from the winner plus a legacy question from the loser is the single-
+    # owner invariant lost ABOVE the database constraint.
+    opened = await open_operation(db, user=user, interpreter_item=interpreter_item,
+                                  interaction=interaction, turn_id=turn_id,
+                                  cohort=cohort, locale=locale,
+                                  decision_id=decision_id,
+                                  candidate_set_id=candidate_set_id)
+    return CanonicalAsk(operation_id=opened.operation_id, revision=opened.revision,
+                        interaction=opened.interaction,
+                        locale=opened.locale, cohort=opened.cohort,
+                        capability=lane.capability)
 
 
 class _MaterialDecision:
