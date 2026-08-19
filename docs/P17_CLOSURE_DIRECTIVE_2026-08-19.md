@@ -486,3 +486,17 @@ No phase is complete because code was pushed or CI started. It is complete only 
 * **Remaining blockers**: Phases 2–6, canaries A/B/C, Phase 8, and the two preserved deploy blockers (acquisition-`None` unbinds silently; WS coalescing drops a second barcode).
 * **P17g: BLOCKED**
 * **END-TO-END SCAN: BLOCKED**
+
+## Phase 1 third review round — grammar defects 1–2 closed (2026-08-20)
+
+* **Exact SHA**: `504b0cd` (on `e6ecac3`; `eeefb85` confirmed docs-only).
+* **Files materially changed**: `core/scan_authority.py` (closed class trimmed to genuinely closed word classes — adjectives out, `one`/`ones` no longer deictics; `identity_modifiers()` adds the POSITIONAL rule over `QUANTITY [determiner|of]* X* UNIT`; `_UNIT_FORMS` declares the unit forms once and both `_UNIT_WORDS` and `_unit_vocabulary()` are generated from it) · `core/turns/entrypoint.py` (refusal copy for `unaccounted_identity`) · the Phase 1 proof file.
+* **Invariant established**: a token's role depends on its POSITION — anything in the modifier slot of a quantity phrase is a product-identity claim whatever global role it has, so `2 Good Bars`, `2 ONE bars`, `2 other bars` and `2 different bars` refuse while `2 bars`, `half a bar`, `2 of these bars` and `2 Barebells bars` still bind; and the amount parser and the grammar share ONE declaration of the unit forms, so a unit the parser accepts can never be unaccounted identity.
+* **Focused tests and mutations**: Phase 1 file 82 passed; seven scan suites 255 passed. **Mutations C1, C2, C3, C4, C6 and C5′ each printed `applied` and went RED** — C5 as first written was GREEN (scraping a plain literal alternation yields the right words; the defect needs the hand-written regex too) and was replaced by C5′, which reproduces the reported failure exactly. 44 mutations across the phase.
+* **Full suite**: 9812 passed / 25 skipped / 17 deselected / 4 xfailed, `PYTEST_EXIT=0`, fingerprint `c33f2c05467e` before = after, `TEST_POSTGRES_URL` set (both PG races ran).
+* **Migration impact**: none.
+* **Deploy status**: NOT deployed; not deploy-approved. Phase 2 paused.
+* **Production evidence**: none.
+* **Remaining blockers**: Phases 2–6, canaries A/B/C, Phase 8, and the two preserved deploy blockers.
+* **P17g: BLOCKED**
+* **END-TO-END SCAN: BLOCKED**
