@@ -472,3 +472,17 @@ No phase is complete because code was pushed or CI started. It is complete only 
 
 1. **Acquisition returning None silently drops the scan attempt** — `attach_acquired(None)` does nothing, so a barcode that failed acquisition leaves no attachment and the message continues UNBOUND, indistinguishable from an unscanned turn (`api/chat.py`). Required: a failed acquisition still records the scan attempt so the turn refuses (`identity_unknown`) rather than running unbound.
 2. **WebSocket coalescing keeps only the newest barcode** — two distinct scans in one coalesced send never reach the attachment-conflict authority (`api/chat.py` `_pending["barcode"] = barcode` overwrites). Required: every received barcode reaches `attach()` so two distinct codes refuse as `ATTACHMENT_CONFLICT`.
+
+## Phase 1 second review round — blockers 1–3 closed (2026-08-20)
+
+* **Exact SHA**: `e6ecac3` (on `1558a09`; `6ea5923` confirmed docs-only).
+* **Files materially changed**: `core/turns/entrypoint.py` (B1: `_claim_scan_state` returns a typed `ScanAuthorityRefusal("claim_failed")` after clearing; `run_turn` answers it through `_result_from_state` via `_PreCoordinatorRefusal` — one result assembly; refusal copy) · `core/scan_authority.py` (B2: the no-unit `half a` / `half of` alternative deleted from `_AMOUNT_RE`; B3: `identity_residual` replaced by `unaccounted_identity` — a positive utterance grammar over closed roles, with the EVIDENCE role reading the label's raw words) · the Phase 1 proof file.
+* **Invariant established**: a scan-state claim failure refuses the whole turn, non-mutating, through the real response seam — never continues unscanned; a stated amount is value + food unit; and identity is decided by positive accounting (every token has a role, or the turn refuses), so a producer that relabels every carrier cannot erase the words it is checked against.
+* **Focused tests and mutations**: Phase 1 file 64 passed (new: full-turn claim-refusal proof with zero writes and session recovery; `half a` / `half of` negatives and `half a bar` / `half of a bar` positives; relabel-every-carrier twins for `I had 2 plain bars` and `I had 2 Perfect Bars`; the protein-bar pair proving evidence — not a list — accounts for generic words). Seven scan suites 237 passed. **7 new mutations (B1a, B1b, B2, B3a–B3d) each printed `applied` and went RED; 38 across the phase.**
+* **Full suite**: 9794 passed / 25 skipped / 17 deselected / 4 xfailed, `PYTEST_EXIT=0`, fingerprint `99f9b0aad661` before = after, `TEST_POSTGRES_URL` set (both PG races ran).
+* **Migration impact**: none.
+* **Deploy status**: NOT deployed; not deploy-approved. Phase 2 not started.
+* **Production evidence**: none.
+* **Remaining blockers**: Phases 2–6, canaries A/B/C, Phase 8, and the two preserved deploy blockers (acquisition-`None` unbinds silently; WS coalescing drops a second barcode).
+* **P17g: BLOCKED**
+* **END-TO-END SCAN: BLOCKED**
