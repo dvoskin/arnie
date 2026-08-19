@@ -453,3 +453,22 @@ No phase is complete because code was pushed or CI started. It is complete only 
 * **Remaining blockers**: Phase 2 (canonical-operation durability), Phase 3 (CF14), Phase 4 (producer + acquisition timing), Phase 5 (weak-evidence policy + 70004199 quarantine), Phase 6 gates, canaries A/B/C, Phase 8 repair.
 * **P17g: BLOCKED**
 * **END-TO-END SCAN: BLOCKED**
+
+## Phase 1 finishing patch — findings 1–5 closed (2026-08-19/20)
+
+* **Exact SHA**: `1558a09` (on `5230456`; `95185f5` confirmed docs-only).
+* **Files materially changed**: `skills/nutrition/product_acquisition.py` (F1: `decide()` is TERMINAL — identical second decision idempotent, different or post-consumption refuses `decision_conflict`; F5: `VerifiedScanEvidence` requires a usable product identity at construction — a nameless snapshot can no longer become "verified"; acquisition stashes nothing for such a row, so the gate refuses `identity_unknown:partial`) · `core/scan_authority.py` (F1: consumed authority is SPENT — `is_bound()` false and `require_bound_evidence()` refuses `consumed` after `consume_binding()`; F2: a stated amount is value + food unit — the bare-number alternative is gone, and a bare deictic no longer counts as a fresh signal; F3: `identity_residual()` — content words nothing accounts for; non-empty residual with no verified mention refuses `unattributed_identity_words` instead of taking the identity-free amount path, so a producer that relabels EVERY carrier cannot erase the conflict it is checked against; F4: Unicode tokenizer (`\w`, the `normalize_name`-empties-Cyrillic lesson) and exact-or-stemmed matching only — no prefix identity, kind≠kindly, quest≠question) · `core/turns/entrypoint.py` (F1: `_claim_scan_state` — a claim failure CLEARS the holder (the turn runs unscanned, loudly) and refuses by propagation when even the clear fails; never continues over unclaimed state; refusal copy for `consumed` and `decision_conflict`).
+* **Invariant established**: the authority lifecycle is immutable and terminal (decide-once, consume-spends, claim-or-clear); identity-free binding requires a real parsed amount or consumption language — never a bare number, deictic, or hallucinated subject; an erased user mention refuses rather than falling through to the amount path; tokenization is Unicode and matching exact/stemmed; verified evidence always carries a usable product identity, so the gate (never the executor) refuses nameless snapshots.
+* **Focused tests and mutations**: Phase 1 proof file now 55 passed (new: F1 decide-terminal, consumed-spent, claim-clears-or-refuses; F2 glucose/version/`it was 110`/`around 2`/bare-deictic red twins; F3 relabel-every-carrier strict UNDECIDABLE naming the erased words; F4 Cyrillic mention + kind/kindly, quest/question; F5 construction + gate refusal for nameless snapshots). Seven scan suites: 226 passed, exit 0. **Mutation sweep: 31 mutations (M1–M21 rerun post-patch + N1–N10), every one printed `applied` and went RED.** N5 (bare-number amount) was GREEN on its first run — the glucose/version twins were masked by the residual check — and got the unmasked `it was 110`/`around 2` twins before passing red.
+* **Full suite**: 9785 passed / 25 skipped / 17 deselected / 4 xfailed, `PYTEST_EXIT=0`, fingerprint `7b6360a6211c` before = after, `TEST_POSTGRES_URL` set (both PG races ran).
+* **Migration impact**: none.
+* **Deploy status**: NOT deployed; not deploy-approved.
+* **Production evidence**: none (no canary before Phases 2–6).
+* **Remaining blockers**: Phases 2–6, canaries A/B/C, Phase 8 — plus the two explicitly preserved **deploy blockers** below.
+* **P17g: BLOCKED**
+* **END-TO-END SCAN: BLOCKED**
+
+## Deploy blockers (open — must close before any deploy, tracked under Phase 4)
+
+1. **Acquisition returning None silently drops the scan attempt** — `attach_acquired(None)` does nothing, so a barcode that failed acquisition leaves no attachment and the message continues UNBOUND, indistinguishable from an unscanned turn (`api/chat.py`). Required: a failed acquisition still records the scan attempt so the turn refuses (`identity_unknown`) rather than running unbound.
+2. **WebSocket coalescing keeps only the newest barcode** — two distinct scans in one coalesced send never reach the attachment-conflict authority (`api/chat.py` `_pending["barcode"] = barcode` overwrites). Required: every received barcode reaches `attach()` so two distinct codes refuse as `ATTACHMENT_CONFLICT`.
