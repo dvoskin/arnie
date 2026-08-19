@@ -2413,3 +2413,91 @@ def test_prod_0819_the_entrypoint_consults_the_authority_before_delegating():
               and any(a.name == "LegacyExecutionStage" for a in n.names)]
     assert consult and legacy and min(consult) < min(legacy), (
         "the no-plan block can delegate a scanned turn before asking the authority")
+
+
+# ═════ PRODUCTION 2026-08-19 15:57 — the interpreter must know a scan is attached ═
+#
+# The iOS producer sends the barcode on a SEPARATE field and NO product prose
+# (P17: never reconstruct a barcode from the message). So the interpreter saw
+# bare "2 servings of Barebells" over an EMPTY board and — twice in one day —
+# emitted update_food_entry(entry_id=123), a correction of a phantom row.
+# `_update_call` dropped it, the plan was empty, the authority refused. Safe,
+# and the canary cannot pass through it. The planner now passes a typed
+# INTENT line (`scan_bound=True`) — never product data.
+
+@pytest.mark.asyncio
+async def test_prod_0819_the_interpreter_is_told_a_scan_is_attached(monkeypatch):
+    """The REAL producer: with the scan intent line in the user turn, the
+    model's payload is a LOG of the named food, not a phantom update. (The
+    model is mocked to echo what it was told — the assertion is that the
+    intent line REACHES the prompt, typed, and is absent unscanned.)"""
+    import json as _json
+    import core.food_turn as FT
+    seen = {}
+    async def fc(messages, system, tools=True, max_tokens=0, model=None, **k):
+        seen["user"] = messages[-1]["content"] if messages else ""
+        return {"text": _json.dumps({"action": "log", "items": [
+            {"food": "Barebells", "amount": 2, "unit": "serving", "calories": 220}]}),
+                "raw_content": [], "tool_calls": []}
+    monkeypatch.setattr(FT, "chat", fc)
+    from types import SimpleNamespace as NS
+    user = NS(preferences=NS(food_logging_mode="strict"))
+    out = await FT.run("2 servings of Barebells", user, scan_bound=True)
+    assert "SCAN ATTACHED" in str(seen["user"])
+    assert "NOT a correction" in str(seen["user"])
+    assert "entry_id" in str(seen["user"])            # the phantom-id warning
+    # ⚠ NOT A LICENCE TO LOG (Danny): the scan settles identity only; the
+    # interpreter must still ask about material ambiguity exactly as it would
+    # unscanned — the line must NOT instruct a commit
+    line = str(seen["user"]).split("SCAN ATTACHED")[1]
+    assert "ask when that is material" in line
+    assert "log it as a new item" not in line.lower()
+    assert 'action "log"' not in line.lower() and "action \\\"log\\\"" not in line
+    assert "Barebell" not in str(seen["user"]).split("SCAN ATTACHED")[1], (
+        "the intent line must carry NO product prose — the label's facts reach "
+        "only settlement")
+    seen.clear()
+    await FT.run("2 servings of Barebells", user, scan_bound=False)
+    assert "SCAN ATTACHED" not in str(seen["user"])
+
+
+@pytest.mark.asyncio
+async def test_prod_0819_the_planner_passes_scan_intent_from_the_attachment(
+        db, make_user, monkeypatch):
+    """FoodPlanStage passes `scan_bound=True` to the interpreter iff a scan is
+    attached — keyed on attachment (the decision needs this call's plan)."""
+    from core.turns.stages.food import FoodPlanStage
+    from skills.nutrition.product_acquisition import attach, begin_turn
+    user = await make_user()
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    got = {}
+    async def stub(text, u, **kw):
+        got.update(kw)
+        return {"action": "log", "tool_calls": []}
+    req = _Req("2 servings of Barebells",
+               {"db": db, "user": user, "today_log": log, "messages": ()})
+    begin_turn(); attach(snap.id)
+    try:
+        await FoodPlanStage(interpreter=stub).run(req)
+        assert got.get("scan_bound") is True
+    finally:
+        begin_turn()
+    got.clear()
+    await FoodPlanStage(interpreter=stub).run(req)
+    assert got.get("scan_bound") is False
+
+
+def test_prod_0819_an_update_of_a_phantom_row_is_one_subject_at_the_normaliser():
+    """⚠ SCOPE: on the 15:57 turn the phantom update (entry_id=123) was
+    dropped INSIDE food_turn by `_update_call` (the row is not on the board),
+    so `tool_calls` reached the planner EMPTY and the authority correctly
+    read 'no food'. This test proves only the normaliser's contract for an
+    update that DOES survive: it is one subject keyed entry:<id>, never zero.
+    The root fix for 15:57 is the typed scan-intent line (tests above)."""
+    from core.turns.stages.food import plan_from_interpretation
+    plan = plan_from_interpretation({"action": "update", "tool_calls": [
+        {"name": "update_food_entry", "input": {"entry_id": 123, "quantity": "2 bar"}}],
+        "_message": "2 servings of Barebells"})
+    assert len(plan.food_subjects) == 1
+    assert plan.food_subjects[0].key == "entry:123"

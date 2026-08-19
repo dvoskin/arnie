@@ -103,7 +103,11 @@ class FoodPlanStage:
                 board=meta.get("board"),
                 last_assistant=meta.get("last_assistant", ""),
                 regulars=meta.get("regulars"),
-                thread_active=bool(meta.get("thread_active")))
+                thread_active=bool(meta.get("thread_active")),
+                # CF5c: a typed INTENT line, from the attachment (the binding
+                # decision needs the plan this call produces). Not product
+                # prose — the label's facts reach only settlement.
+                scan_bound=suppresses_replay_and_prior())
         except Exception as e:
             logger.warning(f"food plan stage failed: {e}")
             out = None

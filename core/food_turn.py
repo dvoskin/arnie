@@ -4907,7 +4907,8 @@ async def run(message: str, user, prior: Optional[dict] = None,
               last_assistant: str = "", regulars: Optional[list] = None,
               thread_active: bool = False,
               history: Optional[list] = None,
-              on_first_food=None) -> Optional[dict]:
+              on_first_food=None,
+              scan_bound: bool = False) -> Optional[dict]:
     """The traced entry point (PR #29).
 
     A thin wrapper rather than instrumentation threaded through the body: the
@@ -4950,7 +4951,7 @@ async def run(message: str, user, prior: Optional[dict] = None,
             message, user, prior=prior, day_line=day_line, board=board,
             last_assistant=last_assistant, regulars=regulars,
             thread_active=thread_active, history=history,
-            on_first_food=on_first_food)
+            on_first_food=on_first_food, scan_bound=scan_bound)
     # THE HELD MEAL IS SETTLED AT THE EXIT, NOT INSIDE THE DECISION. Same
     # reasoning as the trace above: this function has a dozen return points and
     # the one that would get missed is the one that mattered — a turn that
@@ -4998,7 +4999,8 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                         regulars: Optional[list] = None,
                         thread_active: bool = False,
                         history: Optional[list] = None,
-                        on_first_food=None) -> Optional[dict]:
+                        on_first_food=None,
+                        scan_bound: bool = False) -> Optional[dict]:
     """Run the interpreter pass. Returns
         {"action": "log"|"update"|"delete"|"commit", "tool_calls": [...],
          "kinds": [...], "say": "...", "note": "...", "follow_up": "..."}
@@ -5180,6 +5182,38 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             content = f"{content}\n\nTODAY'S BOARD (already logged):\n" + "\n".join(lines)
     if day_line:
         content = f"{content}\n\nDay context: {day_line}"
+    # ⛔⛔ A SCANNED TURN IS A FRESH REPORT OF THE SCANNED PRODUCT *(production
+    # 2026-08-19 15:57, the direct P17g canary)*. The iOS producer sends the
+    # raw barcode on a SEPARATE field and puts NO product prose in the
+    # message (P17: a barcode is never reconstructed from prose) — so this
+    # interpreter saw bare "2 servings of Barebells" over an EMPTY board and,
+    # twice in one day, emitted update_food_entry(entry_id=123): a correction
+    # of a row that does not exist, because "2 servings of X" with no verb
+    # reads like an amendment. `_update_call` dropped the phantom id, the plan
+    # was empty, the authority refused. Safe — and the canary cannot pass
+    # through it. The interpreter is told, as a typed INTENT line and never as
+    # product data, that a scan is attached: the message reports the scanned
+    # product, it is a LOG, it is not a correction of anything on the board.
+    # The label's facts still come only from the snapshot at settlement.
+    if scan_bound:
+        # ⚠ INTENT ONLY — NOT A LICENCE TO LOG *(Danny)*. The first wording
+        # said "log it as a NEW item", which told the model to COMMIT and so
+        # overrode the clarification policy. A scan answers IDENTITY (which
+        # product) and nothing else: whether the user ATE it, HOW MUCH, and
+        # any material preparation question are still the interpreter's
+        # ordinary judgment — ask when material, exactly as for an unscanned
+        # message. The one thing the line settles is that this is a fresh
+        # statement about the scanned product, not an amendment of a board row.
+        content = (f"{content}\n\nSCAN ATTACHED: the user scanned a product "
+                   f"barcode with this message. Treat the message as a FRESH "
+                   f"statement about that scanned product — it is NOT a "
+                   f"correction of any entry already on the board, even if the "
+                   f"same food is there; do not emit an update, and do not "
+                   f"guess an entry_id. The scan settles WHICH product; it does "
+                   f"not settle whether they ate it, how much, or how it was "
+                   f"prepared — apply your normal judgment and ask when that is "
+                   f"material. Exact nutrition comes from the scanned label "
+                   f"later, not from you.")
     mode = _mode(user)
 
     # The zero-model-call path. "150g chicken breast" has one reading, and

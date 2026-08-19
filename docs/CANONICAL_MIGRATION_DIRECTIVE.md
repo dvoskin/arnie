@@ -984,6 +984,54 @@ CF5c ONE SCAN AUTHORITY — the guard-placement fix   P17 (before P17g)     BUIL
        The iOS edit sheet is a LEGACY write (ios_edit):
        it cannot be used to produce a canonical
        correction.
+       ⛔ CORRECTION TO THE ABOVE (log read): the 15:57
+       attempt was NOT a rate limit — interp_model=
+       claude-sonnet-5, error=-, the model answered in
+       9 s and returned update_food_entry(entry_id=123):
+       a correction of a PHANTOM row (empty board), for
+       the SECOND time that day (also 13:42). The
+       interpreter did not know a scan was attached: the
+       P17 producer sends the barcode on a separate field
+       and NO product prose, so it saw bare "2 servings
+       of Barebells" over an empty board and read the
+       "of X, no verb" phrasing as an amendment.
+       `_update_call` dropped the phantom id -> empty
+       plan -> UNDECIDABLE -> scan_refuses_delegation
+       (the morning fix, holding). FIX (16b7dfa): a typed
+       INTENT line in the interpreter's user turn when a
+       scan is attached — "a FRESH statement about the
+       scanned product; NOT a correction; do not guess an
+       entry_id; the scan settles WHICH product, not
+       whether they ate it, how much, or how prepared —
+       apply your normal judgment and ask when material"
+       (Danny: not a licence to LOG; the clarification
+       policy still applies). No product prose — the
+       label's facts reach only settlement (P17 boundary
+       intact). Threaded as `scan_bound=` from the
+       planner, keyed on attachment. Suite 9729 passed,
+       PYTEST_EXIT=0, frozen tree 588eede7dd64. The
+       $4.14 credit is STILL to be topped up (13:40 WAS
+       a RateLimitError).
+CF14 A CONSUMPTION ASK ON A SCANNED TURN LOSES THE      P17 / CF9 family     OPEN
+     BINDING *(found reasoning about the 15:57 canary,  (after P17g; before  (non-
+     2026-08-19)*. CF9 holds the snapshot across a       cohort expansion)    blocking
+     QUANTITY ask only (BoundUnpriceable -> durable                           for the
+     operation carrying product_evidence_id). If the                          canary)
+     interpreter asks whether the user ATE the scanned
+     product (no consumption verb — "2 servings of
+     Barebells"), that ask is an ordinary pending
+     question that stashes NO snapshot; the answer
+     arrives as free text with no chip (consumed on the
+     first send) -> unbound -> legacy/unbound ladder.
+     Same dead-end class as CF9, different field.
+     Required: the bound ASK holder generalises to any
+     material field the interpreter asks on a BOUND
+     single-product turn (consumption, preparation),
+     not only quantity — or the scanned turn refuses in
+     words when the policy would ask a non-quantity
+     question, never asks unbound. Canary wording for
+     P17g states consumption ("had 2 servings of
+     Barebells") so the direct proof is reachable.
 CF13 A TYPED, DATE-REFERENCED CORRECTION BECOMES A NEW   legacy correction     OPEN
      DATED LOG *(2026-08-19 14:59, user 26)*:            lane (not this        (non-
      "yesterday's Barebells was 2 servings" -> the       program's; recorded   blocking)
