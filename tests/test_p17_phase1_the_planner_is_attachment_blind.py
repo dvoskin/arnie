@@ -734,10 +734,11 @@ async def test_8_negated_or_questioned_consumption_cannot_become_a_write(
     ("it was 110", "no_fresh_statement"),
     ("around 2", "no_fresh_statement"),
     ("this", "no_fresh_statement"),                          # a deictic alone binds nothing
-    # "this one": no unit follows, so no modifier slot — it refuses as a
-    # non-statement. The brand case that matters ("2 ONE bars") is positional
-    # and lives in test_f3_position_decides_the_role_not_a_global_allowlist.
-    ("this one", "no_fresh_statement"),
+    # "this one": the parser finds no head, so the phrase is abandoned and
+    # `one` is left as an ordinary token — which the label does not say. It
+    # refuses as an identity claim (ONE is a bar brand), not merely as a
+    # non-statement. Either way: no bind.
+    ("this one", "unaccounted_identity"),
 ])
 async def test_f2_bare_numbers_and_bare_deictics_cannot_authorise_a_ready_write(
         db, make_user, message, expected_reason_prefix):
@@ -936,6 +937,88 @@ async def test_f3_the_positional_rule_leaves_ordinary_phrases_alone(
         assert decide_from_plan(plan, _ev(snap)).outcome == BOUND
     finally:
         begin_turn()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message,identity_word", [
+    ("I had 2 bars from ONE", "one"),      # a quantifier word AFTER the unit
+    ("I had 2 bars by ONE", "one"),        # …is not a quantifier, it names one
+])
+async def test_f3_a_quantifier_word_outside_the_quantifier_span_is_identity(
+        db, make_user, message, identity_word):
+    """⛔ THIRD-ROUND BLOCKER, half 1: `one` was accounted GLOBALLY as a
+    quantifier, and because it sits AFTER the unit the positional scan never
+    looked at it — so with every carrier relabelled "Caramel Cashew", "2 bars
+    from ONE" could still bind the wrong scan (ONE is a bar brand). Roles now
+    come from the parse: only a quantifier INSIDE a parsed quantifier span is
+    a quantifier; anywhere else the word must match the verified evidence."""
+    from skills.nutrition.product_acquisition import (DISP_REFUSED,
+                                                      UNDECIDABLE, attach,
+                                                      begin_turn)
+    from core.scan_authority import decide_from_plan
+    snap = await _caramel(db)
+    plan = _plan({"action": "log", "_message": message,
+                  "tool_calls": [_log_op("Caramel Cashew", "2 bars")],
+                  "b1_material": {"staged_items": (), "items": [
+                      {"food": "Caramel Cashew", "amount": 2, "unit": "bar"}]}})
+    begin_turn()
+    attach(_ev(snap))
+    try:
+        d = decide_from_plan(plan, _ev(snap))
+        assert d.outcome == UNDECIDABLE and d.disposition == DISP_REFUSED
+        assert d.reason.startswith("unaccounted_identity"), d.reason
+        assert identity_word in d.reason, d.reason
+    finally:
+        begin_turn()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message", [
+    "a couple of bars", "a few bars", "I had a couple of bars",
+    "half of a bar", "2 of these bars", "I had some of this",
+])
+async def test_f3_a_multiword_quantifier_the_parser_declares_is_never_identity(
+        db, make_user, message):
+    """⛔ THIRD-ROUND BLOCKER, half 2: the positional scan called `couple` and
+    `few` identity modifiers even though the amount parser declared them
+    quantifiers — a valid quantity refused. ONE parser now owns the phrase,
+    so what it parses as the quantifier span is accounted, everywhere."""
+    from skills.nutrition.product_acquisition import BOUND, attach, begin_turn
+    from core.scan_authority import decide_from_plan
+    snap = await _caramel(db)
+    plan = _plan({"action": "log", "_message": message,
+                  "tool_calls": [_log_op("Caramel Cashew", "2 bars")]})
+    begin_turn()
+    attach(_ev(snap))
+    try:
+        assert decide_from_plan(plan, _ev(snap)).outcome == BOUND, message
+    finally:
+        begin_turn()
+
+
+def test_f3_the_parser_is_the_one_seam_for_both_readers():
+    """The amount SIGNAL and the identity ACCOUNTING read the same typed
+    spans — the disagreement that produced both halves of this blocker
+    cannot recur while there is one parser."""
+    from core.scan_authority import (fresh_statement_signal,
+                                     parse_amount_phrases,
+                                     unaccounted_identity)
+    ev = _fake_ev(7, name="Caramel Cashew", brand="Barebells")
+    for message in ("a couple of bars", "a few bars", "2 servings",
+                    "half a bar", "half of a bar", "110 g"):
+        phrases = parse_amount_phrases(message)
+        assert any(p.head_is_unit for p in phrases), message
+        assert fresh_statement_signal(message) == "amount", message
+        # every token the parser accounts for is accounted by the grammar too
+        assert unaccounted_identity(message, ev, set()) == set(), message
+    # a quantifier OUTSIDE a span is not in any quantifier span
+    phrases = parse_amount_phrases("2 bars from one")
+    assert len(phrases) == 1
+    spans = set(phrases[0].quantifier) | set(phrases[0].fillers) | {phrases[0].head}
+    assert 3 not in spans, "the trailing `one` was swallowed into the phrase"
+    # and no phrase at all means no amount
+    assert parse_amount_phrases("half a") == []
+    assert fresh_statement_signal("half a") == ""
 
 
 def test_f3_unit_forms_are_one_structure_and_the_two_derivations_agree():

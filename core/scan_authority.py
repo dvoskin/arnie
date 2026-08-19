@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -226,17 +227,13 @@ had have has ate eat eaten drank drink drinks just only about around roughly
 again more less extra plain
 """.split())
 
-#: A STATED AMOUNT is a value WITH a food unit *(finding 2)* — "2 servings",
-#: "110 g", "half a bar" — never a bare number ("my glucose was 110",
-#: "version 2" are not amounts) and never a bare "some"/"half".
-#: ⛔ ONE STRUCTURE, BOTH DERIVATIONS *(finding 2 of the third round)*. The
-#: unit vocabulary used to be scraped out of the regex TEXT with
+#: ⛔ ONE STRUCTURE, BOTH DERIVATIONS *(second-round finding 2)*. The unit
+#: vocabulary used to be scraped out of the regex TEXT with
 #: `re.findall(r"[a-z]+", ...)`, which shredded `millilit(?:er|re)s?` into
-#: `millilit`, `er`, `re` — so `_AMOUNT_RE` accepted "2 milliliters" while the
-#: grammar called `milliliters` an unaccounted identity word and refused the
-#: same message. The forms are now written ONCE, explicitly, and both the
-#: alternation and the token set are generated from them, so they cannot
-#: drift (a parity test asserts it over every form).
+#: `millilit`, `er`, `re` — so the amount parser accepted "2 milliliters"
+#: while the grammar called `milliliters` an unaccounted identity word and
+#: refused the same message. The forms are declared ONCE, here, and every
+#: consumer reads them (a parity test asserts it over every form).
 _UNIT_FORMS = (
     ("serving", "servings"),
     ("bar", "bars"),
@@ -259,18 +256,127 @@ _UNIT_FORMS = (
     ("tsp", "teaspoon", "teaspoons"),
 )
 _UNIT_TOKENS = frozenset(form for forms in _UNIT_FORMS for form in forms)
-#: longest first, so "milliliters" cannot be shadowed by "ml"
-_UNIT_WORDS = "(?:" + "|".join(
-    sorted(_UNIT_TOKENS, key=lambda w: (-len(w), w))) + ")"
-_NUM_WORDS = (r"(?:\d+(?:[.,]\d+)?|a|an|one|two|three|four|five|six|seven|"
-              r"eight|nine|ten|half|quarter|couple(?:\s+of)?|few)")
-#: ⛔ VALUE + FOOD UNIT, NOTHING ELSE *(finding 2, second round)*. The
-#: no-unit tail (`half a`, `half of`) is gone: it let a producer-generated
-#: ready write reach BOUND on a fragment that states no amount at all. The
-#: main branch already accepts "half a bar" and "half of a bar".
-_AMOUNT_RE = re.compile(
-    rf"\b{_NUM_WORDS}\s+(?:of\s+)?(?:the\s+)?(?:[\w']+\s+)?{_UNIT_WORDS}\b"
-    rf"|\b\d+(?:[.,]\d+)?\s*(?:g|grams?|oz|ml)\b", re.I)
+
+
+#: ⛔ ONE TYPED PARSER FOR THE QUANTITY PHRASE *(third-round blocker)*. The
+#: amount signal and the identity accounting used to be two mechanisms — a
+#: regex and a positional scan — over two vocabularies, so they disagreed in
+#: both directions: "a couple of bars" was an amount to the regex and an
+#: identity claim to the scan (a valid quantity refused), while "2 bars from
+#: ONE" was neither, because a global quantifier list accounted for `one`
+#: wherever it appeared (a wrong bind). Now ONE grammar produces typed spans
+#: and BOTH readers consume it.
+#:
+#:     PHRASE   := QUANTIFIER MODIFIER* HEAD
+#:     QUANTIFIER := [det] CORE [of] [det]
+#:     CORE     := digits | number word | quantity noun
+#:     HEAD     := UNIT | DEICTIC        (a partitive may head on a deictic:
+#:                                        "some of this" is a quantity phrase)
+#:     MODIFIER := anything else — it modifies the head, so it NAMES something
+#:
+#: Only a quantifier INSIDE a parsed quantifier span is accounted as a
+#: quantifier. The same word outside one ("…bars from ONE") is an ordinary
+#: token and must match the verified evidence like any other identity word.
+_QUANT_CORE_WORDS = (
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "dozen",
+    "half", "quarter", "third",
+    "couple", "few", "several", "some", "many", "handful", "bit", "lot",
+    "lots", "plenty", "double", "triple",
+)
+_QUANT_DETERMINERS = frozenset("a an the this that these those my our your "
+                               "his her their its".split())
+_QUANT_CORE = frozenset(_QUANT_CORE_WORDS)
+
+#: how far past the quantifier the head may sit before the phrase is abandoned
+_PHRASE_WINDOW = 5
+
+
+@dataclass(frozen=True)
+class AmountPhrase:
+    """One parsed quantity phrase, as TOKEN INDEX SPANS — the typed result
+    both the amount signal and the identity accounting read."""
+    quantifier: tuple          # indices forming the quantifier span
+    fillers: tuple             # determiners / "of" between quantifier and head
+    modifiers: tuple           # indices that MODIFY the head: identity-bearing
+    head: int                  # index of the unit or deictic head
+    head_is_unit: bool
+
+    @property
+    def accounted(self) -> frozenset:
+        """Indices this phrase accounts for — everything but its modifiers."""
+        return frozenset(self.quantifier) | frozenset(self.fillers) | {self.head}
+
+
+def _is_number(tok: str) -> bool:
+    return tok.replace(",", "").replace(".", "").isdigit()
+
+
+def parse_amount_phrases(message: str) -> list:
+    """Every quantity phrase in the message, as typed spans. Left to right,
+    non-overlapping; a quantifier with no head within the window yields no
+    phrase at all (so a bare number states no amount)."""
+    toks = _positional_tokens(message)
+    units = _unit_vocabulary()
+    phrases: list = []
+    i, n = 0, len(toks)
+    while i < n:
+        start = i
+        quant: list = []
+        j = i
+        if toks[j] in _QUANT_DETERMINERS and j + 1 < n and (
+                _is_number(toks[j + 1]) or toks[j + 1] in _QUANT_CORE):
+            quant.append(j)                                  # leading "a"/"the"
+            j += 1
+        if j < n and (_is_number(toks[j]) or toks[j] in _QUANT_CORE):
+            quant.append(j)
+            j += 1
+        else:
+            i = start + 1
+            continue
+        fillers: list = []
+        if j < n and toks[j] == "of":                        # partitive
+            fillers.append(j)
+            j += 1
+        if j < n and toks[j] in _QUANT_DETERMINERS:
+            # ⛔ A DEICTIC AFTER THE PARTITIVE IS THE HEAD, NOT A FILLER:
+            # "some of this" is a complete quantity phrase whose head is the
+            # pronoun. It is only a filler when a real head follows it
+            # ("2 of these bars").
+            if (toks[j] in _DEICTIC_WORDS
+                    and not any(toks[k] in units
+                                for k in range(j + 1, min(j + 1 + _PHRASE_WINDOW, n)))):
+                phrases.append(AmountPhrase(tuple(quant), tuple(fillers), (),
+                                            j, False))
+                i = j + 1
+                continue
+            fillers.append(j)
+            j += 1
+        # the head, within a short window; everything before it modifies it
+        modifiers: list = []
+        head, head_is_unit = None, False
+        limit = min(j + _PHRASE_WINDOW, n)
+        while j < limit:
+            tok = toks[j]
+            if tok in units:
+                head, head_is_unit = j, True
+                break
+            if tok in _DEICTIC_WORDS:
+                head, head_is_unit = j, False
+                break
+            if _is_number(tok) or tok in _CONSUMPTION_WORDS:
+                break                        # a new clause: this phrase has no head
+            modifiers.append(j)
+            j += 1
+        if head is None:
+            i = start + 1
+            continue
+        phrases.append(AmountPhrase(tuple(quant), tuple(fillers),
+                                    tuple(modifiers), head, head_is_unit))
+        i = head + 1
+    return phrases
+
+
 _NEGATION_RE = re.compile(
     r"\b(didn'?t|did not|haven'?t|have not|hadn'?t|had not|never|not)\s+"
     r"(?:\w+\s+){0,2}(?:had|eat|ate|eaten|have|drink|drank|finish|finished|touch)\b"
@@ -332,7 +438,7 @@ def fresh_statement_signal(message: str) -> str:
             return "consumption"
     except Exception:                                    # noqa: BLE001
         pass
-    if _AMOUNT_RE.search(body):
+    if any(p.head_is_unit for p in parse_amount_phrases(body)):
         return "amount"
     return ""
 
@@ -437,17 +543,6 @@ snacked downed consumed devoured munched grabbed got bought ordered
 #: must not read as a quantity word in a modifier slot.
 _DEICTIC_WORDS = frozenset("this these that those it them".split())
 
-_QUANTIFIER_WORDS = frozenset("""
-a an one two three four five six seven eight nine ten eleven twelve dozen
-half quarter third couple few several some many lots plenty double triple
-""".split())
-
-#: The ONLY tokens allowed to sit between a quantity and its unit without
-#: being read as product identity: determiners and the partitive "of".
-#: Everything else in that slot MODIFIES the noun, which is an identity claim.
-_PHRASE_FILLERS = frozenset(
-    "a an the this that these those my our your his her their its of".split())
-
 def _unit_vocabulary() -> frozenset:
     """The measure words the amount parser owns — the SAME structure the
     regex is built from, never a re-parse of the regex text."""
@@ -455,82 +550,60 @@ def _unit_vocabulary() -> frozenset:
 
 
 def _positional_tokens(text) -> list:
-    """Word tokens INCLUDING numbers, in order — the phrase scanner needs the
+    """Word tokens INCLUDING numbers, in order — the phrase parser needs the
     quantity itself as a position, which `_tokens` deliberately drops."""
     return [t for t in re.findall(r"[\w']+", str(text or "").lower())
             if t and not t.startswith("_")]
 
 
-def identity_modifiers(message: str) -> set:
-    """⛔ POSITION DECIDES THE ROLE *(finding 1 of the third round)*. In a
-    quantity phrase
-
-        QUANTITY  [determiner | of]*  X*  UNIT
-                                      ^^^ the modifier slot
-
-    every X modifies the unit noun, which makes it a PRODUCT-IDENTITY claim
-    whatever the word is — "2 Good Bars", "2 ONE bars", "2 other bars". A
-    token's membership in some global role list cannot exempt it there; only
-    a determiner or the partitive "of" may fill the slot without naming
-    something. Returns the modifier tokens found in every such phrase."""
-    toks = _positional_tokens(message)
-    units = _unit_vocabulary()
-    out: set = set()
-    for i, tok in enumerate(toks):
-        is_quantity = (tok.replace(",", "").replace(".", "").isdigit()
-                       or tok in _QUANTIFIER_WORDS)
-        if not is_quantity:
-            continue
-        # look ahead a short window for the unit this quantity measures
-        for j in range(i + 1, min(i + 6, len(toks))):
-            if toks[j] in units:
-                out |= {t for t in toks[i + 1:j] if t not in _PHRASE_FILLERS
-                        and t not in units}
-                break
-            if toks[j].isdigit() or toks[j] in _CONSUMPTION_WORDS:
-                break                      # a new clause; this phrase has no unit
-    return out
-
-
 def unaccounted_identity(message: str, ev, mention: set) -> set:
-    """⛔ THE POSITIVE GRAMMAR. Tokens of the user's message that NO role
+    """⛔ THE ONE ACCOUNTING. Tokens of the user's message that nothing
     accounts for — an identity claim the producer's labels never verified.
-    Non-empty means the identity-free path must NOT bind: the words name
-    something, and nothing available proves what.
+    Non-empty means the identity-free path must NOT bind.
 
-    Two passes, and a token needs to survive BOTH: the global roles (below)
-    and the POSITIONAL one (`identity_modifiers`), because a word in the
-    modifier slot of a quantity phrase is identity regardless of any global
-    role it might also have."""
-    # ⛔ the EVIDENCE role uses the label's RAW words, not the identity-
-    # discriminating aliases: "does the scanned label itself contain this
-    # word" is a fact, and a generic word the label genuinely carries
-    # ("Protein Bar") must be accounted for by the label, never by a
-    # hand-kept exception list.
+    Roles come from the PARSE, not from global membership:
+
+      · inside a parsed quantifier span, or its fillers, or the head — the
+        phrase accounts for it
+      · a MODIFIER of a head names something: identity, unless the scanned
+        label or a verified mention says that word
+      · everywhere else, a token is accounted only as a function word, a
+        consumption verb, a deictic, a bare number, or a word of the label /
+        of a verified mention
+
+    A quantifier word OUTSIDE a quantifier span gets no quantifier role, so
+    "2 bars from ONE" is an identity claim about ONE, while "a couple of
+    bars" and "a few bars" are quantities the parser itself recognises."""
+    toks = _positional_tokens(message)
+    phrases = parse_amount_phrases(message)
+    accounted_idx: set = set()
+    modifier_idx: set = set()
+    for phrase in phrases:
+        accounted_idx |= set(phrase.accounted)
+        modifier_idx |= set(phrase.modifiers)
+    # the label's own words, raw: "does the scanned label contain this word"
+    # is a fact, so a generic word the label genuinely carries is accounted
+    # by the label and never by an exception list
     aliases = set(_tokens(str(getattr(ev, "brand", "") or "").replace(",", " ")))
     aliases |= set(_tokens(getattr(ev, "product_name", "") or ""))
-    units = _unit_vocabulary()
+
+    def _evidence_says(tok: str) -> bool:
+        return (any(_tok_match(tok, a) for a in aliases)
+                or any(_tok_match(tok, m) for m in (mention or ())))
+
     out: set = set()
-    for tok in _tokens(message):
+    for idx, tok in enumerate(toks):
+        if _evidence_says(tok):
+            continue
+        if idx in modifier_idx:
+            out.add(tok)                      # modifies a head: it names one
+            continue
+        if idx in accounted_idx or _is_number(tok):
+            continue
         stem = _stem(tok)
         if (tok in _FUNCTION_WORDS or stem in _FUNCTION_WORDS
                 or tok in _CONSUMPTION_WORDS or stem in _CONSUMPTION_WORDS
-                or tok in _DEICTIC_WORDS or stem in _DEICTIC_WORDS
-                or tok in _QUANTIFIER_WORDS or stem in _QUANTIFIER_WORDS
-                or tok in units or stem in units):
-            continue
-        if any(_tok_match(tok, a) for a in aliases):
-            continue                                     # the label's own word
-        if any(_tok_match(tok, m) for m in (mention or ())):
-            continue                                     # a verified mention
-        out.add(tok)
-    # POSITIONAL PASS: a modifier of a unit noun is identity even when some
-    # global role would have accounted for it — unless the LABEL or a
-    # verified mention says that word.
-    for tok in identity_modifiers(message):
-        if any(_tok_match(tok, a) for a in aliases):
-            continue
-        if any(_tok_match(tok, m) for m in (mention or ())):
+                or tok in _DEICTIC_WORDS or stem in _DEICTIC_WORDS):
             continue
         out.add(tok)
     return out
