@@ -90,6 +90,13 @@ class VerifiedScanEvidence:
         for name in ("provider", "code", "fingerprint"):
             if not str(getattr(self, name) or "").strip():
                 raise ValueError(f"VerifiedScanEvidence requires {name}")
+        # ⛔ P17 Phase 1 finishing patch (finding 5): EXACT-PRODUCT authority
+        # needs a usable product identity BEFORE classification — a nameless
+        # snapshot must be refused at the authority gate (identity_unknown),
+        # not discovered later by the executor. Brand may be empty; the
+        # product name may not.
+        if not str(self.product_name or "").strip():
+            raise ValueError("VerifiedScanEvidence requires a product identity")
 
     @classmethod
     def from_row(cls, row) -> "VerifiedScanEvidence":
@@ -348,11 +355,25 @@ async def evidence_from_stored_reference(db, snapshot_id, fingerprint: str
 
 
 def decide(decision: ScanDecision) -> ScanDecision:
-    """Record the authority's ruling. Immutable once set for this turn."""
+    """Record the authority's ruling — TERMINAL for this turn *(P17 Phase 1
+    finishing patch, finding 1)*. An identical second decision is idempotent
+    (a retry of the same gate); a DIFFERENT second decision, or any decision
+    after the binding was consumed, is a lifecycle violation and REFUSES —
+    it would let a later stage overwrite the ruling execution already read."""
     st = SCAN_TURN.get()
     if st is None:
         st = ScanTurnState()
         SCAN_TURN.set(st)
+    if st.decision is not None:
+        if st.decision == decision and not st.consumed:
+            return st.decision                       # idempotent retry
+        from core.scan_authority import ScanAuthorityRefusal
+        raise ScanAuthorityRefusal(
+            "decision_conflict",
+            f"a decision is already recorded for this turn "
+            f"({st.decision.outcome}/{st.decision.disposition}"
+            f"{', consumed' if st.consumed else ''}) and cannot be replaced "
+            f"by {decision.outcome}/{decision.disposition}")
     st.decision = decision
     return decision
 
@@ -537,7 +558,13 @@ async def acquire_product_evidence(db, barcode, *, serving_unit: str = "",
             if row is not None:
                 logger.info("event=product_acquired code=%s snapshot=%s "
                             "rev=%s", code, row.id, row.provider_revision)
-                _LAST_ACQUIRED.set(VerifiedScanEvidence.from_row(row))
+                try:
+                    _LAST_ACQUIRED.set(VerifiedScanEvidence.from_row(row))
+                except ValueError:
+                    # a snapshot without a usable identity: nothing stashed;
+                    # the bare id attaches, verify() refuses identity_unknown
+                    logger.warning("acquisition: snapshot %s has no usable "
+                                   "identity — evidence not stashed", row.id)
                 # ⭐ P17-UA — deterministic unit enrichment AT ACQUISITION:
                 # if the record's structured serving/quantity text names a
                 # consumer unit (sources 2/3), persist that fact beside the
@@ -571,6 +598,10 @@ async def acquire_product_evidence(db, barcode, *, serving_unit: str = "",
     if existing is not None:
         logger.info("event=product_acquired code=%s snapshot=%s source=local",
                     code, existing.id)
-        _LAST_ACQUIRED.set(VerifiedScanEvidence.from_row(existing))
+        try:
+            _LAST_ACQUIRED.set(VerifiedScanEvidence.from_row(existing))
+        except ValueError:
+            logger.warning("acquisition: snapshot %s has no usable identity — "
+                           "evidence not stashed", existing.id)
         return int(existing.id)
     return None

@@ -72,7 +72,8 @@ def _outcome(plan, ev):
     ("2 servings", "Caramel Cashew", "fresh_amount"),
     ("had 2 barebells caramel cashew", "Barebells Caramel Cashew", "mention_same"),
     ("I had a protein bar", "protein bar", "fresh_consumption"),
-    ("this one", "bar", "fresh_deictic"),
+    ("I had this", "bar", "fresh_consumption"),
+    ("110 g of this", "bar", "fresh_amount"),
 ])
 async def test_1_a_fresh_statement_about_the_scanned_product_binds(
         db, make_user, message, subject, why):
@@ -397,9 +398,12 @@ async def test_4_a_hidden_deferred_subject_prevents_binding(db, make_user):
 
 @pytest.mark.asyncio
 async def test_4_twin_the_same_plan_without_the_hidden_subject_binds(db, make_user):
+    """The twin drops the hidden subject from BOTH the plan and the words —
+    a message still naming soup over a plan that dropped it is finding 3's
+    unattributed-identity case and now refuses, correctly."""
     from skills.nutrition.product_acquisition import BOUND, attach, begin_turn
     snap = await _caramel(db)
-    msg = "I had 2 servings of this and some soup"
+    msg = "I had 2 servings of this"
     plan = _plan({"action": "ask", "_message": msg,
                   "tool_calls": [_log_op("Caramel Cashew", "2 servings")],
                   "deferred_calls": [], "questions": []})
@@ -693,6 +697,195 @@ async def test_8_negated_or_questioned_consumption_cannot_become_a_write(
         assert d.reason == why, d.reason
     finally:
         begin_turn()
+
+
+# ═════ 8b — FINDING-CLOSURE RED TWINS (P17 Phase 1 finishing patch) ════════
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message,expected_reason_prefix", [
+    ("my glucose was 110", "unattributed_identity_words"),   # a number is not an amount
+    ("version 2", "unattributed_identity_words"),
+    # ⛔ the residual check must not MASK the amount rule: these carry a bare
+    # number and NO residual identity word, so only the value+unit rule
+    # stands between them and a bind (caught green in the first sweep)
+    ("it was 110", "no_fresh_statement"),
+    ("around 2", "no_fresh_statement"),
+    ("this", "no_fresh_statement"),                          # a deictic alone binds nothing
+    ("this one", "no_fresh_statement"),
+])
+async def test_f2_bare_numbers_and_bare_deictics_cannot_authorise_a_ready_write(
+        db, make_user, message, expected_reason_prefix):
+    """⛔ finding 2: the producer hallucinates a ready log from a message that
+    states neither consumption nor a real amount (value + food unit). The
+    write is refused, whatever the producer emitted."""
+    from skills.nutrition.product_acquisition import (DISP_REFUSED,
+                                                      UNDECIDABLE, attach,
+                                                      begin_turn)
+    from core.scan_authority import decide_from_plan
+    snap = await _caramel(db)
+    plan = _plan({"action": "log", "_message": message,
+                  "tool_calls": [_log_op("Caramel Cashew", "1 bar")]})
+    begin_turn()
+    attach(_ev(snap))
+    try:
+        d = decide_from_plan(plan, _ev(snap))
+        assert d.outcome == UNDECIDABLE and d.disposition == DISP_REFUSED
+        assert d.reason.startswith(expected_reason_prefix), d.reason
+    finally:
+        begin_turn()
+
+
+@pytest.mark.asyncio
+async def test_f3_a_producer_that_relabels_every_carrier_cannot_reach_the_amount_path(
+        db, make_user):
+    """⛔ finding 3 CLOSED, strictly: the user wrote "Barebells Salty Peanut";
+    the producer relabelled EVERY carrier "Caramel Cashew", erasing the words
+    the conflict check needs. The residual identity words refuse the
+    identity-free amount path: UNDECIDABLE, naming the unattributed words."""
+    from skills.nutrition.product_acquisition import (DISP_REFUSED,
+                                                      UNDECIDABLE, attach,
+                                                      begin_turn)
+    from core.scan_authority import decide_from_plan
+    snap = await _caramel(db)
+    msg = "I had 2 Barebells Salty Peanut bars"
+    plan = _plan({"action": "log", "_message": msg,
+                  "tool_calls": [_log_op("Caramel Cashew", "2 bars")],
+                  "b1_material": {"staged_items": (), "items": [
+                      {"food": "Caramel Cashew", "amount": 2, "unit": "bar"}]}})
+    begin_turn()
+    attach(_ev(snap))
+    try:
+        d = decide_from_plan(plan, _ev(snap))
+        assert d.outcome == UNDECIDABLE and d.disposition == DISP_REFUSED
+        assert d.reason.startswith("unattributed_identity_words"), d.reason
+        assert "salty" in d.reason and "peanut" in d.reason
+    finally:
+        begin_turn()
+
+
+def test_f4_the_tokenizer_is_unicode_and_matching_is_exact_or_stemmed():
+    """⛔ finding 4: non-Latin identity words survive tokenisation (the
+    `normalize_name`-empties-Cyrillic lesson), and no prefix fuzz equates
+    kind/kindly or quest/question."""
+    from core.scan_authority import (_tok_match, _tokens, compare_mention,
+                                     verified_mention)
+    assert _tokens("Барбеллс Солёный Арахис 55") == ["барбеллс", "солёный", "арахис"]
+    ev = _fake_ev(7, name="Барбеллс Солёный Арахис", brand="Барбеллс",
+                  code="4600000000001")
+    mention = verified_mention(["Барбеллс Солёный Арахис"],
+                               "съел 2 барбеллс солёный арахис")
+    assert mention == {"барбеллс", "солёный", "арахис"}
+    assert compare_mention(mention, ev) == "same"
+    assert not _tok_match("kind", "kindly")
+    assert not _tok_match("quest", "question")
+    assert _tok_match("bars", "bar") and _tok_match("cashews", "cashew")
+
+
+def test_f5_verified_evidence_requires_a_usable_product_identity():
+    """⛔ finding 5: exact-product authority needs a product identity BEFORE
+    classification — a nameless snapshot refuses at construction, so the gate
+    (not the executor) refuses the turn as identity_unknown."""
+    from skills.nutrition.product_acquisition import VerifiedScanEvidence
+    with pytest.raises(ValueError):
+        VerifiedScanEvidence(snapshot_id=7, provider="off", code="70004199",
+                             revision="1", fingerprint="fp", brand="B",
+                             product_name="")
+    with pytest.raises(ValueError):
+        VerifiedScanEvidence(snapshot_id=7, provider="off", code="70004199",
+                             revision="1", fingerprint="fp", brand="B",
+                             product_name="   ")
+
+
+@pytest.mark.asyncio
+async def test_f5_a_nameless_snapshot_refuses_at_the_gate_not_the_executor(
+        db, make_user):
+    from db.models import ProductEvidenceRecord
+    from skills.nutrition.product_acquisition import (UNDECIDABLE, attach,
+                                                      begin_turn, verify)
+    from core.scan_authority import decide_from_plan
+    snap = await _caramel(db)
+    row = await db.get(ProductEvidenceRecord, snap.id)
+    row.product_name = ""
+    await db.commit()
+    plan = _plan({"action": "log", "_message": "I had 2 servings of this.",
+                  "tool_calls": [_log_op("bar", "2 servings")]})
+    begin_turn()
+    attach(snap.id)                                     # bare id
+    try:
+        ev = await verify(db)
+        assert ev is None                               # cannot be verified
+        d = decide_from_plan(plan, ev)
+        assert d.outcome == UNDECIDABLE
+        assert d.reason.startswith("identity_unknown:partial"), d.reason
+    finally:
+        begin_turn()
+
+
+def test_f1_a_different_second_decision_refuses_and_an_identical_one_is_idempotent():
+    """⛔ finding 1: decide() is terminal. The same ScanDecision again is an
+    idempotent retry; a DIFFERENT one refuses instead of overwriting the
+    ruling execution already read."""
+    from core.scan_authority import ScanAuthorityRefusal
+    from skills.nutrition.product_acquisition import (BOUND, DISP_BOUND,
+                                                      DISP_DISCARDED,
+                                                      MULTI_ITEM,
+                                                      ScanDecision, attach,
+                                                      begin_turn, decide)
+    ev = _fake_ev(7, name="Caramel Cashew", brand="Barebells")
+    begin_turn()
+    attach(ev)
+    first = decide(ScanDecision(BOUND, ev, DISP_BOUND, "mention_same"))
+    assert decide(ScanDecision(BOUND, ev, DISP_BOUND, "mention_same")) is first
+    with pytest.raises(ScanAuthorityRefusal) as ei:
+        decide(ScanDecision(MULTI_ITEM, ev, DISP_DISCARDED, "multi=2"))
+    assert ei.value.reason == "decision_conflict"
+
+
+def test_f1_consumed_authority_is_spent():
+    """⛔ finding 1: after consume_binding(), is_bound() is False and
+    require_bound_evidence() refuses — consumed authority cannot authorise a
+    second settlement, and a decision after consumption refuses too."""
+    from core.scan_authority import (ScanAuthorityRefusal, decide_from_plan,
+                                     is_bound, require_bound_evidence)
+    from skills.nutrition.product_acquisition import (attach, begin_turn,
+                                                      consume_binding)
+    ev = _fake_ev(7, name="Caramel Cashew", brand="Barebells")
+    plan = _plan({"action": "log", "_message": "I had 2 servings of this",
+                  "tool_calls": [_log_op("bar", "2 servings")]})
+    begin_turn()
+    attach(ev)
+    assert decide_from_plan(plan, ev).outcome == "bound"
+    assert is_bound() and require_bound_evidence() == ev
+    consume_binding()
+    assert not is_bound()
+    with pytest.raises(ScanAuthorityRefusal) as ei:
+        require_bound_evidence()
+    assert ei.value.reason == "consumed"
+
+
+def test_f1_a_failed_claim_clears_the_state_and_never_continues(monkeypatch):
+    """⛔ finding 1: the entrypoint's claim helper CLEARS on failure (the turn
+    runs unscanned over fresh state) and refuses by propagation when even the
+    clear fails — it never continues over unclaimed state."""
+    import core.scan_authority as sa
+    import skills.nutrition.product_acquisition as pa
+    from core.turns.entrypoint import _claim_scan_state
+    pa.begin_turn()
+    pa.attach(_fake_ev(7))
+    assert sa.scan_attached()
+
+    def boom(turn_id):
+        raise RuntimeError("contextvar corrupt")
+
+    monkeypatch.setattr(sa, "claim", boom)
+    _claim_scan_state("ios:t1")
+    assert not sa.scan_attached(), "claim failed but the stale state survived"
+
+    # and when the CLEAR itself fails, the turn refuses by propagation
+    monkeypatch.setattr(pa, "begin_turn",
+                        lambda: (_ for _ in ()).throw(RuntimeError("dead")))
+    with pytest.raises(RuntimeError):
+        _claim_scan_state("ios:t2")
 
 
 # ═════ 9 — THE ATTACHMENT AUTHORITY: IDENTICAL DEDUPES, DIFFERENT REFUSES ══

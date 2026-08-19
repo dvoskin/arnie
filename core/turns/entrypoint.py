@@ -133,12 +133,10 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     # ⛔ P17 closure Phase 1 — REQUEST-SCOPED SCAN STATE. The holder ingress
     # created is claimed for THIS request's turn id; a holder still claimed by
     # an earlier turn (an ingress that forgot `begin_turn`) is stale and is
-    # discarded unread. Nothing below can see another request's scan.
-    try:
-        from core.scan_authority import claim as _claim_scan
-        _claim_scan(getattr(request, "turn_id", "") or "")
-    except Exception:                                    # noqa: BLE001
-        logger.warning("scan state: claim failed", exc_info=True)
+    # discarded unread. ⛔ finding 1: a claim FAILURE must clear or refuse,
+    # never continue — continuing would run the turn over scan state nothing
+    # vouches for.
+    _claim_scan_state(getattr(request, "turn_id", "") or "")
     from core.request_trace import RequestTrace, active as _trace_active
     from core.request_trace import current_trace
     from core.turn_identity import CURRENT_TURN_ID
@@ -411,6 +409,23 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     return _result_from_state(state, legacy_kwargs)
 
 
+def _claim_scan_state(turn_id: str) -> None:
+    """Claim the request-scoped scan holder — and on ANY failure, CLEAR it
+    *(P17 Phase 1 finishing patch, finding 1)*. A turn must never continue
+    over scan state it could not claim: cleared, the turn runs as unscanned
+    (an attached scan is lost loudly, in the log); unclearable, the turn
+    refuses by propagation rather than proceeding on stale authority."""
+    try:
+        from core.scan_authority import claim
+        claim(turn_id)
+        return
+    except Exception:                                    # noqa: BLE001
+        logger.warning("scan state: claim failed — clearing; this turn runs "
+                       "unscanned", exc_info=True)
+    from skills.nutrition.product_acquisition import begin_turn
+    begin_turn()                       # raises through = the turn refuses
+
+
 def _refusal_copy(exc) -> str:
     """User-grade copy for a canonical correction refusal, by KIND. Honest and
     bounded: says what did not happen and what would make it happen. Never
@@ -458,6 +473,12 @@ def _refusal_copy(exc) -> str:
             return ("Two different products came through on that message, so "
                     "I didn't log anything. Scan one at a time and tell me "
                     "the amount.")
+        if exc.reason == "consumed":
+            return ("That scan was already used on this message, so I didn't "
+                    "log it twice. If you had more, tell me the amount.")
+        if exc.reason == "decision_conflict":
+            return ("Something went wrong reading that scan, so I didn't "
+                    "change anything. Send it once more with the amount.")
         if exc.reason == "no_fresh_statement":
             return ("Got the scanned product. I haven't logged it — tell me "
                     "if you had it and how much, and I'll log it from the "

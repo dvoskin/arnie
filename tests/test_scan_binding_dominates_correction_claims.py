@@ -466,14 +466,15 @@ async def test_p1_an_unavailable_snapshot_identity_refuses_with_zero_write_and_n
     before the predicate: zero rows, zero events, legacy never invoked, the
     board row byte-identical.
 
-    ⛔ P17 CLOSURE PHASE 1 moved WHERE two of the three are caught, not
-    whether. The authority now compares the user's words with the snapshot's
-    own identity, so a snapshot it cannot read at all (missing, unreadable)
-    is `identity_unknown` -> UNDECIDABLE -> `ScanAuthorityRefusal`, refused at
-    the gate. A snapshot that reads but has no usable NAME still binds (the
-    brand identifies it) and is caught one layer later, by the identity
-    helper, as `ScanBoundIdentityUnavailable`. Both are fail-closed, and the
-    zero-mutation assertions below are identical for all three."""
+    ⛔ P17 CLOSURE PHASE 1 (+ the finishing patch, finding 5) moved WHERE
+    these are caught, not whether: ALL THREE now refuse at the GATE. A
+    snapshot that cannot be read (missing, unreadable) fails verification;
+    one that reads but has no usable product name cannot even construct
+    VerifiedScanEvidence (exact-product authority requires a product
+    identity) — every arm is `identity_unknown` -> UNDECIDABLE ->
+    `ScanAuthorityRefusal` before execution. The zero-mutation assertions
+    below are identical for all three; the executor's nameless raise remains
+    as a backstop."""
     from db.models import FoodEntry, ProductEvidenceRecord
     from sqlalchemy import select
     from core.scan_authority import ScanAuthorityRefusal
@@ -504,17 +505,12 @@ async def test_p1_an_unavailable_snapshot_identity_refuses_with_zero_write_and_n
             return await real_get(model, ident, *a, **k)
         monkeypatch.setattr(db, "get", broken_get)
 
-    expected = (ScanBoundIdentityUnavailable if failure == "nameless"
-                else ScanAuthorityRefusal)
-    with pytest.raises(expected) as ei:
+    with pytest.raises(ScanAuthorityRefusal) as ei:
         await _run(db, user, log, "2 servings of Barebells bars", snapshot_id,
                    _the_misrouted_plan(existing), monkeypatch, turn_id=f"t:p1-{failure}")
     if failure == "unreadable":
         monkeypatch.undo()
-    if failure == "nameless":
-        assert ei.value.placeholder == "Barebells Salty Peanut Protein Bar"
-    else:
-        assert ei.value.reason == "identity_unknown", ei.value.reason
+    assert ei.value.reason == "identity_unknown", ei.value.reason
     assert "settlement_route" not in caplog.text          # refused BEFORE the predicate
     assert "route=ratio" not in caplog.text
     assert await _row_bytes(db, existing) == before

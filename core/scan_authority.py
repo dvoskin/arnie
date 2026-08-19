@@ -155,9 +155,12 @@ def disposition() -> Optional[str]:
 
 
 def is_bound() -> bool:
-    """The ONE question, one answer. Never re-derived from operation shape."""
+    """The ONE question, one answer. Never re-derived from operation shape.
+    ⛔ CONSUMED AUTHORITY IS SPENT *(finding 1)*: once the binding settled or
+    was handed to an ask, nothing later in the turn is bound any more."""
     st = _state()
     return bool(st is not None and not st.attachment_conflict
+                and not st.consumed
                 and st.decision is not None and st.decision.is_bound)
 
 
@@ -170,6 +173,12 @@ def require_bound_evidence():
         raise ScanAuthorityRefusal("attachment_conflict", st.attachment_conflict)
     if st is None or st.decision is None:
         raise ScanAuthorityRefusal("undecidable", "no binding decision on this turn")
+    if st.consumed:
+        # ⛔ finding 1: consumed authority cannot be handed out again — the
+        # settlement or the durable ask already holds it
+        raise ScanAuthorityRefusal(
+            "consumed", "this turn's binding was already settled or handed "
+            "to an ask; the evidence cannot authorise a second settlement")
     d = st.decision
     if not d.is_bound or d.evidence is None:
         raise ScanAuthorityRefusal(
@@ -217,12 +226,18 @@ had have has ate eat eaten drank drink drinks just only about around roughly
 again more less extra plain
 """.split())
 
-_DEICTIC_RE = re.compile(r"\b(this|these|that one|those|here'?s|one of these)\b", re.I)
+#: A STATED AMOUNT is a value WITH a food unit *(finding 2)* — "2 servings",
+#: "110 g", "half a bar" — never a bare number ("my glucose was 110",
+#: "version 2" are not amounts) and never a bare "some"/"half".
+_UNIT_WORDS = (r"(?:servings?|bars?|pieces?|g|grams?|oz|ounces?|ml|"
+               r"millilit(?:er|re)s?|cups?|slices?|packs?|packets?|bottles?|"
+               r"cans?|scoops?|squares?|tbsp|tsp|tablespoons?|teaspoons?)")
+_NUM_WORDS = (r"(?:\d+(?:[.,]\d+)?|a|an|one|two|three|four|five|six|seven|"
+              r"eight|nine|ten|half|quarter|couple(?:\s+of)?|few)")
 _AMOUNT_RE = re.compile(
-    r"(\b\d+(?:[.,]\d+)?\b|\b(?:a|an|one|two|three|four|five|six|seven|eight|"
-    r"nine|ten|half|quarter|couple|few|some)\b\s+(?:of\s+)?(?:\w+\s+)?"
-    r"(?:servings?|bars?|pieces?|g|grams?|oz|ounces?|ml|cups?|slices?|"
-    r"packs?|packets?|bottles?|cans?)\b|\bhalf\b|\bsome\b)", re.I)
+    rf"\b{_NUM_WORDS}\s+(?:of\s+)?(?:the\s+)?(?:[\w']+\s+)?{_UNIT_WORDS}\b"
+    rf"|\b\d+(?:[.,]\d+)?\s*(?:g|grams?|oz|ml)\b"
+    rf"|\bhalf\s+(?:a|an|the|of)\b", re.I)
 _NEGATION_RE = re.compile(
     r"\b(didn'?t|did not|haven'?t|have not|hadn'?t|had not|never|not)\s+"
     r"(?:\w+\s+){0,2}(?:had|eat|ate|eaten|have|drink|drank|finish|finished|touch)\b"
@@ -236,8 +251,13 @@ _CORRECTION_RE = re.compile(
 
 
 def _tokens(text) -> list:
-    return [t for t in re.findall(r"[a-z0-9']+", str(text or "").lower())
-            if t and not t.isdigit()]
+    r"""Unicode-aware word tokens *(finding 4)* — `\w` is Unicode in Python 3,
+    so non-Latin identity words survive (the food-memory `normalize_name`
+    lesson: an ASCII class silently EMPTIES Cyrillic identity). Pure digits
+    are dropped; underscores are not words."""
+    return [t for t in re.findall(r"[\w']+", str(text or "").lower())
+            if t and t != "_" and not t.replace("_", "").isdigit()
+            and not t.startswith("_")]
 
 
 def _stem(t: str) -> str:
@@ -252,13 +272,10 @@ def _stem(t: str) -> str:
 
 
 def _tok_match(a: str, b: str) -> bool:
-    if a == b:
-        return True
-    sa, sb = _stem(a), _stem(b)
-    if sa == sb:
-        return True
-    shorter, longer = (sa, sb) if len(sa) <= len(sb) else (sb, sa)
-    return len(shorter) >= 4 and longer.startswith(shorter)
+    """Exact, or exact after plural/possessive normalisation — NOTHING
+    fuzzier *(finding 4)*: prefix identity equated kind/kindly and
+    quest/question, which is not identity."""
+    return a == b or _stem(a) == _stem(b)
 
 
 def _content(words) -> set:
@@ -268,8 +285,11 @@ def _content(words) -> set:
 
 def fresh_statement_signal(message: str) -> str:
     """'' when the words carry no fresh product statement; else which typed
-    signal they carry: 'amount' | 'consumption' | 'deictic'. Bare "yes",
-    "thanks", an emoji or empty text carry none."""
+    signal they carry: 'consumption' | 'amount'. Bare "yes", "thanks", an
+    emoji or empty text carry none — and *(finding 2)* neither does a bare
+    DEICTIC: "this" alone cannot authorise a producer-generated write; it
+    needs consumption language or a real amount beside it ("I had this",
+    "2 servings of this")."""
     body = str(message or "").strip()
     if not body:
         return ""
@@ -281,8 +301,6 @@ def fresh_statement_signal(message: str) -> str:
         pass
     if _AMOUNT_RE.search(body):
         return "amount"
-    if _DEICTIC_RE.search(body):
-        return "deictic"
     return ""
 
 
@@ -324,6 +342,30 @@ def evidence_aliases(ev) -> tuple:
     brand = _content(_tokens(str(ev.brand or "").replace(",", " ")))
     product = _content(_tokens(ev.product_name)) - brand
     return brand, product
+
+
+#: words that are never product identity, over and above _GENERIC_WORDS —
+#: used ONLY by `identity_residual` (never by the mention/alias comparison,
+#: where "morning" may genuinely be a product word)
+_NON_IDENTITY_EXTRA = frozenset("""
+i we you he she they me us was were is are am be been being did do does done
+doing not no dont didnt cant wont isnt wasnt arent im ive id
+after before during while then later now today tonight yesterday tomorrow
+morning afternoon evening right really very too also still already again
+please thanks thank ok okay yeah yes sure cool nice great awesome alright
+perfect good fine got gotcha word bet lol haha nope nah
+""".split())
+
+
+def identity_residual(message: str) -> set:
+    """⛔ finding 3 — the message's content words that NOTHING accounts for:
+    not generic, not consumption/amount vocabulary, not function words. If
+    this is non-empty and no producer label verified against the message, the
+    user named SOMETHING and the producer erased it — the identity-free
+    amount path must NOT bind; the turn is UNDECIDABLE."""
+    toks = _content(_tokens(_AMOUNT_RE.sub(" ", str(message or ""))))
+    return {t for t in toks
+            if t not in _NON_IDENTITY_EXTRA and _stem(t) not in _NON_IDENTITY_EXTRA}
 
 
 SAME, OTHER, CONFLICT = "same", "other", "conflict"
@@ -487,7 +529,15 @@ def _decide_single(sub, plan, message: str, ev):
                                 f"mention={' '.join(sorted(mention))}")
         return ScanDecision(EXPLICIT_OTHER_FOOD, ev, DISP_DISCARDED,
                             f"mention={' '.join(sorted(mention))}")
-    # no verifiable mention: the words must carry a fresh product statement
+    # no verifiable mention. ⛔ finding 3: if the user's words still carry
+    # identity-class content NOTHING attributed (a product name every carrier
+    # relabelled away), the identity-free path must not bind on a guess.
+    residual = identity_residual(message)
+    if residual:
+        return ScanDecision(UNDECIDABLE, ev, DISP_REFUSED,
+                            f"unattributed_identity_words="
+                            f"{' '.join(sorted(residual))}")
+    # identity-free: the words must carry a fresh product statement
     signal = fresh_statement_signal(message)
     if signal:
         return ScanDecision(BOUND, ev, DISP_BOUND, f"fresh_{signal}")
@@ -517,6 +567,8 @@ def _refusal_reason(d) -> str:
             return r
         if r == "no_fresh_statement":
             return "no_fresh_statement"
+        if r.startswith("unattributed_identity_words"):
+            return "no_fresh_statement"          # same user story: name+amount
         return "undecidable"
     return d.outcome
 
