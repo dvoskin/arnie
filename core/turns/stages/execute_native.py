@@ -519,6 +519,13 @@ class NativeExecutionStage:
                            "without its plan")
         sub = quantity_only_subject(plan)
         if sub is None:
+            subs = tuple(getattr(plan, "food_subjects", ()) or ())
+            if len(subs) == 1 and not getattr(subs[0], "consumed", False):
+                # CF5c-B2: the ONE reason distinguished by name — the user
+                # named or scanned a product and did not say they ate it
+                raise ScanAuthorityRefusal(
+                    "no_consumption",
+                    "a scanned product with no statement that it was eaten")
             raise ScanAuthorityRefusal(
                 "no_quantity_ask",
                 "a scanned turn produced no operation and no answerable "

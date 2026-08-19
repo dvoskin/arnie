@@ -53,6 +53,8 @@ import logging
 from decimal import Decimal
 from typing import Optional
 
+from sqlalchemy.exc import IntegrityError
+
 logger = logging.getLogger(__name__)
 
 
@@ -150,12 +152,17 @@ async def open_bound_quantity_ask(db, *, user, item: dict, coverage,
     """Open the ask. Returns a `CanonicalAsk` (durable operation persisted,
     snapshot on the stored item) or None when the label offers nothing to
     ask with (no serving mass) — the caller then keeps the plain refusal.
-    NEVER RAISES into the turn (the caller is `NativeExecutionStage.run`,
-    which A8 forbids from holding a handler): a failure here is "no ask",
-    logged, and the refusal stands."""
+    Ordinary failure is "no ask", logged, and the plain refusal stands (the
+    caller is `NativeExecutionStage.run`, which A8 forbids from holding a
+    handler). ⛔ `BoundAskNotSingular` PROPAGATES *(CF5c-B3)*: it means a
+    second ask could not be prevented, and "keep the plain refusal" would
+    leave an unknown number of awaiting operations behind it — the entrypoint
+    answers it in words, nothing is written."""
     try:
         return await _open(db, user=user, item=item, coverage=coverage,
                            turn_id=turn_id, channel=channel, locale=locale)
+    except BoundAskNotSingular:
+        raise
     except Exception:                                    # noqa: BLE001
         logger.warning("event=bound_ask_failed turn=%s — keeping the plain "
                        "refusal", turn_id, exc_info=True)
@@ -200,21 +207,41 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
         return None
     staged_item = staged[0]
 
-    # ⭐ A NEW SCAN SUPERSEDES AN OPEN ASK. Two awaiting operations for one
-    # user would race for the next answer; the newer scan is the user's
-    # current intent, so the older ask is cancelled (durably, with reason)
-    # before this one is persisted. Nothing is written for the old ask.
-    try:
-        from core.b1_quantity_operation import cancel, owning
-        prior = await owning(db, user)
-        if prior is not None and prior.awaiting:
-            await cancel(db, owned=prior, user=user,
-                         reason="superseded by a new scan")
-            logger.info("event=bound_ask_superseded old=%s", prior.operation_id)
-    except Exception:                                    # noqa: BLE001
-        logger.warning("could not check/cancel a prior ask", exc_info=True)
-
     operation_id = _operation_id_for(user, turn_id)
+
+    # ⛔⛔ CF5c-B3 — IDEMPOTENT AND SINGLE-OWNER *(Danny, 2026-08-19)*. Three
+    # defects lived here:
+    #   · the check-and-cancel of a prior ask sat in a bare `except` that
+    #     CONTINUED, so a failure to supersede still opened a second ask —
+    #     two awaiting operations racing for the next answer;
+    #   · a same-turn RETRY found ITS OWN ask as the "prior", cancelled it,
+    #     and then collided on the same operation id;
+    #   · nothing at the database enforced "at most one awaiting ask per
+    #     user", so two workers could each pass the check and both insert.
+    # Now:
+    #   1. the SAME operation already open  -> return THAT ask (idempotent).
+    #   2. a DIFFERENT awaiting ask         -> supersede it; if that fails,
+    #                                          REFUSE — never open beside it.
+    #   3. the insert races and loses       -> reload and return the winner.
+    #   4. the DB holds a partial unique index: one active awaiting operation
+    #      per (user, domain) — the constraint the code was pretending to be.
+    from core.b1_quantity_operation import owning
+    try:
+        prior = await owning(db, user)
+    except Exception as exc:                             # noqa: BLE001
+        # ownership UNKNOWN is not "no prior": opening beside an unreadable
+        # ask is the exact race this exists to close
+        raise BoundAskNotSingular(
+            f"could not read the open operation: {type(exc).__name__}") from exc
+    if prior is not None and prior.awaiting and prior.operation_id == operation_id:
+        logger.info("event=bound_ask_idempotent operation=%s — same turn, "
+                    "same ask", operation_id)
+        return _ask_from_owned(prior, channel=channel, locale=locale)
+    # a DIFFERENT prior is released by `open_operation` itself — the ONE
+    # insert site for every B-1 ask, bound or ordinary — so supersede has one
+    # owner (`_release_prior_awaiting`); a failure there is
+    # PriorAskNotReleased, mapped below to this module's refusal.
+
     base_unit = await _label_base_unit(db, pid)
     field_probe = qc.quantity_field(operation_id=operation_id, revision=0,
                                     item=staged_item)
@@ -231,10 +258,30 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
                                stated_quantity=quantity_text or "that",
                                base_unit=base_unit),
         ask_preparation=False)
+    from core.b1_quantity_operation import PriorAskNotReleased
     try:
         await open_operation(db, user=user, interpreter_item=interpreter_item,
                              interaction=interaction, turn_id=turn_id,
                              cohort="scan_bound", locale=locale)
+    except PriorAskNotReleased as exc:
+        raise BoundAskNotSingular(f"could not supersede: {exc}") from exc
+    except IntegrityError:
+        # LOST THE RACE: another worker opened this user's ask between our
+        # check and our insert (the partial unique index, or the operation_id
+        # key). The winner is the ask; return IT, never a second one.
+        await db.rollback()
+        try:
+            winner = await owning(db, user)
+        except Exception as exc:                         # noqa: BLE001
+            raise BoundAskNotSingular(
+                f"lost the insert race and could not read the winner: "
+                f"{type(exc).__name__}") from exc
+        if winner is None or not winner.awaiting:
+            raise BoundAskNotSingular("lost the insert race to an ask that "
+                                      "is no longer awaiting")
+        logger.info("event=bound_ask_race_lost mine=%s winner=%s",
+                    operation_id, winner.operation_id)
+        return _ask_from_owned(winner, channel=channel, locale=locale)
     except Exception:                                    # noqa: BLE001
         logger.warning("event=bound_ask_not_persisted turn=%s — keeping the "
                        "plain refusal", turn_id, exc_info=True)
@@ -245,3 +292,24 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
     return CanonicalAsk(operation_id=operation_id, revision=0,
                         interaction=interaction, locale=locale,
                         cohort="scan_bound", capability=channel or "")
+
+
+class BoundAskNotSingular(Exception):
+    """CF5c-B3 — the bound ask could not be made the ONE awaiting operation
+    for this user: the open operation could not be read, a prior ask could
+    not be superseded, or the insert race resolved to nothing. Non-mutating;
+    the caller answers it as a refusal rather than opening a second ask
+    beside an unknown."""
+
+
+def _ask_from_owned(owned, *, channel: str, locale: str):
+    """The CanonicalAsk for an operation that already exists — the idempotent
+    return and the race-loser's return. Rebuilt from the stored interaction so
+    the wire renders the SAME question and the SAME option ids."""
+    from core.b1_quantity_operation import CanonicalAsk
+    row = getattr(owned, "row", None)
+    return CanonicalAsk(operation_id=owned.operation_id,
+                        revision=int(getattr(row, "revision", 0) or 0),
+                        interaction=owned.interaction,
+                        locale=locale, cohort="scan_bound",
+                        capability=channel or "")

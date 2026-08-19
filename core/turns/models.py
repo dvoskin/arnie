@@ -105,7 +105,15 @@ class FoodSubject:
     name: str
     role: str                     # ready | held | asked | staged | interpreted
     open_fields: tuple = ()       # e.g. ("quantity",) — the fields still asked
-    key: str = ""                 # the normalised identity used to dedupe
+    key: str = ""                 # the occurrence key (see food_subjects_of)
+    # ⛔ CF5c-B2 — DID THE USER SAY THEY ATE IT? A quantity ask whose answer
+    # LOGS food is only legitimate for a food the user asserted consuming; a
+    # scanned or named product with no consumption statement ("scanned a
+    # bar", "got some Barebells") must not open a quantity-to-log operation.
+    # A ready or held WRITE is a consumption assertion (the interpreter
+    # decided to log it); a label-only subject inherits the message's
+    # `consumption_state` and is asserted only when that says CONSUMED.
+    consumed: bool = False
 
 
 @dataclass(frozen=True)
@@ -128,6 +136,12 @@ class TurnPlan:
     # asked" — so a consumer can tell "quantity is the only unknown" without
     # walking the subjects itself.
     open_fields: tuple = ()
+    # ⛔ CF5c-B4 — the interpreter's RAW output, carried so the post-decision
+    # bind step can transform the plan (answer an identity question, lift an
+    # implicit correction, restore the user's unit) from the same facts the
+    # planner saw — AFTER the authority has said BOUND, never before. The
+    # planner itself is attachment-blind. Not read by anything else.
+    source: Any = None
 
 
 @dataclass(frozen=True)

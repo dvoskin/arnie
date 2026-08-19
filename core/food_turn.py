@@ -5468,6 +5468,15 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             return {"action": "ask", "text": text, "tool_calls": _ready_now,
                     DEFERRED_KEY: _deferred_now,
                     "questions": _questions, "options": _chip_options,
+                    # ⛔ CF5c (review of fc38825, leak a) — THE TYPED FIELDS.
+                    # `data["ambiguities"]` is the interpreter's own record of
+                    # WHICH field is open on WHICH item ("quantity", "prep",
+                    # ...). It was dropped here and the scan authority had to
+                    # infer the field back from the question's PROSE — the
+                    # reversal ClarificationAttribute exists to undo. Carried
+                    # verbatim so `food_subjects_of` reads ids, not words.
+                    "ambiguities": [a for a in (data.get("ambiguities") or [])
+                                    if isinstance(a, dict)],
                     # THE OTHER ASK ORIGIN. This branch fires when the MODEL
                     # proposed the ask; the pipeline branch fires when the
                     # model said "log" and the system overrode it. Only the

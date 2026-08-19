@@ -945,6 +945,21 @@ class PendingOperation(Base):
     __table_args__ = (
         Index("ix_pending_operations_open", "user_id", "domain",
               "storage_status"),
+        # ⛔⛔ CF5c-B3 — AT MOST ONE AWAITING OPERATION PER (USER, DOMAIN)
+        # *(Danny, 2026-08-19; migration oneask001)*. The code checked "is
+        # there a prior ask?" and then inserted; two workers could each pass
+        # the check and both insert, and a same-turn retry could cancel its
+        # own ask and collide. This is the constraint the check was
+        # pretending to be. Partial: only `awaiting_answer` rows that are
+        # still `active` — settled, cancelled and expired rows repeat freely.
+        # Both dialects, so the shared PG/SQLite harness cannot drift from
+        # production (the produnit/corrrec lesson).
+        Index("uq_pending_operations_one_awaiting", "user_id", "domain",
+              unique=True,
+              postgresql_where=text(
+                  "status = 'awaiting_answer' AND storage_status = 'active'"),
+              sqlite_where=text(
+                  "status = 'awaiting_answer' AND storage_status = 'active'")),
     )
 
     id = Column(Integer, primary_key=True)

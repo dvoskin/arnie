@@ -344,6 +344,49 @@ class LockedOperation:
             self.row.revision = int(revision)
 
 
+async def locked_awaiting_for_user(db, *, user_id: int, domain: str,
+                                   exclude_operation_id: str = "") -> list:
+    """`SELECT ... FOR UPDATE` on EVERY awaiting/active operation a user holds
+    in a domain — the second lock SHAPE this repository offers, beside the
+    per-operation one above.
+
+    ⛔ WHY A SECOND SHAPE *(CF5c-B3, migration oneask001)*: the database now
+    holds "at most one awaiting operation per (user, domain)", so a new ask
+    must RELEASE the user's prior awaiting row before inserting. Two workers
+    opening asks for one user at once must serialise on THAT row, not on
+    their own (different) operation ids — a per-operation lock cannot do it.
+    The rows come back locked; the caller mutates them through
+    `save_revision`/`mark_expired` inside the same transaction, and the lock
+    releases with it. Same rules as `locked_operation`: nothing expensive
+    under the lock, no timeout, no retry, `lock_wait_ms` emitted so the
+    measurement exists before anyone tunes anything. SQLite ignores FOR
+    UPDATE — single-writer — so the primitive is uniform and only the
+    engine's means differ."""
+    import time
+
+    from sqlalchemy import select
+
+    from db.models import PendingOperation
+
+    started = time.monotonic()
+    statement = select(PendingOperation).where(
+        PendingOperation.user_id == int(user_id),
+        PendingOperation.domain == domain,
+        PendingOperation.status == "awaiting_answer",
+        PendingOperation.storage_status == "active")
+    if exclude_operation_id:
+        statement = statement.where(
+            PendingOperation.operation_id != exclude_operation_id)
+    if db.bind is not None and db.bind.dialect.name != "sqlite":
+        statement = statement.with_for_update()
+    rows = list((await db.execute(statement)).scalars().all())
+    waited_ms = int((time.monotonic() - started) * 1000)
+    logger.info("event=awaiting_locked user=%s domain=%s rows=%d "
+                "operation_lock_wait_ms=%d", user_id, domain, len(rows),
+                waited_ms)
+    return rows
+
+
 async def locked_operation(db, operation_id: str) -> LockedOperation:
     """`SELECT ... FOR UPDATE` on one operation, plus its decoded payload.
 

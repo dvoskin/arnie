@@ -715,6 +715,92 @@ CF5c ONE SCAN AUTHORITY — the guard-placement fix   P17 (before P17g)     BUIL
        matches reports the unmutated tree's green as
        evidence). Suite 9684 passed, PYTEST_EXIT=0,
        frozen tree fdb5a8226fc8.
+       REVIEW of fc38825 (Danny) — FOUR BLOCKERS, all
+       upstream of or beside the authority:
+         B1 ✅ `b1_answer_turn.handle` runs from
+            conversation.py BEFORE the coordinator; an
+            open chicken ask could claim a NEW scan +
+            "2 servings" as its answer. Now a scanned
+            FREE-TEXT message is "not ours" (None); a
+            chip tap still answers (the CF9 tap).
+         B2 ✅ CF9 did not prove consumption: scanning
+            or naming a product with no "I ate it"
+            opened a quantity ask whose answer LOGS.
+            `FoodSubject.consumed` — a write asserts
+            it, a label inherits the message's
+            `consumption_state`; CF9 requires it, else
+            `no_consumption` refusal.
+         B3 ✅ ask creation not idempotent / single-
+            owner: supersede failure in a bare except
+            CONTINUED; same-turn retry cancelled its
+            own ask and collided; no DB constraint.
+            Now: same op id -> return THAT ask;
+            supersede-or-refuse (`BoundAskNotSingular`,
+            answered at the seam); insert race -> return
+            the winner; PARTIAL UNIQUE INDEX
+            `uq_pending_operations_one_awaiting`
+            (model both dialects + migration oneask001).
+            ⭐ The index exposed that the WHOLE B-1 lane
+            never superseded — an expired-but-unswept
+            prior (last night's chicken) blocked this
+            morning's oatmeal ask. Production checked
+            first: 0 users >1 awaiting, 0 unswept-
+            expired, so the constraint encodes what is
+            already true. Supersede moved to
+            `open_operation` (the ONE insert site,
+            bound or ordinary): `_release_prior_
+            awaiting` marks an expired prior expired,
+            cancels a live one as superseded, under the
+            repository's new shared lock
+            `locked_awaiting_for_user` (the house gate
+            forbids a bare with_for_update outside
+            pending_repository — it caught mine, then
+            caught my COMMENT naming it: it greps text).
+            PG proofs on the real engine: two turns at
+            once -> ≤1 active (supersede) · the SAME
+            turn twice -> exactly one row, both workers
+            return its id.
+         B4 ✅ attachment transformed the plan BEFORE
+            the decision (identity-answer lift,
+            correction lift, unit restore all keyed on
+            attachment) so a plan could be scan-
+            transformed then classified SKIPPED. The
+            planner is now ATTACHMENT-BLIND (its only
+            attachment reads are the pre-plan hooks);
+            the three transforms live in `bind_plan`,
+            run in the validation stage only after
+            `decide_from_plan` says BOUND; `TurnPlan.
+            source` carries the raw interpretation for
+            it. Hidden-second-subject proof: none of the
+            three fires; remove the second subject: all
+            three fire, post-decision. AST: no planner
+            function reads the attachment or is_bound.
+       LEAKS (a) typed field ids — the model schema
+       REQUIRES `ambiguities:[{item,field}]`; the
+       producer dropped them and CF5c inferred fields
+       from question PROSE. Now carried verbatim,
+       canonicalised (`prep`->preparation, `flavor`->
+       food_identity …); prose inference is the marked
+       fallback ("quantity?") which CF9 REJECTS — an
+       untyped question refuses rather than asks; an
+       item-less record does not type a field. (b) after
+       the decision `snapshot_id()` follows
+       `ScanBinding.snapshot_id`, not the attachment; a
+       decided/attached MISMATCH is refused before any
+       write; a decision whose attachment was cleared
+       reads as no scan; no module outside the authority
+       reads SCANNED_PRODUCT_EVIDENCE (AST). (c) a
+       repeated same-name label WITHIN one carrier with
+       nothing to anchor to is a second subject; the
+       same label across questions+points is one. (d)
+       `SUBJECT_SOURCES` is a gate input.
+       Danny's five proofs + twins; TEN mutations RED,
+       each printed `applied` (B3's supersede mutation
+       was first MASKED by the DB constraint — defence
+       in depth catching what the swallowed handler let
+       through — so the proof asserts WHICH layer
+       refused). Suite 9703 passed, PYTEST_EXIT=0,
+       frozen tree 51e1b5646fc2.
 CF6  LANE PROMOTION RULE (learned from 3 canaries):  every future lane     RULE
      a proven CONSUMER (stage) is unreachable if the
      PRODUCER (planner) or RENDERER in front of it

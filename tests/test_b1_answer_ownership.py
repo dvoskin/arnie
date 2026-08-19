@@ -737,10 +737,18 @@ async def test_the_sweep_cannot_be_starved_by_other_expired_operations(
     from core.clock import now as _now
 
     async with sessions() as s:
-        # A wall of expired NON-B-1 food operations, all older than ours.
+        # A wall of expired NON-B-1 food operations, all older than ours —
+        # ONE PER USER. `uq_pending_operations_one_awaiting` (CF5c-B3,
+        # oneask001) forbids two awaiting/active rows for one user, and
+        # production holds none: the realistic backlog is many USERS each
+        # with one unswept question, which starves the sweep identically.
+        from db.models import User as _U
         for i in range(30):
+            other = _U(telegram_id=f"b1:wall:{i}", name=f"W{i}", timezone="UTC")
+            s.add(other)
+            await s.flush()
             s.add(PendingOperation(
-                operation_id=f"other:{i}", user_id=user.id, domain="food",
+                operation_id=f"other:{i}", user_id=other.id, domain="food",
                 status=b1.AWAITING, storage_status="active", revision=0,
                 canonical_payload=_json.dumps({"slice": "something_else"}),
                 expires_at=_now() - timedelta(hours=2)))

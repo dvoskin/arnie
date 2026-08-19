@@ -63,8 +63,10 @@ FOOD_OPS = frozenset({"log_food", "update_food_entry", "delete_food_entry"})
 #: The clarification fields that leave QUANTITY as the only open question. An
 #: ask limited to these on a single bound product is the CF9 case: the durable
 #: ask holds the snapshot and the answer settles bound.
-QUANTITY_FIELDS = frozenset({"quantity", "amount", "portion", "size",
-                             "serving", "servings"})
+#: TYPED ids only. An inferred field is recorded as "quantity?" and is NOT in
+#: this set — a question whose field the interpreter did not type refuses
+#: rather than opens an ask whose answer logs food.
+QUANTITY_FIELDS = frozenset({"quantity"})
 
 
 class ScanAuthorityRefusal(Exception):
@@ -92,11 +94,39 @@ def scan_attached() -> bool:
 
 
 def snapshot_id() -> Optional[int]:
+    """The snapshot this turn is ABOUT.
+
+    ⛔ AFTER THE DECISION, THE DECIDED SNAPSHOT — NOT THE ATTACHMENT *(review
+    of fc38825, leak b)*. `SCAN_BINDING` records which snapshot the authority
+    ruled on; `SCANNED_PRODUCT_EVIDENCE` is the raw attachment. If those ever
+    disagree — an attachment re-set mid-turn, a stale contextvar, a test that
+    swapped one — every downstream consumer must follow the DECISION, so that
+    a binding for snapshot A can never settle, name or ask using attachment
+    B. Before a decision exists (the pre-plan hooks) the attachment is all
+    there is, and it is only used to answer "is a scan attached at all"."""
+    from skills.nutrition.product_acquisition import SCAN_BINDING
+    state = SCAN_BINDING.get()
+    decided = getattr(state, "snapshot_id", None)
+    if decided is not None:
+        return int(decided)
     try:
         from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
         return SCANNED_PRODUCT_EVIDENCE.get()
     except Exception:                                    # noqa: BLE001
         return None
+
+
+def snapshot_mismatch() -> bool:
+    """True when the decided snapshot and the attachment DISAGREE — a state
+    that must not exist inside one turn. Read by `require_shape` and refused;
+    exposed separately so the twin can name it."""
+    from skills.nutrition.product_acquisition import (SCAN_BINDING,
+                                                      SCANNED_PRODUCT_EVIDENCE)
+    state = SCAN_BINDING.get()
+    decided = getattr(state, "snapshot_id", None)
+    attached = SCANNED_PRODUCT_EVIDENCE.get()
+    return (decided is not None and attached is not None
+            and int(decided) != int(attached))
 
 
 def disposition() -> Optional[str]:
@@ -113,6 +143,12 @@ def disposition() -> Optional[str]:
     if state is None:
         # No state at all. If an id is attached, the decision never ran.
         return UNDECIDABLE if scan_attached() else None
+    if not scan_attached():
+        # ⛔ A DECISION WITH NO ATTACHMENT BEHIND IT IS STALE *(leak b, the
+        # other direction)*: the attachment was cleared (a new turn began, a
+        # test reset it) and the decision outlived it. Reading it as live
+        # would let a previous scan's BOUND transform THIS turn. No scan.
+        return None
     kind = getattr(state, "kind", None)
     if kind in (BOUND, SKIPPED_MULTI_ITEM, UNDECIDABLE, CONSUMED):
         return kind
@@ -225,6 +261,10 @@ def require_shape(ops) -> None:
     state = disposition()
     if state is None:
         return
+    if snapshot_mismatch():
+        raise ScanAuthorityRefusal(
+            "snapshot_mismatch",
+            "the decided snapshot and the attached snapshot disagree")
     if state == UNDECIDABLE:
         raise ScanAuthorityRefusal(
             "undecidable",
@@ -258,6 +298,12 @@ def quantity_only_subject(plan):
     if len(subjects) != 1:
         return None
     sub = subjects[0]
+    # ⛔ CF5c-B2 — NO CONSUMPTION ASSERTION, NO QUANTITY-TO-LOG OPERATION. A
+    # scanned or named product the user never said they ate must not open an
+    # ask whose answer logs food. The subject carries the assertion; absent,
+    # this is "no trustworthy consumption intent" and the caller refuses.
+    if not getattr(sub, "consumed", False):
+        return None
     fields = tuple(getattr(sub, "open_fields", ()) or ())
     if not fields or not all(f in QUANTITY_FIELDS for f in fields):
         return None

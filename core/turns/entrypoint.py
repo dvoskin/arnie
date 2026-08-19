@@ -303,6 +303,7 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     from core.canonical_correction import CorrectionRefused
     from skills.nutrition.correction_application import ScanBoundCorrectionRefused
     from core.scan_authority import ScanAuthorityRefusal
+    from core.product_bound_ask import BoundAskNotSingular
     from core.turns.stages.execute_native import (ScanBindingDecisionUnavailable,
                                                   ScanBoundIdentityUnavailable,
                                                   ScanBoundNotLegacy)
@@ -316,7 +317,7 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
                                 ScanBoundIdentityUnavailable,
                                 ScanBindingDecisionUnavailable,
                                 ScanBoundCorrectionRefused,
-                                ScanAuthorityRefusal)):
+                                ScanAuthorityRefusal, BoundAskNotSingular)):
         # CF5b: `ScanBoundNotLegacy` is answered here beside the correction
         # refusals — same contract: no write, no legacy, no raise, words.
         logger.info("event=canonical_refusal_answered turn=%s kind=%s reason=%s",
@@ -376,13 +377,22 @@ def _refusal_copy(exc) -> str:
                                            StaleUndo)
     from skills.nutrition.correction_application import ScanBoundCorrectionRefused
     from core.scan_authority import ScanAuthorityRefusal
+    from core.product_bound_ask import BoundAskNotSingular
     from core.turns.stages.execute_native import (ScanBindingDecisionUnavailable,
                                                   ScanBoundIdentityUnavailable,
                                                   ScanBoundNotLegacy)
+    if isinstance(exc, BoundAskNotSingular):
+        return ("I have the scanned product but couldn't set up the question "
+                "about it cleanly, so I left everything as it was. Send it "
+                "once more, or tell me the amount.")
     if isinstance(exc, ScanAuthorityRefusal):
         # CF5c, by REASON — each says what actually happened, because "I
         # couldn't read the scan" and "tell me how much" are different
         # problems for the person holding the phone.
+        if exc.reason == "no_consumption":
+            return ("Got the scanned product. I haven't logged it — tell me "
+                    "if you had it and how much, and I'll log it from the "
+                    "label.")
         if exc.reason == "no_quantity_ask":
             return ("I have the scanned product, but I couldn't tell what you "
                     "had of it, so I didn't log anything. Tell me the amount "

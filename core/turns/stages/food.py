@@ -393,19 +393,11 @@ _IDENTITY_FIELDS = frozenset({"identity", "brand", "variant", "flavor", "flavour
                               "product_identity", "product_line", "product_variant"})
 
 
-def _scan_is_bound() -> bool:
-    """⚠ ATTACHMENT, and deliberately so *(CF5b review)*. The binding DECISION
-    needs the turn's operations, which do not exist until this stage has
-    produced them — so the planner reads the attachment and SCOPES ITSELF:
-    the lift takes exactly one implicit update, `_scan_answers_the_identity`
-    exactly one item. Guards that run after the plan (the legacy backstop,
-    the binder, correction application) read the decided state via
-    `product_acquisition.scan_is_bound`, never this."""
-    try:
-        from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
-        return SCANNED_PRODUCT_EVIDENCE.get() is not None
-    except Exception:                                    # noqa: BLE001
-        return False
+# (CF5c-B4: `_scan_is_bound` — the planner's attachment read — is GONE. The
+# planner has two legitimate attachment reads, both PRE-plan hooks that
+# suppress an OLDER question from shaping this turn (`suppresses_replay_and_
+# prior`); every scan-specific transform of the plan itself now runs in
+# `bind_plan`, after the authority's decision.)
 
 
 def _lift_bound_correction_to_log(ops, message: str):
@@ -551,10 +543,9 @@ def _restore_user_stated_unit(call: dict, message: str) -> None:
 
 
 def _scan_answers_the_identity(out) -> bool:
-    """True when a scan is bound to this turn, the interpreter staged exactly
-    ONE item, and every ambiguity it reported is identity-class."""
-    if not _scan_is_bound():
-        return False
+    """True when the interpreter staged exactly ONE item and every ambiguity
+    it reported is identity-class. Attachment-blind: called only from
+    `bind_plan`, i.e. only once the authority has said BOUND."""
     items = [it for it in (out.get("items") or []) if isinstance(it, dict)]
     if len(items) != 1:
         return False
@@ -563,11 +554,13 @@ def _scan_answers_the_identity(out) -> bool:
     return bool(fields) and all(f in _IDENTITY_FIELDS for f in fields)
 
 
-#: The producer's ask carries its foods in as many as FIVE places. Named here
-#: once so the normaliser and the tests share one list, and so a sixth key
-#: added to the producer is a one-line change here rather than a silent hole.
-_SUBJECT_SOURCES = ("tool_calls", "deferred_calls", "questions",
-                    "b1_material", "items", "points")
+#: The producer keys `food_subjects_of` MUST read. This is not documentation:
+#: `tests/test_cf5c_one_scan_authority.py` parses the normaliser and asserts
+#: every key here appears as a subscript of `out` inside it, so a key added
+#: to this tuple without a reader fails the build — and a key the producer
+#: grows that is NOT here is the reviewer's cue, not a silent hole *(leak d)*.
+SUBJECT_SOURCES = ("tool_calls", "deferred_calls", "questions", "points",
+                   "b1_material", "items", "ambiguities")
 
 
 def _norm_key(name: str) -> str:
@@ -628,16 +621,28 @@ def food_subjects_of(out) -> tuple:
     from core.turns.models import FoodSubject
     if not isinstance(out, dict):
         return ()
-    # occurrence key -> {"name", "roles": [...], "fields": set, "nk": name key}
+    # occurrence key -> {"name", "roles": [...], "fields": set, "nk": name key,
+    #                    "consumed": bool}
     found: dict = {}
     order: list = []
+    # ⛔ CF5c-B2 — the MESSAGE's consumption state, read once. A write carrier
+    # asserts consumption by existing (the interpreter chose to log it); a
+    # label-only carrier asserts it only if the user's words did.
+    try:
+        from core.food_turn import STATE_CONSUMED, consumption_state
+        message_consumed = consumption_state(
+            str(out.get("_message") or ""),
+            thread_active=bool(out.get("_thread_active"))) == STATE_CONSUMED
+    except Exception:                                    # noqa: BLE001
+        message_consumed = False
 
-    def _put(occ_key, name, role, fields=()):
+    def _put(occ_key, name, role, fields=(), consumed=None):
         name = str(name or "").strip()
         rec = found.get(occ_key)
         if rec is None:
             rec = {"name": name or occ_key, "roles": [], "fields": set(),
-                   "nk": _norm_key(name) if name else ""}
+                   "nk": _norm_key(name) if name else "",
+                   "consumed": False}
             found[occ_key] = rec
             order.append(occ_key)
         elif name and not rec["nk"]:
@@ -645,23 +650,47 @@ def food_subjects_of(out) -> tuple:
         if role not in rec["roles"]:
             rec["roles"].append(role)
         rec["fields"].update(f for f in fields if f)
+        if consumed is None:
+            consumed = role in ("ready", "held") or message_consumed
+        rec["consumed"] = rec["consumed"] or bool(consumed)
         return rec
 
     def _by_name(name):
         nk = _norm_key(name)
         return [k for k in order if nk and found[k]["nk"] == nk]
 
-    def _link_or_put(name, role, fields=()):
-        """A LABEL carrier: attach to every same-name occurrence, or create
-        one subject if none exists. Never a second occurrence by name."""
-        matches = _by_name(name)
-        if matches:
-            for k in matches:
+    label_seen: dict = {}      # (carrier, name key) -> repeat count
+
+    def _link_or_put(name, role, fields=(), carrier="label"):
+        """A LABEL carrier: attach to every same-name occurrence that a WRITE
+        or a STAGED/INTERPRETED row introduced. When none exists, the label
+        is its own subject.
+
+        ⛔ REPEATS, CONSERVATIVELY *(leak c)*: the SAME label seen once in
+        `questions` and once in `points` is ONE reference (the producer emits
+        both views of one question); the same label seen TWICE WITHIN one
+        carrier — two questions about "Barebells" with no write behind either
+        — is two intents until something says otherwise, and two intents
+        means the scan binds nothing rather than one of them."""
+        nk = _norm_key(name)
+        if not nk:
+            return
+        anchored = [k for k in _by_name(name) if not k.startswith("label:")]
+        if anchored:
+            for k in anchored:
                 _put(k, name, role, fields)
             return
-        nk = _norm_key(name)
-        if nk:
-            _put(f"label:{nk}", name, role, fields)
+        # a label already introduced by the OTHER label carrier is the same
+        # reference (questions and points are two views of one question)
+        other = [k for k in _by_name(name) if k.startswith("label:")]
+        if other and label_seen.get((carrier, nk), 0) == 0:
+            for k in other:
+                _put(k, name, role, fields)
+            label_seen[(carrier, nk)] = 1
+            return
+        n = label_seen.get((carrier, nk), 0)
+        label_seen[(carrier, nk)] = n + 1
+        _put(f"label:{nk}" if n == 0 else f"label:{nk}:{n}", name, role, fields)
 
     def _write(call, carrier, index, role):
         inp = (call or {}).get("input") if isinstance(call, dict) else None
@@ -721,37 +750,68 @@ def food_subjects_of(out) -> tuple:
             nm = it.get("food") or it.get("name")
             if not nm:
                 continue
+            explicit = it.get("consumed")
+            c = (bool(explicit) if isinstance(explicit, bool) else None)
             matches = _by_name(nm)
             if len(matches) == 1:
-                _put(matches[0], nm, "interpreted")
+                _put(matches[0], nm, "interpreted", consumed=c)
             elif not matches:
-                _put(f"interp:{i}", nm, "interpreted")
+                _put(f"interp:{i}", nm, "interpreted", consumed=c)
 
     for it in out.get("items") or ():
         if isinstance(it, dict):
             nm = it.get("food") or it.get("name")
-            fields = [str(a.get("field") or "").strip().lower()
-                      for a in (out.get("ambiguities") or [])
-                      if isinstance(a, dict)
-                      and str(a.get("item") or a.get("food") or "") in
-                      ("", str(nm or ""))]
-            _link_or_put(nm, "interpreted", fields)
+            # typed fields are attached once, below, from `typed_fields`
+            _link_or_put(nm, "interpreted")
+
+    # ⛔ TYPED FIELD IDS FIRST *(leak a)*. The producer now carries the
+    # interpreter's own `ambiguities: [{item, field}]`; a field named there
+    # is authoritative for its item. Keyword inference over the question's
+    # prose is the FALLBACK for a label no typed record covers, and a field
+    # so inferred is recorded as such ("quantity?" — a guess the CF9 test
+    # does NOT accept, so an un-typed question refuses rather than asks).
+    typed_fields: dict = {}
+    for a in out.get("ambiguities") or ():
+        if not isinstance(a, dict):
+            continue
+        item = str(a.get("item") or a.get("food") or "").strip()
+        field = str(a.get("field") or "").strip().lower()
+        if item and field:
+            typed_fields.setdefault(_norm_key(item), set()).add(_canon_field(field))
+
+    def _fields_for(label, prose):
+        """Typed wins outright: a label with a typed record contributes NO
+        inferred field (the typed one is attached below). Only a label the
+        interpreter did not type falls back to prose, marked '?'."""
+        nk = _norm_key(label)
+        if nk in typed_fields:
+            return ()
+        inferred = _fields_in_question(prose)
+        return tuple(f"{f}?" for f in inferred)      # marked as inferred
 
     # LABEL carriers last: they reference foods, they do not introduce
     # occurrences unless nothing else names the food at all
     for q in out.get("questions") or ():
         if isinstance(q, dict):
             _link_or_put(q.get("item"), "asked",
-                         _fields_in_question(q.get("text")))
+                         _fields_for(q.get("item"), q.get("text")),
+                         carrier="questions")
     for pt in out.get("points") or ():
         if isinstance(pt, dict):
             qs = pt.get("qs") if isinstance(pt.get("qs"), list) else [pt.get("q")]
             _link_or_put(pt.get("label"), "asked",
-                         _fields_in_question(" ".join(str(x) for x in qs if x)))
+                         _fields_for(pt.get("label"),
+                                     " ".join(str(x) for x in qs if x)),
+                         carrier="points")
+    # a typed record for an item that no label mentioned still names an
+    # open field on that item
+    for nk, fields in typed_fields.items():
+        for k in [k for k in order if found[k]["nk"] == nk]:
+            found[k]["fields"].update(fields)
 
     return tuple(FoodSubject(name=found[k]["name"], role=found[k]["roles"][0],
                              open_fields=tuple(sorted(found[k]["fields"])),
-                             key=k)
+                             key=k, consumed=bool(found[k]["consumed"]))
                  for k in order)
 
 
@@ -764,6 +824,20 @@ def food_subjects_of(out) -> tuple:
 _QTY_WORDS = ("how much", "how many", "serving", "servings", "grams", "oz",
               "ounce", "portion", "amount", "quantity", "cups", "pieces",
               "slices", "how big", "size")
+
+
+#: The interpreter says "prep"; the semantics say "preparation". One map, so
+#: the CF9 test compares canonical ids, not spellings.
+_FIELD_ALIASES = {"prep": "preparation", "amount": "quantity",
+                  "portion": "quantity", "size": "quantity",
+                  "flavor": "food_identity", "flavour": "food_identity",
+                  "identity": "food_identity", "brand": "food_identity",
+                  "variant": "product_variant"}
+
+
+def _canon_field(field: str) -> str:
+    f = str(field or "").strip().lower()
+    return _FIELD_ALIASES.get(f, f)
 
 
 def _fields_in_question(text) -> tuple:
@@ -787,7 +861,8 @@ def plan_from_interpretation(out) -> TurnPlan:
     plan = _plan_from_interpretation(out)
     subjects = food_subjects_of(out)
     open_fields = tuple(sorted({f for sub in subjects for f in sub.open_fields}))
-    return _replace(plan, food_subjects=subjects, open_fields=open_fields)
+    return _replace(plan, food_subjects=subjects, open_fields=open_fields,
+                    source=out if isinstance(out, dict) else None)
 
 
 def _plan_from_interpretation(out) -> TurnPlan:
@@ -811,28 +886,15 @@ def _plan_from_interpretation(out) -> TurnPlan:
         return TurnPlan(operations=(), response_intent="pass",
                         planner_version=FOOD_PLANNER_VERSION)
     action = out.get("action")
-    # ⭐ P17 iOS producer, LIVE CANARY #1 (2026-08-18): A BARCODE PROVES WHAT.
-    # The interpreter, which reads prose only, asked "Salty Peanut or Caramel
-    # Cashew?" about a SCAN-BOUND bar — an identity question the snapshot has
-    # already answered — produced no operation, and the turn fell to legacy
-    # (native_no_plan). A scan-bound single item whose ONLY ambiguities are
-    # identity-class is not ambiguous: the item is approved as a log operation
-    # and the bound predicate decides the QUANTITY (Supported("product") or
-    # BoundUnpriceable), which is the one thing a barcode cannot prove.
-    # Any other ambiguity (quantity, prep, consumed) still asks.
-    if action == "ask" and _scan_answers_the_identity(out):
-        from core.food_turn import _log_call
-        items = [it for it in (out.get("items") or []) if isinstance(it, dict)]
-        call = _log_call(items[0]) if items else None
-        if call is not None:
-            _restore_user_stated_unit(call, out.get("_message") or "")
-            logger.info("event=scan_answers_identity item=%r ambiguities=%s",
-                        items[0].get("food"),
-                        [a.get("field") for a in (out.get("ambiguities") or [])])
-            return TurnPlan(operations=(call,), response_intent="log",
-                            ambiguities=(),
-                            narration_hint=str(out.get("say") or ""),
-                            planner_version=FOOD_PLANNER_VERSION)
+    # ⛔⛔ CF5c-B4 — THIS FUNCTION IS ATTACHMENT-BLIND *(Danny, 2026-08-19)*.
+    # Three scan-specific transforms used to live here, ahead of the binding
+    # decision — a scan-answers-the-identity lift, the CF5b implicit-
+    # correction lift, and the user's-unit restoration — each keyed on
+    # ATTACHMENT. So a plan could be scan-transformed and THEN classified
+    # SKIPPED_MULTI_ITEM: the authority ruled on a plan the attachment had
+    # already rewritten, which is not dominance. They now live in `bind_plan`
+    # and run only AFTER `decide_from_plan` says BOUND. This body sees an
+    # interpreter result and types it; it does not know a scan exists.
     # ⛔⛔ CF5b — SCAN BINDING DOMINATES CORRECTION CLAIMS *(Danny, 2026-08-18,
     # P1 authority violation; production turn ios:D3B7757E)*. The user scanned
     # 70004199 and typed "2 servings of Barebells bars"; a legacy Barebells row
@@ -862,14 +924,7 @@ def _plan_from_interpretation(out) -> TurnPlan:
     # correction is legitimate when nothing outranks it. Ratio correction is
     # not weakened globally; the exclusion is exactly "implicit correction
     # cannot outrank explicit scan binding".
-    if action in ("update", "log") and _scan_is_bound():
-        lifted = _lift_bound_correction_to_log(
-            tuple(out.get("tool_calls") or ()), out.get("_message") or "")
-        if lifted is not None:
-            return TurnPlan(operations=(lifted,), response_intent="log",
-                            ambiguities=(),
-                            narration_hint=str(out.get("say") or ""),
-                            planner_version=FOOD_PLANNER_VERSION)
+    # (the CF5b correction lift is applied in `bind_plan`, post-decision)
     if action == "ask":
         return TurnPlan(
             # AN ASK IS NOT AN EMPTY TURN (audit A1). `core.food_turn` returns
@@ -885,14 +940,92 @@ def _plan_from_interpretation(out) -> TurnPlan:
             ambiguities=(out,),
             planner_version=FOOD_PLANNER_VERSION)
     ops = tuple(out.get("tool_calls") or ())
-    if _scan_is_bound() and len(ops) == 1:
-        _restore_user_stated_unit(ops[0], out.get("_message") or "")
+    # (the user's-unit restoration is applied in `bind_plan`, post-decision)
     return TurnPlan(
         operations=ops,
         response_intent=action or "",
         ambiguities=(),
         narration_hint=str(out.get("say") or ""),
         planner_version=FOOD_PLANNER_VERSION)
+
+
+def bind_plan(plan) -> TurnPlan:
+    """⛔⛔ CF5c-B4 — THE SCAN-SPECIFIC PLAN TRANSFORMS, applied ONLY once the
+    authority has said BOUND. Called by `FoodValidationStage` immediately
+    after `decide_from_plan`; a plan the authority classified anything else
+    is returned UNTOUCHED — a hidden second subject prevents every one of
+    these, which is the point.
+
+    Three transforms, in the order the planner used to apply them:
+
+      1. SCAN ANSWERS THE IDENTITY (P17 live canary #1): the interpreter asked
+         "Salty Peanut or Caramel Cashew?" about a scan-bound bar — an
+         identity question the snapshot has already answered. A single item
+         whose ONLY open questions are identity-class is not ambiguous: it
+         becomes a log operation and the bound predicate decides the quantity.
+      2. THE IMPLICIT-CORRECTION LIFT (CF5b): a scanned turn's single
+         `update_food_entry` of a board row is a fresh statement about the
+         scanned product, lifted to `log_food` in the user's own words.
+      3. THE USER'S UNIT (P17 live canary #3): "2 servings" typed by the user
+         outranks the interpreter's rewrite to "2 bar" — restored against the
+         label's own vocabulary.
+
+    All three read the interpreter's raw output off `plan.source`; none of
+    them consults the attachment. `food_subjects` are recomputed from the
+    transformed operations so downstream sees one truth."""
+    from dataclasses import replace as _replace
+    from core.scan_authority import is_bound
+    if not is_bound():
+        return plan
+    out = getattr(plan, "source", None)
+    if not isinstance(out, dict):
+        return plan
+    action = out.get("action")
+    message = out.get("_message") or ""
+
+    # 1. scan answers the identity
+    if action == "ask" and _scan_answers_the_identity(out):
+        from core.food_turn import _log_call
+        items = [it for it in (out.get("items") or []) if isinstance(it, dict)]
+        call = _log_call(items[0]) if items else None
+        if call is not None:
+            _restore_user_stated_unit(call, message)
+            logger.info("event=scan_answers_identity item=%r ambiguities=%s",
+                        items[0].get("food"),
+                        [a.get("field") for a in (out.get("ambiguities") or [])])
+            new_plan = _replace(plan, operations=(call,), response_intent="log",
+                                ambiguities=())
+            return _retype(new_plan, out)
+
+    # 2. the implicit-correction lift
+    if action in ("update", "log"):
+        lifted = _lift_bound_correction_to_log(
+            tuple(plan.operations or ()), message)
+        if lifted is not None:
+            new_plan = _replace(plan, operations=(lifted,),
+                                response_intent="log", ambiguities=())
+            return _retype(new_plan, out)
+
+    # 3. the user's unit, on the single log this turn settles
+    ops = tuple(plan.operations or ())
+    if len(ops) == 1 and isinstance(ops[0], dict):
+        _restore_user_stated_unit(ops[0], message)
+    return plan
+
+
+def _retype(plan, out) -> TurnPlan:
+    """After a bind transform the operations changed; the typed subjects are
+    recomputed from the transformed shape so the two never disagree. The
+    transformed plan is a single log by construction (transforms 1 and 2
+    each produce exactly one), and its subject is that log."""
+    from dataclasses import replace as _replace
+    from core.turns.models import FoodSubject
+    op = plan.operations[0] if plan.operations else None
+    inp = (op or {}).get("input") if isinstance(op, dict) else None
+    name = str((inp or {}).get("food_name") or "")
+    subs = (FoodSubject(name=name, role="ready", open_fields=(),
+                        key="op:ready:0", consumed=True),) if name else ()
+    return _replace(plan, food_subjects=subs, open_fields=())
 
 
 class FoodValidationStage:
@@ -920,6 +1053,11 @@ class FoodValidationStage:
         # Every downstream reader consumes this decision; none re-derives it.
         from core.scan_authority import decide_from_plan
         decide_from_plan(plan)
+        # ⛔ CF5c-B4 — the scan-specific transforms run HERE, after the
+        # decision and only for a BOUND plan. `bind_plan` returns any other
+        # plan untouched, so a turn the authority classified
+        # SKIPPED_MULTI_ITEM is validated exactly as an unscanned one.
+        plan = bind_plan(plan)
         intent = getattr(plan, "response_intent", "") or ""
         ops = tuple(getattr(plan, "operations", ()) or ())
         if intent in ("ask", "confirm"):

@@ -163,8 +163,13 @@ async def _run(db, user, log, text, snapshot_id, plan, monkeypatch, *,
                turn_id=f"{turn_id}-{user.id}")
     token = SCANNED_PRODUCT_EVIDENCE.set(snapshot_id)
     try:
-        typed = await FoodPlanStage(interpreter=stub).run(req)
-        validation = await FoodValidationStage().run(req, plan=typed)
+        raw = await FoodPlanStage(interpreter=stub).run(req)
+        validation = await FoodValidationStage().run(req, plan=raw)
+        # ⛔ CF5c-B4: the PLANNER is attachment-blind — the raw plan still
+        # holds the correction. The scan-specific transform (the lift) runs
+        # inside the validation stage AFTER the authority says BOUND, so the
+        # plan the executor sees is `validation.plan`. Tests read THAT.
+        typed = validation.plan
         assert validation.disposition == "execute", validation
         execution = await NativeExecutionStage().run(req, validation=validation)
         snapshot = await CommittedSnapshotStage().run(req, execution=execution)

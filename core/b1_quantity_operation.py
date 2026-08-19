@@ -292,6 +292,52 @@ def _encode(interaction, interpreter_item: dict, locale: str,
     })
 
 
+class PriorAskNotReleased(RuntimeError):
+    """A prior awaiting operation for this user could not be released before
+    opening a new one. Non-mutating; the caller must not insert."""
+
+
+async def _release_prior_awaiting(db, *, user, keep: str) -> None:
+    """Release every awaiting/active operation this user holds, except `keep`
+    (the operation being (re)opened — a same-turn retry finds its own row).
+    Clock-expired rows are marked EXPIRED (what the sweep would do); live rows
+    are CANCELLED as superseded. Read under FOR UPDATE where the engine has
+    it, so two workers releasing at once serialise on the rows rather than
+    both proceeding to insert."""
+    from datetime import timezone
+
+    from core import pending_repository as repo
+    from core.clock import now as _now
+
+    # the row lock is the repository's SHARED primitive; this module takes no
+    # lock of its own (tests/test_two_answers_at_once_do_not_lose_one)
+    rows = await repo.locked_awaiting_for_user(
+        db, user_id=int(user.id), domain=DOMAIN, exclude_operation_id=keep)
+    now = _now()
+    for row in rows:
+        try:
+            exp = row.expires_at
+            if exp is not None and exp.tzinfo is None and now.tzinfo is not None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp is not None and exp <= now:
+                await repo.mark_expired(db, operation_id=row.operation_id,
+                                        expected_revision=int(row.revision or 0))
+                logger.info("event=b1_prior_released operation=%s how=expired "
+                            "for=%s", row.operation_id, keep)
+            else:
+                await repo.save_revision(
+                    db, operation_id=row.operation_id,
+                    expected_revision=int(row.revision or 0),
+                    status=CANCELLED, storage_status="closed",
+                    terminal_reason="superseded by a newer ask"[:200])
+                logger.info("event=b1_prior_released operation=%s how=superseded "
+                            "for=%s", row.operation_id, keep)
+        except Exception as exc:                         # noqa: BLE001
+            raise PriorAskNotReleased(
+                f"could not release {row.operation_id}: {type(exc).__name__}"
+            ) from exc
+
+
 async def open_operation(db, *, user, interpreter_item: dict, interaction,
                          turn_id: str, cohort: str = "",
                          locale: str = "en", decision_id: str = "",
@@ -323,6 +369,20 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
     from core.clock import now as _now
 
     operation_id = operation_id_for("chat_quantity", user.id, turn_id)
+    # ⛔⛔ ONE AWAITING OPERATION PER USER, ENFORCED WHERE THE INSERT IS
+    # *(CF5c-B3, migration oneask001)*. The database now holds a partial
+    # unique index over (user_id, domain) for awaiting/active rows — the
+    # constraint the code used to merely check for. Production already
+    # satisfies it (0 users with >1 awaiting row, 0 unswept-expired rows), so
+    # this makes explicit what was already true. Consequence: a NEW ask must
+    # RELEASE the user's prior awaiting operation before inserting, or the
+    # insert fails — including a prior that the clock has expired but the
+    # sweep has not yet marked (yesterday's chicken question, this morning's
+    # oatmeal). Expired -> marked expired; live -> superseded (cancelled with
+    # reason). The newer ask is the user's current intent. If the prior
+    # cannot be released the insert is not attempted: two awaiting rows must
+    # never exist, and an unreleased unknown is not a licence to add one.
+    await _release_prior_awaiting(db, user=user, keep=operation_id)
     await repo.create_operation(
         db, operation_id=operation_id, user_id=user.id, status=AWAITING,
         storage_status="active", domain=DOMAIN, source_turn_id=turn_id,

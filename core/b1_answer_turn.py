@@ -120,7 +120,37 @@ async def handle(db, *, user, source_turn_id: str, message: str = "",
     None means "not ours" and ONLY that — the caller proceeds exactly as it
     does today. Every other return means the canonical path handled the turn
     and the legacy lane must not run.
+
+    ⛔⛔ CF5c-B1 *(Danny, 2026-08-19)* — A SCANNED FREE-TEXT MESSAGE IS NOT AN
+    ANSWER TO WHATEVER OPERATION IS OPEN. This is called from
+    `core.conversation` BEFORE the coordinator, so an open chicken ask could
+    claim a NEW Barebells scan + "2 servings" as ITS answer: the chicken row
+    settles at "2 servings", the snapshot never reaches the scan authority,
+    and the scanned product is lost. The scan is the strongest identity
+    statement the user can make; an older question does not outrank it. So a
+    TEXT message with a scan attached is not ours here — the coordinator's
+    pre-plan hook already suppresses replay and prior for the same reason,
+    and this is the same rule at the seam that runs even earlier.
+
+    A CHIP TAP (`option_id`) with a scan attached IS still an answer: that is
+    exactly the CF9 tap on the bound ask, and it names its operation. Only
+    the free-text claim is suppressed. Attachment, not binding, is the key —
+    the disposition does not exist yet, and the whole point is that the
+    earlier question must not shape this turn.
     """
+    if not option_id and not field_id:
+        try:
+            from core.scan_authority import scan_attached
+            if scan_attached():
+                logger.info("event=b1_answer_declines_scanned_text user=%s — "
+                            "a scanned message is a fresh statement, not an "
+                            "answer to an open operation",
+                            getattr(user, "id", None))
+                return None
+        except Exception:                                # noqa: BLE001
+            # an unreadable attachment is not "not attached": fall through to
+            # ownership, whose own failure mode REFUSES rather than proceeds
+            pass
     try:
         owned = await ops.owning(db, user)
     except Exception as exc:
