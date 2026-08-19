@@ -1089,6 +1089,23 @@ CF15 THE SCANNED CODE WAS NEVER A PRODUCT CODE —         P17 producer +       
      logging build): whether 70004199 is a printed
      secondary code on the wrapper or a decoder false
      positive of a non-GTIN symbology.
+     (6) Danny, 2026-08-19 16:34: "I had sent it a UPC
+     code from a Caramel Cashew Barebell Bar instead" —
+     the bar behind the 08-18 scans was CARAMEL CASHEW
+     (US UPC 850000429093, kiliweb rev 218, photo, 200
+     kcal / P20 / C18 / F8 per 55 g; EU 7340001800494).
+     The 08-18 Render log shows TWELVE product_acquired
+     lines 18:10–21:02, every one code=70004199: the
+     Caramel Cashew UPC never left the phone. => the
+     "Barebells Salty Peanut" identity in production
+     (snapshot 1; rows 3030/3031) was a MISIDENTIFICATION
+     of a Caramel Cashew bar by a junk record under a
+     non-product code. The identity was wrong, not only
+     the numbers. The single fact that settles the
+     mechanism: is "70004199" PRINTED on that wrapper
+     (typed/scanned from it) or did the camera produce
+     it from the UPC symbol? Pending Danny's look at the
+     wrapper, or a symbology-logging build.
      REQUIRED (not shipped; Danny's decision on policy):
      producer — GTIN-only symbologies for food scans
      (ean8/ean13/upce), prefer 12/13-digit over 8 when
