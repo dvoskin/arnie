@@ -961,6 +961,24 @@ CF10a LIQUID BOUND-ASK PATH UNPROVEN (from the CF5b   P17-UE (with CF10)    OPEN
      BoundUnpriceable -> ask -> [240 ml — 1 serving]
      -> settle before claiming liquids; until then the
      bound ask is claimed for gram-based labels only.
+CF11 A SCAN THAT COULD NOT BE ACQUIRED IS NOT A SCAN  P17 (after the       OPEN
+     *(Danny, 2026-08-19, registered during the CF5c   canaries; before      (non-
+     deploy gate; NON-BLOCKING for the Barebells       cohort expansion)     blocking)
+     canary — a local snapshot exists)*. At ingress
+     (`api/chat.py`) `acquire_product_evidence` returns
+     None when OFF is down AND no local snapshot exists
+     for the code; `attach(None)` is then a no-op — no
+     ATTACHED state, CF5c sees no scan, and the message
+     routes as ORDINARY FREE TEXT. The user scanned; the
+     system forgot. Required behaviour: an acquisition
+     failure still records SCAN INTENT (a distinct state,
+     e.g. ATTACHED_UNRESOLVED carrying the raw code), and
+     the authority refuses/asks in words ("I couldn't
+     look that barcode up — tell me the food") rather
+     than letting the prose settle unbound; the canary
+     protocol ABORTS if no `product_acquired` line
+     appears. Not this tranche's blocker; it is the
+     attachment's own fail-open and belongs with P17-UE.
 CF10 INCOMPLETE PRODUCT RECORDS may provide serving   P17-UE — UNIT         OPEN
      mass without the physical consumer-unit          EVIDENCE COMPLETION
      relationship required for natural inputs such   (after P17g/h + the
