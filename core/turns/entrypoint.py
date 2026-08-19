@@ -133,10 +133,25 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     # ⛔ P17 closure Phase 1 — REQUEST-SCOPED SCAN STATE. The holder ingress
     # created is claimed for THIS request's turn id; a holder still claimed by
     # an earlier turn (an ingress that forgot `begin_turn`) is stale and is
-    # discarded unread. ⛔ finding 1: a claim FAILURE must clear or refuse,
-    # never continue — continuing would run the turn over scan state nothing
-    # vouches for.
-    _claim_scan_state(getattr(request, "turn_id", "") or "")
+    # discarded unread.
+    #
+    # ⛔⛔ A CLAIM FAILURE FAILS CLOSED *(finding 1, second round)*. Clearing
+    # and continuing was still fail-OPEN: a message that arrived carrying a
+    # barcode would then run as an ordinary unscanned turn and could reach
+    # legacy execution without its scan — the exact invariant this phase
+    # closes. So the state is cleared AND the turn refuses here, in words,
+    # through the same result assembly every other refusal uses: no stages
+    # run, no execution, no tool calls, nothing written, the session usable.
+    _scan_claim_failure = _claim_scan_state(getattr(request, "turn_id", "") or "")
+    if _scan_claim_failure is not None:
+        logger.warning("event=scan_claim_refused turn=%s — the scan state "
+                       "could not be claimed for this request; refusing "
+                       "rather than running the turn over unowned state",
+                       getattr(request, "turn_id", "-"))
+        return _result_from_state(
+            _PreCoordinatorRefusal(request,
+                                   _refusal_copy(_scan_claim_failure)),
+            legacy_kwargs)
     from core.request_trace import RequestTrace, active as _trace_active
     from core.request_trace import current_trace
     from core.turn_identity import CURRENT_TURN_ID
@@ -409,21 +424,50 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     return _result_from_state(state, legacy_kwargs)
 
 
-def _claim_scan_state(turn_id: str) -> None:
-    """Claim the request-scoped scan holder — and on ANY failure, CLEAR it
-    *(P17 Phase 1 finishing patch, finding 1)*. A turn must never continue
-    over scan state it could not claim: cleared, the turn runs as unscanned
-    (an attached scan is lost loudly, in the log); unclearable, the turn
-    refuses by propagation rather than proceeding on stale authority."""
+class _PreCoordinatorRefusal:
+    """The minimal state a refusal raised BEFORE the coordinator ran needs, so
+    it flows through `_result_from_state` — ONE result assembly, no second
+    definition of what a turn returns. No execution, no validation, hence no
+    tool calls and nothing committed."""
+
+    def __init__(self, request, text: str):
+        from core.platform import Response
+        self.response = Response.from_text(text)
+        self.validation = None
+        self.request = request
+        self.health_flags = set()
+        self.execution = None
+        self.error = None
+
+
+def _claim_scan_state(turn_id: str):
+    """Claim the request-scoped scan holder. Returns None on success, or the
+    typed refusal the caller must answer with *(finding 1)*.
+
+    ⛔ FAIL CLOSED, BOTH WAYS. On any failure the holder is CLEARED — so no
+    later reader can see unowned state — and a `ScanAuthorityRefusal` is
+    returned so the turn is answered in words instead of continuing. Clearing
+    alone was still fail-open: a message that arrived with a barcode would
+    have run as an ordinary unscanned turn."""
+    from core.scan_authority import ScanAuthorityRefusal
     try:
         from core.scan_authority import claim
         claim(turn_id)
-        return
+        return None
+    except Exception as exc:                             # noqa: BLE001
+        logger.warning("scan state: claim failed — clearing and refusing",
+                       exc_info=True)
+        detail = f"{type(exc).__name__}: {exc}"
+    try:
+        from skills.nutrition.product_acquisition import begin_turn
+        begin_turn()
     except Exception:                                    # noqa: BLE001
-        logger.warning("scan state: claim failed — clearing; this turn runs "
-                       "unscanned", exc_info=True)
-    from skills.nutrition.product_acquisition import begin_turn
-    begin_turn()                       # raises through = the turn refuses
+        # even the clear failed: still refuse, and say so in the log — the
+        # turn writes nothing either way
+        logger.error("scan state: clear after a failed claim ALSO failed",
+                     exc_info=True)
+        detail += " (state not clearable)"
+    return ScanAuthorityRefusal("claim_failed", detail)
 
 
 def _refusal_copy(exc) -> str:
@@ -473,6 +517,10 @@ def _refusal_copy(exc) -> str:
             return ("Two different products came through on that message, so "
                     "I didn't log anything. Scan one at a time and tell me "
                     "the amount.")
+        if exc.reason == "claim_failed":
+            return ("Something went wrong starting that message, so I didn't "
+                    "log anything. Send it again — if you scanned something, "
+                    "scan it once more with the amount.")
         if exc.reason == "consumed":
             return ("That scan was already used on this message, so I didn't "
                     "log it twice. If you had more, tell me the amount.")

@@ -71,7 +71,7 @@ def _outcome(plan, ev):
     ("I had 2 servings of this.", "Caramel Cashew", "fresh_consumption"),
     ("2 servings", "Caramel Cashew", "fresh_amount"),
     ("had 2 barebells caramel cashew", "Barebells Caramel Cashew", "mention_same"),
-    ("I had a protein bar", "protein bar", "fresh_consumption"),
+    ("I had 2 bars", "bar", "fresh_consumption"),   # consumption wins the label
     ("I had this", "bar", "fresh_consumption"),
     ("110 g of this", "bar", "fresh_amount"),
 ])
@@ -703,8 +703,8 @@ async def test_8_negated_or_questioned_consumption_cannot_become_a_write(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("message,expected_reason_prefix", [
-    ("my glucose was 110", "unattributed_identity_words"),   # a number is not an amount
-    ("version 2", "unattributed_identity_words"),
+    ("my glucose was 110", "unaccounted_identity"),   # a number is not an amount
+    ("version 2", "unaccounted_identity"),
     # ⛔ the residual check must not MASK the amount rule: these carry a bare
     # number and NO residual identity word, so only the value+unit rule
     # stands between them and a bind (caught green in the first sweep)
@@ -736,19 +736,28 @@ async def test_f2_bare_numbers_and_bare_deictics_cannot_authorise_a_ready_write(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("message,unaccounted", [
+    # the user's own product words, every carrier relabelled away
+    ("I had 2 Barebells Salty Peanut bars", {"salty", "peanut"}),
+    # ⛔ Danny's cases: a stop list swallowed both of these
+    ("I had 2 plain bars", {"plain"}),
+    ("I had 2 Perfect Bars", {"perfect"}),
+])
 async def test_f3_a_producer_that_relabels_every_carrier_cannot_reach_the_amount_path(
-        db, make_user):
-    """⛔ finding 3 CLOSED, strictly: the user wrote "Barebells Salty Peanut";
-    the producer relabelled EVERY carrier "Caramel Cashew", erasing the words
-    the conflict check needs. The residual identity words refuse the
-    identity-free amount path: UNDECIDABLE, naming the unattributed words."""
+        db, make_user, message, unaccounted):
+    """⛔ finding 3 CLOSED BY A POSITIVE GRAMMAR (second round): the producer
+    relabelled EVERY carrier "Caramel Cashew", so no label verifies against
+    the user's words. Every message token must then be accounted for by a
+    CLOSED role (function / quantifier / unit / consumption / deictic) or by
+    the scanned label's own words. "plain" and "Perfect" are accounted for by
+    nothing — the identity-free amount path must not bind on a word the
+    producer erased. A stop list swallowed exactly these."""
     from skills.nutrition.product_acquisition import (DISP_REFUSED,
                                                       UNDECIDABLE, attach,
                                                       begin_turn)
     from core.scan_authority import decide_from_plan
     snap = await _caramel(db)
-    msg = "I had 2 Barebells Salty Peanut bars"
-    plan = _plan({"action": "log", "_message": msg,
+    plan = _plan({"action": "log", "_message": message,
                   "tool_calls": [_log_op("Caramel Cashew", "2 bars")],
                   "b1_material": {"staged_items": (), "items": [
                       {"food": "Caramel Cashew", "amount": 2, "unit": "bar"}]}})
@@ -757,8 +766,88 @@ async def test_f3_a_producer_that_relabels_every_carrier_cannot_reach_the_amount
     try:
         d = decide_from_plan(plan, _ev(snap))
         assert d.outcome == UNDECIDABLE and d.disposition == DISP_REFUSED
-        assert d.reason.startswith("unattributed_identity_words"), d.reason
-        assert "salty" in d.reason and "peanut" in d.reason
+        assert d.reason.startswith("unaccounted_identity"), d.reason
+        for word in unaccounted:
+            assert word in d.reason, (word, d.reason)
+    finally:
+        begin_turn()
+
+
+@pytest.mark.asyncio
+async def test_f3_the_grammar_is_positive_not_a_stop_list(db, make_user):
+    """The POSITIVE half: a message whose every token has a role binds, and a
+    generic word the LABEL ITSELF carries is accounted for BY THE LABEL — not
+    by an exception list. Same words, two labels, two answers."""
+    from core.scan_authority import decide_from_plan, unaccounted_identity
+    from skills.nutrition.product_acquisition import (BOUND, UNDECIDABLE,
+                                                      attach, begin_turn)
+    snap = await _caramel(db)                       # "Caramel Cashew"
+    msg = "I had a protein bar"
+    plan = _plan({"action": "log", "_message": msg,
+                  "tool_calls": [_log_op("Caramel Cashew", "1 bar")],
+                  "b1_material": {"staged_items": (), "items": [
+                      {"food": "Caramel Cashew", "amount": 1, "unit": "bar"}]}})
+    begin_turn()
+    attach(_ev(snap))
+    try:
+        d = decide_from_plan(plan, _ev(snap))
+        assert d.outcome == UNDECIDABLE, d
+        assert "protein" in d.reason                 # the label never says it
+    finally:
+        begin_turn()
+    # the SAME words against a label that does say "Protein Bar": accounted
+    protein_ev = _fake_ev(9, name="Protein Bar Caramel Cashew", brand="Barebells")
+    assert unaccounted_identity(msg, protein_ev, set()) == set()
+    begin_turn()
+    attach(protein_ev)
+    try:
+        assert decide_from_plan(plan, protein_ev).outcome == BOUND
+    finally:
+        begin_turn()
+
+
+def test_f2_half_without_a_unit_is_not_an_amount():
+    """⛔ finding 2 (second round): the no-unit tail is gone. "half a" and
+    "half of" state no amount; "half a bar" and "half of a bar" do."""
+    from core.scan_authority import fresh_statement_signal as sig
+    assert sig("half a") == ""
+    assert sig("half of") == ""
+    assert sig("half a bar") == "amount"
+    assert sig("half of a bar") == "amount"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message", ["half a", "half of"])
+async def test_f2_a_no_unit_fragment_cannot_authorise_a_ready_write(
+        db, make_user, message):
+    """The producer emits a ready write from a fragment that states no
+    amount: refused."""
+    from skills.nutrition.product_acquisition import (UNDECIDABLE, attach,
+                                                      begin_turn)
+    from core.scan_authority import decide_from_plan
+    snap = await _caramel(db)
+    plan = _plan({"action": "log", "_message": message,
+                  "tool_calls": [_log_op("Caramel Cashew", "1 bar")]})
+    begin_turn()
+    attach(_ev(snap))
+    try:
+        assert decide_from_plan(plan, _ev(snap)).outcome == UNDECIDABLE
+    finally:
+        begin_turn()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message", ["half a bar", "half of a bar"])
+async def test_f2_half_a_bar_is_a_real_amount_and_binds(db, make_user, message):
+    from skills.nutrition.product_acquisition import BOUND, attach, begin_turn
+    from core.scan_authority import decide_from_plan
+    snap = await _caramel(db)
+    plan = _plan({"action": "log", "_message": message,
+                  "tool_calls": [_log_op("Caramel Cashew", "0.5 bar")]})
+    begin_turn()
+    attach(_ev(snap))
+    try:
+        assert decide_from_plan(plan, _ev(snap)).outcome == BOUND
     finally:
         begin_turn()
 
@@ -863,12 +952,122 @@ def test_f1_consumed_authority_is_spent():
     assert ei.value.reason == "consumed"
 
 
-def test_f1_a_failed_claim_clears_the_state_and_never_continues(monkeypatch):
-    """⛔ finding 1: the entrypoint's claim helper CLEARS on failure (the turn
-    runs unscanned over fresh state) and refuses by propagation when even the
-    clear fails — it never continues over unclaimed state."""
+@pytest.mark.asyncio
+async def test_f1_a_failed_claim_refuses_the_WHOLE_TURN_with_zero_writes(
+        db, make_user, monkeypatch, caplog):
+    """⛔ finding 1, THE FULL-TURN PROOF Danny required: `run_turn` is driven
+    end to end with a claim that fails. The turn must produce a typed refusal
+    through the real response seam — no coordinator stages, no legacy
+    execution, no tool calls, no food row, no ledger event — and the session
+    must remain usable afterwards."""
+    import types
+    import core.scan_authority as sa
+    import core.turns.factory as F
+    from core.turns.stages import execute as E
+    from db.models import FoodEntry, LedgerEvent
+    from sqlalchemy import select
+    from skills.nutrition.product_acquisition import attach, begin_turn
+    from core.turns.models import TurnRequest
+    caplog.set_level(logging.INFO)
+    user = await make_user()
+    log = await _log(db, user)
+    snap = await _caramel(db)
+    ran = {"coordinator": 0, "legacy": 0}
+
+    class _Coordinator:
+        route_stage = types.SimpleNamespace(decision=None)
+
+        async def run(self, request):
+            ran["coordinator"] += 1
+            raise AssertionError("a stage ran on a refused-claim turn")
+
+    async def _build(request, **kwargs):
+        return _Coordinator()
+
+    class _LegacySpy:
+        def __init__(self, **kwargs):
+            ran["legacy"] += 1
+
+        async def run(self, request):
+            raise AssertionError("legacy ran on a refused-claim turn")
+
+    monkeypatch.setattr(F, "build_coordinator", _build)
+    monkeypatch.setattr(E, "LegacyExecutionStage", _LegacySpy)
+    monkeypatch.setattr(sa, "claim", lambda turn_id: (_ for _ in ()).throw(
+        RuntimeError("contextvar corrupt")))
+
+    rows_before = (await db.execute(select(FoodEntry).where(
+        FoodEntry.daily_log_id == log.id))).scalars().all()
+    events_before = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.user_id == user.id))).scalars().all()
+
+    # the message ARRIVED WITH A BARCODE — the case that used to run unscanned
+    begin_turn()
+    attach(_ev(snap))
+    req = TurnRequest(turn_id=f"ios:claimfail-{user.id}", user_id=user.id,
+                      platform="ios", source_type="ios",
+                      text="I had 2 servings of this.",
+                      metadata={"db": db, "user": user, "today_log": log,
+                                "messages": ()})
+    from core.turns.entrypoint import run_turn
+    try:
+        result = await run_turn(request=req)
+    finally:
+        begin_turn()
+
+    bubbles = list(getattr(result.response, "bubbles", None) or [])
+    assert bubbles and any(b.strip() for b in bubbles), result
+    text = " ".join(bubbles).lower()
+    assert "didn't log anything" in text, text
+    assert "lost the thread" not in text and "wires crossed" not in text
+    assert list(result.tool_calls or []) == []
+    assert ran == {"coordinator": 0, "legacy": 0}, ran
+    assert "scan_claim_refused" in caplog.text
+    rows_after = (await db.execute(select(FoodEntry).where(
+        FoodEntry.daily_log_id == log.id))).scalars().all()
+    events_after = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.user_id == user.id))).scalars().all()
+    assert [r.id for r in rows_after] == [r.id for r in rows_before]
+    assert [e.id for e in events_after] == [e.id for e in events_before]
+
+    # the session is still usable: with the claim working again the SAME
+    # request runs normally (the coordinator is reached)
+    monkeypatch.undo()
+    reached = {"n": 0}
+
+    class _OkCoordinator:
+        route_stage = types.SimpleNamespace(decision=None)
+
+        async def run(self, request):
+            from core.platform import Response
+            reached["n"] += 1
+            # a state with a RESPONSE: an ordinary answered turn, so the
+            # empty-plan delegation below it is not reached
+            return types.SimpleNamespace(
+                error=None, execution=None,
+                response=Response.from_text("Logged."), request=request,
+                health_flags=(), snapshot=None, phase=None, route=None,
+                plan=None, validation=None, context=None)
+
+    async def _build_ok(request, **kwargs):
+        return _OkCoordinator()
+
+    monkeypatch.setattr(F, "build_coordinator", _build_ok)
+    monkeypatch.setattr(E, "LegacyExecutionStage", _LegacySpy)
+    begin_turn()
+    await run_turn(request=req)
+    assert reached["n"] == 1, "the session did not recover after the refusal"
+
+
+def test_f1_a_failed_claim_clears_the_state_and_returns_a_typed_refusal(monkeypatch):
+    """⛔ finding 1 (second round): clearing and CONTINUING was still
+    fail-open — a message that arrived with a barcode would run as an
+    ordinary unscanned turn. The helper clears AND returns the typed refusal
+    the caller must answer with; it never returns None on failure, even when
+    the clear itself fails."""
     import core.scan_authority as sa
     import skills.nutrition.product_acquisition as pa
+    from core.scan_authority import ScanAuthorityRefusal
     from core.turns.entrypoint import _claim_scan_state
     pa.begin_turn()
     pa.attach(_fake_ev(7))
@@ -878,14 +1077,16 @@ def test_f1_a_failed_claim_clears_the_state_and_never_continues(monkeypatch):
         raise RuntimeError("contextvar corrupt")
 
     monkeypatch.setattr(sa, "claim", boom)
-    _claim_scan_state("ios:t1")
+    exc = _claim_scan_state("ios:t1")
+    assert isinstance(exc, ScanAuthorityRefusal) and exc.reason == "claim_failed"
     assert not sa.scan_attached(), "claim failed but the stale state survived"
 
-    # and when the CLEAR itself fails, the turn refuses by propagation
+    # even when the CLEAR fails, a refusal is returned — never None
     monkeypatch.setattr(pa, "begin_turn",
                         lambda: (_ for _ in ()).throw(RuntimeError("dead")))
-    with pytest.raises(RuntimeError):
-        _claim_scan_state("ios:t2")
+    exc2 = _claim_scan_state("ios:t2")
+    assert isinstance(exc2, ScanAuthorityRefusal)
+    assert "not clearable" in exc2.detail
 
 
 # ═════ 9 — THE ATTACHMENT AUTHORITY: IDENTICAL DEDUPES, DIFFERENT REFUSES ══

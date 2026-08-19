@@ -234,10 +234,13 @@ _UNIT_WORDS = (r"(?:servings?|bars?|pieces?|g|grams?|oz|ounces?|ml|"
                r"cans?|scoops?|squares?|tbsp|tsp|tablespoons?|teaspoons?)")
 _NUM_WORDS = (r"(?:\d+(?:[.,]\d+)?|a|an|one|two|three|four|five|six|seven|"
               r"eight|nine|ten|half|quarter|couple(?:\s+of)?|few)")
+#: ⛔ VALUE + FOOD UNIT, NOTHING ELSE *(finding 2, second round)*. The
+#: no-unit tail (`half a`, `half of`) is gone: it let a producer-generated
+#: ready write reach BOUND on a fragment that states no amount at all. The
+#: main branch already accepts "half a bar" and "half of a bar".
 _AMOUNT_RE = re.compile(
     rf"\b{_NUM_WORDS}\s+(?:of\s+)?(?:the\s+)?(?:[\w']+\s+)?{_UNIT_WORDS}\b"
-    rf"|\b\d+(?:[.,]\d+)?\s*(?:g|grams?|oz|ml)\b"
-    rf"|\bhalf\s+(?:a|an|the|of)\b", re.I)
+    rf"|\b\d+(?:[.,]\d+)?\s*(?:g|grams?|oz|ml)\b", re.I)
 _NEGATION_RE = re.compile(
     r"\b(didn'?t|did not|haven'?t|have not|hadn'?t|had not|never|not)\s+"
     r"(?:\w+\s+){0,2}(?:had|eat|ate|eaten|have|drink|drank|finish|finished|touch)\b"
@@ -344,28 +347,100 @@ def evidence_aliases(ev) -> tuple:
     return brand, product
 
 
-#: words that are never product identity, over and above _GENERIC_WORDS —
-#: used ONLY by `identity_residual` (never by the mention/alias comparison,
-#: where "morning" may genuinely be a product word)
-_NON_IDENTITY_EXTRA = frozenset("""
-i we you he she they me us was were is are am be been being did do does done
-doing not no dont didnt cant wont isnt wasnt arent im ive id
-after before during while then later now today tonight yesterday tomorrow
-morning afternoon evening right really very too also still already again
-please thanks thank ok okay yeah yes sure cool nice great awesome alright
-perfect good fine got gotcha word bet lol haha nope nah
+# ── THE POSITIVE UTTERANCE GRAMMAR *(finding 3, second round)* ─────────────
+#
+# ⛔ NOT A STOP LIST. The previous cut (`identity_residual`) subtracted a
+# growing list of "words that are not identity" and asked whether anything
+# remained — a leftover-token heuristic under a new name, and it let a
+# producer that relabelled EVERY carrier bind anyway: "I had 2 plain bars"
+# and "I had 2 Perfect Bars" both subtract to nothing when the stop list
+# happens to contain the identifying word.
+#
+# The rule is inverted. Every token of the user's message must be POSITIVELY
+# ACCOUNTED FOR by one of a small number of CLOSED roles:
+#
+#     FUNCTION    pronouns, determiners, prepositions, conjunctions,
+#                 auxiliaries — a closed word class, finite by definition
+#     QUANTIFIER  numbers and number words
+#     UNIT        the measure vocabulary the amount parser already owns
+#     CONSUMPTION the eating/drinking verbs
+#     DEICTIC     this / these / that one / those
+#     EVIDENCE    a word of the scanned product's own brand or product name
+#     MENTION     a word of a producer label the user literally wrote
+#
+# A token matching NO role is an identity claim nothing accounts for, and the
+# identity-free path refuses (`unaccounted_identity`). "plain" and "Perfect"
+# are unaccounted, so both refuse; "I had 2 bars" is fully accounted and
+# binds; a product word the LABEL carries ("protein", when the scanned
+# product is a protein bar) is accounted by the EVIDENCE role rather than by
+# a list of exceptions.
+
+_FUNCTION_WORDS = frozenset("""
+i me my mine we us our ours you your yours he him his she her hers it its
+they them their theirs this that these those there here who whom whose which
+what a an the and or but nor so then than as if because while when whenever
+of in on at to from for with without into onto off out up down over under
+about around by via per each every both all any some none no not just only
+also too very really quite rather still already again more less most least
+other another same different next last previous
+is are was were be been being am do does did doing done have has had having
+will would shall should can could may might must
+please thanks thank ok okay yes yeah yep sure nope nah cool nice great good
+fine perfect_ack alright awesome sorry hey hi hello
+today tonight yesterday tomorrow now later earlier morning afternoon evening
+night before after during while ago
+""".split())
+
+_CONSUMPTION_WORDS = frozenset("""
+had have has ate eat eaten eating drank drink drinking drunk finished finish
+snacked downed consumed devoured munched grabbed got bought ordered
+""".split())
+
+_DEICTIC_WORDS = frozenset("this these that those it them one ones".split())
+
+_QUANTIFIER_WORDS = frozenset("""
+a an one two three four five six seven eight nine ten eleven twelve dozen
+half quarter third couple few several some many lots plenty double triple
 """.split())
 
 
-def identity_residual(message: str) -> set:
-    """⛔ finding 3 — the message's content words that NOTHING accounts for:
-    not generic, not consumption/amount vocabulary, not function words. If
-    this is non-empty and no producer label verified against the message, the
-    user named SOMETHING and the producer erased it — the identity-free
-    amount path must NOT bind; the turn is UNDECIDABLE."""
-    toks = _content(_tokens(_AMOUNT_RE.sub(" ", str(message or ""))))
-    return {t for t in toks
-            if t not in _NON_IDENTITY_EXTRA and _stem(t) not in _NON_IDENTITY_EXTRA}
+def _unit_vocabulary() -> frozenset:
+    """The measure words the amount parser owns, as a token set — ONE source,
+    so the grammar cannot drift from what `_AMOUNT_RE` accepts. The pattern
+    spells plurals with `?` ("bars?"), so the singular is added by stemming
+    rather than by a second hand-written list."""
+    found = set(re.findall(r"[a-z]+", _UNIT_WORDS))
+    return frozenset(found | {_stem(w) for w in found})
+
+
+def unaccounted_identity(message: str, ev, mention: set) -> set:
+    """⛔ THE POSITIVE GRAMMAR. Tokens of the user's message that NO role
+    accounts for — an identity claim the producer's labels never verified.
+    Non-empty means the identity-free path must NOT bind: the words name
+    something, and nothing available proves what."""
+    # ⛔ the EVIDENCE role uses the label's RAW words, not the identity-
+    # discriminating aliases: "does the scanned label itself contain this
+    # word" is a fact, and a generic word the label genuinely carries
+    # ("Protein Bar") must be accounted for by the label, never by a
+    # hand-kept exception list.
+    aliases = set(_tokens(str(getattr(ev, "brand", "") or "").replace(",", " ")))
+    aliases |= set(_tokens(getattr(ev, "product_name", "") or ""))
+    units = _unit_vocabulary()
+    out: set = set()
+    for tok in _tokens(message):
+        stem = _stem(tok)
+        if (tok in _FUNCTION_WORDS or stem in _FUNCTION_WORDS
+                or tok in _CONSUMPTION_WORDS or stem in _CONSUMPTION_WORDS
+                or tok in _DEICTIC_WORDS or stem in _DEICTIC_WORDS
+                or tok in _QUANTIFIER_WORDS or stem in _QUANTIFIER_WORDS
+                or tok in units or stem in units):
+            continue
+        if any(_tok_match(tok, a) for a in aliases):
+            continue                                     # the label's own word
+        if any(_tok_match(tok, m) for m in (mention or ())):
+            continue                                     # a verified mention
+        out.add(tok)
+    return out
 
 
 SAME, OTHER, CONFLICT = "same", "other", "conflict"
@@ -529,14 +604,14 @@ def _decide_single(sub, plan, message: str, ev):
                                 f"mention={' '.join(sorted(mention))}")
         return ScanDecision(EXPLICIT_OTHER_FOOD, ev, DISP_DISCARDED,
                             f"mention={' '.join(sorted(mention))}")
-    # no verifiable mention. ⛔ finding 3: if the user's words still carry
-    # identity-class content NOTHING attributed (a product name every carrier
-    # relabelled away), the identity-free path must not bind on a guess.
-    residual = identity_residual(message)
-    if residual:
+    # no verifiable mention. ⛔ finding 3: every token of the message must be
+    # positively accounted for by a closed role or by the evidence itself.
+    # A token nothing accounts for is an identity claim the producer erased
+    # (it relabelled every carrier) — the identity-free path must not bind.
+    unaccounted = unaccounted_identity(message, ev, mention)
+    if unaccounted:
         return ScanDecision(UNDECIDABLE, ev, DISP_REFUSED,
-                            f"unattributed_identity_words="
-                            f"{' '.join(sorted(residual))}")
+                            f"unaccounted_identity={' '.join(sorted(unaccounted))}")
     # identity-free: the words must carry a fresh product statement
     signal = fresh_statement_signal(message)
     if signal:
@@ -567,8 +642,8 @@ def _refusal_reason(d) -> str:
             return r
         if r == "no_fresh_statement":
             return "no_fresh_statement"
-        if r.startswith("unattributed_identity_words"):
-            return "no_fresh_statement"          # same user story: name+amount
+        if r.startswith("unaccounted_identity"):
+            return "unaccounted_identity"
         return "undecidable"
     return d.outcome
 
