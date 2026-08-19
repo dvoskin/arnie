@@ -301,10 +301,20 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     # write, no legacy, no raise. The exception's own text is developer copy;
     # the sentence is chosen by refusal KIND.
     from core.canonical_correction import CorrectionRefused
-    from core.turns.stages.execute_native import (ScanBoundIdentityUnavailable,
+    from skills.nutrition.correction_application import ScanBoundCorrectionRefused
+    from core.turns.stages.execute_native import (ScanBindingDecisionUnavailable,
+                                                  ScanBoundIdentityUnavailable,
                                                   ScanBoundNotLegacy)
+    # ⚠ `ScanBoundCorrectionRefused` is here as DEFENCE IN DEPTH, not as a
+    # route: the CF5 backstop should stop a bound turn long before correction
+    # application sees it. But an invariant that prevents a bad write and then
+    # surfaces as "Arnie's temporarily unavailable" has traded a wrong number
+    # for an outage — CF2's lesson, and the reason every canonical refusal
+    # gets user-grade copy.
     if isinstance(state.error, (CorrectionRefused, ScanBoundNotLegacy,
-                                ScanBoundIdentityUnavailable)):
+                                ScanBoundIdentityUnavailable,
+                                ScanBindingDecisionUnavailable,
+                                ScanBoundCorrectionRefused)):
         # CF5b: `ScanBoundNotLegacy` is answered here beside the correction
         # refusals — same contract: no write, no legacy, no raise, words.
         logger.info("event=canonical_refusal_answered turn=%s kind=%s reason=%s",
@@ -362,8 +372,18 @@ def _refusal_copy(exc) -> str:
     the exception text (developer copy), never a claim of success."""
     from core.canonical_correction import (ProductSelectionRefused,
                                            StaleUndo)
-    from core.turns.stages.execute_native import (ScanBoundIdentityUnavailable,
+    from skills.nutrition.correction_application import ScanBoundCorrectionRefused
+    from core.turns.stages.execute_native import (ScanBindingDecisionUnavailable,
+                                                  ScanBoundIdentityUnavailable,
                                                   ScanBoundNotLegacy)
+    if isinstance(exc, ScanBindingDecisionUnavailable):
+        return ("Something went wrong reading that scan, so I didn't change "
+                "anything. Scan it again, or tell me the food and the amount "
+                "and I'll log it.")
+    if isinstance(exc, ScanBoundCorrectionRefused):
+        return ("I have the scanned product, so I didn't apply that as a "
+                "change to an existing entry. Tell me how much of it you had "
+                "and I'll log it from the label.")
     if isinstance(exc, ScanBoundIdentityUnavailable):
         return ("I couldn't read the scanned product's details just now, so I "
                 "didn't log anything. Scan it again, or tell me the food and "

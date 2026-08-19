@@ -108,11 +108,39 @@ def _decide_scan_binding(ops) -> None:
     state, and read by every downstream guard — the backstop below, the
     binder, and `correction_application`'s invariant. Operation counting is
     this decision's INPUT, never a second definition of "bound" living at a
-    guard site."""
+    guard site.
+
+    ⛔⛔ AND IT FAILS CLOSED *(review round 3)*. The first cut caught every
+    exception, logged it, and continued — which silently restored the ORIGINAL
+    bug class: an attached scan stays ATTACHED, `scan_is_bound()` is then
+    False, so the product is never stamped, the CF5 backstop never fires, the
+    turn reaches the ordinary correction/legacy path, and the snapshot is
+    discarded exactly as it was on ios:D3B7757E. A decision that cannot be
+    made is not "no binding" — it is an unknown, and an unknown about
+    AUTHORITY must refuse. Same lesson as the lifted identity one level down:
+    a guard whose failure mode is "carry on" is not a guard.
+
+    A turn with NO scan attached has nothing to protect: the decision is a
+    no-op and a failure there is logged, not raised."""
+    attached = _scan_is_attached()
     try:
-        from skills.nutrition.product_acquisition import decide_binding
+        from skills.nutrition.product_acquisition import (BOUND,
+                                                          SCAN_BINDING,
+                                                          SKIPPED_MULTI_ITEM,
+                                                          decide_binding)
         decide_binding(bound=not _scan_declined_to_bind(ops))
-    except Exception:                                    # noqa: BLE001
+        if attached:
+            state = SCAN_BINDING.get()
+            kind = getattr(state, "kind", None)
+            if kind not in (BOUND, SKIPPED_MULTI_ITEM):
+                raise RuntimeError(
+                    f"the decision left the state {kind!r}, which is neither "
+                    f"bound nor skipped")
+    except Exception as exc:                             # noqa: BLE001
+        if attached:
+            logger.warning("scan binding decision failed on a SCANNED turn — "
+                           "refusing", exc_info=True)
+            raise ScanBindingDecisionUnavailable(str(exc)) from exc
         logger.warning("scan binding decision failed", exc_info=True)
 
 
@@ -133,6 +161,24 @@ def _scan_declined_to_bind(ops) -> bool:
     food, or none — is the scanned product's turn."""
     return sum(1 for op in (ops or ())
                if isinstance(op, dict) and op.get("name") in _FOOD_OPS) >= 2
+
+
+class ScanBindingDecisionUnavailable(Exception):
+    """⛔⛔ CF5b (review round 3) — a barcode is attached to this turn and
+    whether it BINDS could not be decided. Not the same as "it binds
+    nothing": that is a decision, this is the absence of one, and every guard
+    downstream reads the decision. Continuing would leave the state ATTACHED,
+    `scan_is_bound()` False, nothing stamped, the backstop silent, and the
+    snapshot free to be discarded by the legacy correction path — the exact
+    production failure this tranche exists to close. Raised before any write
+    and before any guard reads the state; answered in words at the
+    entrypoint's canonical-refusal seam."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(
+            f"a scanned turn's binding could not be decided ({reason}) — "
+            f"refused, nothing written")
 
 
 class ScanBoundIdentityUnavailable(Exception):

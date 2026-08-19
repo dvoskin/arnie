@@ -768,6 +768,182 @@ def test_p2_the_ingress_clears_both_the_attachment_and_the_decision():
         "ingress sets the attachment directly — the reset must be the one door")
 
 
+# ═════ REVIEW ROUND 3 — AN UNDECIDABLE BINDING FAILS CLOSED ════════════════
+#
+# Catching the decision's failure and continuing restored the ORIGINAL bug
+# class by a quieter door: the state stays ATTACHED, `scan_is_bound()` is
+# False, nothing is stamped, the backstop is silent, and the legacy
+# correction path is free to discard the snapshot — ios:D3B7757E again.
+
+@pytest.mark.asyncio
+async def test_r3_an_undecidable_binding_on_a_scanned_turn_refuses_and_writes_nothing(
+        db, make_user, monkeypatch, caplog):
+    """Attached scan + forced decision failure -> ScanBindingDecisionUnavailable:
+    no mutation of the old row, no new row, no legacy execution, and a
+    user-facing refusal rather than an outage."""
+    from db.models import FoodEntry
+    from sqlalchemy import select
+    import skills.nutrition.product_acquisition as pa
+    from core.turns.stages.execute_native import ScanBindingDecisionUnavailable
+    caplog.set_level(logging.INFO)
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    existing = await _legacy_barebells_row(db, log)
+    before = await _row_bytes(db, existing)
+    events_before = len(await _events(db, user.id))
+
+    def _boom(*a, **k):
+        raise RuntimeError("the decision could not be made")
+    monkeypatch.setattr(pa, "decide_binding", _boom)
+
+    with pytest.raises(ScanBindingDecisionUnavailable):
+        await _run(db, user, log, "2 servings of Barebells bars", snap.id,
+                   _the_misrouted_plan(existing), monkeypatch, turn_id="t:r3")
+
+    assert await _row_bytes(db, existing) == before
+    rows = (await db.execute(select(FoodEntry).where(
+        FoodEntry.daily_log_id == log.id))).scalars().all()
+    assert [r.id for r in rows] == [existing]
+    assert len(await _events(db, user.id)) == events_before
+    assert "settlement_route" not in caplog.text        # refused before the predicate
+    assert "route=ratio" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_r3_an_undecidable_binding_with_NO_scan_is_not_an_error(
+        db, make_user, monkeypatch, caplog):
+    """A turn with no barcode has nothing to protect: the decision is a no-op
+    and its failure is logged, not raised — the guard must not turn every
+    unscanned turn into a refusal."""
+    import skills.nutrition.product_acquisition as pa
+    from core.turns.stages.execute_native import _decide_scan_binding
+    caplog.set_level(logging.WARNING)
+    pa.begin_turn()                                     # no attachment
+    def _boom(*a, **k):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(pa, "decide_binding", _boom)
+    _decide_scan_binding([{"name": "log_food", "input": {"food_name": "x"}}])
+    assert "scan binding decision failed" in caplog.text
+    assert "refusing" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_r3_a_decision_that_returns_without_deciding_also_refuses(
+        db, make_user, monkeypatch, caplog):
+    """The failure mode with no exception at all: `decide_binding` returns
+    normally but leaves the state ATTACHED. `scan_is_bound()` would then be
+    False on a scanned turn and every guard downstream would go quiet — the
+    same fail-open, arriving without an error to catch. The post-check is what
+    turns that into a refusal."""
+    from db.models import FoodEntry
+    from sqlalchemy import select
+    import skills.nutrition.product_acquisition as pa
+    from core.turns.stages.execute_native import ScanBindingDecisionUnavailable
+    caplog.set_level(logging.INFO)
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    existing = await _legacy_barebells_row(db, log)
+    before = await _row_bytes(db, existing)
+
+    monkeypatch.setattr(pa, "decide_binding", lambda **k: None)   # no raise, no decision
+
+    with pytest.raises(ScanBindingDecisionUnavailable):
+        await _run(db, user, log, "2 servings of Barebells bars", snap.id,
+                   _the_misrouted_plan(existing), monkeypatch, turn_id="t:r3b")
+    assert await _row_bytes(db, existing) == before
+    rows = (await db.execute(select(FoodEntry).where(
+        FoodEntry.daily_log_id == log.id))).scalars().all()
+    assert [r.id for r in rows] == [existing]
+    assert "settlement_route" not in caplog.text
+
+
+def test_r3_the_decision_fails_closed_by_construction():
+    """AST: `_decide_scan_binding` raises the typed refusal, and does so only
+    on the attached branch."""
+    import ast
+    import inspect
+    from core.turns.stages import execute_native as m
+    tree = ast.parse(inspect.getsource(m._decide_scan_binding).lstrip())
+    raises = [n for n in ast.walk(tree) if isinstance(n, ast.Raise)
+              and isinstance(getattr(n.exc, "func", None), ast.Name)
+              and n.exc.func.id == "ScanBindingDecisionUnavailable"]
+    assert raises, "the decision still fails OPEN — an attached scan can go undecided"
+
+
+def test_r3_the_entrypoint_answers_every_scan_refusal_in_words():
+    """P2 hardening: an invariant that blocks a bad write and then surfaces as
+    'temporarily unavailable' has traded a wrong number for an outage."""
+    from core.turns.entrypoint import _refusal_copy
+    from core.turns.stages.execute_native import (ScanBindingDecisionUnavailable,
+                                                  ScanBoundIdentityUnavailable,
+                                                  ScanBoundNotLegacy)
+    from skills.nutrition.correction_application import ScanBoundCorrectionRefused
+    # ⚠ EACH MUST NAME ITS OWN KIND. An earlier version asserted only that the
+    # four copies DIFFERED and said nothing alarming — which the GENERIC
+    # correction fallback also satisfies, so deleting a branch left the test
+    # green. The phrase each copy must contain is what makes the branch
+    # observable.
+    cases = [
+        (ScanBindingDecisionUnavailable("boom"), "scan it again"),
+        (ScanBoundCorrectionRefused(1, "Barebells"), "scanned product"),
+        (ScanBoundIdentityUnavailable(1, "Quest", "missing"), "didn't log anything"),
+        (ScanBoundNotLegacy("t:1", ["update_food_entry"]), "didn't touch anything"),
+    ]
+    generic = _refusal_copy(Exception("something else entirely"))
+    seen = set()
+    for exc, must_say in cases:
+        copy = _refusal_copy(exc)
+        assert must_say in copy.lower(), (type(exc).__name__, copy)
+        assert copy != generic, (
+            f"{type(exc).__name__} fell through to the generic correction copy")
+        assert "unavailable" not in copy.lower()
+        assert "lost the thread" not in copy.lower()
+        assert "error" not in copy.lower()
+        seen.add(copy)
+    assert len(seen) == len(cases), "two refusals share copy — the kind is not named"
+
+
+def test_r3_every_scan_refusal_is_recognised_at_the_seam():
+    """AST: each typed refusal is in the entrypoint's `isinstance` TUPLE — a
+    type the seam does not catch reaches the failure floor and the user is
+    told the app is unavailable.
+
+    ⚠ ASKED OF THE TUPLE, NOT OF THE FILE. The first version collected every
+    `ast.Name` in the module, so a type still imported and still handled in
+    `_refusal_copy` satisfied it while having been deleted from the catch —
+    the copy exists and is unreachable. The same string-vs-structure trap the
+    A1 gate records being fooled by twice."""
+    import ast
+    import inspect
+    from core.turns import entrypoint as ep
+
+    required = {"ScanBindingDecisionUnavailable", "ScanBoundIdentityUnavailable",
+                "ScanBoundNotLegacy", "ScanBoundCorrectionRefused",
+                "CorrectionRefused"}
+    tree = ast.parse(inspect.getsource(ep))
+    tuples = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call)
+                and getattr(node.func, "id", None) == "isinstance"):
+            continue
+        arg = node.args[1] if len(node.args) > 1 else None
+        elts = arg.elts if isinstance(arg, ast.Tuple) else [arg]
+        tuples.append({e.id for e in elts if isinstance(e, ast.Name)})
+    # ⚠ ONE tuple must catch them ALL. Collecting names across EVERY isinstance
+    # in the module also swept up `_refusal_copy`'s per-kind dispatch, so
+    # deleting a type from the CATCH left it "present" via the copy that had
+    # just become unreachable — the gate passing on the evidence of the bug.
+    assert any(required <= t for t in tuples), (
+        "no single isinstance at the seam catches every scan refusal; missing "
+        f"{sorted(required - max(tuples, key=lambda t: len(required & t)))} — "
+        "an uncaught type reaches the failure floor, whatever `_refusal_copy` "
+        "says about it")
+
+
 # ═════ REQUIREMENT 3 — THE STATE IS THE FINAL AUTHORITY ════════════════════
 
 def test_p2_the_final_proof_matrix_of_binding_states():
