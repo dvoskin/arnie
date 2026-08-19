@@ -29,13 +29,33 @@ class FoodPlanStage:
         self._interpreter = interpreter
 
     async def run(self, request, context=None, route=None) -> TurnPlan:
-        # A "yes" answering an open confirm is already decided (P0.2 Phase 3):
-        # replay the stashed items rather than paying for a re-parse. Anything
-        # else answering a confirm is a correction, and falls through.
-        from core.turns.stages.deterministic import ConfirmReplayPlanStage
-        replay = await ConfirmReplayPlanStage().run(request, context, route)
-        if replay is not None:
-            return replay
+        # ⛔⛔ CF5c PRE-PLAN HOOK — AN ATTACHED SCAN SUPPRESSES CONFIRM REPLAY
+        # *(Danny, 2026-08-19)*. "yes" to an open confirm replays the stashed
+        # items VERBATIM, so scan + "yes" would log an EARLIER confirmed food
+        # and then attach THIS scan's snapshot to it: one product's nutrition
+        # committed under another product's name. That is the identity failure
+        # the snapshot guards exist to prevent, arriving through a door
+        # upstream of all of them — the replay stage runs before the
+        # interpreter, before the plan, before any binding decision.
+        #
+        # Keyed on ATTACHMENT, deliberately: the disposition is not decided
+        # until the plan exists, and the whole point is that the earlier
+        # question must not shape this turn's plan. The confirm is left
+        # exactly as it is — its own row, its own expiry; it simply does not
+        # get to absorb a scanned turn.
+        from core.scan_authority import suppresses_replay_and_prior
+        if suppresses_replay_and_prior():
+            logger.info("event=scan_suppresses_confirm_replay turn=%s — a "
+                        "scan is a fresh exact statement, not a 'yes' to an "
+                        "older meal", getattr(request, "turn_id", "-"))
+        else:
+            # A "yes" answering an open confirm is already decided (P0.2 Phase 3):
+            # replay the stashed items rather than paying for a re-parse. Anything
+            # else answering a confirm is a correction, and falls through.
+            from core.turns.stages.deterministic import ConfirmReplayPlanStage
+            replay = await ConfirmReplayPlanStage().run(request, context, route)
+            if replay is not None:
+                return replay
         run_interpreter = self._interpreter
         if run_interpreter is None:
             from core.food_turn import run as run_interpreter
@@ -70,9 +90,9 @@ class FoodPlanStage:
         # exactly as it is (legacy's row, legacy's expiry); it simply does not
         # get to hijack this turn.
         prior = meta.get("food_prior")
-        if prior is not None and _scan_is_bound():
-            logger.info("event=scan_ignores_pending_prior turn=%s — a bound "
-                        "scan is a fresh statement, not an answer",
+        if prior is not None and suppresses_replay_and_prior():
+            logger.info("event=scan_ignores_pending_prior turn=%s — a scanned "
+                        "turn is a fresh statement, not an answer",
                         getattr(request, "turn_id", "-"))
             prior = None
         try:
@@ -663,6 +683,16 @@ class FoodValidationStage:
     POLICY_VERSION = "food_policy_native_v1"
 
     async def run(self, request, context=None, route=None, plan=None) -> ValidationResult:
+        # ⛔⛔ CF5c POST-PLAN GATE — THE ONE BINDING DECISION, made here because
+        # this is the first place the COMPLETE plan is known: the operations
+        # AND the clarification's items. Deciding from `approved_operations`
+        # instead is how a two-food clarification could bind a scan — the
+        # branch below approves only the READY items of an ask, so a turn
+        # naming two foods can expose exactly one approved operation.
+        #
+        # Every downstream reader consumes this decision; none re-derives it.
+        from core.scan_authority import decide_from_plan
+        decide_from_plan(plan)
         intent = getattr(plan, "response_intent", "") or ""
         ops = tuple(getattr(plan, "operations", ()) or ())
         if intent in ("ask", "confirm"):

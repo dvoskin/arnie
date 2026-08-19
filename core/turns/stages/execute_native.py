@@ -46,26 +46,28 @@ def _bind_scanned_product(items: list) -> list:
     smearing one product's evidence across foods it does not describe.
     `assemble()` loads the reference locally; nothing here fetches.
     """
-    from skills.nutrition.product_acquisition import (SCANNED_PRODUCT_EVIDENCE,
-                                                       scan_is_bound)
+    from core.scan_authority import ScanAuthorityRefusal, is_bound, snapshot_id
 
-    snapshot_id = SCANNED_PRODUCT_EVIDENCE.get()
-    if snapshot_id is not None and items:
-        # ⛔ CF5b review — THE DECISION IS THE AUTHORITY, not this function's
-        # own count. `_food_inputs` filters to log_food, so a mixed
-        # [update, log] turn arrives here as ONE item and would stamp a
-        # binding the turn does not have.
-        if not scan_is_bound():
-            logger.info(
-                "event=scan_binding_skipped items=%d snapshot=%s — the scan "
-                "bound nothing on this turn", len(items), snapshot_id)
-        elif len(items) == 1:
-            items[0]["product_evidence_id"] = snapshot_id
-        else:
-            logger.info(
-                "event=scan_binding_skipped items=%d snapshot=%s — a scan "
-                "names one product and this turn has several",
-                len(items), snapshot_id)
+    sid = snapshot_id()
+    if sid is None or not items:
+        return items
+    # ⛔ CF5c BACKSTOP, NOT A DECISION. This function no longer asks "how many
+    # items are there?" — `_food_inputs` filters to log_food, so a mixed
+    # [update, log] turn arrives as ONE item and any count taken here is a
+    # second definition of "bound". It reads the authority and fails closed on
+    # a shape that cannot be: BOUND means exactly one item by the time the
+    # gate has run, so several items under BOUND is an impossible state, not
+    # something to quietly decline.
+    if not is_bound():
+        logger.info(
+            "event=scan_binding_skipped items=%d snapshot=%s — the authority "
+            "says this scan binds nothing", len(items), sid)
+        return items
+    if len(items) != 1:
+        raise ScanAuthorityRefusal(
+            "impossible_shape",
+            f"BOUND with {len(items)} food items reaching the binder")
+    items[0]["product_evidence_id"] = sid
     return items
 
 
@@ -84,83 +86,16 @@ def _correction_input(ops) -> Optional[dict]:
 
 
 def _scan_is_attached() -> bool:
-    """A barcode rode this turn. NOT a binding — see `scan_is_bound`."""
-    try:
-        from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
-        return SCANNED_PRODUCT_EVIDENCE.get() is not None
-    except Exception:                                    # noqa: BLE001
-        return False
+    """A barcode rode this turn. NOT a binding — see `_scan_bound`."""
+    from core.scan_authority import scan_attached
+    return scan_attached()
 
 
 def _scan_bound() -> bool:
-    """Did this turn's scan actually BIND? The single question, one answer,
-    read off the explicit state — never re-derived from operation shape."""
-    try:
-        from skills.nutrition.product_acquisition import scan_is_bound
-        return scan_is_bound()
-    except Exception:                                    # noqa: BLE001
-        return False
-
-
-def _decide_scan_binding(ops) -> None:
-    """⛔ THE ONE BINDING DECISION *(CF5b review)*. Made here because this is
-    the first place the turn's OPERATIONS are known, recorded on the explicit
-    state, and read by every downstream guard — the backstop below, the
-    binder, and `correction_application`'s invariant. Operation counting is
-    this decision's INPUT, never a second definition of "bound" living at a
-    guard site.
-
-    ⛔⛔ AND IT FAILS CLOSED *(review round 3)*. The first cut caught every
-    exception, logged it, and continued — which silently restored the ORIGINAL
-    bug class: an attached scan stays ATTACHED, `scan_is_bound()` is then
-    False, so the product is never stamped, the CF5 backstop never fires, the
-    turn reaches the ordinary correction/legacy path, and the snapshot is
-    discarded exactly as it was on ios:D3B7757E. A decision that cannot be
-    made is not "no binding" — it is an unknown, and an unknown about
-    AUTHORITY must refuse. Same lesson as the lifted identity one level down:
-    a guard whose failure mode is "carry on" is not a guard.
-
-    A turn with NO scan attached has nothing to protect: the decision is a
-    no-op and a failure there is logged, not raised."""
-    attached = _scan_is_attached()
-    try:
-        from skills.nutrition.product_acquisition import (BOUND,
-                                                          SCAN_BINDING,
-                                                          SKIPPED_MULTI_ITEM,
-                                                          decide_binding)
-        decide_binding(bound=not _scan_declined_to_bind(ops))
-        if attached:
-            state = SCAN_BINDING.get()
-            kind = getattr(state, "kind", None)
-            if kind not in (BOUND, SKIPPED_MULTI_ITEM):
-                raise RuntimeError(
-                    f"the decision left the state {kind!r}, which is neither "
-                    f"bound nor skipped")
-    except Exception as exc:                             # noqa: BLE001
-        if attached:
-            logger.warning("scan binding decision failed on a SCANNED turn — "
-                           "refusing", exc_info=True)
-            raise ScanBindingDecisionUnavailable(str(exc)) from exc
-        logger.warning("scan binding decision failed", exc_info=True)
-
-
-#: Every operation that names a food on the board. Binding disposition is
-#: decided over ALL of them *(review P2)*: "a bar and some soup" against a
-#: board that already holds the bar is [update, log] — two foods — and a scan
-#: names ONE product, so it binds nothing; counting only `log_food` called
-#: that turn bound and refused it whole (safe, but not "unchanged").
-_FOOD_OPS = frozenset({"log_food", "update_food_entry", "delete_food_entry"})
-
-
-def _scan_declined_to_bind(ops) -> bool:
-    """True when the scan attached to this turn bound NOTHING by design: the
-    turn is about several foods and a scan names one product. Counts every
-    food-affecting operation, not just logs, so the backstop agrees with the
-    planner (the lift declines a mixed plan) and with `_bind_scanned_product`
-    (one item binds; several do not). A turn about fewer than two foods — one
-    food, or none — is the scanned product's turn."""
-    return sum(1 for op in (ops or ())
-               if isinstance(op, dict) and op.get("name") in _FOOD_OPS) >= 2
+    """Did this turn's scan actually BIND? One question, one answer, read off
+    `core.scan_authority` — never re-derived from operation shape here."""
+    from core.scan_authority import is_bound
+    return is_bound()
 
 
 class ScanBindingDecisionUnavailable(Exception):
@@ -203,27 +138,33 @@ class ScanBoundIdentityUnavailable(Exception):
 
 
 async def _name_from_snapshot(db, ops) -> None:
-    """CF5b: an item the planner LIFTED from an implicit correction carries a
-    placeholder name (the board row's — ANOTHER product's identity). Replace
-    it with the scanned snapshot's own product_name — a LOCAL read of the
-    persisted record, no network — so the row is named and priced from ONE
-    exact identity. Mutates the op's OWN input (the source every downstream
-    copy is made from).
+    """⛔⛔ CF5c — THE SNAPSHOT'S IDENTITY IS AUTHORITATIVE FOR EVERY BOUND
+    LOG *(Danny, 2026-08-19)*, not only for an item the planner lifted.
 
-    ⛔ FAIL CLOSED *(review P1)*: for a `_scan_lifted` item the snapshot must
-    LOAD and must carry a USABLE name, or the item is refused
-    (`ScanBoundIdentityUnavailable`) — never settled under the placeholder.
-    Items the planner did not lift are untouched: their name is the
-    interpreter's own reading of the message, not another row's."""
-    try:
-        from skills.nutrition.product_acquisition import SCANNED_PRODUCT_EVIDENCE
-        snapshot_id = SCANNED_PRODUCT_EVIDENCE.get()
-    except Exception:                                    # noqa: BLE001
-        snapshot_id = None
+    A barcode states WHAT was eaten more exactly than any prose can. Once the
+    disposition is BOUND, the row is named from the snapshot's own
+    product_name — a LOCAL read of the persisted record, no network — so the
+    row's identity and its nutrition come from ONE source. Mutates the op's
+    OWN input (the source every downstream copy is made from).
+
+    This began narrower: only `_scan_lifted` items were repaired, because
+    only they carried a placeholder taken from another board row. But the
+    interpreter's own reading of a scanned message is prose too — it can name
+    the wrong product beside a correct snapshot, and the snapshot is the
+    stronger statement either way. Widening it also closes the replay-shaped
+    hole at the root rather than at its symptom.
+
+    ⛔ FAIL CLOSED: the snapshot must LOAD and carry a USABLE name, or the
+    item is refused (`ScanBoundIdentityUnavailable`) — never settled under a
+    name the scan did not confirm. On an UNBOUND turn nothing here applies:
+    the interpreter's name stands, exactly as before."""
+    from core.scan_authority import is_bound, snapshot_id as _sid
+    if not is_bound():
+        return
+    snapshot_id = _sid()
     for op in ops or ():
         inp = (op or {}).get("input") if isinstance(op, dict) else None
-        if not (isinstance(inp, dict) and op.get("name") == "log_food"
-                and inp.get("_scan_lifted")):
+        if not (isinstance(inp, dict) and op.get("name") == "log_food"):
             continue
         placeholder = str(inp.get("food_name") or "")
         if snapshot_id is None:
@@ -285,28 +226,36 @@ class NativeExecutionStage:
 
     async def run(self, request, route=None, validation=None):
         ops = list(getattr(validation, "approved_operations", ()) or ())
-        if not ops:
-            return None
         meta = request.metadata or {}
         db, user, today_log = meta.get("db"), meta.get("user"), meta.get("today_log")
+
+        # ⛔⛔ CF5c EXECUTION ENFORCEMENT — CONSUMED BEFORE EVERY EARLY RETURN.
+        # This method used to open `if not ops: return None`, ahead of every
+        # guard: a scanned turn with zero approved operations left the state
+        # merely ATTACHED, no decision ran, the entrypoint saw no execution and
+        # no response, and `native_no_plan` handed the SCANNED turn to legacy,
+        # which reinterpreted the prose without the snapshot. The same
+        # authority escape, through the zero-operation shape — and it left
+        # LAST_EXECUTION uncleared on the way out.
+        #
+        # So the ambient execution is cleared and the disposition is consumed
+        # FIRST, before any return can happen. `require_shape` refuses an
+        # UNDECIDABLE turn and an impossible BOUND shape; the zero-op branch
+        # below is the one it hands back, because the choice between the CF9
+        # durable ask and a typed refusal needs the clarification.
+        from core.execution_result import LAST_EXECUTION
+        from core.scan_authority import require_shape
+        LAST_EXECUTION.set(None)
+        require_shape(ops)
+
+        if not ops:
+            return await self._no_operations(request, validation, db, user)
         if db is None or user is None:
             raise RuntimeError("native execution requires db and user")
 
-        # ⛔⛔ CLEAR THE AMBIENT EXECUTION FIRST, WHATEVER SETTLES THIS TURN.
-        # `execute_tool_calls` documents and honours this: a new batch sets
-        # LAST_EXECUTION to None up front, so a batch that dies mid-flight
-        # cannot leave the PREVIOUS turn's execution ambient for a renderer to
-        # narrate. The canonical branch only ever `set()` a value on success,
-        # so a settlement that raised in a reused context left the prior
-        # execution standing — the same stale-read class, arriving through the
-        # door this slice opened.
-        from core.execution_result import LAST_EXECUTION
-        LAST_EXECUTION.set(None)
-
-        # ⛔⛔ CF5b review — DECIDE THE BINDING BEFORE ANY GUARD READS IT. A
-        # scan names ONE product: this turn either binds it or binds nothing,
-        # and that answer is recorded once, here, on the explicit state.
-        _decide_scan_binding(ops)
+        # (LAST_EXECUTION is cleared above, before the CF5c gate — a batch
+        # that dies mid-flight must not leave the PREVIOUS turn's execution
+        # ambient for a renderer to narrate, and a refusal is such a death.)
 
         # ⭐ B-1.8b — A CORRECTION ON A CANONICAL ROW IS THE OWNER'S TO MAKE.
         # Decided BEFORE the legacy claim, like settlement, and for the same
@@ -506,6 +455,9 @@ class NativeExecutionStage:
         # under a scan (one food; or no food at all, i.e. the correction that
         # motivated this) is the scanned product's turn and stays canonical.
         if _scan_bound():
+            # CF5c: a BACKSTOP. The gate already refused every impossible
+            # BOUND shape; this catches a bound turn that reached the legacy
+            # route by a path the gate does not cover.
             raise ScanBoundNotLegacy(request.turn_id, [
                 str((op or {}).get("name") or "") for op in ops])
 
@@ -521,6 +473,72 @@ class NativeExecutionStage:
                        source_type=request.source_type or request.platform,
                        user_message=request.text or "")
         return self._published()
+
+    async def _no_operations(self, request, validation, db, user):
+        """The turn approved no writes. CF5c owns what that means for a
+        SCANNED turn.
+
+        ⛔ AN UNSCANNED zero-op turn is untouched: `None` here, and the
+        entrypoint's `native_no_plan` delegation runs exactly as it always
+        has. That branch is legitimate and stays.
+
+        A BOUND zero-op turn is one of two things, and never legacy:
+
+          · exactly one consumed product with QUANTITY the only unknown —
+            the CF9 case. The durable ask is opened HOLDING the snapshot, so
+            the answer settles bound instead of arriving cold. This is the
+            same `open_bound_quantity_ask` the BoundUnpriceable path uses;
+            the difference is only that the INTERPRETER asked first, before
+            settlement could.
+          · anything else — no trustworthy food or consumption intent, a
+            failed plan, or another ambiguity beside the quantity — a typed
+            non-mutating refusal. Never a blanket refusal for both: a user
+            who scanned a bar and said nothing about how much should be
+            asked, not turned away.
+        """
+        from core.scan_authority import (ScanAuthorityRefusal, is_bound,
+                                         quantity_only_ask_item, snapshot_id)
+        if not is_bound():
+            return None                       # unscanned, or bound nothing
+        item = quantity_only_ask_item(getattr(validation, "clarification", None))
+        if item is None:
+            raise ScanAuthorityRefusal(
+                "no_quantity_ask",
+                "a scanned turn produced no operation and no answerable "
+                "quantity question")
+        if db is None or user is None:
+            raise ScanAuthorityRefusal("no_session",
+                                       "no database handle for a bound ask")
+        sid = snapshot_id()
+        staged = dict(item)
+        staged["product_evidence_id"] = sid
+        staged.setdefault("food_name", staged.get("food") or "")
+        await _name_from_snapshot(db, [{"name": "log_food", "input": staged}])
+        from core.general_settlement import BoundUnpriceable, coverage_for
+        coverage = await coverage_for(db, user_id=int(user.id), items=[staged])
+        if not isinstance(coverage, BoundUnpriceable):
+            raise ScanAuthorityRefusal(
+                "unaskable",
+                f"the label offers no quantity question "
+                f"({type(coverage).__name__})")
+        from core.product_bound_ask import open_bound_quantity_ask
+        ask = await open_bound_quantity_ask(
+            db, user=user, item=staged, coverage=coverage,
+            turn_id=request.turn_id,
+            channel=str(getattr(request, "platform", "") or ""),
+            locale=str(getattr(user, "locale", "") or "en"))
+        if ask is None:
+            raise ScanAuthorityRefusal(
+                "unaskable", "the durable bound ask could not be opened")
+        logger.info("event=scan_zero_op_bound_ask turn=%s snapshot=%s "
+                    "operation=%s", request.turn_id, sid,
+                    getattr(ask, "operation_id", "-"))
+        from core.scan_authority import consume
+        consume()
+        view = self._publish_bound_refusal(coverage, [staged], request, ask=ask)
+        from core.execution_result import LAST_EXECUTION
+        LAST_EXECUTION.set(view)
+        return view
 
     async def _canonical_route(self, db, user, ops):
         """`(owner, coverage)` when canonical settlement owns this turn, else None.
@@ -540,13 +558,13 @@ class NativeExecutionStage:
 
         if not settlement_cohort(getattr(user, "id", None)):
             return None
-        # ⭐ CF5b — a lifted item is NAMED FROM THE SNAPSHOT before the
+        # ⭐ CF5c — EVERY BOUND LOG is named from the snapshot before the
         # predicate reads it: identity from the exact scanned product, not
-        # from the board row the interpreter had picked to mutate. Applied to
-        # the OPS' own inputs — `_food_inputs` COPIES, and settlement builds
-        # its items from the ops again, so a name set on this route's copy
-        # would never reach the row (found on review; the proof now asserts
-        # the snapshot's exact name on the committed row).
+        # from the interpreter's prose or from a board row it picked to
+        # mutate. Applied to the OPS' own inputs — `_food_inputs` COPIES, and
+        # settlement builds its items from the ops again, so a name set on
+        # this route's copy would never reach the row (found on review; the
+        # proof asserts the snapshot's exact name on the committed row).
         await _name_from_snapshot(db, ops)
         calls = _bind_scanned_product(_food_inputs(ops))
         if not calls or len(calls) != len(ops):

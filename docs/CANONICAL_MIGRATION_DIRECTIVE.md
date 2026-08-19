@@ -579,6 +579,88 @@ CF5b SCAN BINDING MUST DOMINATE CORRECTION CLAIMS   P17 (before P17g)     BUILT;
             claimed for GRAM-BASED labels only; the liquid
             path proof is registered under P17-UE / CF10
             (below). No liquid claim ships in this commit.
+CF5c ONE SCAN AUTHORITY — the guard-placement fix   P17 (before P17g)     BUILT;
+     *(Danny, 2026-08-19)*. SUPERSEDES CF5b's                              live
+     local-guard framing; CF5b's guards are RETAINED                       canary
+     as backstops, stripped of decision-making.                            OWED
+       THE FINDING IS THE PATTERN, not a fifth hole.
+       Four production-shaped routes were found around
+       CF5, and every fix added a guard where the
+       damage SURFACED, each re-deriving "is this
+       bound?" from whatever it had to hand:
+         ios:D3B7757E  implicit ratio correction    CF5b
+         mixed turn    attachment read as binding   review 2
+         undecidable   the decision failed open     review 3
+         zero-op       early return before any      review 4
+                       decision ran
+       Danny: "binding is decided from approved_
+       operations, after information about the full
+       turn may already be lost." Correct — and the
+       remaining escapes followed from it:
+         · ConfirmReplayPlanStage runs BEFORE the scan
+           rule, so scan + "yes" could replay an older
+           confirmed food and attach THIS snapshot to
+           it — one product's nutrition under another's
+           name, upstream of every identity guard.
+         · a two-food clarification exposes ONE approved
+           operation (the validation stage approves only
+           the READY items), so ops-counting binds a
+           turn that names two foods.
+         · a bound canonical update could execute
+           through _correction_route if the lift missed.
+         · the zero-op escape also left LAST_EXECUTION
+           uncleared.
+       THE BUILD: one SEMANTIC decision, three physical
+       touch points (`core/scan_authority.py`):
+         PRE-PLAN   an attached scan suppresses confirm
+                    replay AND pending-prior consumption
+                    (keyed on ATTACHMENT — the
+                    disposition does not exist yet, and
+                    the earlier question must not shape
+                    this turn's plan).
+         POST-PLAN  decide BOUND / SKIPPED_MULTI_ITEM /
+                    UNDECIDABLE from the COMPLETE plan —
+                    operations AND the clarification's
+                    items, counted as the MAX of the two
+                    views. In `FoodValidationStage`, the
+                    first place the complete plan exists.
+         EXECUTION  `require_shape` consumed before every
+                    early return, correction route and
+                    legacy route. BOUND means EXACTLY ONE
+                    log_food; every other shape refuses
+                    (`ScanAuthorityRefusal`, non-mutating,
+                    answered in words by REASON).
+       NO STATED AMOUNT is not a blanket refusal: exactly
+       one consumed product with quantity the ONLY unknown
+       opens the durable CF9 ask HOLDING the snapshot, so
+       the answer settles bound; anything else (no
+       trustworthy intent, failed plan, another ambiguity)
+       is the typed refusal.
+       IDENTITY: the snapshot is authoritative for EVERY
+       BOUND log, not only `_scan_lifted` ones — the
+       interpreter's prose can name the wrong product
+       beside a correct snapshot, and the barcode is the
+       stronger statement either way.
+       BACKSTOPS RETAINED, DECISIONS REMOVED: the legacy
+       backstop, `correction_application`, the binder and
+       the identity repair all READ the disposition and
+       fail closed on an impossible shape. Gates assert
+       that food counting (`FOOD_OPS` / `foods_in_plan`)
+       appears in NO other module and that
+       `decide_from_plan` has exactly ONE caller.
+       PROOFS `tests/test_cf5c_one_scan_authority.py`:
+       scan+"yes" suppressed (+ unscanned "yes" still
+       replays, no re-parse) · two-food ask with one ready
+       item -> SKIPPED_MULTI_ITEM · zero-op -> CF9 ask
+       holding the snapshot / typed refusal / unscanned
+       zero-op still reaches legacy / LAST_EXECUTION
+       cleared · bound update refused BEFORE
+       _correction_route (spied) · mismatched name loses
+       to the snapshot · ORDINARY correctly-named scan
+       settles IDENTICALLY (the twin that makes the
+       widening safe) · unbound log keeps the
+       interpreter's name. Six mutations seen RED.
+       Suite 9667 passed, PYTEST_EXIT=0, frozen tree.
 CF6  LANE PROMOTION RULE (learned from 3 canaries):  every future lane     RULE
      a proven CONSUMER (stage) is unreachable if the
      PRODUCER (planner) or RENDERER in front of it
@@ -719,6 +801,9 @@ ROLLOUT                                FROZEN — user 26 only
     -> CF5b (scan binding dominates correction claims) built + proven  ✅ (this
        — the direct canary's failure class; ask copy names the unknown,      commit)
        chips lead with the label's unit ([110 g — 2 servings])
+    -> CF5c one scan authority (pre-plan hook · post-plan gate ·
+       execution enforcement; CF5b guards retained as backstops)        ✅ (this
+                                                                            commit)
     -> DEPLOY, then RERUN the direct canary (scan -> "2 servings of
        Barebells" -> a NEW bound row; 3030/3031 untouched)              ⏳
     -> P17g / P17h                                                     ⛔

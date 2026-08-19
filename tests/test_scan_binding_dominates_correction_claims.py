@@ -67,6 +67,23 @@ from tests.test_a_scan_is_binding import (BAREBELLS_PROD, _Req, _log,
                                           _prod_snapshot)
 
 
+
+class _Plan:
+    """Plan-shaped stub for the CF5c gate. Production always runs
+    `FoodValidationStage`, which is where the decision lives, so a test that
+    hand-builds a ValidationResult must still present a plan to the gate."""
+
+    def __init__(self, ops=(), ambiguities=(), intent="log"):
+        self.operations = tuple(ops)
+        self.ambiguities = tuple(ambiguities)
+        self.response_intent = intent
+
+
+def _decide(ops=(), ambiguities=()):
+    from core.scan_authority import decide_from_plan
+    return decide_from_plan(_Plan(ops, ambiguities))
+
+
 # ── the board: a LEGACY Barebells row, exactly the production shape ──────────
 
 async def _legacy_barebells_row(db, log, *, calories=400.0, quantity="2 bar"):
@@ -232,6 +249,7 @@ async def test_twin_removing_the_scan_exclusion_from_the_correction_claim_is_red
     backstop is what stops the mutation (nothing committed, legacy never
     reached). Both RED without their code."""
     from core.turns.stages import food as food_mod
+    from core.scan_authority import ScanAuthorityRefusal
     from core.turns.stages.execute_native import ScanBoundNotLegacy
     caplog.set_level(logging.INFO)
     user = await make_user()
@@ -241,10 +259,13 @@ async def test_twin_removing_the_scan_exclusion_from_the_correction_claim_is_red
     existing = await _legacy_barebells_row(db, log)
     before = await _row_bytes(db, existing)
 
-    # (a) remove the scan exclusion at the claim boundary
+    # (a) remove the scan exclusion at the claim boundary. Under CF5c the
+    # GATE refuses first — BOUND with an update_food_entry is an impossible
+    # shape — so the turn never even reaches the legacy backstop. Earlier is
+    # better: the backstop remains beneath it for a path the gate misses.
     monkeypatch.setattr(food_mod, "_lift_bound_correction_to_log",
                         lambda ops, message: None)
-    with pytest.raises(ScanBoundNotLegacy):
+    with pytest.raises((ScanBoundNotLegacy, ScanAuthorityRefusal)):
         await _run(db, user, log, "2 servings of Barebells bars", snap.id,
                    _the_misrouted_plan(existing), monkeypatch)
     # (b) and NOTHING moved: no ratio, no legacy, row untouched
@@ -490,23 +511,33 @@ def test_p1_the_helper_fails_closed_by_construction():
               and isinstance(getattr(n.exc, "func", None), ast.Name)
               and n.exc.func.id == "ScanBoundIdentityUnavailable"]
     assert len(raises) >= 4, "missing / nameless / unreadable / unbound must each refuse"
-    # the only early exits are `continue` for NON-lifted items — never a
-    # `return` that leaves a lifted item under its placeholder
-    returns = [n for n in ast.walk(tree) if isinstance(n, ast.Return)]
-    assert not returns, "a bare return here fails OPEN"
+    # ⚠ ONE early return is legitimate under CF5c — the UNBOUND turn, where
+    # the interpreter's name stands exactly as it always has. What must never
+    # exist is a return INSIDE the per-item loop: that would leave a BOUND
+    # item under a name the scan did not confirm.
+    loops = [n for n in ast.walk(tree) if isinstance(n, ast.For)]
+    assert loops, "the helper no longer iterates the operations"
+    in_loop = [n for loop in loops for n in ast.walk(loop)
+               if isinstance(n, ast.Return)]
+    assert not in_loop, "a return inside the loop leaves a bound item unnamed"
+    guard = ast.parse(inspect.getsource(m._name_from_snapshot).lstrip()).body[0]
+    assert "is_bound" in inspect.getsource(m._name_from_snapshot), (
+        "the helper no longer keys on the binding disposition")
 
 
 # ═════ REVIEW P2 — BINDING DISPOSITION COUNTS EVERY FOOD-AFFECTING OP ═══════
 
 def test_p2_a_mixed_update_plus_log_plan_is_two_foods_and_binds_nothing():
-    from core.turns.stages.execute_native import _scan_declined_to_bind
+    """CF5c: counted off the COMPLETE plan, in one place."""
+    from core.scan_authority import foods_in_plan
     upd = {"name": "update_food_entry", "input": {"entry_id": 1, "quantity": "2 bar"}}
     logf = {"name": "log_food", "input": {"food_name": "soup", "quantity": "1 bowl"}}
     dele = {"name": "delete_food_entry", "input": {"entry_id": 1}}
-    assert _scan_declined_to_bind([upd, logf]) is True        # two foods -> unbound by design
-    assert _scan_declined_to_bind([dele, logf]) is True
-    assert _scan_declined_to_bind([upd]) is False              # one food (a correction): the scan's turn
-    assert _scan_declined_to_bind([logf]) is False
+    assert foods_in_plan(_Plan([upd, logf])) == 2             # two foods -> binds nothing
+    assert foods_in_plan(_Plan([dele, logf])) == 2
+    assert foods_in_plan(_Plan([upd])) == 1                   # one food: the scan's turn
+    assert foods_in_plan(_Plan([logf])) == 1
+    assert foods_in_plan(_Plan([])) == 0
 
 
 # ── the real executor, because a stub cannot see this ───────────────────────
@@ -784,7 +815,7 @@ async def test_r3_an_undecidable_binding_on_a_scanned_turn_refuses_and_writes_no
     from db.models import FoodEntry
     from sqlalchemy import select
     import skills.nutrition.product_acquisition as pa
-    from core.turns.stages.execute_native import ScanBindingDecisionUnavailable
+    from core.scan_authority import ScanAuthorityRefusal
     caplog.set_level(logging.INFO)
     user = await make_user()
     monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
@@ -794,11 +825,12 @@ async def test_r3_an_undecidable_binding_on_a_scanned_turn_refuses_and_writes_no
     before = await _row_bytes(db, existing)
     events_before = len(await _events(db, user.id))
 
+    import core.scan_authority as sa
     def _boom(*a, **k):
         raise RuntimeError("the decision could not be made")
-    monkeypatch.setattr(pa, "decide_binding", _boom)
+    monkeypatch.setattr(sa, "foods_in_plan", _boom)
 
-    with pytest.raises(ScanBindingDecisionUnavailable):
+    with pytest.raises(ScanAuthorityRefusal):
         await _run(db, user, log, "2 servings of Barebells bars", snap.id,
                    _the_misrouted_plan(existing), monkeypatch, turn_id="t:r3")
 
@@ -817,16 +849,18 @@ async def test_r3_an_undecidable_binding_with_NO_scan_is_not_an_error(
     """A turn with no barcode has nothing to protect: the decision is a no-op
     and its failure is logged, not raised — the guard must not turn every
     unscanned turn into a refusal."""
+    import core.scan_authority as sa
     import skills.nutrition.product_acquisition as pa
-    from core.turns.stages.execute_native import _decide_scan_binding
     caplog.set_level(logging.WARNING)
     pa.begin_turn()                                     # no attachment
     def _boom(*a, **k):
         raise RuntimeError("boom")
-    monkeypatch.setattr(pa, "decide_binding", _boom)
-    _decide_scan_binding([{"name": "log_food", "input": {"food_name": "x"}}])
-    assert "scan binding decision failed" in caplog.text
-    assert "refusing" not in caplog.text
+    monkeypatch.setattr(sa, "foods_in_plan", _boom)
+    # no scan rode this turn: the gate is a no-op and returns None, and
+    # `require_shape` proceeds. Nothing to protect, nothing to refuse.
+    assert _decide([{"name": "log_food", "input": {"food_name": "x"}}]) is None
+    from core.scan_authority import require_shape
+    require_shape([{"name": "log_food", "input": {"food_name": "x"}}])
 
 
 @pytest.mark.asyncio
@@ -839,8 +873,7 @@ async def test_r3_a_decision_that_returns_without_deciding_also_refuses(
     turns that into a refusal."""
     from db.models import FoodEntry
     from sqlalchemy import select
-    import skills.nutrition.product_acquisition as pa
-    from core.turns.stages.execute_native import ScanBindingDecisionUnavailable
+    from core.scan_authority import ScanAuthorityRefusal
     caplog.set_level(logging.INFO)
     user = await make_user()
     monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
@@ -849,9 +882,12 @@ async def test_r3_a_decision_that_returns_without_deciding_also_refuses(
     existing = await _legacy_barebells_row(db, log)
     before = await _row_bytes(db, existing)
 
-    monkeypatch.setattr(pa, "decide_binding", lambda **k: None)   # no raise, no decision
+    # the gate never runs at all — the state stays ATTACHED, which the
+    # authority reads as UNDECIDABLE rather than as "binds nothing"
+    import core.scan_authority as sa
+    monkeypatch.setattr(sa, "decide_from_plan", lambda plan: None)
 
-    with pytest.raises(ScanBindingDecisionUnavailable):
+    with pytest.raises(ScanAuthorityRefusal):
         await _run(db, user, log, "2 servings of Barebells bars", snap.id,
                    _the_misrouted_plan(existing), monkeypatch, turn_id="t:r3b")
     assert await _row_bytes(db, existing) == before
@@ -867,11 +903,16 @@ def test_r3_the_decision_fails_closed_by_construction():
     import ast
     import inspect
     from core.turns.stages import execute_native as m
-    tree = ast.parse(inspect.getsource(m._decide_scan_binding).lstrip())
+    from core.scan_authority import decide_from_plan, require_shape
+    # the DECISION records UNDECIDABLE rather than leaving the state attached
+    src = inspect.getsource(decide_from_plan)
+    assert "UNDECIDABLE" in src, "the gate can leave a scanned turn undecided"
+    # and ENFORCEMENT refuses it
+    tree = ast.parse(inspect.getsource(require_shape).lstrip())
     raises = [n for n in ast.walk(tree) if isinstance(n, ast.Raise)
               and isinstance(getattr(n.exc, "func", None), ast.Name)
-              and n.exc.func.id == "ScanBindingDecisionUnavailable"]
-    assert raises, "the decision still fails OPEN — an attached scan can go undecided"
+              and n.exc.func.id == "ScanAuthorityRefusal"]
+    assert len(raises) >= 2, "undecidable and impossible shapes must both refuse"
 
 
 def test_r3_the_entrypoint_answers_every_scan_refusal_in_words():
@@ -946,30 +987,30 @@ def test_r3_every_scan_refusal_is_recognised_at_the_seam():
 
 # ═════ REQUIREMENT 3 — THE STATE IS THE FINAL AUTHORITY ════════════════════
 
-def test_p2_the_final_proof_matrix_of_binding_states():
+def test_p2_the_final_proof_matrix_of_binding_states_CF5C():
     """single scanned log -> BOUND · scan-bound correction shape -> lifted or
     refused · multi-food scan -> SKIPPED_MULTI_ITEM · next unscanned turn ->
     no binding state · typed invariant -> propagates, never swallowed."""
     from skills.nutrition.product_acquisition import (ATTACHED, BOUND,
                                                       SKIPPED_MULTI_ITEM,
                                                       SCAN_BINDING, attach,
-                                                      begin_turn, decide_binding,
-                                                      scan_is_bound)
+                                                      begin_turn, scan_is_bound)
     logf = {"name": "log_food", "input": {"food_name": "x", "quantity": "1 bar"}}
     upd = {"name": "update_food_entry", "input": {"entry_id": 1, "quantity": "2 bar"}}
     soup = {"name": "log_food", "input": {"food_name": "soup", "quantity": "1 bowl"}}
-    from core.turns.stages.execute_native import _scan_declined_to_bind
 
-    def _decide(ops):
+    def _d(ops, ambiguities=()):
         begin_turn(); attach(7)
-        assert SCAN_BINDING.get().kind == ATTACHED
-        decide_binding(bound=not _scan_declined_to_bind(ops))
+        assert SCAN_BINDING.get().kind == ATTACHED        # attached, not yet decided
+        _decide(ops, ambiguities)
         return SCAN_BINDING.get().kind
 
-    assert _decide([logf]) == BOUND                       # single scanned log
-    assert _decide([upd]) == BOUND                        # correction shape: the scan's turn
-    assert _decide([upd, soup]) == SKIPPED_MULTI_ITEM     # multi-food
-    assert _decide([logf, soup]) == SKIPPED_MULTI_ITEM
+    assert _d([logf]) == BOUND                            # single scanned log
+    assert _d([upd]) == BOUND                             # correction shape: the scan's turn
+    assert _d([upd, soup]) == SKIPPED_MULTI_ITEM          # multi-food
+    assert _d([logf, soup]) == SKIPPED_MULTI_ITEM
+    # the shape approved-operation counting could not see
+    assert _d([logf], ({"items": [{"food": "a"}, {"food": "b"}]},)) == SKIPPED_MULTI_ITEM
     begin_turn()                                          # the next, unscanned turn
     assert SCAN_BINDING.get() is None and not scan_is_bound()
 
@@ -999,21 +1040,25 @@ def test_p2_the_binder_stamps_only_what_the_decision_says_is_bound():
 
 
 def test_p2_no_guard_re_derives_binding_from_operation_shape():
-    """`_FOOD_OPS` counting is the DECISION's input and appears once, at the
-    decision. Guards read the state."""
+    """⛔ CF5c's central claim, as a gate: food counting lives in
+    `core.scan_authority` and NOWHERE else. Every other module reads the
+    disposition. A count at a guard site is a second definition of "bound",
+    and four production-shaped escapes came from exactly that."""
     import ast
     import inspect
-    from core.turns.stages import execute_native as m
-    src = inspect.getsource(m)
-    tree = ast.parse(src)
-    callers = [n for n in ast.walk(tree)
-               if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-               and n.func.id == "_scan_declined_to_bind"]
-    assert len(callers) == 1, (
-        "operation counting is consulted more than once — a second definition "
-        "of whether binding occurred")
-    run_src = inspect.getsource(m.NativeExecutionStage.run)
-    assert "_scan_bound()" in run_src and "_scan_declined_to_bind" not in run_src
+    from core.turns.stages import execute_native as en
+    from core.turns.stages import food as fd
+    from skills.nutrition import correction_application as ca
+
+    for mod in (en, fd, ca):
+        tree = ast.parse(inspect.getsource(mod))
+        names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+        attrs = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+        assert "FOOD_OPS" not in names and "FOOD_OPS" not in attrs, (
+            f"{mod.__name__} counts food operations — that is the authority's job")
+        assert "foods_in_plan" not in names, (
+            f"{mod.__name__} re-derives the food count instead of reading the "
+            f"disposition")
 
 
 # ═════ SCOPE: UNBOUND IS BYTE-IDENTICAL; MULTI-FOOD SCAN IS UNTOUCHED ═══════
@@ -1079,15 +1124,29 @@ def test_the_lift_takes_the_users_words_never_the_planners_total():
 def test_the_backstop_is_keyed_on_the_binding_not_the_attachment():
     """A scan names ONE product. A multi-food turn binds nothing by design and
     legitimately takes the general path; every other shape under a scan is
-    the scanned product's turn."""
-    from core.turns.stages.execute_native import _scan_declined_to_bind
+    the scanned product's turn. Under CF5c this is one gate reading the
+    complete plan, and the backstops only read its answer."""
+    from skills.nutrition.product_acquisition import (BOUND, SKIPPED_MULTI_ITEM,
+                                                      UNDECIDABLE, attach,
+                                                      begin_turn)
     logf = {"name": "log_food", "input": {"food_name": "x", "quantity": "1"}}
     upd = {"name": "update_food_entry", "input": {"entry_id": 1, "quantity": "4 bar"}}
-    assert _scan_declined_to_bind([logf, logf]) is True        # two foods: unbound by design
-    assert _scan_declined_to_bind([upd, logf]) is True         # a food updated + a food logged: two foods
-    assert _scan_declined_to_bind([logf]) is False             # one food: bound
-    assert _scan_declined_to_bind([upd]) is False              # a correction: the scanned product's turn
-    assert _scan_declined_to_bind([]) is False
+
+    def _d(ops, ambiguities=()):
+        begin_turn(); attach(7)
+        return _decide(ops, ambiguities)
+
+    assert _d([logf, logf]) == SKIPPED_MULTI_ITEM
+    assert _d([upd, logf]) == SKIPPED_MULTI_ITEM
+    assert _d([logf]) == BOUND
+    assert _d([upd]) == BOUND                    # a correction shape: still the scan's turn
+    assert _d([]) == UNDECIDABLE                 # no food at all is not "binds nothing"
+    # ⭐ AND THE COMPLETE-PLAN CASE, which approved-operation counting missed:
+    # a two-food ask exposing ONE ready operation.
+    two_food_ask = {"items": [{"food": "bar"}, {"food": "soup"}],
+                    "ambiguities": [{"field": "quantity"}]}
+    assert _d([logf], (two_food_ask,)) == SKIPPED_MULTI_ITEM
+    begin_turn()
 
 
 def test_the_native_stage_still_holds_no_except_handler():

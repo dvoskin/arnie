@@ -302,6 +302,7 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     # the sentence is chosen by refusal KIND.
     from core.canonical_correction import CorrectionRefused
     from skills.nutrition.correction_application import ScanBoundCorrectionRefused
+    from core.scan_authority import ScanAuthorityRefusal
     from core.turns.stages.execute_native import (ScanBindingDecisionUnavailable,
                                                   ScanBoundIdentityUnavailable,
                                                   ScanBoundNotLegacy)
@@ -314,7 +315,8 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     if isinstance(state.error, (CorrectionRefused, ScanBoundNotLegacy,
                                 ScanBoundIdentityUnavailable,
                                 ScanBindingDecisionUnavailable,
-                                ScanBoundCorrectionRefused)):
+                                ScanBoundCorrectionRefused,
+                                ScanAuthorityRefusal)):
         # CF5b: `ScanBoundNotLegacy` is answered here beside the correction
         # refusals — same contract: no write, no legacy, no raise, words.
         logger.info("event=canonical_refusal_answered turn=%s kind=%s reason=%s",
@@ -373,9 +375,24 @@ def _refusal_copy(exc) -> str:
     from core.canonical_correction import (ProductSelectionRefused,
                                            StaleUndo)
     from skills.nutrition.correction_application import ScanBoundCorrectionRefused
+    from core.scan_authority import ScanAuthorityRefusal
     from core.turns.stages.execute_native import (ScanBindingDecisionUnavailable,
                                                   ScanBoundIdentityUnavailable,
                                                   ScanBoundNotLegacy)
+    if isinstance(exc, ScanAuthorityRefusal):
+        # CF5c, by REASON — each says what actually happened, because "I
+        # couldn't read the scan" and "tell me how much" are different
+        # problems for the person holding the phone.
+        if exc.reason == "no_quantity_ask":
+            return ("I have the scanned product, but I couldn't tell what you "
+                    "had of it, so I didn't log anything. Tell me the amount "
+                    "and I'll log it from the label.")
+        if exc.reason == "impossible_shape":
+            return ("I have the scanned product, but I couldn't tell how it "
+                    "fits what you asked for, so I left everything as it was. "
+                    "Tell me the food and the amount and I'll log it.")
+        return ("Something went wrong reading that scan, so I didn't change "
+                "anything. Scan it again, or tell me the food and the amount.")
     if isinstance(exc, ScanBindingDecisionUnavailable):
         return ("Something went wrong reading that scan, so I didn't change "
                 "anything. Scan it again, or tell me the food and the amount "

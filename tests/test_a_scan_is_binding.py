@@ -155,6 +155,24 @@ class _Req:
         self.source_type, self.platform = "ios", "ios"
 
 
+
+class _Plan:
+    """A plan-shaped stub for the CF5c gate. Tests that hand-build a
+    ValidationResult must still make the REAL decision — production always
+    runs `FoodValidationStage`, which is where the gate lives, so a test that
+    skips it is testing a path that cannot happen."""
+
+    def __init__(self, ops=(), ambiguities=()):
+        self.operations = tuple(ops)
+        self.ambiguities = tuple(ambiguities)
+        self.response_intent = "log"
+
+
+def _decide(ops=(), ambiguities=()):
+    from core.scan_authority import decide_from_plan
+    return decide_from_plan(_Plan(ops, ambiguities))
+
+
 async def _log(db, user):
     """⛔ THE APP'S OWN TODAY, NOT A PINNED DATE. This helper pinned
     `dt.date(2026, 8, 18)` while the canonical writer resolves the LOGGING
@@ -539,6 +557,7 @@ async def test_two_bars_opens_an_ask_that_holds_the_snapshot_and_the_answer_sett
     req = _Req("2 barebells bars", {"db": db, "user": user, "today_log": log, "messages": ()},
                turn_id=f"ios:cf9-{user.id}")
     token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    _decide(ops)
     try:
         execution = await NativeExecutionStage().run(req, validation=_V())
         snapshot = await CommittedSnapshotStage().run(req, execution=execution)
@@ -602,6 +621,7 @@ async def test_the_bound_ask_chip_settles_the_same_snapshot(db, make_user, monke
     req = _Req("2 barebells bars", {"db": db, "user": user, "today_log": log, "messages": ()},
                turn_id=f"ios:cf9tap-{user.id}")
     token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    _decide(ops)
     try:
         execution = await NativeExecutionStage().run(req, validation=_V())
     finally:
@@ -634,6 +654,7 @@ async def _open_bound_ask(db, user, log, snap, monkeypatch, *, turn_id, qty="2 b
     req = _Req("2 barebells bars", {"db": db, "user": user, "today_log": log, "messages": ()},
                turn_id=turn_id)
     token = SCANNED_PRODUCT_EVIDENCE.set(snap.id)
+    _decide(ops)
     try:
         execution = await NativeExecutionStage().run(req, validation=_V())
     finally:

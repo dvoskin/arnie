@@ -79,6 +79,11 @@ ATTACHED = "attached"
 BOUND = "bound"
 SKIPPED_MULTI_ITEM = "skipped_multi_item"
 CONSUMED = "consumed"
+#: ⛔ CF5c — "I could not tell" is NOT "it binds nothing". The second is a
+#: decision every downstream reader may act on; the first is the absence of
+#: one, and a reader that conflates them proceeds on an unknown about
+#: AUTHORITY. Recorded explicitly so `core.scan_authority` can refuse it.
+UNDECIDABLE = "undecidable"
 
 SCAN_BINDING: ContextVar[Optional[ScanBinding]] = ContextVar(
     "SCAN_BINDING", default=None)

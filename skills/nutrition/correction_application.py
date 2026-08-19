@@ -212,11 +212,9 @@ def _refuse_if_scan_bound(food_name: str) -> None:
     row took "9 chips" beside the whole bag's 210 kcal, where unbound it
     correctly rescales to 90.1."""
     try:
-        from skills.nutrition.product_acquisition import (SCAN_BINDING,
-                                                          scan_is_bound)
-        bound = scan_is_bound()
-        state = SCAN_BINDING.get()
-        sid = getattr(state, "snapshot_id", None)
+        from core.scan_authority import is_bound, snapshot_id
+        bound = is_bound()
+        sid = snapshot_id()
     except Exception:                                    # noqa: BLE001
         return
     if bound:
