@@ -801,6 +801,37 @@ CF5c ONE SCAN AUTHORITY — the guard-placement fix   P17 (before P17g)     BUIL
        through — so the proof asserts WHICH layer
        refused). Suite 9703 passed, PYTEST_EXIT=0,
        frozen tree 51e1b5646fc2.
+       REVIEW of 22b9e7a (Danny) — B3's two identity-
+       impacting defects; oneask001 itself sound,
+       unchanged:
+         · `_release_prior_awaiting` IGNORED SaveOutcome.
+           save_revision/mark_expired REPORT conflicts
+           (ok=False, conflict=True), they do not raise;
+           the code logged "released" and inserted beside
+           a row it had not released. My test mocked an
+           EXCEPTION, so it missed the real contract. Now
+           ok=False -> PriorAskNotReleased; proven with a
+           real SaveOutcome(ok=False, conflict=True).
+         · a lost insert race returned WHICHEVER ask
+           owned the user — another turn's, i.e. another
+           product's question rendered in this product's
+           reply. Now reuse ONLY when the winner IS this
+           operation id (`OpenedElsewhere` otherwise ->
+           BoundAskNotSingular); the wrapper's same-id
+           reuse also verifies the persisted snapshot.
+         · contract gap closed: open / reuse / race all
+           live in `open_operation`, the shared insert
+           seam — ordinary B-1 now gets "same op id ->
+           same ask" (proven: no self-release on retry).
+         · proof gaps: the B4 test now supplies an
+           update_food_entry + hidden soup (the
+           correction lift does NOT fire; drop the soup
+           and it does, post-decision); SUBJECT_SOURCES
+           has its AST gate (every listed key read by the
+           normaliser; every read key declared).
+       Four mutations RED (`applied`). PG race on the
+       real engine green. Suite 9709 passed,
+       PYTEST_EXIT=0, frozen tree b71b92258e09.
 CF6  LANE PROMOTION RULE (learned from 3 canaries):  every future lane     RULE
      a proven CONSUMER (stage) is unreachable if the
      PRODUCER (planner) or RENDERER in front of it

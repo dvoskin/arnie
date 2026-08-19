@@ -297,6 +297,13 @@ class PriorAskNotReleased(RuntimeError):
     opening a new one. Non-mutating; the caller must not insert."""
 
 
+class OpenedElsewhere(RuntimeError):
+    """The insert lost a race and the operation now awaiting for this user is
+    NOT this one (a different turn, so a different product's question) — or
+    this operation id exists in a non-reusable state. The caller must not
+    present the other operation as its own; it refuses."""
+
+
 async def _release_prior_awaiting(db, *, user, keep: str) -> None:
     """Release every awaiting/active operation this user holds, except `keep`
     (the operation being (re)opened — a same-turn retry finds its own row).
@@ -315,27 +322,39 @@ async def _release_prior_awaiting(db, *, user, keep: str) -> None:
         db, user_id=int(user.id), domain=DOMAIN, exclude_operation_id=keep)
     now = _now()
     for row in rows:
+        exp = row.expires_at
+        if exp is not None and exp.tzinfo is None and now.tzinfo is not None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        how = "expired" if (exp is not None and exp <= now) else "superseded"
         try:
-            exp = row.expires_at
-            if exp is not None and exp.tzinfo is None and now.tzinfo is not None:
-                exp = exp.replace(tzinfo=timezone.utc)
-            if exp is not None and exp <= now:
-                await repo.mark_expired(db, operation_id=row.operation_id,
-                                        expected_revision=int(row.revision or 0))
-                logger.info("event=b1_prior_released operation=%s how=expired "
-                            "for=%s", row.operation_id, keep)
+            if how == "expired":
+                outcome = await repo.mark_expired(
+                    db, operation_id=row.operation_id,
+                    expected_revision=int(row.revision or 0))
             else:
-                await repo.save_revision(
+                outcome = await repo.save_revision(
                     db, operation_id=row.operation_id,
                     expected_revision=int(row.revision or 0),
                     status=CANCELLED, storage_status="closed",
                     terminal_reason="superseded by a newer ask"[:200])
-                logger.info("event=b1_prior_released operation=%s how=superseded "
-                            "for=%s", row.operation_id, keep)
         except Exception as exc:                         # noqa: BLE001
             raise PriorAskNotReleased(
                 f"could not release {row.operation_id}: {type(exc).__name__}"
             ) from exc
+        # ⛔⛔ THE REPOSITORY REPORTS, IT DOES NOT RAISE *(review of 22b9e7a)*.
+        # `save_revision` / `mark_expired` return SaveOutcome(ok=False,
+        # conflict=True) when another writer moved the row first; the first
+        # cut read only exceptions, logged "released", and proceeded to
+        # INSERT beside a row it had not released — the second awaiting ask
+        # the constraint exists to forbid, arriving through a value the code
+        # never looked at. A not-ok outcome is a refusal, by contract.
+        if not getattr(outcome, "ok", False):
+            raise PriorAskNotReleased(
+                f"could not release {row.operation_id}: "
+                f"{'revision conflict' if getattr(outcome, 'conflict', False) else 'not saved'}"
+                f" (revision {getattr(outcome, 'revision', '?')})")
+        logger.info("event=b1_prior_released operation=%s how=%s for=%s",
+                    row.operation_id, how, keep)
 
 
 async def open_operation(db, *, user, interpreter_item: dict, interaction,
@@ -366,37 +385,72 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
 
     from datetime import timedelta
 
+    from sqlalchemy.exc import IntegrityError
+
     from core.clock import now as _now
 
     operation_id = operation_id_for("chat_quantity", user.id, turn_id)
     # ⛔⛔ ONE AWAITING OPERATION PER USER, ENFORCED WHERE THE INSERT IS
-    # *(CF5c-B3, migration oneask001)*. The database now holds a partial
-    # unique index over (user_id, domain) for awaiting/active rows — the
-    # constraint the code used to merely check for. Production already
-    # satisfies it (0 users with >1 awaiting row, 0 unswept-expired rows), so
-    # this makes explicit what was already true. Consequence: a NEW ask must
-    # RELEASE the user's prior awaiting operation before inserting, or the
-    # insert fails — including a prior that the clock has expired but the
-    # sweep has not yet marked (yesterday's chicken question, this morning's
-    # oatmeal). Expired -> marked expired; live -> superseded (cancelled with
-    # reason). The newer ask is the user's current intent. If the prior
-    # cannot be released the insert is not attempted: two awaiting rows must
-    # never exist, and an unreleased unknown is not a licence to add one.
+    # *(CF5c-B3, migration oneask001)*. The database holds a partial unique
+    # index over (user_id, domain) for awaiting/active rows — the constraint
+    # the code used to merely check for. Production already satisfies it
+    # (0 users with >1 awaiting row, 0 unswept-expired rows). Three things
+    # follow, ALL at this seam because it is the one insert site for every
+    # B-1 ask, bound or ordinary *(review of 22b9e7a: "same op id -> same
+    # ask" was true only for the product-bound wrapper)*:
+    #
+    #   REUSE    the SAME operation id already awaiting -> return it. A same-
+    #            turn retry (a resend, a double-tap) must not release its own
+    #            ask and re-insert — that is how a retry cancelled itself.
+    #   RELEASE  a DIFFERENT prior must be released first — a clock-expired
+    #            one marked expired (what the sweep would do), a live one
+    #            cancelled as superseded. The newer ask is the user's current
+    #            intent. If it cannot be released (the repository says so by
+    #            VALUE: SaveOutcome.ok=False) the insert is not attempted.
+    #   RACE     the insert lost to another worker -> reuse ONLY if the
+    #            winner IS this operation (same turn, same id). A winner from
+    #            a DIFFERENT turn is a different product's question, and
+    #            returning it would render product B's ask in product A's
+    #            reply — `OpenedElsewhere`, and the caller refuses.
+    existing = await repo.load_operation(db, operation_id)
+    if existing is not None:
+        if (existing.status == AWAITING and existing.storage_status == "active"):
+            logger.info("event=b1_open_reused operation=%s — same turn, same "
+                        "ask", operation_id)
+            return operation_id
+        raise OpenedElsewhere(
+            f"operation {operation_id} exists but is {existing.status}/"
+            f"{existing.storage_status} — not reusable")
     await _release_prior_awaiting(db, user=user, keep=operation_id)
-    await repo.create_operation(
-        db, operation_id=operation_id, user_id=user.id, status=AWAITING,
-        storage_status="active", domain=DOMAIN, source_turn_id=turn_id,
-        payload=_encode(interaction, interpreter_item, locale or "en",
-                        decision_id=decision_id,
-                        candidate_set_id=candidate_set_id,
-                        asked_at=_now().isoformat(),
-                        cohort=cohort or ""),
-        # AN UNANSWERED QUESTION MUST NOT LIVE FOREVER. Without this the row
-        # stays `awaiting_answer` indefinitely and a message weeks later is
-        # read as an answer to a meal the user has long forgotten.
-        expires_at=_now() + timedelta(minutes=ASK_TTL_MINUTES))
+    uid = int(user.id)            # captured: a rollback below expires `user`
+    payload = _encode(interaction, interpreter_item, locale or "en",
+                      decision_id=decision_id,
+                      candidate_set_id=candidate_set_id,
+                      asked_at=_now().isoformat(),
+                      cohort=cohort or "")
+    try:
+        await repo.create_operation(
+            db, operation_id=operation_id, user_id=uid, status=AWAITING,
+            storage_status="active", domain=DOMAIN, source_turn_id=turn_id,
+            payload=payload,
+            # AN UNANSWERED QUESTION MUST NOT LIVE FOREVER. Without this the
+            # row stays `awaiting_answer` indefinitely and a message weeks
+            # later is read as an answer to a meal the user has long forgotten.
+            expires_at=_now() + timedelta(minutes=ASK_TTL_MINUTES))
+    except IntegrityError as exc:
+        await db.rollback()
+        winner = await repo.load_operation(db, operation_id)
+        if (winner is not None and winner.status == AWAITING
+                and winner.storage_status == "active"):
+            # the SAME operation landed from another worker: reuse it
+            logger.info("event=b1_open_race_reused operation=%s", operation_id)
+            return operation_id
+        # a different operation holds the user: NOT ours to return
+        raise OpenedElsewhere(
+            f"insert of {operation_id} lost the race to another awaiting "
+            f"operation for user {uid}") from exc
     from core import b1_metrics
-    b1_metrics.shown(operation_id=operation_id, user_id=user.id, cohort=cohort,
+    b1_metrics.shown(operation_id=operation_id, user_id=uid, cohort=cohort,
                      locale=locale or "en",
                      field=interaction.groups[0].fields[0])
     # THE JOIN KEY, ON THE ASK SIDE. The answer arrives on a different turn with

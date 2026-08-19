@@ -1528,3 +1528,251 @@ def test_b5_the_authority_reads_the_decided_snapshot_and_no_module_reads_the_raw
                         and n.value.id == "SCANNED_PRODUCT_EVIDENCE"):
                     offenders.append(f"{path}:{n.lineno}")
     assert not offenders, offenders
+
+
+# ═════ REVIEW OF 22b9e7a — B3's two identity-impacting defects + proof gaps ═
+
+@pytest.mark.asyncio
+async def test_b3_a_release_that_reports_not_ok_refuses_by_value(
+        db, make_user, monkeypatch):
+    """⛔ THE REPOSITORY REPORTS, IT DOES NOT RAISE. `save_revision` and
+    `mark_expired` return SaveOutcome(ok=False, conflict=True) when another
+    writer moved the row first. The first cut checked only exceptions, logged
+    "released", and proceeded to INSERT beside a row it had not released. The
+    mock here is the REAL contract value, not an exception."""
+    from core import pending_repository as repo
+    from core.b1_quantity_operation import PriorAskNotReleased, open_operation
+    from core.pending_repository import SaveOutcome
+    from db.models import PendingOperation
+    from sqlalchemy import select
+    from tests.test_a_scan_is_binding import _open_bound_ask
+    user = await make_user()
+    uid = user.id
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(uid))
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    await _open_bound_ask(db, user, log, snap, monkeypatch, turn_id=f"ios:b3v-p-{uid}")
+
+    async def _conflict(*a, **k):
+        return SaveOutcome(ok=False, revision=7, conflict=True)
+    monkeypatch.setattr(repo, "save_revision", _conflict)
+    monkeypatch.setattr(repo, "mark_expired", _conflict)
+
+    from core.semantics import ClarificationInteraction
+    from skills.nutrition import quantity_clarification as qc
+    from core.food_pipeline import stage_items
+    staged = stage_items({"items": [{"food": "Oatmeal", "amount": 1, "unit": "cup",
+                                     "calories": 150}]}, turn_id="t", message="oatmeal",
+                         mode="strict")[0]
+    op_id_probe = "x"
+    field = qc.quantity_field(operation_id=op_id_probe, revision=0, item=staged)
+    interaction = qc.build_interaction(operation_id=op_id_probe, revision=0,
+                                       item=staged, options=field.options,
+                                       introduction="How much?", ask_preparation=False)
+    with pytest.raises(PriorAskNotReleased) as ei:
+        await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                             interaction=interaction,
+                             turn_id=f"ios:b3v-second-{uid}", locale="en")
+    assert "revision conflict" in str(ei.value)
+    await db.rollback()
+    awaiting = (await db.execute(select(PendingOperation).where(
+        PendingOperation.user_id == uid,
+        PendingOperation.status == "awaiting_answer"))).scalars().all()
+    assert len(awaiting) == 1                         # the prior, untouched; no second
+
+
+@pytest.mark.asyncio
+async def test_b3_ordinary_b1_open_reuses_the_same_operation_id(
+        db, make_user, monkeypatch, caplog):
+    """"Same op id -> same ask" at the SHARED seam, for an ORDINARY (non-
+    bound) B-1 ask — it was true only for the product-bound wrapper."""
+    from core.b1_quantity_operation import open_operation
+    from db.models import PendingOperation
+    from skills.nutrition import quantity_clarification as qc
+    from core.food_pipeline import stage_items
+    from sqlalchemy import select
+    caplog.set_level(logging.INFO)
+    user = await make_user()
+    staged = stage_items({"items": [{"food": "Oatmeal", "amount": 1, "unit": "cup",
+                                     "calories": 150}]}, turn_id="t", message="oatmeal",
+                         mode="strict")[0]
+    field = qc.quantity_field(operation_id="x", revision=0, item=staged)
+    interaction = qc.build_interaction(operation_id="x", revision=0, item=staged,
+                                       options=field.options,
+                                       introduction="How much?", ask_preparation=False)
+    tid = f"ios:b3-ord-{user.id}"
+    a = await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                             interaction=interaction, turn_id=tid, locale="en")
+    await db.commit()
+    b = await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                             interaction=interaction, turn_id=tid, locale="en")
+    assert a == b
+    assert "b1_open_reused" in caplog.text
+    assert "b1_prior_released" not in caplog.text        # it did NOT release itself
+    rows = (await db.execute(select(PendingOperation).where(
+        PendingOperation.user_id == user.id))).scalars().all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_b3_a_lost_race_to_a_different_turn_is_refused_not_rendered(
+        db, make_user, monkeypatch):
+    """The insert loses to a winner from a DIFFERENT turn. The first cut
+    returned "whichever ask currently owns the user" — product B's question
+    rendered in product A's reply. Now: OpenedElsewhere at the seam,
+    BoundAskNotSingular at the wrapper; the other ask is never presented as
+    this one."""
+    from sqlalchemy.exc import IntegrityError
+    from core import pending_repository as repo
+    from core.b1_quantity_operation import OpenedElsewhere, open_operation
+    from skills.nutrition import quantity_clarification as qc
+    from core.food_pipeline import stage_items
+    from tests.test_a_scan_is_binding import _open_bound_ask
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    # a winner from turn A already awaiting (the "other product's question")
+    await _open_bound_ask(db, user, log, snap, monkeypatch, turn_id=f"ios:raceA-{user.id}")
+
+    # turn B: make the release a no-op (simulating the window where the
+    # winner landed AFTER our release read) and the insert collide
+    async def _no_rows(*a, **k):
+        return []
+    monkeypatch.setattr(repo, "locked_awaiting_for_user", _no_rows)
+    real_create = repo.create_operation
+    async def _collide(*a, **k):
+        raise IntegrityError("insert", {}, Exception("uq_pending_operations_one_awaiting"))
+    monkeypatch.setattr(repo, "create_operation", _collide)
+
+    staged = stage_items({"items": [{"food": "Quest bar", "amount": 1, "unit": "bar",
+                                     "calories": 200}]}, turn_id="t", message="quest",
+                         mode="strict")[0]
+    field = qc.quantity_field(operation_id="x", revision=0, item=staged)
+    interaction = qc.build_interaction(operation_id="x", revision=0, item=staged,
+                                       options=field.options,
+                                       introduction="How much?", ask_preparation=False)
+    with pytest.raises(OpenedElsewhere):
+        await open_operation(db, user=user, interpreter_item={"food": "Quest bar"},
+                             interaction=interaction,
+                             turn_id=f"ios:raceB-{user.id}", locale="en")
+    monkeypatch.setattr(repo, "create_operation", real_create)
+
+
+@pytest.mark.asyncio
+async def test_b3_the_bound_wrapper_refuses_a_same_id_ask_bound_to_another_snapshot(
+        db, make_user, monkeypatch):
+    """Same operation id, awaiting — but the persisted item is bound to a
+    DIFFERENT snapshot. Not rendered as this scan's question."""
+    from core.product_bound_ask import BoundAskNotSingular, open_bound_quantity_ask
+    from core.general_settlement import coverage_for
+    from skills.nutrition.product_acquisition import (SCAN_BINDING, ScanBinding,
+                                                      attach, begin_turn)
+    from skills.nutrition.product_store import append_product_evidence
+    from tests.test_a_scan_is_binding import _open_bound_ask
+    user = await make_user()
+    monkeypatch.setenv("GENERAL_SETTLEMENT_ALLOWLIST", str(user.id))
+    log = await _log(db, user)
+    snap_a = await _prod_snapshot(db)
+    snap_b = await append_product_evidence(db, record=dict(
+        BAREBELLS_PROD, code="70004200", product_name="Quest Protein Bar",
+        brands="Quest", rev=2))
+    tid = f"ios:b3-swap-{user.id}"
+    await _open_bound_ask(db, user, log, snap_a, monkeypatch, turn_id=tid)   # bound to A
+    # the SAME turn id, now with snapshot B attached
+    begin_turn(); attach(snap_b.id); SCAN_BINDING.set(ScanBinding("bound", snap_b.id))
+    try:
+        item = {"food_name": "Quest Protein Bar", "quantity": "2 bar",
+                "product_evidence_id": snap_b.id}
+        cov = await coverage_for(db, user_id=user.id, items=[item])
+        with pytest.raises(BoundAskNotSingular):
+            await open_bound_quantity_ask(db, user=user, item=item, coverage=cov,
+                                          turn_id=tid, channel="ios", locale="en")
+    finally:
+        begin_turn()
+
+
+# ── the two proof gaps ──────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_b4_a_hidden_second_subject_also_prevents_the_correction_lift(
+        db, make_user, monkeypatch, caplog):
+    """The earlier B4 proof never supplied an `update_food_entry`, so it did
+    not exercise the CORRECTION lift. Here the plan is the CF5b shape — ONE
+    implicit update of a board row — PLUS a hidden held soup. Two subjects:
+    the lift must not fire; the update is left exactly as the interpreter
+    emitted it (and the executor then refuses the impossible shape or routes
+    it unbound, per the authority)."""
+    from core.turns.stages.food import FoodPlanStage, FoodValidationStage
+    from skills.nutrition.product_acquisition import (SKIPPED_MULTI_ITEM,
+                                                      SCAN_BINDING, attach,
+                                                      begin_turn)
+    caplog.set_level(logging.INFO)
+    user = await make_user()
+    log = await _log(db, user)
+    snap = await _prod_snapshot(db)
+    upd = {"name": "update_food_entry",
+           "input": {"entry_id": 3030, "quantity": "4 bar",
+                     "food_hint": "Barebells Salty Peanut Protein Bar"}}
+    held = {"name": "log_food",
+            "input": {"food_name": "Mystery soup", "quantity": "1 bowl"}}
+    interpreter_out = {"action": "update", "tool_calls": [upd],
+                       "deferred_calls": [held], "say": ""}
+
+    async def stub(text, u, **kw):
+        return interpreter_out
+    req = _Req("2 servings of Barebells bars and some soup",
+               {"db": db, "user": user, "today_log": log, "messages": ()})
+    begin_turn(); attach(snap.id)
+    try:
+        raw = await FoodPlanStage(interpreter=stub).run(req)
+        assert raw.operations[0]["name"] == "update_food_entry"      # planner blind
+        v = await FoodValidationStage().run(req, plan=raw)
+        assert SCAN_BINDING.get().kind == SKIPPED_MULTI_ITEM
+        assert v.plan.operations[0]["name"] == "update_food_entry"   # NOT lifted
+        assert v.plan.operations[0]["input"]["quantity"] == "4 bar"
+    finally:
+        begin_turn()
+    assert "scan_rejects_correction_shape" not in caplog.text
+
+    # and the twin: drop the soup -> BOUND -> the lift fires, post-decision
+    interpreter_out["deferred_calls"] = []
+    begin_turn(); attach(snap.id)
+    try:
+        raw = await FoodPlanStage(interpreter=stub).run(req)
+        v = await FoodValidationStage().run(req, plan=raw)
+        assert v.plan.operations[0]["name"] == "log_food"
+        assert v.plan.operations[0]["input"]["quantity"] == "2 serving"
+    finally:
+        begin_turn()
+    assert "scan_rejects_correction_shape" in caplog.text
+
+
+def test_subject_sources_is_a_gate_not_a_claim():
+    """`SUBJECT_SOURCES` says every listed producer key is READ by the
+    normaliser. The docstring claimed a gate existed; this is that gate: each
+    key must appear as a subscript of `out` (or a `.get(...)` on it) inside
+    `food_subjects_of`, so a key added to the tuple without a reader fails
+    here."""
+    import ast
+    import inspect
+    from core.turns.stages import food as m
+    tree = ast.parse(inspect.getsource(m.food_subjects_of).lstrip())
+    read = set()
+    for n in ast.walk(tree):
+        # out.get("key") / out["key"]
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and n.func.attr == "get" and n.args
+                and isinstance(n.args[0], ast.Constant)):
+            read.add(n.args[0].value)
+        if (isinstance(n, ast.Subscript) and isinstance(n.slice, ast.Constant)):
+            read.add(n.slice.value)
+    missing = [k for k in m.SUBJECT_SOURCES if k not in read]
+    assert not missing, f"SUBJECT_SOURCES names keys the normaliser never reads: {missing}"
+    # and the converse: the producer keys the normaliser reads off `out` are
+    # all declared, so a new read is a deliberate contract change
+    declared = set(m.SUBJECT_SOURCES) | {"_message", "_thread_active", "action"}
+    undeclared = [k for k in read if isinstance(k, str) and k in (
+        "tool_calls", "deferred_calls", "questions", "points", "b1_material",
+        "items", "ambiguities") and k not in declared]
+    assert not undeclared, undeclared

@@ -53,7 +53,6 @@ import logging
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -234,8 +233,15 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
         raise BoundAskNotSingular(
             f"could not read the open operation: {type(exc).__name__}") from exc
     if prior is not None and prior.awaiting and prior.operation_id == operation_id:
+        # same turn, same ask — but VERIFY the persisted item is bound to THIS
+        # snapshot before rendering it as this scan's question
+        stored_pid = (getattr(prior, "item", None) or {}).get("product_evidence_id")
+        if stored_pid is not None and int(stored_pid) != int(pid):
+            raise BoundAskNotSingular(
+                f"operation {operation_id} is awaiting for snapshot "
+                f"{stored_pid}, not {pid}")
         logger.info("event=bound_ask_idempotent operation=%s — same turn, "
-                    "same ask", operation_id)
+                    "same ask, same snapshot", operation_id)
         return _ask_from_owned(prior, channel=channel, locale=locale)
     # a DIFFERENT prior is released by `open_operation` itself — the ONE
     # insert site for every B-1 ask, bound or ordinary — so supersede has one
@@ -258,30 +264,24 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
                                stated_quantity=quantity_text or "that",
                                base_unit=base_unit),
         ask_preparation=False)
-    from core.b1_quantity_operation import PriorAskNotReleased
+    from core.b1_quantity_operation import OpenedElsewhere, PriorAskNotReleased
+    # ⛔ OPEN / REUSE / RACE ARE RESOLVED AT THE SHARED SEAM *(review of
+    # 22b9e7a)*: `open_operation` is the one insert site for every B-1 ask.
+    # It reuses the SAME operation id if already awaiting, releases a
+    # different prior (refusing by VALUE when the repository says the release
+    # did not take), and on a lost insert race reuses ONLY when the winner IS
+    # this operation. A winner from another turn is a different product's
+    # question — `OpenedElsewhere` — and is NEVER rendered as this one: the
+    # first cut returned "whichever ask currently owns the user", which could
+    # put product B's question in product A's reply.
     try:
         await open_operation(db, user=user, interpreter_item=interpreter_item,
                              interaction=interaction, turn_id=turn_id,
                              cohort="scan_bound", locale=locale)
     except PriorAskNotReleased as exc:
         raise BoundAskNotSingular(f"could not supersede: {exc}") from exc
-    except IntegrityError:
-        # LOST THE RACE: another worker opened this user's ask between our
-        # check and our insert (the partial unique index, or the operation_id
-        # key). The winner is the ask; return IT, never a second one.
-        await db.rollback()
-        try:
-            winner = await owning(db, user)
-        except Exception as exc:                         # noqa: BLE001
-            raise BoundAskNotSingular(
-                f"lost the insert race and could not read the winner: "
-                f"{type(exc).__name__}") from exc
-        if winner is None or not winner.awaiting:
-            raise BoundAskNotSingular("lost the insert race to an ask that "
-                                      "is no longer awaiting")
-        logger.info("event=bound_ask_race_lost mine=%s winner=%s",
-                    operation_id, winner.operation_id)
-        return _ask_from_owned(winner, channel=channel, locale=locale)
+    except OpenedElsewhere as exc:
+        raise BoundAskNotSingular(f"another ask owns this user: {exc}") from exc
     except Exception:                                    # noqa: BLE001
         logger.warning("event=bound_ask_not_persisted turn=%s — keeping the "
                        "plain refusal", turn_id, exc_info=True)
