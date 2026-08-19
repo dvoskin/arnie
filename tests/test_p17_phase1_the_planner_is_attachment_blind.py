@@ -649,7 +649,7 @@ def test_7_the_unused_scan_note_reaches_the_users_reply():
 # ═════ 8 — IDENTITY-FREE BINDING NEEDS A FRESH STATEMENT ═══════════════════
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("message", ["yes", "thanks", "👍", "", "ok cool"])
+@pytest.mark.parametrize("message", ["yes", "thanks", "👍", ""])
 async def test_8_a_hallucinated_one_subject_plan_from_bare_text_cannot_bind(
         db, make_user, message):
     """REQUIRED PROOF: the producer falsely emits an ordinary log from bare
@@ -668,6 +668,29 @@ async def test_8_a_hallucinated_one_subject_plan_from_bare_text_cannot_bind(
         d = decide_from_plan(plan, _ev(snap))
         assert d.outcome == UNDECIDABLE and d.disposition == DISP_REFUSED
         assert d.reason == "no_fresh_statement", d.reason
+    finally:
+        begin_turn()
+
+
+@pytest.mark.asyncio
+async def test_8_an_ack_carrying_a_brandable_word_refuses_as_unaccounted(
+        db, make_user):
+    """"ok cool" is not a fresh statement AND "cool" is brandable material
+    (Cool Blue, Cool Mint) — an adjective is not a function word, so it is
+    never globally accounted for. Refused either way."""
+    from skills.nutrition.product_acquisition import (DISP_REFUSED,
+                                                      UNDECIDABLE, attach,
+                                                      begin_turn)
+    from core.scan_authority import decide_from_plan
+    snap = await _caramel(db)
+    plan = _plan({"action": "log", "_message": "ok cool",
+                  "tool_calls": [_log_op("Caramel Cashew", "1 bar")]})
+    begin_turn()
+    attach(_ev(snap))
+    try:
+        d = decide_from_plan(plan, _ev(snap))
+        assert d.outcome == UNDECIDABLE and d.disposition == DISP_REFUSED
+        assert "cool" in d.reason, d.reason
     finally:
         begin_turn()
 
@@ -711,6 +734,9 @@ async def test_8_negated_or_questioned_consumption_cannot_become_a_write(
     ("it was 110", "no_fresh_statement"),
     ("around 2", "no_fresh_statement"),
     ("this", "no_fresh_statement"),                          # a deictic alone binds nothing
+    # "this one": no unit follows, so no modifier slot — it refuses as a
+    # non-statement. The brand case that matters ("2 ONE bars") is positional
+    # and lives in test_f3_position_decides_the_role_not_a_global_allowlist.
     ("this one", "no_fresh_statement"),
 ])
 async def test_f2_bare_numbers_and_bare_deictics_cannot_authorise_a_ready_write(
@@ -844,6 +870,114 @@ async def test_f2_half_a_bar_is_a_real_amount_and_binds(db, make_user, message):
     snap = await _caramel(db)
     plan = _plan({"action": "log", "_message": message,
                   "tool_calls": [_log_op("Caramel Cashew", "0.5 bar")]})
+    begin_turn()
+    attach(_ev(snap))
+    try:
+        assert decide_from_plan(plan, _ev(snap)).outcome == BOUND
+    finally:
+        begin_turn()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message,identity_word", [
+    ("I had 2 Good Bars", "good"),          # an evaluative adjective is a brand
+    ("I had 2 ONE bars", "one"),            # ONE is a bar brand, not a numeral
+    ("I had 2 other bars", "other"),        # explicitly CONTRADICTS the scan
+    ("I had 2 different bars", "different"),
+    ("I had 2 Perfect Bars", "perfect"),
+    ("I had 2 plain bars", "plain"),
+])
+async def test_f3_position_decides_the_role_not_a_global_allowlist(
+        db, make_user, message, identity_word):
+    """⛔ finding 1 (third round): a global word allowlist accepted `good`,
+    `one`, `other`, `different` ANYWHERE, so a producer that relabelled every
+    carrier could bind the wrong scan — and `other`/`different` explicitly
+    contradict the scanned identity. POSITION decides: a token in the
+    modifier slot of a quantity phrase (QUANTITY … UNIT) modifies the unit
+    noun and is a product-identity claim whatever global role it might have.
+    Only determiners and the partitive "of" may fill that slot."""
+    from skills.nutrition.product_acquisition import (DISP_REFUSED,
+                                                      UNDECIDABLE, attach,
+                                                      begin_turn)
+    from core.scan_authority import decide_from_plan
+    snap = await _caramel(db)
+    plan = _plan({"action": "log", "_message": message,
+                  "tool_calls": [_log_op("Caramel Cashew", "2 bars")],
+                  "b1_material": {"staged_items": (), "items": [
+                      {"food": "Caramel Cashew", "amount": 2, "unit": "bar"}]}})
+    begin_turn()
+    attach(_ev(snap))
+    try:
+        d = decide_from_plan(plan, _ev(snap))
+        assert d.outcome == UNDECIDABLE and d.disposition == DISP_REFUSED
+        assert d.reason.startswith("unaccounted_identity"), d.reason
+        assert identity_word in d.reason, (identity_word, d.reason)
+    finally:
+        begin_turn()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message", [
+    "I had 2 bars", "half a bar", "half of a bar", "2 of these bars",
+    "I had 2 Barebells bars", "110 g of this", "I had 2 servings of this.",
+])
+async def test_f3_the_positional_rule_leaves_ordinary_phrases_alone(
+        db, make_user, message):
+    """The positive half: nothing sits in the modifier slot (or the LABEL's
+    own word does), so these bind exactly as before."""
+    from skills.nutrition.product_acquisition import BOUND, attach, begin_turn
+    from core.scan_authority import decide_from_plan
+    snap = await _caramel(db)
+    plan = _plan({"action": "log", "_message": message,
+                  "tool_calls": [_log_op("Caramel Cashew", "2 bars")]})
+    begin_turn()
+    attach(_ev(snap))
+    try:
+        assert decide_from_plan(plan, _ev(snap)).outcome == BOUND
+    finally:
+        begin_turn()
+
+
+def test_f3_unit_forms_are_one_structure_and_the_two_derivations_agree():
+    """⛔ finding 2 (third round): the vocabulary used to be scraped out of
+    the regex TEXT, which shredded `millilit(?:er|re)s?` into `millilit`,
+    `er`, `re` — `_AMOUNT_RE` accepted "2 milliliters" while the grammar
+    called `milliliters` unaccounted identity and refused the same message.
+    Forms are written once; both derivations come from them. PARITY over
+    EVERY form, so they can never drift again."""
+    from core.scan_authority import (_UNIT_FORMS, _unit_vocabulary,
+                                     fresh_statement_signal,
+                                     unaccounted_identity)
+    ev = _fake_ev(7, name="Caramel Cashew", brand="Barebells")
+    vocab = _unit_vocabulary()
+    for forms in _UNIT_FORMS:
+        for form in forms:
+            assert form in vocab, form
+            assert fresh_statement_signal(f"2 {form}") == "amount", form
+            assert unaccounted_identity(f"I had 2 {form}", ev, set()) == set(), form
+    # US/UK, singular/plural twins explicitly
+    for form in ("milliliter", "milliliters", "millilitre", "millilitres",
+                 "liter", "liters", "litre", "litres",
+                 "gram", "grams", "ounce", "ounces"):
+        assert fresh_statement_signal(f"2 {form}") == "amount", form
+        assert unaccounted_identity(f"I had 2 {form}", ev, set()) == set(), form
+    # and no regex fragment leaked into the vocabulary
+    for junk in ("millilit", "er", "re", "s", "lit"):
+        assert junk not in vocab, junk
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("form", ["milliliters", "millilitres", "ounces", "grams"])
+async def test_f3_a_unit_the_amount_parser_accepts_is_never_unaccounted(
+        db, make_user, form):
+    """The end-to-end shape of the parity defect: the message states a real
+    amount in a real unit, so it BINDS — it must not refuse because the two
+    derivations disagreed about the word."""
+    from skills.nutrition.product_acquisition import BOUND, attach, begin_turn
+    from core.scan_authority import decide_from_plan
+    snap = await _caramel(db)
+    plan = _plan({"action": "log", "_message": f"I had 2 {form}",
+                  "tool_calls": [_log_op("Caramel Cashew", f"2 {form}")]})
     begin_turn()
     attach(_ev(snap))
     try:

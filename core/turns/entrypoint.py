@@ -527,6 +527,12 @@ def _refusal_copy(exc) -> str:
         if exc.reason == "decision_conflict":
             return ("Something went wrong reading that scan, so I didn't "
                     "change anything. Send it once more with the amount.")
+        if exc.reason == "unaccounted_identity":
+            # the message names something the scanned label does not, and no
+            # producer label verified against the user's own words
+            return ("I have the scanned product, but your message mentions "
+                    "something I can't match to it, so I didn't log anything. "
+                    "Tell me which product it was and how much.")
         if exc.reason == "no_fresh_statement":
             return ("Got the scanned product. I haven't logged it — tell me "
                     "if you had it and how much, and I'll log it from the "

@@ -229,9 +229,39 @@ again more less extra plain
 #: A STATED AMOUNT is a value WITH a food unit *(finding 2)* — "2 servings",
 #: "110 g", "half a bar" — never a bare number ("my glucose was 110",
 #: "version 2" are not amounts) and never a bare "some"/"half".
-_UNIT_WORDS = (r"(?:servings?|bars?|pieces?|g|grams?|oz|ounces?|ml|"
-               r"millilit(?:er|re)s?|cups?|slices?|packs?|packets?|bottles?|"
-               r"cans?|scoops?|squares?|tbsp|tsp|tablespoons?|teaspoons?)")
+#: ⛔ ONE STRUCTURE, BOTH DERIVATIONS *(finding 2 of the third round)*. The
+#: unit vocabulary used to be scraped out of the regex TEXT with
+#: `re.findall(r"[a-z]+", ...)`, which shredded `millilit(?:er|re)s?` into
+#: `millilit`, `er`, `re` — so `_AMOUNT_RE` accepted "2 milliliters" while the
+#: grammar called `milliliters` an unaccounted identity word and refused the
+#: same message. The forms are now written ONCE, explicitly, and both the
+#: alternation and the token set are generated from them, so they cannot
+#: drift (a parity test asserts it over every form).
+_UNIT_FORMS = (
+    ("serving", "servings"),
+    ("bar", "bars"),
+    ("piece", "pieces"),
+    ("slice", "slices"),
+    ("square", "squares"),
+    ("scoop", "scoops"),
+    ("pack", "packs"),
+    ("packet", "packets"),
+    ("bottle", "bottles"),
+    ("can", "cans"),
+    ("cup", "cups"),
+    ("g", "gram", "grams"),
+    ("kg", "kilogram", "kilograms"),
+    ("oz", "ounce", "ounces"),
+    ("lb", "pound", "pounds"),
+    ("ml", "milliliter", "milliliters", "millilitre", "millilitres"),
+    ("l", "liter", "liters", "litre", "litres"),
+    ("tbsp", "tablespoon", "tablespoons"),
+    ("tsp", "teaspoon", "teaspoons"),
+)
+_UNIT_TOKENS = frozenset(form for forms in _UNIT_FORMS for form in forms)
+#: longest first, so "milliliters" cannot be shadowed by "ml"
+_UNIT_WORDS = "(?:" + "|".join(
+    sorted(_UNIT_TOKENS, key=lambda w: (-len(w), w))) + ")"
 _NUM_WORDS = (r"(?:\d+(?:[.,]\d+)?|a|an|one|two|three|four|five|six|seven|"
               r"eight|nine|ten|half|quarter|couple(?:\s+of)?|few)")
 #: ⛔ VALUE + FOOD UNIT, NOTHING ELSE *(finding 2, second round)*. The
@@ -375,20 +405,27 @@ def evidence_aliases(ev) -> tuple:
 # product is a protein bar) is accounted by the EVIDENCE role rather than by
 # a list of exceptions.
 
+#: ⛔ GENUINELY CLOSED CLASS ONLY *(finding 1 of the third round)*. The
+#: previous list carried evaluative and contrastive ADJECTIVES — good, nice,
+#: great, same, different, other, previous — and pronoun "one". Those are not
+#: function words, they are product-name material: "I had 2 Good Bars",
+#: "I had 2 ONE bars", "I had 2 other bars" were all fully "accounted" and
+#: could bind the wrong scan, and `other`/`different` explicitly CONTRADICT
+#: the scanned identity. Pronouns, determiners, prepositions, conjunctions,
+#: auxiliaries and negation are closed classes; adjectives are not.
 _FUNCTION_WORDS = frozenset("""
 i me my mine we us our ours you your yours he him his she her hers it its
 they them their theirs this that these those there here who whom whose which
-what a an the and or but nor so then than as if because while when whenever
+what a an the and or but nor so if because while when whenever
 of in on at to from for with without into onto off out up down over under
-about around by via per each every both all any some none no not just only
-also too very really quite rather still already again more less most least
-other another same different next last previous
+about around by via per each every both all any none
+too very really quite rather more less most least
 is are was were be been being am do does did doing done have has had having
 will would shall should can could may might must
-please thanks thank ok okay yes yeah yep sure nope nah cool nice great good
-fine perfect_ack alright awesome sorry hey hi hello
+not no never dont didnt cant wont isnt wasnt arent im ive id
+please thanks thank ok okay yes yeah yep sure nope nah sorry hey hi hello
 today tonight yesterday tomorrow now later earlier morning afternoon evening
-night before after during while ago
+night before after during ago just then also again
 """.split())
 
 _CONSUMPTION_WORDS = frozenset("""
@@ -396,28 +433,75 @@ had have has ate eat eaten eating drank drink drinking drunk finished finish
 snacked downed consumed devoured munched grabbed got bought ordered
 """.split())
 
-_DEICTIC_WORDS = frozenset("this these that those it them one ones".split())
+#: ⛔ "one"/"ones" are NOT deictics here: ONE is a bar brand, and "2 ONE bars"
+#: must not read as a quantity word in a modifier slot.
+_DEICTIC_WORDS = frozenset("this these that those it them".split())
 
 _QUANTIFIER_WORDS = frozenset("""
 a an one two three four five six seven eight nine ten eleven twelve dozen
 half quarter third couple few several some many lots plenty double triple
 """.split())
 
+#: The ONLY tokens allowed to sit between a quantity and its unit without
+#: being read as product identity: determiners and the partitive "of".
+#: Everything else in that slot MODIFIES the noun, which is an identity claim.
+_PHRASE_FILLERS = frozenset(
+    "a an the this that these those my our your his her their its of".split())
 
 def _unit_vocabulary() -> frozenset:
-    """The measure words the amount parser owns, as a token set — ONE source,
-    so the grammar cannot drift from what `_AMOUNT_RE` accepts. The pattern
-    spells plurals with `?` ("bars?"), so the singular is added by stemming
-    rather than by a second hand-written list."""
-    found = set(re.findall(r"[a-z]+", _UNIT_WORDS))
-    return frozenset(found | {_stem(w) for w in found})
+    """The measure words the amount parser owns — the SAME structure the
+    regex is built from, never a re-parse of the regex text."""
+    return _UNIT_TOKENS
+
+
+def _positional_tokens(text) -> list:
+    """Word tokens INCLUDING numbers, in order — the phrase scanner needs the
+    quantity itself as a position, which `_tokens` deliberately drops."""
+    return [t for t in re.findall(r"[\w']+", str(text or "").lower())
+            if t and not t.startswith("_")]
+
+
+def identity_modifiers(message: str) -> set:
+    """⛔ POSITION DECIDES THE ROLE *(finding 1 of the third round)*. In a
+    quantity phrase
+
+        QUANTITY  [determiner | of]*  X*  UNIT
+                                      ^^^ the modifier slot
+
+    every X modifies the unit noun, which makes it a PRODUCT-IDENTITY claim
+    whatever the word is — "2 Good Bars", "2 ONE bars", "2 other bars". A
+    token's membership in some global role list cannot exempt it there; only
+    a determiner or the partitive "of" may fill the slot without naming
+    something. Returns the modifier tokens found in every such phrase."""
+    toks = _positional_tokens(message)
+    units = _unit_vocabulary()
+    out: set = set()
+    for i, tok in enumerate(toks):
+        is_quantity = (tok.replace(",", "").replace(".", "").isdigit()
+                       or tok in _QUANTIFIER_WORDS)
+        if not is_quantity:
+            continue
+        # look ahead a short window for the unit this quantity measures
+        for j in range(i + 1, min(i + 6, len(toks))):
+            if toks[j] in units:
+                out |= {t for t in toks[i + 1:j] if t not in _PHRASE_FILLERS
+                        and t not in units}
+                break
+            if toks[j].isdigit() or toks[j] in _CONSUMPTION_WORDS:
+                break                      # a new clause; this phrase has no unit
+    return out
 
 
 def unaccounted_identity(message: str, ev, mention: set) -> set:
     """⛔ THE POSITIVE GRAMMAR. Tokens of the user's message that NO role
     accounts for — an identity claim the producer's labels never verified.
     Non-empty means the identity-free path must NOT bind: the words name
-    something, and nothing available proves what."""
+    something, and nothing available proves what.
+
+    Two passes, and a token needs to survive BOTH: the global roles (below)
+    and the POSITIONAL one (`identity_modifiers`), because a word in the
+    modifier slot of a quantity phrase is identity regardless of any global
+    role it might also have."""
     # ⛔ the EVIDENCE role uses the label's RAW words, not the identity-
     # discriminating aliases: "does the scanned label itself contain this
     # word" is a fact, and a generic word the label genuinely carries
@@ -439,6 +523,15 @@ def unaccounted_identity(message: str, ev, mention: set) -> set:
             continue                                     # the label's own word
         if any(_tok_match(tok, m) for m in (mention or ())):
             continue                                     # a verified mention
+        out.add(tok)
+    # POSITIONAL PASS: a modifier of a unit noun is identity even when some
+    # global role would have accounted for it — unless the LABEL or a
+    # verified mention says that word.
+    for tok in identity_modifiers(message):
+        if any(_tok_match(tok, a) for a in aliases):
+            continue
+        if any(_tok_match(tok, m) for m in (mention or ())):
+            continue
         out.add(tok)
     return out
 
