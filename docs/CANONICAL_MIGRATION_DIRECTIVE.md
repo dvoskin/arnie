@@ -961,6 +961,37 @@ CF10a LIQUID BOUND-ASK PATH UNPROVEN (from the CF5b   P17-UE (with CF10)    OPEN
      BoundUnpriceable -> ask -> [240 ml — 1 serving]
      -> settle before claiming liquids; until then the
      bound ask is claimed for gram-based labels only.
+CF12 PERSISTED ASK ENVELOPE AUTHORITATIVE *(Danny,    CF5c follow-up —      OPEN
+     2026-08-19, conditional-go review of 4045514;      BEFORE any cohort     (non-
+     does NOT affect the two fresh-state canaries:     expansion or          blocking
+     production holds zero awaiting operations and     FINGERPRINT_VERSION   for the
+     both canaries create fresh operations under ONE   change)               canaries)
+     deployed build)*. Three ways the row is not yet
+     the sole authority for a reuse:
+       · the FINGERPRINT and its VERSION are NOT STORED
+         on the row; `_stored_open_result` RECOMPUTES
+         them under the CURRENT FINGERPRINT_VERSION, so
+         a future bump recomputes BOTH sides under the
+         new rule — the claimed cross-version protection
+         is not proven. Required: persist
+         `fingerprint` + `fingerprint_version` in the
+         payload at open; on reuse compare the STORED
+         value (and refuse a stored version != current,
+         rather than recomputing).
+       · CAPABILITY is not in OpenResult: ordinary B-1
+         renders with the RETRY's lane.capability, the
+         bound wrapper with the retry's raw channel —
+         rendering is not entirely from persisted state.
+         Required: persist capability at open; OpenResult
+         carries it; consumers render `opened.capability`.
+       · the reuse decoder does not enforce
+         `schema_version`, and a falsy non-dict `item`
+         becomes {} through `data.get("item") or {}` —
+         an empty item could fingerprint-match an empty
+         build. Required: schema_version == B1_PAYLOAD_
+         VERSION or FingerprintUnreadable; item must be a
+         non-empty dict or FingerprintUnreadable.
+     One follow-up; register-and-hold, not a blocker.
 CF11 A SCAN THAT COULD NOT BE ACQUIRED IS NOT A SCAN  P17 (after the       OPEN
      *(Danny, 2026-08-19, registered during the CF5c   canaries; before      (non-
      deploy gate; NON-BLOCKING for the Barebells       cohort expansion)     blocking)
