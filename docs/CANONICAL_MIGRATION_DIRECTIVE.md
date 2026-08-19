@@ -958,6 +958,44 @@ CF5c ONE SCAN AUTHORITY — the guard-placement fix   P17 (before P17g)     BUIL
        3031 by TYPING "make the Barebells 2 servings"
        (canonical) — verify 220 kcal, snapshot 1
        retained, canonical:correction event.
+       ⛔⛔ ROOT CAUSE OF BOTH "RateLimitError" CANARY
+       DEATHS (13:40 and 15:57): THE ANTHROPIC ACCOUNT
+       HAD $4.14 OF CREDIT. Not traffic (the only model-
+       bearing turns in 3 h were Danny's), not our code:
+       AsyncAnthropic(max_retries=3, timeout=45) ->
+       primary claude-sonnet-5 -> fallback claude-sonnet-
+       4-6, both on the same starved account -> 9 s of
+       backoff -> no plan. Second attempt (ed97f7a
+       deployed) REFUSED IN WORDS with zero writes —
+       "I have the scanned product but couldn't work out
+       the rest…" — the morning's empty-plan fix holding
+       in production. Lesson for the next trace: a
+       `food_trace error=interpret:RateLimitError` on an
+       idle fleet is BILLING, check the console before
+       the code. Also found on the repair path: a TYPED,
+       DATE-REFERENCED correction ("yesterday's Barebells
+       was 2 servings") became a NEW dated log at 7 kcal
+       (row 3036, legacy ladder) — registered below as
+       CF13; and "2 servings of Barebells" (no scan) sent
+       onto a board already holding the bar was
+       interpreted as `update_food_entry(entry_id=123)` —
+       a HALLUCINATED row id — which `_update_call`
+       rejects (not on the board) -> no op -> legacy.
+       The iOS edit sheet is a LEGACY write (ios_edit):
+       it cannot be used to produce a canonical
+       correction.
+CF13 A TYPED, DATE-REFERENCED CORRECTION BECOMES A NEW   legacy correction     OPEN
+     DATED LOG *(2026-08-19 14:59, user 26)*:            lane (not this        (non-
+     "yesterday's Barebells was 2 servings" -> the       program's; recorded   blocking)
+     interpreter emitted a LOG with date=yesterday,      because the canary
+     quantity "2 bar", and the unscanned ladder priced   repair hit it)
+     two protein bars at 7 kcal (row 3036). The
+     move-to-date primitive took a correction for a
+     fresh entry; the ladder produced an absurd price
+     with `basis: stated`. Two defects: routing (a
+     dated reference to a food already on that day is a
+     correction, not a log) and pricing (a branded bar
+     at 7 kcal should fail the plausibility floor).
 CF6  LANE PROMOTION RULE (learned from 3 canaries):  every future lane     RULE
      a proven CONSUMER (stage) is unreachable if the
      PRODUCER (planner) or RENDERER in front of it
