@@ -1636,7 +1636,13 @@ async def test_b3_open_operation_returns_a_typed_result_and_reuse_renders_the_st
     second = await open_operation(db, user=user, interpreter_item=item,
                                   interaction=interaction, turn_id=tid, locale="en", capability="id_addressed")
     assert second.reused and second.operation_id == op_id
-    assert second.fingerprint == first.fingerprint == semantic_fingerprint(interaction, item)
+    # ⛔ `fingerprint` is the stored INTEGRITY digest (it covers the held
+    # answers, so it moves as the ask is answered); `ask_identity` is the
+    # derived IDENTITY of the question, which is what a reuse compares and
+    # what `semantic_fingerprint` returns *(P17 Phase 2, fifth round)*.
+    assert second.fingerprint == first.fingerprint
+    assert second.ask_identity == first.ask_identity == semantic_fingerprint(
+        interaction, item)
     assert "b1_open_reused" in caplog.text
     assert "b1_prior_released" not in caplog.text
     rows = (await db.execute(select(PendingOperation).where(

@@ -296,15 +296,186 @@ def test_the_merge_reads_the_locked_row_not_the_pre_lock_snapshot():
                for c in ast.walk(n.value))}
     assert locked_names, "hold_answer never opens the mutation boundary"
 
+    # ⛔ PROVENANCE IS FOLLOWED TRANSITIVELY, not one hop. `held` is decoded
+    # from `_locked_data`, which is decoded from `locked.row` — a one-hop
+    # check would call that stale and force the merge back onto a direct
+    # `locked.…` call, which is the opposite of what this gate wants.
+    derived = set(locked_names)
+    for _ in range(8):                      # to a fixpoint; the chain is short
+        grew = False
+        for n in ast.walk(tree):
+            if not isinstance(n, ast.Assign):
+                continue
+            if {c.id for c in ast.walk(n.value)
+                    if isinstance(c, ast.Name)} & derived:
+                for t in n.targets:
+                    for sub in ast.walk(t):
+                        if isinstance(sub, ast.Name) and sub.id not in derived:
+                            derived.add(sub.id)
+                            grew = True
+        if not grew:
+            break
+
     held = [n for n in ast.walk(tree) if isinstance(n, ast.Assign)
             and any(getattr(t, "id", "") == "held" for t in n.targets)]
     assert held, "`held` is no longer assigned"
-    from_locked = any(c.id in locked_names for a in held
+    from_locked = any(c.id in derived for a in held
                       for c in ast.walk(a.value) if isinstance(c, ast.Name))
     assert from_locked, (
         "`held` is not derived from the locked row — the lock is being held "
         "over a merge into state that predates it")
 
+
+@pg_only
+@pytest.mark.asyncio
+async def test_two_real_owning_then_hold_answer_writers_do_not_lose_a_shape_change(
+        sessions):
+    """⛔ P17 PHASE 2, THIRD ROUND. The other races in this file drive
+    `LockedOperation` directly, so they cannot see the defect that lived
+    between `owning()` and the lock: BOTH writers hydrate the operation
+    BEFORE either takes the lock, and the loser then reconciled from ITS
+    pre-lock interaction and re-signed the result — overwriting the winner's
+    transition with a valid-looking fingerprint.
+
+    AND ONE WRITER GENUINELY CHANGES THE SHAPE. The first version of this
+    proof had both writers answer the same quantity field, which does not
+    activate anything — so nothing was reconciled, nothing was rebuilt, and
+    the test's own name over-claimed what its body exercised. Here writer A
+    answers "yes, fat was added", which turns two conditional fields on and
+    re-issues the surface at a new revision, while writer B holds a chip for
+    the ORIGINAL revision.
+
+    Whatever order they serialise in: no writer that committed may have its
+    answer missing from the row, a writer whose field the rebuild retired
+    must be REFUSED as stale rather than applied to a question that no
+    longer asks it, and the surviving digest must describe the surviving
+    material."""
+    import asyncio
+
+    from core import b1_quantity_operation as b1
+    from core.semantics import (ClarificationGroup, ClarificationInteraction,
+                                Provenance, ResponseType, UnresolvedField)
+    from db.models import PendingOperation, User, UserPreferences
+    from sqlalchemy import select
+
+    # a real user, so `owning()` can find the row
+    async with sessions() as s:
+        u = (await s.execute(select(User).where(User.id == 26))).scalar_one_or_none()
+        if u is None:
+            u = User(id=26, telegram_id="race-26", onboarding_completed=True)
+            s.add(u)
+            await s.flush()
+            s.add(UserPreferences(user_id=u.id, proactive_messaging_enabled=False))
+        await s.commit()
+
+    op_id = "chat_quantity:26:race-real"
+    async with sessions() as s:
+        await s.execute(__import__("sqlalchemy").delete(PendingOperation).where(
+            PendingOperation.user_id == 26))
+        await s.commit()
+    async with sessions() as s:
+        user = (await s.execute(select(User).where(User.id == 26))).scalar_one()
+        items, _g = __import__("core.food_pipeline", fromlist=["stage_items"]).stage_items(
+            {"items": [{"food": "Oatmeal", "amount": 1, "unit": "bowl",
+                        "calories": 150}]},
+            turn_id="race-real", message="x", mode="strict")
+        from skills.nutrition import quantity_clarification as qc
+        field = qc.quantity_field(operation_id=op_id, revision=0, item=items[0])
+        base = qc.build_interaction(operation_id=op_id, revision=0,
+                                    item=items[0], options=field.options,
+                                    introduction="How much oatmeal?",
+                                    ask_preparation=False)
+        # ONE ask, TWO questions: the quantity chip B will tap, and the
+        # yes/no whose answer A gives, which activates two more fields.
+        group = base.groups[0]
+        fat = UnresolvedField(
+            operation_id=op_id, revision=0, event_id=group.event_id,
+            attribute=ClarificationAttribute.ADDED_FAT_PRESENT,
+            response_type=ResponseType.FREE_TEXT)
+        inter = ClarificationInteraction(
+            interaction_id=base.interaction_id, operation_id=op_id,
+            revision=0, introduction=base.introduction,
+            groups=(ClarificationGroup(event_id=group.event_id,
+                                       label=group.label,
+                                       fields=group.fields + (fat,)),))
+        await b1.open_operation(s, user=user,
+                                interpreter_item={"food": "Oatmeal", "amount": 1},
+                                interaction=inter, turn_id="race-real",
+                                locale="en", cohort="allowlist",
+                                capability=b1.ID_ADDRESSED)
+        await s.commit()
+
+    _f = inter.groups[0].fields[0]
+    chip = (_f.options[0].patch if getattr(_f, "options", None)
+            else SetQuantity(
+                event_id=inter.groups[0].event_id, field_id=_f.field_id,
+                quantity=CanonicalQuantity(amount=Decimal("120"), unit_id="g",
+                                           dimension=Dimension.MASS)))
+    shape_changer = SetAddedFatPresent(
+        event_id=inter.groups[0].event_id, field_id=fat.field_id,
+        present=True, provenance=Provenance.USER_SELECTED)
+
+    # ⛔ THE INTERLEAVING IS PINNED, NOT RACED. The first version left the
+    # order to a 0.25s sleep, and every assertion that mattered sat behind
+    # `if outcome == "stale"` — so when a mutation let the stale chip through,
+    # the branch simply never ran and the proof passed. Two real sessions,
+    # one deterministic order: B hydrates at revision 0, THEN A changes the
+    # shape and commits, THEN B tries to answer.
+    hydrated, reshaped = asyncio.Event(), asyncio.Event()
+
+    async def shape_writer():
+        async with sessions() as s:
+            user = (await s.execute(select(User).where(User.id == 26))).scalar_one()
+            owned = await b1.owning(s, user)
+            assert owned is not None and owned.interaction is not None
+            await hydrated.wait()           # B is holding revision 0
+            result = await b1.hold_answer(s, owned=owned, patch=shape_changer)
+            await s.commit()
+            reshaped.set()
+            return ("shape", "held", sorted(result.held),
+                    result.interaction.revision)
+
+    async def chip_writer():
+        async with sessions() as s:
+            user = (await s.execute(select(User).where(User.id == 26))).scalar_one()
+            owned = await b1.owning(s, user)      # hydrates BEFORE the change
+            assert owned is not None and owned.interaction is not None
+            hydrated.set()
+            await reshaped.wait()                 # A's rebuild has committed
+            try:
+                result = await b1.hold_answer(s, owned=owned, patch=chip)
+                await s.commit()
+                return ("chip", "held", sorted(result.held),
+                        result.interaction.revision)
+            except b1.StaleAnswerField:
+                await s.rollback()
+                return ("chip", "stale", [], None)
+
+    a, b = await asyncio.gather(shape_writer(), chip_writer())
+
+    async with sessions() as s:
+        row = (await s.execute(select(PendingOperation).where(
+            PendingOperation.operation_id == op_id))).scalars().one()
+        payload = json.loads(row.canonical_payload)
+
+    # the digest describes the material that actually landed
+    assert payload["fingerprint"] == b1.fingerprint_of_payload(payload)
+    landed = set(payload.get("answered") or {})
+
+    # A really did change the shape — without this the rest is hollow
+    assert a == ("shape", "held", [str(fat.field_id)], 1), a
+    assert payload["interaction"]["revision"] == 1
+    assert str(fat.field_id) in landed, (
+        "the shape writer committed and its answer is gone — the chip writer "
+        "reconciled from its pre-lock snapshot and overwrote the transition")
+
+    # B hydrated before the rebuild; its chip addresses the retired revision
+    assert b[1] == "stale", (
+        f"the chip aimed at revision 0 was accepted after the surface moved "
+        f"to revision 1: {b}")
+    assert str(chip.field_id) not in landed, (
+        "a chip answering the retired question was applied to the re-issued "
+        "one")
 
 @pg_only
 @pytest.mark.asyncio

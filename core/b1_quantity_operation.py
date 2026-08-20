@@ -230,8 +230,8 @@ class _AnswerOperation:
 
 def _encode(interaction, interpreter_item: dict, locale: str,
             decision_id: str = "", candidate_set_id: str = "",
-            asked_at: str = "", cohort: str = "", fingerprint: str = "",
-            capability: str = "") -> str:
+            asked_at: str = "", cohort: str = "",
+            capability: str = "", ask_identity: str = "") -> tuple:
     if not isinstance(interpreter_item, dict):
         # NAMED, not coerced. `build_interaction` takes the STAGED item and
         # this takes the INTERPRETER's dict; they are different objects about
@@ -241,7 +241,7 @@ def _encode(interaction, interpreter_item: dict, locale: str,
             f"the pending payload carries the interpreter's item dict, got "
             f"{type(interpreter_item).__name__} — the staged item goes to "
             f"build_interaction, not here")
-    return json.dumps({
+    body = {
         "schema_version": B1_PAYLOAD_VERSION,
         "slice": "b1_quantity",
         # ⛔ THE FINGERPRINT AS WRITTEN, WITH THE RULES THAT WROTE IT *(P17
@@ -253,12 +253,24 @@ def _encode(interaction, interpreter_item: dict, locale: str,
         # persisted; a row written under another version cannot be compared
         # at all, and refuses rather than being reinterpreted.
         "fingerprint_version": FINGERPRINT_VERSION,
-        "fingerprint": fingerprint,
         # WHAT THE CLIENT COULD DO WHEN THE QUESTION WAS ASKED. Rendering
         # depends on it (chips in the sentence, or not), so a reuse must read
         # the capability the ask was BUILT for, not the one this retry
         # happens to arrive with.
         "capability": capability or "",
+        # ⛔⛔ WHAT QUESTION THIS OPERATION *ORIGINALLY* ASKED — IMMUTABLE
+        # *(seventh round, Danny)*. Deriving the identity from the CURRENT
+        # interaction was still wrong after the generation-strip fix: a real
+        # B-1.6b shape change alters the FIELD SET itself ("yes, fat was
+        # added" retires `added_fat_present` and activates two new fields),
+        # so the rebuilt surface hashes differently no matter which keys are
+        # stripped — and a delayed retry of the ORIGINAL opening turn was
+        # refused `OpenedElsewhere` instead of idempotently reusing.
+        #
+        # Written ONCE here, preserved through every rebuild, covered by the
+        # envelope (it is IN the payload), and reuse compares against THIS
+        # stored value — never against the mutable interaction.
+        "ask_identity": ask_identity,
         "interaction": interaction.to_payload(),
         "item": interpreter_item,
         # THE LANGUAGE THE QUESTION WAS ASKED IN, pinned to the operation.
@@ -305,7 +317,13 @@ def _encode(interaction, interpreter_item: dict, locale: str,
         # arrive days later, and a rollout that moved in between would relabel
         # an operation that was decided under the old one.
         "cohort": cohort,
-    })
+    }
+    # ⛔ SIGNED HERE, WHERE IT IS BUILT *(sixth round)*. The digest used to be
+    # computed by the caller and passed in, which meant the value signed and
+    # the value stored were two statements that had to agree. One place
+    # assembles the payload and signs exactly what it assembled.
+    body["fingerprint"] = fingerprint_of_payload(body)
+    return json.dumps(body), body["fingerprint"]
 
 
 class PriorAskNotReleased(RuntimeError):
@@ -338,11 +356,17 @@ class OpenResult:
     `OpenedElsewhere`, whatever the operation id says."""
 
     __slots__ = ("operation_id", "created", "interaction", "item",
-                 "revision", "fingerprint", "locale", "cohort", "capability")
+                 "revision", "fingerprint", "locale", "cohort", "capability",
+                 "ask_identity")
 
     def __init__(self, *, operation_id: str, created: bool, interaction,
                  item: dict, revision: int, fingerprint: str,
-                 locale: str = "en", cohort: str = "", capability: str = ""):
+                 locale: str = "en", cohort: str = "", capability: str = "",
+                 ask_identity: str = ""):
+        #: the DERIVED identity of the question (see `ask_fingerprint`) — what
+        #: a reuse compares. `fingerprint` is the stored INTEGRITY digest and
+        #: moves whenever an answer is held, so it cannot answer that.
+        self.ask_identity = ask_identity
         self.operation_id = operation_id
         self.created = created
         self.interaction = interaction
@@ -369,7 +393,14 @@ class OpenResult:
 #: as "meaning") bumps this, so a fingerprint computed under the old rule can
 #: never silently equal one computed under the new — they differ in the prefix
 #: before they differ in the hash.
-FINGERPRINT_VERSION = "fp1"
+#: ⛔ `fp2` SIGNS THE HELD ANSWERS TOO *(P17 Phase 2, fifth round, Danny)*.
+#: `fp1` covered the interaction and the item only, so an existing held answer
+#: could be changed from one WELL-FORMED value to another between `owning()`
+#: and the lock — 120 g becomes 900 g — and the strict decoder, which only
+#: rejects malformed patches, accepted it as persisted authority. A row
+#: written under `fp1` is not comparable and refuses (fail closed) rather than
+#: being re-judged under today's rules.
+FINGERPRINT_VERSION = "fp2"
 
 
 class FingerprintUnreadable(RuntimeError):
@@ -387,7 +418,11 @@ def _canonical_json(obj) -> str:
                       ensure_ascii=True, allow_nan=False)
 
 
-def fingerprint_of_payload(interaction_payload: dict, interpreter_item: dict) -> str:
+#: the only key the digest cannot cover: its own output
+_UNSIGNED_KEYS = frozenset({"fingerprint"})
+
+
+def fingerprint_of_payload(payload: dict) -> str:
     """⛔ THE DIGEST IS OVER THE STORED FORM *(P17 Phase 2, second round)*.
 
     Fingerprinting the interaction OBJECT at write time and the round-tripped
@@ -396,17 +431,105 @@ def fingerprint_of_payload(interaction_payload: dict, interpreter_item: dict) ->
     multi-field ask read back as "tampered" and the operation FAILED under
     the user. Both ends now hash the payload dict that is actually persisted,
     so write and read agree by construction and an outside edit still moves
-    the hash."""
+    the hash.
+
+    ⛔⛔ IT SIGNS THE WHOLE STORED PAYLOAD *(sixth round, Danny)*. It began
+    as interaction+item, then grew `answered` when a well-formed answer
+    substituted between `owning()` and the lock proved undetectable. That
+    left a field LIST to keep in step with the payload, and `locale`,
+    `cohort`, `capability`, `decision_id`, `candidate_set_id`, `asked_at` and
+    the retraction history were all outside it — every one of them an
+    authority something reads (the reply renders in `locale`, the client
+    contract is `capability`, the funnel joins on `cohort`).
+
+    So the envelope is now "the payload minus its own digest": a field added
+    later is signed because it is IN the payload, not because someone
+    remembered to add it here. There are exactly two writers of
+    `canonical_payload` — the insert at open and `LockedOperation.write`
+    under the lock — and both sign, so nothing legitimate writes outside it.
+
+    NOT A MAC. Anything that can edit the row can recompute this; it detects
+    edits that do not re-sign, while malformed CONTENT is refused
+    independently by the strict decoders. For "is this the same question?",
+    which must NOT move when a legitimate answer is held, see
+    `ask_fingerprint`."""
     import hashlib
 
+    if not isinstance(payload, dict):
+        raise FingerprintUnreadable(
+            f"a payload is an object; got {type(payload).__name__}")
     try:
-        body = _canonical_json({"v": FINGERPRINT_VERSION,
-                                "interaction": interaction_payload,
-                                "item": dict(interpreter_item or {})})
+        body = _canonical_json({
+            "v": FINGERPRINT_VERSION,
+            "payload": {k: v for k, v in payload.items()
+                        if k not in _UNSIGNED_KEYS}})
     except (TypeError, ValueError) as exc:
         raise FingerprintUnreadable(
             f"payload is not canonically serialisable: {exc}") from exc
     return f"{FINGERPRINT_VERSION}:" + hashlib.sha256(
+        body.encode("utf-8")).hexdigest()[:24]
+
+
+#: Keys that carry the GENERATION rather than the question. Stripped before
+#: an ask is identified, at any depth: `revision` rides the interaction, every
+#: field, and every option's patch, and `field_id` is
+#: `operation:event:attribute:revision` — so both move on a rebuild that asks
+#: the very same thing.
+_GENERATION_KEYS = frozenset({"revision", "field_id"})
+
+
+def _without_generation(value):
+    """The payload with every generation-bearing identifier removed, at any
+    depth. STRIPPING rather than hand-picking the identifying keys: a
+    projection that listed what to KEEP would silently stop distinguishing
+    asks the day a field gained a new property, and two different questions
+    colliding on one identity is worse than the instability this fixes."""
+    if isinstance(value, dict):
+        return {k: _without_generation(v) for k, v in value.items()
+                if k not in _GENERATION_KEYS}
+    if isinstance(value, (list, tuple)):
+        return [_without_generation(v) for v in value]
+    return value
+
+
+def ask_fingerprint(interaction_payload: dict, interpreter_item: dict) -> str:
+    """⛔ WHAT THE QUESTION IS, ignoring what has been ANSWERED so far *(P17
+    Phase 2, fifth round)*.
+
+    Two different questions are asked by the integrity digest and by reuse.
+    "Has this row been altered?" must cover the held answers. "Is this the
+    same ask I would have written?" must NOT — an awaiting operation may
+    legitimately already hold an answer, and a same-turn retry would then
+    compare a fresh ask (no answers) against a stored one (some answers) and
+    refuse a reuse that is perfectly valid.
+
+    Derived ONCE — at open — and PERSISTED as the payload's `ask_identity`
+    *(seventh round; this docstring previously said "never persisted", which
+    stopped being true the moment reuse had to survive a real field-set
+    rebuild)*. It sits inside the fp2 envelope, is required and non-empty at
+    the strict decode, and is never recomputed from the stored row: the
+    stored value IS the original, so there is no second derivation to fall
+    out of agreement with it. This function still runs at open, to compute
+    the identity of the ask being opened and compare it against the stored
+    original.
+
+    ⛔⛔ AND IT IS STABLE ACROSS A SHAPE CHANGE *(Danny, Phase 2 review)*. It
+    used to hash the interaction payload whole — including `revision` and the
+    `field_id`s that embed it — so the moment a legitimate answer rebuilt the
+    surface, the SAME question acquired a different identity. A same-turn
+    retry then compared a fresh ask against the rebuilt stored one, found
+    them unequal, and refused a reuse that was valid: `OpenedElsewhere` on
+    the operation the user was in the middle of answering."""
+    import hashlib
+
+    try:
+        body = _canonical_json({"v": FINGERPRINT_VERSION,
+                                "ask": _without_generation(interaction_payload),
+                                "item": dict(interpreter_item or {})})
+    except (TypeError, ValueError) as exc:
+        raise FingerprintUnreadable(
+            f"ask is not canonically serialisable: {exc}") from exc
+    return f"{FINGERPRINT_VERSION}:ask:" + hashlib.sha256(
         body.encode("utf-8")).hexdigest()[:24]
 
 
@@ -417,7 +540,7 @@ def semantic_fingerprint(interaction, interpreter_item: dict) -> str:
     and different fingerprints are two different questions, and only one of
     them persisted. Canonical and versioned (see FINGERPRINT_VERSION); raises
     FingerprintUnreadable rather than returning a guess."""
-    return fingerprint_of_payload(interaction.to_payload(), interpreter_item)
+    return ask_fingerprint(interaction.to_payload(), interpreter_item)
 
 
 class StoredFingerprintVersionMismatch(RuntimeError):
@@ -455,11 +578,17 @@ def _decode_stored_payload(row):
             raise ValueError(
                 f"schema_version {data.get('schema_version')!r} is not "
                 f"{B1_PAYLOAD_VERSION!r} — this code cannot read it")
-        for required in ("locale", "cohort", "capability"):
+        for required in ("locale", "cohort", "capability", "ask_identity"):
             if required not in data:
                 raise ValueError(
                     f"payload carries no {required!r} — a rendering fact this "
                     f"schema requires, and defaulting it would invent one")
+        # presence is not enough for the identity: the open seam always
+        # writes a non-empty one, so an empty value is a payload this code
+        # did not write — and comparing a reuse against "" would refuse
+        # every legitimate retry while looking like a working check
+        if not str(data.get("ask_identity") or ""):
+            raise ValueError("payload carries an EMPTY ask_identity")
         capability = data.get("capability")
         if capability not in RECOGNISED_CAPABILITIES:
             raise ValueError(
@@ -490,7 +619,7 @@ def _decode_stored_payload(row):
             f"operation {op_id} was fingerprinted under {stored_version!r}; "
             f"this process writes {FINGERPRINT_VERSION!r} — not comparable, "
             f"and not recomputed under the new rules")
-    recomputed = fingerprint_of_payload(data.get("interaction") or {}, item)
+    recomputed = fingerprint_of_payload(data)
     if recomputed != stored_fp:
         raise FingerprintUnreadable(
             f"operation {op_id} does not match the fingerprint it stores "
@@ -548,6 +677,10 @@ def _stored_open_result(row, *, created: bool, expect_user_id: int,
                       interaction=interaction, item=item,
                       revision=int(row.revision or 0),
                       fingerprint=str(data["fingerprint"]),
+                      # ⛔ THE STORED ORIGINAL, NOT A DERIVATION FROM THE
+                      # CURRENT INTERACTION *(seventh round)* — the current
+                      # one legitimately changes field set on a rebuild.
+                      ask_identity=str(data["ask_identity"]),
                       locale=str(data["locale"]),
                       cohort=str(data["cohort"]),
                       capability=str(data["capability"]))
@@ -689,11 +822,16 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
         stored = _stored_open_result(row, created=False, expect_user_id=uid,
                                      expect_turn_id=turn_id,
                                      expect_operation_id=operation_id)
-        if stored.fingerprint != mine:
+        # ⛔ COMPARED ON THE ASK, NOT THE STORED DIGEST *(fifth round)*. The
+        # stored digest now moves when a legitimate answer is held, so an
+        # awaiting operation that has been partly answered would fail a
+        # reuse it should pass. Integrity was already proved by
+        # `_stored_open_result` above; what remains is identity.
+        if stored.ask_identity != mine:
             raise OpenedElsewhere(
                 f"operation {operation_id} is awaiting with a DIFFERENT "
-                f"semantic payload (stored {stored.fingerprint}, mine {mine}) "
-                f"— {why}")
+                f"semantic payload — a different question "
+                f"(stored {stored.ask_identity}, mine {mine}) — {why}")
         logger.info("event=b1_open_reused operation=%s how=%s fingerprint=%s",
                     operation_id, why, mine)
         return stored
@@ -702,12 +840,13 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
     if existing is not None:
         return _reuse_if_same(existing, why="same turn, same ask")
     await _release_prior_awaiting(db, user=user, keep=operation_id)
-    payload = _encode(interaction, interpreter_item, locale or "en",
-                      decision_id=decision_id,
-                      candidate_set_id=candidate_set_id,
-                      asked_at=_now().isoformat(),
-                      cohort=cohort or "", fingerprint=mine,
-                      capability=capability or "")
+    payload, signed = _encode(interaction, interpreter_item, locale or "en",
+                              ask_identity=mine,
+                              decision_id=decision_id,
+                              candidate_set_id=candidate_set_id,
+                              asked_at=_now().isoformat(),
+                              cohort=cohort or "",
+                              capability=capability or "")
     try:
         row = await repo.create_operation(
             db, operation_id=operation_id, user_id=uid, status=AWAITING,
@@ -738,7 +877,7 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
                 f"{type(e).__name__}") from e
     result = OpenResult(operation_id=operation_id, created=True,
                         interaction=interaction, item=dict(interpreter_item),
-                        revision=0, fingerprint=mine,
+                        revision=0, fingerprint=signed, ask_identity=mine,
                         locale=locale or "en", cohort=cohort or "",
                         capability=capability or "")
     from core import b1_metrics
@@ -793,6 +932,14 @@ LABEL_TEXT = "label_text"
 #: the boundary (`channel_capability`), and a value outside this set is
 #: refused rather than rendered.
 RECOGNISED_CAPABILITIES = frozenset({ID_ADDRESSED, LABEL_TEXT})
+
+#: ⛔ THE SLICES THIS TABLE MAY HOLD BESIDE OURS *(P17 Phase 2, third round)*.
+#: `owning()` may skip a row ONLY when it positively names one of these — a
+#: payload that belongs to another owner. An UNKNOWN slice is not evidence
+#: that the operation is unowned; it is an operation we cannot read, and
+#: "not proven to be B-1" must never mean "safe for legacy". Empty today:
+#: `b1_quantity` is the only slice written, so anything else repairs.
+RECOGNISED_OTHER_SLICES = frozenset()
 
 #: THE GENERATION OF THE QUESTION ITSELF — wording and option selection, as the
 #: user experiences them. Follows `core/food_ledger`'s existing convention
@@ -1413,12 +1560,30 @@ async def owning(db, user) -> Optional[OwnedOperation]:
         # this question, NOT the right to accept one that was. Skipping the
         # row here would drop a late but unmistakable answer on the floor,
         # which is its own silent loss. See `OwnedOperation.expired`.
+        # ⛔ ONLY AN EXPLICITLY RECOGNISED *DIFFERENT* SLICE MAY BE SKIPPED
+        # *(P17 Phase 2, third round)*. The prefilter used to skip invalid
+        # JSON, a non-object payload and a MISSING slice too — bypassing the
+        # strict decoder entirely, and, with no other row, returning None so
+        # the turn fell to legacy. An unreadable payload is not evidence that
+        # the operation is unowned; it is an operation we cannot read, and it
+        # still owns the meal.
+        _readable = True
         try:
             data = json.loads(row.canonical_payload or "{}")
         except Exception:
-            data = {}
-        if not isinstance(data, dict) or data.get("slice") != "b1_quantity":
-            continue
+            data, _readable = {}, False
+        _slice = data.get("slice") if isinstance(data, dict) else None
+        if _readable and _slice in RECOGNISED_OTHER_SLICES:
+            continue        # positively another slice: genuinely not ours
+        # ⛔ AND NOTHING ELSE IS DECIDED HERE *(P17 Phase 2, third round)*.
+        # This block used to ALSO detect invalid JSON, a non-object payload
+        # and a missing/unknown slice, and return the repairing operation
+        # itself — a SECOND DOOR that pre-empted the strict decoder below and
+        # had to be kept in agreement with it forever. Every one of those
+        # cases is already refused by `_decode_stored_payload`, so the door is
+        # gone: unreadability is diagnosed in exactly one place, and this
+        # prefilter now decides one thing only — is this row a positively
+        # recognised DIFFERENT slice.
         # ⛔ THE SAME STRICT DECODE AS THE REUSE SEAM *(P17 Phase 2, second
         # round)*. Verification used to live only on the ask side: a payload
         # edited after the write refused a REUSE while THIS path read it
@@ -1431,10 +1596,16 @@ async def owning(db, user) -> Optional[OwnedOperation]:
             interaction, item, data = _decode_stored_payload(row)
         except (FingerprintUnreadable, StoredFingerprintVersionMismatch) as exc:
             logger.error(
-                "event=b1_payload_unreadable operation=%s kind=%s — the "
-                "operation still owns this meal; the turn repairs rather "
-                "than falling back: %s",
-                row.operation_id, type(exc).__name__, exc)
+                "event=b1_payload_unreadable operation=%s kind=%s reason=%s "
+                "— the operation still owns this meal; the turn repairs "
+                "rather than falling back: %s",
+                row.operation_id, type(exc).__name__,
+                "invalid_json" if not _readable
+                else ("not_an_object" if not isinstance(data, dict)
+                      else ("no_slice" if _slice is None
+                            else ("unknown_slice:%r" % (_slice,)
+                                  if _slice != "b1_quantity" else "decode"))),
+                exc)
             # ⛔ THE REPAIR BRANCH STILL REPORTS WHAT THE ROW SAYS ABOUT
             # ITSELF. `cohort` and `locale` here are METRIC facts read from
             # the row (raw), never rendering authority — the rendering facts
@@ -1501,7 +1672,12 @@ def _decode_answered(data: dict, operation_id: str) -> dict:
     """
     from core.semantics import patch_from_payload
 
-    held = data.get("answered") or {}
+    # ⛔ `or {}` TURNED `null`, `[]`, `""` AND `false` INTO A VALID EMPTY
+    # ANSWER MAP *(sixth round, Danny)* — coercing malformed into missing
+    # before the type check could see it, so a payload nothing wrote could
+    # decode as "this ask has no answers yet". Absent is a fresh ask; present
+    # and not an object is a refusal.
+    held = data.get("answered", {})
     if not isinstance(held, dict):
         raise ValueError(
             f"{operation_id} has a non-object `answered` "
@@ -1623,7 +1799,64 @@ def resolved_fields(held: dict) -> ResolvedFields:
     return ResolvedFields(by_field=dict(held or {}))
 
 
-async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
+class StaleAnswerField(RuntimeError):
+    """⛔ THE CHIP ANSWERS A FIELD THE LOCKED INTERACTION NO LONGER HAS *(P17
+    Phase 2, third round)*. A concurrent shape change can retire the very
+    field this tap addresses, and applying it anyway patches "whatever looks
+    closest" — the failure `Outcome.REFUSED` exists for. Raised under the
+    lock, before any write."""
+
+
+@dataclass(frozen=True)
+class HeldAnswerResult:
+    """⛔ THE POST-LOCK TRANSITION, WITH EXACTLY ONE AUTHORITY *(Danny)*.
+
+    `hold_answer` is the atomic state-transition boundary: everything
+    downstream — readiness, the open fields, the remaining wire payload,
+    settlement, metrics, entry stamping — must consume THIS, not the objects
+    the caller hydrated before the lock.
+
+    ⛔⛔ `interaction`, `held` and `revision` ARE PROPERTIES, NOT FIELDS
+    *(fourth round)*. They used to be stored beside `owned`, which meant the
+    answer map existed twice — `owned.answered` and `held` — and could
+    diverge, leaving the type permitting two answer authorities while
+    claiming to have removed them. Validating copies is weaker than not
+    having copies: these now READ from `owned`, so disagreement is not
+    representable.
+    """
+    owned: OwnedOperation
+
+    @property
+    def interaction(self):
+        return self.owned.interaction
+
+    @property
+    def held(self) -> dict:
+        return self.owned.answered
+
+    @property
+    def revision(self) -> int:
+        return self.owned.revision
+
+    def __post_init__(self):
+        """The one comparison that survives: the ROW's generation against the
+        INTERACTION's. Those are two different stored facts — a column and a
+        payload — and they are equal by design rather than by luck, because
+        the row is created at the interaction's revision and
+        `LockedOperation.write` moves the row's revision only when the caller
+        reports a shape change, the same moment the rebuilt interaction gets
+        its new generation. A disagreement means one of them was written
+        without the other, so refuse rather than hand it on."""
+        _generation = getattr(self.owned.interaction, "revision", None)
+        if _generation is not None and int(self.owned.revision) != int(_generation):
+            raise ValueError(
+                f"the locked row is at revision {self.owned.revision} and the "
+                f"answer surface at generation {_generation} — the operation "
+                f"and what it is asking disagree about which generation this "
+                f"is")
+
+
+async def hold_answer(db, *, owned: OwnedOperation, patch) -> "HeldAnswerResult":
     """Record an answer to ONE field and leave the operation open (B-1.5).
 
     DURABLE, NOT REMEMBERED BY THE SCREEN. The next tap may come from a
@@ -1655,9 +1888,70 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
     # taking the lock while still merging from the pre-lock snapshot would
     # acquire the lock and keep the bug.
     locked = await repo.locked_operation(db, owned.operation_id)
-    held = locked.answered()
+    # ⛔⛔ VERIFY THE LOCKED ROW BEFORE MUTATING OR RE-SIGNING IT *(P17
+    # Phase 2, third round)*. `owning()` validated the payload BEFORE the
+    # lock. Between that read and this lock another writer may have changed
+    # the shape — or the row may have been edited outside the seam — and this
+    # function then assigns a NEW, VALID fingerprint to whatever it wrote,
+    # effectively re-signing material nothing verified. So the locked row is
+    # decoded strictly HERE, after the wait, and everything below reconciles
+    # and rebuilds from the LOCKED interaction and item, never from the
+    # pre-lock `owned.interaction`.
+    locked_interaction, locked_item, _locked_data = _decode_stored_payload(locked.row)
+    # ⛔ AND THE LOCKED STATE MUST STILL ACCEPT THIS ANSWER. A concurrent
+    # writer may have settled the operation, or rebuilt the surface so that
+    # the field this chip addresses no longer exists. Both are stale taps,
+    # and a stale tap must not patch whatever looks closest.
+    _status = str(getattr(locked.row, "status", "") or "")
+    if not (_status == AWAITING
+            and str(getattr(locked.row, "storage_status", "") or "") == "active"):
+        raise StaleAnswerField(
+            f"operation {owned.operation_id} is {_status}/"
+            f"{getattr(locked.row, 'storage_status', None)} under the lock — "
+            f"it no longer accepts answers")
+    # ⛔⛔ THE ROW AND ITS QUESTION MUST ALREADY AGREE, BEFORE WE MUTATE
+    # EITHER *(Danny, Phase 2 review)*. `HeldAnswerResult` refuses a
+    # disagreeing generation, but it is constructed AFTER `locked.write` and
+    # `flush` — so the row had already been rewritten and the answer already
+    # persisted by the time anything noticed. A post-condition is a report;
+    # this is the gate. Checked on the LOCKED material, before the merge.
+    _row_generation = int(getattr(locked.row, "revision", 0) or 0)
+    _asked_generation = getattr(locked_interaction, "revision", None)
+    if _asked_generation is not None and int(_asked_generation) != _row_generation:
+        raise FingerprintUnreadable(
+            f"operation {owned.operation_id} is at row revision "
+            f"{_row_generation} while the question it stores is generation "
+            f"{_asked_generation} — one was written without the other, and "
+            f"answering would build on whichever we happened to read")
+    _live_ids = {str(f.field_id) for g in locked_interaction.groups
+                 for f in g.fields}
+    if str(patch.field_id) not in _live_ids:
+        raise StaleAnswerField(
+            f"field {patch.field_id!r} is not in the locked interaction "
+            f"(open: {sorted(_live_ids)}) — a concurrent shape change retired "
+            f"it, so this tap is stale")
+    # ⛔⛔ THE STRICT DECODER, NOT THE PERMISSIVE ACCESSOR *(Danny, fourth
+    # round)*. `locked.answered()` logs an unreadable held patch and SKIPS it
+    # — and `_decode_answered` exists precisely to say that skipping one is
+    # forbidden: the field then looks unanswered, the question is re-asked,
+    # and the meal commits without what the user already told us. Under this
+    # lock it was worse than a re-ask: the reduced map was written back as
+    # `answered` and RE-SIGNED with a fresh valid fingerprint, so an answer
+    # that became unreadable between `owning()` and the lock was deleted and
+    # the deletion was laundered as legitimate. Refuse before any mutation.
+    try:
+        held = _decode_answered(_locked_data, owned.operation_id)
+    except Exception as exc:
+        raise FingerprintUnreadable(
+            f"{owned.operation_id} holds an answer that cannot be read under "
+            f"the lock — refusing before any mutation or re-signing: {exc}"
+        ) from exc
     held[str(patch.field_id)] = patch
     data = dict(locked.payload)
+    # the merge works on the LOCKED material
+    data["interaction"] = _locked_data.get("interaction") or {}
+    data["item"] = locked_item
+    locked_view = _replace_interaction(owned, locked_interaction)
 
     # ⭐ B-1.6: RECONCILE, DO NOT APPEND. An answer can make another field
     # irrelevant, and dropping that field from the screen is not the same as
@@ -1665,7 +1959,7 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
     # remove the tablespoon from settlement — leaving it in `answered` while
     # hiding its chip prices a meal with fat the user just said was not there,
     # which is a silent nutrition corruption rather than a display bug.
-    held, retracted, reconciliation = _reconcile_after(owned, held, data)
+    held, retracted, reconciliation = _reconcile_after(locked_view, held, data)
 
     # ⭐ B-1.6b: A SHAPE CHANGE REBUILDS THE ANSWER SURFACE, UNDER THIS LOCK.
     #
@@ -1674,15 +1968,24 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
     # memory is one a reload cannot reproduce, and reload is the normal case
     # (a relaunched app, a second device, another worker).
     generation = None
+    # ⛔ THE EFFECTIVE QUESTION IS RETURNED, NOT ASSIGNED *(P17 Phase 2, third
+    # round)*. This used to do `owned.interaction = rebuilt` — and
+    # `OwnedOperation` is a FROZEN dataclass, so every shape change raised
+    # `FrozenInstanceError` inside the answer turn and came back REFUSED with
+    # `internal_failure`. Latent because only a reconciliation that CHANGES
+    # the active set reaches it. The caller is handed the interaction this
+    # transition ends with — the locked one, or the rebuilt one — and renders
+    # readiness, open fields and the wire payload from THAT.
+    effective = locked_interaction
     if reconciliation is not None and reconciliation.changed:
         from core import interaction_generation as gen
 
-        rebuilt = gen.next_generation(previous=owned.interaction,
+        rebuilt = gen.next_generation(previous=locked_interaction,
                                       reconciliation=reconciliation,
                                       answered=held, item=data.get("item"))
         if rebuilt is not None:
             data["interaction"] = rebuilt.to_payload()
-            owned.interaction = rebuilt
+            effective = rebuilt
             generation = rebuilt.revision
 
     data["answered"] = {k: p.to_payload() for k, p in held.items()}
@@ -1696,8 +1999,7 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
     # leaves the digest describing the previous material.
     try:
         data["fingerprint_version"] = FINGERPRINT_VERSION
-        data["fingerprint"] = fingerprint_of_payload(
-            data.get("interaction") or {}, data.get("item") or {})
+        data["fingerprint"] = fingerprint_of_payload(data)
     except FingerprintUnreadable:
         logger.error("event=b1_answer_fingerprint_unwritable operation=%s — "
                      "the merged payload cannot be fingerprinted",
@@ -1708,9 +2010,35 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
     await db.flush()
     logger.info("event=b1_answer_held operation=%s field=%s open=%d "
                 "retracted=%d operation_lock_wait_ms=%d", owned.operation_id,
-                patch.field_id, len(open_fields(owned.interaction, held)),
+                patch.field_id, len(open_fields(effective, held)),
                 len(retracted), locked.lock_wait_ms)
-    return held
+    # ⛔ BUILT ENTIRELY FROM THE LOCKED AUTHORITY *(Danny, fourth round)*.
+    # This used to be `dataclasses.replace(owned, ...)`, which carried the
+    # PRE-LOCK `locale`, `cohort`, `decision_id`, `candidate_set_id` and
+    # `asked_at_stamp` through untouched — so a metadata change that landed
+    # between the two reads left the persisted row and the returned operation
+    # disagreeing, with the returned one looking authoritative. Every field
+    # now comes from the refreshed locked row and its decoded payload.
+    return HeldAnswerResult(owned=OwnedOperation(
+        row=locked.row,
+        interaction=effective,
+        item=dict(locked_item),
+        locale=str(_locked_data.get("locale") or "en"),
+        decision_id=str(_locked_data.get("decision_id") or ""),
+        candidate_set_id=str(_locked_data.get("candidate_set_id") or ""),
+        answered=dict(held),
+        asked_at_stamp=_decode_asked_at(_locked_data),
+        cohort=str(_locked_data.get("cohort") or "")))
+
+
+def _replace_interaction(owned: OwnedOperation, interaction) -> OwnedOperation:
+    """A view of `owned` carrying the LOCKED interaction — so reconciliation
+    reads the material the lock actually protects *(P17 Phase 2, third
+    round)*. A copy, not a mutation: the caller's object is only updated once
+    the transition is decided."""
+    import dataclasses
+
+    return dataclasses.replace(owned, interaction=interaction)
 
 
 def _reconcile_after(owned: OwnedOperation, held: dict, data: dict) -> tuple:

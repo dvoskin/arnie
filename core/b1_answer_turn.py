@@ -311,7 +311,26 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
         # did while B-1 had one field) would commit a two-field meal on one
         # late tap, which is the exact defect readiness exists to prevent —
         # reachable only through the expiry door.
-        held = await ops.hold_answer(db, owned=owned, patch=answer.patch)
+        # ⛔ THE POST-LOCK TRANSITION IS THE STATE FROM HERE *(P17 Phase 2,
+        # third round)*. `hold_answer` is the atomic boundary: it locks with a
+        # refresh, verifies the stored payload, rejects a stale field, merges,
+        # rebuilds and re-signs — and hands back the whole resulting state.
+        # Everything below (readiness, open fields, the remaining wire
+        # payload, settlement, metrics, entry stamping) consumes THIS.
+        try:
+            _transition = await ops.hold_answer(db, owned=owned,
+                                                patch=answer.patch)
+        except ops.StaleAnswerField as _stale:
+            logger.info("event=b1_answer_stale_field operation=%s reason=%s",
+                        owned.operation_id, _stale)
+            return AnswerTurn(
+                Outcome.REFUSED, operation_id=owned.operation_id,
+                field_id=str(getattr(answer.patch, "field_id", "") or ""),
+                reason="the question changed while this chip was on screen",
+                refusal_reason="stale_field")
+        owned = _transition.owned
+        interaction = _transition.interaction
+        held = _transition.held
         if not ops.ready_to_settle(interaction, held):
             _measure_partial(owned, answer, user=user, field=live_field,
                              held=held, option_id=option_id)
@@ -394,7 +413,22 @@ async def _handle_owned(db, *, user, owned, source_turn_id: str, message: str,
     #
     # Held DURABLY rather than in this turn's memory — the next tap may arrive
     # from a relaunched app or another worker.
-    held = await ops.hold_answer(db, owned=owned, patch=answer.patch)
+    # ⛔ THE POST-LOCK TRANSITION IS THE STATE FROM HERE (see the branch
+    # above): readiness, open fields, the remaining wire payload, settlement,
+    # metrics and entry stamping all consume it.
+    try:
+        _transition = await ops.hold_answer(db, owned=owned, patch=answer.patch)
+    except ops.StaleAnswerField as _stale:
+        logger.info("event=b1_answer_stale_field operation=%s reason=%s",
+                    owned.operation_id, _stale)
+        return AnswerTurn(
+            Outcome.REFUSED, operation_id=owned.operation_id,
+            field_id=str(getattr(answer.patch, "field_id", "") or ""),
+            reason="the question changed while this chip was on screen",
+            refusal_reason="stale_field")
+    owned = _transition.owned
+    interaction = _transition.interaction
+    held = _transition.held
     if not ops.ready_to_settle(interaction, held):
         _measure_partial(owned, answer, user=user, field=live_field,
                          held=held, option_id=option_id)

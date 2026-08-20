@@ -26,6 +26,7 @@ integrity error from the path entirely.
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 
@@ -57,6 +58,21 @@ async def _row(db, op_id):
         PendingOperation.operation_id == op_id))).scalars().one()
 
 
+def _a_live_patch(interaction):
+    """A patch addressing a field the interaction really has — the shape a
+    chip tap produces."""
+    field = interaction.groups[0].fields[0]
+    if getattr(field, "options", None):
+        return field.options[0].patch
+    from decimal import Decimal
+    from core.semantics import CanonicalQuantity, Dimension, SetQuantity
+    return SetQuantity(event_id=interaction.groups[0].event_id,
+                       field_id=field.field_id,
+                       quantity=CanonicalQuantity(amount=Decimal("120"),
+                                                  unit_id="g",
+                                                  dimension=Dimension.MASS))
+
+
 async def _repayload(db, op_id, mutate):
     """Rewrite the stored payload through `mutate(dict) -> dict`."""
     row = await _row(db, op_id)
@@ -84,8 +100,14 @@ async def test_1_the_fingerprint_and_its_version_are_persisted_at_creation(
     await db.commit()
     data = json.loads((await _row(db, op_id)).canonical_payload)
     assert data["fingerprint_version"] == FINGERPRINT_VERSION
-    assert data["fingerprint"] == semantic_fingerprint(inter, item)
+    # ⛔ the ROW stores the INTEGRITY digest (covering the — here empty —
+    # answer map); `semantic_fingerprint` is the ASK IDENTITY and is never
+    # persisted, so the two are deliberately different values.
+    from core.b1_quantity_operation import fingerprint_of_payload
+    assert data["fingerprint"] == fingerprint_of_payload(data)
     assert data["fingerprint"] == opened.fingerprint
+    assert opened.ask_identity == semantic_fingerprint(inter, item)
+    assert opened.ask_identity != opened.fingerprint
     assert data["capability"] == ID_ADDRESSED
 
 
@@ -333,6 +355,1354 @@ async def test_2_a_tampered_payload_settles_nothing_on_a_real_answer_turn(
     if turn is not None:
         assert getattr(turn, "outcome", None) is not None
         assert str(getattr(turn.outcome, "name", turn.outcome)).upper() != "APPLIED"
+
+
+def _two_field(interaction, *, operation_id, revision):
+    """The same interaction with a SECOND field — the shape a concurrent
+    writer's rebuild produces."""
+    from core.semantics import (ClarificationAttribute, ClarificationGroup,
+                                ClarificationInteraction, ResponseType,
+                                UnresolvedField)
+    group = interaction.groups[0]
+    quantity = group.fields[0]
+    prep = UnresolvedField(
+        operation_id=operation_id, revision=revision,
+        event_id=quantity.event_id,
+        attribute=ClarificationAttribute.PREPARATION,
+        response_type=ResponseType.FREE_TEXT)
+    return ClarificationInteraction(
+        interaction_id=interaction.interaction_id, operation_id=operation_id,
+        revision=revision, introduction=interaction.introduction,
+        groups=(ClarificationGroup(event_id=group.event_id, label=group.label,
+                                   fields=(quantity, prep)),)), prep
+
+
+async def _reshape(db, op_id, interaction):
+    """Persist a NEW interaction the way the one write seam does — payload and
+    digest together — i.e. a concurrent writer's legitimate shape change."""
+    from core import b1_quantity_operation as m
+
+    def _apply(d):
+        out = {**d, "interaction": interaction.to_payload(),
+               "fingerprint_version": m.FINGERPRINT_VERSION}
+        out["fingerprint"] = m.fingerprint_of_payload(out)
+        return out
+
+    row = await _repayload(db, op_id, _apply)
+    # ⛔ THE ROW'S GENERATION MOVES WITH THE QUESTION'S, exactly as
+    # `LockedOperation.write(..., revision=)` does at the one production write
+    # seam. Leaving the column behind produced a row whose stored question was
+    # a generation ahead of the operation — a state nothing legitimate can
+    # write, and one `hold_answer` now refuses before it mutates anything.
+    row.revision = int(getattr(interaction, "revision", 0) or 0)
+    await db.commit()
+    return row
+
+
+@pytest.mark.asyncio
+async def test_2_a_field_retired_by_a_concurrent_shape_change_is_refused_as_stale(
+        db, make_user):
+    """⛔ R3: the chip answers a field the LOCKED interaction no longer has.
+    Applying it would patch "whatever looks closest" — the failure
+    `Outcome.REFUSED` exists for. Raised under the lock, before any write."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, StaleAnswerField,
+                                            open_operation, owning)
+    user = await make_user()
+    tid = f"ios:stalefield-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+    two, prep = _two_field(inter, operation_id=op_id, revision=0)
+    stale_patch = _a_live_patch(inter)                  # for the FIRST field
+
+    # the concurrent writer retires the field this tap addresses
+    from core.semantics import (ClarificationGroup, ClarificationInteraction)
+    only_prep = ClarificationInteraction(
+        interaction_id=inter.interaction_id, operation_id=op_id, revision=0,
+        introduction=inter.introduction,
+        groups=(ClarificationGroup(event_id=inter.groups[0].event_id,
+                                   label=inter.groups[0].label,
+                                   fields=(prep,)),))
+    await _reshape(db, op_id, only_prep)
+
+    before = json.loads((await _row(db, op_id)).canonical_payload)
+    with pytest.raises(StaleAnswerField, match="stale"):
+        await ops.hold_answer(db, owned=owned, patch=stale_patch)
+    after = json.loads((await _row(db, op_id)).canonical_payload)
+    assert after == before, "a stale tap wrote to the operation"
+
+
+@pytest.mark.asyncio
+async def test_2_an_operation_that_stopped_awaiting_refuses_the_answer(db, make_user):
+    """⛔ R4: a concurrent writer settled (or cancelled) the operation while
+    this chip was in flight. The locked STATUS is rechecked, so the answer is
+    refused rather than merged into a closed operation."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, StaleAnswerField,
+                                            open_operation, owning)
+    user = await make_user()
+    tid = f"ios:closed-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+    row = await _row(db, op_id)
+    row.status = "committed"
+    await db.commit()
+    before = json.loads((await _row(db, op_id)).canonical_payload)
+    with pytest.raises(StaleAnswerField, match="no longer accepts answers"):
+        await ops.hold_answer(db, owned=owned, patch=_a_live_patch(inter))
+    assert json.loads((await _row(db, op_id)).canonical_payload) == before
+
+
+@pytest.mark.asyncio
+async def test_2_reconciliation_reads_the_locked_shape_not_the_pre_lock_one(
+        db, make_user):
+    """⛔ R5: THE REBUILD RENDERS `reconciliation.active` AND NOTHING ELSE.
+
+    `next_generation` does not amend the previous interaction — it rebuilds
+    every group from `renderable(active=...)`, so an attribute missing from
+    that set is DELETED from the ask. And `reconcile` derives the set from
+    `previously_active`, which is read off the interaction it is handed.
+
+    Hand it the PRE-LOCK one and a question another writer added moments ago
+    is not in `previously_active`, not in `active`, and therefore not in the
+    rebuilt interaction — silently dropped, while the answer that caused the
+    rebuild commits normally. The user never sees the question again.
+
+    The earlier version of this proof could not see that: it checked an
+    attribute that was also ANSWERED, and `_reconcile_after` unions the held
+    answers' own attributes into `previously_active` — which put the field
+    back under both shapes and made the mutation survive. The divergence has
+    to be a field the locked shape has and the held answers do NOT mention."""
+    from core import b1_quantity_operation as ops
+    from core import field_activation as fa
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    from core.semantics import (ClarificationAttribute, ClarificationGroup,
+                                ClarificationInteraction, Provenance,
+                                ResponseType, SetAddedFatPresent,
+                                UnresolvedField)
+    user = await make_user()
+    tid = f"ios:reconcile-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    group = inter.groups[0]
+
+    def _field(attribute):
+        return UnresolvedField(operation_id=op_id, revision=0,
+                               event_id=group.event_id, attribute=attribute,
+                               response_type=ResponseType.FREE_TEXT)
+
+    def _shape(fields):
+        return ClarificationInteraction(
+            interaction_id=inter.interaction_id, operation_id=op_id,
+            revision=0, introduction=inter.introduction,
+            groups=(ClarificationGroup(event_id=group.event_id,
+                                       label=group.label, fields=fields),))
+
+    # the ask on screen is the one unconditional yes/no whose answer turns two
+    # CONDITIONAL attributes on — i.e. an answer that legitimately rebuilds.
+    fat = _field(ClarificationAttribute.ADDED_FAT_PRESENT)
+    await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                         interaction=_shape((fat,)), turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)        # pre-lock: {added_fat_present}
+
+    # a concurrent writer adds PREPARATION: unconditional, UNANSWERED, and
+    # absent from the pre-lock shape — so nothing else can put it back.
+    prep = _field(ClarificationAttribute.PREPARATION)
+    await _reshape(db, op_id, _shape((fat, prep)))
+
+    transition = await ops.hold_answer(db, owned=owned, patch=SetAddedFatPresent(
+        event_id=group.event_id, field_id=fat.field_id, present=True,
+        provenance=Provenance.USER_SELECTED))
+
+    attributes = {fa.attribute_of_field_id(f.field_id)
+                  for g in transition.interaction.groups for f in g.fields}
+    assert "added_fat_amount" in attributes, (
+        "the answer did not rebuild at all — this proof only means something "
+        f"when the shape changes; rendered {sorted(attributes)}")
+    assert "preparation" in attributes, (
+        "the question another writer had just added was DELETED by the "
+        "rebuild: reconciliation was computed from the pre-lock interaction, "
+        f"so it was never in `active`; rendered {sorted(attributes)}")
+
+
+# ═════ 2d — A MALFORMED PAYLOAD STILL OWNS THE MEAL ════════════════════════
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("how", ["invalid_json", "not_an_object", "no_slice",
+                                 "unknown_slice"])
+async def test_2_a_malformed_payload_preserves_ownership_and_never_falls_to_legacy(
+        db, make_user, monkeypatch, caplog, how):
+    """⛔ P17 PHASE 2, THIRD ROUND, BLOCKER 2. `owning()`'s prefilter parsed
+    the JSON itself and `continue`d on anything that was not a b1_quantity
+    dict — so invalid JSON, a non-object payload and a MISSING slice bypassed
+    the strict decoder, and with no other row `owning()` returned None and
+    the turn fell to LEGACY. "Not proven to be B-1" is not "safe for legacy".
+
+    Only a positively recognised DIFFERENT slice may be skipped. Everything
+    else preserves ownership and repairs — proved through a real answer turn:
+    zero settlement, zero legacy, the operation still owns, session usable."""
+    import handlers.tool_executor as te
+    from core import b1_answer_turn
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    from db.models import FoodEntry, LedgerEvent, PendingOperation
+    from tests.test_a_scan_is_binding import _log
+
+    async def forbidden(*a, **k):
+        raise AssertionError("legacy executor ran on an unreadable operation")
+
+    monkeypatch.setattr(te, "execute_tool_calls", forbidden)
+    user = await make_user()
+    log = await _log(db, user)
+    tid = f"ios:malformed-{how}-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+
+    row = await _row(db, op_id)
+    if how == "invalid_json":
+        row.canonical_payload = "{not json at all"
+    elif how == "not_an_object":
+        row.canonical_payload = json.dumps(["a", "list"])
+    elif how == "no_slice":
+        data = json.loads((await _row(db, op_id)).canonical_payload)
+        data.pop("slice", None)
+        row.canonical_payload = json.dumps(data)
+    else:
+        data = json.loads((await _row(db, op_id)).canonical_payload)
+        data["slice"] = "b1_quantity_v9_from_the_future"
+        row.canonical_payload = json.dumps(data)
+    await db.commit()
+
+    with caplog.at_level(logging.ERROR):
+        owned = await owning(db, user)
+    # an UNKNOWN slice is not a RECOGNISED different one: it is a payload we
+    # cannot read, so it still owns the meal
+    assert owned is not None, f"{how} lost ownership — the turn would go legacy"
+    # ⛔ and the PREFILTER named the reason: only it can distinguish invalid
+    # JSON from a non-object from a missing/unknown slice, so this is what
+    # proves the prefilter ran rather than the decoder catching it later
+    assert how.split(":")[0] in caplog.text, caplog.text
+    assert owned.interaction is None and owned.item == {}
+
+    turn = await b1_answer_turn.handle(
+        db, user=user, source_turn_id=f"{tid}-ans", message="2 servings")
+    await db.commit()
+    assert turn is not None, "the answer turn fell through to legacy"
+
+    rows = (await db.execute(select(FoodEntry).where(
+        FoodEntry.daily_log_id == log.id))).scalars().all()
+    assert rows == [], [r.parsed_food_name for r in rows]
+    assert (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.user_id == user.id))).scalars().all() == []
+    # the operation is still there and still owns
+    assert (await db.execute(select(PendingOperation).where(
+        PendingOperation.operation_id == op_id))).scalars().one() is not None
+    # and the session is usable: a fresh operation opens on the next turn
+    tid2 = f"{tid}-next"
+    op2, inter2 = await _interaction(db, user, tid2, food="Quinoa")
+    opened = await open_operation(db, user=user,
+                                  interpreter_item={"food": "Quinoa"},
+                                  interaction=inter2, turn_id=tid2,
+                                  locale="en", cohort="allowlist",
+                                  capability=ID_ADDRESSED)
+    assert opened.created and opened.operation_id == op2
+
+
+@pytest.mark.asyncio
+async def test_2_a_genuinely_different_slice_is_skipped(db, make_user):
+    """The one thing that MAY be skipped: a payload that positively says it
+    belongs to another slice."""
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:otherslice-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    import core.b1_quantity_operation as m
+    # a slice this table is REGISTERED to hold beside ours
+    monkeypatch_target = frozenset({"b2_workout_sets"})
+    original = m.RECOGNISED_OTHER_SLICES
+    m.RECOGNISED_OTHER_SLICES = monkeypatch_target
+    try:
+        await _repayload(db, op_id, lambda d: {**d, "slice": "b2_workout_sets"})
+        assert await owning(db, user) is None
+    finally:
+        m.RECOGNISED_OTHER_SLICES = original
+    # and with the register empty (today's reality) the SAME payload repairs
+    owned = await owning(db, user)
+    assert owned is not None and owned.interaction is None
+
+
+# ═════ 2c — THE LOCKED MUTATION WORKS FROM VERIFIED, FRESH AUTHORITY ═══════
+
+@pytest.mark.asyncio
+async def test_2_tampering_between_owning_and_the_lock_refuses_without_re_signing(
+        db, make_user, monkeypatch):
+    """⛔ P17 PHASE 2, THIRD ROUND, BLOCKER 1. `owning()` validates BEFORE the
+    lock; `hold_answer()` then locked, merged, and assigned a NEW valid
+    fingerprint — so material edited in that window was effectively RE-SIGNED
+    as legitimate. The locked row is now decoded strictly AFTER the wait, and
+    the digest is renewed only past that verified transition."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (FingerprintUnreadable,
+                                            ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:lockwindow-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+    assert owned.interaction is not None                  # verified pre-lock
+    before = json.loads((await _row(db, op_id)).canonical_payload)
+
+    # the edit lands AFTER `owning()` and BEFORE the lock
+    import core.pending_repository as _repo
+    real_locked = _repo.locked_operation
+
+    async def tamper_then_lock(dbx, operation_id):
+        await _repayload(dbx, operation_id,
+                         lambda d: {**d, "item": {"food": "Chicken thighs",
+                                                  "amount": 99}})
+        return await real_locked(dbx, operation_id)
+
+    monkeypatch.setattr(_repo, "locked_operation", tamper_then_lock)
+    patch = _a_live_patch(inter)
+    with pytest.raises(FingerprintUnreadable):
+        await ops.hold_answer(db, owned=owned, patch=patch)
+    monkeypatch.undo()
+
+    # the tampered row was NOT re-signed: its digest still describes the
+    # material written at open, so it stays refused rather than legitimised
+    after = json.loads((await _row(db, op_id)).canonical_payload)
+    assert after["fingerprint"] == before["fingerprint"]
+    assert after["item"] == {"food": "Chicken thighs", "amount": 99}
+    assert "answered" not in after or not after["answered"]
+
+
+@pytest.mark.asyncio
+async def test_2_the_merge_reconciles_from_the_LOCKED_interaction(db, make_user,
+                                                                  monkeypatch):
+    """A concurrent shape change lands between `owning()` and the lock. The
+    merge must reconcile and rebuild from the LOCKED interaction — the
+    pre-lock one would overwrite the other writer's transition and then
+    re-sign the result."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:lockshape-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+
+    seen = {}
+    real_decode = ops._decode_stored_payload
+
+    def spy(row):
+        out = real_decode(row)
+        seen["interaction_id"] = out[0].interaction_id
+        return out
+
+    monkeypatch.setattr(ops, "_decode_stored_payload", spy)
+    transition = await ops.hold_answer(db, owned=owned,
+                                       patch=_a_live_patch(inter))
+    monkeypatch.undo()
+    # the decoder ran against the LOCKED row inside `hold_answer`
+    assert seen.get("interaction_id") == inter.interaction_id
+    # and the caller is handed the whole post-lock state
+    assert transition.interaction.interaction_id == inter.interaction_id
+    assert transition.owned.interaction is transition.interaction
+    assert transition.owned.item == {"food": "Oatmeal", "amount": 1}
+    assert str(_a_live_patch(inter).field_id) in transition.held
+
+
+@pytest.mark.asyncio
+async def test_2_the_transition_cannot_carry_two_authorities(db, make_user):
+    """⛔ `interaction` AND `revision` ARE REACHABLE THREE WAYS, SO THEY ARE
+    CHECKED AT CONSTRUCTION *(Danny, third round)*.
+
+    `HeldAnswerResult.interaction` is also `owned.interaction`; its `revision`
+    is also `owned.revision` (read off the refreshed locked ROW) and the
+    interaction's own generation. Three names for one fact is how a caller
+    renders one surface while settlement counts another — so a disagreeing
+    result is refused BY THE TYPE, not caught later by a test.
+
+    The positive half runs a real shape change so all three have MOVED
+    together (revision 1, not the trivial 0-equals-0 case)."""
+    import dataclasses as _dc
+
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (HeldAnswerResult, ID_ADDRESSED,
+                                            open_operation, owning)
+    from core.semantics import (ClarificationAttribute, ClarificationGroup,
+                                ClarificationInteraction, Provenance,
+                                ResponseType, SetAddedFatPresent,
+                                UnresolvedField)
+    user = await make_user()
+    tid = f"ios:twoauth-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    group = inter.groups[0]
+    fat = UnresolvedField(operation_id=op_id, revision=0,
+                          event_id=group.event_id,
+                          attribute=ClarificationAttribute.ADDED_FAT_PRESENT,
+                          response_type=ResponseType.FREE_TEXT)
+    await open_operation(
+        db, user=user, interpreter_item={"food": "Oatmeal"},
+        interaction=ClarificationInteraction(
+            interaction_id=inter.interaction_id, operation_id=op_id,
+            revision=0, introduction=inter.introduction,
+            groups=(ClarificationGroup(event_id=group.event_id,
+                                       label=group.label, fields=(fat,)),)),
+        turn_id=tid, locale="en", cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+
+    transition = await ops.hold_answer(db, owned=owned, patch=SetAddedFatPresent(
+        event_id=group.event_id, field_id=fat.field_id, present=True,
+        provenance=Provenance.USER_SELECTED))
+
+    # ⛔ THE DUPLICATES ARE GONE, NOT MERELY VALIDATED. `interaction`, `held`
+    # and `revision` are PROPERTIES of the single `owned` field, so a second
+    # answer map cannot exist to diverge from the first.
+    assert [f.name for f in _dc.fields(transition)] == ["owned"], (
+        "HeldAnswerResult stores something beside `owned` again — a stored "
+        "copy is a second authority waiting to disagree")
+    for name in ("interaction", "held", "revision"):
+        assert isinstance(getattr(type(transition), name), property), (
+            f"`{name}` is a stored field again, not derived from `owned`")
+    assert transition.held is transition.owned.answered
+    assert transition.interaction is transition.owned.interaction
+    assert transition.revision == transition.owned.revision
+
+    # they agree at a revision that actually MOVED (1, not the trivial 0 == 0)
+    assert transition.revision == 1
+    assert transition.revision == transition.interaction.revision
+
+    # ⛔ AND THE ROW/GENERATION DISAGREEMENT IS STILL REFUSED. Those are two
+    # separately stored facts — a column and a payload — so this is the one
+    # comparison that survives the removal of the copies.
+    class _DriftedRow:
+        revision = 99
+
+    with pytest.raises(ValueError):
+        HeldAnswerResult(owned=_dc.replace(transition.owned,
+                                           row=_DriftedRow()))
+
+
+@pytest.mark.asyncio
+async def test_2_an_answer_corrupted_before_the_lock_is_never_deleted_and_re_signed(
+        db, make_user, monkeypatch):
+    """⛔⛔ P17 PHASE 2, FOURTH ROUND *(Danny)*. THE ANSWER MAP IS NOT COVERED
+    BY THE DIGEST, which is what made this reachable: `fingerprint_of_payload`
+    signs the interaction and the item, so `answered` can become unreadable
+    without invalidating anything, and the strict decoder passes.
+
+    `hold_answer` then merged through `LockedOperation.answered()`, which LOGS
+    an unreadable held patch and SKIPS it — while `_decode_answered` exists to
+    say that skipping one is forbidden, because the field then looks
+    unanswered, the question is re-asked, and the meal commits without what
+    the user already told us. Under the lock it was worse than a re-ask: the
+    reduced map was written back as `answered` and RE-SIGNED with a fresh
+    valid fingerprint, so the lost answer looked legitimate afterwards.
+
+    The prior payload must survive byte-for-byte and nothing may be written."""
+    import handlers.tool_executor as te
+    from core import b1_answer_turn
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (FingerprintUnreadable,
+                                            ID_ADDRESSED, open_operation,
+                                            owning)
+    from core.semantics import Provenance, SetPreparation
+    from db.models import FoodEntry, LedgerEvent
+    from tests.test_a_scan_is_binding import _log
+
+    user = await make_user()
+    log = await _log(db, user)
+    # ids captured up front: every commit/rollback below expires these
+    # objects, and touching an expired attribute lazy-loads (MissingGreenlet).
+    user_id, log_id = user.id, log.id
+    tid = f"ios:corruptheld-{user_id}"
+    op_id, inter = await _interaction(db, user, tid)
+    two, prep = _two_field(inter, operation_id=op_id, revision=0)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=two, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+
+    # the user answers ONE question for real, so a genuine held patch exists
+    owned = await owning(db, user)
+    await ops.hold_answer(db, owned=owned, patch=SetPreparation(
+        event_id=two.groups[0].event_id, field_id=prep.field_id,
+        preparation_id="grilled", provenance=Provenance.USER_SELECTED))
+    await db.commit()
+
+    await db.refresh(user)        # the commit above expired it; `owning()`
+    owned = await owning(db, user)                   # valid at this point
+    # ...and the held patch becomes unreadable AFTER that read. The digest
+    # covers interaction+item, so this does NOT disturb it: the operation
+    # still verifies, and only the answer map is broken.
+    def _corrupt(d):
+        # ⛔ RE-SIGNED ON PURPOSE. Now that the digest covers `answered`, an
+        # unsigned edit is refused by the digest and this proof would never
+        # reach the decoder it exists to test — one guard masking another.
+        # The digest is not a MAC: anything that can edit the row can also
+        # recompute it, so the decoder must refuse malformed content on its
+        # own, and that is what is isolated here.
+        broken = {k: {"patch_type": "no_such_patch_type"}
+                  for k in (d.get("answered") or {})}
+        out = {**d, "answered": broken}
+        out["fingerprint"] = ops.fingerprint_of_payload(out)
+        return out
+
+    await _repayload(db, op_id, _corrupt)
+    from db.models import PendingOperation
+
+    async def _payload():
+        return json.loads((await db.execute(
+            select(PendingOperation.canonical_payload).where(
+                PendingOperation.operation_id == op_id))).scalar_one())
+
+    before = await _payload()
+    assert before["answered"], "the fixture lost the held answer it needs"
+
+    with pytest.raises(FingerprintUnreadable):
+        await ops.hold_answer(db, owned=owned, patch=_a_live_patch(inter))
+    await db.rollback()
+
+    after = await _payload()
+    assert after == before, (
+        "the operation was mutated after an unreadable held answer — the "
+        "prior payload must survive untouched")
+    assert after["fingerprint"] == before["fingerprint"], (
+        "the reduced state was RE-SIGNED, which launders the deletion")
+    assert set(after["answered"]) == set(before["answered"]), (
+        "the unreadable answer was dropped from the map")
+
+    # and a real answer turn settles nothing and never reaches legacy
+    async def forbidden(*a, **k):
+        raise AssertionError("legacy executor ran on an unreadable answer map")
+
+    monkeypatch.setattr(te, "execute_tool_calls", forbidden)
+    await db.refresh(user)                  # the rollback above expired it
+    turn = await b1_answer_turn.handle(
+        db, user=user, source_turn_id=f"{tid}-ans", message="2 servings")
+    await db.commit()
+    rows = (await db.execute(select(FoodEntry).where(
+        FoodEntry.daily_log_id == log_id))).scalars().all()
+    assert rows == [], [r.parsed_food_name for r in rows]
+    events = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.user_id == user_id))).scalars().all()
+    assert events == []
+    if turn is not None and getattr(turn, "outcome", None) is not None:
+        assert str(getattr(turn.outcome, "name", turn.outcome)).upper() != "APPLIED"
+    final = await _payload()
+    assert final["fingerprint"] == before["fingerprint"]
+
+
+@pytest.mark.asyncio
+async def test_2_the_returned_operation_carries_the_locked_metadata(db, make_user):
+    """⛔ P17 PHASE 2, FOURTH ROUND *(Danny)*. The returned operation used to
+    be `dataclasses.replace(owned, ...)`, which updates the row, interaction,
+    item and answers — and silently carries the PRE-LOCK `locale`, `cohort`,
+    `decision_id`, `candidate_set_id` and `asked_at_stamp` through untouched.
+
+    A metadata change that lands between the two reads then leaves the
+    persisted row and the returned operation disagreeing, with the returned
+    one looking authoritative: the funnel row is joined on `cohort`, and the
+    reply is rendered in `locale`. Every field must come from the refreshed
+    locked row and its decoded payload."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:lockedmeta-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+    assert (owned.locale, owned.cohort) == ("en", "allowlist")
+
+    # the metadata moves AFTER that read — as a LEGITIMATE, re-signed write,
+    # because the digest now covers the whole payload and an unsigned edit
+    # would (correctly) be refused as tampering before this proof could say
+    # anything about which copy the returned operation reports.
+    def _move_metadata(d):
+        out = {**d, "locale": "ru", "cohort": "general"}
+        out["fingerprint"] = ops.fingerprint_of_payload(out)
+        return out
+
+    await _repayload(db, op_id, _move_metadata)
+
+    transition = await ops.hold_answer(db, owned=owned,
+                                       patch=_a_live_patch(inter))
+    assert transition.owned.locale == "ru", (
+        f"the returned operation reports the PRE-LOCK locale "
+        f"{transition.owned.locale!r}; the row says 'ru'")
+    assert transition.owned.cohort == "general", (
+        f"the returned operation reports the PRE-LOCK cohort "
+        f"{transition.owned.cohort!r}; the row says 'general'")
+
+
+def test_the_repository_never_decodes_held_patches():
+    """⛔ HELD ANSWERS HAVE ONE DECODER *(P17 Phase 2, fourth round)*.
+
+    `LockedOperation.answered()` decoded the held patches and, on an
+    unreadable one, logged and SKIPPED it — the exact thing
+    `_decode_answered` exists to forbid, sitting in the SHARED repository
+    where any future caller would find it first. It is deleted; this keeps it
+    deleted.
+
+    Structural rather than a substring search: a `patch_from_payload` in a
+    comment or a docstring explaining why it must not appear here would trip
+    a grep gate, and gates that fail on their own explanation get deleted."""
+    import ast
+    import inspect
+
+    from core import pending_repository as repo
+
+    tree = ast.parse(inspect.getsource(repo))
+    decoding = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                and (getattr(n.func, "id", "")
+                     or getattr(n.func, "attr", "")) == "patch_from_payload"]
+    assert not decoding, (
+        f"the repository decodes held patches again at line(s) "
+        f"{[n.lineno for n in decoding]} — held answers are decoded by "
+        f"`_decode_answered`, which fails the OPERATION rather than skipping "
+        f"the field")
+
+
+@pytest.mark.asyncio
+async def test_2_a_well_formed_answer_substituted_before_the_lock_refuses(
+        db, make_user):
+    """⛔⛔ P17 PHASE 2, FIFTH ROUND *(Danny)*. STRICT DECODING CANNOT SEE
+    THIS ONE. The answers used to sit OUTSIDE the digest, so an existing held
+    answer could be changed from one WELL-FORMED value to another — 120 g
+    becomes 900 g — between `owning()` and the lock. `_decode_answered`
+    accepts it, because it is a perfectly valid patch, and `hold_answer` then
+    treated the substituted amount as the authority the user had stated.
+
+    `fp2` signs the stored answer map, so the edit moves the digest and the
+    operation refuses before anything is mutated or re-signed."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (FingerprintUnreadable,
+                                            ID_ADDRESSED, open_operation,
+                                            owning)
+    from core.semantics import Provenance, SetPreparation
+    from db.models import PendingOperation
+
+    user = await make_user()
+    tid = f"ios:wellformed-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    two, prep = _two_field(inter, operation_id=op_id, revision=0)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=two, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+    await ops.hold_answer(db, owned=owned, patch=SetPreparation(
+        event_id=two.groups[0].event_id, field_id=prep.field_id,
+        preparation_id="grilled", provenance=Provenance.USER_SELECTED))
+    await db.commit()
+
+    await db.refresh(user)
+    owned = await owning(db, user)              # valid at this point
+
+    # a DIFFERENT, equally well-formed answer is substituted afterwards
+    def _swap(d):
+        answered = dict(d.get("answered") or {})
+        key = next(iter(answered))
+        swapped = dict(answered[key])
+        swapped["preparation_id"] = "deep_fried"
+        answered[key] = swapped
+        return {**d, "answered": answered}
+
+    await _repayload(db, op_id, _swap)
+
+    async def _payload():
+        return json.loads((await db.execute(
+            select(PendingOperation.canonical_payload).where(
+                PendingOperation.operation_id == op_id))).scalar_one())
+
+    before = await _payload()
+    assert "deep_fried" in json.dumps(before["answered"]), (
+        "the fixture did not actually substitute a well-formed answer")
+
+    with pytest.raises(FingerprintUnreadable):
+        await ops.hold_answer(db, owned=owned, patch=_a_live_patch(inter))
+    await db.rollback()
+
+    after = await _payload()
+    assert after == before, (
+        "the substituted answer was accepted as authority and the payload "
+        "mutated on top of it")
+    assert after["fingerprint"] == before["fingerprint"], (
+        "the substituted state was RE-SIGNED, which makes the edit look "
+        "like something the user said")
+
+
+@pytest.mark.asyncio
+async def test_2_an_awaiting_row_at_the_old_fingerprint_version_fails_closed(
+        db, make_user, monkeypatch):
+    """⛔ WHAT HAPPENS TO ROWS ALREADY IN FLIGHT WHEN THE RULES CHANGE *(fifth
+    round)*. Bumping the version changes what the digest MEANS, so an
+    AWAITING operation written under the old one cannot be verified — and
+    must not be re-judged under today's rules, which is the silent
+    reinterpretation the version exists to prevent.
+
+    Fail closed, and specifically: the operation still OWNS the meal (it is
+    not "unowned", so nothing falls to legacy), it settles nothing, and the
+    row is left exactly as it was for a human to look at."""
+    import handlers.tool_executor as te
+    from core import b1_answer_turn
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    from db.models import FoodEntry, LedgerEvent, PendingOperation
+    from tests.test_a_scan_is_binding import _log
+
+    user = await make_user()
+    log = await _log(db, user)
+    user_id, log_id = user.id, log.id
+    tid = f"ios:oldfp-{user_id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+
+    # the row as an older build wrote it: a valid payload, an OLD version
+    await _repayload(db, op_id, lambda d: {**d, "fingerprint_version": "fp1"})
+
+    async def _payload():
+        return json.loads((await db.execute(
+            select(PendingOperation.canonical_payload).where(
+                PendingOperation.operation_id == op_id))).scalar_one())
+
+    before = await _payload()
+
+    # OWNERSHIP IS PRESERVED — repairing, never None (which would be legacy)
+    await db.refresh(user)
+    owned = await owning(db, user)
+    assert owned is not None, (
+        "an unreadable version made the operation look UNOWNED — the turn "
+        "would fall through to legacy beside a live canonical ask")
+    assert owned.interaction is None and owned.item == {}, (
+        "rendering facts were handed out for a payload nothing could verify")
+
+    async def forbidden(*a, **k):
+        raise AssertionError("legacy executor ran on an old-version row")
+
+    monkeypatch.setattr(te, "execute_tool_calls", forbidden)
+    turn = await b1_answer_turn.handle(
+        db, user=user, source_turn_id=f"{tid}-ans", message="2 servings")
+    await db.commit()
+
+    rows = (await db.execute(select(FoodEntry).where(
+        FoodEntry.daily_log_id == log_id))).scalars().all()
+    assert rows == [], [r.parsed_food_name for r in rows]
+    events = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.user_id == user_id))).scalars().all()
+    assert events == []
+    if turn is not None and getattr(turn, "outcome", None) is not None:
+        assert str(getattr(turn.outcome, "name", turn.outcome)).upper() != "APPLIED"
+    assert await _payload() == before, (
+        "the old-version row was rewritten — it must be left exactly as it "
+        "was, including its old version marker")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bogus", [[], "", 0, False, None])
+async def test_2_a_non_object_answer_map_is_refused_not_coerced(
+        db, make_user, bogus):
+    """⛔ P17 PHASE 2, SIXTH ROUND *(Danny)*. `data.get("answered") or {}`
+    turned `null`, `[]`, `""`, `0` and `false` into a valid EMPTY answer map
+    BEFORE the type check could see any of them — coercing malformed into
+    missing. Absent is a fresh ask; present-and-not-an-object is a payload
+    nothing legitimate wrote, and it must refuse.
+
+    RE-SIGNED ON PURPOSE, so the digest cannot be what refuses and the
+    decoder is isolated: `_decode_answered` has to reject this on its own."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+
+    # the unit claim, on the decoder itself
+    with pytest.raises(ValueError):
+        ops._decode_answered({"answered": bogus}, "op")
+    assert ops._decode_answered({}, "op") == {}, (
+        "an ABSENT answer map is a fresh ask, not a malformed one")
+
+    user = await make_user()
+    tid = f"ios:bogusanswers-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+
+    def _apply(d):
+        out = {**d, "answered": bogus}
+        out["fingerprint"] = ops.fingerprint_of_payload(out)
+        return out
+
+    await _repayload(db, op_id, _apply)
+
+    await db.refresh(user)
+    owned = await owning(db, user)
+    assert owned is not None, (
+        "a malformed answer map made the operation look UNOWNED — the turn "
+        "would fall through to legacy")
+    assert owned.interaction is None and owned.item == {}, (
+        f"answered={bogus!r} was coerced to an empty map and the operation "
+        f"rendered as if the user had answered nothing")
+
+
+def test_2_the_ask_identity_is_stable_across_a_shape_change():
+    """⛔⛔ P17 PHASE 2 REVIEW *(Danny)*. The identity of a QUESTION must not
+    move when its GENERATION does. It used to hash the interaction payload
+    whole — `revision` rides the interaction, every field, and every option's
+    patch, and `field_id` is `operation:event:attribute:revision` — so the
+    moment a legitimate answer rebuilt the surface, the same question
+    acquired a new identity and a same-turn retry refused a valid reuse."""
+    from core.b1_quantity_operation import ask_fingerprint
+    from core.semantics import (ClarificationAttribute, ClarificationGroup,
+                                ClarificationInteraction, ResponseType,
+                                UnresolvedField)
+
+    def shape(revision, attributes, introduction="How much?"):
+        fields = tuple(UnresolvedField(
+            operation_id="op:1", revision=revision, event_id="ev",
+            attribute=a, response_type=ResponseType.FREE_TEXT)
+            for a in attributes)
+        return ClarificationInteraction(
+            interaction_id="i", operation_id="op:1", revision=revision,
+            introduction=introduction,
+            groups=(ClarificationGroup(event_id="ev", label="L",
+                                       fields=fields),)).to_payload()
+
+    Q = ClarificationAttribute.QUANTITY
+    P = ClarificationAttribute.PREPARATION
+    item = {"food": "Barebells Caramel Cashew"}
+    base = ask_fingerprint(shape(0, (Q,)), item)
+
+    assert base == ask_fingerprint(shape(7, (Q,)), item), (
+        "the same question at a later generation is a different ask — a "
+        "retry after any rebuild refuses a reuse it should accept")
+    # and it still tells genuinely different asks apart
+    assert base != ask_fingerprint(shape(0, (Q, P)), item), "attribute set"
+    assert base != ask_fingerprint(shape(0, (Q,), "How many?"), item), "wording"
+    assert base != ask_fingerprint(shape(0, (Q,)), {"food": "Oatmeal"}), "item"
+
+    # ⛔ AND THE PARTS OF A FIELD THAT CARRY MEANING *(review checklist)*.
+    # Stripping generation keys must not have flattened these into one ask.
+    from decimal import Decimal
+
+    from core.semantics import (CanonicalQuantity, ClarificationOption,
+                                Dimension, SetQuantity)
+
+    def offered(*, revision, label, grams, response_type):
+        field_id = f"op:1:ev:quantity:{revision}"
+        patch = SetQuantity(event_id="ev", field_id=field_id,
+                            quantity=CanonicalQuantity(amount=Decimal(grams),
+                                                       unit_id="g",
+                                                       dimension=Dimension.MASS))
+        option = ClarificationOption(label=label, value=label,
+                                     option_id="o1", field_id=field_id,
+                                     patch=patch)
+        f = UnresolvedField(operation_id="op:1", revision=revision,
+                            event_id="ev", attribute=Q,
+                            response_type=response_type, options=(option,))
+        return ClarificationInteraction(
+            interaction_id="i", operation_id="op:1", revision=revision,
+            introduction="How much?",
+            groups=(ClarificationGroup(event_id="ev", label="L",
+                                       fields=(f,)),)).to_payload()
+
+    chips = offered(revision=0, label="110 g", grams="110",
+                    response_type=ResponseType.SINGLE_SELECT)
+    assert ask_fingerprint(chips, item) == ask_fingerprint(
+        offered(revision=4, label="110 g", grams="110",
+                response_type=ResponseType.SINGLE_SELECT), item), (
+        "an option's own field_id and its PATCH's field_id both carry the "
+        "generation; neither may make the same offer a different ask")
+    assert ask_fingerprint(chips, item) != ask_fingerprint(
+        offered(revision=0, label="55 g", grams="110",
+                response_type=ResponseType.SINGLE_SELECT), item), "option label"
+    assert ask_fingerprint(chips, item) != ask_fingerprint(
+        offered(revision=0, label="110 g", grams="55",
+                response_type=ResponseType.SINGLE_SELECT), item), (
+        "two chips reading the same but RECORDING different amounts are one "
+        "ask — the patch is the authoritative meaning")
+    # SINGLE vs MULTI select: both carry options (a field with options IS a
+    # select, so FREE_TEXT cannot be the contrast here), and "pick one" is a
+    # different question from "pick any"
+    assert ask_fingerprint(chips, item) != ask_fingerprint(
+        offered(revision=0, label="110 g", grams="110",
+                response_type=ResponseType.MULTI_SELECT), item), "response type"
+
+
+def test_2_the_strip_removes_generation_metadata_and_nothing_else():
+    """⛔ THE STRIP IS CONFINED *(review checklist)*. It must reach nested
+    patch revisions at any depth and leave every meaning-bearing key alone —
+    an over-strip is how two different asks collide on one identity."""
+    from core.b1_quantity_operation import (_GENERATION_KEYS,
+                                            _without_generation)
+
+    assert _GENERATION_KEYS == frozenset({"revision", "field_id"})
+    nested = {
+        "revision": 3, "introduction": "How much?",
+        "groups": [{"label": "L", "fields": [{
+            "revision": 3, "field_id": "op:ev:quantity:3", "attribute": "quantity",
+            "response_type": "single_select",
+            "options": [{"option_id": "o1", "label": "110 g",
+                         "field_id": "op:ev:quantity:3",
+                         "patch": {"patch_type": "set_quantity",
+                                   "field_id": "op:ev:quantity:3",
+                                   "revision": 3,
+                                   "quantity": {"amount": "110", "unit_id": "g"}}}]}]}]}
+    out = _without_generation(nested)
+
+    def keys(value):
+        if isinstance(value, dict):
+            return set(value) | {k for v in value.values() for k in keys(v)}
+        if isinstance(value, list):
+            return {k for v in value for k in keys(v)}
+        return set()
+
+    assert not (keys(out) & _GENERATION_KEYS), (
+        f"generation metadata survived at some depth: {keys(out) & _GENERATION_KEYS}")
+    survived = keys(out)
+    for meaning in ("introduction", "label", "attribute", "response_type",
+                    "option_id", "patch", "patch_type", "quantity", "amount",
+                    "unit_id", "groups", "fields", "options"):
+        assert meaning in survived, f"{meaning!r} was stripped — identities collide"
+    # the nested patch kept its MEANING, having lost only its generation
+    patch = out["groups"][0]["fields"][0]["options"][0]["patch"]
+    assert patch == {"patch_type": "set_quantity",
+                     "quantity": {"amount": "110", "unit_id": "g"}}
+
+
+@pytest.mark.asyncio
+async def test_2_a_retry_after_a_generation_bump_still_reuses(db, make_user):
+    """The consumer-side half: an operation whose stored question was
+    re-issued at a new generation is still THE SAME ask, so a same-turn retry
+    reuses it instead of raising `OpenedElsewhere` at the user."""
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:retrybump-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    item = {"food": "Oatmeal", "amount": 1}
+    await open_operation(db, user=user, interpreter_item=item,
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+
+    # the very same questions, re-issued one generation on — ONLY `revision`
+    # moves (the field ids follow it, as they do in a real re-issue). Note
+    # `_bumped` is not usable here: it also flattens options and response
+    # types, which makes it a genuinely different question and rightly
+    # refuses.
+    import dataclasses as _dc
+    regenerated = _dc.replace(
+        inter, revision=1,
+        groups=tuple(_dc.replace(g, fields=tuple(
+            _dc.replace(f, revision=1) for f in g.fields))
+            for g in inter.groups))
+    await _reshape(db, op_id, regenerated)
+    await db.refresh(user)
+
+    reused = await open_operation(db, user=user, interpreter_item=item,
+                                  interaction=inter, turn_id=tid, locale="en",
+                                  cohort="allowlist", capability=ID_ADDRESSED)
+    assert reused.created is False, "the retry opened a SECOND operation"
+    assert reused.revision == 1, (
+        f"the reuse rendered generation {reused.revision}, not the stored one")
+
+
+@pytest.mark.asyncio
+async def test_2_a_row_whose_generation_disagrees_refuses_before_writing(
+        db, make_user):
+    """⛔⛔ P17 PHASE 2 REVIEW *(Danny)*. `HeldAnswerResult` refuses a
+    disagreeing generation — but it is constructed AFTER `locked.write` and
+    `flush`, so the row had already been rewritten and the answer already
+    persisted by the time anything noticed. A post-condition is a report, not
+    a gate. The agreement is now established on the LOCKED material before
+    the merge, and the payload must come through untouched."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (FingerprintUnreadable,
+                                            ID_ADDRESSED, open_operation,
+                                            owning)
+    from db.models import PendingOperation
+
+    user = await make_user()
+    tid = f"ios:genskew-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+
+    # the stored QUESTION moves a generation on while the ROW's column does
+    # not — a state the one write seam cannot produce, so something else did
+    bumped = _bumped(inter, operation_id=op_id, revision=1)
+    await _repayload(db, op_id, lambda d: {
+        **d, "interaction": bumped.to_payload(),
+        "fingerprint": ops.fingerprint_of_payload({
+            **d, "interaction": bumped.to_payload()})})
+
+    async def _payload():
+        return json.loads((await db.execute(
+            select(PendingOperation.canonical_payload).where(
+                PendingOperation.operation_id == op_id))).scalar_one())
+
+    async def _row_generation():
+        return (await db.execute(select(PendingOperation.revision).where(
+            PendingOperation.operation_id == op_id))).scalar_one()
+
+    from db.models import FoodEntry, LedgerEvent
+    before, before_generation = await _payload(), await _row_generation()
+
+    with pytest.raises(FingerprintUnreadable):
+        await ops.hold_answer(db, owned=owned, patch=_a_live_patch(inter))
+    await db.rollback()
+
+    # ⛔ NOTHING MOVED *(review checklist)*: not the payload, not the held
+    # answers, not the digest, not the row's own generation, not the ledger.
+    after = await _payload()
+    assert after == before, (
+        "the answer was written on top of a row whose generation and question "
+        "disagreed — the check ran after the write, not before it")
+    assert after["fingerprint"] == before["fingerprint"]
+    assert not after.get("answered")
+    assert await _row_generation() == before_generation, (
+        "the row's generation moved on a refusal")
+    assert (await db.execute(select(FoodEntry))).scalars().all() == []
+    assert (await db.execute(select(LedgerEvent))).scalars().all() == []
+
+    # and the SESSION is still usable — a refusal that poisons the
+    # transaction takes the rest of the turn down with it
+    await db.refresh(user)
+    assert await owning(db, user) is not None
+
+
+@pytest.mark.asyncio
+async def test_2_a_retry_after_a_REAL_shape_change_still_reuses(db, make_user):
+    """⛔⛔ P17 PHASE 2, SEVENTH ROUND *(Danny)* — THE REAL B-1.6b PATH.
+
+    The generation-strip fix was not enough: a genuine shape change alters
+    the FIELD SET. "Yes, fat was added" retires `added_fat_present` and
+    activates `added_fat_amount` + `added_fat_identity`, so the rebuilt
+    surface hashes differently no matter which keys are stripped. A delayed
+    retry of the ORIGINAL opening turn computed the original identity, the
+    stored row computed the rebuilt one, and `open_operation` refused
+    `OpenedElsewhere` at a user whose retry was perfectly idempotent.
+
+    Identity is now written ONCE at open and compared against that stored
+    value. The retry must find ONE operation, reuse it, and render the
+    REBUILT current surface — the original identity answers "same ask?",
+    never "which surface do I show?"."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    from core.semantics import (ClarificationAttribute, ClarificationGroup,
+                                ClarificationInteraction, Provenance,
+                                ResponseType, SetAddedFatPresent,
+                                UnresolvedField)
+    from db.models import PendingOperation
+
+    user = await make_user()
+    tid = f"ios:realshape-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    group = inter.groups[0]
+    fat = UnresolvedField(operation_id=op_id, revision=0,
+                          event_id=group.event_id,
+                          attribute=ClarificationAttribute.ADDED_FAT_PRESENT,
+                          response_type=ResponseType.FREE_TEXT)
+    original = ClarificationInteraction(
+        interaction_id=inter.interaction_id, operation_id=op_id, revision=0,
+        introduction=inter.introduction,
+        groups=(ClarificationGroup(event_id=group.event_id, label=group.label,
+                                   fields=(fat,)),))
+    item = {"food": "Oatmeal"}
+    first = await open_operation(db, user=user, interpreter_item=item,
+                                 interaction=original, turn_id=tid,
+                                 locale="en", cohort="allowlist",
+                                 capability=ID_ADDRESSED)
+    assert first.created is True
+    await db.commit()
+
+    # the REAL answer path rebuilds the surface: field set changes
+    owned = await owning(db, user)
+    transition = await ops.hold_answer(db, owned=owned, patch=SetAddedFatPresent(
+        event_id=group.event_id, field_id=fat.field_id, present=True,
+        provenance=Provenance.USER_SELECTED))
+    await db.commit()
+    rebuilt_attrs = {f.attribute for g in transition.interaction.groups
+                     for f in g.fields}
+    assert transition.interaction.revision == 1
+    assert ClarificationAttribute.ADDED_FAT_AMOUNT in rebuilt_attrs, (
+        "the fixture did not actually change the field set — this proof "
+        "would then be the generation-bump case again")
+    assert ClarificationAttribute.ADDED_FAT_PRESENT not in rebuilt_attrs
+
+    # the delayed retry of the ORIGINAL opening turn, original interaction
+    await db.refresh(user)
+    retried = await open_operation(db, user=user, interpreter_item=item,
+                                   interaction=original, turn_id=tid,
+                                   locale="en", cohort="allowlist",
+                                   capability=ID_ADDRESSED)
+    assert retried.created is False, (
+        "the retry did not reuse — after a real shape change the same "
+        "opening turn stopped being idempotent")
+    rows = (await db.execute(select(PendingOperation).where(
+        PendingOperation.user_id == user.id))).scalars().all()
+    assert len(rows) == 1, f"the retry made {len(rows)} operations of one ask"
+    # and the surface handed back is the REBUILT current one
+    assert retried.revision == 1
+    retried_attrs = {f.attribute for g in retried.interaction.groups
+                     for f in g.fields}
+    assert retried_attrs == rebuilt_attrs, (
+        f"the retry rendered {sorted(a.value for a in retried_attrs)} instead "
+        f"of the current surface {sorted(a.value for a in rebuilt_attrs)}")
+    assert retried.ask_identity == first.ask_identity
+
+
+@pytest.mark.asyncio
+async def test_2_the_stored_ask_identity_is_signed_and_required(db, make_user):
+    """The two ways the stored original could quietly stop being authority:
+    edited (must be caught by the envelope — it is IN the payload), or
+    dropped (must be refused as a payload this code did not write, and the
+    operation still owns the meal)."""
+    from core.b1_quantity_operation import (FingerprintUnreadable,
+                                            ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:idsigned-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    item = {"food": "Oatmeal", "amount": 1}
+    await open_operation(db, user=user, interpreter_item=item,
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+
+    # EDITED without re-signing: the digest catches it — and an unreadable
+    # stored payload at the reuse seam is a REFUSAL, not a reuse
+    await _repayload(db, op_id, lambda d: {**d, "ask_identity": "fp2:ask:" + "0" * 24})
+    await db.refresh(user)
+    with pytest.raises(FingerprintUnreadable):
+        await open_operation(db, user=user, interpreter_item=item,
+                             interaction=inter, turn_id=tid, locale="en",
+                             cohort="allowlist", capability=ID_ADDRESSED)
+    await db.rollback()
+    await db.refresh(user)                  # the rollback expired it
+    owned = await owning(db, user)
+    assert owned is not None and owned.interaction is None, (
+        "an edited identity either dropped ownership or handed out rendering "
+        "facts from a payload the digest refuses")
+
+    # DROPPED and re-signed: the required-field check refuses; still owned
+    from core import b1_quantity_operation as m
+    await _repayload(db, op_id, lambda d: {
+        **{k: v for k, v in d.items() if k != "ask_identity"},
+        "fingerprint": m.fingerprint_of_payload(
+            {k: v for k, v in d.items() if k != "ask_identity"})})
+    await db.refresh(user)
+    owned = await owning(db, user)
+    assert owned is not None and owned.interaction is None, (
+        "a payload with no ask_identity was either read as unowned (legacy) "
+        "or decoded as if this code had written it")
+
+
+def test_2_the_locked_read_refreshes_the_row_by_construction():
+    """⛔ SQLAlchemy does NOT repopulate an object already in the identity map
+    from a later query. Without `populate_existing`, the row `owning()`
+    hydrated is returned unchanged after the lock wait — the lock would guard
+    a decision taken on the pre-lock snapshot."""
+    import inspect
+    from core import pending_repository as repo
+    src = inspect.getsource(repo.locked_operation)
+    assert "populate_existing=True" in src
+
+
+def test_2_hold_answer_never_reconciles_from_the_pre_lock_object():
+    """AST: after the lock, nothing in `hold_answer` reads `owned.interaction`
+    — reconciliation, rebuild and the digest all work from the locked
+    material."""
+    import ast
+    import inspect
+    from core import b1_quantity_operation as m
+    tree = ast.parse(inspect.getsource(m.hold_answer).lstrip())
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Attribute) and node.attr == "interaction"
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "owned"):
+            raise AssertionError(
+                "hold_answer reads owned.interaction — that object was "
+                "hydrated BEFORE the lock")
+    # and it decodes the locked row before mutating it
+    src = inspect.getsource(m.hold_answer)
+    assert src.index("_decode_stored_payload") < src.index("locked.write")
+
+
+def _bumped(interaction, *, operation_id, revision):
+    """The SAME questions, re-issued at a NEW revision — the identity change a
+    reopened field gets. The attribute set is unchanged; only the field ids
+    move, which is precisely the case an attribute-set check cannot see."""
+    from core.semantics import (ClarificationGroup, ClarificationInteraction,
+                                ResponseType, UnresolvedField)
+    groups = tuple(
+        ClarificationGroup(
+            event_id=g.event_id, label=g.label,
+            fields=tuple(UnresolvedField(
+                operation_id=operation_id, revision=revision,
+                event_id=g.event_id, attribute=f.attribute,
+                response_type=ResponseType.FREE_TEXT) for f in g.fields))
+        for g in interaction.groups)
+    return ClarificationInteraction(
+        interaction_id=interaction.interaction_id, operation_id=operation_id,
+        revision=revision, introduction=interaction.introduction,
+        groups=groups)
+
+
+@pytest.mark.asyncio
+async def test_2_a_revision_bump_alone_refuses_the_old_chip(db, make_user):
+    """⛔ THE LOCKED **REVISION** IS REVALIDATED, NOT ONLY THE ATTRIBUTE SET.
+
+    A concurrent writer can re-issue the SAME questions at a new revision —
+    the identity change that makes a reopened field a different field. Nothing
+    was added and nothing removed, so a check that compares which ATTRIBUTES
+    are open sees no difference at all; only the field ids moved. The chip
+    still on the user's screen addresses the OLD identity, and applying it
+    would answer the new question with a tap aimed at the retired one.
+
+    `field_id` is `operation:event:attribute:revision`, so revalidating
+    membership against the locked interaction catches this by construction —
+    but only because the revision is part of the identity, which is the fact
+    this proof pins."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:revbump-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+    stale = _a_live_patch(inter)                  # a chip from revision 0
+
+    bumped = _bumped(inter, operation_id=op_id, revision=1)
+    assert {f.attribute for g in bumped.groups for f in g.fields} == \
+           {f.attribute for g in inter.groups for f in g.fields}, \
+        "this proof is only meaningful when the ATTRIBUTE SET is identical"
+    await _reshape(db, op_id, bumped)
+
+    with pytest.raises(ops.StaleAnswerField):
+        await ops.hold_answer(db, owned=owned, patch=stale)
+
+    after = json.loads((await _row(db, op_id)).canonical_payload)
+    assert not after.get("answered"), (
+        "a chip aimed at the retired revision was applied to the re-issued "
+        "question")
+    assert after["interaction"]["revision"] == 1
+
+
+@pytest.mark.asyncio
+async def test_2_a_shape_change_returns_the_rebuilt_wire_surface(db, make_user):
+    """⛔ THE SHAPE-CHANGE BRANCH RUNS, AND WHAT IT RETURNS IS WHAT IS STORED.
+
+    Two claims in one, because they failed together. `owned.interaction =
+    rebuilt` on a FROZEN dataclass raised `FrozenInstanceError` for every
+    answer that changed the shape — latent only because no proof had ever
+    executed that branch. And the caller kept its own pre-lock `interaction`
+    variable, so even a mutable assignment would have rendered readiness, the
+    open fields and the wire payload from the SUPERSEDED surface.
+
+    So: the branch executes without raising, the revision bumps once, the
+    interaction handed back IS the one persisted, the caller cannot reach a
+    stale object through `owned`, and the newly activated questions are the
+    ones the client would be shown."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    from core.semantics import (ClarificationAttribute, ClarificationGroup,
+                                ClarificationInteraction, Provenance,
+                                ResponseType, SetAddedFatPresent,
+                                UnresolvedField)
+    user = await make_user()
+    tid = f"ios:wire-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    group = inter.groups[0]
+    fat = UnresolvedField(operation_id=op_id, revision=0,
+                          event_id=group.event_id,
+                          attribute=ClarificationAttribute.ADDED_FAT_PRESENT,
+                          response_type=ResponseType.FREE_TEXT)
+    base = ClarificationInteraction(
+        interaction_id=inter.interaction_id, operation_id=op_id, revision=0,
+        introduction=inter.introduction,
+        groups=(ClarificationGroup(event_id=group.event_id, label=group.label,
+                                   fields=(fat,)),))
+    await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                         interaction=base, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+
+    # "yes, fat was added" — the answer that turns two conditional fields on
+    transition = await ops.hold_answer(db, owned=owned, patch=SetAddedFatPresent(
+        event_id=group.event_id, field_id=fat.field_id, present=True,
+        provenance=Provenance.USER_SELECTED))
+
+    assert transition.interaction.revision == base.revision + 1, (
+        "the shape changed but the revision did not move — a reopened field "
+        "would keep the retired identity")
+    stored = json.loads((await _row(db, op_id)).canonical_payload)
+    assert stored["interaction"] == transition.interaction.to_payload(), (
+        "the caller was handed one surface and the row stored another")
+    assert transition.owned.interaction is transition.interaction, (
+        "`owned` still carries a surface the caller could render from")
+    opened = {f.attribute for f in ops.open_fields(transition.interaction,
+                                                   transition.held)}
+    assert ClarificationAttribute.ADDED_FAT_AMOUNT in opened, (
+        f"the newly activated question is not on the wire: {sorted(opened)}")
+    assert ClarificationAttribute.ADDED_FAT_PRESENT not in opened, (
+        "the answered question is still being asked")
 
 
 # ═════ 4 — OWNERSHIP IS VERIFIED BEFORE REUSE ══════════════════════════════

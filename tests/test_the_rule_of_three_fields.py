@@ -192,9 +192,8 @@ async def _open_with_three(sessions, user):
         # opens, so it must keep the payload self-consistent the way the one
         # production write seam does — otherwise it is indistinguishable from
         # an outside edit, which the strict decoder correctly refuses.
-        payload["fingerprint"] = b1.fingerprint_of_payload(
-            payload["interaction"], payload.get("item") or {})
         payload["fingerprint_version"] = b1.FINGERPRINT_VERSION
+        payload["fingerprint"] = b1.fingerprint_of_payload(payload)
         row.canonical_payload = json.dumps(payload)
         await s.commit()
     return ask, three.groups[0].fields
