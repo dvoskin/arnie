@@ -372,6 +372,85 @@ def test_the_scoop_veto_survives_the_spelled_count_fix():
     assert _item_is_stated(item, "and a scoop of peanut butter") is False
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# ROUND 3 — A COUNT HAS TO BE THIS FOOD'S COUNT
+#
+# `_literal_amount_with_unit` deliberately drops the unit requirement when the
+# item is measured in a COUNT ("egg", "piece", "slice"): "15" versus "piece"
+# is not a disagreement, so demanding agreement there would refuse real
+# statements. The cost of dropping it was never stated: with no unit to bind
+# to, ANY number in the clause satisfies the match.
+#
+# So a number belonging to the food NEXT to this one can be read as this
+# one's, and `basis="estimate"` no longer vetoes it — round 1 moved that veto
+# below this rung. The quantity ask is then suppressed and an inferred count
+# commits.
+#
+# ⭐ WORTH RECORDING PRECISELY, because the reported example does not
+# reproduce: in "I had 2 tacos and fried eggs" the clause splitter already
+# keeps the eggs clause down to "fried eggs", and the "2" is never in scope.
+# The defect is real but needs a shape the splitter does NOT cut — a
+# connective it does not split on:
+#
+#     "fried eggs after 2 tacos"   ->  clause "fried eggs after 2 tacos"
+#
+# measured True at abf615d against an item of 2 egg / basis="estimate". Both
+# shapes are pinned below, so the guard cannot be weakened back to the one
+# that happened to be safe.
+# ══════════════════════════════════════════════════════════════════════════
+
+EGGS_2 = {"food": "Fried eggs", "amount": 2, "unit": "egg", "basis": "estimate"}
+
+
+@pytest.mark.parametrize("message,stated,why", [
+    ("2 fried eggs", True,
+     "the count sits on this food's own noun"),
+    ("I had 2 fried eggs", True,
+     "a leading verb does not break the binding"),
+    ("2 tacos and fried eggs", False,
+     "the count belongs to the tacos"),
+    ("fried eggs after 2 tacos", False,
+     "REPRO at abf615d: the splitter does not cut on 'after', so the taco "
+     "count landed inside the eggs clause and bound to it"),
+    ("fried eggs with 2 slices of toast", False,
+     "a side dish's count is not this food's count"),
+])
+def test_a_count_must_bind_to_this_food(message, stated, why):
+    """⛔⛔ THE TWIN. A count literal has to attach to THIS food's own words —
+    its head noun or its unit — and not merely appear somewhere in the clause.
+
+    A measured unit carries its own proof of ownership: `100 g` beside a food
+    measured in grams is that food's mass. A bare count carries none, so the
+    binding has to come from the words around it."""
+    assert _item_is_stated(dict(EGGS_2), message) is stated, why
+
+
+def test_the_count_binding_does_not_cost_the_awkward_real_fixtures():
+    """⛔ THE GUARD ON THE GUARD. "Bind to the head noun" alone would refuse
+    two shapes already shipped and tested — a food whose name tokenises badly
+    ("Peanut M&Ms") and one whose count precedes an adjective ("15 peanut
+    m&m"). Binding accepts any recognised word of THIS food's name, which is
+    what keeps those working while still refusing the taco."""
+    assert _item_is_stated(
+        {"food": "Peanut M&Ms", "amount": 15, "unit": "pieces",
+         "basis": "estimate"},
+        "I had like 15 peanut m&m, half a banana and a scoop of peanut butter",
+    ) is True
+    assert _item_is_stated(
+        {"food": "Chicken nuggets", "amount": 6, "unit": "piece",
+         "basis": "estimate"}, "had 6 chicken nuggets") is True
+
+
+def test_a_measured_unit_does_not_need_the_noun_beside_it():
+    """The binding requirement is for COUNTS only. "200g of grilled chicken
+    breast" proves ownership through the unit, and demanding the food's noun
+    within a few words of the number would refuse it."""
+    assert _item_is_stated(
+        {"food": "Grilled chicken breast", "amount": 200, "unit": "g",
+         "basis": "estimate"},
+        "3 large eggs and 200g of grilled chicken breast") is True
+
+
 def test_a_spelled_count_whose_unit_is_absent_still_needs_the_unit():
     """A written number is necessary, not sufficient. If the user spelled a
     count but named a unit this item cannot be measured in, the disagreement
