@@ -583,10 +583,33 @@ def _decode_stored_payload(row):
                 raise ValueError(
                     f"payload carries no {required!r} — a rendering fact this "
                     f"schema requires, and defaulting it would invent one")
-        # presence is not enough for the identity: the open seam always
-        # writes a non-empty one, so an empty value is a payload this code
-        # did not write — and comparing a reuse against "" would refuse
-        # every legitimate retry while looking like a working check
+        # ⛔⛔ PRESENCE IS NOT USABILITY *(Danny, post-merge review)*. The
+        # loop above only asked whether the KEY exists, so `locale: ""` and
+        # `locale: null` decoded happily — and then the two readers of one
+        # row disagreed about what it says: the ask path rendered
+        # `str(data["locale"])` (`""`, or the literal `"None"`), while
+        # `hold_answer` substituted `"en"` through `... or "en"`. A
+        # fingerprint-valid persisted authority silently CHANGED across an
+        # answer transition, which is the one thing the envelope exists to
+        # make impossible. Same family as `answered or {}`: a falsy value
+        # coerced past its own type check.
+        #
+        # `locale` is written as `locale or "en"` at the one open seam, so a
+        # non-empty string is what this code always produces; anything else
+        # is a payload it did not write. `cohort` is written as `cohort or
+        # ""`, so EMPTY IS LEGITIMATE there and only the type is checked —
+        # rejecting `""` would refuse rows the seam really writes.
+        _locale = data.get("locale")
+        if not isinstance(_locale, str) or not _locale:
+            raise ValueError(
+                f"payload carries locale {_locale!r} — the ask was written in "
+                f"a language, and defaulting one invents the authority the "
+                f"answer turn renders in")
+        _cohort = data.get("cohort")
+        if not isinstance(_cohort, str):
+            raise ValueError(
+                f"payload carries cohort {_cohort!r}, which is not a string — "
+                f"the funnel joins the ask to its answer on this")
         if not str(data.get("ask_identity") or ""):
             raise ValueError("payload carries an EMPTY ask_identity")
         capability = data.get("capability")
@@ -2023,12 +2046,19 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> "HeldAnswerResult"
         row=locked.row,
         interaction=effective,
         item=dict(locked_item),
-        locale=str(_locked_data.get("locale") or "en"),
+        # ⛔ READ EXACTLY, NEVER DEFAULT *(post-merge review)*. These used
+        # to be `... or "en"` / `... or ""`, a SECOND opinion about what the
+        # row says, sitting downstream of the decoder that already verified
+        # it. The strict decode above guarantees a non-empty `locale` and a
+        # string `cohort`, so a subscript here is not a risk — it is the
+        # point: if that guarantee ever regresses, this raises loudly
+        # instead of quietly inventing "en" under the user.
+        locale=_locked_data["locale"],
         decision_id=str(_locked_data.get("decision_id") or ""),
         candidate_set_id=str(_locked_data.get("candidate_set_id") or ""),
         answered=dict(held),
         asked_at_stamp=_decode_asked_at(_locked_data),
-        cohort=str(_locked_data.get("cohort") or "")))
+        cohort=_locked_data["cohort"]))
 
 
 def _replace_interaction(owned: OwnedOperation, interaction) -> OwnedOperation:
