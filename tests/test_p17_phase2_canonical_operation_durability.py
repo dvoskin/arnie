@@ -755,6 +755,133 @@ def test_2_hold_answer_never_reconciles_from_the_pre_lock_object():
     assert src.index("_decode_stored_payload") < src.index("locked.write")
 
 
+def _bumped(interaction, *, operation_id, revision):
+    """The SAME questions, re-issued at a NEW revision — the identity change a
+    reopened field gets. The attribute set is unchanged; only the field ids
+    move, which is precisely the case an attribute-set check cannot see."""
+    from core.semantics import (ClarificationGroup, ClarificationInteraction,
+                                ResponseType, UnresolvedField)
+    groups = tuple(
+        ClarificationGroup(
+            event_id=g.event_id, label=g.label,
+            fields=tuple(UnresolvedField(
+                operation_id=operation_id, revision=revision,
+                event_id=g.event_id, attribute=f.attribute,
+                response_type=ResponseType.FREE_TEXT) for f in g.fields))
+        for g in interaction.groups)
+    return ClarificationInteraction(
+        interaction_id=interaction.interaction_id, operation_id=operation_id,
+        revision=revision, introduction=interaction.introduction,
+        groups=groups)
+
+
+@pytest.mark.asyncio
+async def test_2_a_revision_bump_alone_refuses_the_old_chip(db, make_user):
+    """⛔ THE LOCKED **REVISION** IS REVALIDATED, NOT ONLY THE ATTRIBUTE SET.
+
+    A concurrent writer can re-issue the SAME questions at a new revision —
+    the identity change that makes a reopened field a different field. Nothing
+    was added and nothing removed, so a check that compares which ATTRIBUTES
+    are open sees no difference at all; only the field ids moved. The chip
+    still on the user's screen addresses the OLD identity, and applying it
+    would answer the new question with a tap aimed at the retired one.
+
+    `field_id` is `operation:event:attribute:revision`, so revalidating
+    membership against the locked interaction catches this by construction —
+    but only because the revision is part of the identity, which is the fact
+    this proof pins."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:revbump-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+    stale = _a_live_patch(inter)                  # a chip from revision 0
+
+    bumped = _bumped(inter, operation_id=op_id, revision=1)
+    assert {f.attribute for g in bumped.groups for f in g.fields} == \
+           {f.attribute for g in inter.groups for f in g.fields}, \
+        "this proof is only meaningful when the ATTRIBUTE SET is identical"
+    await _reshape(db, op_id, bumped)
+
+    with pytest.raises(ops.StaleAnswerField):
+        await ops.hold_answer(db, owned=owned, patch=stale)
+
+    after = json.loads((await _row(db, op_id)).canonical_payload)
+    assert not after.get("answered"), (
+        "a chip aimed at the retired revision was applied to the re-issued "
+        "question")
+    assert after["interaction"]["revision"] == 1
+
+
+@pytest.mark.asyncio
+async def test_2_a_shape_change_returns_the_rebuilt_wire_surface(db, make_user):
+    """⛔ THE SHAPE-CHANGE BRANCH RUNS, AND WHAT IT RETURNS IS WHAT IS STORED.
+
+    Two claims in one, because they failed together. `owned.interaction =
+    rebuilt` on a FROZEN dataclass raised `FrozenInstanceError` for every
+    answer that changed the shape — latent only because no proof had ever
+    executed that branch. And the caller kept its own pre-lock `interaction`
+    variable, so even a mutable assignment would have rendered readiness, the
+    open fields and the wire payload from the SUPERSEDED surface.
+
+    So: the branch executes without raising, the revision bumps once, the
+    interaction handed back IS the one persisted, the caller cannot reach a
+    stale object through `owned`, and the newly activated questions are the
+    ones the client would be shown."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    from core.semantics import (ClarificationAttribute, ClarificationGroup,
+                                ClarificationInteraction, Provenance,
+                                ResponseType, SetAddedFatPresent,
+                                UnresolvedField)
+    user = await make_user()
+    tid = f"ios:wire-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    group = inter.groups[0]
+    fat = UnresolvedField(operation_id=op_id, revision=0,
+                          event_id=group.event_id,
+                          attribute=ClarificationAttribute.ADDED_FAT_PRESENT,
+                          response_type=ResponseType.FREE_TEXT)
+    base = ClarificationInteraction(
+        interaction_id=inter.interaction_id, operation_id=op_id, revision=0,
+        introduction=inter.introduction,
+        groups=(ClarificationGroup(event_id=group.event_id, label=group.label,
+                                   fields=(fat,)),))
+    await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
+                         interaction=base, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+
+    # "yes, fat was added" — the answer that turns two conditional fields on
+    transition = await ops.hold_answer(db, owned=owned, patch=SetAddedFatPresent(
+        event_id=group.event_id, field_id=fat.field_id, present=True,
+        provenance=Provenance.USER_SELECTED))
+
+    assert transition.interaction.revision == base.revision + 1, (
+        "the shape changed but the revision did not move — a reopened field "
+        "would keep the retired identity")
+    stored = json.loads((await _row(db, op_id)).canonical_payload)
+    assert stored["interaction"] == transition.interaction.to_payload(), (
+        "the caller was handed one surface and the row stored another")
+    assert transition.owned.interaction is transition.interaction, (
+        "`owned` still carries a surface the caller could render from")
+    opened = {f.attribute for f in ops.open_fields(transition.interaction,
+                                                   transition.held)}
+    assert ClarificationAttribute.ADDED_FAT_AMOUNT in opened, (
+        f"the newly activated question is not on the wire: {sorted(opened)}")
+    assert ClarificationAttribute.ADDED_FAT_PRESENT not in opened, (
+        "the answered question is still being asked")
+
+
 # ═════ 4 — OWNERSHIP IS VERIFIED BEFORE REUSE ══════════════════════════════
 
 @pytest.mark.asyncio
