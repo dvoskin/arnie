@@ -534,3 +534,14 @@ No phase is complete because code was pushed or CI started. It is complete only 
 * **Deploy status**: NOT deployed; not deploy-approved.
 * **Remaining blockers**: Phases 3–6, canaries A/B/C, Phase 8, and the two preserved deploy blockers.
 * **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED**
+
+## Phase 2 second review round — durability gaps 1–3 closed (2026-08-20)
+
+* **Exact SHA**: `15b5da5` (on `d749a4f`; `676f359` docs-only).
+* **Files materially changed**: `core/conversation.py` (the version mismatch joins the canonical-refusal tuple) · `core/b1_quantity_operation.py` (`_decode_stored_payload` shared by the reuse seam and `owning()`; `fingerprint_of_payload` hashes the STORED FORM; the answer merge re-derives the digest under its lock; locale/cohort/capability required; `RECOGNISED_CAPABILITIES` validated on read and write) · `core/canonical_lane.py` (`capability_for`, so only the lane module reads the channel table) · `core/product_bound_ask.py` (takes the capability from the lane, not the table; renders exactly the persisted one) · two multi-field fixtures keep their digest consistent.
+* **Invariant established**: a stored operation is verified identically wherever it is read — reuse or consumption — and a failure preserves ownership and repairs rather than falling to legacy; every rendering fact is persisted, required and validated, never synthesized from the live turn; and a fingerprint-version refusal is a canonical refusal, never a legacy question.
+* **Focused tests and mutations**: 46 in the Phase 2 file; 265 across every operation-related suite. **Mutations Q1–Q9 each printed `applied` and went RED** (20 for Phase 2).
+* **Two real defects surfaced and fixed**: the digest was computed over the interaction OBJECT rather than the stored payload (`to_payload(from_payload(p))` is not identity, so a legitimate multi-field ask read back as tampered and the operation FAILED under the user); and a shape change legitimately rebuilds the interaction at the answer merge, so the digest is re-derived at that one write.
+* **Full suite**: 9876 passed / 25 skipped / 17 deselected / 4 xfailed, `PYTEST_EXIT=0`, fingerprint `ede60bb29ca5` before = after, `TEST_POSTGRES_URL` set. ⛔ The prior run for this phase reported **PYTEST_EXIT=1 with 8 failures** and was not green; it is recorded here as such.
+* **Migration impact**: none. **Deploy status**: NOT deployed; not deploy-approved. Phase 3 paused.
+* **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED**
