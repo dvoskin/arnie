@@ -468,6 +468,22 @@ def test_a_connective_ends_the_binding_even_inside_one_clause(message):
     ("half a cup of greek yogurt",
      {"food": "Greek yogurt", "amount": 0.5, "unit": "cup"}, True,
      "correctly bound half must still count"),
+    # ⭐ THE WITNESS THAT ISOLATES THIS RUNG. `normalize_quantity` parses
+    # "half a cup" and "half of a banana" perfectly well, so those cases stay
+    # True even with `_half_binds_to_food` disabled entirely — mutation R4-3
+    # came back green against them, MASKED BY THE NORMALIZER. These three are
+    # phrasings the normalizer does NOT resolve, so they fail the moment this
+    # rung stops returning True, which is what makes its positive direction
+    # provable rather than merely present.
+    ("ate half the banana",
+     {"food": "Banana", "amount": 0.5, "unit": "banana"}, True,
+     "no article: only this rung reads it"),
+    ("half banana",
+     {"food": "Banana", "amount": 0.5, "unit": "banana"}, True,
+     "bare adjacency: only this rung reads it"),
+    ("a half banana",
+     {"food": "Banana", "amount": 0.5, "unit": "banana"}, True,
+     "article BEFORE half: only this rung reads it"),
     ("half a banana and greek yogurt",
      {"food": "Greek yogurt", "amount": 0.5, "unit": "cup"}, False,
      "even split into clauses, the half never named the yogurt"),

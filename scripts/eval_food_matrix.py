@@ -53,6 +53,11 @@ _RECOVERY_MARKERS = (
 )
 
 
+#: Where the run's verdict is written. A module constant so a test can
+#: point it somewhere harmless instead of stamping on the real one.
+RESULTS_PATH = "/tmp/eval_matrix_results.txt"
+
+
 class _InfraWatch(logging.Handler):
     """⛔⛔ AN ABSENT ANSWER IS NOT A NEGATIVE ANSWER — AND A RECOVERED ONE IS
     NOT ABSENT.
@@ -426,8 +431,7 @@ async def main():
             "about those cases' behaviour. Restore API access and re-run "
             "before reading this battery as a verdict.")
     print(summary, flush=True)
-    out = "/tmp/eval_matrix_results.txt"
-    with open(out, "w") as f:
+    with open(RESULTS_PATH, "w") as f:
         f.write("\n".join(lines) + summary + "\n")
     # Three distinct outcomes, three distinct codes: 0 clean, 2 not measured,
     # 1 measured and wrong. CI reds on any non-zero, but the code alone now

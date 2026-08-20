@@ -148,3 +148,74 @@ def test_the_per_rep_reset_actually_resets(watch):
     assert watch.hits == [], (
         "a leaked marker from the previous rep survived the reset and would "
         "condemn a rep the fallback rescued")
+
+
+def test_a_DEAD_call_is_not_forgiven_by_a_LATER_recovery(watch):
+    """⛔⛔ THE ORDER MATTERS, AND ONE ORDER WAS UNTESTED. The existing guard
+    runs rescued-then-dead, which passes even if a recovery clears everything
+    — the dead call comes afterwards and its markers survive by accident.
+
+    Reverse it and the real requirement appears: call 1 dies outright, call 2
+    is rescued. The rep still contains a turn that never got an answer, so it
+    is still unmeasured. Two mutations (recovery clearing everything, and
+    removing the call-boundary banking) were GREEN against the original order
+    and are RED against this one."""
+    _emit(PRIMARY_FAILED, RETRYING, FALLBACK_FAILED)  # call 1: dead
+    _emit(PRIMARY_FAILED, RETRYING, FALLBACK_OK)      # call 2: rescued
+    assert watch.hits, (
+        "a later recovery forgave an earlier outage — the rep would be scored "
+        "on a turn that never got an answer")
+
+
+def test_main_does_not_leak_markers_between_cases(monkeypatch, capsys, tmp_path):
+    """⛔⛔ THE RESET AS `main` ACTUALLY USES IT, AND AN ASSERTION THAT CAN SEE
+    THE DIFFERENCE.
+
+    The `watch.clear()` proof above passes even when `main` calls
+    `watch.hits.clear()` — which clears a computed temporary and does nothing.
+    So this drives `main` itself.
+
+    ⭐ AND THE FIRST VERSION OF THIS TEST WAS ALSO BLIND: it asserted
+    `exit == 2`, which is true whether ONE rep was refused or every rep of
+    every case was. Mutation R4-9 stayed green against it. One refused rep and
+    a total leak are the same exit code and a completely different report.
+
+    The signal that separates them is the per-case verdict. Case 1 has a
+    genuinely refused rep and must read INFRA; case 2 is clean and must read
+    PASS. Under leakage the marker survives into case 2 and condemns it, so
+    the second verdict is what this test is really about."""
+    import asyncio
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy-for-this-proof")
+    monkeypatch.setenv("EVAL_REPS", "2")
+    monkeypatch.setattr(evalmx, "RESULTS_PATH", str(tmp_path / "results.txt"))
+
+    seen = {"n": 0}
+
+    async def fake_case(case):
+        seen["n"] += 1
+        if case["name"] == "refused once" and seen["n"] == 1:
+            _emit(PRIMARY_FAILED, RETRYING, FALLBACK_FAILED)
+            return False, "got=None want=ask"
+        return True, "got=ask ✓"
+
+    monkeypatch.setattr(evalmx, "run_case", fake_case)
+    monkeypatch.setattr(evalmx, "CASES", [
+        dict(name="refused once", msg="x", expect="ask"),
+        dict(name="entirely clean", msg="y", expect="ask"),
+    ])
+
+    with pytest.raises(SystemExit) as exc:
+        asyncio.run(evalmx.main())
+
+    out = capsys.readouterr().out
+    first = next(l for l in out.splitlines() if "refused once" in l)
+    second = next(l for l in out.splitlines() if "entirely clean" in l)
+
+    assert first.startswith("[INFRA]"), first
+    assert second.startswith("[PASS]"), (
+        "a marker leaked out of the previous case and condemned a clean one — "
+        "the run would report every case after the first outage as unmeasured "
+        "and still look like a coherent report: " + second)
+    assert "UNMEASURED (infrastructure): 1" in out
+    assert exc.value.code == 2
