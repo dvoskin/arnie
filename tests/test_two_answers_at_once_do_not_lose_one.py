@@ -296,10 +296,30 @@ def test_the_merge_reads_the_locked_row_not_the_pre_lock_snapshot():
                for c in ast.walk(n.value))}
     assert locked_names, "hold_answer never opens the mutation boundary"
 
+    # ⛔ PROVENANCE IS FOLLOWED TRANSITIVELY, not one hop. `held` is decoded
+    # from `_locked_data`, which is decoded from `locked.row` — a one-hop
+    # check would call that stale and force the merge back onto a direct
+    # `locked.…` call, which is the opposite of what this gate wants.
+    derived = set(locked_names)
+    for _ in range(8):                      # to a fixpoint; the chain is short
+        grew = False
+        for n in ast.walk(tree):
+            if not isinstance(n, ast.Assign):
+                continue
+            if {c.id for c in ast.walk(n.value)
+                    if isinstance(c, ast.Name)} & derived:
+                for t in n.targets:
+                    for sub in ast.walk(t):
+                        if isinstance(sub, ast.Name) and sub.id not in derived:
+                            derived.add(sub.id)
+                            grew = True
+        if not grew:
+            break
+
     held = [n for n in ast.walk(tree) if isinstance(n, ast.Assign)
             and any(getattr(t, "id", "") == "held" for t in n.targets)]
     assert held, "`held` is no longer assigned"
-    from_locked = any(c.id in locked_names for a in held
+    from_locked = any(c.id in derived for a in held
                       for c in ast.walk(a.value) if isinstance(c, ast.Name))
     assert from_locked, (
         "`held` is not derived from the locked row — the lock is being held "

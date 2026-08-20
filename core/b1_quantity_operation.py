@@ -1665,49 +1665,51 @@ class StaleAnswerField(RuntimeError):
 
 @dataclass(frozen=True)
 class HeldAnswerResult:
-    """⛔ THE POST-LOCK TRANSITION, TYPED *(Danny)*. `hold_answer` is the
-    atomic state-transition boundary: everything downstream — readiness, the
-    open fields, the remaining wire payload, settlement, metrics, entry
-    stamping — must consume THIS, not the objects the caller hydrated before
-    the lock. Returning only the held map left the caller reasoning from a
-    stale `interaction`, and mutating the frozen `OwnedOperation` raised
-    `FrozenInstanceError` on every shape change."""
+    """⛔ THE POST-LOCK TRANSITION, WITH EXACTLY ONE AUTHORITY *(Danny)*.
+
+    `hold_answer` is the atomic state-transition boundary: everything
+    downstream — readiness, the open fields, the remaining wire payload,
+    settlement, metrics, entry stamping — must consume THIS, not the objects
+    the caller hydrated before the lock.
+
+    ⛔⛔ `interaction`, `held` and `revision` ARE PROPERTIES, NOT FIELDS
+    *(fourth round)*. They used to be stored beside `owned`, which meant the
+    answer map existed twice — `owned.answered` and `held` — and could
+    diverge, leaving the type permitting two answer authorities while
+    claiming to have removed them. Validating copies is weaker than not
+    having copies: these now READ from `owned`, so disagreement is not
+    representable.
+    """
     owned: OwnedOperation
-    interaction: Any
-    held: dict
-    revision: int
+
+    @property
+    def interaction(self):
+        return self.owned.interaction
+
+    @property
+    def held(self) -> dict:
+        return self.owned.answered
+
+    @property
+    def revision(self) -> int:
+        return self.owned.revision
 
     def __post_init__(self):
-        """⛔ THE DUPLICATED FIELDS CANNOT BECOME TWO AUTHORITIES *(Danny,
-        third round)*. `interaction` and `revision` are conveniences: the
-        first is also reachable as `owned.interaction`, the second as
-        `owned.revision` (the refreshed locked ROW) and as the interaction's
-        own generation. Three names for one fact is exactly how a caller ends
-        up rendering one surface while settlement counts another, so
-        disagreement is refused AT CONSTRUCTION rather than asserted in a
-        test — this type cannot exist in an inconsistent state.
-
-        The three are equal by design, not by luck: the row is created at the
-        interaction's revision, and `LockedOperation.write` moves the row's
-        revision ONLY when the caller reports a shape change, which is the
-        same moment the rebuilt interaction gets its new generation."""
-        if self.interaction is not getattr(self.owned, "interaction", None):
+        """The one comparison that survives: the ROW's generation against the
+        INTERACTION's. Those are two different stored facts — a column and a
+        payload — and they are equal by design rather than by luck, because
+        the row is created at the interaction's revision and
+        `LockedOperation.write` moves the row's revision only when the caller
+        reports a shape change, the same moment the rebuilt interaction gets
+        its new generation. A disagreement means one of them was written
+        without the other, so refuse rather than hand it on."""
+        _generation = getattr(self.owned.interaction, "revision", None)
+        if _generation is not None and int(self.owned.revision) != int(_generation):
             raise ValueError(
-                "HeldAnswerResult.interaction is not the one carried by "
-                "`owned` — the caller would render from one and settle from "
-                "the other")
-        _row_revision = int(getattr(self.owned, "revision", 0) or 0)
-        _generation = getattr(self.interaction, "revision", None)
-        if int(self.revision) != _row_revision:
-            raise ValueError(
-                f"HeldAnswerResult.revision {self.revision} does not match "
-                f"the refreshed locked row {_row_revision}")
-        if _generation is not None and int(self.revision) != int(_generation):
-            raise ValueError(
-                f"HeldAnswerResult.revision {self.revision} does not match "
-                f"the interaction generation {_generation} — the answer "
-                f"surface and the operation disagree about which generation "
-                f"this is")
+                f"the locked row is at revision {self.owned.revision} and the "
+                f"answer surface at generation {_generation} — the operation "
+                f"and what it is asking disagree about which generation this "
+                f"is")
 
 
 async def hold_answer(db, *, owned: OwnedOperation, patch) -> "HeldAnswerResult":
@@ -1770,7 +1772,22 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> "HeldAnswerResult"
             f"field {patch.field_id!r} is not in the locked interaction "
             f"(open: {sorted(_live_ids)}) — a concurrent shape change retired "
             f"it, so this tap is stale")
-    held = locked.answered()
+    # ⛔⛔ THE STRICT DECODER, NOT THE PERMISSIVE ACCESSOR *(Danny, fourth
+    # round)*. `locked.answered()` logs an unreadable held patch and SKIPS it
+    # — and `_decode_answered` exists precisely to say that skipping one is
+    # forbidden: the field then looks unanswered, the question is re-asked,
+    # and the meal commits without what the user already told us. Under this
+    # lock it was worse than a re-ask: the reduced map was written back as
+    # `answered` and RE-SIGNED with a fresh valid fingerprint, so an answer
+    # that became unreadable between `owning()` and the lock was deleted and
+    # the deletion was laundered as legitimate. Refuse before any mutation.
+    try:
+        held = _decode_answered(_locked_data, owned.operation_id)
+    except Exception as exc:
+        raise FingerprintUnreadable(
+            f"{owned.operation_id} holds an answer that cannot be read under "
+            f"the lock — refusing before any mutation or re-signing: {exc}"
+        ) from exc
     held[str(patch.field_id)] = patch
     data = dict(locked.payload)
     # the merge works on the LOCKED material
@@ -1838,17 +1855,23 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> "HeldAnswerResult"
                 "retracted=%d operation_lock_wait_ms=%d", owned.operation_id,
                 patch.field_id, len(open_fields(effective, held)),
                 len(retracted), locked.lock_wait_ms)
-    # ⛔ THE WHOLE POST-LOCK STATE, in one typed value. A new frozen
-    # `OwnedOperation` built from the LOCKED authority — the refreshed row,
-    # the interaction this transition ends with, the locked item and the
-    # merged answers — so no downstream reader can reach a pre-lock object.
-    import dataclasses as _dc
-
-    return HeldAnswerResult(
-        owned=_dc.replace(owned, row=locked.row, interaction=effective,
-                          item=dict(locked_item), answered=dict(held)),
-        interaction=effective, held=held,
-        revision=int(getattr(locked.row, "revision", 0) or 0))
+    # ⛔ BUILT ENTIRELY FROM THE LOCKED AUTHORITY *(Danny, fourth round)*.
+    # This used to be `dataclasses.replace(owned, ...)`, which carried the
+    # PRE-LOCK `locale`, `cohort`, `decision_id`, `candidate_set_id` and
+    # `asked_at_stamp` through untouched — so a metadata change that landed
+    # between the two reads left the persisted row and the returned operation
+    # disagreeing, with the returned one looking authoritative. Every field
+    # now comes from the refreshed locked row and its decoded payload.
+    return HeldAnswerResult(owned=OwnedOperation(
+        row=locked.row,
+        interaction=effective,
+        item=dict(locked_item),
+        locale=str(_locked_data.get("locale") or "en"),
+        decision_id=str(_locked_data.get("decision_id") or ""),
+        candidate_set_id=str(_locked_data.get("candidate_set_id") or ""),
+        answered=dict(held),
+        asked_at_stamp=_decode_asked_at(_locked_data),
+        cohort=str(_locked_data.get("cohort") or "")))
 
 
 def _replace_interaction(owned: OwnedOperation, interaction) -> OwnedOperation:

@@ -740,8 +740,8 @@ async def test_2_the_transition_cannot_carry_two_authorities(db, make_user):
     import dataclasses as _dc
 
     from core import b1_quantity_operation as ops
-    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
-                                            owning)
+    from core.b1_quantity_operation import (HeldAnswerResult, ID_ADDRESSED,
+                                            open_operation, owning)
     from core.semantics import (ClarificationAttribute, ClarificationGroup,
                                 ClarificationInteraction, Provenance,
                                 ResponseType, SetAddedFatPresent,
@@ -769,29 +769,173 @@ async def test_2_the_transition_cannot_carry_two_authorities(db, make_user):
         event_id=group.event_id, field_id=fat.field_id, present=True,
         provenance=Provenance.USER_SELECTED))
 
-    # all three agree, and they agree at a revision that actually MOVED
-    assert transition.revision == 1
+    # ⛔ THE DUPLICATES ARE GONE, NOT MERELY VALIDATED. `interaction`, `held`
+    # and `revision` are PROPERTIES of the single `owned` field, so a second
+    # answer map cannot exist to diverge from the first.
+    assert [f.name for f in _dc.fields(transition)] == ["owned"], (
+        "HeldAnswerResult stores something beside `owned` again — a stored "
+        "copy is a second authority waiting to disagree")
+    for name in ("interaction", "held", "revision"):
+        assert isinstance(getattr(type(transition), name), property), (
+            f"`{name}` is a stored field again, not derived from `owned`")
+    assert transition.held is transition.owned.answered
     assert transition.interaction is transition.owned.interaction
-    assert transition.revision == transition.interaction.revision
     assert transition.revision == transition.owned.revision
 
-    # and disagreement cannot be constructed
-    with pytest.raises(ValueError):
-        _dc.replace(transition, revision=transition.revision + 1)
-    with pytest.raises(ValueError):
-        _dc.replace(transition, interaction=owned.interaction)
+    # they agree at a revision that actually MOVED (1, not the trivial 0 == 0)
+    assert transition.revision == 1
+    assert transition.revision == transition.interaction.revision
 
-    # ⛔ AND THE ROW HALF IS PROVEN INDEPENDENTLY OF THE GENERATION HALF.
-    # Bumping `revision` alone trips BOTH checks, so it cannot show that the
-    # refreshed locked ROW is consulted at all — the generation check would
-    # mask a row check that had been quietly reduced to a tautology. Here the
-    # generation still agrees and only the row has drifted.
+    # ⛔ AND THE ROW/GENERATION DISAGREEMENT IS STILL REFUSED. Those are two
+    # separately stored facts — a column and a payload — so this is the one
+    # comparison that survives the removal of the copies.
     class _DriftedRow:
         revision = 99
 
     with pytest.raises(ValueError):
-        _dc.replace(transition,
-                    owned=_dc.replace(transition.owned, row=_DriftedRow()))
+        HeldAnswerResult(owned=_dc.replace(transition.owned,
+                                           row=_DriftedRow()))
+
+
+@pytest.mark.asyncio
+async def test_2_an_answer_corrupted_before_the_lock_is_never_deleted_and_re_signed(
+        db, make_user, monkeypatch):
+    """⛔⛔ P17 PHASE 2, FOURTH ROUND *(Danny)*. THE ANSWER MAP IS NOT COVERED
+    BY THE DIGEST, which is what made this reachable: `fingerprint_of_payload`
+    signs the interaction and the item, so `answered` can become unreadable
+    without invalidating anything, and the strict decoder passes.
+
+    `hold_answer` then merged through `LockedOperation.answered()`, which LOGS
+    an unreadable held patch and SKIPS it — while `_decode_answered` exists to
+    say that skipping one is forbidden, because the field then looks
+    unanswered, the question is re-asked, and the meal commits without what
+    the user already told us. Under the lock it was worse than a re-ask: the
+    reduced map was written back as `answered` and RE-SIGNED with a fresh
+    valid fingerprint, so the lost answer looked legitimate afterwards.
+
+    The prior payload must survive byte-for-byte and nothing may be written."""
+    import handlers.tool_executor as te
+    from core import b1_answer_turn
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (FingerprintUnreadable,
+                                            ID_ADDRESSED, open_operation,
+                                            owning)
+    from core.semantics import Provenance, SetPreparation
+    from db.models import FoodEntry, LedgerEvent
+    from tests.test_a_scan_is_binding import _log
+
+    user = await make_user()
+    log = await _log(db, user)
+    # ids captured up front: every commit/rollback below expires these
+    # objects, and touching an expired attribute lazy-loads (MissingGreenlet).
+    user_id, log_id = user.id, log.id
+    tid = f"ios:corruptheld-{user_id}"
+    op_id, inter = await _interaction(db, user, tid)
+    two, prep = _two_field(inter, operation_id=op_id, revision=0)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=two, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+
+    # the user answers ONE question for real, so a genuine held patch exists
+    owned = await owning(db, user)
+    await ops.hold_answer(db, owned=owned, patch=SetPreparation(
+        event_id=two.groups[0].event_id, field_id=prep.field_id,
+        preparation_id="grilled", provenance=Provenance.USER_SELECTED))
+    await db.commit()
+
+    await db.refresh(user)        # the commit above expired it; `owning()`
+    owned = await owning(db, user)                   # valid at this point
+    # ...and the held patch becomes unreadable AFTER that read. The digest
+    # covers interaction+item, so this does NOT disturb it: the operation
+    # still verifies, and only the answer map is broken.
+    await _repayload(db, op_id, lambda d: {
+        **d, "answered": {k: {"patch_type": "no_such_patch_type"}
+                          for k in (d.get("answered") or {})}})
+    from db.models import PendingOperation
+
+    async def _payload():
+        return json.loads((await db.execute(
+            select(PendingOperation.canonical_payload).where(
+                PendingOperation.operation_id == op_id))).scalar_one())
+
+    before = await _payload()
+    assert before["answered"], "the fixture lost the held answer it needs"
+
+    with pytest.raises(FingerprintUnreadable):
+        await ops.hold_answer(db, owned=owned, patch=_a_live_patch(inter))
+    await db.rollback()
+
+    after = await _payload()
+    assert after == before, (
+        "the operation was mutated after an unreadable held answer — the "
+        "prior payload must survive untouched")
+    assert after["fingerprint"] == before["fingerprint"], (
+        "the reduced state was RE-SIGNED, which launders the deletion")
+    assert set(after["answered"]) == set(before["answered"]), (
+        "the unreadable answer was dropped from the map")
+
+    # and a real answer turn settles nothing and never reaches legacy
+    async def forbidden(*a, **k):
+        raise AssertionError("legacy executor ran on an unreadable answer map")
+
+    monkeypatch.setattr(te, "execute_tool_calls", forbidden)
+    await db.refresh(user)                  # the rollback above expired it
+    turn = await b1_answer_turn.handle(
+        db, user=user, source_turn_id=f"{tid}-ans", message="2 servings")
+    await db.commit()
+    rows = (await db.execute(select(FoodEntry).where(
+        FoodEntry.daily_log_id == log_id))).scalars().all()
+    assert rows == [], [r.parsed_food_name for r in rows]
+    events = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.user_id == user_id))).scalars().all()
+    assert events == []
+    if turn is not None and getattr(turn, "outcome", None) is not None:
+        assert str(getattr(turn.outcome, "name", turn.outcome)).upper() != "APPLIED"
+    final = await _payload()
+    assert final["fingerprint"] == before["fingerprint"]
+
+
+@pytest.mark.asyncio
+async def test_2_the_returned_operation_carries_the_locked_metadata(db, make_user):
+    """⛔ P17 PHASE 2, FOURTH ROUND *(Danny)*. The returned operation used to
+    be `dataclasses.replace(owned, ...)`, which updates the row, interaction,
+    item and answers — and silently carries the PRE-LOCK `locale`, `cohort`,
+    `decision_id`, `candidate_set_id` and `asked_at_stamp` through untouched.
+
+    A metadata change that lands between the two reads then leaves the
+    persisted row and the returned operation disagreeing, with the returned
+    one looking authoritative: the funnel row is joined on `cohort`, and the
+    reply is rendered in `locale`. Every field must come from the refreshed
+    locked row and its decoded payload."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:lockedmeta-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+    assert (owned.locale, owned.cohort) == ("en", "allowlist")
+
+    # the metadata moves AFTER that read. The digest covers interaction+item,
+    # so this is a legitimate payload the strict decoder still accepts.
+    await _repayload(db, op_id, lambda d: {**d, "locale": "ru",
+                                           "cohort": "general"})
+
+    transition = await ops.hold_answer(db, owned=owned,
+                                       patch=_a_live_patch(inter))
+    assert transition.owned.locale == "ru", (
+        f"the returned operation reports the PRE-LOCK locale "
+        f"{transition.owned.locale!r}; the row says 'ru'")
+    assert transition.owned.cohort == "general", (
+        f"the returned operation reports the PRE-LOCK cohort "
+        f"{transition.owned.cohort!r}; the row says 'general'")
 
 
 def test_2_the_locked_read_refreshes_the_row_by_construction():
