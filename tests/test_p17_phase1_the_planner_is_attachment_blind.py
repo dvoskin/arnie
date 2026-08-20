@@ -996,6 +996,75 @@ async def test_f3_a_multiword_quantifier_the_parser_declares_is_never_identity(
         begin_turn()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message", ["a bar", "an ounce", "a serving",
+                                     "I had a bar", "a bar of this"])
+async def test_f3_an_article_is_a_quantity_of_one(db, make_user, message):
+    """⛔ FOURTH-ROUND REGRESSION: the retired `_AMOUNT_RE` listed `a|an`
+    among the number words, so "a bar" / "an ounce" stated an amount. In the
+    parser they were only LEADING determiners before another core, so those
+    phrases vanished — and without consumption language (or when the label
+    omits the unit word) the turn refused instead of binding. `a` and `an`
+    may head the quantifier when they introduce no other core."""
+    from skills.nutrition.product_acquisition import BOUND, attach, begin_turn
+    from core.scan_authority import (decide_from_plan, fresh_statement_signal,
+                                     parse_amount_phrases)
+    phrases = parse_amount_phrases(message)
+    assert any(p.head_is_unit for p in phrases), (message, phrases)
+    # the phrase states an amount; when the message ALSO states consumption
+    # that label wins (it is checked first) — either way it is a statement
+    assert fresh_statement_signal(message) in ("amount", "consumption"), message
+    snap = await _caramel(db)
+    plan = _plan({"action": "log", "_message": message,
+                  "tool_calls": [_log_op("Caramel Cashew", "1 bar")]})
+    begin_turn()
+    attach(_ev(snap))
+    try:
+        assert decide_from_plan(plan, _ev(snap)).outcome == BOUND, message
+    finally:
+        begin_turn()
+
+
+@pytest.mark.asyncio
+async def test_f3_an_article_quantity_still_checks_the_brand_it_names(db, make_user):
+    """"a Barebells bar" binds ONLY when the evidence says Barebells — the
+    article supplies the quantity, the modifier still supplies identity."""
+    from skills.nutrition.product_acquisition import (BOUND, UNDECIDABLE,
+                                                      attach, begin_turn)
+    from core.scan_authority import decide_from_plan
+    msg = "a Barebells bar"
+    plan = _plan({"action": "log", "_message": msg,
+                  "tool_calls": [_log_op("Caramel Cashew", "1 bar")]})
+    snap = await _caramel(db)                            # brand: Barebells
+    begin_turn()
+    attach(_ev(snap))
+    try:
+        assert decide_from_plan(plan, _ev(snap)).outcome == BOUND
+    finally:
+        begin_turn()
+    other = _fake_ev(9, name="Chocolate Dough", brand="Quest")
+    begin_turn()
+    attach(other)
+    try:
+        d = decide_from_plan(plan, other)
+        assert d.outcome == UNDECIDABLE and "barebells" in d.reason, d.reason
+    finally:
+        begin_turn()
+
+
+def test_f3_the_definite_article_is_not_a_quantity():
+    """`the` quantifies nothing: "the bar" states no amount, so it cannot
+    reach the identity-free bind. (Only `a`/`an` are quantities of one.)"""
+    from core.scan_authority import fresh_statement_signal, parse_amount_phrases
+    assert parse_amount_phrases("the bar") == []
+    assert fresh_statement_signal("the bar") == ""
+    assert fresh_statement_signal("the serving") == ""
+    # and the article cores still do not fire when they introduce another core
+    from core.scan_authority import parse_amount_phrases as parse
+    p = parse("a couple of bars")[0]
+    assert len(p.quantifier) == 2, p          # "a couple", not "a" alone
+
+
 def test_f3_the_parser_is_the_one_seam_for_both_readers():
     """The amount SIGNAL and the identity ACCOUNTING read the same typed
     spans — the disagreement that produced both halves of this blocker

@@ -286,6 +286,9 @@ _QUANT_CORE_WORDS = (
 )
 _QUANT_DETERMINERS = frozenset("a an the this that these those my our your "
                                "his her their its".split())
+#: the determiners that are ALSO a quantity of one — "a bar" is an amount,
+#: "the bar" is not
+_ARTICLE_CORES = frozenset({"a", "an"})
 _QUANT_CORE = frozenset(_QUANT_CORE_WORDS)
 
 #: how far past the quantifier the head may sit before the phrase is abandoned
@@ -329,6 +332,17 @@ def parse_amount_phrases(message: str) -> list:
             quant.append(j)                                  # leading "a"/"the"
             j += 1
         if j < n and (_is_number(toks[j]) or toks[j] in _QUANT_CORE):
+            quant.append(j)
+            j += 1
+        elif j < n and toks[j] in _ARTICLE_CORES:
+            # ⛔ THE ARTICLE IS ITSELF A QUANTITY *(fourth-round regression)*.
+            # The retired regex listed `a|an` among the number words, so "a
+            # bar" / "an ounce" stated an amount. In the parser they were only
+            # LEADING determiners before another core, so those phrases
+            # vanished and — without consumption language, or when the label
+            # omits the unit word — the turn refused instead of binding. `a`
+            # and `an` may head the quantifier when they are not introducing
+            # another core; `the` may not ("the bar" quantifies nothing).
             quant.append(j)
             j += 1
         else:
