@@ -721,3 +721,130 @@ The transition now **subscripts** (`_locked_data["locale"]`) rather than default
 5. Then restack Phase 3 (`review/p17-phase3-cf14`) on merged main.
 
 **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED** · rollout NOT re-enabled.
+
+---
+
+## TRANCHE Q — rounds 2–3 (2026-08-20, PR #79, unmerged)
+
+Ordered by Danny **ahead of Phase 3**, from the live canary that logged
+170.1 g against a stated 100 g. Round 1 (the raw-substring fix) was approved;
+rounds 2–3 are the two blockers found after it.
+
+### Round 2 — the eval battery's flake was hiding a regression
+
+The `environment: Cloud` fix made the battery genuinely run (3m 47s, 22 cases
+× 3 reps) instead of aborting at the key gate in 27 s. Result: 21/22 clean,
+0 failed outright, 1 flaky — and the flaky case's two failing reps were
+**Anthropic credit exhaustion**, not behaviour.
+
+⛔⛔ **Chasing it found a regression this branch introduced, in both
+directions.** The case is `"had a bowl of white rice and two fried eggs"`,
+expecting an ask. Measured against deployed main `76076b6`:
+
+| case | main `76076b6` | PR `41297ca` | fixed |
+|---|---|---|---|
+| `a bowl`, `basis=estimate`/`regular` | False | **True** ← regression | False |
+| `a bowl`, no `basis` | True | True | True |
+| `two fried eggs`, `basis=estimate` | False | False ← req. 1 unmet | True |
+| `100g` chicken, `basis=estimate` | False | True | True |
+| `a scoop` as `1 tbsp` | False | False | False |
+
+**Over-reach.** `normalize_quantity("a bowl of white rice")` reports
+`user_stated_amount=1`, identical to `"1 bowl"`, because it reports what a
+phrase **denotes** — not whether the user counted anything. Harmless while the
+`basis` veto sat above that rung; moving the veto below it (so a typed `100g`
+could outrank `basis`) handed the indefinite article the veto's authority.
+⭐ **A GUARD THAT MOVES MUST BE JUDGED AGAINST EVERY PATH IT NOW SITS BELOW.**
+
+The existing bare-article guard missed it because its fixture is `1 tbsp` — a
+MEASURED unit, where the unit check vetoes independently. Only a unit carrying
+no measure ("bowl") leaves the article alone with the decision. ⭐ **its single
+fixture was load-bearing in a way nothing had stated.**
+
+**Under-reach.** `"two fried eggs"` is a quantity the user typed and `basis`
+was overruling it exactly as `100g` was: the normalizer takes whatever word
+sits where a unit usually sits and reported `user_stated_unit="fried"`, so a
+veto built to stop "scoop" masquerading as "tbsp" fired on a word that is not
+a unit at all.
+
+### Round 3 — a count has to be THIS food's count (Danny's blocker)
+
+`_literal_amount_with_unit` drops the unit requirement for a COUNT unit —
+correctly; people write "15 peanut m&m", never "15 pieces of peanut m&m". The
+cost was never stated: with no unit to bind to, **any** number in the clause
+satisfied the match, and round 1 had just removed the `basis` veto behind it.
+
+⭐⭐ **THE REPORTED EXAMPLE DOES NOT REPRODUCE.** In `"I had 2 tacos and fried
+eggs"`, `_clause_for` already cuts the eggs clause to `"fried eggs"` and the
+`2` is never in scope. The defect is real but needs a connective the splitter
+does **not** cut on: `"fried eggs after 2 tacos"` → clause
+`"fried eggs after 2 tacos"` → stated **True** at `abf615d`. Both shapes are
+pinned so the guard cannot be weakened back to the one that happened to be
+safe.
+
+Fix: a count literal must bind to this food's own words — its unit or any
+recognised word of its name — inside a window that stops at a clause-breaking
+connective or at the next number. **Head-noun-only was tried and refused two
+shipped fixtures** (`Peanut M&Ms` tokenises to `peanut/m/ms`; the count
+precedes an adjective in `"15 peanut m&m"`).
+
+Two things that fix found on its own:
+
+* **the round-2 unit stand-down had the same hole** — it asked whether the
+  item's unit appeared *anywhere* in the clause, and in `"fried eggs after 2
+  tacos"` the word "eggs" is indeed there. Same question, one helper now.
+* ⛔ **sharing ONE noun set between the two callers put the 190-calorie defect
+  straight back**: for `"1 scoop of peanut butter"` carried as 1 tbsp the
+  food's own name sits beside the number, so a food-word set stood the unit
+  veto down. "Does a count belong to this food" and "did the user name this
+  unit" are different questions. Caught by the existing guard, same run.
+
+### The battery: an absent answer is not a negative answer
+
+A refused API call was scored `got=None want=ask` and reported
+`[FLAKY] … (1/3)`, exit 1 — the battery's **loudest behavioural signal**,
+borrowed by an outage. `core/llm.py` swallows the model failure deliberately
+(a dead turn must still reply), so the signature is only in the log line it
+writes; a handler now watches for it and marks the rep **unscored**.
+Three outcomes, three exit codes: **0** clean, **2** not measured, **1**
+measured and wrong. Verified without spending credit — the handler catches the
+exact billing line from the PR #79 run and an auth line, ignores ordinary and
+behavioural lines, and all four classification paths were driven end to end.
+
+### Gates
+
+* **Frozen suite** (PG-inclusive, `TEST_POSTGRES_URL` set) on `81f8605`:
+  `PYTEST_EXIT=0`, **9962 passed / 25 skipped / 17 deselected / 4 xfailed**;
+  `HEAD` and `HEAD^{tree}` identical before and after; worktree clean both
+  times. Baselines: `abf615d` 9949, `0df6a1b` 9960.
+  ⛔ **the first round-2 freeze was UNDER-INCLUSIVE** — 9851 passed / **123
+  skipped** because `TEST_POSTGRES_URL` was unset; the count is the only thing
+  that reveals it, and it was green.
+* **Mutations: 9 RED, 0 GREEN, 1 INVALID**, each `applied=1`.
+  ⛔⛔ **THE SWEEP WAS WRONG ONCE AND READ AS A FINDING.** M7 mutated
+  `_BINDING_BREAK` to `frozenset() or frozenset({...})` — an empty frozenset is
+  **falsy**, so `or` returned the full set. `applied=1`, GREEN, nothing
+  changed, and it read as "the break words are redundant". ⭐ **`applied`
+  proves the anchor matched; it does NOT prove the edit bit.** Every case now
+  also measures a behaviour witness on the mutated module and reports
+  **INVALID**, not GREEN.
+  * **Two guards were real and unproven** — found only because the sweep was
+    then honest: the binding **window** (`"2 corn tortilla chicken tinga fried
+    eggs"`) and the **next-number break** (`"2 tacos 3 fried eggs"` states
+    *three* eggs). Both flipped under mutation with no test noticing. A guard
+    nobody can fail is where a guard that isn't there is.
+  * **M5 is INVALID, not proven**: reverting `_canon_unit` to `.rstrip("s")` at
+    the unit comparison changes no observable behaviour — the stand-down and
+    the literal fallback both canonicalise. **Kept** so an existing comparison
+    uses the module's one unit vocabulary instead of an ad-hoc suffix strip two
+    lines from `_unit_nouns`'s `_canon_unit`. A judgement, not a proof; open
+    for Danny to overrule.
+
+### Open, and not mine to close
+
+* **The Anthropic balance.** The battery cannot return a verdict until it is
+  topped up. That is a payment on Danny's account.
+* **Battery rerun** after the top-up — cases scored, not the check colour.
+
+**Tranche D (P0): untouched.** **P17g: BLOCKED** · **END-TO-END SCAN:
+BLOCKED** · PR #79 Draft, unmerged, awaiting approval.
