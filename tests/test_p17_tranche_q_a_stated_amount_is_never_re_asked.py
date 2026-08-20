@@ -501,6 +501,78 @@ def test_half_and_range_bind_to_their_food(message, item, stated, why):
     assert _item_is_stated(dict(item, basis="estimate"), message) is stated, why
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# ROUND 5 — NEARNESS IS NOT AGREEMENT
+#
+# Round 4 bound `half` and a range to their food with
+# `_binds_nearby(..., _item_nouns(it))`. `_item_nouns` includes every word of
+# the FOOD NAME, which is right for a bare count — "15 peanut m&m" binds on
+# "peanut" — and wrong the moment the item is measured in something the
+# phrase contradicts:
+#
+#     "half a scoop of peanut butter"  as 0.5 TBSP  -> "peanut" binds
+#     "5-6 oz grilled chicken"         as 5.5 G     -> "chicken" binds
+#
+# The food's own name rescued a unit that disagreed. The first is the scoop
+# defect for the third time — the 190-calorie assumption presented as the
+# user's words — and the second is a 28× mass error.
+#
+# ⭐ THE DIGIT PATH NEVER HAD THIS because `_literal_amount_with_unit` splits
+# measured units from counts and demands agreement for the former. Round 4
+# routed two new paths around that distinction instead of through it.
+#
+#     measured item  -> the phrase must NAME a canonically compatible unit
+#     count item     -> nearby food/unit binding is enough
+# ══════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.parametrize("message,item,stated,why", [
+    # ⛔⛔ the conflicts
+    ("half a scoop of peanut butter",
+     {"food": "Peanut butter", "amount": 0.5, "unit": "tbsp"}, False,
+     "they said scoop, we said tablespoon — the 190-calorie defect, reached "
+     "through the half rung this time"),
+    ("French fries after 5-6 oz chicken",
+     {"food": "French fries", "amount": 5.5, "unit": "g"}, False,
+     "a foreign food AND a conflicting unit"),
+    ("5-6 oz grilled chicken",
+     {"food": "Grilled chicken", "amount": 5.5, "unit": "g"}, False,
+     "oz is not g — 5.5 g of chicken is a 28x mass error"),
+    # ⭐ the matching-unit twins: the rule must not refuse real statements
+    ("half a tbsp of peanut butter",
+     {"food": "Peanut butter", "amount": 0.5, "unit": "tbsp"}, True,
+     "the user named this item's own unit"),
+    ("half a tablespoon of peanut butter",
+     {"food": "Peanut butter", "amount": 0.5, "unit": "tbsp"}, True,
+     "spelled in full, canonically the same unit"),
+    ("5-6 oz grilled chicken",
+     {"food": "Grilled chicken", "amount": 5.5, "unit": "oz"}, True,
+     "the range names the item's own unit"),
+    ("half a cup of greek yogurt",
+     {"food": "Greek yogurt", "amount": 0.5, "unit": "cup"}, True,
+     "measured item, unit named beside the quantity"),
+    # ⭐ the COUNT twins: nearness alone still binds where no unit can conflict
+    ("half a banana",
+     {"food": "Banana", "amount": 0.5, "unit": "banana"}, True,
+     "a count noun carries no contradiction"),
+    ("ate half the banana",
+     {"food": "Banana", "amount": 0.5, "unit": "banana"}, True,
+     "count, and no unit word at all"),
+    ("like 5-6 fries",
+     {"food": "French fries", "amount": 5.5, "unit": "piece"}, True,
+     "a range on a count item binds on the food's own noun"),
+    ("6 chicken nuggets",
+     {"food": "Chicken nuggets", "amount": 6, "unit": "piece"}, True,
+     "the digit path's count behaviour is unchanged"),
+])
+def test_a_measured_item_needs_a_compatible_unit_not_just_nearness(
+        message, item, stated, why):
+    """⛔⛔ NEARNESS IS NOT AGREEMENT. `_item_nouns` includes the food's name,
+    so on a MEASURED item the food's own words could rescue a unit that
+    contradicts it. Measured items must prove the unit; count items have no
+    unit to contradict and keep binding on nearness."""
+    assert _item_is_stated(dict(item, basis="estimate"), message) is stated, why
+
+
 def test_the_truffle_fries_case_survives_the_range_binding():
     """⛔ THE GUARD ON ROUND 4. The stated-range rung exists for this exact
     shipped message: the count that settles "some fries" sits in a LATER

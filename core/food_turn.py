@@ -1538,6 +1538,38 @@ def _binds_nearby(text: str, nouns: frozenset) -> bool:
     return False
 
 
+def _quantity_binds_to_item(text: str, it: dict) -> bool:
+    """Starting at a quantity phrase, does it belong to THIS item — food AND
+    unit?
+
+    ⛔⛔ NEARNESS IS NOT AGREEMENT *(P17 Tranche Q, round 5)*. Round 4 bound
+    `half` and a range with `_binds_nearby(..., _item_nouns(it))`, and
+    `_item_nouns` includes every word of the FOOD NAME. That is right for a
+    bare count — "15 peanut m&m" binds on "peanut" — and wrong the moment the
+    item is measured in something the phrase contradicts, because the food's
+    own name then rescues a unit that disagrees:
+
+        "half a scoop of peanut butter"  as 0.5 TBSP  -> "peanut" bound it
+        "5-6 oz grilled chicken"         as 5.5 G     -> "chicken" bound it
+
+    The first is the scoop defect for the third time; the second is a 28×
+    mass error.
+
+    ⭐ THE DIGIT PATH NEVER HAD THIS. `_literal_amount_with_unit` splits
+    measured units from counts and demands agreement for the former; round 4
+    routed two new paths AROUND that distinction instead of through it. So
+    this is where the distinction now lives for all of them:
+
+      * measured item -> the phrase must NAME a canonically compatible unit,
+        and the food's name cannot stand in for one
+      * count item    -> nothing can contradict a count noun, so nearby
+        food-or-unit binding is enough
+    """
+    if _canon_unit(it.get("unit") or "") in _MEASURED_UNITS:
+        return _binds_nearby(text, _unit_nouns(it))
+    return _binds_nearby(text, _item_nouns(it))
+
+
 def _half_binds_to_food(haystack: str, f: float, it: dict) -> bool:
     """"Half" states an amount without writing a digit — and still has to say
     whose amount it is.
@@ -1557,7 +1589,7 @@ def _half_binds_to_food(haystack: str, f: float, it: dict) -> bool:
     if f != 0.5:
         return False
     for m in re.finditer(r"\bhalf\b", (haystack or "").lower()):
-        if _binds_nearby(haystack[m.start():], _item_nouns(it)):
+        if _quantity_binds_to_item(haystack[m.start():], it):
             return True
     return False
 
@@ -1853,7 +1885,7 @@ def _item_is_stated(it: dict, message: str) -> bool:
                 continue
             if not (_lo <= _hi and (_lo - 0.01) <= f <= (_hi + 0.01)):
                 continue
-            if _binds_nearby((_hay or "")[_m.start():], _item_nouns(it)):
+            if _quantity_binds_to_item((_hay or "")[_m.start():], it):
                 return True
     # ── THE BASIS VETO, AND WHY IT SITS EXACTLY HERE ───────────────────────
     #
