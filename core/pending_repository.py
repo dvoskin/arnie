@@ -409,8 +409,16 @@ async def locked_operation(db, operation_id: str) -> LockedOperation:
     from db.models import PendingOperation
 
     started = time.monotonic()
+    # ⛔ THE LOCKED READ MUST REFRESH *(P17 Phase 2, third round)*. SQLAlchemy
+    # does NOT repopulate an object already in the identity map from a later
+    # query: without `populate_existing`, a row hydrated BEFORE the lock (by
+    # `owning()`) is returned unchanged after waiting for another writer, so
+    # the "locked" payload is the pre-lock snapshot and a concurrent shape
+    # change is read as if it had never happened. The lock then guards a
+    # decision taken on stale material.
     statement = select(PendingOperation).where(
-        PendingOperation.operation_id == operation_id)
+        PendingOperation.operation_id == operation_id).execution_options(
+            populate_existing=True)
     if db.bind is not None and db.bind.dialect.name != "sqlite":
         statement = statement.with_for_update()
     row = (await db.execute(statement)).scalar_one_or_none()

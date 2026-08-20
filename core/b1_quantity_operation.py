@@ -794,6 +794,14 @@ LABEL_TEXT = "label_text"
 #: refused rather than rendered.
 RECOGNISED_CAPABILITIES = frozenset({ID_ADDRESSED, LABEL_TEXT})
 
+#: ⛔ THE SLICES THIS TABLE MAY HOLD BESIDE OURS *(P17 Phase 2, third round)*.
+#: `owning()` may skip a row ONLY when it positively names one of these — a
+#: payload that belongs to another owner. An UNKNOWN slice is not evidence
+#: that the operation is unowned; it is an operation we cannot read, and
+#: "not proven to be B-1" must never mean "safe for legacy". Empty today:
+#: `b1_quantity` is the only slice written, so anything else repairs.
+RECOGNISED_OTHER_SLICES = frozenset()
+
 #: THE GENERATION OF THE QUESTION ITSELF — wording and option selection, as the
 #: user experiences them. Follows `core/food_ledger`'s existing convention
 #: (INTERPRETER_VERSION / POLICY_VERSION / RENDERER_VERSION) rather than
@@ -1413,12 +1421,30 @@ async def owning(db, user) -> Optional[OwnedOperation]:
         # this question, NOT the right to accept one that was. Skipping the
         # row here would drop a late but unmistakable answer on the floor,
         # which is its own silent loss. See `OwnedOperation.expired`.
+        # ⛔ ONLY AN EXPLICITLY RECOGNISED *DIFFERENT* SLICE MAY BE SKIPPED
+        # *(P17 Phase 2, third round)*. The prefilter used to skip invalid
+        # JSON, a non-object payload and a MISSING slice too — bypassing the
+        # strict decoder entirely, and, with no other row, returning None so
+        # the turn fell to legacy. An unreadable payload is not evidence that
+        # the operation is unowned; it is an operation we cannot read, and it
+        # still owns the meal.
+        _readable = True
         try:
             data = json.loads(row.canonical_payload or "{}")
         except Exception:
-            data = {}
-        if not isinstance(data, dict) or data.get("slice") != "b1_quantity":
-            continue
+            data, _readable = {}, False
+        _slice = data.get("slice") if isinstance(data, dict) else None
+        if _readable and _slice in RECOGNISED_OTHER_SLICES:
+            continue        # positively another slice: genuinely not ours
+        # ⛔ AND NOTHING ELSE IS DECIDED HERE *(P17 Phase 2, third round)*.
+        # This block used to ALSO detect invalid JSON, a non-object payload
+        # and a missing/unknown slice, and return the repairing operation
+        # itself — a SECOND DOOR that pre-empted the strict decoder below and
+        # had to be kept in agreement with it forever. Every one of those
+        # cases is already refused by `_decode_stored_payload`, so the door is
+        # gone: unreadability is diagnosed in exactly one place, and this
+        # prefilter now decides one thing only — is this row a positively
+        # recognised DIFFERENT slice.
         # ⛔ THE SAME STRICT DECODE AS THE REUSE SEAM *(P17 Phase 2, second
         # round)*. Verification used to live only on the ask side: a payload
         # edited after the write refused a REUSE while THIS path read it
@@ -1431,10 +1457,16 @@ async def owning(db, user) -> Optional[OwnedOperation]:
             interaction, item, data = _decode_stored_payload(row)
         except (FingerprintUnreadable, StoredFingerprintVersionMismatch) as exc:
             logger.error(
-                "event=b1_payload_unreadable operation=%s kind=%s — the "
-                "operation still owns this meal; the turn repairs rather "
-                "than falling back: %s",
-                row.operation_id, type(exc).__name__, exc)
+                "event=b1_payload_unreadable operation=%s kind=%s reason=%s "
+                "— the operation still owns this meal; the turn repairs "
+                "rather than falling back: %s",
+                row.operation_id, type(exc).__name__,
+                "invalid_json" if not _readable
+                else ("not_an_object" if not isinstance(data, dict)
+                      else ("no_slice" if _slice is None
+                            else ("unknown_slice:%r" % (_slice,)
+                                  if _slice != "b1_quantity" else "decode"))),
+                exc)
             # ⛔ THE REPAIR BRANCH STILL REPORTS WHAT THE ROW SAYS ABOUT
             # ITSELF. `cohort` and `locale` here are METRIC facts read from
             # the row (raw), never rendering authority — the rendering facts
@@ -1623,7 +1655,30 @@ def resolved_fields(held: dict) -> ResolvedFields:
     return ResolvedFields(by_field=dict(held or {}))
 
 
-async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
+class StaleAnswerField(RuntimeError):
+    """⛔ THE CHIP ANSWERS A FIELD THE LOCKED INTERACTION NO LONGER HAS *(P17
+    Phase 2, third round)*. A concurrent shape change can retire the very
+    field this tap addresses, and applying it anyway patches "whatever looks
+    closest" — the failure `Outcome.REFUSED` exists for. Raised under the
+    lock, before any write."""
+
+
+@dataclass(frozen=True)
+class HeldAnswerResult:
+    """⛔ THE POST-LOCK TRANSITION, TYPED *(Danny)*. `hold_answer` is the
+    atomic state-transition boundary: everything downstream — readiness, the
+    open fields, the remaining wire payload, settlement, metrics, entry
+    stamping — must consume THIS, not the objects the caller hydrated before
+    the lock. Returning only the held map left the caller reasoning from a
+    stale `interaction`, and mutating the frozen `OwnedOperation` raised
+    `FrozenInstanceError` on every shape change."""
+    owned: OwnedOperation
+    interaction: Any
+    held: dict
+    revision: int
+
+
+async def hold_answer(db, *, owned: OwnedOperation, patch) -> "HeldAnswerResult":
     """Record an answer to ONE field and leave the operation open (B-1.5).
 
     DURABLE, NOT REMEMBERED BY THE SCREEN. The next tap may come from a
@@ -1655,9 +1710,41 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
     # taking the lock while still merging from the pre-lock snapshot would
     # acquire the lock and keep the bug.
     locked = await repo.locked_operation(db, owned.operation_id)
+    # ⛔⛔ VERIFY THE LOCKED ROW BEFORE MUTATING OR RE-SIGNING IT *(P17
+    # Phase 2, third round)*. `owning()` validated the payload BEFORE the
+    # lock. Between that read and this lock another writer may have changed
+    # the shape — or the row may have been edited outside the seam — and this
+    # function then assigns a NEW, VALID fingerprint to whatever it wrote,
+    # effectively re-signing material nothing verified. So the locked row is
+    # decoded strictly HERE, after the wait, and everything below reconciles
+    # and rebuilds from the LOCKED interaction and item, never from the
+    # pre-lock `owned.interaction`.
+    locked_interaction, locked_item, _locked_data = _decode_stored_payload(locked.row)
+    # ⛔ AND THE LOCKED STATE MUST STILL ACCEPT THIS ANSWER. A concurrent
+    # writer may have settled the operation, or rebuilt the surface so that
+    # the field this chip addresses no longer exists. Both are stale taps,
+    # and a stale tap must not patch whatever looks closest.
+    _status = str(getattr(locked.row, "status", "") or "")
+    if not (_status == AWAITING
+            and str(getattr(locked.row, "storage_status", "") or "") == "active"):
+        raise StaleAnswerField(
+            f"operation {owned.operation_id} is {_status}/"
+            f"{getattr(locked.row, 'storage_status', None)} under the lock — "
+            f"it no longer accepts answers")
+    _live_ids = {str(f.field_id) for g in locked_interaction.groups
+                 for f in g.fields}
+    if str(patch.field_id) not in _live_ids:
+        raise StaleAnswerField(
+            f"field {patch.field_id!r} is not in the locked interaction "
+            f"(open: {sorted(_live_ids)}) — a concurrent shape change retired "
+            f"it, so this tap is stale")
     held = locked.answered()
     held[str(patch.field_id)] = patch
     data = dict(locked.payload)
+    # the merge works on the LOCKED material
+    data["interaction"] = _locked_data.get("interaction") or {}
+    data["item"] = locked_item
+    locked_view = _replace_interaction(owned, locked_interaction)
 
     # ⭐ B-1.6: RECONCILE, DO NOT APPEND. An answer can make another field
     # irrelevant, and dropping that field from the screen is not the same as
@@ -1665,7 +1752,7 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
     # remove the tablespoon from settlement — leaving it in `answered` while
     # hiding its chip prices a meal with fat the user just said was not there,
     # which is a silent nutrition corruption rather than a display bug.
-    held, retracted, reconciliation = _reconcile_after(owned, held, data)
+    held, retracted, reconciliation = _reconcile_after(locked_view, held, data)
 
     # ⭐ B-1.6b: A SHAPE CHANGE REBUILDS THE ANSWER SURFACE, UNDER THIS LOCK.
     #
@@ -1674,15 +1761,24 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
     # memory is one a reload cannot reproduce, and reload is the normal case
     # (a relaunched app, a second device, another worker).
     generation = None
+    # ⛔ THE EFFECTIVE QUESTION IS RETURNED, NOT ASSIGNED *(P17 Phase 2, third
+    # round)*. This used to do `owned.interaction = rebuilt` — and
+    # `OwnedOperation` is a FROZEN dataclass, so every shape change raised
+    # `FrozenInstanceError` inside the answer turn and came back REFUSED with
+    # `internal_failure`. Latent because only a reconciliation that CHANGES
+    # the active set reaches it. The caller is handed the interaction this
+    # transition ends with — the locked one, or the rebuilt one — and renders
+    # readiness, open fields and the wire payload from THAT.
+    effective = locked_interaction
     if reconciliation is not None and reconciliation.changed:
         from core import interaction_generation as gen
 
-        rebuilt = gen.next_generation(previous=owned.interaction,
+        rebuilt = gen.next_generation(previous=locked_interaction,
                                       reconciliation=reconciliation,
                                       answered=held, item=data.get("item"))
         if rebuilt is not None:
             data["interaction"] = rebuilt.to_payload()
-            owned.interaction = rebuilt
+            effective = rebuilt
             generation = rebuilt.revision
 
     data["answered"] = {k: p.to_payload() for k, p in held.items()}
@@ -1708,9 +1804,29 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
     await db.flush()
     logger.info("event=b1_answer_held operation=%s field=%s open=%d "
                 "retracted=%d operation_lock_wait_ms=%d", owned.operation_id,
-                patch.field_id, len(open_fields(owned.interaction, held)),
+                patch.field_id, len(open_fields(effective, held)),
                 len(retracted), locked.lock_wait_ms)
-    return held
+    # ⛔ THE WHOLE POST-LOCK STATE, in one typed value. A new frozen
+    # `OwnedOperation` built from the LOCKED authority — the refreshed row,
+    # the interaction this transition ends with, the locked item and the
+    # merged answers — so no downstream reader can reach a pre-lock object.
+    import dataclasses as _dc
+
+    return HeldAnswerResult(
+        owned=_dc.replace(owned, row=locked.row, interaction=effective,
+                          item=dict(locked_item), answered=dict(held)),
+        interaction=effective, held=held,
+        revision=int(getattr(locked.row, "revision", 0) or 0))
+
+
+def _replace_interaction(owned: OwnedOperation, interaction) -> OwnedOperation:
+    """A view of `owned` carrying the LOCKED interaction — so reconciliation
+    reads the material the lock actually protects *(P17 Phase 2, third
+    round)*. A copy, not a mutation: the caller's object is only updated once
+    the transition is decided."""
+    import dataclasses
+
+    return dataclasses.replace(owned, interaction=interaction)
 
 
 def _reconcile_after(owned: OwnedOperation, held: dict, data: dict) -> tuple:

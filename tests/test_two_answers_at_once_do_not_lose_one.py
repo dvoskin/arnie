@@ -308,6 +308,104 @@ def test_the_merge_reads_the_locked_row_not_the_pre_lock_snapshot():
 
 @pg_only
 @pytest.mark.asyncio
+async def test_two_real_owning_then_hold_answer_writers_do_not_lose_a_shape_change(
+        sessions, monkeypatch):
+    """⛔ P17 PHASE 2, THIRD ROUND. The other races in this file drive
+    `LockedOperation` directly, so they cannot see the defect that lived
+    between `owning()` and the lock: BOTH writers hydrate the operation
+    BEFORE either takes the lock, and the loser then reconciled from ITS
+    pre-lock interaction and re-signed the result — overwriting the winner's
+    transition with a valid-looking fingerprint.
+
+    Here both sessions go through the REAL path: `owning()` first, then
+    `hold_answer()`. Whatever order they serialise in, the row that lands
+    must be the one the SECOND writer built ON TOP of the first — and if the
+    first writer's shape change retired the second's field, the second must
+    be REFUSED as stale rather than applied to a question that no longer
+    asks it."""
+    import asyncio
+
+    from core import b1_quantity_operation as b1
+    from db.models import PendingOperation, User, UserPreferences
+    from sqlalchemy import select
+
+    # a real user, so `owning()` can find the row
+    async with sessions() as s:
+        u = (await s.execute(select(User).where(User.id == 26))).scalar_one_or_none()
+        if u is None:
+            u = User(id=26, telegram_id="race-26", onboarding_completed=True)
+            s.add(u)
+            await s.flush()
+            s.add(UserPreferences(user_id=u.id, proactive_messaging_enabled=False))
+        await s.commit()
+
+    op_id = "chat_quantity:26:race-real"
+    async with sessions() as s:
+        await s.execute(__import__("sqlalchemy").delete(PendingOperation).where(
+            PendingOperation.user_id == 26))
+        await s.commit()
+    async with sessions() as s:
+        user = (await s.execute(select(User).where(User.id == 26))).scalar_one()
+        items, _g = __import__("core.food_pipeline", fromlist=["stage_items"]).stage_items(
+            {"items": [{"food": "Oatmeal", "amount": 1, "unit": "bowl",
+                        "calories": 150}]},
+            turn_id="race-real", message="x", mode="strict")
+        from skills.nutrition import quantity_clarification as qc
+        field = qc.quantity_field(operation_id=op_id, revision=0, item=items[0])
+        inter = qc.build_interaction(operation_id=op_id, revision=0,
+                                     item=items[0], options=field.options,
+                                     introduction="How much oatmeal?",
+                                     ask_preparation=False)
+        await b1.open_operation(s, user=user,
+                                interpreter_item={"food": "Oatmeal", "amount": 1},
+                                interaction=inter, turn_id="race-real",
+                                locale="en", cohort="allowlist",
+                                capability=b1.ID_ADDRESSED)
+        await s.commit()
+
+    # a patch addressing a field the interaction really has (this ask has no
+    # chip options in the fixture's shape, so the patch is built directly)
+    _f = inter.groups[0].fields[0]
+    live_patch = (_f.options[0].patch if getattr(_f, "options", None)
+                  else SetQuantity(
+                      event_id=inter.groups[0].event_id, field_id=_f.field_id,
+                      quantity=CanonicalQuantity(amount=Decimal("120"),
+                                                 unit_id="g",
+                                                 dimension=Dimension.MASS)))
+
+    async def writer(delay: float):
+        async with sessions() as s:
+            user = (await s.execute(select(User).where(User.id == 26))).scalar_one()
+            owned = await b1.owning(s, user)          # BOTH hydrate first
+            assert owned is not None and owned.interaction is not None
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                result = await b1.hold_answer(s, owned=owned, patch=live_patch)
+                await s.commit()
+                return ("held", result.interaction.interaction_id,
+                        sorted(result.held))
+            except b1.StaleAnswerField as exc:
+                await s.rollback()
+                return ("stale", str(exc), [])
+
+    a, b = await asyncio.gather(writer(0.0), writer(0.25))
+    # neither writer may silently overwrite the other: both either held on
+    # top of the locked state or refused as stale
+    for outcome in (a, b):
+        assert outcome[0] in ("held", "stale"), outcome
+    # and the row that landed carries a digest that describes it
+    async with sessions() as s:
+        row = (await s.execute(select(PendingOperation).where(
+            PendingOperation.operation_id == op_id))).scalars().one()
+        payload = json.loads(row.canonical_payload)
+        assert payload["fingerprint"] == b1.fingerprint_of_payload(
+            payload["interaction"], payload["item"])
+        assert payload["answered"], "the surviving writer's answer is gone"
+
+
+@pg_only
+@pytest.mark.asyncio
 async def test_an_uncontended_lock_is_cheap(sessions):
     """The critical section contains only pure reconciliation, so acquiring
     the row lock with nobody else on it must cost approximately nothing. This
