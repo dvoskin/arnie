@@ -654,10 +654,14 @@ WHERE domain = 'food'
 * The constants are `DOMAIN = "food"` and `AWAITING = "awaiting_answer"` (`core/b1_quantity_operation.py:38`, `:68`). ⛔ An earlier version of this gate used `domain='chat_quantity'` / `status='awaiting'` and would have reported zero while fp1 operations were live.
 * ⚠ `canonical_payload` is nullable `Text`: a row holding non-JSON text makes the `::jsonb` cast raise for the whole query. That row is itself a finding — it would refuse at runtime too.
 
-## Phase 2 — CLOSED PENDING CI (2026-08-20)
+## Phase 2 — CODE REVIEW APPROVED, FORMAL CLOSURE PENDING CI (2026-08-20)
 
 Danny's verdict on `9a71764`: **code approved, no additional correctness blockers.** Confirmed by him: whole-payload fingerprinting centralised in `_encode`; only the fingerprint itself excluded from the signed envelope; locked answer transitions re-sign the complete resulting payload atomically; missing `answered` means fresh while every present non-object form refuses; ask identity separate from mutable operation integrity; the corrected query uses the real constants; the freeze valid with code `HEAD 9a71764` / tree `41179f6` pinned; `9fc8b4b` documentation-only over that frozen code; branch 13 commits ahead with main untouched.
 
 Gate state: code review ✅ · frozen PostgreSQL suite ✅ · **draft PR ❌ not opened** · GitHub CI ⏳ no checks on `9fc8b4b` · deploy approval ❌ · **P17g / END-TO-END SCAN: still BLOCKED**.
 
-**Phase 3 begins only after CI is green on the PR.**
+**Phase 2 code review approved; formal closure pending GitHub CI. Phase 3 development may proceed on a separate stacked branch. Not deploy-approved.**
+
+⛔ An earlier revision of this section was headed "CLOSED PENDING CI" and described Phase 2 as closed. It was not, and is not: approval of the code is not closure of the phase. Closure requires CI green on the draft PR from the pinned review branch.
+
+Branch topology: `review/p17-phase2-round3` is PINNED at the docs-only head below and receives no further pushes unless CI finds a defect. Phase 3 lives on `review/p17-phase3-cf14`, stacked on that head — no Phase 3 commit enters the Phase 2 PR.
