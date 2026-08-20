@@ -583,11 +583,50 @@ The report above was written at `4278f9b`, before three further commits. **That 
 * **The digest was answering two questions and only one wants the answers.** "Has this row been altered?" must cover them. "Is this the same ask I would have written?" must NOT — an awaiting operation may legitimately already hold an answer, and a same-turn retry would then compare a fresh ask against a stored one and refuse a valid reuse. Identity moved to `ask_fingerprint()`: **derived at read time, never persisted**, so there is no second stored digest to fall out of agreement with the first. `OpenResult.ask_identity` sits beside the stored `fingerprint`; reuse compares identity, integrity having been proved by the strict decoder above it.
 * **Verified under the lock** before any held answer is accepted, and **recomputed in the same single write** whenever answers change.
 * **Fail-closed for rows already in flight**: an AWAITING operation written under `fp1` is not comparable and is NOT re-judged under today's rules. It still **owns** the meal (it does not read as unowned, so nothing falls to legacy), settles nothing, writes nothing, and is left exactly as it was — old version marker included.
-* **Operational consequence, stated plainly**: at deploy, any awaiting canonical operation written under `fp1` stops being answerable and that user must be re-asked. The lane is allowlist-gated, so that cohort is the blast radius. Pre-deploy check: `SELECT operation_id, user_id, created_at FROM pending_operations WHERE domain='chat_quantity' AND status='awaiting' AND storage_status='active';`
+* **Operational consequence, stated plainly**: at deploy, any awaiting canonical operation written under `fp1` stops being answerable and that user must be re-asked. The lane is allowlist-gated, so that cohort is the blast radius. Pre-deploy check: ⛔ **the query first published here was WRONG on two fields** (`domain='chat_quantity'`, `status='awaiting'`; production writes `DOMAIN = "food"` and `AWAITING = "awaiting_answer"`), so it would have reported zero while fp1 operations were still live — the exact failure it exists to prevent. The corrected query is in the sixth-round section below.
 * **Honest scope note**: the digest is **not a MAC**. Anything that can edit the row can recompute it, so it detects edits that do not re-sign; malformed content is refused independently by the strict decoder. That is why the malformed proof now **re-signs on purpose** — otherwise the new digest refuses it first and masks the decoder that proof exists to test.
 * **The version check is redundant for integrity** and is reported as such rather than given a manufactured proof: an `fp1` row fails the digest comparison anyway, because the version is inside the hashed body. Its value is a distinct diagnosis (`StoredFingerprintVersionMismatch`) routing to the same fail-closed repair.
 * **Proofs**: a well-formed answer substituted before the lock refuses with payload and digest unchanged · the malformed case (re-signed, isolating the decoder) refuses without deleting the entry, through a real answer turn with no food row, no ledger event, no legacy · an awaiting `fp1` row fails closed the same way.
 * **Mutations**: R17 (digest stops covering the answers) RED · R14 (answers decoded permissively again) RED · R9-family (unreadable row loses ownership) RED · R12, R15, R16 re-verified RED.
 * ⛔ **THE FIRST fp2 FREEZE WAS RED AND IS RECORDED AS SUCH**: `PYTEST_EXIT=1`, 3 failed + 5 errors, while the shell reported "exited with code 0". Two multi-field fixtures still signed without the answers. Fixed, then the whole tree swept by AST for wrong-arity calls rather than finding them one suite at a time.
 * **Authoritative freeze**: **9897 passed · 25 skipped · 17 deselected · 4 xfailed · `PYTEST_EXIT=0`**, zero `FAILED`/`ERROR` lines, **`HEAD` `c79b34b` and `HEAD^{tree}` `cf44bc4` identical before and after** (dirty-diff hash kept only as a worktree-clean witness — it is `sha256("")` and proves nothing about the committed tree), `TEST_POSTGRES_URL` set.
+* **Deploy status**: NOT deployed, NOT deploy-approved, not on main. **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED**.
+
+## Phase 2 sixth review round — whole-payload envelope, and the SQL gate corrected (2026-08-20)
+
+### 1. The pre-deploy query was wrong on two fields
+
+Published as `domain='chat_quantity'` / `status='awaiting'`. Production writes `DOMAIN = "food"` (`core/b1_quantity_operation.py:38`) and `AWAITING = "awaiting_answer"` (`:68`), so the query **would have reported zero while fp1 operations remained active** — the operational failure it was written to prevent. Corrected (Danny's form, verified against the constants and against `canonical_payload` being a nullable `Text` column, so the `::jsonb` cast is valid):
+
+```sql
+SELECT
+    operation_id,
+    user_id,
+    created_at,
+    canonical_payload::jsonb->>'fingerprint_version' AS fingerprint_version
+FROM pending_operations
+WHERE domain = 'food'
+  AND status = 'awaiting_answer'
+  AND storage_status = 'active'
+  AND canonical_payload::jsonb->>'slice' = 'b1_quantity'
+  AND COALESCE(canonical_payload::jsonb->>'fingerprint_version', '') <> 'fp2';
+```
+
+⚠ `canonical_payload` is nullable `Text`: if any row holds text that is not valid JSON the cast raises for the whole query. Such a row is itself a finding — it would refuse at runtime too.
+
+### 2. `answered` was coerced before it was checked
+
+`data.get("answered") or {}` turned `null`, `[]`, `""`, `0` and `false` into a valid EMPTY answer map **before** the `isinstance` check could see any of them, so a payload nothing legitimate wrote decoded as "this ask has no answers yet". Now `data.get("answered", {})` then the type check: **absent is a fresh ask; present-and-not-an-object refuses.** The same `or {}` is gone from the digest, which is what had made `{}` → `[]` fingerprint-equivalent.
+
+### 3. Digest scope — widened rather than narrowed
+
+The claim could have been narrowed to "settlement-material integrity". It was widened instead: **the digest signs the whole payload minus its own digest**, so `locale`, `cohort`, `capability`, `decision_id`, `candidate_set_id`, `asked_at` and the retraction history are all covered — every one of them an authority something reads (the reply renders in `locale`, the client contract is `capability`, the funnel joins on `cohort`). A field added later is signed because it is IN the payload, not because someone remembered a list.
+
+Safe for a checked reason: `canonical_payload` has exactly **two** writers — the insert at open and `LockedOperation.write` under the lock — and both sign; all four `save_revision` call sites change status columns only. Signing moved INTO `_encode`, so the value signed and the value stored are no longer two statements that must agree.
+
+**Not a MAC**: anything that can edit the row can recompute it. It detects edits that do not re-sign; malformed CONTENT is refused independently by the strict decoders. Both the malformed-answer and non-object-answer proofs therefore **re-sign on purpose**, isolating the decoder from the digest.
+
+* **Consequence that confirms the widening bit**: the locked-metadata proof now performs a LEGITIMATE re-signed write, because an unsigned `locale`/`cohort` edit is correctly tampering under the new envelope.
+* **Mutations**: R18 (`or {}` coercion restored) RED on all five parametrisations (`[]`, `""`, `0`, `False`, `None`); R14, R17 and the R9-family re-verified RED.
+* **Authoritative freeze**: **9902 passed · 25 skipped · 17 deselected · 4 xfailed · `PYTEST_EXIT=0`**, zero `FAILED`/`ERROR` lines, **`HEAD 9a71764` and `HEAD^{tree} 41179f6` identical before and after**, `TEST_POSTGRES_URL` set.
 * **Deploy status**: NOT deployed, NOT deploy-approved, not on main. **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED**.
