@@ -228,3 +228,62 @@ def test_ontology_options_are_not_withheld():
                            options=(_ontology_option(170.1, label="6 oz", item=item),
                                     _ontology_option(435.0, label="16 oz", item=item)))
     assert len(field.options) == 2
+
+
+# ═════ THE LITERAL PATH MUST PROVE AMOUNT *AND* UNIT ═══════════════════════
+#
+# Review of PR #79 (Danny): moving the veto exposed a fallback that was never
+# strong evidence at all —
+#
+#     if s in clause:            # s == "1"
+#         return True            # matches the "1" inside "100g"
+#
+# Raw substring, no token boundary, no unit compatibility. The normalizer
+# above it correctly REFUSES "100 g" as evidence for "1 tbsp"; this then
+# accepted it anyway. Before the veto moved these were unreachable for
+# basis="estimate", so the move is what exposed them: a guard relocation has
+# to be judged on what it now lets through, not only on what it still stops.
+
+@pytest.mark.parametrize("message,item,why", [
+    ("I had 100g of peanut butter",
+     {"food": "Peanut butter", "amount": 1, "unit": "tbsp"},
+     "the '1' inside '100g' is not a stated tablespoon"),
+    ("I had 21 almonds",
+     {"food": "Almonds", "amount": 1, "unit": "cup"},
+     "the '1' inside '21' is not a stated cup"),
+    ("1 scoop of peanut butter",
+     {"food": "Peanut butter", "amount": 1, "unit": "tbsp"},
+     "they said scoop; we said tablespoon — the 190-calorie defect"),
+    ("I had 250ml of milk",
+     {"food": "Whole milk", "amount": 2, "unit": "cup"},
+     "the '2' inside '250' is not two cups"),
+])
+def test_a_literal_match_needs_a_compatible_unit(message, item, why):
+    """Amount alone is not evidence. The number has to be the user's own
+    token AND wear a unit this item can be measured in."""
+    payload = dict(item, basis="estimate")
+    assert _item_is_stated(payload, message) is False, why
+
+
+@pytest.mark.parametrize("message,item", [
+    ("I also had 100g of grilled chicken",
+     {"food": "Grilled chicken breast", "amount": 100, "unit": "g"}),
+    ("had 6oz of grilled chicken",
+     {"food": "Grilled chicken breast", "amount": 6, "unit": "oz"}),
+    ("250 ml of whole milk", {"food": "Whole milk", "amount": 250, "unit": "ml"}),
+    ("I had 2 tbsp of peanut butter",
+     {"food": "Peanut butter", "amount": 2, "unit": "tbsp"}),
+    ("2 tablespoons of peanut butter",
+     {"food": "Peanut butter", "amount": 2, "unit": "tbsp"}),
+])
+def test_a_matching_unit_still_counts_as_stated(message, item):
+    """The tightening must not cost the cases it exists to protect — including
+    a unit the user spelled out in full."""
+    assert _item_is_stated(dict(item, basis="estimate"), message) is True
+
+
+def test_an_amount_with_no_unit_on_the_item_still_counts():
+    """When the item carries no unit there is nothing for a unit to conflict
+    with, and the number is still the user's own token."""
+    assert _item_is_stated({"amount": 6.5}, "6.5 oz turkey") is True
+    assert _item_is_stated({"amount": 2, "basis": "estimate"}, "2 tacos") is True

@@ -1391,6 +1391,88 @@ def _drop_unit_derived(op: dict) -> None:
         op.pop(_k, None)
 
 
+#: Unit spellings that mean the same measure. Explicit rather than derived
+#: from a factor table: `g` and `ml` share a factor of 1.0 there and are NOT
+#: the same unit, so grouping by factor would call a millilitre a gram.
+_UNIT_ALIASES = {
+    "g": "g", "gm": "g", "gr": "g", "gram": "g",
+    "kg": "kg", "kilo": "kg", "kilogram": "kg",
+    "oz": "oz", "ounce": "oz",
+    "lb": "lb", "pound": "lb",
+    "ml": "ml", "milliliter": "ml", "millilitre": "ml", "cc": "ml",
+    "l": "l", "liter": "l", "litre": "l",
+    "tbsp": "tbsp", "tablespoon": "tbsp", "tbs": "tbsp",
+    "tsp": "tsp", "teaspoon": "tsp",
+    "cup": "cup", "scoop": "scoop", "slice": "slice", "piece": "piece",
+}
+
+
+#: The units that can CONTRADICT one another. "1 tbsp" versus "100 g" is a
+#: real disagreement; "15" versus "piece" is not a disagreement at all.
+_MEASURED_UNITS = frozenset({"g", "kg", "oz", "lb", "ml", "l",
+                             "tbsp", "tsp", "cup"})
+
+
+def _canon_unit(word: str) -> str:
+    w = str(word or "").strip().lower().rstrip(".")
+    w = _UNIT_ALIASES.get(w) or _UNIT_ALIASES.get(w.rstrip("s")) or w.rstrip("s")
+    return w
+
+
+def _literal_amount_with_unit(haystack: str, f: float, it: dict) -> bool:
+    """Did the user write THIS number, as a token, wearing a unit this item
+    can be measured in?
+
+    Replaces a raw `str(amount) in clause` substring test. That test had no
+    token boundary — `1` matched inside `100g` and inside `21` — and no unit
+    check, so a number agreeing while the units disagreed read as the user's
+    own words. Both failures are the same shape: evidence that never proved
+    what it claimed.
+
+    The number is matched with a boundary on the NUMBER (so `200g` still
+    counts, which is why a plain `\b` word-boundary test was rejected when
+    this code was first written). The unit is then taken from the token
+    immediately following it:
+
+      * item carries no unit          -> the number alone is enough; there is
+                                         nothing for a unit to contradict
+      * item's unit is a COUNT noun   -> likewise. People write "15 peanut
+                                         m&m", never "15 pieces of peanut
+                                         m&m"; demanding the unit token there
+                                         would call a plainly stated count an
+                                         inference, which is the defect this
+                                         function exists to prevent, running
+                                         backwards
+      * item's unit is MEASURED       -> the token after the number must
+                                         canonicalise to it. This is the half
+                                         that matters: every false positive
+                                         found in review had a measured unit
+                                         on the item ("1 tbsp", "1 cup") and a
+                                         different measure, or none, in the
+                                         message
+    """
+    if not haystack:
+        return False
+    want = _canon_unit(it.get("unit") or "")
+    # Only a MEASURED unit can be contradicted by another measure. A count
+    # noun ("piece", "slice", "egg", "bar") is usually left unsaid or replaced
+    # by the food itself, so it carries no contradiction to detect.
+    if want not in _MEASURED_UNITS:
+        want = ""
+    for m in re.finditer(r"(?<![\d.])(\d+(?:\.\d+)?)\s*([A-Za-z]+)?", haystack):
+        try:
+            said = float(m.group(1))
+        except (TypeError, ValueError):
+            continue
+        if abs(said - f) > max(0.02, abs(f) * 0.02):
+            continue
+        if not want:
+            return True
+        if _canon_unit(m.group(2) or "") == want:
+            return True
+    return False
+
+
 def _item_is_stated(it: dict, message: str) -> bool:
     """Is this item's amount the USER's own words? The interpreter's "basis"
     declaration wins when present ("stated"/"regular" vs "estimate"); when
@@ -1486,9 +1568,23 @@ def _item_is_stated(it: dict, message: str) -> bool:
         pass
 
     s = str(int(f)) if f.is_integer() else str(f)
-    # Plain substring for digits: "200" has no word boundary before the "g" in
-    # "200g", and requiring one dropped every mass the user actually typed.
-    if s in clause:
+    # ⛔⛔ THIS USED TO BE `if s in clause: return True` — RAW SUBSTRING *(P17
+    # Tranche Q, review of PR #79)*. No token boundary and no unit check, so
+    # `amount=1` matched the "1" inside "100g" and the "1" inside "21", and
+    # "1 scoop of peanut butter" carried as 1 tbsp matched on the number while
+    # the units disagreed — the 190-calorie defect, arriving through the one
+    # door the normalizer above had just closed on it.
+    #
+    # It was reachable before only when the interpreter volunteered no basis;
+    # moving the veto below it made it reachable for `estimate` and `regular`
+    # too. ⭐ A GUARD THAT MOVES MUST BE JUDGED ON WHAT IT NOW LETS THROUGH,
+    # not only on what it still stops.
+    #
+    # So the literal path proves the same two things the normalizer does: the
+    # number is the user's own TOKEN, and it wears a unit this item can be
+    # measured in. `200g` still matches — the boundary is on the number, not
+    # on whitespace.
+    if _literal_amount_with_unit(clause, f, it):
         return True
     if f == 0.5 and re.search(r"\bhalf\b", clause):
         return True
@@ -1510,7 +1606,8 @@ def _item_is_stated(it: dict, message: str) -> bool:
     # THIS food, never a number borrowed from the food next to it.
     _refine = _refining_clauses(message, str(it.get("food") or ""), clause)
     if _refine:
-        if s in _refine:
+        # the refining clause earns no weaker a test than the primary one
+        if _literal_amount_with_unit(_refine, f, it):
             return True
         if f == 0.5 and re.search(r"\bhalf\b", _refine):
             return True
