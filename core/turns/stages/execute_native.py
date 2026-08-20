@@ -505,8 +505,8 @@ class NativeExecutionStage:
             who scanned a bar and said nothing about how much should be
             asked, not turned away.
         """
-        from core.scan_authority import (ScanAuthorityRefusal, is_bound,
-                                         quantity_only_subject, snapshot_id)
+        from core.scan_authority import (ScanAuthorityRefusal, bound_ask_subject,
+                                         is_bound, snapshot_id)
         if not is_bound():
             return None                       # unscanned, or bound nothing
         # the TYPED subjects ride the plan, which the validation stage
@@ -516,7 +516,13 @@ class NativeExecutionStage:
             raise ScanAuthorityRefusal(
                 "no_plan", "a scanned zero-operation turn reached execution "
                            "without its plan")
-        sub = quantity_only_subject(plan)
+        # ⛔ CF14: EVERY MATERIAL SETTLEMENT FIELD, not only quantity
+        # *(Phase 3)*. The holder was always general; this gate was
+        # quantity-shaped, so a bound scan whose open question was
+        # PREPARATION refused and the user lost the label they had just
+        # scanned. `MATERIAL_SETTLEMENT_FIELDS` excludes `food_identity`
+        # deliberately — the snapshot answers identity.
+        sub = bound_ask_subject(plan)
         if sub is None:
             subs = tuple(getattr(plan, "food_subjects", ()) or ())
             if len(subs) == 1 and not getattr(subs[0], "consumed", False):
@@ -528,7 +534,7 @@ class NativeExecutionStage:
             raise ScanAuthorityRefusal(
                 "no_quantity_ask",
                 "a scanned turn produced no operation and no answerable "
-                "quantity question")
+                "material question")
         item = {"food": sub.name}
         if db is None or user is None:
             raise ScanAuthorityRefusal("no_session",

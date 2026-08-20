@@ -75,6 +75,30 @@ FOOD_OPS = frozenset({"log_food", "update_food_entry", "delete_food_entry"})
 #: ask limited to these on a single bound product is the CF9 case.
 QUANTITY_FIELDS = frozenset({"quantity"})
 
+#: ⛔ CF14 — EVERY MATERIAL SETTLEMENT FIELD A BOUND ASK MAY HOLD, declared
+#: once beside `QUANTITY_FIELDS` for the same reason: a second copy at a
+#: guard site is a second definition of what a bound ask is allowed to ask.
+#:
+#: Names are the PLAN-STAGE vocabulary (`core/turns/stages/food._canon_field`
+#: after `_FIELD_ALIASES`), not the field registry's — this gate reads the
+#: producer's typed `ambiguities`, and the interpreter names `consumed` and
+#: `serving` in its own words. Both spellings are accepted because the alias
+#: table maps neither today, and a gate that silently missed the interpreter's
+#: actual word would refuse the turn it exists to serve.
+#:
+#: ⛔ `food_identity` IS DELIBERATELY ABSENT. The snapshot answers identity;
+#: an ask that offered it would let prose overwrite a scanned product's own
+#: label, which is the Salty Peanut incident with a nicer interface. An
+#: explicit prose/snapshot identity conflict asks or refuses through the
+#: authority — it never opens a bound ask.
+MATERIAL_SETTLEMENT_FIELDS = frozenset({
+    "quantity",             # how much
+    "consumed", "consumed_fraction",   # how much OF IT was eaten
+    "serving", "serving_basis",        # what the label's numbers are per
+    "preparation",          # how it was cooked
+    "product_variant",      # which variant, WITHIN the scanned identity
+})
+
 
 class ScanAuthorityRefusal(Exception):
     """A scanned turn whose shape cannot be honoured. Raised BEFORE any write,
@@ -868,20 +892,36 @@ def require_shape(ops) -> None:
             f"{[op.get('name') for op in ops]}")
 
 
-def quantity_only_subject(plan):
-    """The single food subject whose ONLY open field is quantity, or None.
-    The CF9 case: one consumed product, the amount unknown — a durable ask
-    holding the snapshot, not a refusal."""
+def bound_ask_subject(plan, *, fields=MATERIAL_SETTLEMENT_FIELDS):
+    """The single consumed food subject whose open fields are all material
+    settlement fields, or None.
+
+    ⛔ CF14 GENERALISES CF9 *(Phase 3)*. This began as
+    `quantity_only_subject`: one consumed product with the amount unknown.
+    The holder was always general — it holds a snapshot against an operation
+    — and only this gate was quantity-shaped, so a bound scan whose open
+    question was PREPARATION refused instead of asking, and the user lost the
+    exact label they had just scanned.
+
+    `fields` is a parameter so the CF9 case remains expressible (pass
+    `QUANTITY_FIELDS`) without a second copy of the subject-shape rules."""
     subjects = tuple(getattr(plan, "food_subjects", None) or ())
     if len(subjects) != 1:
         return None
     sub = subjects[0]
     if not getattr(sub, "consumed", False):
         return None
-    fields = tuple(getattr(sub, "open_fields", ()) or ())
-    if not fields or not all(f in QUANTITY_FIELDS for f in fields):
+    open_now = tuple(getattr(sub, "open_fields", ()) or ())
+    # an INFERRED field is spelled "quantity?" by the producer and is not
+    # accepted here — an un-typed question refuses rather than asks
+    if not open_now or not all(f in fields for f in open_now):
         return None
     return sub
+
+
+def quantity_only_subject(plan):
+    """The CF9 case, unchanged: quantity is the only open question."""
+    return bound_ask_subject(plan, fields=QUANTITY_FIELDS)
 
 
 def scan_unused_note() -> Optional[str]:
