@@ -262,11 +262,29 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
     # question — `OpenedElsewhere` — and is NEVER rendered as this one: the
     # first cut returned "whichever ask currently owns the user", which could
     # put product B's question in product A's reply.
+    # ⛔ THE FIELD HOLDS A CAPABILITY, NOT A CHANNEL *(P17 Phase 2, second
+    # round)*. This wrapper used to persist "ios" into the same column the
+    # ordinary lane fills with `label_text` / `id_addressed` — two
+    # vocabularies in one field.
+    #
+    # ⛔ AND THE CAPABILITY COMES FROM THE LANE, NOT FROM THE TABLE. Only the
+    # lane gate may ask what a channel can do (`test_one_module_owns_the_
+    # channel_capability_table`): three readings of one fact is what produced
+    # the defect where a question was RECORDED as id_addressed and SHOWN as
+    # label text. A client the lane does not admit cannot answer a canonical
+    # ask at all, so the bound ask declines rather than persisting an
+    # unanswerable question (the caller keeps its plain refusal).
+    from core.canonical_lane import capability_for
+    _capability = capability_for(channel)
+    if _capability is None:
+        logger.info("event=bound_ask_declined turn=%s channel=%r — no "
+                    "canonical capability for this client", turn_id, channel)
+        return None
     try:
         opened = await open_operation(
             db, user=user, interpreter_item=interpreter_item,
             interaction=interaction, turn_id=turn_id,
-            cohort="scan_bound", locale=locale, capability=channel or "")
+            cohort="scan_bound", locale=locale, capability=_capability)
     except PriorAskNotReleased as exc:
         raise BoundAskNotSingular(f"could not supersede: {exc}") from exc
     except OpenedElsewhere as exc:
@@ -307,7 +325,7 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
                         revision=opened.revision,
                         interaction=opened.interaction,
                         locale=opened.locale, cohort=opened.cohort,
-                        capability=opened.capability or "")
+                        capability=opened.capability)
 
 
 class BoundAskNotSingular(Exception):

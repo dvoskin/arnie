@@ -126,7 +126,7 @@ async def test_the_row_birthday_predates_the_question_it_stamps(pg):
     await b1.open_operation(
         db, user=user, interpreter_item=ITEM,
         interaction=_interaction("chat_quantity:1:pg1"),
-        turn_id="pg1", cohort="allowlist", locale="en")
+        turn_id="pg1", cohort="allowlist", locale="en", capability="id_addressed")
     await db.commit()
 
     owned = await b1.owning(db, user)
@@ -153,7 +153,7 @@ async def test_latency_measures_the_user_not_the_backend(pg):
     await b1.open_operation(
         db, user=user, interpreter_item=ITEM,
         interaction=_interaction("chat_quantity:1:pg2"),
-        turn_id="pg2", cohort="allowlist", locale="en")
+        turn_id="pg2", cohort="allowlist", locale="en", capability="id_addressed")
     await db.commit()
 
     owned = await b1.owning(db, user)
@@ -183,7 +183,7 @@ async def test_a_row_without_a_stamp_still_falls_back(pg):
     await b1.open_operation(
         db, user=user, interpreter_item=ITEM,
         interaction=_interaction("chat_quantity:1:pg3"),
-        turn_id="pg3", cohort="allowlist", locale="en")
+        turn_id="pg3", cohort="allowlist", locale="en", capability="id_addressed")
     await db.commit()
 
     owned = await b1.owning(db, user)

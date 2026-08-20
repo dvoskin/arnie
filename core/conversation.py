@@ -1824,7 +1824,15 @@ async def _run_turn(
                                 getattr(_prefs, "preferred_language", None),
                                 _user_text or ""))
                 except (_b1.OpenedElsewhere, _b1.PriorAskNotReleased,
-                        _b1.FingerprintUnreadable) as _b1_exc:
+                        _b1.FingerprintUnreadable,
+                        # ⛔ P17 Phase 2 (second round): a row written under
+                        # OTHER fingerprint rules is a canonical refusal too.
+                        # It used to reach the broad `except Exception` below,
+                        # which resumes the LEGACY path — leaving the
+                        # canonical operation open while a legacy question was
+                        # recorded beside it, the single-owner invariant lost
+                        # exactly as for the other refusals.
+                        _b1.StoredFingerprintVersionMismatch) as _b1_exc:
                     # ⛔⛔ NOT A DECLINE — A CANONICAL REFUSAL *(review of
                     # 2db22e1)*. Another canonical ask already owns this user
                     # (the winner of a race, or a prior that could not be

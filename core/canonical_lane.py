@@ -128,6 +128,20 @@ def canonical_food_enabled(*, user_id, channel) -> LaneDecision:
         return LaneDecision(False, LaneReason.GATE_FAILED)
 
 
+def capability_for(channel) -> Optional[str]:
+    """WHAT THIS CLIENT CAN DO — the lane's single reading of the table, for
+    callers that need the capability WITHOUT the rollout gate.
+
+    The product-bound ask is one: it runs inside general settlement, under
+    ITS allowlist, and must not also inherit the B-1 quantity cohort — two
+    rollouts coupled by accident. It still may not read the table itself
+    (`test_one_module_owns_the_channel_capability_table`), because three
+    readings of one fact is what recorded a question as `id_addressed` while
+    showing it as label text.
+    """
+    return _capability_of(channel)
+
+
 def _capability_of(channel) -> Optional[str]:
     """Imported inside the call to keep the module graph acyclic —
     `b1_quantity_operation` imports this one."""

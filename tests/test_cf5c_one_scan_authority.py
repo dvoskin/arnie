@@ -1592,7 +1592,7 @@ async def test_b3_a_release_that_reports_not_ok_refuses_by_value(
     with pytest.raises(PriorAskNotReleased) as ei:
         await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
                              interaction=interaction,
-                             turn_id=f"ios:b3v-second-{uid}", locale="en")
+                             turn_id=f"ios:b3v-second-{uid}", locale="en", capability="id_addressed")
     assert "revision conflict" in str(ei.value)
     await db.rollback()
     awaiting = (await db.execute(select(PendingOperation).where(
@@ -1629,12 +1629,12 @@ async def test_b3_open_operation_returns_a_typed_result_and_reuse_renders_the_st
                                        introduction="How much?", ask_preparation=False)
     item = {"food": "Oatmeal", "amount": 1, "unit": "cup"}
     first = await open_operation(db, user=user, interpreter_item=item,
-                                 interaction=interaction, turn_id=tid, locale="en")
+                                 interaction=interaction, turn_id=tid, locale="en", capability="id_addressed")
     await db.commit()
     assert isinstance(first, OpenResult) and first.created
     assert first.operation_id == op_id
     second = await open_operation(db, user=user, interpreter_item=item,
-                                  interaction=interaction, turn_id=tid, locale="en")
+                                  interaction=interaction, turn_id=tid, locale="en", capability="id_addressed")
     assert second.reused and second.operation_id == op_id
     assert second.fingerprint == first.fingerprint == semantic_fingerprint(interaction, item)
     assert "b1_open_reused" in caplog.text
@@ -1676,12 +1676,12 @@ async def test_b3_same_turn_different_semantics_is_not_a_reuse(db, make_user):
     ia, item_a = _build("Barebells bar", 1)
     ib, item_b = _build("Quest bar", 2)
     first = await open_operation(db, user=user, interpreter_item=item_a,
-                                 interaction=ia, turn_id=tid, locale="en")
+                                 interaction=ia, turn_id=tid, locale="en", capability="id_addressed")
     await db.commit()
     assert first.created
     with pytest.raises(OpenedElsewhere, match="DIFFERENT semantic payload"):
         await open_operation(db, user=user, interpreter_item=item_b,
-                             interaction=ib, turn_id=tid, locale="en")
+                             interaction=ib, turn_id=tid, locale="en", capability="id_addressed")
 
 
 @pytest.mark.asyncio
@@ -1725,7 +1725,7 @@ async def test_b3_a_lost_race_to_a_different_turn_is_refused_not_rendered(
     with pytest.raises(OpenedElsewhere):
         await open_operation(db, user=user, interpreter_item={"food": "Quest bar"},
                              interaction=interaction,
-                             turn_id=f"ios:raceB-{user.id}", locale="en")
+                             turn_id=f"ios:raceB-{user.id}", locale="en", capability="id_addressed")
     monkeypatch.setattr(repo, "create_operation", real_create)
 
 
@@ -1845,7 +1845,7 @@ async def test_b3_an_absent_stored_snapshot_is_not_a_match(db, make_user, monkey
                                  ask_preparation=False)
     await open_operation(db, user=user, interpreter_item={"food": "Barebells bar",
                                                            "amount": 2, "unit": "bar"},
-                         interaction=inter, turn_id=tid, locale="en")
+                         interaction=inter, turn_id=tid, locale="en", capability="id_addressed")
     await db.commit()
     # the bound wrapper on the SAME turn id
     item = {"food_name": BAREBELLS_PROD["product_name"], "quantity": "2 bar",
@@ -2235,7 +2235,7 @@ async def test_reuse_verifies_row_ownership_user_domain_turn(db, make_user):
                                  options=field.options, introduction="How much?",
                                  ask_preparation=False)
     await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
-                         interaction=inter, turn_id=tid, locale="en", cohort="allowlist")
+                         interaction=inter, turn_id=tid, locale="en", cohort="allowlist", capability="id_addressed")
     await db.commit()
     row = (await db.execute(select(PendingOperation).where(
         PendingOperation.operation_id == op_id))).scalars().one()
@@ -2281,14 +2281,14 @@ async def test_an_unreadable_stored_payload_refuses_not_reuses(db, make_user, mo
                                  options=field.options, introduction="How much?",
                                  ask_preparation=False)
     await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
-                         interaction=inter, turn_id=tid, locale="en")
+                         interaction=inter, turn_id=tid, locale="en", capability="id_addressed")
     await db.commit()
     await db.execute(update(PendingOperation).where(
         PendingOperation.operation_id == op_id).values(canonical_payload="{not json"))
     await db.commit()
     with pytest.raises(FingerprintUnreadable):
         await open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
-                             interaction=inter, turn_id=tid, locale="en")
+                             interaction=inter, turn_id=tid, locale="en", capability="id_addressed")
 
 
 @pytest.mark.asyncio
@@ -2311,12 +2311,12 @@ async def test_a_reused_ask_renders_entirely_from_persisted_state(db, make_user,
                                  ask_preparation=False)
     first = await b1q.open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
                                      interaction=inter, turn_id=tid, locale="ru",
-                                     cohort="allowlist")
+                                     cohort="allowlist", capability="id_addressed")
     await db.commit()
     assert first.created and first.locale == "ru" and first.cohort == "allowlist"
     again = await b1q.open_operation(db, user=user, interpreter_item={"food": "Oatmeal"},
                                      interaction=inter, turn_id=tid, locale="en",
-                                     cohort="scan_bound")
+                                     cohort="scan_bound", capability="id_addressed")
     assert again.reused
     assert again.locale == "ru" and again.cohort == "allowlist", (again.locale, again.cohort)
 

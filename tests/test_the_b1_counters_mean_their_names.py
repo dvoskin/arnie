@@ -93,7 +93,7 @@ class TestTheOperationCarriesWhatTheAnswerTurnNeeds:
         operation_id = (await b1.open_operation(
             db, user=user, interpreter_item=ITEM,
             interaction=_interaction("chat_quantity:1:t1"),
-            turn_id="t1", cohort="allowlist", locale="en")).operation_id
+            turn_id="t1", cohort="allowlist", locale="en", capability="id_addressed")).operation_id
         await db.commit()
 
         owned = await b1.owning(db, user)
@@ -109,7 +109,7 @@ class TestTheOperationCarriesWhatTheAnswerTurnNeeds:
         await b1.open_operation(
             db, user=user, interpreter_item=ITEM,
             interaction=_interaction("chat_quantity:1:t2"),
-            turn_id="t2", cohort="allowlist", locale="en")
+            turn_id="t2", cohort="allowlist", locale="en", capability="id_addressed")
         await db.commit()
 
         owned = await b1.owning(db, user)
@@ -132,7 +132,7 @@ class TestTheOperationCarriesWhatTheAnswerTurnNeeds:
         await b1.open_operation(
             db, user=user, interpreter_item=ITEM,
             interaction=_interaction("chat_quantity:1:t3"),
-            turn_id="t3", cohort="allowlist", locale="en")
+            turn_id="t3", cohort="allowlist", locale="en", capability="id_addressed")
         await db.commit()
 
         owned = await b1.owning(db, user)
@@ -161,7 +161,7 @@ class TestTheOperationCarriesWhatTheAnswerTurnNeeds:
         await b1.open_operation(
             db, user=user, interpreter_item=ITEM,
             interaction=_interaction("chat_quantity:1:t4"),
-            turn_id="t4", cohort="allowlist", locale="en")
+            turn_id="t4", cohort="allowlist", locale="en", capability="id_addressed")
         await db.commit()
 
         owned = await b1.owning(db, user)

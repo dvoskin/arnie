@@ -187,6 +187,14 @@ async def _open_with_three(sessions, user):
         ).scalars().one()
         payload = json.loads(row.canonical_payload)
         payload["interaction"] = three.to_payload()
+        # ⛔ A REAL OPERATION'S DIGEST DESCRIBES ITS STORED MATERIAL *(P17
+        # Phase 2)*. This fixture emulates the multi-field form B-1 really
+        # opens, so it must keep the payload self-consistent the way the one
+        # production write seam does — otherwise it is indistinguishable from
+        # an outside edit, which the strict decoder correctly refuses.
+        payload["fingerprint"] = b1.fingerprint_of_payload(
+            payload["interaction"], payload.get("item") or {})
+        payload["fingerprint_version"] = b1.FINGERPRINT_VERSION
         row.canonical_payload = json.dumps(payload)
         await s.commit()
     return ask, three.groups[0].fields

@@ -387,18 +387,21 @@ def _canonical_json(obj) -> str:
                       ensure_ascii=True, allow_nan=False)
 
 
-def semantic_fingerprint(interaction, interpreter_item: dict) -> str:
-    """What an ask MEANS, hashed: the wire interaction (question, fields,
-    option ids and patches) and the interpreter item (food, quantity, and for
-    a bound ask the product_evidence_id). Two asks with the same operation id
-    and different fingerprints are two different questions, and only one of
-    them persisted. Canonical and versioned (see FINGERPRINT_VERSION); raises
-    FingerprintUnreadable rather than returning a guess."""
+def fingerprint_of_payload(interaction_payload: dict, interpreter_item: dict) -> str:
+    """⛔ THE DIGEST IS OVER THE STORED FORM *(P17 Phase 2, second round)*.
+
+    Fingerprinting the interaction OBJECT at write time and the round-tripped
+    object at read time assumes `to_payload(from_payload(p)) == to_payload(p)`
+    — and it is not identity for every interaction shape, so a legitimate
+    multi-field ask read back as "tampered" and the operation FAILED under
+    the user. Both ends now hash the payload dict that is actually persisted,
+    so write and read agree by construction and an outside edit still moves
+    the hash."""
     import hashlib
 
     try:
         body = _canonical_json({"v": FINGERPRINT_VERSION,
-                                "interaction": interaction.to_payload(),
+                                "interaction": interaction_payload,
                                 "item": dict(interpreter_item or {})})
     except (TypeError, ValueError) as exc:
         raise FingerprintUnreadable(
@@ -407,11 +410,92 @@ def semantic_fingerprint(interaction, interpreter_item: dict) -> str:
         body.encode("utf-8")).hexdigest()[:24]
 
 
+def semantic_fingerprint(interaction, interpreter_item: dict) -> str:
+    """What an ask MEANS, hashed: the wire interaction (question, fields,
+    option ids and patches) and the interpreter item (food, quantity, and for
+    a bound ask the product_evidence_id). Two asks with the same operation id
+    and different fingerprints are two different questions, and only one of
+    them persisted. Canonical and versioned (see FINGERPRINT_VERSION); raises
+    FingerprintUnreadable rather than returning a guess."""
+    return fingerprint_of_payload(interaction.to_payload(), interpreter_item)
+
+
 class StoredFingerprintVersionMismatch(RuntimeError):
     """The persisted operation was fingerprinted under DIFFERENT rules than
     this process uses. Not comparable — and recomputing it under today's
     rules would be exactly the silent reinterpretation the version exists to
-    prevent. FAIL CLOSED: refuse the reuse."""
+    prevent. FAIL CLOSED: refuse the reuse, and on the ANSWER side route to
+    repair with ownership preserved."""
+
+
+def _decode_stored_payload(row):
+    """⛔ THE ONE STRICT DECODE, shared by the REUSE seam and by `owning()`
+    *(P17 Phase 2, second round)*. Verification used to live only on the ask
+    side, so a payload edited after the write refused a REUSE while the
+    ANSWER turn read it happily and could settle the modified material.
+
+    Returns `(interaction, item, data)` or raises:
+      · `FingerprintUnreadable`            unreadable / wrong schema / bad
+                                           item / digest mismatch
+      · `StoredFingerprintVersionMismatch` written under other rules
+
+    Every persisted rendering fact is REQUIRED here (locale, cohort,
+    capability): a missing one is a payload this code did not write, and
+    defaulting it would synthesise authority the row never carried."""
+    from core.semantics import ClarificationInteraction
+
+    op_id = getattr(row, "operation_id", "?")
+    try:
+        data = json.loads(row.canonical_payload or "{}")
+        if not isinstance(data, dict):
+            raise ValueError("stored payload is not an object")
+        if data.get("slice") != "b1_quantity":
+            raise ValueError(f"slice {data.get('slice')!r} is not b1_quantity")
+        if data.get("schema_version") != B1_PAYLOAD_VERSION:
+            raise ValueError(
+                f"schema_version {data.get('schema_version')!r} is not "
+                f"{B1_PAYLOAD_VERSION!r} — this code cannot read it")
+        for required in ("locale", "cohort", "capability"):
+            if required not in data:
+                raise ValueError(
+                    f"payload carries no {required!r} — a rendering fact this "
+                    f"schema requires, and defaulting it would invent one")
+        capability = data.get("capability")
+        if capability not in RECOGNISED_CAPABILITIES:
+            raise ValueError(
+                f"capability {capability!r} is not one of "
+                f"{sorted(RECOGNISED_CAPABILITIES)}")
+        item = data.get("item")
+        if not isinstance(item, dict):
+            raise ValueError(
+                f"stored item is {type(item).__name__}, not a dict")
+        interaction = ClarificationInteraction.from_payload(
+            data.get("interaction") or {})
+    except FingerprintUnreadable:
+        raise
+    except Exception as exc:                             # noqa: BLE001
+        raise FingerprintUnreadable(
+            f"stored payload for {op_id} is unreadable: "
+            f"{type(exc).__name__}: {exc}") from exc
+
+    stored_version = str(data.get("fingerprint_version") or "")
+    stored_fp = str(data.get("fingerprint") or "")
+    if not stored_version or not stored_fp:
+        raise StoredFingerprintVersionMismatch(
+            f"operation {op_id} stores no fingerprint — it was written "
+            f"before the fingerprint was persisted and cannot be proved to "
+            f"mean the same thing")
+    if stored_version != FINGERPRINT_VERSION:
+        raise StoredFingerprintVersionMismatch(
+            f"operation {op_id} was fingerprinted under {stored_version!r}; "
+            f"this process writes {FINGERPRINT_VERSION!r} — not comparable, "
+            f"and not recomputed under the new rules")
+    recomputed = fingerprint_of_payload(data.get("interaction") or {}, item)
+    if recomputed != stored_fp:
+        raise FingerprintUnreadable(
+            f"operation {op_id} does not match the fingerprint it stores "
+            f"(stored {stored_fp}, payload {recomputed})")
+    return interaction, item, data
 
 
 def _stored_open_result(row, *, created: bool, expect_user_id: int,
@@ -457,52 +541,16 @@ def _stored_open_result(row, *, created: bool, expect_user_id: int,
         raise OpenedElsewhere(
             f"operation {row.operation_id} was opened on turn "
             f"{row.source_turn_id!r}, not {expect_turn_id!r}")
-    try:
-        data = json.loads(row.canonical_payload or "{}")
-        if not isinstance(data, dict):
-            raise ValueError("stored payload is not an object")
-        if data.get("slice") != "b1_quantity":
-            raise ValueError(f"slice {data.get('slice')!r} is not b1_quantity")
-        stored_schema = data.get("schema_version")
-        if stored_schema != B1_PAYLOAD_VERSION:
-            raise ValueError(
-                f"schema_version {stored_schema!r} is not "
-                f"{B1_PAYLOAD_VERSION!r} — this code cannot read it")
-        interaction = ClarificationInteraction.from_payload(data.get("interaction") or {})
-        item = data.get("item")
-        if not isinstance(item, dict):
-            raise ValueError(
-                f"stored item is {type(item).__name__}, not a dict")
-    except FingerprintUnreadable:
-        raise
-    except Exception as exc:                             # noqa: BLE001
-        raise FingerprintUnreadable(
-            f"stored payload for {row.operation_id} is unreadable: "
-            f"{type(exc).__name__}: {exc}") from exc
-
-    stored_version = str(data.get("fingerprint_version") or "")
-    stored_fp = str(data.get("fingerprint") or "")
-    if not stored_version or not stored_fp:
-        raise StoredFingerprintVersionMismatch(
-            f"operation {row.operation_id} stores no fingerprint — it was "
-            f"written before the fingerprint was persisted and cannot be "
-            f"proved to mean the same thing")
-    if stored_version != FINGERPRINT_VERSION:
-        raise StoredFingerprintVersionMismatch(
-            f"operation {row.operation_id} was fingerprinted under "
-            f"{stored_version!r}; this process writes {FINGERPRINT_VERSION!r} "
-            f"— not comparable, and not recomputed under the new rules")
-    recomputed = semantic_fingerprint(interaction, item)
-    if recomputed != stored_fp:
-        raise FingerprintUnreadable(
-            f"operation {row.operation_id} does not match the fingerprint it "
-            f"stores (stored {stored_fp}, payload {recomputed})")
+    interaction, item, data = _decode_stored_payload(row)
+    # every rendering fact comes from the row — required and validated by
+    # `_decode_stored_payload`, never defaulted here
     return OpenResult(operation_id=row.operation_id, created=created,
                       interaction=interaction, item=item,
-                      revision=int(row.revision or 0), fingerprint=stored_fp,
-                      locale=str(data.get("locale") or "en"),
-                      cohort=str(data.get("cohort") or ""),
-                      capability=str(data.get("capability") or ""))
+                      revision=int(row.revision or 0),
+                      fingerprint=str(data["fingerprint"]),
+                      locale=str(data["locale"]),
+                      cohort=str(data["cohort"]),
+                      capability=str(data["capability"]))
 
 
 async def _release_prior_awaiting(db, *, user, keep: str) -> None:
@@ -562,7 +610,7 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
                          turn_id: str, cohort: str = "",
                          locale: str = "en", decision_id: str = "",
                          candidate_set_id: str = "",
-                         capability: str = "") -> "OpenResult":
+                         capability: str) -> "OpenResult":
     """Take ownership of this meal. Call ONLY after the rollout gate said yes.
 
     `interpreter_item` is the interpreter's own reading — the food name and
@@ -614,6 +662,15 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
     #            a DIFFERENT turn is a different product's question, and
     #            returning it would render product B's ask in product A's
     #            reply — `OpenedElsewhere`, and the caller refuses.
+    # ⛔ THE WRITE VALIDATES WHAT THE DECODER WILL REQUIRE *(P17 Phase 2,
+    # second round)*: a capability outside the vocabulary would persist a
+    # rendering fact nothing can honour, and the row would then be
+    # unreadable to its own reuse. Refuse at the seam that writes it.
+    if capability not in RECOGNISED_CAPABILITIES:
+        raise OpenedElsewhere(
+            f"capability {capability!r} is not one of "
+            f"{sorted(RECOGNISED_CAPABILITIES)} — refusing to persist an ask "
+            f"no client can be proved to answer")
     mine = semantic_fingerprint(interaction, interpreter_item)   # may raise FingerprintUnreadable
     uid = int(user.id)            # captured early: a rollback below expires `user`
 
@@ -727,6 +784,15 @@ ASK_TTL_MINUTES = 180
 #: of that.
 ID_ADDRESSED = "id_addressed"
 LABEL_TEXT = "label_text"
+
+#: ⛔ THE CAPABILITY VOCABULARY, ONE OF THEM *(P17 Phase 2, second round)*.
+#: The ordinary lane persisted a CAPABILITY (`label_text` / `id_addressed`)
+#: while the product-bound wrapper persisted a CHANNEL ("ios") into the same
+#: field — two vocabularies in one column, which is how a stored value stops
+#: meaning anything. The field holds a CAPABILITY; a channel is converted at
+#: the boundary (`channel_capability`), and a value outside this set is
+#: refused rather than rendered.
+RECOGNISED_CAPABILITIES = frozenset({ID_ADDRESSED, LABEL_TEXT})
 
 #: THE GENERATION OF THE QUESTION ITSELF — wording and option selection, as the
 #: user experiences them. Follows `core/food_ledger`'s existing convention
@@ -1174,13 +1240,15 @@ async def try_take_ownership(db, *, user, material: dict, turn_id: str,
                                   decision_id=decision_id,
                                   candidate_set_id=candidate_set_id,
                                   capability=str(lane.capability or ""))
-    # ⛔ P17 Phase 2 — the capability comes from the PERSISTED row too: on a
-    # reuse the stored question is rendered under the capability it was built
-    # for, not the one this retry arrived with.
+    # ⛔ P17 Phase 2 — EXACTLY the persisted capability *(second round)*.
+    # `opened.capability or lane.capability` let a missing persisted value be
+    # replaced by the retry's LIVE one, which is the synthesis requirement 5
+    # forbids. The decoder requires the field, so there is nothing to fall
+    # back to: what was stored is what renders.
     return CanonicalAsk(operation_id=opened.operation_id, revision=opened.revision,
                         interaction=opened.interaction,
                         locale=opened.locale, cohort=opened.cohort,
-                        capability=opened.capability or lane.capability)
+                        capability=opened.capability)
 
 
 class _MaterialDecision:
@@ -1351,46 +1419,55 @@ async def owning(db, user) -> Optional[OwnedOperation]:
             data = {}
         if not isinstance(data, dict) or data.get("slice") != "b1_quantity":
             continue
+        # ⛔ THE SAME STRICT DECODE AS THE REUSE SEAM *(P17 Phase 2, second
+        # round)*. Verification used to live only on the ask side: a payload
+        # edited after the write refused a REUSE while THIS path read it
+        # happily and could settle the modified material. Now one decoder
+        # answers both — and a failure here does NOT drop the operation: it
+        # still OWNS the meal (that contract is deliberate and unchanged),
+        # it routes to the REPAIR path with no interaction and no item, so
+        # nothing settles and nothing falls to legacy.
         try:
-            from core.semantics import ClarificationInteraction
-            # ⛔ P17 Phase 2 — STRICT, on the answer side too. `schema_version`
-            # is validated and the item must be a dict: `data.get("item") or
-            # {}` turned `0`, `""`, `[]` and `null` into an EMPTY item, and an
-            # empty item prices nothing while looking readable. A payload this
-            # code cannot read routes to the unreadable branch below (the
-            # operation still OWNS the meal — that contract is unchanged), it
-            # never becomes a question about nothing.
-            if data.get("schema_version") != B1_PAYLOAD_VERSION:
-                raise ValueError(
-                    f"schema_version {data.get('schema_version')!r} is not "
-                    f"{B1_PAYLOAD_VERSION!r}")
-            _item = data.get("item")
-            if not isinstance(_item, dict):
-                raise ValueError(
-                    f"stored item is {type(_item).__name__}, not a dict")
-            interaction = ClarificationInteraction.from_payload(
-                data.get("interaction") or {})
+            interaction, item, data = _decode_stored_payload(row)
+        except (FingerprintUnreadable, StoredFingerprintVersionMismatch) as exc:
+            logger.error(
+                "event=b1_payload_unreadable operation=%s kind=%s — the "
+                "operation still owns this meal; the turn repairs rather "
+                "than falling back: %s",
+                row.operation_id, type(exc).__name__, exc)
+            # ⛔ THE REPAIR BRANCH STILL REPORTS WHAT THE ROW SAYS ABOUT
+            # ITSELF. `cohort` and `locale` here are METRIC facts read from
+            # the row (raw), never rendering authority — the rendering facts
+            # are exactly the ones withheld: no interaction, no item. An
+            # unreadable operation whose funnel row printed `cohort=-` broke
+            # the join between the ask and its answer.
+            _raw = data if isinstance(data, dict) else {}
+            return OwnedOperation(
+                row=row, interaction=None, item={},
+                locale=str(_raw.get("locale") or "en"),
+                decision_id="", candidate_set_id="",
+                asked_at_stamp=_decode_asked_at(_raw),
+                cohort=str(_raw.get("cohort") or ""))
+        try:
+            answered = _decode_answered(data, row.operation_id)
         except Exception:
             logger.error(
-                "event=b1_payload_unreadable operation=%s — the operation "
-                "still owns this meal; the turn repairs rather than falling "
-                "back", row.operation_id, exc_info=True)
+                "event=b1_payload_unreadable operation=%s — held answers "
+                "unreadable; repairing", row.operation_id, exc_info=True)
             return OwnedOperation(
                 row=row, interaction=None, item={},
                 locale=str(data.get("locale") or "en"),
-                decision_id=str(data.get("decision_id") or ""),
-                candidate_set_id=str(data.get("candidate_set_id") or ""),
+                decision_id="", candidate_set_id="",
                 asked_at_stamp=_decode_asked_at(data),
                 cohort=str(data.get("cohort") or ""))
         return OwnedOperation(
-            row=row, interaction=interaction,
-            item=dict(_item),
-            locale=str(data.get("locale") or "en"),
+            row=row, interaction=interaction, item=dict(item),
+            locale=str(data["locale"]),
             decision_id=str(data.get("decision_id") or ""),
             candidate_set_id=str(data.get("candidate_set_id") or ""),
             asked_at_stamp=_decode_asked_at(data),
-            cohort=str(data.get("cohort") or ""),
-            answered=_decode_answered(data, row.operation_id))
+            cohort=str(data["cohort"]),
+            answered=answered)
     return None
 
 
@@ -1609,6 +1686,23 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> dict:
             generation = rebuilt.revision
 
     data["answered"] = {k: p.to_payload() for k, p in held.items()}
+    # ⛔ THE DIGEST DESCRIBES THE STORED MATERIAL *(P17 Phase 2, second
+    # round)*. A shape change legitimately REBUILDS the interaction above, so
+    # the fingerprint written at open no longer describes what is stored —
+    # and the strict decoder would then read this row as tampered and fail
+    # the operation the user is still answering. Re-derived here, at the one
+    # write that can change the semantic material, under the same lock. An
+    # OUTSIDE edit still fails: it does not come through this seam and so
+    # leaves the digest describing the previous material.
+    try:
+        data["fingerprint_version"] = FINGERPRINT_VERSION
+        data["fingerprint"] = fingerprint_of_payload(
+            data.get("interaction") or {}, data.get("item") or {})
+    except FingerprintUnreadable:
+        logger.error("event=b1_answer_fingerprint_unwritable operation=%s — "
+                     "the merged payload cannot be fingerprinted",
+                     owned.operation_id, exc_info=True)
+        raise
     locked.write(data, revision=generation)     # ONE write, whole payload
     db.add(locked.row)
     await db.flush()

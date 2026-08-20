@@ -124,7 +124,7 @@ async def _open(sessions, user, turn_id="t_1"):
         op = (await b1.open_operation(
             s, user=u, interpreter_item=ITEM,
             interaction=_interaction(f"chat_quantity:{user.id}:{turn_id}"),
-            turn_id=turn_id, cohort="allowlist")).operation_id
+            turn_id=turn_id, cohort="allowlist", capability="id_addressed")).operation_id
         await s.commit()
     return op
 

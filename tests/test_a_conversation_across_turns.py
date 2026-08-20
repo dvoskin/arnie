@@ -746,6 +746,87 @@ async def test_try_take_ownership_twice_for_one_turn_renders_the_stored_ask(
 
 
 @pytest.mark.asyncio
+async def test_a_stored_fingerprint_version_mismatch_is_a_canonical_refusal(
+        edges, b1_live, monkeypatch):
+    """⛔ P17 PHASE 2, SECOND ROUND, BLOCKER 1. `StoredFingerprintVersionMismatch`
+    was NOT in the canonical-refusal tuple, so it reached the broad
+    `except Exception` — which explicitly RESUMES THE LEGACY PATH. A retry
+    against a row written under other fingerprint rules would therefore leave
+    the canonical operation open AND record a legacy question beside it: the
+    single-owner invariant lost above the database constraint, and exactly
+    the requirement-8 violation this phase exists to prevent.
+
+    Driven through the real turn: the refusal is answered in words, and the
+    turn writes nothing."""
+    import db.database as D
+    from core import b1_quantity_operation as b1q
+    from db.models import (ConversationLog, FoodEntry, LedgerEvent,
+                           PendingOperation, PendingQuestion)
+    from sqlalchemy import select
+
+    real_open = b1q.open_operation
+
+    async def _version_mismatch(*a, **k):
+        raise b1q.StoredFingerprintVersionMismatch(
+            "operation was fingerprinted under 'fp0'; this process writes 'fp1'")
+
+    monkeypatch.setattr(b1q, "open_operation", _version_mismatch)
+    edges.plans.append(B1_ELIGIBLE)
+    resp = await say(b1_live, "I had some chicken breast", platform=CAPABLE)
+    monkeypatch.setattr(b1q, "open_operation", real_open)
+
+    text = " ".join(resp.response.bubbles)
+    assert "already got a question open" in text.lower(), text
+    assert "how much chicken" not in text.lower(), text        # NOT the legacy ask
+    assert resp.tool_calls == [], resp.tool_calls
+    async with D.AsyncSessionLocal() as s:
+        ops = (await s.execute(select(PendingOperation).where(
+            PendingOperation.user_id == b1_live))).scalars().all()
+        pqs = (await s.execute(select(PendingQuestion).where(
+            PendingQuestion.user_id == b1_live,
+            PendingQuestion.answered_at.is_(None),
+            PendingQuestion.kind == "food_structured_ask"))).scalars().all()
+        foods = (await s.execute(select(FoodEntry))).scalars().all()
+        events = (await s.execute(select(LedgerEvent).where(
+            LedgerEvent.user_id == b1_live))).scalars().all()
+        logs = (await s.execute(select(ConversationLog).where(
+            ConversationLog.user_id == b1_live))).scalars().all()
+    assert ops == [], "a replacement operation was opened on a refusal"
+    assert not pqs, "a legacy question was recorded on a canonical refusal"
+    assert foods == [] and events == []
+    assert logs, "the conversation turn did not commit — the session was poisoned"
+    # the session survives it
+    edges.plans.append(B1_ELIGIBLE)
+    assert (await say(b1_live, "I had some chicken breast",
+                      platform=CAPABLE)).response.bubbles
+
+
+def test_the_refusal_tuple_names_every_canonical_refusal():
+    """By construction: the ONE tuple that separates a canonical refusal from
+    the legacy-resuming catch must list all four. A type missing here silently
+    resumes legacy — the failure this test exists to make loud."""
+    import ast
+    import inspect
+    from core import conversation as C
+
+    src = inspect.getsource(C)
+    tree = ast.parse(src)
+    tuples = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ExceptHandler) and isinstance(node.type, ast.Tuple):
+            names = {getattr(e, "attr", None) or getattr(e, "id", None)
+                     for e in node.type.elts}
+            if "OpenedElsewhere" in names:
+                tuples.append(names)
+    assert tuples, "the canonical-refusal handler is gone"
+    for names in tuples:
+        for required in ("OpenedElsewhere", "PriorAskNotReleased",
+                         "FingerprintUnreadable",
+                         "StoredFingerprintVersionMismatch"):
+            assert required in names, (required, sorted(names))
+
+
+@pytest.mark.asyncio
 async def test_an_ordinary_b1_open_refused_by_the_seam_never_becomes_a_legacy_question(
         edges, b1_live, monkeypatch):
     """`OpenedElsewhere` / `PriorAskNotReleased` from the seam on the ORDINARY
