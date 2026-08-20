@@ -675,3 +675,49 @@ Branch topology: `review/p17-phase2-round3` is PINNED at the docs-only head belo
 * **Authoritative freeze**: **9908 passed · 25 skipped · 17 deselected · 4 xfailed · `PYTEST_EXIT=0`**, zero `FAILED`/`ERROR` lines, **`HEAD 9f3eff4` and `HEAD^{tree} ffa9b1d` identical before and after**, `TEST_POSTGRES_URL` set. Focused + adjacent suites 202 passed.
 * **PR #77 converted back to DRAFT** — it had been flipped Open/mergeable by something outside this session (`chatgpt-codex-connector[bot]` appears in reviewers; parallel sessions run against this repo). The draft state is a guard that can be flipped again; the durable guard remains that nothing merges without Danny's decision.
 * **Deploy status**: NOT deployed, NOT deploy-approved, not on main. **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED**. Awaiting re-review of the pushed head, then the fp1 production gate, then the merge decision.
+
+## Phase 2 — MERGED, DEPLOYED, AND ONE POST-MERGE BLOCKER REMEDIATED (2026-08-20)
+
+### What actually happened, in order
+
+1. **Quiesce.** `B1_QUANTITY_HALT=1` was **not** set when the halt was ordered; it was added in the Render dashboard via **"Save and deploy"** — "Save only" stores the variable *without restarting*, so the halt would have existed in the dashboard and nowhere else. Restart live 12:09 on `ed97f7a` (37.8s).
+2. **Authoritative fp1 gate, quiesced: ZERO rows** — 0 non-fp2, and 0 awaiting `b1_quantity` of *any* version (db clock 16:12Z).
+3. **CI green** on `8b6c257`. **PR #77 merged as `71da768`.**
+4. **Tree verified**: `origin/main^{tree}` = `50847ae` = `8b6c257^{tree}`; parents exactly `f35155f` + `8b6c257`. `release_check.py`: DEPLOYABLE.
+5. **Deploy of `71da768`** — built in 50s, then the instance took 3m23s to bind its port and was not promoted for 22 minutes. Cancelled; two retry submissions created **no deploy row at all**. Cause: **an active Render platform incident** ("Deployment Issues", upstream Google Cloud), not the code.
+6. ⛔ **THE CANCELLED DEPLOY PROMOTED ANYWAY, LATE.** `/health` now reports **`71da768`**. An interim report of "not deployed" was **wrong** and is corrected here. Auto-deploy remains disabled; this was the manual deploy landing after the incident, not an auto-deploy.
+
+### Why the live build is safe despite the blocker below
+
+The running app reports its own effective state: **`B1_QUANTITY = {"effective": "halted", "halted": true, "percent": 0.0, "allowlist_size": 1}`** — quiesced, not merely quiet. With **0 awaiting operations** and **0 operations created in 3h**, no answer transition can occur, so the defect is **unreachable in production**. No legitimate write can produce the bad payload either: `_encode` writes `locale or "en"`, always non-empty, so reaching it requires an external edit **plus** a re-sign.
+
+### The blocker (Danny, post-merge review) — remediated on `fix/p17-strict-locale`
+
+`_decode_stored_payload`'s required-key loop asked only whether `locale` **exists**, so `locale: ""` and `locale: null` decoded happily, and the two readers of one row disagreed:
+
+| reader | code | result |
+|---|---|---|
+| ask path | `str(data["locale"])` | `""` — or the literal `"None"` |
+| answer path | `str(… or "en")` | `"en"` |
+
+A fingerprint-valid persisted authority **silently changed across an answer transition** — the one thing the whole-payload envelope exists to prevent. Same family as `answered or {}`: a falsy value coerced past its own type check by a second opinion downstream of the decoder that had already verified the row.
+
+**Strictness calibrated to what the seam writes** — the part needing judgement rather than rigour:
+
+* `locale` is written `locale or "en"` → always non-empty → **must be a non-empty `str`**.
+* `cohort` is written `cohort or ""` → **empty is legitimate** → type-checked only. Rejecting `""` would refuse rows the open seam itself produces while looking like rigour (mutation **L4** proves that overreach fails).
+
+The transition now **subscripts** (`_locked_data["locale"]`) rather than defaulting: if the decoder's guarantee regresses, it raises loudly instead of inventing `"en"` under the user.
+
+* **Proofs**: `""`, `null`, an int and a list each refuse on **both** paths, ownership preserved, no mutation · one row cannot state two locales · a non-string cohort refuses (the funnel joins ask to answer on that field; `"26"` vs `26` breaks the join every promotion decision is read from) · an **empty** cohort still decodes. Every proof **re-signs** the edited payload on purpose — otherwise the envelope refuses first and the check under test is never reached.
+* **Mutations, each `applied` and RED**: L1 presence-only decode · L2 the original defect with both halves restored · L3 cohort type check removed · L4 strictness overreaches. ⛔ **L3 was GREEN on the first sweep — not masked, not redundant, simply UNTESTED**; the non-string cohort proof was added for it, and it surfaced a second real divergence.
+
+### Order from here
+
+1. ✅ Verify no auto-deploy (disabled; the live build is the manual deploy of the merged SHA).
+2. Remediation PR on its exact head → **CI green on that head**.
+3. **Quiesced fp1 gate rerun** before rollout is re-enabled.
+4. `B1_QUANTITY_HALT` **stays set** until 2–3 are done; it is what makes the live blocker unreachable.
+5. Then restack Phase 3 (`review/p17-phase3-cf14`) on merged main.
+
+**P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED** · rollout NOT re-enabled.

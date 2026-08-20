@@ -1547,6 +1547,161 @@ async def test_2_the_stored_ask_identity_is_signed_and_required(db, make_user):
         "or decoded as if this code had written it")
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", ["", None, 123, ["en"]])
+async def test_2_an_unusable_locale_refuses_rather_than_defaulting(
+        db, make_user, bad):
+    """⛔⛔ POST-MERGE REVIEW *(Danny)*. The required-key loop asked only
+    whether `locale` EXISTS, so `""` and `null` decoded happily — and the two
+    readers of one row then disagreed about what it says. Presence is not
+    usability; same family as `answered or {}`.
+
+    Re-signed on purpose: the envelope would otherwise refuse the edit first
+    and this proof would never reach the check it exists to test."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (FingerprintUnreadable,
+                                            ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:badlocale-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    item = {"food": "Oatmeal", "amount": 1}
+    await open_operation(db, user=user, interpreter_item=item,
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+
+    def _swap(d):
+        out = {**d, "locale": bad}
+        out["fingerprint"] = ops.fingerprint_of_payload(out)
+        return out
+
+    await _repayload(db, op_id, _swap)
+    await db.refresh(user)
+
+    # the ANSWER path refuses instead of substituting "en"
+    with pytest.raises(FingerprintUnreadable):
+        await ops.hold_answer(db, owned=owned, patch=_a_live_patch(inter))
+    await db.rollback()
+
+    # and the ASK path refuses instead of rendering "" or the literal "None"
+    await db.refresh(user)
+    reowned = await owning(db, user)
+    assert reowned is not None, "an unusable locale made the operation unowned"
+    assert reowned.interaction is None, (
+        f"rendering facts were handed out for locale {bad!r} — the ask would "
+        f"be rendered in a language the row does not state")
+
+
+@pytest.mark.asyncio
+async def test_2_one_row_cannot_state_two_locales(db, make_user):
+    """⛔⛔ THE DIVERGENCE ITSELF, named. Before this fix a single
+    fingerprint-valid row yielded `""` to the ask path (`str(data["locale"])`)
+    and `"en"` to the answer path (`... or "en"`) — the persisted authority
+    changed identity depending on who read it, which is precisely what the
+    whole-payload envelope exists to make impossible.
+
+    Neither reader may now produce a locale this row does not state."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (FingerprintUnreadable,
+                                            ID_ADDRESSED, open_operation,
+                                            owning)
+    from db.models import PendingOperation
+    user = await make_user()
+    tid = f"ios:twolocales-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    item = {"food": "Oatmeal", "amount": 1}
+    await open_operation(db, user=user, interpreter_item=item,
+                         interaction=inter, turn_id=tid, locale="ru",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+    assert owned.locale == "ru"
+
+    def _empty_locale(d):
+        out = {**d, "locale": ""}
+        out["fingerprint"] = ops.fingerprint_of_payload(out)
+        return out
+
+    await _repayload(db, op_id, _empty_locale)
+
+    async def _payload():
+        return json.loads((await db.execute(
+            select(PendingOperation.canonical_payload).where(
+                PendingOperation.operation_id == op_id))).scalar_one())
+
+    before = await _payload()
+    with pytest.raises(FingerprintUnreadable):
+        await ops.hold_answer(db, owned=owned, patch=_a_live_patch(inter))
+    await db.rollback()
+    assert await _payload() == before, "the row was mutated on a refusal"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", [None, 26, ["allowlist"]])
+async def test_2_a_non_string_cohort_refuses(db, make_user, bad):
+    """⛔ THE SAME TWO-READER DIVERGENCE, one field over. `cohort` may be
+    EMPTY (the open seam writes `cohort or ""`), but it may not be a
+    non-string: the ask path renders `str(data["cohort"])` — turning `26`
+    into `"26"` and `None` into the literal `"None"` — while the transition
+    now carries the raw value. The funnel joins the ask to its answer on
+    exactly this field, so two spellings of one cohort break the join that
+    every promotion decision is read from."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (FingerprintUnreadable,
+                                            ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:badcohort-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+
+    def _swap(d):
+        out = {**d, "cohort": bad}
+        out["fingerprint"] = ops.fingerprint_of_payload(out)
+        return out
+
+    await _repayload(db, op_id, _swap)
+    await db.refresh(user)
+    with pytest.raises(FingerprintUnreadable):
+        await ops.hold_answer(db, owned=owned, patch=_a_live_patch(inter))
+    await db.rollback()
+    await db.refresh(user)
+    reowned = await owning(db, user)
+    assert reowned is not None and reowned.interaction is None, (
+        f"cohort {bad!r} was rendered rather than refused")
+
+
+@pytest.mark.asyncio
+async def test_2_an_empty_cohort_is_legitimate_and_still_decodes(db, make_user):
+    """⛔ THE STRICTNESS IS CALIBRATED TO WHAT THE SEAM WRITES. `_encode`
+    writes `cohort or ""`, so an EMPTY cohort is a row this code really
+    produces — rejecting it would refuse legitimate operations while looking
+    like rigour. Only the TYPE is checked there; `locale`, written as
+    `locale or "en"`, is the one that must be non-empty."""
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:emptycohort-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+    assert owned is not None and owned.interaction is not None, (
+        "an empty cohort — which the open seam itself writes — was refused")
+    assert owned.cohort == ""
+    assert owned.locale == "en"
+
+
 def test_2_the_locked_read_refreshes_the_row_by_construction():
     """⛔ SQLAlchemy does NOT repopulate an object already in the identity map
     from a later query. Without `populate_existing`, the row `owning()`
