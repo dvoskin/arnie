@@ -938,6 +938,34 @@ async def test_2_the_returned_operation_carries_the_locked_metadata(db, make_use
         f"{transition.owned.cohort!r}; the row says 'general'")
 
 
+def test_the_repository_never_decodes_held_patches():
+    """⛔ HELD ANSWERS HAVE ONE DECODER *(P17 Phase 2, fourth round)*.
+
+    `LockedOperation.answered()` decoded the held patches and, on an
+    unreadable one, logged and SKIPPED it — the exact thing
+    `_decode_answered` exists to forbid, sitting in the SHARED repository
+    where any future caller would find it first. It is deleted; this keeps it
+    deleted.
+
+    Structural rather than a substring search: a `patch_from_payload` in a
+    comment or a docstring explaining why it must not appear here would trip
+    a grep gate, and gates that fail on their own explanation get deleted."""
+    import ast
+    import inspect
+
+    from core import pending_repository as repo
+
+    tree = ast.parse(inspect.getsource(repo))
+    decoding = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                and (getattr(n.func, "id", "")
+                     or getattr(n.func, "attr", "")) == "patch_from_payload"]
+    assert not decoding, (
+        f"the repository decodes held patches again at line(s) "
+        f"{[n.lineno for n in decoding]} — held answers are decoded by "
+        f"`_decode_answered`, which fails the OPERATION rather than skipping "
+        f"the field")
+
+
 def test_2_the_locked_read_refreshes_the_row_by_construction():
     """⛔ SQLAlchemy does NOT repopulate an object already in the identity map
     from a later query. Without `populate_existing`, the row `owning()`

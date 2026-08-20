@@ -316,19 +316,19 @@ class LockedOperation:
     def revision(self) -> int:
         return int(self.row.revision or 0)
 
-    def answered(self) -> dict:
-        """The held patches, decoded from the LOCKED payload."""
-        from core.semantics import patch_from_payload
-
-        out = {}
-        for field_id, data in (self.payload.get("answered") or {}).items():
-            try:
-                out[str(field_id)] = patch_from_payload(data)
-            except Exception:
-                logger.warning("event=held_patch_unreadable operation=%s "
-                               "field=%s", self.operation_id, field_id,
-                               exc_info=True)
-        return out
+    # ⛔ `answered()` IS DELETED, NOT DEPRECATED *(P17 Phase 2, fourth round)*.
+    # It decoded the held patches and, on an unreadable one, logged a warning
+    # and SKIPPED it. `b1_quantity_operation._decode_answered` exists to say
+    # why that is forbidden: a skipped answer makes an answered field look
+    # unanswered, the question is re-asked, and the meal commits without what
+    # the user already told us — and under this lock the reduced map was
+    # written back and RE-SIGNED, so the loss looked legitimate afterwards.
+    #
+    # It had no callers left once `hold_answer` moved to the strict decoder,
+    # and a permissive decoder sitting in the shared repository is an
+    # invitation to reintroduce exactly that defect from a new caller. Held
+    # answers are decoded in ONE place, by the decoder that fails the
+    # operation rather than the field.
 
     def write(self, payload: dict, *, revision: Optional[int] = None) -> None:
         """Stage the complete new payload on the locked row.
