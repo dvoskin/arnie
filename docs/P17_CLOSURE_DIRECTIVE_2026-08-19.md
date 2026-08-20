@@ -721,3 +721,44 @@ The transition now **subscripts** (`_locked_data["locale"]`) rather than default
 5. Then restack Phase 3 (`review/p17-phase3-cf14`) on merged main.
 
 **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED** · rollout NOT re-enabled.
+
+## CANARY ON `76076b6` (2026-08-20) — remediation PROVEN, two new tranches registered
+
+### What the canary proved (Phase 2 remediation, live)
+
+One controlled allowlist turn, read from the database rather than the reply text:
+
+* canonical operation `chat_quantity:26:ios:5F861208…` created and settled on build `76076b69aea5`;
+* **`fp2`**, `locale='en'`, `cohort='allowlist'`, `capability='id_addressed'` — all through the new strict decode;
+* **`ask_identity: fp2:ask:fdb43e1975191f5c31708a32`** — first live use of the immutable persisted identity;
+* settled `committed`/`settled`, ledger `canonical:create`, `turn_metrics` outcome `ok`, chip answer **103 ms**;
+* fp1 gate still zero.
+
+### ⛔⛔ TRANCHE Q — THE QUANTITY ASK DISCARDED A STATED AMOUNT (next, AHEAD of Phase 3)
+
+The user wrote **"I also had 100g of grilled chicken"**. The interpreter parsed it correctly — the stored item is `{"amount": 100, "unit": "g"}`. B-1 asked anyway, offering **only** `6 oz (170.1 g)` and `16 oz (435 g)`, both derived from history (`confidence.basis = "the user's own last log"`), with no option for the stated 100 g and no free-text. The tap recorded **170.1 g / 281 kcal** against a stated 100 g / 165 kcal — **70% over**, `estimated_flag=true`.
+
+**Root cause, one line.** `core/food_turn._item_is_stated` short-circuits on the interpreter's `basis` declaration: `basis == "estimate"` returns `False` **before** the deterministic "does the number literally appear beside its unit in the clause naming this food" proxy is ever consulted. The interpreter labelled a literal `100g` as `basis: "estimate"`, so `stated_amount` stayed `None`, `Ineligible.QUANTITY_ALREADY_STATED` never fired, and the ask opened. **A declaration overrode the literal evidence in the message** — the same ownership inversion as the resolver-override defect.
+
+Two faults, and the second is the worse one: an ask fired that should not have, **and its option set could not express the answer the user had already given**.
+
+Required (Danny, verbatim):
+
+1. **Literal quantity in the message outranks interpreter `basis`.**
+2. **`QUANTITY_ALREADY_STATED` must decline the ask.**
+3. **A quantity ask must never offer only history-derived amounts when the user already supplied one.**
+4. **Add the exact 100 g end-to-end regression and a `basis="estimate"` twin.**
+
+### ⛔ TRANCHE D — DUPLICATE TURN + 5.4 s LEGACY QUALIFICATION (separate P0 investigation)
+
+* **The ask turn executed twice**: two `turn_metrics` rows share turn id `ios:5F861208…` — 9523 ms then 6293 ms. One operation and one entry, so dedup held, but the turn ran twice and the user waited for both. Consistent with the WS→REST fallback shape.
+* **`pricing.qualification` ≈ 5.4 s** on both the bar turn (8892 ms) and the ask turn (9523 ms). This repo's own history names that stage as the fingerprint of **legacy** settling a turn. `llm` ≈ 6.1–6.6 s alongside it. Stages nest, so they do not sum.
+* May be pre-existing; **too risky to leave unexplained**. Investigate before P17g.
+
+### Production correction (authorised)
+
+Entry **3038** corrected `170.1 g / 281 kcal / 52.7 P / 6.8 F` → **`100 g / 165 kcal / 31 P / 4 F`**; `daily_logs 555` recomputed **from the rows** `481.0 → 365.0` kcal (cached totals now equal `SUM()` over entries). Audit trail preserved as ledger event **2211**, `source='manual:p17_canary_correction'`, carrying the complete before-state, the reason, and the origin operation — the original record is **not** silently overwritten. Guarded against double-application.
+
+### Gate state
+
+**P17g: BLOCKED · END-TO-END SCAN: BLOCKED — until BOTH Tranche Q and Tranche D are closed.** Phase 3 (CF14) is queued behind Tranche Q. `B1_QUANTITY_HALT` is lifted; the lane runs `effective: allowlist`, one user.
