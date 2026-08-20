@@ -251,7 +251,8 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
                                base_unit=base_unit),
         ask_preparation=False)
     from core.b1_quantity_operation import (FingerprintUnreadable, OpenedElsewhere,
-                                            PriorAskNotReleased)
+                                            PriorAskNotReleased,
+                                            StoredFingerprintVersionMismatch)
     # ⛔ OPEN / REUSE / RACE ARE RESOLVED AT THE SHARED SEAM *(review of
     # 22b9e7a)*: `open_operation` is the one insert site for every B-1 ask.
     # It reuses the SAME operation id if already awaiting, releases a
@@ -265,13 +266,17 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
         opened = await open_operation(
             db, user=user, interpreter_item=interpreter_item,
             interaction=interaction, turn_id=turn_id,
-            cohort="scan_bound", locale=locale)
+            cohort="scan_bound", locale=locale, capability=channel or "")
     except PriorAskNotReleased as exc:
         raise BoundAskNotSingular(f"could not supersede: {exc}") from exc
     except OpenedElsewhere as exc:
         raise BoundAskNotSingular(f"another ask owns this user: {exc}") from exc
     except FingerprintUnreadable as exc:
         raise BoundAskNotSingular(f"stored ask unreadable: {exc}") from exc
+    except StoredFingerprintVersionMismatch as exc:
+        # ⛔ P17 Phase 2: the stored ask was fingerprinted under other rules.
+        # Not comparable, and never recomputed under today's — refuse.
+        raise BoundAskNotSingular(f"stored ask not comparable: {exc}") from exc
     except Exception:                                    # noqa: BLE001
         logger.warning("event=bound_ask_not_persisted turn=%s — keeping the "
                        "plain refusal", turn_id, exc_info=True)
@@ -291,11 +296,18 @@ async def _open(db, *, user, item: dict, coverage, turn_id: str, channel: str,
                 "stated=%r options=%d",
                 "opened" if opened.created else "reused", operation_id, pid,
                 food, quantity_text, len(field.options))
+    # ⛔ RENDER FROM PERSISTED AUTHORITY, INCLUDING THE CAPABILITY *(P17
+    # Phase 2)*. Rendering depends on capability (whether the options are IN
+    # the sentence), so a reuse must render under the capability the ask was
+    # BUILT for — reading the live channel here would let a retry from a
+    # different client re-render a stored question in a shape it was never
+    # asked in. `opened.capability` is the stored one; on a fresh open it IS
+    # this channel, because that is what was just persisted.
     return CanonicalAsk(operation_id=opened.operation_id,
                         revision=opened.revision,
                         interaction=opened.interaction,
                         locale=opened.locale, cohort=opened.cohort,
-                        capability=channel or "")
+                        capability=opened.capability or "")
 
 
 class BoundAskNotSingular(Exception):

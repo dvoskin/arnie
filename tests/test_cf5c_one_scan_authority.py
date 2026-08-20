@@ -2239,13 +2239,25 @@ async def test_reuse_verifies_row_ownership_user_domain_turn(db, make_user):
     await db.commit()
     row = (await db.execute(select(PendingOperation).where(
         PendingOperation.operation_id == op_id))).scalars().one()
-    ok = _stored_open_result(row, created=False, expect_user_id=user.id, expect_turn_id=tid)
+    ok = _stored_open_result(row, created=False, expect_user_id=user.id,
+                             expect_turn_id=tid, expect_operation_id=op_id)
     assert ok.locale == "en" and ok.cohort == "allowlist"        # (2) rendering facts
     with pytest.raises(OpenedElsewhere, match="belongs to user"):
-        _stored_open_result(row, created=False, expect_user_id=user.id + 99, expect_turn_id=tid)
+        _stored_open_result(row, created=False, expect_user_id=user.id + 99,
+                            expect_turn_id=tid, expect_operation_id=op_id)
     with pytest.raises(OpenedElsewhere, match="opened on turn"):
         _stored_open_result(row, created=False, expect_user_id=user.id,
-                            expect_turn_id="ios:someone-elses-turn")
+                            expect_turn_id="ios:someone-elses-turn",
+                            expect_operation_id=op_id)
+    # ⛔ P17 Phase 2 — the OPERATION ID is verified too, and a request that
+    # cannot state its turn cannot verify ownership at all
+    with pytest.raises(OpenedElsewhere, match="carries operation"):
+        _stored_open_result(row, created=False, expect_user_id=user.id,
+                            expect_turn_id=tid,
+                            expect_operation_id="chat_quantity:someone-else")
+    with pytest.raises(OpenedElsewhere, match="states no source turn"):
+        _stored_open_result(row, created=False, expect_user_id=user.id,
+                            expect_turn_id="", expect_operation_id=op_id)
 
 
 @pytest.mark.asyncio
