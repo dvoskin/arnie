@@ -388,7 +388,15 @@ async def _reshape(db, op_id, interaction):
         out["fingerprint"] = m.fingerprint_of_payload(out)
         return out
 
-    return await _repayload(db, op_id, _apply)
+    row = await _repayload(db, op_id, _apply)
+    # ⛔ THE ROW'S GENERATION MOVES WITH THE QUESTION'S, exactly as
+    # `LockedOperation.write(..., revision=)` does at the one production write
+    # seam. Leaving the column behind produced a row whose stored question was
+    # a generation ahead of the operation — a state nothing legitimate can
+    # write, and one `hold_answer` now refuses before it mutates anything.
+    row.revision = int(getattr(interaction, "revision", 0) or 0)
+    await db.commit()
+    return row
 
 
 @pytest.mark.asyncio
@@ -1178,6 +1186,128 @@ async def test_2_a_non_object_answer_map_is_refused_not_coerced(
     assert owned.interaction is None and owned.item == {}, (
         f"answered={bogus!r} was coerced to an empty map and the operation "
         f"rendered as if the user had answered nothing")
+
+
+def test_2_the_ask_identity_is_stable_across_a_shape_change():
+    """⛔⛔ P17 PHASE 2 REVIEW *(Danny)*. The identity of a QUESTION must not
+    move when its GENERATION does. It used to hash the interaction payload
+    whole — `revision` rides the interaction, every field, and every option's
+    patch, and `field_id` is `operation:event:attribute:revision` — so the
+    moment a legitimate answer rebuilt the surface, the same question
+    acquired a new identity and a same-turn retry refused a valid reuse."""
+    from core.b1_quantity_operation import ask_fingerprint
+    from core.semantics import (ClarificationAttribute, ClarificationGroup,
+                                ClarificationInteraction, ResponseType,
+                                UnresolvedField)
+
+    def shape(revision, attributes, introduction="How much?"):
+        fields = tuple(UnresolvedField(
+            operation_id="op:1", revision=revision, event_id="ev",
+            attribute=a, response_type=ResponseType.FREE_TEXT)
+            for a in attributes)
+        return ClarificationInteraction(
+            interaction_id="i", operation_id="op:1", revision=revision,
+            introduction=introduction,
+            groups=(ClarificationGroup(event_id="ev", label="L",
+                                       fields=fields),)).to_payload()
+
+    Q = ClarificationAttribute.QUANTITY
+    P = ClarificationAttribute.PREPARATION
+    item = {"food": "Barebells Caramel Cashew"}
+    base = ask_fingerprint(shape(0, (Q,)), item)
+
+    assert base == ask_fingerprint(shape(7, (Q,)), item), (
+        "the same question at a later generation is a different ask — a "
+        "retry after any rebuild refuses a reuse it should accept")
+    # and it still tells genuinely different asks apart
+    assert base != ask_fingerprint(shape(0, (Q, P)), item), "attribute set"
+    assert base != ask_fingerprint(shape(0, (Q,), "How many?"), item), "wording"
+    assert base != ask_fingerprint(shape(0, (Q,)), {"food": "Oatmeal"}), "item"
+
+
+@pytest.mark.asyncio
+async def test_2_a_retry_after_a_generation_bump_still_reuses(db, make_user):
+    """The consumer-side half: an operation whose stored question was
+    re-issued at a new generation is still THE SAME ask, so a same-turn retry
+    reuses it instead of raising `OpenedElsewhere` at the user."""
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:retrybump-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    item = {"food": "Oatmeal", "amount": 1}
+    await open_operation(db, user=user, interpreter_item=item,
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+
+    # the very same questions, re-issued one generation on — ONLY `revision`
+    # moves (the field ids follow it, as they do in a real re-issue). Note
+    # `_bumped` is not usable here: it also flattens options and response
+    # types, which makes it a genuinely different question and rightly
+    # refuses.
+    import dataclasses as _dc
+    regenerated = _dc.replace(
+        inter, revision=1,
+        groups=tuple(_dc.replace(g, fields=tuple(
+            _dc.replace(f, revision=1) for f in g.fields))
+            for g in inter.groups))
+    await _reshape(db, op_id, regenerated)
+    await db.refresh(user)
+
+    reused = await open_operation(db, user=user, interpreter_item=item,
+                                  interaction=inter, turn_id=tid, locale="en",
+                                  cohort="allowlist", capability=ID_ADDRESSED)
+    assert reused.created is False, "the retry opened a SECOND operation"
+    assert reused.revision == 1, (
+        f"the reuse rendered generation {reused.revision}, not the stored one")
+
+
+@pytest.mark.asyncio
+async def test_2_a_row_whose_generation_disagrees_refuses_before_writing(
+        db, make_user):
+    """⛔⛔ P17 PHASE 2 REVIEW *(Danny)*. `HeldAnswerResult` refuses a
+    disagreeing generation — but it is constructed AFTER `locked.write` and
+    `flush`, so the row had already been rewritten and the answer already
+    persisted by the time anything noticed. A post-condition is a report, not
+    a gate. The agreement is now established on the LOCKED material before
+    the merge, and the payload must come through untouched."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (FingerprintUnreadable,
+                                            ID_ADDRESSED, open_operation,
+                                            owning)
+    from db.models import PendingOperation
+
+    user = await make_user()
+    tid = f"ios:genskew-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+
+    # the stored QUESTION moves a generation on while the ROW's column does
+    # not — a state the one write seam cannot produce, so something else did
+    bumped = _bumped(inter, operation_id=op_id, revision=1)
+    await _repayload(db, op_id, lambda d: {
+        **d, "interaction": bumped.to_payload(),
+        "fingerprint": ops.fingerprint_of_payload({
+            **d, "interaction": bumped.to_payload()})})
+
+    async def _payload():
+        return json.loads((await db.execute(
+            select(PendingOperation.canonical_payload).where(
+                PendingOperation.operation_id == op_id))).scalar_one())
+
+    before = await _payload()
+    with pytest.raises(FingerprintUnreadable):
+        await ops.hold_answer(db, owned=owned, patch=_a_live_patch(inter))
+    await db.rollback()
+    assert await _payload() == before, (
+        "the answer was written on top of a row whose generation and question "
+        "disagreed — the check ran after the write, not before it")
 
 
 def test_2_the_locked_read_refreshes_the_row_by_construction():

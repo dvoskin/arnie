@@ -457,6 +457,28 @@ def fingerprint_of_payload(payload: dict) -> str:
         body.encode("utf-8")).hexdigest()[:24]
 
 
+#: Keys that carry the GENERATION rather than the question. Stripped before
+#: an ask is identified, at any depth: `revision` rides the interaction, every
+#: field, and every option's patch, and `field_id` is
+#: `operation:event:attribute:revision` — so both move on a rebuild that asks
+#: the very same thing.
+_GENERATION_KEYS = frozenset({"revision", "field_id"})
+
+
+def _without_generation(value):
+    """The payload with every generation-bearing identifier removed, at any
+    depth. STRIPPING rather than hand-picking the identifying keys: a
+    projection that listed what to KEEP would silently stop distinguishing
+    asks the day a field gained a new property, and two different questions
+    colliding on one identity is worse than the instability this fixes."""
+    if isinstance(value, dict):
+        return {k: _without_generation(v) for k, v in value.items()
+                if k not in _GENERATION_KEYS}
+    if isinstance(value, (list, tuple)):
+        return [_without_generation(v) for v in value]
+    return value
+
+
 def ask_fingerprint(interaction_payload: dict, interpreter_item: dict) -> str:
     """⛔ WHAT THE QUESTION IS, ignoring what has been ANSWERED so far *(P17
     Phase 2, fifth round)*.
@@ -469,12 +491,20 @@ def ask_fingerprint(interaction_payload: dict, interpreter_item: dict) -> str:
     refuse a reuse that is perfectly valid.
 
     So this one is DERIVED at read time and never persisted: there is no
-    second stored digest to fall out of agreement with the first."""
+    second stored digest to fall out of agreement with the first.
+
+    ⛔⛔ AND IT IS STABLE ACROSS A SHAPE CHANGE *(Danny, Phase 2 review)*. It
+    used to hash the interaction payload whole — including `revision` and the
+    `field_id`s that embed it — so the moment a legitimate answer rebuilt the
+    surface, the SAME question acquired a different identity. A same-turn
+    retry then compared a fresh ask against the rebuilt stored one, found
+    them unequal, and refused a reuse that was valid: `OpenedElsewhere` on
+    the operation the user was in the middle of answering."""
     import hashlib
 
     try:
         body = _canonical_json({"v": FINGERPRINT_VERSION,
-                                "ask": interaction_payload,
+                                "ask": _without_generation(interaction_payload),
                                 "item": dict(interpreter_item or {})})
     except (TypeError, ValueError) as exc:
         raise FingerprintUnreadable(
@@ -1850,6 +1880,20 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> "HeldAnswerResult"
             f"operation {owned.operation_id} is {_status}/"
             f"{getattr(locked.row, 'storage_status', None)} under the lock — "
             f"it no longer accepts answers")
+    # ⛔⛔ THE ROW AND ITS QUESTION MUST ALREADY AGREE, BEFORE WE MUTATE
+    # EITHER *(Danny, Phase 2 review)*. `HeldAnswerResult` refuses a
+    # disagreeing generation, but it is constructed AFTER `locked.write` and
+    # `flush` — so the row had already been rewritten and the answer already
+    # persisted by the time anything noticed. A post-condition is a report;
+    # this is the gate. Checked on the LOCKED material, before the merge.
+    _row_generation = int(getattr(locked.row, "revision", 0) or 0)
+    _asked_generation = getattr(locked_interaction, "revision", None)
+    if _asked_generation is not None and int(_asked_generation) != _row_generation:
+        raise FingerprintUnreadable(
+            f"operation {owned.operation_id} is at row revision "
+            f"{_row_generation} while the question it stores is generation "
+            f"{_asked_generation} — one was written without the other, and "
+            f"answering would build on whichever we happened to read")
     _live_ids = {str(f.field_id) for g in locked_interaction.groups
                  for f in g.fields}
     if str(patch.field_id) not in _live_ids:
