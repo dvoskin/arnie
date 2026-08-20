@@ -503,8 +503,15 @@ def ask_fingerprint(interaction_payload: dict, interpreter_item: dict) -> str:
     compare a fresh ask (no answers) against a stored one (some answers) and
     refuse a reuse that is perfectly valid.
 
-    So this one is DERIVED at read time and never persisted: there is no
-    second stored digest to fall out of agreement with the first.
+    Derived ONCE — at open — and PERSISTED as the payload's `ask_identity`
+    *(seventh round; this docstring previously said "never persisted", which
+    stopped being true the moment reuse had to survive a real field-set
+    rebuild)*. It sits inside the fp2 envelope, is required and non-empty at
+    the strict decode, and is never recomputed from the stored row: the
+    stored value IS the original, so there is no second derivation to fall
+    out of agreement with it. This function still runs at open, to compute
+    the identity of the ask being opened and compare it against the stored
+    original.
 
     ⛔⛔ AND IT IS STABLE ACROSS A SHAPE CHANGE *(Danny, Phase 2 review)*. It
     used to hash the interaction payload whole — including `revision` and the
