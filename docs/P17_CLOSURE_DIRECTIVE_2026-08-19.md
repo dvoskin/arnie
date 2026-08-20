@@ -522,3 +522,15 @@ No phase is complete because code was pushed or CI started. It is complete only 
 * **Migration impact**: none. **Deploy status**: NOT deployed; not deploy-approved. Phase 2 paused.
 * **Remaining blockers**: Phases 2–6, canaries A/B/C, Phase 8, and the two preserved deploy blockers.
 * **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED**
+
+## Phase 2 — canonical-operation durability (2026-08-20)
+
+* **Exact SHA**: `d749a4f` (on `088fd35`, Phase 1 signed off).
+* **Files materially changed**: `core/b1_quantity_operation.py` (payload carries `fingerprint_version`, `fingerprint` and `capability`; `StoredFingerprintVersionMismatch`; `_stored_open_result` verifies operation id / user / domain / turn, validates `schema_version`, decodes the item strictly and reads the STORED fingerprint rather than recomputing under today's rules; `OpenResult.capability`; `owning()` strict on schema and item) · `core/product_bound_ask.py` (opens with the channel, renders `opened.capability`) · new `tests/test_p17_phase2_canonical_operation_durability.py`.
+* **Invariant established**: a persisted operation is proved before it is reused — its rules, its schema, its item, its owner and its digest — and a reuse renders only what persisted. A refusal writes nothing and leaves the session usable. `oneask001` stays a backstop: the application keeps one awaiting operation per user without the constraint ever firing.
+* **Focused tests and mutations**: 31 in the Phase 2 file; 287 with the scan suites. **Mutations P1–P11 each printed `applied` and went RED.** The first by-construction gate was a grep trap (it matched its own docstring) and is now structural.
+* **Full suite**: 9859 passed / 25 skipped / 17 deselected / 4 xfailed, `PYTEST_EXIT=0`, fingerprint `ed0ad8f143c5` before = after, `TEST_POSTGRES_URL` set (both PG races ran).
+* **Migration impact**: none — the new payload fields are additive and unknown fields were already tolerated by readers.
+* **Deploy status**: NOT deployed; not deploy-approved.
+* **Remaining blockers**: Phases 3–6, canaries A/B/C, Phase 8, and the two preserved deploy blockers.
+* **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED**
