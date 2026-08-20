@@ -231,7 +231,7 @@ class _AnswerOperation:
 def _encode(interaction, interpreter_item: dict, locale: str,
             decision_id: str = "", candidate_set_id: str = "",
             asked_at: str = "", cohort: str = "",
-            capability: str = "") -> tuple:
+            capability: str = "", ask_identity: str = "") -> tuple:
     if not isinstance(interpreter_item, dict):
         # NAMED, not coerced. `build_interaction` takes the STAGED item and
         # this takes the INTERPRETER's dict; they are different objects about
@@ -258,6 +258,19 @@ def _encode(interaction, interpreter_item: dict, locale: str,
         # the capability the ask was BUILT for, not the one this retry
         # happens to arrive with.
         "capability": capability or "",
+        # ⛔⛔ WHAT QUESTION THIS OPERATION *ORIGINALLY* ASKED — IMMUTABLE
+        # *(seventh round, Danny)*. Deriving the identity from the CURRENT
+        # interaction was still wrong after the generation-strip fix: a real
+        # B-1.6b shape change alters the FIELD SET itself ("yes, fat was
+        # added" retires `added_fat_present` and activates two new fields),
+        # so the rebuilt surface hashes differently no matter which keys are
+        # stripped — and a delayed retry of the ORIGINAL opening turn was
+        # refused `OpenedElsewhere` instead of idempotently reusing.
+        #
+        # Written ONCE here, preserved through every rebuild, covered by the
+        # envelope (it is IN the payload), and reuse compares against THIS
+        # stored value — never against the mutable interaction.
+        "ask_identity": ask_identity,
         "interaction": interaction.to_payload(),
         "item": interpreter_item,
         # THE LANGUAGE THE QUESTION WAS ASKED IN, pinned to the operation.
@@ -558,11 +571,17 @@ def _decode_stored_payload(row):
             raise ValueError(
                 f"schema_version {data.get('schema_version')!r} is not "
                 f"{B1_PAYLOAD_VERSION!r} — this code cannot read it")
-        for required in ("locale", "cohort", "capability"):
+        for required in ("locale", "cohort", "capability", "ask_identity"):
             if required not in data:
                 raise ValueError(
                     f"payload carries no {required!r} — a rendering fact this "
                     f"schema requires, and defaulting it would invent one")
+        # presence is not enough for the identity: the open seam always
+        # writes a non-empty one, so an empty value is a payload this code
+        # did not write — and comparing a reuse against "" would refuse
+        # every legitimate retry while looking like a working check
+        if not str(data.get("ask_identity") or ""):
+            raise ValueError("payload carries an EMPTY ask_identity")
         capability = data.get("capability")
         if capability not in RECOGNISED_CAPABILITIES:
             raise ValueError(
@@ -651,8 +670,10 @@ def _stored_open_result(row, *, created: bool, expect_user_id: int,
                       interaction=interaction, item=item,
                       revision=int(row.revision or 0),
                       fingerprint=str(data["fingerprint"]),
-                      ask_identity=ask_fingerprint(
-                          data.get("interaction") or {}, item),
+                      # ⛔ THE STORED ORIGINAL, NOT A DERIVATION FROM THE
+                      # CURRENT INTERACTION *(seventh round)* — the current
+                      # one legitimately changes field set on a rebuild.
+                      ask_identity=str(data["ask_identity"]),
                       locale=str(data["locale"]),
                       cohort=str(data["cohort"]),
                       capability=str(data["capability"]))
@@ -813,6 +834,7 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
         return _reuse_if_same(existing, why="same turn, same ask")
     await _release_prior_awaiting(db, user=user, keep=operation_id)
     payload, signed = _encode(interaction, interpreter_item, locale or "en",
+                              ask_identity=mine,
                               decision_id=decision_id,
                               candidate_set_id=candidate_set_id,
                               asked_at=_now().isoformat(),

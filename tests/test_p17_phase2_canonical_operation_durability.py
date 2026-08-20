@@ -1419,6 +1419,134 @@ async def test_2_a_row_whose_generation_disagrees_refuses_before_writing(
     assert await owning(db, user) is not None
 
 
+@pytest.mark.asyncio
+async def test_2_a_retry_after_a_REAL_shape_change_still_reuses(db, make_user):
+    """⛔⛔ P17 PHASE 2, SEVENTH ROUND *(Danny)* — THE REAL B-1.6b PATH.
+
+    The generation-strip fix was not enough: a genuine shape change alters
+    the FIELD SET. "Yes, fat was added" retires `added_fat_present` and
+    activates `added_fat_amount` + `added_fat_identity`, so the rebuilt
+    surface hashes differently no matter which keys are stripped. A delayed
+    retry of the ORIGINAL opening turn computed the original identity, the
+    stored row computed the rebuilt one, and `open_operation` refused
+    `OpenedElsewhere` at a user whose retry was perfectly idempotent.
+
+    Identity is now written ONCE at open and compared against that stored
+    value. The retry must find ONE operation, reuse it, and render the
+    REBUILT current surface — the original identity answers "same ask?",
+    never "which surface do I show?"."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    from core.semantics import (ClarificationAttribute, ClarificationGroup,
+                                ClarificationInteraction, Provenance,
+                                ResponseType, SetAddedFatPresent,
+                                UnresolvedField)
+    from db.models import PendingOperation
+
+    user = await make_user()
+    tid = f"ios:realshape-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    group = inter.groups[0]
+    fat = UnresolvedField(operation_id=op_id, revision=0,
+                          event_id=group.event_id,
+                          attribute=ClarificationAttribute.ADDED_FAT_PRESENT,
+                          response_type=ResponseType.FREE_TEXT)
+    original = ClarificationInteraction(
+        interaction_id=inter.interaction_id, operation_id=op_id, revision=0,
+        introduction=inter.introduction,
+        groups=(ClarificationGroup(event_id=group.event_id, label=group.label,
+                                   fields=(fat,)),))
+    item = {"food": "Oatmeal"}
+    first = await open_operation(db, user=user, interpreter_item=item,
+                                 interaction=original, turn_id=tid,
+                                 locale="en", cohort="allowlist",
+                                 capability=ID_ADDRESSED)
+    assert first.created is True
+    await db.commit()
+
+    # the REAL answer path rebuilds the surface: field set changes
+    owned = await owning(db, user)
+    transition = await ops.hold_answer(db, owned=owned, patch=SetAddedFatPresent(
+        event_id=group.event_id, field_id=fat.field_id, present=True,
+        provenance=Provenance.USER_SELECTED))
+    await db.commit()
+    rebuilt_attrs = {f.attribute for g in transition.interaction.groups
+                     for f in g.fields}
+    assert transition.interaction.revision == 1
+    assert ClarificationAttribute.ADDED_FAT_AMOUNT in rebuilt_attrs, (
+        "the fixture did not actually change the field set — this proof "
+        "would then be the generation-bump case again")
+    assert ClarificationAttribute.ADDED_FAT_PRESENT not in rebuilt_attrs
+
+    # the delayed retry of the ORIGINAL opening turn, original interaction
+    await db.refresh(user)
+    retried = await open_operation(db, user=user, interpreter_item=item,
+                                   interaction=original, turn_id=tid,
+                                   locale="en", cohort="allowlist",
+                                   capability=ID_ADDRESSED)
+    assert retried.created is False, (
+        "the retry did not reuse — after a real shape change the same "
+        "opening turn stopped being idempotent")
+    rows = (await db.execute(select(PendingOperation).where(
+        PendingOperation.user_id == user.id))).scalars().all()
+    assert len(rows) == 1, f"the retry made {len(rows)} operations of one ask"
+    # and the surface handed back is the REBUILT current one
+    assert retried.revision == 1
+    retried_attrs = {f.attribute for g in retried.interaction.groups
+                     for f in g.fields}
+    assert retried_attrs == rebuilt_attrs, (
+        f"the retry rendered {sorted(a.value for a in retried_attrs)} instead "
+        f"of the current surface {sorted(a.value for a in rebuilt_attrs)}")
+    assert retried.ask_identity == first.ask_identity
+
+
+@pytest.mark.asyncio
+async def test_2_the_stored_ask_identity_is_signed_and_required(db, make_user):
+    """The two ways the stored original could quietly stop being authority:
+    edited (must be caught by the envelope — it is IN the payload), or
+    dropped (must be refused as a payload this code did not write, and the
+    operation still owns the meal)."""
+    from core.b1_quantity_operation import (FingerprintUnreadable,
+                                            ID_ADDRESSED, open_operation,
+                                            owning)
+    user = await make_user()
+    tid = f"ios:idsigned-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    item = {"food": "Oatmeal", "amount": 1}
+    await open_operation(db, user=user, interpreter_item=item,
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+
+    # EDITED without re-signing: the digest catches it — and an unreadable
+    # stored payload at the reuse seam is a REFUSAL, not a reuse
+    await _repayload(db, op_id, lambda d: {**d, "ask_identity": "fp2:ask:" + "0" * 24})
+    await db.refresh(user)
+    with pytest.raises(FingerprintUnreadable):
+        await open_operation(db, user=user, interpreter_item=item,
+                             interaction=inter, turn_id=tid, locale="en",
+                             cohort="allowlist", capability=ID_ADDRESSED)
+    await db.rollback()
+    await db.refresh(user)                  # the rollback expired it
+    owned = await owning(db, user)
+    assert owned is not None and owned.interaction is None, (
+        "an edited identity either dropped ownership or handed out rendering "
+        "facts from a payload the digest refuses")
+
+    # DROPPED and re-signed: the required-field check refuses; still owned
+    from core import b1_quantity_operation as m
+    await _repayload(db, op_id, lambda d: {
+        **{k: v for k, v in d.items() if k != "ask_identity"},
+        "fingerprint": m.fingerprint_of_payload(
+            {k: v for k, v in d.items() if k != "ask_identity"})})
+    await db.refresh(user)
+    owned = await owning(db, user)
+    assert owned is not None and owned.interaction is None, (
+        "a payload with no ask_identity was either read as unowned (legacy) "
+        "or decoded as if this code had written it")
+
+
 def test_2_the_locked_read_refreshes_the_row_by_construction():
     """⛔ SQLAlchemy does NOT repopulate an object already in the identity map
     from a later query. Without `populate_existing`, the row `owning()`
