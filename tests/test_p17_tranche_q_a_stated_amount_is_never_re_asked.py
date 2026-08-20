@@ -287,3 +287,95 @@ def test_an_amount_with_no_unit_on_the_item_still_counts():
     with, and the number is still the user's own token."""
     assert _item_is_stated({"amount": 6.5}, "6.5 oz turkey") is True
     assert _item_is_stated({"amount": 2, "basis": "estimate"}, "2 tacos") is True
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ROUND 2 — WHAT THE EVAL BATTERY CAUGHT THAT THE UNIT SUITE DID NOT
+#
+# The battery case "a unit that does not fix a size is asked about"
+# ("had a bowl of white rice and two fried eggs", expect=ask) went flaky on
+# PR #79. Two of its three reps died on an unrelated API-billing error, but
+# probing the case deterministically found a REAL regression underneath, in
+# both directions at once.
+#
+# ⛔⛔ THE ARTICLE GOT PROMOTED TO STRONG EVIDENCE. `normalize_quantity`
+# reports `user_stated_amount=1` for "a bowl of white rice" — it cannot tell
+# a number the user TYPED from one an indefinite article IMPLIES, and it was
+# never asked to. Moving the `basis` veto below the normalizer handed that
+# conflation the authority the veto used to withhold: measured at
+# 41297ca, `{"unit": "bowl", "basis": "estimate"}` returned True where
+# deployed main (76076b6) returned False.
+#
+# That is the SAME defect class as the raw-substring fallback caught in
+# review — a bare article overruling an explicit `basis="estimate"` — simply
+# arriving through the door next to it. ⭐ A GUARD THAT MOVES MUST BE JUDGED
+# AGAINST EVERY PATH IT NOW SITS BELOW, not just the one that prompted it.
+#
+# The existing bare-article guard did not catch it because its item is
+# `1 tbsp` — a MEASURED unit, where the unit check vetoes independently.
+# Only a unit that carries no measure ("bowl") leaves the article alone with
+# the decision. So the guard was real, and its single fixture was load-
+# bearing in a way nothing had stated.
+# ══════════════════════════════════════════════════════════════════════════
+
+BOWL_MESSAGE = "had a bowl of white rice and two fried eggs"
+
+
+@pytest.mark.parametrize("basis", ["estimate", "regular"])
+def test_an_article_beside_an_unmeasured_unit_is_not_a_stated_amount(basis):
+    """⛔⛔ THE REGRESSION. "A bowl" is one bowl, but the user never counted
+    it — and a bowl is not a size. Reading it as stated suppresses the very
+    question this message exists to provoke.
+
+    The normalizer's `user_stated_amount` answers "what amount does this
+    phrase denote", NOT "did the user write one". Only the second question
+    can outrank `basis`."""
+    item = {"food": "White rice", "amount": 1, "unit": "bowl", "basis": basis}
+    assert _item_is_stated(item, BOWL_MESSAGE) is False, (
+        "an indefinite article overrode an explicit basis=%r — the ask that "
+        "settles an unfixed unit never opens" % basis)
+
+
+def test_the_article_still_stands_when_the_interpreter_declares_nothing():
+    """The fix must not overshoot into the case it never governed. With no
+    `basis` to weigh it against, the article remains what it always was: the
+    weakest evidence, but the only evidence there is. Deployed main returned
+    True here and must continue to."""
+    item = {"food": "White rice", "amount": 1, "unit": "bowl"}
+    assert _item_is_stated(item, BOWL_MESSAGE) is True
+
+
+def test_a_spelled_count_outranks_basis_like_a_digit_does(basis="estimate"):
+    """⛔ THE OTHER HALF OF REQUIREMENT 1. "two fried eggs" is a literal
+    quantity the user typed; `basis="estimate"` was overruling it, exactly as
+    `100g` was. The tranche is named for the rule that a declaration loses to
+    the message — a rule that cannot be spelled digits-only.
+
+    It fails today for a reason worth recording: the normalizer returns
+    `user_stated_unit="fried"`, grabbing the adjective sitting where a unit
+    usually sits. The item's unit is "egg". So a unit check written to stop
+    "scoop" masquerading as "tbsp" fires on a word that is not a unit at all,
+    and the user's own count loses to it."""
+    item = {"food": "Fried eggs", "amount": 2, "unit": "egg", "basis": basis}
+    assert _item_is_stated(item, BOWL_MESSAGE) is True, (
+        "a spelled count the user typed lost to the interpreter's basis")
+
+
+def test_the_scoop_veto_survives_the_spelled_count_fix():
+    """⛔⛔ THE GUARD ON THAT SECOND FIX. Loosening the unit check enough to
+    let "two fried eggs" through must not loosen it enough to let "a scoop of
+    peanut butter" carry a tablespoon. The separator is that the clause names
+    THIS item's unit in the user's own words: "eggs" is written, "tbsp" is
+    not."""
+    item = {"food": "Peanut butter", "amount": 1, "unit": "tbsp",
+            "basis": "estimate"}
+    assert _item_is_stated(item, "and a scoop of peanut butter") is False
+
+
+def test_a_spelled_count_whose_unit_is_absent_still_needs_the_unit():
+    """A written number is necessary, not sufficient. If the user spelled a
+    count but named a unit this item cannot be measured in, the disagreement
+    is real and still vetoes."""
+    item = {"food": "Whole milk", "amount": 2, "unit": "cup",
+            "basis": "estimate"}
+    assert _item_is_stated(item, "I had two glasses of milk") is False

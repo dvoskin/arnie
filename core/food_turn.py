@@ -1419,6 +1419,50 @@ def _canon_unit(word: str) -> str:
     return w
 
 
+#: An indefinite article is not a count. `normalize_quantity` maps "a" and
+#: "an" to 1 in the SAME table that maps "one" and "two" — correctly, because
+#: it is answering what the phrase DENOTES. This module asks a different
+#: question, and needs the two kept apart.
+_ARTICLES = frozenset({"a", "an"})
+
+
+def _clause_writes_a_quantity(clause: str) -> bool:
+    """Did the user WRITE a quantity here, or does one merely follow from an
+    article?
+
+    ⛔⛔ THE DISTINCTION THE NORMALIZER DOES NOT DRAW *(P17 Tranche Q, round
+    2)*. `normalize_quantity("a bowl of white rice")` reports
+    `user_stated_amount=1`, identically to `"1 bowl of white rice"`, because
+    it is reporting what the phrase means — and "a bowl" does mean one bowl.
+    What it is NOT reporting is whether the user counted anything.
+
+    That conflation was harmless while `basis` was vetoed above this rung.
+    Moving the veto below it (so a typed `100g` could outrank `basis`) handed
+    the article the same authority: measured at 41297ca, a bowl of rice
+    carried `basis="estimate"` all the way to "stated", and the ask that
+    settles an unfixed unit stopped opening. ⭐ A GUARD THAT MOVES MUST BE
+    JUDGED AGAINST EVERY PATH IT NOW SITS BELOW.
+
+    Reads the normalizer's OWN tables rather than respelling them, so the
+    parser and this gate cannot drift apart about which words are quantity
+    words — the failure mode that had two vocabularies disagreeing in both
+    directions at once during Phase 1."""
+    try:
+        from skills.nutrition.normalize import (_FRACTION_WORDS,
+                                                _UNICODE_FRACTIONS,
+                                                _WORD_NUMBERS)
+    except Exception:
+        # No table, no opinion: fall back to "a digit is a written number",
+        # which is the part of the answer that needs no vocabulary at all.
+        return bool(re.search(r"\d", clause or ""))
+    for tok in re.findall(r"\d+|[^\W\d_]+|.", str(clause or "").lower()):
+        if tok.isdigit() or tok in _UNICODE_FRACTIONS or tok in _FRACTION_WORDS:
+            return True
+        if tok in _WORD_NUMBERS and tok not in _ARTICLES:
+            return True
+    return False
+
+
 def _literal_amount_with_unit(haystack: str, f: float, it: dict) -> bool:
     """Did the user write THIS number, as a token, wearing a unit this item
     can be measured in?
@@ -1560,8 +1604,31 @@ def _item_is_stated(it: dict, message: str) -> bool:
             # is precisely the shipped failure: a 190-calorie assumption
             # presented as the user's own words. They said scoop; we said
             # tablespoon; that is an inference whatever the number did.
-            _said_unit = (_q.user_stated_unit or "").rstrip("s")
-            if _unit and _said_unit and _said_unit != _unit.rstrip("s"):
+            _said_unit = _canon_unit(_q.user_stated_unit or "")
+            _want_unit = _canon_unit(_unit)
+            if _want_unit and _said_unit and _said_unit != _want_unit:
+                # ⭐ UNLESS THE USER WROTE THIS ITEM'S UNIT THEMSELVES. The
+                # normalizer takes whatever word sits where a unit usually
+                # sits, and that word is sometimes an adjective: "two fried
+                # eggs" reports `fried` against an item measured in `egg`. A
+                # veto built to stop "scoop" masquerading as "tbsp" must not
+                # fire on a word that is not a unit at all — otherwise a count
+                # the user typed loses to the interpreter's `basis`, which is
+                # the whole defect this tranche is named for.
+                #
+                # The separator is the user's own clause: "eggs" is written
+                # there, "tbsp" is not. So the veto stands down only when the
+                # disagreement is with a word the user never used as the
+                # measure, and holds whenever they named a different one.
+                if not re.search(r"\b%ss?\b" % re.escape(_want_unit),
+                                 clause.lower()):
+                    break
+            # ⛔⛔ AND THE NUMBER HAS TO BE ONE THE USER WROTE. `_said` is what
+            # the phrase DENOTES, which for "a bowl" is 1 — an article, not a
+            # count. Strong evidence is what outranks `basis` here, and an
+            # article is the weakest evidence in this function, so it belongs
+            # below the veto with the rest of the weak rung, not above it.
+            if not _clause_writes_a_quantity(clause):
                 break
             return True
     except Exception:
