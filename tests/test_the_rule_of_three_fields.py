@@ -193,7 +193,8 @@ async def _open_with_three(sessions, user):
         # production write seam does — otherwise it is indistinguishable from
         # an outside edit, which the strict decoder correctly refuses.
         payload["fingerprint"] = b1.fingerprint_of_payload(
-            payload["interaction"], payload.get("item") or {})
+            payload["interaction"], payload.get("item") or {},
+            payload.get("answered") or {})
         payload["fingerprint_version"] = b1.FINGERPRINT_VERSION
         row.canonical_payload = json.dumps(payload)
         await s.commit()
