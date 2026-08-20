@@ -446,6 +446,34 @@ def test_a_connective_ends_the_binding_even_inside_one_clause(message):
     assert _item_is_stated(item, message) is False
 
 
+def test_a_second_number_ends_the_scan():
+    """⛔ A NUMBER IS ITS OWN BOUNDARY. "2 tacos 3 fried eggs" states three
+    eggs; an item claiming two of them is holding the TACOS' count. The scan
+    from the first number has to stop when it meets the second, or "eggs"
+    three words later would hand it over.
+
+    Found by mutation: removing this break flipped exactly this message and
+    no test noticed — the guard was real and unproven, which is the same
+    position as a guard that is not there."""
+    item = {"food": "Fried eggs", "amount": 2, "unit": "egg",
+            "basis": "estimate"}
+    assert _item_is_stated(item, "2 tacos 3 fried eggs") is False
+
+
+def test_a_distant_noun_does_not_own_the_count():
+    """⛔ THE WINDOW EARNS ITS PLACE TOO. A compound dish name can put this
+    food's noun many words past a number that plainly belongs to the dish,
+    with no connective in between for the break words to catch. Nearness is
+    the only thing left to decide ownership there.
+
+    Found by mutation: widening the window to the whole clause left every
+    other proof green, which meant the bound was asserted and not tested."""
+    item = {"food": "Fried eggs", "amount": 2, "unit": "egg",
+            "basis": "estimate"}
+    assert _item_is_stated(
+        item, "2 corn tortilla chicken tinga fried eggs") is False
+
+
 def test_the_count_binding_does_not_cost_the_awkward_real_fixtures():
     """⛔ THE GUARD ON THE GUARD. "Bind to the head noun" alone would refuse
     two shapes already shipped and tested — a food whose name tokenises badly
