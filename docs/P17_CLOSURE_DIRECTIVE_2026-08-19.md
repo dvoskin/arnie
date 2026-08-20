@@ -511,3 +511,14 @@ No phase is complete because code was pushed or CI started. It is complete only 
 * **Migration impact**: none. **Deploy status**: NOT deployed; not deploy-approved. Phase 2 paused.
 * **Remaining blockers**: Phases 2–6, canaries A/B/C, Phase 8, and the two preserved deploy blockers.
 * **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED**
+
+## Phase 1 — article-quantity regression closed (2026-08-20)
+
+* **Exact SHA**: `088fd35` (on `2edab8c`; `8c6af90` docs-only).
+* **Files materially changed**: `core/scan_authority.py` (`_ARTICLE_CORES`; the parser's quantifier branch) · the Phase 1 proof file.
+* **Invariant established**: `a`/`an` head the quantifier when they introduce no other core, so "a bar", "an ounce", "a serving" state an amount again; `the` does not quantify; and an article quantity still checks the identity it names ("a Barebells bar" binds only against a Barebells label).
+* **Focused tests and mutations**: Phase 1 file 98 passed; seven scan suites 271 passed. **E1 (article-core branch removed) and E2 (`the` as a core) each printed `applied` and went RED.** 52 mutations across the phase.
+* **Full suite**: 9828 passed / 25 skipped / 17 deselected / 4 xfailed, `PYTEST_EXIT=0`, fingerprint `b150fb9c677d` before = after, `TEST_POSTGRES_URL` set (both PG races ran).
+* **Migration impact**: none. **Deploy status**: NOT deployed; not deploy-approved. Phase 2 paused.
+* **Remaining blockers**: Phases 2–6, canaries A/B/C, Phase 8, and the two preserved deploy blockers.
+* **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED**
