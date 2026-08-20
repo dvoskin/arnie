@@ -104,8 +104,7 @@ async def test_1_the_fingerprint_and_its_version_are_persisted_at_creation(
     # answer map); `semantic_fingerprint` is the ASK IDENTITY and is never
     # persisted, so the two are deliberately different values.
     from core.b1_quantity_operation import fingerprint_of_payload
-    assert data["fingerprint"] == fingerprint_of_payload(
-        inter.to_payload(), item, {})
+    assert data["fingerprint"] == fingerprint_of_payload(data)
     assert data["fingerprint"] == opened.fingerprint
     assert opened.ask_identity == semantic_fingerprint(inter, item)
     assert opened.ask_identity != opened.fingerprint
@@ -382,12 +381,14 @@ async def _reshape(db, op_id, interaction):
     """Persist a NEW interaction the way the one write seam does — payload and
     digest together — i.e. a concurrent writer's legitimate shape change."""
     from core import b1_quantity_operation as m
-    return await _repayload(db, op_id, lambda d: {
-        **d, "interaction": interaction.to_payload(),
-        "fingerprint": m.fingerprint_of_payload(interaction.to_payload(),
-                                                d.get("item") or {},
-                                                d.get("answered") or {}),
-        "fingerprint_version": m.FINGERPRINT_VERSION})
+
+    def _apply(d):
+        out = {**d, "interaction": interaction.to_payload(),
+               "fingerprint_version": m.FINGERPRINT_VERSION}
+        out["fingerprint"] = m.fingerprint_of_payload(out)
+        return out
+
+    return await _repayload(db, op_id, _apply)
 
 
 @pytest.mark.asyncio
@@ -868,8 +869,7 @@ async def test_2_an_answer_corrupted_before_the_lock_is_never_deleted_and_re_sig
         broken = {k: {"patch_type": "no_such_patch_type"}
                   for k in (d.get("answered") or {})}
         out = {**d, "answered": broken}
-        out["fingerprint"] = ops.fingerprint_of_payload(
-            out.get("interaction") or {}, out.get("item") or {}, broken)
+        out["fingerprint"] = ops.fingerprint_of_payload(out)
         return out
 
     await _repayload(db, op_id, _corrupt)
@@ -943,10 +943,16 @@ async def test_2_the_returned_operation_carries_the_locked_metadata(db, make_use
     owned = await owning(db, user)
     assert (owned.locale, owned.cohort) == ("en", "allowlist")
 
-    # the metadata moves AFTER that read. The digest covers interaction+item,
-    # so this is a legitimate payload the strict decoder still accepts.
-    await _repayload(db, op_id, lambda d: {**d, "locale": "ru",
-                                           "cohort": "general"})
+    # the metadata moves AFTER that read — as a LEGITIMATE, re-signed write,
+    # because the digest now covers the whole payload and an unsigned edit
+    # would (correctly) be refused as tampering before this proof could say
+    # anything about which copy the returned operation reports.
+    def _move_metadata(d):
+        out = {**d, "locale": "ru", "cohort": "general"}
+        out["fingerprint"] = ops.fingerprint_of_payload(out)
+        return out
+
+    await _repayload(db, op_id, _move_metadata)
 
     transition = await ops.hold_answer(db, owned=owned,
                                        patch=_a_live_patch(inter))
@@ -1124,6 +1130,54 @@ async def test_2_an_awaiting_row_at_the_old_fingerprint_version_fails_closed(
     assert await _payload() == before, (
         "the old-version row was rewritten — it must be left exactly as it "
         "was, including its old version marker")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bogus", [[], "", 0, False, None])
+async def test_2_a_non_object_answer_map_is_refused_not_coerced(
+        db, make_user, bogus):
+    """⛔ P17 PHASE 2, SIXTH ROUND *(Danny)*. `data.get("answered") or {}`
+    turned `null`, `[]`, `""`, `0` and `false` into a valid EMPTY answer map
+    BEFORE the type check could see any of them — coercing malformed into
+    missing. Absent is a fresh ask; present-and-not-an-object is a payload
+    nothing legitimate wrote, and it must refuse.
+
+    RE-SIGNED ON PURPOSE, so the digest cannot be what refuses and the
+    decoder is isolated: `_decode_answered` has to reject this on its own."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+
+    # the unit claim, on the decoder itself
+    with pytest.raises(ValueError):
+        ops._decode_answered({"answered": bogus}, "op")
+    assert ops._decode_answered({}, "op") == {}, (
+        "an ABSENT answer map is a fresh ask, not a malformed one")
+
+    user = await make_user()
+    tid = f"ios:bogusanswers-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+
+    def _apply(d):
+        out = {**d, "answered": bogus}
+        out["fingerprint"] = ops.fingerprint_of_payload(out)
+        return out
+
+    await _repayload(db, op_id, _apply)
+
+    await db.refresh(user)
+    owned = await owning(db, user)
+    assert owned is not None, (
+        "a malformed answer map made the operation look UNOWNED — the turn "
+        "would fall through to legacy")
+    assert owned.interaction is None and owned.item == {}, (
+        f"answered={bogus!r} was coerced to an empty map and the operation "
+        f"rendered as if the user had answered nothing")
 
 
 def test_2_the_locked_read_refreshes_the_row_by_construction():
