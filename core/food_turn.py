@@ -1411,10 +1411,18 @@ def _item_is_stated(it: dict, message: str) -> bool:
     # history holding six Barebells flavours, on STRICT — whose own rule says a
     # branded product with an unstated flavour is always an ask. The flavour was
     # unstated. It just did not look unstated by the time anything could ask.
-    if b == "regular":
-        return False
-    if b == "estimate":
-        return False
+    #
+    # ⛔⛔ AND THE VETO DOES NOT LIVE HERE ANY MORE *(P17 Tranche Q)*. Both
+    # `regular` and `estimate` used to return False RIGHT HERE, before the
+    # literal proxy below had been consulted at all — so a `basis` label the
+    # interpreter chose could overrule the user's own typed number. Measured
+    # in production 2026-08-20: "I also had 100g of grilled chicken" arrived
+    # as amount=100 unit=g basis="estimate", was filed as OUR inference, and
+    # B-1 asked "How much?" and logged 170.1 g against a stated 100 g.
+    #
+    # A DECLARATION LOSES TO THE MESSAGE. The veto now sits below the strong
+    # literal checks and above the weak ones — see the marker further down,
+    # which explains why that boundary is exactly where it is.
     amt = it.get("amount")
     if amt is None:
         return False
@@ -1528,6 +1536,24 @@ def _item_is_stated(it: dict, message: str) -> bool:
                 continue
             if _lo <= _hi and (_lo - 0.01) <= f <= (_hi + 0.01):
                 return True
+    # ── THE BASIS VETO, AND WHY IT SITS EXACTLY HERE ───────────────────────
+    #
+    # Everything ABOVE is a number the user actually typed: the normalizer
+    # agreeing on amount AND unit, the digits appearing in this food's clause,
+    # "half", a refining clause about the same head noun, a stated range. That
+    # is evidence, and it outranks whatever `basis` claims — Tranche Q.
+    #
+    # Everything BELOW is weaker: a spelled small number, and finally a bare
+    # indefinite article. The article is the weakest signal in this function,
+    # and the `basis` veto is precisely what stops it turning "a scoop of
+    # peanut butter" (carried as 1 tbsp) into the user's own statement — the
+    # shipped 190-calorie assumption recorded above. Widening "literal
+    # outranks basis" to cover the article would reintroduce that defect while
+    # fixing this one.
+    #
+    # So: a number they typed beats the label; an article does not.
+    if b in ("regular", "estimate"):
+        return False
     if not f.is_integer():
         return False
     _words = {1: ("one",), 2: ("two",), 3: ("three",), 4: ("four",),

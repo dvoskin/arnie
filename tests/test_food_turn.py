@@ -586,11 +586,22 @@ async def test_strict_confirm_narrowed_to_where_it_earns_friction(monkeypatch):
 
 
 def test_item_is_stated_proxy():
-    """basis wins when present; otherwise the amount must be the user's own
+    """A number the user TYPED outranks the interpreter's `basis`; otherwise
+    the basis decides, and otherwise still the amount must be the user's own
     words (digits, 'half', spelled small counts). Unsure → False (errs toward
-    confirming, the safe strict direction)."""
+    confirming, the safe strict direction).
+
+    ⛔ THE SECOND ASSERTION USED TO READ `not ... ("2 tacos")` *(P17 Tranche
+    Q)*. It pinned "basis wins when present" as the contract — so `basis:
+    "estimate"` vetoed a number sitting in the user's own message. That is
+    not a subtle edge: measured in production 2026-08-20, "I also had 100g of
+    grilled chicken" was filed as OUR inference, B-1 asked "How much?", and
+    the meal logged 170.1 g against a stated 100 g. The user typed the 2 in
+    "2 tacos" exactly as they typed the 100 in "100g", and neither is ours to
+    relabel."""
     assert FT._item_is_stated({"amount": 6.5, "basis": "stated"}, "whatever")
-    assert not FT._item_is_stated({"amount": 2, "basis": "estimate"}, "2 tacos")
+    assert FT._item_is_stated({"amount": 2, "basis": "estimate"}, "2 tacos"), (
+        "an interpreter label overrode a number the user typed")
     assert FT._item_is_stated({"amount": 6.5}, "6.5 oz turkey")
     assert FT._item_is_stated({"amount": 0.5}, "half a bagel")
     assert FT._item_is_stated({"amount": 2}, "two slices of pizza")
