@@ -563,3 +563,15 @@ No phase is complete because code was pushed or CI started. It is complete only 
 * **Production evidence**: none — deliberately, no canary before Phases 2–6.
 * **Remaining blockers**: Phases 3–6, Canaries A/B/C, Phase 8 incident repair, plus the two preserved **deploy blockers** (acquisition `None` silently unbinds the scan attempt; WS coalescing drops a second barcode before the attachment-conflict authority).
 * **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED**
+
+### Phase 2 third round — authoritative freeze and review series (2026-08-19)
+
+The report above was written at `4278f9b`, before three further commits. **That earlier 9889-test freeze is superseded**; these are the authoritative numbers.
+
+* **Review series** (`origin/main..`): `31c5daa` (locked authority + one door) · `4278f9b` (report) · `cfe44e0` (the two unproven seams) · `2f23aca` (the race actually exercises a shape change) · `ba64d80` (`HeldAnswerResult` refuses two authorities). Net: 6 files, +993/−16.
+* **Pushed to `review/p17-phase2-round3` only. `origin/main` is untouched at `f35155f`.** Note `ci.yml` triggers on push to `main` and PRs *targeting* `main`, so a review-only branch runs **no CI**; a draft PR into main would run CI without deploying (Render auto-deploys from main pushes; `render.yaml` is reference-only).
+* **Full suite, frozen**: **9892 passed · 25 skipped · 17 deselected · 4 xfailed · `PYTEST_EXIT=0`** in 397.30s, zero `FAILED`/`ERROR` lines in the log, tree fingerprint **`e3b0c44298fc` before = after** (an empty diff — the tree was fully committed), `TEST_POSTGRES_URL` set. The 25-skip shape confirms the PostgreSQL races ran (not the under-inclusive 122-skip run).
+* **Focused**: 69 proofs in the Phase 2 file + 8 in the answer-race file — **77 total, 0 skipped, exit 0**.
+* **Construction invariant (Danny's)**: `HeldAnswerResult.__post_init__` refuses a result whose `interaction` is not `owned.interaction`, or whose `revision` disagrees with the refreshed locked ROW or with the interaction's generation. Proven at a revision that actually moved (1, not 0 == 0). **The row half is proven independently of the generation half** — bumping `revision` alone trips both, so R13 (row check reduced to a tautology) was GREEN until a case was added that drifts only the row.
+* **Mutations**: R1–R9 plus R10 (locked field membership), R11 (rebuilt surface not returned), R12 (`__post_init__` neutered), R13 (row check tautological) — **every one printed `applied` and every one went RED against a reachable, correctly targeted proof**. Reported honestly: R5/R6 are inert against the two-session race (nothing changes the shape before writer A, so its pre-lock state equals the locked one) and are RED in the deterministic proofs that inject a reshape between `owning()` and the lock.
+* **Deploy status**: NOT deployed, NOT deploy-approved, **not on main**. No canary attempted. **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED**. Phase 2 closes and Phase 3 begins only after sign-off on the reviewed series.
