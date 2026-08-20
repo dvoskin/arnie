@@ -1538,6 +1538,30 @@ def _binds_nearby(text: str, nouns: frozenset) -> bool:
     return False
 
 
+def _half_binds_to_food(haystack: str, f: float, it: dict) -> bool:
+    """"Half" states an amount without writing a digit — and still has to say
+    whose amount it is.
+
+    ⛔⛔ *(P17 Tranche Q, round 4)* This rung was a bare
+    `re.search(r"\\bhalf\\b", clause)` sitting ABOVE the `basis` veto since
+    round 1, so any "half" anywhere in the clause promoted an inferred 0.5 to
+    the user's own words. `_clause_for` does not split on "after", so
+    "Greek yogurt after half a banana" classified an inferred **0.5 cup of
+    yogurt** as stated — the banana's half, relabelled.
+
+    Same question and the same helper as the digit counts: does this food's
+    own noun follow the quantity closely enough to own it? `_binds_nearby`
+    skips the quantity words themselves, so "half a cup of greek yogurt"
+    reaches "cup" and binds, while "half a banana" reaches "banana" and does
+    not."""
+    if f != 0.5:
+        return False
+    for m in re.finditer(r"\bhalf\b", (haystack or "").lower()):
+        if _binds_nearby(haystack[m.start():], _item_nouns(it)):
+            return True
+    return False
+
+
 def _clause_writes_a_quantity(clause: str) -> bool:
     """Did the user WRITE a quantity here, or does one merely follow from an
     article?
@@ -1776,7 +1800,7 @@ def _item_is_stated(it: dict, message: str) -> bool:
     # on whitespace.
     if _literal_amount_with_unit(clause, f, it):
         return True
-    if f == 0.5 and re.search(r"\bhalf\b", clause):
+    if _half_binds_to_food(clause, f, it):
         return True
     # ── ONE FOOD CAN SPAN TWO CLAUSES ──────────────────────────────────────
     #
@@ -1799,7 +1823,7 @@ def _item_is_stated(it: dict, message: str) -> bool:
         # the refining clause earns no weaker a test than the primary one
         if _literal_amount_with_unit(_refine, f, it):
             return True
-        if f == 0.5 and re.search(r"\bhalf\b", _refine):
+        if _half_binds_to_food(_refine, f, it):
             return True
     # ── A RANGE IS A STATED AMOUNT ─────────────────────────────────────────
     #
@@ -1813,15 +1837,23 @@ def _item_is_stated(it: dict, message: str) -> bool:
     #
     # Anywhere inside the stated span counts, midpoint or endpoint, because
     # every value in it is the user's figure rather than ours.
+    #
+    # ⭐ AND THE SPAN HAS TO BE THIS FOOD'S SPAN *(round 4)*. A range is a
+    # quantity like any other, so it answers the same ownership question the
+    # digit counts do — "French fries after 5-6 chicken nuggets" states the
+    # NUGGETS' count, and reading 5.5 fries out of it hands one food's number
+    # to another under the label "the user said so".
     for _hay in (clause, _refine):
-        for _lo, _hi in re.findall(
+        for _m in re.finditer(
                 r"(\d+(?:\.\d+)?)\s*(?:-|–|—|to|or)\s*(\d+(?:\.\d+)?)",
                 _hay or ""):
             try:
-                _lo, _hi = float(_lo), float(_hi)
+                _lo, _hi = float(_m.group(1)), float(_m.group(2))
             except ValueError:
                 continue
-            if _lo <= _hi and (_lo - 0.01) <= f <= (_hi + 0.01):
+            if not (_lo <= _hi and (_lo - 0.01) <= f <= (_hi + 0.01)):
+                continue
+            if _binds_nearby((_hay or "")[_m.start():], _item_nouns(it)):
                 return True
     # ── THE BASIS VETO, AND WHY IT SITS EXACTLY HERE ───────────────────────
     #

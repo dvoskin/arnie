@@ -446,6 +446,58 @@ def test_a_connective_ends_the_binding_even_inside_one_clause(message):
     assert _item_is_stated(item, message) is False
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# ROUND 4 — "half" AND A RANGE ARE QUANTITIES TOO
+#
+# Round 3 bound bare COUNTS to their food. Two other rungs state a quantity
+# without a digit token and were left behind, both sitting ABOVE the `basis`
+# veto since round 1:
+#
+#     if f == 0.5 and re.search(r"\bhalf\b", clause):   -> True
+#     ... the stated-range branch                       -> True
+#
+# Neither asks whose quantity it is. They are the same defect as the count
+# branch — a bare presence test in a clause that can name two foods — and the
+# splitter does not cut on "after", so both reach it.
+# ══════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.parametrize("message,item,stated,why", [
+    ("Greek yogurt after half a banana",
+     {"food": "Greek yogurt", "amount": 0.5, "unit": "cup"}, False,
+     "the half is the banana's; 0.5 cup of yogurt is our inference"),
+    ("half a cup of greek yogurt",
+     {"food": "Greek yogurt", "amount": 0.5, "unit": "cup"}, True,
+     "correctly bound half must still count"),
+    ("half a banana and greek yogurt",
+     {"food": "Greek yogurt", "amount": 0.5, "unit": "cup"}, False,
+     "even split into clauses, the half never named the yogurt"),
+    ("French fries after 5-6 chicken nuggets",
+     {"food": "French fries", "amount": 5.5, "unit": "piece"}, False,
+     "the range is the nuggets'; 5.5 fries is our inference"),
+    ("like 5-6 fries",
+     {"food": "French fries", "amount": 5.5, "unit": "piece"}, True,
+     "correctly bound range must still count"),
+])
+def test_half_and_range_bind_to_their_food(message, item, stated, why):
+    """⛔⛔ A QUANTITY WITHOUT A DIGIT IS STILL A QUANTITY, and still has to
+    say whose it is. Both rungs outrank `basis`, so an unbound match here
+    launders a neighbouring food's amount into "the user said so"."""
+    assert _item_is_stated(dict(item, basis="estimate"), message) is stated, why
+
+
+def test_the_truffle_fries_case_survives_the_range_binding():
+    """⛔ THE GUARD ON ROUND 4. The stated-range rung exists for this exact
+    shipped message: the count that settles "some fries" sits in a LATER
+    clause, `_clause_for` keeps the earlier one, and the interpreter carries
+    the midpoint 5.5 which appears nowhere in the text. Binding the range must
+    not cost the case the range branch was written for."""
+    assert _item_is_stated(
+        {"food": "Parmesan truffle fries", "amount": 5.5, "unit": "piece",
+         "basis": "estimate"},
+        "some parmesan truffle fries from Bobby Flay, like 5-6 fries",
+    ) is True
+
+
 def test_a_second_number_ends_the_scan():
     """⛔ A NUMBER IS ITS OWN BOUNDARY. "2 tacos 3 fried eggs" states three
     eggs; an item claiming two of them is holding the TACOS' count. The scan
