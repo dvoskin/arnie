@@ -833,12 +833,15 @@ behavioural lines, and all four classification paths were driven end to end.
     eggs"`) and the **next-number break** (`"2 tacos 3 fried eggs"` states
     *three* eggs). Both flipped under mutation with no test noticing. A guard
     nobody can fail is where a guard that isn't there is.
-  * **M5 is INVALID, not proven**: reverting `_canon_unit` to `.rstrip("s")` at
-    the unit comparison changes no observable behaviour — the stand-down and
-    the literal fallback both canonicalise. **Kept** so an existing comparison
-    uses the module's one unit vocabulary instead of an ad-hoc suffix strip two
-    lines from `_unit_nouns`'s `_canon_unit`. A judgement, not a proof; open
-    for Danny to overrule.
+  * **M5 is INVALID / EQUIVALENT — decided by Danny 2026-08-20, KEEP
+    `_canon_unit`.** Reverting it to `.rstrip("s")` at the unit comparison
+    changes no observable behaviour: the mutation is **equivalent at that
+    particular comparison**, which is not evidence the code is harmful or
+    unnecessary. Recording it as INVALID/equivalent rather than reverting to a
+    second ad-hoc unit-normalisation rule. ⭐ **an equivalent mutant is a
+    classification, not a verdict on the code** — the mutation-testing
+    literature's own category, and the reason "GREEN" needed five names before
+    it needed six.
 
 ### Open, and not mine to close
 
@@ -848,3 +851,52 @@ behavioural lines, and all four classification paths were driven end to end.
 
 **Tranche D (P0): untouched.** **P17g: BLOCKED** · **END-TO-END SCAN:
 BLOCKED** · PR #79 Draft, unmerged, awaiting approval.
+
+### Round 4 (Danny, review of `9c4195b`) — two rungs still unbound
+
+Both checks were green on `9c4195b` and the PR was still not approvable.
+
+**1. `half` and a stated RANGE never bound to their food.** Round 3 bound bare
+counts; these two rungs state a quantity *without a digit token* and were left
+behind — both bare presence tests, both above the `basis` veto since round 1,
+both reachable because `_clause_for` does not split on "after". Measured at
+`81f8605`:
+
+| message | item | classified |
+|---|---|---|
+| `Greek yogurt after half a banana` | 0.5 **cup** yogurt, `estimate` | **stated** |
+| `French fries after 5-6 chicken nuggets` | 5.5 **fries**, `estimate` | **stated** |
+
+Both now route through `_binds_nearby` with `_item_nouns` — the same helper the
+digit counts use. ⭐ **`_binds_nearby` skips the quantity words themselves**,
+which is what lets "half" work with no special case: *half a cup of greek
+yogurt* reaches `cup` and binds; *half a banana* reaches `banana` and does not.
+The truffle-fries message the range branch exists for still passes.
+
+**2. The infra watcher discarded rescued answers.** `core/llm.py` logs the
+primary failure **before** it retries, so every rep an Anthropic fallback saved
+still carried the marker and was thrown away as unmeasured. ⭐⭐ **THE SAME
+ERROR THE WATCHER EXISTS TO CORRECT, POINTING THE OTHER WAY** — v1 could not
+tell an outage from a behaviour; v2 could not tell a recovery from an outage.
+Both discard a real measurement.
+
+A marker is now **pending** until the call resolves: a recovery clears it, and
+a new PRIMARY failure banks the previous call's markers as dead first, so an
+early recovery cannot forgive a later outage. ⛔ **"fallback ALSO failed" is
+deliberately NOT terminal** — the OpenAI net runs after it, so a call can still
+be answered once both Anthropic models are out; treating it as terminal
+discarded exactly the measurement the net saved (found by the OpenAI proof
+going red). That net had **no success log at all**, so `core/llm.py` now writes
+`openai fallback OK`, symmetric with the Anthropic retry — production could not
+previously tell whether the second net had ever caught anything.
+
+⛔ **AND THE PER-REP RESET SILENTLY BROKE**: `hits` became a computed property,
+so `main`'s `watch.hits.clear()` cleared a temporary and did nothing. Every
+marker would leak into the following reps and one outage would condemn the
+whole run **while still looking like a coherent report**. Now `watch.clear()`,
+pinned by its own proof.
+
+Five end-to-end scenarios verified without spending credit: all reps refused →
+INFRA/2 · one rep refused → INFRA/2 · fallback rescued every rep → PASS/0 ·
+**rescued but behaviourally WRONG → FAIL/1** (a recovery must not launder a
+wrong answer into "unmeasured") · clean → PASS/0.
