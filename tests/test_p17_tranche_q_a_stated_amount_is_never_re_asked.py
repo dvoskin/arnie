@@ -425,6 +425,27 @@ def test_a_count_must_bind_to_this_food(message, stated, why):
     assert _item_is_stated(dict(EGGS_2), message) is stated, why
 
 
+@pytest.mark.parametrize("message", [
+    "2 tacos then fried eggs",
+    "2 tacos before fried eggs",
+    "2 tacos followed by fried eggs",
+    "2 sausages next to fried eggs",
+])
+def test_a_connective_ends_the_binding_even_inside_one_clause(message):
+    """⛔ THE BREAK WORDS EARN THEIR PLACE. `_clause_for` splits on comma/and/
+    with/plus, so these shapes arrive as ONE clause with both foods in it. The
+    window alone would not save them: "2 tacos then fried eggs" puts "eggs"
+    three words after the number, inside the window, and the count would bind
+    to the wrong food.
+
+    Written because the guard looked redundant — every case that motivated the
+    fix was already refused by the noun mismatch. It is not redundant; it is
+    just load-bearing somewhere else."""
+    item = {"food": "Fried eggs", "amount": 2, "unit": "egg",
+            "basis": "estimate"}
+    assert _item_is_stated(item, message) is False
+
+
 def test_the_count_binding_does_not_cost_the_awkward_real_fixtures():
     """⛔ THE GUARD ON THE GUARD. "Bind to the head noun" alone would refuse
     two shapes already shipped and tested — a food whose name tokenises badly
