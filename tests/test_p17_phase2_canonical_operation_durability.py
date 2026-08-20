@@ -724,6 +724,76 @@ async def test_2_the_merge_reconciles_from_the_LOCKED_interaction(db, make_user,
     assert str(_a_live_patch(inter).field_id) in transition.held
 
 
+@pytest.mark.asyncio
+async def test_2_the_transition_cannot_carry_two_authorities(db, make_user):
+    """⛔ `interaction` AND `revision` ARE REACHABLE THREE WAYS, SO THEY ARE
+    CHECKED AT CONSTRUCTION *(Danny, third round)*.
+
+    `HeldAnswerResult.interaction` is also `owned.interaction`; its `revision`
+    is also `owned.revision` (read off the refreshed locked ROW) and the
+    interaction's own generation. Three names for one fact is how a caller
+    renders one surface while settlement counts another — so a disagreeing
+    result is refused BY THE TYPE, not caught later by a test.
+
+    The positive half runs a real shape change so all three have MOVED
+    together (revision 1, not the trivial 0-equals-0 case)."""
+    import dataclasses as _dc
+
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    from core.semantics import (ClarificationAttribute, ClarificationGroup,
+                                ClarificationInteraction, Provenance,
+                                ResponseType, SetAddedFatPresent,
+                                UnresolvedField)
+    user = await make_user()
+    tid = f"ios:twoauth-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    group = inter.groups[0]
+    fat = UnresolvedField(operation_id=op_id, revision=0,
+                          event_id=group.event_id,
+                          attribute=ClarificationAttribute.ADDED_FAT_PRESENT,
+                          response_type=ResponseType.FREE_TEXT)
+    await open_operation(
+        db, user=user, interpreter_item={"food": "Oatmeal"},
+        interaction=ClarificationInteraction(
+            interaction_id=inter.interaction_id, operation_id=op_id,
+            revision=0, introduction=inter.introduction,
+            groups=(ClarificationGroup(event_id=group.event_id,
+                                       label=group.label, fields=(fat,)),)),
+        turn_id=tid, locale="en", cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+
+    transition = await ops.hold_answer(db, owned=owned, patch=SetAddedFatPresent(
+        event_id=group.event_id, field_id=fat.field_id, present=True,
+        provenance=Provenance.USER_SELECTED))
+
+    # all three agree, and they agree at a revision that actually MOVED
+    assert transition.revision == 1
+    assert transition.interaction is transition.owned.interaction
+    assert transition.revision == transition.interaction.revision
+    assert transition.revision == transition.owned.revision
+
+    # and disagreement cannot be constructed
+    with pytest.raises(ValueError):
+        _dc.replace(transition, revision=transition.revision + 1)
+    with pytest.raises(ValueError):
+        _dc.replace(transition, interaction=owned.interaction)
+
+    # ⛔ AND THE ROW HALF IS PROVEN INDEPENDENTLY OF THE GENERATION HALF.
+    # Bumping `revision` alone trips BOTH checks, so it cannot show that the
+    # refreshed locked ROW is consulted at all — the generation check would
+    # mask a row check that had been quietly reduced to a tautology. Here the
+    # generation still agrees and only the row has drifted.
+    class _DriftedRow:
+        revision = 99
+
+    with pytest.raises(ValueError):
+        _dc.replace(transition,
+                    owned=_dc.replace(transition.owned, row=_DriftedRow()))
+
+
 def test_2_the_locked_read_refreshes_the_row_by_construction():
     """⛔ SQLAlchemy does NOT repopulate an object already in the identity map
     from a later query. Without `populate_existing`, the row `owning()`

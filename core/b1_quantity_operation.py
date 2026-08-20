@@ -1677,6 +1677,38 @@ class HeldAnswerResult:
     held: dict
     revision: int
 
+    def __post_init__(self):
+        """⛔ THE DUPLICATED FIELDS CANNOT BECOME TWO AUTHORITIES *(Danny,
+        third round)*. `interaction` and `revision` are conveniences: the
+        first is also reachable as `owned.interaction`, the second as
+        `owned.revision` (the refreshed locked ROW) and as the interaction's
+        own generation. Three names for one fact is exactly how a caller ends
+        up rendering one surface while settlement counts another, so
+        disagreement is refused AT CONSTRUCTION rather than asserted in a
+        test — this type cannot exist in an inconsistent state.
+
+        The three are equal by design, not by luck: the row is created at the
+        interaction's revision, and `LockedOperation.write` moves the row's
+        revision ONLY when the caller reports a shape change, which is the
+        same moment the rebuilt interaction gets its new generation."""
+        if self.interaction is not getattr(self.owned, "interaction", None):
+            raise ValueError(
+                "HeldAnswerResult.interaction is not the one carried by "
+                "`owned` — the caller would render from one and settle from "
+                "the other")
+        _row_revision = int(getattr(self.owned, "revision", 0) or 0)
+        _generation = getattr(self.interaction, "revision", None)
+        if int(self.revision) != _row_revision:
+            raise ValueError(
+                f"HeldAnswerResult.revision {self.revision} does not match "
+                f"the refreshed locked row {_row_revision}")
+        if _generation is not None and int(self.revision) != int(_generation):
+            raise ValueError(
+                f"HeldAnswerResult.revision {self.revision} does not match "
+                f"the interaction generation {_generation} — the answer "
+                f"surface and the operation disagree about which generation "
+                f"this is")
+
 
 async def hold_answer(db, *, owned: OwnedOperation, patch) -> "HeldAnswerResult":
     """Record an answer to ONE field and leave the operation open (B-1.5).
