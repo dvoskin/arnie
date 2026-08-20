@@ -630,3 +630,34 @@ Safe for a checked reason: `canonical_payload` has exactly **two** writers — t
 * **Mutations**: R18 (`or {}` coercion restored) RED on all five parametrisations (`[]`, `""`, `0`, `False`, `None`); R14, R17 and the R9-family re-verified RED.
 * **Authoritative freeze**: **9902 passed · 25 skipped · 17 deselected · 4 xfailed · `PYTEST_EXIT=0`**, zero `FAILED`/`ERROR` lines, **`HEAD 9a71764` and `HEAD^{tree} 41179f6` identical before and after**, `TEST_POSTGRES_URL` set.
 * **Deploy status**: NOT deployed, NOT deploy-approved, not on main. **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED**.
+
+## ⛔ MANDATORY PHASE 6 PRE-DEPLOY GATE — fp1 awaiting operations (Danny, 2026-08-20)
+
+**Rerun this IMMEDIATELY BEFORE deployment, not once at review time.** Awaiting operations are created by live traffic, so a clean result today says nothing about the moment the deploy lands. `fp2` changes what the digest means: any awaiting operation still carrying `fp1` stops being answerable the instant the new build serves, and that user must be re-asked.
+
+```sql
+SELECT
+    operation_id,
+    user_id,
+    created_at,
+    canonical_payload::jsonb->>'fingerprint_version' AS fingerprint_version
+FROM pending_operations
+WHERE domain = 'food'
+  AND status = 'awaiting_answer'
+  AND storage_status = 'active'
+  AND canonical_payload::jsonb->>'slice' = 'b1_quantity'
+  AND COALESCE(canonical_payload::jsonb->>'fingerprint_version', '') <> 'fp2';
+```
+
+* **Zero rows** → proceed.
+* **Any rows** → those users lose their open question. Decide deliberately: hold the deploy, or accept and re-ask them. Do not discover this after the fact.
+* The constants are `DOMAIN = "food"` and `AWAITING = "awaiting_answer"` (`core/b1_quantity_operation.py:38`, `:68`). ⛔ An earlier version of this gate used `domain='chat_quantity'` / `status='awaiting'` and would have reported zero while fp1 operations were live.
+* ⚠ `canonical_payload` is nullable `Text`: a row holding non-JSON text makes the `::jsonb` cast raise for the whole query. That row is itself a finding — it would refuse at runtime too.
+
+## Phase 2 — CLOSED PENDING CI (2026-08-20)
+
+Danny's verdict on `9a71764`: **code approved, no additional correctness blockers.** Confirmed by him: whole-payload fingerprinting centralised in `_encode`; only the fingerprint itself excluded from the signed envelope; locked answer transitions re-sign the complete resulting payload atomically; missing `answered` means fresh while every present non-object form refuses; ask identity separate from mutable operation integrity; the corrected query uses the real constants; the freeze valid with code `HEAD 9a71764` / tree `41179f6` pinned; `9fc8b4b` documentation-only over that frozen code; branch 13 commits ahead with main untouched.
+
+Gate state: code review ✅ · frozen PostgreSQL suite ✅ · **draft PR ❌ not opened** · GitHub CI ⏳ no checks on `9fc8b4b` · deploy approval ❌ · **P17g / END-TO-END SCAN: still BLOCKED**.
+
+**Phase 3 begins only after CI is green on the PR.**
