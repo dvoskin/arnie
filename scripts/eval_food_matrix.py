@@ -18,6 +18,7 @@ of them; see `main`. Exits non-zero unless every case is clean, so FLAKY is a
 failure here rather than a footnote.
 """
 import asyncio
+import logging
 import os
 import sys
 import json
@@ -26,6 +27,51 @@ from types import SimpleNamespace
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
 
 from core import food_turn as FT
+
+
+#: Signatures of a call that was REFUSED rather than answered. Matched against
+#: the log line `core.llm` writes when the model call fails, because that
+#: failure is swallowed there — the turn returns a null result and the case
+#: sees `got=None`, which is indistinguishable from the model declining to act.
+_INFRA_MARKERS = (
+    "credit balance is too low",
+    "authentication_error",
+    "invalid x-api-key",
+    "permission_error",
+    "rate_limit_error",
+    "overloaded_error",
+    "internal_server_error",
+    "api_error",
+)
+
+
+class _InfraWatch(logging.Handler):
+    """⛔⛔ AN ABSENT ANSWER IS NOT A NEGATIVE ANSWER.
+
+    Measured on PR #79: the Anthropic balance ran out mid-run, both the
+    primary model and the fallback returned 400 `credit balance is too low`,
+    and the battery scored those two reps as `got=None want=ask` — reporting
+    "[FLAKY] a unit that does not fix a size is asked about (1/3)" and exiting
+    1. That reads as a behaviour that sometimes misfires. Nothing about the
+    behaviour was measured; the API refused to answer.
+
+    A billing or auth outage is an INFRASTRUCTURE failure and now says so.
+    The distinction matters because FLAKY is the battery's loudest behavioural
+    signal — the state it exists to catch — and an outage was borrowing it."""
+
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self.hits = []
+
+    def emit(self, record):
+        try:
+            msg = record.getMessage().lower()
+        except Exception:  # noqa: BLE001 - a broken record must not kill the run
+            return
+        for marker in _INFRA_MARKERS:
+            if marker in msg:
+                self.hits.append(marker)
+                return
 
 
 def U(mode="strict"):
@@ -275,17 +321,33 @@ async def main():
     _preflight()
     reps = int(os.getenv("EVAL_REPS", "3"))
     lines = []
-    clean = flaky = broken = 0
+    clean = flaky = broken = unmeasured = 0
+    watch = _InfraWatch()
+    logging.getLogger().addHandler(watch)
     for c in CASES:
         runs = []
         for _ in range(reps):
+            watch.hits.clear()
             try:
-                runs.append(await run_case(c))
+                ok, detail = await run_case(c)
             except Exception as e:  # noqa: BLE001
-                runs.append((False, f"EXC {type(e).__name__}: {e}"))
-        n = sum(1 for ok, _ in runs if ok)
-        if n == reps:
-            mark, _b = "PASS", clean
+                ok, detail = False, f"EXC {type(e).__name__}: {e}"
+            if watch.hits:
+                # `ok` here is not a verdict — the model never answered. Keep
+                # the rep, discard its score.
+                runs.append((None, f"INFRA {watch.hits[0]}"))
+            else:
+                runs.append((ok, detail))
+        scored = [(ok, d) for ok, d in runs if ok is not None]
+        infra = [d for ok, d in runs if ok is None]
+        n = sum(1 for ok, _ in scored if ok)
+        if infra:
+            # ⛔ NOT FLAKY. A case whose reps were refused was not measured, and
+            # calling it flaky would attribute an outage to the behaviour.
+            mark = "INFRA"
+            unmeasured += 1
+        elif n == reps:
+            mark = "PASS"
             clean += 1
         elif n == 0:
             mark = "FAIL"
@@ -293,18 +355,34 @@ async def main():
         else:
             mark = "FLAKY"
             flaky += 1
-        detail = "; ".join(sorted({d for ok, d in runs if not ok})) or runs[0][1]
-        line = f"[{mark}] {c['name']}  ({n}/{reps}) ({detail[:160]})"
+        detail = ("; ".join(sorted(set(infra))) if infra else
+                  "; ".join(sorted({d for ok, d in scored if not ok}))
+                  or (scored[0][1] if scored else ""))
+        shown = f"{n}/{len(scored)} scored, {len(infra)}/{reps} refused" if infra \
+            else f"{n}/{reps}"
+        line = f"[{mark}] {c['name']}  ({shown}) ({detail[:160]})"
         print(line, flush=True)
         lines.append(line)
     total = len(CASES)
     summary = (f"\n{clean}/{total} passed all {reps} reps"
-               f"  |  flaky: {flaky}  |  failed outright: {broken}")
+               f"  |  flaky: {flaky}  |  failed outright: {broken}"
+               f"  |  UNMEASURED (infrastructure): {unmeasured}")
+    if unmeasured:
+        summary += (
+            f"\n\n⛔ INFRASTRUCTURE FAILURE — {unmeasured} case(s) were never "
+            "measured because the model API refused the call (billing, auth, "
+            "or rate limit; see the INFRA lines above). This run says NOTHING "
+            "about those cases' behaviour. Restore API access and re-run "
+            "before reading this battery as a verdict.")
     print(summary, flush=True)
     out = "/tmp/eval_matrix_results.txt"
     with open(out, "w") as f:
         f.write("\n".join(lines) + summary + "\n")
-    # A flaky case is not a pass — make the exit code say so for CI.
+    # Three distinct outcomes, three distinct codes: 0 clean, 2 not measured,
+    # 1 measured and wrong. CI reds on any non-zero, but the code alone now
+    # says whether the product or the plumbing failed.
+    if unmeasured:
+        sys.exit(2)
     sys.exit(0 if clean == total else 1)
 
 
