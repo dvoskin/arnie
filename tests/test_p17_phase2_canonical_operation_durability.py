@@ -1224,6 +1224,94 @@ def test_2_the_ask_identity_is_stable_across_a_shape_change():
     assert base != ask_fingerprint(shape(0, (Q,), "How many?"), item), "wording"
     assert base != ask_fingerprint(shape(0, (Q,)), {"food": "Oatmeal"}), "item"
 
+    # ⛔ AND THE PARTS OF A FIELD THAT CARRY MEANING *(review checklist)*.
+    # Stripping generation keys must not have flattened these into one ask.
+    from decimal import Decimal
+
+    from core.semantics import (CanonicalQuantity, ClarificationOption,
+                                Dimension, SetQuantity)
+
+    def offered(*, revision, label, grams, response_type):
+        field_id = f"op:1:ev:quantity:{revision}"
+        patch = SetQuantity(event_id="ev", field_id=field_id,
+                            quantity=CanonicalQuantity(amount=Decimal(grams),
+                                                       unit_id="g",
+                                                       dimension=Dimension.MASS))
+        option = ClarificationOption(label=label, value=label,
+                                     option_id="o1", field_id=field_id,
+                                     patch=patch)
+        f = UnresolvedField(operation_id="op:1", revision=revision,
+                            event_id="ev", attribute=Q,
+                            response_type=response_type, options=(option,))
+        return ClarificationInteraction(
+            interaction_id="i", operation_id="op:1", revision=revision,
+            introduction="How much?",
+            groups=(ClarificationGroup(event_id="ev", label="L",
+                                       fields=(f,)),)).to_payload()
+
+    chips = offered(revision=0, label="110 g", grams="110",
+                    response_type=ResponseType.SINGLE_SELECT)
+    assert ask_fingerprint(chips, item) == ask_fingerprint(
+        offered(revision=4, label="110 g", grams="110",
+                response_type=ResponseType.SINGLE_SELECT), item), (
+        "an option's own field_id and its PATCH's field_id both carry the "
+        "generation; neither may make the same offer a different ask")
+    assert ask_fingerprint(chips, item) != ask_fingerprint(
+        offered(revision=0, label="55 g", grams="110",
+                response_type=ResponseType.SINGLE_SELECT), item), "option label"
+    assert ask_fingerprint(chips, item) != ask_fingerprint(
+        offered(revision=0, label="110 g", grams="55",
+                response_type=ResponseType.SINGLE_SELECT), item), (
+        "two chips reading the same but RECORDING different amounts are one "
+        "ask — the patch is the authoritative meaning")
+    # SINGLE vs MULTI select: both carry options (a field with options IS a
+    # select, so FREE_TEXT cannot be the contrast here), and "pick one" is a
+    # different question from "pick any"
+    assert ask_fingerprint(chips, item) != ask_fingerprint(
+        offered(revision=0, label="110 g", grams="110",
+                response_type=ResponseType.MULTI_SELECT), item), "response type"
+
+
+def test_2_the_strip_removes_generation_metadata_and_nothing_else():
+    """⛔ THE STRIP IS CONFINED *(review checklist)*. It must reach nested
+    patch revisions at any depth and leave every meaning-bearing key alone —
+    an over-strip is how two different asks collide on one identity."""
+    from core.b1_quantity_operation import (_GENERATION_KEYS,
+                                            _without_generation)
+
+    assert _GENERATION_KEYS == frozenset({"revision", "field_id"})
+    nested = {
+        "revision": 3, "introduction": "How much?",
+        "groups": [{"label": "L", "fields": [{
+            "revision": 3, "field_id": "op:ev:quantity:3", "attribute": "quantity",
+            "response_type": "single_select",
+            "options": [{"option_id": "o1", "label": "110 g",
+                         "field_id": "op:ev:quantity:3",
+                         "patch": {"patch_type": "set_quantity",
+                                   "field_id": "op:ev:quantity:3",
+                                   "revision": 3,
+                                   "quantity": {"amount": "110", "unit_id": "g"}}}]}]}]}
+    out = _without_generation(nested)
+
+    def keys(value):
+        if isinstance(value, dict):
+            return set(value) | {k for v in value.values() for k in keys(v)}
+        if isinstance(value, list):
+            return {k for v in value for k in keys(v)}
+        return set()
+
+    assert not (keys(out) & _GENERATION_KEYS), (
+        f"generation metadata survived at some depth: {keys(out) & _GENERATION_KEYS}")
+    survived = keys(out)
+    for meaning in ("introduction", "label", "attribute", "response_type",
+                    "option_id", "patch", "patch_type", "quantity", "amount",
+                    "unit_id", "groups", "fields", "options"):
+        assert meaning in survived, f"{meaning!r} was stripped — identities collide"
+    # the nested patch kept its MEANING, having lost only its generation
+    patch = out["groups"][0]["fields"][0]["options"][0]["patch"]
+    assert patch == {"patch_type": "set_quantity",
+                     "quantity": {"amount": "110", "unit_id": "g"}}
+
 
 @pytest.mark.asyncio
 async def test_2_a_retry_after_a_generation_bump_still_reuses(db, make_user):
@@ -1301,13 +1389,34 @@ async def test_2_a_row_whose_generation_disagrees_refuses_before_writing(
             select(PendingOperation.canonical_payload).where(
                 PendingOperation.operation_id == op_id))).scalar_one())
 
-    before = await _payload()
+    async def _row_generation():
+        return (await db.execute(select(PendingOperation.revision).where(
+            PendingOperation.operation_id == op_id))).scalar_one()
+
+    from db.models import FoodEntry, LedgerEvent
+    before, before_generation = await _payload(), await _row_generation()
+
     with pytest.raises(FingerprintUnreadable):
         await ops.hold_answer(db, owned=owned, patch=_a_live_patch(inter))
     await db.rollback()
-    assert await _payload() == before, (
+
+    # ⛔ NOTHING MOVED *(review checklist)*: not the payload, not the held
+    # answers, not the digest, not the row's own generation, not the ledger.
+    after = await _payload()
+    assert after == before, (
         "the answer was written on top of a row whose generation and question "
         "disagreed — the check ran after the write, not before it")
+    assert after["fingerprint"] == before["fingerprint"]
+    assert not after.get("answered")
+    assert await _row_generation() == before_generation, (
+        "the row's generation moved on a refusal")
+    assert (await db.execute(select(FoodEntry))).scalars().all() == []
+    assert (await db.execute(select(LedgerEvent))).scalars().all() == []
+
+    # and the SESSION is still usable — a refusal that poisons the
+    # transaction takes the rest of the turn down with it
+    await db.refresh(user)
+    assert await owning(db, user) is not None
 
 
 def test_2_the_locked_read_refreshes_the_row_by_construction():
