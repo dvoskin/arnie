@@ -100,8 +100,15 @@ async def test_1_the_fingerprint_and_its_version_are_persisted_at_creation(
     await db.commit()
     data = json.loads((await _row(db, op_id)).canonical_payload)
     assert data["fingerprint_version"] == FINGERPRINT_VERSION
-    assert data["fingerprint"] == semantic_fingerprint(inter, item)
+    # ⛔ the ROW stores the INTEGRITY digest (covering the — here empty —
+    # answer map); `semantic_fingerprint` is the ASK IDENTITY and is never
+    # persisted, so the two are deliberately different values.
+    from core.b1_quantity_operation import fingerprint_of_payload
+    assert data["fingerprint"] == fingerprint_of_payload(
+        inter.to_payload(), item, {})
     assert data["fingerprint"] == opened.fingerprint
+    assert opened.ask_identity == semantic_fingerprint(inter, item)
+    assert opened.ask_identity != opened.fingerprint
     assert data["capability"] == ID_ADDRESSED
 
 
@@ -378,7 +385,8 @@ async def _reshape(db, op_id, interaction):
     return await _repayload(db, op_id, lambda d: {
         **d, "interaction": interaction.to_payload(),
         "fingerprint": m.fingerprint_of_payload(interaction.to_payload(),
-                                                d.get("item") or {}),
+                                                d.get("item") or {},
+                                                d.get("answered") or {}),
         "fingerprint_version": m.FINGERPRINT_VERSION})
 
 
@@ -850,9 +858,21 @@ async def test_2_an_answer_corrupted_before_the_lock_is_never_deleted_and_re_sig
     # ...and the held patch becomes unreadable AFTER that read. The digest
     # covers interaction+item, so this does NOT disturb it: the operation
     # still verifies, and only the answer map is broken.
-    await _repayload(db, op_id, lambda d: {
-        **d, "answered": {k: {"patch_type": "no_such_patch_type"}
-                          for k in (d.get("answered") or {})}})
+    def _corrupt(d):
+        # ⛔ RE-SIGNED ON PURPOSE. Now that the digest covers `answered`, an
+        # unsigned edit is refused by the digest and this proof would never
+        # reach the decoder it exists to test — one guard masking another.
+        # The digest is not a MAC: anything that can edit the row can also
+        # recompute it, so the decoder must refuse malformed content on its
+        # own, and that is what is isolated here.
+        broken = {k: {"patch_type": "no_such_patch_type"}
+                  for k in (d.get("answered") or {})}
+        out = {**d, "answered": broken}
+        out["fingerprint"] = ops.fingerprint_of_payload(
+            out.get("interaction") or {}, out.get("item") or {}, broken)
+        return out
+
+    await _repayload(db, op_id, _corrupt)
     from db.models import PendingOperation
 
     async def _payload():
@@ -964,6 +984,146 @@ def test_the_repository_never_decodes_held_patches():
         f"{[n.lineno for n in decoding]} — held answers are decoded by "
         f"`_decode_answered`, which fails the OPERATION rather than skipping "
         f"the field")
+
+
+@pytest.mark.asyncio
+async def test_2_a_well_formed_answer_substituted_before_the_lock_refuses(
+        db, make_user):
+    """⛔⛔ P17 PHASE 2, FIFTH ROUND *(Danny)*. STRICT DECODING CANNOT SEE
+    THIS ONE. The answers used to sit OUTSIDE the digest, so an existing held
+    answer could be changed from one WELL-FORMED value to another — 120 g
+    becomes 900 g — between `owning()` and the lock. `_decode_answered`
+    accepts it, because it is a perfectly valid patch, and `hold_answer` then
+    treated the substituted amount as the authority the user had stated.
+
+    `fp2` signs the stored answer map, so the edit moves the digest and the
+    operation refuses before anything is mutated or re-signed."""
+    from core import b1_quantity_operation as ops
+    from core.b1_quantity_operation import (FingerprintUnreadable,
+                                            ID_ADDRESSED, open_operation,
+                                            owning)
+    from core.semantics import Provenance, SetPreparation
+    from db.models import PendingOperation
+
+    user = await make_user()
+    tid = f"ios:wellformed-{user.id}"
+    op_id, inter = await _interaction(db, user, tid)
+    two, prep = _two_field(inter, operation_id=op_id, revision=0)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=two, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+    owned = await owning(db, user)
+    await ops.hold_answer(db, owned=owned, patch=SetPreparation(
+        event_id=two.groups[0].event_id, field_id=prep.field_id,
+        preparation_id="grilled", provenance=Provenance.USER_SELECTED))
+    await db.commit()
+
+    await db.refresh(user)
+    owned = await owning(db, user)              # valid at this point
+
+    # a DIFFERENT, equally well-formed answer is substituted afterwards
+    def _swap(d):
+        answered = dict(d.get("answered") or {})
+        key = next(iter(answered))
+        swapped = dict(answered[key])
+        swapped["preparation_id"] = "deep_fried"
+        answered[key] = swapped
+        return {**d, "answered": answered}
+
+    await _repayload(db, op_id, _swap)
+
+    async def _payload():
+        return json.loads((await db.execute(
+            select(PendingOperation.canonical_payload).where(
+                PendingOperation.operation_id == op_id))).scalar_one())
+
+    before = await _payload()
+    assert "deep_fried" in json.dumps(before["answered"]), (
+        "the fixture did not actually substitute a well-formed answer")
+
+    with pytest.raises(FingerprintUnreadable):
+        await ops.hold_answer(db, owned=owned, patch=_a_live_patch(inter))
+    await db.rollback()
+
+    after = await _payload()
+    assert after == before, (
+        "the substituted answer was accepted as authority and the payload "
+        "mutated on top of it")
+    assert after["fingerprint"] == before["fingerprint"], (
+        "the substituted state was RE-SIGNED, which makes the edit look "
+        "like something the user said")
+
+
+@pytest.mark.asyncio
+async def test_2_an_awaiting_row_at_the_old_fingerprint_version_fails_closed(
+        db, make_user, monkeypatch):
+    """⛔ WHAT HAPPENS TO ROWS ALREADY IN FLIGHT WHEN THE RULES CHANGE *(fifth
+    round)*. Bumping the version changes what the digest MEANS, so an
+    AWAITING operation written under the old one cannot be verified — and
+    must not be re-judged under today's rules, which is the silent
+    reinterpretation the version exists to prevent.
+
+    Fail closed, and specifically: the operation still OWNS the meal (it is
+    not "unowned", so nothing falls to legacy), it settles nothing, and the
+    row is left exactly as it was for a human to look at."""
+    import handlers.tool_executor as te
+    from core import b1_answer_turn
+    from core.b1_quantity_operation import (ID_ADDRESSED, open_operation,
+                                            owning)
+    from db.models import FoodEntry, LedgerEvent, PendingOperation
+    from tests.test_a_scan_is_binding import _log
+
+    user = await make_user()
+    log = await _log(db, user)
+    user_id, log_id = user.id, log.id
+    tid = f"ios:oldfp-{user_id}"
+    op_id, inter = await _interaction(db, user, tid)
+    await open_operation(db, user=user,
+                         interpreter_item={"food": "Oatmeal", "amount": 1},
+                         interaction=inter, turn_id=tid, locale="en",
+                         cohort="allowlist", capability=ID_ADDRESSED)
+    await db.commit()
+
+    # the row as an older build wrote it: a valid payload, an OLD version
+    await _repayload(db, op_id, lambda d: {**d, "fingerprint_version": "fp1"})
+
+    async def _payload():
+        return json.loads((await db.execute(
+            select(PendingOperation.canonical_payload).where(
+                PendingOperation.operation_id == op_id))).scalar_one())
+
+    before = await _payload()
+
+    # OWNERSHIP IS PRESERVED — repairing, never None (which would be legacy)
+    await db.refresh(user)
+    owned = await owning(db, user)
+    assert owned is not None, (
+        "an unreadable version made the operation look UNOWNED — the turn "
+        "would fall through to legacy beside a live canonical ask")
+    assert owned.interaction is None and owned.item == {}, (
+        "rendering facts were handed out for a payload nothing could verify")
+
+    async def forbidden(*a, **k):
+        raise AssertionError("legacy executor ran on an old-version row")
+
+    monkeypatch.setattr(te, "execute_tool_calls", forbidden)
+    turn = await b1_answer_turn.handle(
+        db, user=user, source_turn_id=f"{tid}-ans", message="2 servings")
+    await db.commit()
+
+    rows = (await db.execute(select(FoodEntry).where(
+        FoodEntry.daily_log_id == log_id))).scalars().all()
+    assert rows == [], [r.parsed_food_name for r in rows]
+    events = (await db.execute(select(LedgerEvent).where(
+        LedgerEvent.user_id == user_id))).scalars().all()
+    assert events == []
+    if turn is not None and getattr(turn, "outcome", None) is not None:
+        assert str(getattr(turn.outcome, "name", turn.outcome)).upper() != "APPLIED"
+    assert await _payload() == before, (
+        "the old-version row was rewritten — it must be left exactly as it "
+        "was, including its old version marker")
 
 
 def test_2_the_locked_read_refreshes_the_row_by_construction():

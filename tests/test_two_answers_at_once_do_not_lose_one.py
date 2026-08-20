@@ -460,7 +460,8 @@ async def test_two_real_owning_then_hold_answer_writers_do_not_lose_a_shape_chan
 
     # the digest describes the material that actually landed
     assert payload["fingerprint"] == b1.fingerprint_of_payload(
-        payload["interaction"], payload["item"])
+        payload["interaction"], payload["item"],
+        payload.get("answered") or {})
     landed = set(payload.get("answered") or {})
 
     # A really did change the shape — without this the rest is hollow

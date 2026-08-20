@@ -338,11 +338,17 @@ class OpenResult:
     `OpenedElsewhere`, whatever the operation id says."""
 
     __slots__ = ("operation_id", "created", "interaction", "item",
-                 "revision", "fingerprint", "locale", "cohort", "capability")
+                 "revision", "fingerprint", "locale", "cohort", "capability",
+                 "ask_identity")
 
     def __init__(self, *, operation_id: str, created: bool, interaction,
                  item: dict, revision: int, fingerprint: str,
-                 locale: str = "en", cohort: str = "", capability: str = ""):
+                 locale: str = "en", cohort: str = "", capability: str = "",
+                 ask_identity: str = ""):
+        #: the DERIVED identity of the question (see `ask_fingerprint`) — what
+        #: a reuse compares. `fingerprint` is the stored INTEGRITY digest and
+        #: moves whenever an answer is held, so it cannot answer that.
+        self.ask_identity = ask_identity
         self.operation_id = operation_id
         self.created = created
         self.interaction = interaction
@@ -369,7 +375,14 @@ class OpenResult:
 #: as "meaning") bumps this, so a fingerprint computed under the old rule can
 #: never silently equal one computed under the new — they differ in the prefix
 #: before they differ in the hash.
-FINGERPRINT_VERSION = "fp1"
+#: ⛔ `fp2` SIGNS THE HELD ANSWERS TOO *(P17 Phase 2, fifth round, Danny)*.
+#: `fp1` covered the interaction and the item only, so an existing held answer
+#: could be changed from one WELL-FORMED value to another between `owning()`
+#: and the lock — 120 g becomes 900 g — and the strict decoder, which only
+#: rejects malformed patches, accepted it as persisted authority. A row
+#: written under `fp1` is not comparable and refuses (fail closed) rather than
+#: being re-judged under today's rules.
+FINGERPRINT_VERSION = "fp2"
 
 
 class FingerprintUnreadable(RuntimeError):
@@ -387,7 +400,8 @@ def _canonical_json(obj) -> str:
                       ensure_ascii=True, allow_nan=False)
 
 
-def fingerprint_of_payload(interaction_payload: dict, interpreter_item: dict) -> str:
+def fingerprint_of_payload(interaction_payload: dict, interpreter_item: dict,
+                          answered_payload: dict) -> str:
     """⛔ THE DIGEST IS OVER THE STORED FORM *(P17 Phase 2, second round)*.
 
     Fingerprinting the interaction OBJECT at write time and the round-tripped
@@ -396,17 +410,54 @@ def fingerprint_of_payload(interaction_payload: dict, interpreter_item: dict) ->
     multi-field ask read back as "tampered" and the operation FAILED under
     the user. Both ends now hash the payload dict that is actually persisted,
     so write and read agree by construction and an outside edit still moves
-    the hash."""
+    the hash.
+
+    ⛔⛔ IT SIGNS `answered` TOO *(fifth round)*. Strict decoding rejects a
+    MALFORMED held patch; it cannot see a well-formed one being swapped for
+    another well-formed one. With the answers outside the digest, an edit
+    landing between `owning()` and the lock was indistinguishable from what
+    the user actually said, and `hold_answer` treated it as authority. This
+    is the INTEGRITY digest — for "is this the same question?", which must
+    not move when a legitimate answer is held, see `ask_fingerprint`."""
     import hashlib
 
     try:
         body = _canonical_json({"v": FINGERPRINT_VERSION,
                                 "interaction": interaction_payload,
-                                "item": dict(interpreter_item or {})})
+                                "item": dict(interpreter_item or {}),
+                                # the STORED form of the answers, so a
+                                # well-formed substitution moves the digest
+                                "answered": dict(answered_payload or {})})
     except (TypeError, ValueError) as exc:
         raise FingerprintUnreadable(
             f"payload is not canonically serialisable: {exc}") from exc
     return f"{FINGERPRINT_VERSION}:" + hashlib.sha256(
+        body.encode("utf-8")).hexdigest()[:24]
+
+
+def ask_fingerprint(interaction_payload: dict, interpreter_item: dict) -> str:
+    """⛔ WHAT THE QUESTION IS, ignoring what has been ANSWERED so far *(P17
+    Phase 2, fifth round)*.
+
+    Two different questions are asked by the integrity digest and by reuse.
+    "Has this row been altered?" must cover the held answers. "Is this the
+    same ask I would have written?" must NOT — an awaiting operation may
+    legitimately already hold an answer, and a same-turn retry would then
+    compare a fresh ask (no answers) against a stored one (some answers) and
+    refuse a reuse that is perfectly valid.
+
+    So this one is DERIVED at read time and never persisted: there is no
+    second stored digest to fall out of agreement with the first."""
+    import hashlib
+
+    try:
+        body = _canonical_json({"v": FINGERPRINT_VERSION,
+                                "ask": interaction_payload,
+                                "item": dict(interpreter_item or {})})
+    except (TypeError, ValueError) as exc:
+        raise FingerprintUnreadable(
+            f"ask is not canonically serialisable: {exc}") from exc
+    return f"{FINGERPRINT_VERSION}:ask:" + hashlib.sha256(
         body.encode("utf-8")).hexdigest()[:24]
 
 
@@ -417,7 +468,7 @@ def semantic_fingerprint(interaction, interpreter_item: dict) -> str:
     and different fingerprints are two different questions, and only one of
     them persisted. Canonical and versioned (see FINGERPRINT_VERSION); raises
     FingerprintUnreadable rather than returning a guess."""
-    return fingerprint_of_payload(interaction.to_payload(), interpreter_item)
+    return ask_fingerprint(interaction.to_payload(), interpreter_item)
 
 
 class StoredFingerprintVersionMismatch(RuntimeError):
@@ -490,7 +541,8 @@ def _decode_stored_payload(row):
             f"operation {op_id} was fingerprinted under {stored_version!r}; "
             f"this process writes {FINGERPRINT_VERSION!r} — not comparable, "
             f"and not recomputed under the new rules")
-    recomputed = fingerprint_of_payload(data.get("interaction") or {}, item)
+    recomputed = fingerprint_of_payload(data.get("interaction") or {}, item,
+                                        data.get("answered") or {})
     if recomputed != stored_fp:
         raise FingerprintUnreadable(
             f"operation {op_id} does not match the fingerprint it stores "
@@ -548,6 +600,8 @@ def _stored_open_result(row, *, created: bool, expect_user_id: int,
                       interaction=interaction, item=item,
                       revision=int(row.revision or 0),
                       fingerprint=str(data["fingerprint"]),
+                      ask_identity=ask_fingerprint(
+                          data.get("interaction") or {}, item),
                       locale=str(data["locale"]),
                       cohort=str(data["cohort"]),
                       capability=str(data["capability"]))
@@ -671,7 +725,10 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
             f"capability {capability!r} is not one of "
             f"{sorted(RECOGNISED_CAPABILITIES)} — refusing to persist an ask "
             f"no client can be proved to answer")
+    # the ASK identity, for reuse; and the INTEGRITY digest actually stored,
+    # which at open covers an empty answer map
     mine = semantic_fingerprint(interaction, interpreter_item)   # may raise FingerprintUnreadable
+    signed = fingerprint_of_payload(interaction.to_payload(), interpreter_item, {})
     uid = int(user.id)            # captured early: a rollback below expires `user`
 
     def _reuse_if_same(row, *, why: str) -> "OpenResult":
@@ -689,11 +746,16 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
         stored = _stored_open_result(row, created=False, expect_user_id=uid,
                                      expect_turn_id=turn_id,
                                      expect_operation_id=operation_id)
-        if stored.fingerprint != mine:
+        # ⛔ COMPARED ON THE ASK, NOT THE STORED DIGEST *(fifth round)*. The
+        # stored digest now moves when a legitimate answer is held, so an
+        # awaiting operation that has been partly answered would fail a
+        # reuse it should pass. Integrity was already proved by
+        # `_stored_open_result` above; what remains is identity.
+        if stored.ask_identity != mine:
             raise OpenedElsewhere(
                 f"operation {operation_id} is awaiting with a DIFFERENT "
-                f"semantic payload (stored {stored.fingerprint}, mine {mine}) "
-                f"— {why}")
+                f"semantic payload — a different question "
+                f"(stored {stored.ask_identity}, mine {mine}) — {why}")
         logger.info("event=b1_open_reused operation=%s how=%s fingerprint=%s",
                     operation_id, why, mine)
         return stored
@@ -706,7 +768,9 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
                       decision_id=decision_id,
                       candidate_set_id=candidate_set_id,
                       asked_at=_now().isoformat(),
-                      cohort=cohort or "", fingerprint=mine,
+                      # the STORED digest is the integrity one (`signed`),
+                      # not the ask identity — `mine` never reaches the row
+                      cohort=cohort or "", fingerprint=signed,
                       capability=capability or "")
     try:
         row = await repo.create_operation(
@@ -738,7 +802,7 @@ async def open_operation(db, *, user, interpreter_item: dict, interaction,
                 f"{type(e).__name__}") from e
     result = OpenResult(operation_id=operation_id, created=True,
                         interaction=interaction, item=dict(interpreter_item),
-                        revision=0, fingerprint=mine,
+                        revision=0, fingerprint=signed, ask_identity=mine,
                         locale=locale or "en", cohort=cohort or "",
                         capability=capability or "")
     from core import b1_metrics
@@ -1842,7 +1906,8 @@ async def hold_answer(db, *, owned: OwnedOperation, patch) -> "HeldAnswerResult"
     try:
         data["fingerprint_version"] = FINGERPRINT_VERSION
         data["fingerprint"] = fingerprint_of_payload(
-            data.get("interaction") or {}, data.get("item") or {})
+            data.get("interaction") or {}, data.get("item") or {},
+            data.get("answered") or {})
     except FingerprintUnreadable:
         logger.error("event=b1_answer_fingerprint_unwritable operation=%s — "
                      "the merged payload cannot be fingerprinted",
