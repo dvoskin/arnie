@@ -28,6 +28,19 @@ concurrency:
 jobs:
   battery:
     runs-on: ubuntu-latest
+    # ⛔ THE KEY IS AN *ENVIRONMENT* SECRET, SO THE JOB HAS TO NAME THE
+    # ENVIRONMENT. `ANTHROPIC_API_KEY` lives on the `Cloud` environment; the
+    # repository-secrets list is empty. Without this line
+    # `${{ secrets.ANTHROPIC_API_KEY }}` resolves to an empty string, the
+    # guard below trips, and the battery exits in ~27s having scored NOTHING
+    # — which is what it did on PR #79, the first pull request to change the
+    # food lane since the gate was written.
+    #
+    # The guard was right to stop: a keyless run scores a false 6/20. But a
+    # gate that cannot reach its own credential never runs at all, and a
+    # behaviour battery that never runs is indistinguishable from one that
+    # passes — which is the more dangerous of the two failures.
+    environment: Cloud
     # Serial by construction inside the script; the budget is for the whole
     # 22-case x 3-rep run plus model latency.
     timeout-minutes: 45
