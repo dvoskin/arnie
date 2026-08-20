@@ -45,8 +45,17 @@ _INFRA_MARKERS = (
 )
 
 
+#: The lines `core/llm.py` writes when a safety net CAUGHT the call. They mean
+#: the model answered, so whatever failed on the way is not an outage.
+_RECOVERY_MARKERS = (
+    "model fallback ok",   # core/llm.py — the Anthropic retry succeeded
+    "openai fallback ok",  # core/llm.py — the OpenAI net succeeded
+)
+
+
 class _InfraWatch(logging.Handler):
-    """⛔⛔ AN ABSENT ANSWER IS NOT A NEGATIVE ANSWER.
+    """⛔⛔ AN ABSENT ANSWER IS NOT A NEGATIVE ANSWER — AND A RECOVERED ONE IS
+    NOT ABSENT.
 
     Measured on PR #79: the Anthropic balance ran out mid-run, both the
     primary model and the fallback returned 400 `credit balance is too low`,
@@ -57,20 +66,59 @@ class _InfraWatch(logging.Handler):
 
     A billing or auth outage is an INFRASTRUCTURE failure and now says so.
     The distinction matters because FLAKY is the battery's loudest behavioural
-    signal — the state it exists to catch — and an outage was borrowing it."""
+    signal — the state it exists to catch — and an outage was borrowing it.
+
+    ⭐ THE SEQUENCE MATTERS, NOT THE PRESENCE OF A MARKER. `core/llm.py` logs
+    the primary failure BEFORE it retries, so the first version of this
+    handler threw away every rep a fallback had rescued — the same error it
+    exists to correct, pointing the other way. A marker is therefore PENDING
+    until the call resolves: a recovery line clears it, a second failure
+    leaves it standing.
+
+    Clearing is per-call, not per-rep. A rep makes several model calls, and an
+    early recovery must not forgive a later outage — that would score the rep
+    on a turn that never got an answer. The call boundary is the PRIMARY
+    failure line: reaching a new one means the previous call ended without
+    announcing a rescue, so its markers are banked as dead before the new
+    call's start collecting.
+
+    ⭐ "Fallback ALSO failed" is deliberately NOT treated as terminal. The
+    OpenAI net runs AFTER it (`core/llm.py`), so a call can still be answered
+    once both Anthropic models are out — and calling it dead there would
+    discard exactly the measurement the net saved."""
 
     def __init__(self):
         super().__init__(level=logging.WARNING)
-        self.hits = []
+        self._pending = []
+        self._dead = []
+
+    @property
+    def hits(self):
+        """Markers no recovery accounted for. Pending ones count: a call that
+        failed and never announced a rescue did not get one."""
+        return self._dead + self._pending
+
+    def clear(self):
+        self._pending.clear()
+        self._dead.clear()
 
     def emit(self, record):
         try:
             msg = record.getMessage().lower()
         except Exception:  # noqa: BLE001 - a broken record must not kill the run
             return
+        if any(marker in msg for marker in _RECOVERY_MARKERS):
+            self._pending.clear()          # this call was answered after all
+            return
         for marker in _INFRA_MARKERS:
             if marker in msg:
-                self.hits.append(marker)
+                if "model call failed" in msg and self._pending:
+                    # A new call is starting and the last one never announced a
+                    # rescue. Bank it now, so THIS call's recovery cannot clear
+                    # a previous call's outage.
+                    self._dead.extend(self._pending)
+                    self._pending.clear()
+                self._pending.append(marker)
                 return
 
 
@@ -327,7 +375,10 @@ async def main():
     for c in CASES:
         runs = []
         for _ in range(reps):
-            watch.hits.clear()
+            # `watch.clear()`, NOT `watch.hits.clear()` — `hits` is a computed
+            # list, so clearing it would clear a temporary and leak every
+            # marker into the next rep, making one outage condemn the run.
+            watch.clear()
             try:
                 ok, detail = await run_case(c)
             except Exception as e:  # noqa: BLE001
