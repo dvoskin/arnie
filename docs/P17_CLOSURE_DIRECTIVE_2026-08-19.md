@@ -900,3 +900,54 @@ Five end-to-end scenarios verified without spending credit: all reps refused →
 INFRA/2 · one rep refused → INFRA/2 · fallback rescued every rep → PASS/0 ·
 **rescued but behaviourally WRONG → FAIL/1** (a recovery must not launder a
 wrong answer into "unmeasured") · clean → PASS/0.
+
+### Round 5 (Danny, review of `7fae549`) — nearness is not agreement
+
+Blocker 2 (the infra watcher) **approved**. Blocker 1 was incomplete.
+
+Round 4 bound `half` and a range with `_binds_nearby(..., _item_nouns(it))`,
+and `_item_nouns` includes every word of the **food name**. That is right for a
+bare count — "15 peanut m&m" binds on "peanut" — and wrong the moment the item
+is measured in something the phrase contradicts, because the food's own name
+then rescues a unit that disagrees:
+
+| message | item | was |
+|---|---|---|
+| `half a scoop of peanut butter` | 0.5 **tbsp** | **stated** — "peanut" bound it |
+| `5-6 oz grilled chicken` | 5.5 **g** | **stated** — "chicken" bound it |
+
+⭐⭐⭐ **THE SCOOP DEFECT FOR THE THIRD TIME.** The same 190-calorie assumption —
+"they said scoop; we said tablespoon" — has now arrived through the raw
+substring fallback (round 1 review), through a shared noun set (round 3), and
+through the half rung (round 5). **It reappears at whichever door is newest**,
+because each new door re-answers "is this the user's number?" without
+re-answering "in whose unit?". The second case is a **28× mass error**.
+
+⭐ **THE DIGIT PATH NEVER HAD THIS.** `_literal_amount_with_unit` splits
+measured units from counts and demands agreement for the former; round 4 routed
+two new paths **around** that distinction instead of through it. It now lives in
+one predicate, `_quantity_binds_to_item`, and all three paths go through it:
+
+* **measured item** → the phrase must NAME a canonically compatible unit; the
+  food's name cannot stand in for one.
+* **count item** → nothing can contradict a count noun, so nearby
+  food-or-unit binding is enough.
+
+Eleven proofs: both conflicts, a foreign-food-**and**-conflicting-unit case,
+four matching-unit twins (including the unit spelled in full), four count
+twins. **Nine of the eleven were green before the fix** — the rule had to be
+proven not to cost them.
+
+**Gates.** Frozen suite on `f5ed65f`: `PYTEST_EXIT=0`, **9991 passed / 25
+skipped**, HEAD and tree identical before and after. Mutations **6 RED, 0
+GREEN, 0 INVALID**.
+
+⭐ **AND ONE WITNESS WAS MIS-CHOSEN, WHICH READS EXACTLY LIKE AN INERT EDIT.**
+R5-2 (invert the measured test) first reported `behaviour=SAME` → INVALID,
+while pytest was already RED. The witness was a MEASURED item whose unit is
+named — and `_item_nouns` is a SUPERSET of `_unit_nouns`, so that case binds
+under **both** branches. Inverting the test sends COUNT items down the
+unit-only branch, so only a count item can see it. **A behaviour witness has to
+be chosen against the mutation's actual reach, not against the defect's
+headline case** — otherwise the harness's own safeguard files a working
+mutation as invalid.
