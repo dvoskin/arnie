@@ -5,8 +5,24 @@ enabled, the code was confirmed deployed, and a fully-supported meal — a banan
 the predicate answered `Supported(memory)` for — was still settled by legacy.
 Four gates decide that turn and NOT ONE was readable from outside, so the
 diagnosis came from archaeology on `turn_metrics.stages_json`: a 4,688 ms
-`pricing.qualification` proves legacy settled it, because canonical settlement
-structurally cannot retrieve.
+`pricing.qualification` was read as proof that legacy settled it, on the
+grounds that canonical settlement structurally cannot retrieve.
+
+⛔⛔ THAT INFERENCE IS FALSE AND IS RETIRED HERE *(Tranche D2, 2026-08-21)*.
+It is recorded rather than deleted because it was load-bearing: it is how the
+2026-08-16 canary was diagnosed, and anyone re-reading that diagnosis needs to
+know the ground moved. `core/food_turn.py` launches a FIRE-AND-FORGET
+speculative USDA/OFF prewarm from the interpreter's token stream, before
+settlement ownership is decided, and `timed()` records onto the AMBIENT trace —
+so `pricing.qualification` appears in the turn's stages whichever lane settles.
+
+⭐ Measured on `ios:5F861208…`: qualification 5379 ms beside llm 6601 ms in a
+turn whose `total_ms` was 9523. Those cannot both be on one critical path;
+they overlap by at least 2457 ms. The stage was never proof of ownership, and
+on that turn it was not even proof of latency.
+
+Settlement ownership is read from THIS endpoint's gates, which is the whole
+reason it exists.
 
 ⭐ A CANARY THAT DOES NOT FIRE AND A CANARY THAT FIRED AND DECLINED WRITE THE
 SAME LEDGER ROWS. The only thing that separates them is knowing which gates were

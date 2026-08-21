@@ -5045,7 +5045,24 @@ class _SpeculativeEnrichment:
             # a generic one alike. A stray OFF candidate cannot leak into a
             # generic answer — `candidate_map` does not seat OFF on the generic
             # ladder at all.
-            task = _aio.ensure_future(_fetch_usda_off(food, True))
+            # ⛔⛔ MARKED SPECULATIVE INSIDE THE TASK *(Tranche D2)*. `timed()`
+            # records onto the AMBIENT trace, and `ensure_future` copies the
+            # context at creation — so without this the prewarm's duration is
+            # attributed to the user-visible turn even though nothing awaits
+            # it. Measured on `ios:5F861208…`: a 5379 ms qualification beside a
+            # 6601 ms llm in a turn whose total was 9523 ms. They overlap by at
+            # least 2457 ms; the turn read ~5.4 s slower than it was.
+            #
+            # Set INSIDE the coroutine, not around `ensure_future`: the flag
+            # must belong to the task's own context copy, so it can never leak
+            # into the turn that launched it or into the next one.
+            from core.request_trace import speculative as _speculative
+
+            async def _detached():
+                with _speculative():
+                    return await _fetch_usda_off(food, True)
+
+            task = _aio.ensure_future(_detached())
             # Nothing awaits this here. Swallow its failure so a dead lookup
             # cannot surface as an unretrieved-exception warning on a turn that
             # went on to succeed without it.

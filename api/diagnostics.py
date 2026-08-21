@@ -534,8 +534,23 @@ def settlement_gates_summary() -> dict:
     was confirmed deployed, and a fully-supported meal was still settled by
     legacy. Four gates decide that turn, and NOT ONE of them was readable from
     outside the container — so the diagnosis came from archaeology on
-    `turn_metrics.stages_json` (legacy `pricing.qualification` timings prove
-    legacy settled it) instead of from a single question with an answer.
+    `turn_metrics.stages_json` instead of from a single question with an answer.
+
+    ⛔⛔ AND THAT ARCHAEOLOGY RESTED ON AN INFERENCE NOW KNOWN TO BE FALSE,
+    RETIRED HERE *(Tranche D2, 2026-08-21)*. It read: "a long
+    `pricing.qualification` proves legacy settled the turn, because canonical
+    settlement structurally cannot retrieve." It does not prove that.
+    `core/food_turn.py` launches a FIRE-AND-FORGET speculative USDA/OFF
+    prewarm from the interpreter's token stream — before settlement ownership
+    is decided at all — and `core/request_trace.timed()` records onto the
+    AMBIENT trace, so the stage lands in the turn's `stages_json` whichever
+    lane settles. Measured on `ios:5F861208…`: `pricing.qualification` 5379 ms
+    beside `llm` 6601 ms in a turn whose `total_ms` was 9523 — the two MUST
+    overlap by ≥2457 ms, so the stage was not even on the critical path.
+
+    ⭐ THE REPLACEMENT IS THIS ENDPOINT, which is why it exists: settlement
+    ownership is a question with an answer, not something to infer from a
+    duration. Read the gates, not the timings.
 
     ⭐ AND EACH VALUE IS REPORTED AS THE CODE READS IT, not as the environment
     spells it. `TURN_COORDINATOR_LANES` unset is an EMPTY SET that enables
