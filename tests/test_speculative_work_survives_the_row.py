@@ -147,3 +147,113 @@ async def test_flushing_before_the_row_exists_is_harmless(isolated_sessions, db)
         stages = json.loads(stages)
     assert "speculative.pricing.qualification" in stages, (
         "a prewarm that finished in time did not make the normal persist")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# POST-MERGE REMEDIATION — two defects the durability fix introduced
+# ══════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+async def test_a_prewarm_finishing_while_persist_is_in_flight_is_not_lost(
+        isolated_sessions, db):
+    """⛔⛔ THE PERSIST-IN-FLIGHT RACE.
+
+    `flush_speculative()` returns early unless `_persisted` is set, and
+    `persist()` sets it only AFTER its commit. A prewarm completing inside that
+    window is dropped by BOTH paths: too late for `_stages_for_row()` to have
+    seen it, too early for the flush to act.
+
+    The window is narrow, which is the point — the contract this fix exists to
+    honour fails precisely when the timing is tightest, and a narrow window on
+    a fire-and-forget task is not a rare event, it is an ordinary one.
+
+    Simulated deterministically by recording the stage between the row being
+    built and `_persisted` being set."""
+    trace = RequestTrace(turn_id="d2:race", channel="ios", command="turn")
+    with _trace_active(trace):
+        with timed("llm"):
+            await asyncio.sleep(0.01)
+
+    real_stages_for_row = trace._stages_for_row
+    raced = {}
+
+    def _stages_then_race():
+        out = real_stages_for_row()
+        # The prewarm completes HERE — after the row's payload is built and
+        # before `_persisted` becomes True — and calls the flush, exactly as
+        # the detached task's `finally` does. `persist` awaits its commit
+        # after this, so the queued flush genuinely runs inside the window
+        # rather than being simulated around it.
+        trace.record_speculative("pricing.qualification", 42)
+        raced["task"] = asyncio.ensure_future(trace.flush_speculative())
+        return out
+
+    trace._stages_for_row = _stages_then_race
+    await trace.persist_isolated()
+    trace._stages_for_row = real_stages_for_row
+    await raced["task"]
+
+    row = (await db.execute(
+        select(TurnMetric).where(TurnMetric.turn_id == "d2:race")
+    )).scalars().one()
+    stages = row.stages_json
+    if isinstance(stages, str):
+        import json
+        stages = json.loads(stages)
+    assert "speculative.pricing.qualification" in stages, (
+        "a prewarm that completed while persist was in flight was dropped by "
+        "both paths: %r" % (stages,))
+
+
+@pytest.mark.asyncio
+async def test_the_flush_updates_ITS_row_not_the_latest_sharing_a_turn_id(
+        isolated_sessions, db):
+    """⛔⛔ "LATEST ROW BY turn_id" MISATTRIBUTION.
+
+    The flush selects `WHERE turn_id = … ORDER BY id DESC LIMIT 1`. ⭐ turn_id
+    IS NOT UNIQUE, and this repository registers that as CF19: `h:`-prefixed
+    ids are a content hash bucketed by the hour, so genuinely separate requests
+    share one — a single `healthkit:h:` id covers six executions in production.
+
+    Keying the update on that field means one request's speculative stage can
+    land in a DIFFERENT request's row. Using the very field CF19 names as
+    ambiguous is the defect; the fix is to remember which row this trace
+    actually wrote."""
+    shared = "ios:h:abc123sharedbucket"
+
+    first = RequestTrace(turn_id=shared, channel="ios", command="turn")
+    with _trace_active(first):
+        with timed("llm"):
+            await asyncio.sleep(0.01)
+    await first.persist_isolated()
+
+    second = RequestTrace(turn_id=shared, channel="ios", command="turn")
+    with _trace_active(second):
+        with timed("llm"):
+            await asyncio.sleep(0.01)
+    await second.persist_isolated()
+
+    # the FIRST request's prewarm finishes last — as a slow one would
+    from core.request_trace import speculative
+    with _trace_active(first), speculative():
+        with timed("pricing.qualification"):
+            await asyncio.sleep(0.01)
+    await first.flush_speculative()
+
+    rows = (await db.execute(
+        select(TurnMetric).where(TurnMetric.turn_id == shared)
+        .order_by(TurnMetric.id)
+    )).scalars().all()
+    assert len(rows) == 2, "precondition: two rows share this turn id"
+
+    import json
+    def _stages(r):
+        s = r.stages_json
+        return json.loads(s) if isinstance(s, str) else (s or {})
+
+    assert "speculative.pricing.qualification" in _stages(rows[0]), (
+        "the first request's speculative stage did not reach its OWN row")
+    assert "speculative.pricing.qualification" not in _stages(rows[1]), (
+        "the first request's speculative stage was folded into the SECOND "
+        "request's row — turn_id is not unique (CF19) and must not key this "
+        "update: %r" % (_stages(rows[1]),))

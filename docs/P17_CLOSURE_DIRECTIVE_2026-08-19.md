@@ -1007,3 +1007,101 @@ repeated. That is the anti-bleed rule working as designed (it is what stops
 
 **Gate.** Frozen suite on `a5d4a80`: `PYTEST_EXIT=0`, **10032 passed / 25
 skipped / 17 deselected / 4 xfailed**; HEAD and tree identical before and after.
+
+---
+
+## ⚠ TRANCHE D — MERGED, POST-MERGE REMEDIATION OPEN (2026-08-21)
+
+⛔⛔ **NOT CLOSED.** `ef2bf63` carries two telemetry defects introduced by the
+D2 durability fix itself, both found in post-merge review:
+
+* **THE PERSIST-IN-FLIGHT RACE.** `flush_speculative()` returns early unless
+  `self._persisted` is set, and `persist()` sets it only *after* the commit. A
+  prewarm completing inside that window is dropped by BOTH paths — too late for
+  `_stages_for_row()` to have seen it, too early for the flush to act. The
+  fix's own contract ("speculative work stays auditable in the persisted row")
+  fails exactly when the timing is tightest, which is the case it was written
+  for.
+* **"LATEST ROW BY turn_id" MISATTRIBUTION.** The flush selects
+  `WHERE turn_id = … ORDER BY id DESC LIMIT 1`. ⭐ **turn_id IS NOT UNIQUE, and
+  this repository documents that in CF19** — `h:`-prefixed ids are shared by
+  genuinely separate requests, one `healthkit:h:` id covering six executions.
+  So the flush can fold one request's speculative stage into a DIFFERENT
+  request's row. Keying on the very field CF19 registers as ambiguous is the
+  defect, not a hardening opportunity.
+
+**Merged**: PR #80 at exact reviewed head `7b1dbdc` → `origin/main` **`ef2bf63`**
+(parents `14de251` + `7b1dbdc`). Merge tree `26da5621…` is **byte-for-byte
+identical** to the reviewed head's tree. D1 stands as reviewed; the open items
+above are D2's, and P17g may proceed in parallel — they touch different code.
+
+### D1 — one request opened two top-level turn scopes
+
+Two variants of one class, both fixed. **Sequential**: the entrypoint closed and
+persisted its trace in the `finally` around `coordinator.run`, which sits BEFORE
+the native-no-plan delegation, so a turn the native lane could not execute
+persisted its row and THEN ran legacy under a trace of its own. **Nested**: the
+guard was one-sided — the entrypoint asks `current_trace()` before opening one;
+`core/conversation.py` did neither.
+
+⭐ **Nesting was never the defect.** Delegating a turn the native lane cannot
+execute is correct, and a nested composer call is legitimate work. What was
+wrong is that the work opened a second TOP-LEVEL scope. The rule is one
+top-level EXECUTION, not one model call.
+
+### D2 — redefined once the caller was traced, then closed
+
+The premise was wrong, and that is the finding. `pricing.qualification` on a
+canonical turn comes from a **fire-and-forget prewarm** launched from the
+interpreter's token stream, before settlement ownership is decided;
+`timed()` records onto the AMBIENT trace. Arithmetic settled it:
+`llm 6601 + qualification 5379 = 11980 > total_ms 9523` — an overlap of at
+least 2457 ms, so the stage was never on the critical path.
+
+⭐⭐⭐ **A FALSE DIAGNOSTIC WAS RETIRED, NOT QUIETLY EDITED.**
+"`pricing.qualification` present ⇒ legacy settled" is how the 2026-08-16 canary
+was diagnosed. It is false, and both places carrying it now say so with the
+measurement, because anyone re-reading that diagnosis needs to know the ground
+moved.
+
+Addressed on all seven points — **and note ADDRESSED, not closed**: the
+durability fix that answered point 2 introduced the two defects listed at the
+top of this section, which are open on PR #81. Points: domains separated (`speculative.<stage>`, added to
+the row, never summed into it) · latency independence proven by a 10 s poisoned
+prewarm · semantic non-authority · cross-turn **and** launching-turn isolation ·
+lifecycle stated rather than inherited · production remeasured · and late
+completions folded back into the **same** row, never a second one.
+
+### Gates
+
+Frozen suite on `7b1dbdc`: `PYTEST_EXIT=0`, **10049 passed / 25 skipped**, HEAD
+and `HEAD^{tree}` identical before and after. CI #1525 and battery #52 green on
+that exact head (**22/22 × 3 reps, 0 flaky, 0 failed, 0 UNMEASURED**). D2
+mutations **4 RED / 0 GREEN / 0 INVALID**.
+
+⭐ **Two instrument findings worth keeping.** A mutation exposed that isolation
+from the LAUNCHING turn was untested — setting the flag around `ensure_future`
+leaves the prewarm correctly marked while re-filing the turn's own `llm` as
+speculative, and every existing assertion still passed. And **a stage sum is
+not a latency**: turn 1860 sums 33989 ms of *critical* stages against a
+`total_ms` of 25922, because awaited work overlaps itself. Request-start →
+response-emitted remains the only trustworthy number.
+
+---
+
+## ⏭ P17g — WORK STARTS, CLOSURE STILL GATED
+
+**Unblocked by Q, and by D's MERGE — but D is not closed.** The D2 remediation
+is open on PR #81, so P17g may be BUILT on that branch while "repaired main"
+does not exist until #81 merges.
+
+⛔ **And P17g is not clearable yet for a SEPARATE reason:**
+P17g's closure gate is BOTH canaries, and the DIRECT canary reads
+**FAILED — MISROUTED**, "RERUN after deploy". The CF5b/CF5c fixes it needs are
+on main and **NOT LIVE** — auto-deploy is disabled, deployed build `76076b6`,
+main `ef2bf63`. So the predicate work may start; declaring P17g closed waits on
+a manual deploy and the rerun.
+
+Reminder carried forward: the scan proof must **not** use barcode `70004199` —
+it is not a product code, and the OFF record behind it carries per-bar numbers
+as per-100g. Use the wrapper's real 13-digit UPC with "I had 2 servings."

@@ -18,8 +18,25 @@
 > authority.
 
 >
-> **CURRENT RECONCILIATION — 2026-08-21 @ `cfb3557` (Tranche Q branch;
-> `origin/main` is `76076b6`).** P17 Phase 2 is SHIPPED AND LIVE; the P17
+> **CURRENT RECONCILIATION — 2026-08-21 @ `ef2bf63` (merged main).**
+> **Q CLOSED** (`14de251`, PR #79). **D MERGED** (`ef2bf63`, PR #80) with
+> POST-MERGE REMEDIATION OPEN — two D2 telemetry defects (persist-in-flight
+> race; "latest row by turn_id" misattribution, which keys on the field CF19
+> registers as non-unique). Both merged at their exact reviewed heads with the
+> merge tree verified identical.
+> **P17g / CF14 / the end-to-end scan are unblocked by Q and by D's MERGE** —
+> but D is not closed, so "repaired main" does not exist yet. P17g may be BUILT
+> on the #81 branch; it does not stand on repaired main until #81 merges.
+>
+> ⛔ **BUT P17g CANNOT BE DECLARED CLOSED YET, AND NOT FOR A Q/D REASON.** Its
+> closure gate is BOTH canaries, and the DIRECT canary still reads FAILED —
+> MISROUTED with "RERUN after deploy". The CF5b/CF5c fixes it needs are on
+> main and **NOT LIVE**: auto-deploy is disabled and the deployed build is
+> still `76076b6`. So P17g's predicate WORK may start; its CLOSURE waits on a
+> manual deploy and the direct-canary rerun.
+>
+> **SUPERSEDED — 2026-08-21 @ `cfb3557` (Tranche Q branch;
+> `origin/main` was `76076b6`).** P17 Phase 2 is SHIPPED AND LIVE; the P17
 > closure directive governs P17 execution and holds the phase reports. Tranche Q
 > (the live `basis`-over-literal defect, CF16) is BUILT and unmerged on PR #79.
 > Tranche D (CF17/CF18) is OPEN with D1's shape proven and NOT patched. P17g,
@@ -1266,10 +1283,12 @@ CF16 A `basis` LABEL OUTRANKED THE USER'S OWN      Tranche Q (PR #79) FIX
      without re-answering "in whose unit?". Closed
      by one predicate + a per-INVARIANT cross-rung
      corpus, not per-defect tests.
-CF17 ONE REQUEST, TWO TOP-LEVEL TURN SCOPES:       Tranche D, D1        OPEN
-     turn ios:5F861208 wrote TWO turn_metrics rows  (shape proven,       SHAPE
-     (9523 ms then 6293 ms) under one turn id, two   NOT patched)        PROVEN
-     LLM calls, ONE reply, ZERO writes. NOT
+CF17 ONE REQUEST, TWO TOP-LEVEL TURN SCOPES:       Tranche D, D1        MERGED
+     turn ios:5F861208 wrote TWO turn_metrics rows  PR #80; ef2bf63      REMED-
+     (9523 ms then 6293 ms) under one turn id, two  TRANCHE REMEDIATION  IATION
+     LLM calls, ONE reply, ZERO writes. D1's own
+     change stands as reviewed; the tranche's open
+     items are D2's. NOT
      concurrency (windows do not overlap; the second
      starts 3.9 ms after the first ends, -0.004 s,
      on all three real-UUID chat duplicates), NOT
@@ -1288,11 +1307,36 @@ CF17 ONE REQUEST, TWO TOP-LEVEL TURN SCOPES:       Tranche D, D1        OPEN
      total_ms runs construction->persist, so a
      nested OUTER must exceed its inner; production's
      second row is SHORTER.
-CF18 LEGACY `pricing.qualification` ON THE          Tranche D, D2        OPEN
-     CANONICAL LANE: ~5.4 s (5379 ms) inside
-     execution A of the same turn. The gate must
-     prove the stage is ABSENT from a canonical
-     turn, not merely faster.
+CF18 `pricing.qualification` ON THE CANONICAL       Tranche D, D2        MERGED
+     LANE — REDEFINED, then merged. Two telemetry   PR #80; ef2bf63      REMED-
+     defects introduced by the durability fix are   REMEDIATION OPEN     IATION
+     OPEN post-merge: the PERSIST-IN-FLIGHT RACE                         OPEN
+     (flush returns early until `_persisted` is set
+     AFTER the commit, so a prewarm completing in
+     that window is dropped by both paths) and
+     "LATEST ROW BY turn_id" MISATTRIBUTION (the
+     flush keys on turn_id, which CF19 registers as
+     NOT UNIQUE — an `h:` id covers six requests —
+     so it can fold one request's stage into
+     another's row). The premise
+     stage comes from a FIRE-AND-FORGET USDA/OFF
+     prewarm launched from the interpreter's token
+     stream, before settlement ownership is decided,
+     and `timed()` records onto the AMBIENT trace.
+     Arithmetic settled it: llm 6601 + qualification
+     5379 = 11980 > total_ms 9523, so they overlap
+     by >=2457 ms and the stage was never on the
+     critical path. ADDRESSED on seven points as the
+     observability bug it is — domains separated,
+     latency independence proven by a 10 s poisoned
+     prewarm, semantic non-authority proven,
+     cross-turn AND launching-turn isolation proven,
+     lifecycle stated, late completions folded back
+     into the SAME row (never a second one) — and
+     POST-MERGE REMEDIATION REMAINS OPEN ON #81:
+     the durability fix that answered point 2
+     introduced the persist-in-flight race and the
+     "latest row by turn_id" misattribution.
 CF19 TURN-IDENTITY HOURLY HASH COLLISIONS: `h:`     turn identity        OPEN
      ids (content hash bucketed by hour) are SHARED
      by genuinely separate requests — one
@@ -1376,7 +1420,14 @@ ROLLOUT                                FROZEN — user 26 only
                                               correction of legacy row 3030
                                               (400 -> 800). Fix built; RERUN
                                               after deploy
-    P17g                                  ⛔  BLOCKED on the direct canary
+    P17g                                  ⚠  Unblocked by Q and by D's MERGE
+                                              (2026-08-21). WORK may start on
+                                              the #81 branch; D is NOT closed,
+                                              so repaired main does not exist
+                                              until #81 merges. CLOSURE also
+                                              waits on the direct-canary rerun,
+                                              which waits on a manual deploy —
+                                              main ef2bf63, live 76076b6
     CF10 / P17-UE                         ◻  registered; begins after remeasure
 
 ⭐ SEQUENCE FROM HERE *(Danny, 2026-08-18 — verbatim)*:
@@ -7517,7 +7568,24 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-21 (`cfb3557`, Tranche Q branch; `origin/main`
+Last reconciled 2026-08-21 (`ef2bf63`, merged main) against BOTH TRANCHES
+CLOSING. What was re-read and corrected rather than date-bumped: CF17 and CF18
+moved OPEN -> MERGED, POST-MERGE REMEDIATION OPEN with the merge SHAs — NOT
+closed: two D2 telemetry defects (the persist-in-flight race; "latest row by
+turn_id" misattribution) are open on PR #81 — and CF18's text rewritten because its
+PREMISE was wrong, not merely its status — "settlement pays 5.4 s" became "a
+fire-and-forget prewarm contaminates critical-path telemetry", which is a
+different defect with a different fix · the top banner, which still named D as
+open and unpatched · the P17 board's `P17g BLOCKED on the direct canary` line.
+
+⛔ **AND THE P17g LINE IS THE ONE THAT NEEDED JUDGEMENT, NOT A STATUS FLIP.**
+Q and D unblock P17g's WORK. They do not clear its CLOSURE gate, which is BOTH
+canaries — and the DIRECT canary still reads FAILED — MISROUTED, "RERUN after
+deploy". The CF5b/CF5c fixes it needs are on main and NOT LIVE: auto-deploy is
+disabled and the deployed build is still `76076b6`. Marking P17g simply
+"UNBLOCKED" would have read as "ready to close" and lost that.
+
+Previously reconciled 2026-08-21 (`cfb3557`, Tranche Q branch; `origin/main`
 `76076b6`) against P17 PHASE 2 SHIPPING LIVE, TRANCHE Q, AND THE OPENING OF
 TRANCHE D. What was actually re-read and corrected, rather than date-bumped:
 the top-of-file CURRENT RECONCILIATION banner, which still read 2026-08-17 @
