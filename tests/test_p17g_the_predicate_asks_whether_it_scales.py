@@ -105,25 +105,89 @@ def test_a_scaling_count_with_no_local_evidence_is_still_declined():
         "conversion happened to exist: %r" % (verdict,))
 
 
-def test_the_product_twins_decline_for_the_PRODUCER_reason_not_the_mass_reason():
-    """⛔ EXPLICIT NEGATIVE TWINS, NOT OMITTED ONES *(Danny, 2026-08-21)*.
+#: The two P17h product twins, as the user would NAME them (no scan, no
+#: `product_evidence_id`). Both are declines today and positives the day a
+#: sourced PRODUCT producer lands — which is the claim the test below has to
+#: prove rather than assert.
+PRODUCT_TWINS = [
+    ("Barebells Salty Peanut Protein Bar", "1 bar", "bar",
+     {"calories": 200.0, "protein": 20.0, "carbs": 16.0, "fat": 8.0}, 55.0),
+    ("Fairlife Core Power Elite", "1 bottle", "bottle",
+     {"calories": 230.0, "protein": 42.0, "carbs": 8.0, "fat": 3.5}, 414.0),
+]
 
-    "exact 1 Barebells bar" and "1 Fairlife bottle" are P17h positives — but
-    only once a producer exists. `assemble()` supplies a PRODUCT rung solely
-    for a scan-BOUND item carrying `product_evidence_id`, and a bound item
-    returns from `decide()` before this branch. An item the user merely NAMED
-    has no authoritative product producer at all.
 
-    So they decline, and the REASON has to say which fact is missing. "No mass"
-    would be the wrong answer recorded as the right verdict — and it is the
-    answer that would silently become stale the day the producer lands."""
-    verdict = decide(_facts(identity="Barebells Salty Peanut Protein Bar",
-                            entity="", has_identity=False,
-                            selected_rung_authoritative=False))
+@pytest.mark.parametrize("identity,quantity,unit,per_serving,serving_g",
+                         PRODUCT_TWINS)
+def test_the_product_twins_decline_because_NO_PRODUCER_EXISTS(
+        identity, quantity, unit, per_serving, serving_g):
+    """⛔ EXPLICIT NEGATIVE TWINS, AND THE REASON PROVEN RATHER THAN ASSERTED
+    *(Danny, review of `61eaf4e`)*.
+
+    ⛔⛔⛔ THE FIRST VERSION OF THIS TEST PASSED FOR THE WRONG REASON, and its
+    shape is worth keeping as the warning. It forced `entity=""`/
+    `has_identity=False`, so `decide()` returned at the IDENTITY rung — "no
+    canonical identity" — and never reached the producer question at all. Its
+    one assertion (`"mass" not in reason`) then held trivially, because the
+    identity reason does not mention mass. It covered ONE twin, and it was
+    written that way BECAUSE the honest reason contains the word "mass" ("a
+    user-stated exact mass") — the assertion had been fitted to a verdict that
+    answered a different question. A twin that declines at a rung above the one
+    under test proves nothing about the rung under test.
+
+    So the claim is made positively, in three steps, against the REAL selector:
+
+        1  with the rungs `look()` actually builds, PRODUCT's evidence is
+           `None` — the rung does not exist, so nothing wins and nothing is
+           authoritative;
+        2  the SAME identity and the SAME quantity, given a real per-serving
+           PRODUCT producer, scale AUTHORITATIVELY through `direct_basis`;
+        3  therefore the decline is the producer's absence, and it lifts the
+           day the producer lands — not the day someone states a mass.
+
+    Step 2 is what step 1 alone cannot say: an absence is only attributable
+    when you can show the presence changing the answer."""
+    from core.canonical_pricing import (ProductEvidence, _from_memory,
+                                        _from_product)
+    from skills.nutrition.pricing_artifact import split_identity
+
+    entity, preparation = split_identity(identity)
+    consumed = normalize_quantity(quantity, identity)
+
+    # 1 — the rung set `look()` builds for an item the user merely NAMED.
+    # `assemble()` hard-codes PRODUCT to None for anything not scan-bound.
+    no_producer = select_priced_rung(
+        entity=entity, preparation=preparation, consumed=consumed,
+        rungs=((None, _from_memory), (None, _from_product)), bound=False)
+    assert no_producer.rung is None and no_producer.priced is None, (
+        "a PRODUCT rung priced this without a producer: %r" % (no_producer,))
+    assert no_producer.authoritative is False
+
+    # 2 — the same item, with the producer this slice does not yet have.
+    ev = ProductEvidence(identifier=identity, per_serving=dict(per_serving),
+                         serving_grams=serving_g, serving_unit=unit)
+    with_producer = select_priced_rung(
+        entity=entity, preparation=preparation, consumed=consumed,
+        rungs=((ev, _from_product),), bound=False)
+    assert with_producer.rung is Rung.PRODUCT, (
+        "the per-serving producer did not win its own rung: %r"
+        % (with_producer,))
+    assert with_producer.authoritative is True, (
+        "a count of the LABEL'S OWN unit is a direct compatible basis "
+        "(precedence rung 2), not a heuristic: %r" % (with_producer,))
+
+    # 3 — so today's verdict is a decline, and it is the SELECTED-RUNG verdict,
+    # reached with identity and quantity both present. Not the identity rung.
+    verdict = decide(_facts(identity=identity, entity=entity,
+                            preparation=preparation, has_mass=False,
+                            selected_rung="", selected_rung_authoritative=False))
     assert isinstance(verdict, Unsupported)
-    assert "mass" not in verdict.reason.lower(), (
-        "a product with no authoritative producer was declined for a MASS "
-        "reason: %r — the missing fact is the producer" % (verdict.reason,))
+    assert "identity" not in verdict.reason and "quantity" not in verdict.reason, (
+        "the twin declined ABOVE the rung under test — this is the vacuity the "
+        "first version of this test shipped with: %r" % (verdict.reason,))
+    assert "heuristically" in verdict.reason, (
+        "the decline did not come from the selected-rung branch: %r"
+        % (verdict.reason,))
 
 
 def test_the_predicate_describes_the_rung_that_WINS_not_the_best_available():
@@ -312,32 +376,166 @@ def test_the_selector_skips_a_rung_that_scales_but_cannot_price():
         "the winning rung's resolution was not reported as authoritative")
 
 
-def test_look_uses_the_selector_result_not_merely_calls_it():
-    """⛔⛔ A CALL IS NOT A CONSUMPTION *(and the first version of this test
-    only checked the call)*.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rung,authoritative", [
+    (Rung.ARTIFACT, True),
+    (Rung.MEMORY, False),
+    (None, False),
+])
+async def test_the_selectors_result_REACHES_the_facts(monkeypatch, rung,
+                                                      authoritative):
+    """⛔⛔⛔ THE DATA FLOW, DRIVEN — not an AST that accepts any `.authoritative`
+    anywhere in the function *(Danny, review of `61eaf4e`)*.
 
-    Mutation P7 replaced `selected_authoritative = bool(_sel.authoritative)`
-    with `= True`, leaving the `select_priced_rung(...)` call untouched. The
-    grep-style assertion stayed green while routing had stopped consuming the
-    pricer's verdict entirely — the exact "a function that is called is not a
-    function whose result is used" trap this repository keeps cataloguing.
+    Two earlier versions of this proof were both too weak, in the same
+    direction, and the second one is the interesting failure:
 
-    So the assertion is on the DATA FLOW: the selector's result must reach the
-    fact `decide()` reads."""
-    import ast
-    import inspect
+        v1  asserted `select_priced_rung` appears in the source. Mutation P7
+            replaced the assignment with `= True` and left the call standing:
+            green while routing had stopped consuming the pricer entirely.
+        v2  asserted that SOME `<name>.authoritative` is read somewhere in
+            `look()`. That still passes for `_ = _sel.authoritative` followed
+            by a hard-coded constant — it proves a READ happened, never that
+            the value reaches the `ItemFacts` `decide()` will read.
 
-    from core import general_settlement as GS
-    tree = ast.parse(inspect.getsource(GS.look).lstrip())
+    A structural test can say the wire exists. Only a driven one can say the
+    current arrives. So the selector is replaced by a SENTINEL and the returned
+    facts are read: both fields, over three selections, including a `None` rung
+    (which is what a selector that found no winner returns, and the case a
+    hard-coded `""`/`False` would pass by accident on its own).
 
-    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
-             and getattr(n.func, "id", "") == "select_priced_rung"]
-    assert calls, "look() never calls the shared selector"
+    ⭐ THE THREE CASES ARE NOT REDUNDANT. A constant `True` fails case 2, a
+    constant `False` fails case 1, a hard-coded `"memory"` fails cases 1 and 3
+    — no single frozen value survives the set."""
+    import core.canonical_pricing as CP
+    import core.general_settlement as GS
+    from core.canonical_pricing import RungSelection
 
-    # the result is bound, and that binding is what reaches the fact
-    reads = {n.value.id for n in ast.walk(tree)
-             if isinstance(n, ast.Attribute) and n.attr == "authoritative"
-             and isinstance(n.value, ast.Name)}
-    assert reads, (
-        "look() calls select_priced_rung but never reads `.authoritative` "
-        "from its result — routing is not consuming the pricer's rule")
+    sentinel = RungSelection(priced=object(), rung=rung,
+                             authoritative=authoritative)
+    calls = []
+
+    def _spy(**kwargs):
+        calls.append(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(CP, "select_priced_rung", _spy)
+
+    facts = await GS.look(None, user_id=1,
+                          item={"food_name": "Eggs", "quantity": "2 eggs"})
+
+    assert calls, "look() never called the shared selector"
+    assert facts.selected_rung == (rung.value if rung is not None else ""), (
+        "the selector chose %r but the facts say %r — the verdict would name a "
+        "rung the pricer is not going to commit"
+        % (rung, facts.selected_rung))
+    assert facts.selected_rung_authoritative is authoritative, (
+        "the selector said authoritative=%r but the facts say %r — `decide()` "
+        "is reading a number routing invented"
+        % (authoritative, facts.selected_rung_authoritative))
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# THE OTHER HALF OF "ONE SELECTION RULE, CONSUMED TWICE" — the PRICER
+#
+# ⛔⛔⛔ `decide()` consuming the rule is not the contract; BOTH consuming it
+# is. `price()` held a `RungSelection` carrying `.authoritative` and returned
+# `.priced` without ever looking at it, so a promise made at routing had no
+# enforcement at the only place that writes.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def _memory_evidence():
+    from core.canonical_pricing import MemoryEvidence
+    return MemoryEvidence(per100g=dict(_PER100G), source_id="memory:1",
+                          confidence=1.0)
+
+
+def test_the_pricer_refuses_a_rung_the_predicate_would_never_have_blessed():
+    """⛔⛔⛔ `price()` MUST ENFORCE WHAT `decide()` PROMISED *(Danny, review of
+    `61eaf4e`)*.
+
+    The two run the SAME selector but not over the same rungs: `look()` builds
+    `(memory, None, artifact)` while `assemble()` supplies
+    `(memory, product, artifact, ESTIMATE)`. So routing can admit on an
+    authoritative artifact and the pricer — artifact ranking having found no
+    winner on its own query — can fall through to the ESTIMATE rung and commit
+    a heuristic price under an admission that promised authority. Nothing
+    checked. `selection.authoritative` existed and was discarded one line
+    before the return.
+
+    ⭐ THE REQUIREMENT IS THE CALLER'S, NOT A GLOBAL RULE. Refusing every
+    non-authoritative price everywhere would refuse most ordinary meals — a
+    heuristic estimate is a legitimate price, it is simply not a canonical
+    SETTLEMENT. So `price()` takes the requirement from whoever is calling,
+    exactly as it already takes `bound`, and general settlement — the one
+    caller that has published an authoritative promise — passes it.
+
+    ⚠ AND IT REFUSES BEFORE ANY WRITE. `PricingRefused` propagates by design
+    (A8); a divergence therefore costs a refused turn, never a wrong row."""
+    from core.canonical_pricing import PricingRefused, price
+
+    consumed = normalize_quantity("2 eggs", "Eggs")
+
+    # UNCHANGED for every other caller: a heuristic piece weight still prices.
+    lenient = price(entity="Eggs", consumed=consumed, memory=_memory_evidence())
+    assert lenient.calories > 0, (
+        "the ordinary pricing path changed — this requirement is the caller's, "
+        "not a new global rule")
+
+    with pytest.raises(PricingRefused) as caught:
+        price(entity="Eggs", consumed=consumed, memory=_memory_evidence(),
+              require_authoritative=True)
+    assert "authoritativ" in str(caught.value).lower(), (
+        "the refusal did not name the requirement it enforced: %r"
+        % (str(caught.value),))
+
+
+def test_the_pricer_still_returns_an_authoritative_rung_under_the_requirement():
+    """⛔ THE NEGATIVE INVARIANT'S TWIN. A requirement that refused everything
+    would satisfy the test above and delete canonical settlement — so the
+    exact-mass positive has to keep pricing with the requirement ON."""
+    from core.canonical_pricing import price
+
+    priced = price(entity="Eggs", consumed=normalize_quantity("100 g eggs",
+                                                              "Eggs"),
+                   memory=_memory_evidence(), require_authoritative=True)
+    assert priced.calories > 0
+    assert priced.rung is Rung.MEMORY
+
+
+@pytest.mark.asyncio
+async def test_general_settlement_asks_the_pricer_to_enforce_the_promise(
+        monkeypatch):
+    """⛔⛔ THE CALLER SIDE, DRIVEN. `price()` gaining the ability to enforce is
+    worth nothing if the one caller that made the promise never asks for it —
+    the "a function that is called is not a function whose result is used"
+    trap, one layer out.
+
+    So this drives the real `_price` and reads the keyword it passed."""
+    from types import SimpleNamespace
+
+    import core.canonical_pricing as CP
+    import core.canonical_pricing_inputs as CPI
+    from core.general_settlement import GeneralSettlementOwner
+
+    seen = {}
+
+    async def _assemble(*_a, **_k):
+        return {"memory": None, "product": None, "artifact": None,
+                "estimate": None}
+
+    def _price(**kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(calories=1.0, rung=Rung.MEMORY)
+
+    monkeypatch.setattr(CPI, "assemble", _assemble)
+    monkeypatch.setattr(CP, "price", _price)
+
+    await GeneralSettlementOwner()._price(
+        None, user=SimpleNamespace(id=1),
+        item={"food_name": "Eggs", "quantity": "100 g"})
+
+    assert seen.get("require_authoritative") is True, (
+        "general settlement priced without asking the pricer to enforce the "
+        "authority its own predicate promised: %r" % (sorted(seen),))

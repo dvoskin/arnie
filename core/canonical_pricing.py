@@ -773,7 +773,8 @@ def price(*, entity: str, preparation: str = "", consumed=None,
           product: Optional[ProductEvidence] = None,
           artifact: Optional[ArtifactEvidence] = None,
           estimate: Optional[EstimateEvidence] = None,
-          bound: bool = False) -> PricedFood:
+          bound: bool = False,
+          require_authoritative: bool = False) -> PricedFood:
     """What this food costs. SYNCHRONOUS, and deliberately so.
 
     A synchronous signature is the strongest possible statement of Gate B:
@@ -783,6 +784,38 @@ def price(*, entity: str, preparation: str = "", consumed=None,
     RUNG ORDER IS AUTHORITY ORDER — memory, product, artifact, estimate — and
     the first rung that can produce numbers wins. `refuse_or_return` is the
     single exit, so no rung can smuggle out an indefensible price.
+
+    ⛔⛔⛔ `require_authoritative` — THE OTHER HALF OF "ONE SELECTION RULE,
+    CONSUMED TWICE" *(P17g, Danny's review of `61eaf4e`)*. This function held a
+    `RungSelection` carrying `.authoritative` and returned `.priced` without
+    ever reading it, so the promise routing published had no enforcement at the
+    only place that writes.
+
+    The two are not guaranteed to agree by construction, because they do not
+    run over the same rungs: `look()` builds `(memory, None, artifact)` while
+    `assemble()` supplies `(memory, product, artifact, ESTIMATE)`. Routing can
+    therefore admit on an authoritative artifact while this function — artifact
+    ranking having found no winner under its own composed query — falls through
+    to ESTIMATE and commits a heuristic price under an admission that promised
+    authority.
+
+    ⭐ AND IT IS THE CALLER'S REQUIREMENT, NOT A GLOBAL RULE. A heuristic
+    estimate is a perfectly legitimate PRICE; it is simply not a canonical
+    SETTLEMENT. Refusing every non-authoritative rung here would refuse most
+    ordinary meals and delete the B-1 quantity and correction paths along the
+    way. So the requirement arrives from whoever is calling — exactly as
+    `bound` does — and only general settlement, the one caller that published
+    an authoritative promise, passes it.
+
+    ⚠ THE PREFERENCE OPTION WAS DELIBERATELY NOT TAKEN. Clause 4 of the
+    contract allows instead SKIPPING a higher-priority heuristic-only rung in
+    favour of a later authoritative one. That changes which numbers get
+    committed on paths outside this slice (a sourced conversion would start
+    outranking a memory row mid-ladder), and this tranche is a predicate
+    change, not a repricing. Refusing a divergence is the conservative half:
+    it cannot commit anything new, and `PricingRefused` is raised BEFORE any
+    write (A8), so the cost of a divergence is a refused turn, never a wrong
+    row.
     """
     from skills.nutrition.models import MACRO_FIELDS
     # ⭐ NO BASIS TYPES IMPORTED HERE ANY MORE, AND THAT IS THE POINT OF P17a.
@@ -843,6 +876,20 @@ def price(*, entity: str, preparation: str = "", consumed=None,
     selection = select_priced_rung(
         entity=entity, preparation=preparation, consumed=consumed,
         rungs=rungs, bound=bound)
+    # ⛔⛔ THE SELECTION IS CONSUMED, NOT MERELY RETURNED. `.authoritative` was
+    # computed and discarded here; a caller that has promised canonical
+    # authority now gets that promise enforced rather than assumed.
+    if (require_authoritative and selection.priced is not None
+            and not selection.authoritative):
+        logger.warning("event=pricing_refused food=%s reason=not_authoritative "
+                       "rung=%s", entity,
+                       selection.rung.value if selection.rung else "-")
+        raise PricingRefused(
+            f"{entity!r} was priced from the "
+            f"{selection.rung.value if selection.rung else 'unknown'} rung, "
+            f"which scales only heuristically — the caller required an "
+            f"authoritative settlement, and an exact-looking number scaled by "
+            f"a mass nobody measured is not one")
     return refuse_or_return(selection.priced, food_name=entity)
 
 

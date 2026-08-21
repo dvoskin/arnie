@@ -301,34 +301,42 @@ class ItemFacts:
 async def look(db, *, user_id: int, item: dict) -> ItemFacts:
     """The routing facts for one item. LOCAL READS ONLY.
 
+    ⛔⛔⛔ THIS FUNCTION PRICES. SAY IT PLAINLY *(Danny, review of `61eaf4e`)*.
+
+    This docstring used to end its forbidden list with "…, pricing, writing
+    state, claiming idempotency" while the body below ran `select_priced_rung`
+    — the pricer's own selection loop, which builds `PricedFood` objects with
+    real macros for every candidate rung. A boundary comment that contradicts
+    the code twenty lines under it is worse than no comment: the next reader
+    trusts the sentence, not the loop.
+
+    ⭐ AND THE REPAIR IS NOT TO STOP PRICING. P17g's question IS a pricing
+    question — "which rung would `price()` return, and does IT scale without
+    guessing" — and answering it anywhere else would define rung selection a
+    SECOND time, which is the exact drift `select_priced_rung` was extracted to
+    prevent. So the boundary is restated to what it always actually protected:
+
+        forbidden   RETRIEVAL and MUTATION — USDA, OFF, the web, any DB write,
+                    the commit, durable state, idempotency claims. Those are
+                    the reasons the rule existed.
+        permitted   reading the LOCAL evidence this item already has, and
+                    running the pricer's PURE selection over it: candidate
+                    profiles are built and scaled IN MEMORY to learn which rung
+                    wins. No network, no writes, no side effects.
+
+    ⚠ SO THE HONEST CLAIM IS ABOUT WHAT ESCAPES, NOT ABOUT WHAT RUNS. Prices
+    are computed here and every one of them is DISCARDED: `ItemFacts` carries
+    a rung name and two booleans, never a macro, and nothing this function
+    computes is ever committed. Pricing to decide is not pricing to write.
+
+    ⭐ `assemble()` is still not called: `look()` builds the same rung
+    candidates in the same order by reading the same local sources, because
+    the contract it must honour is about WHICH RUNG WINS — and `assemble()`
+    retrieves, which is the half that stays forbidden.
+
     Permitted (§3a.2 decision D): canonical identity eligibility, local
     artifact availability, eligible memory availability, quantity/identity
-    completeness. Forbidden: USDA, web retrieval, pricing, writing state,
-    claiming idempotency.
-
-    ⛔⛔ THE BOUNDARY MOVED, DELIBERATELY *(P17g)*. This line read "Forbidden:
-    `assemble()` … the resolver" — and P17g cannot be built under that rule,
-    because the predicate's question IS a resolver question: "can this
-    evidence be scaled to this quantity without retrieval, guessing or
-    unsourced conversion?" Answering it anywhere else would define scalability
-    a SECOND time, which is precisely what `can_scale` was added to prevent.
-
-    So the boundary is restated rather than quietly crossed:
-
-        forbidden   RETRIEVAL and WRITES — USDA, the web, pricing's commit,
-                    state, claims. The reasons this rule existed.
-        permitted   reading the LOCAL evidence this item already has, and
-                    asking the ONE resolver, PURELY, whether that evidence
-                    scales. No network, no writes, no side effects.
-
-    ⭐ `assemble()` is still not called here: `look()` builds the same rung
-    candidates in the same order by reading the same local sources, because
-    the contract it must honour is about WHICH RUNG WINS, not merely whether
-    some rung could scale — see the P17g selection contract below.
-
-    ⚠ ASKING WHETHER EVIDENCE EXISTS IS NOT PRICING IT. `_memory` and
-    `evidence_for` are the same reads `assemble` would perform, called here for
-    their EXISTENCE and not for their numbers — nothing below returns a macro.
+    completeness, and the pure rung selection described above.
     """
     from core.canonical_pricing_inputs import _memory
     from skills.nutrition.normalize import normalize_quantity
@@ -798,8 +806,16 @@ class GeneralSettlementOwner:
             db, user_id=int(user.id), entity=entity, preparation=preparation,
             identity=identity, item=item,
             basis_grams=getattr(consumed, "grams", None), bound=bound)
+        # ⛔⛔⛔ THE PROMISE IS ENFORCED WHERE THE WRITE HAPPENS *(P17g)*. Every
+        # `Supported` branch of `decide()` means "the rung that prices this
+        # scales authoritatively" — but `look()` selects over
+        # `(memory, None, artifact)` and `assemble()` supplies
+        # `(memory, product, artifact, ESTIMATE)`, so the pricer can land on a
+        # rung routing never saw. Without this the divergence commits silently.
+        # With it the divergence is a refusal, raised before any write.
         analysis = price(entity=identity, preparation=preparation,
-                         consumed=consumed, bound=bound, **inputs)
+                         consumed=consumed, bound=bound,
+                         require_authoritative=True, **inputs)
         return _Priced(
             identity=identity, entity_id=str(
                 item.get("canonical_entity_id") or item.get("entity_id") or ""),

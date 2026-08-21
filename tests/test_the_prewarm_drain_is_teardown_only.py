@@ -150,7 +150,85 @@ async def test_the_drain_is_bounded_and_never_raises(monkeypatch):
         awaited = await FT.drain_speculative(timeout=0.1)
         elapsed = time.monotonic() - t0
         assert elapsed < 2.0, f"the drain blocked for {elapsed:.2f}s"
-        assert awaited == 1
+        assert awaited.drained == 1
     finally:
         task.cancel()
         FT._IN_FLIGHT.discard(task)
+
+
+@pytest.mark.asyncio
+async def test_a_timed_out_drain_leaves_NOTHING_still_running():
+    """⛔⛔⛔ A DRAIN THAT RETURNS WITH LIVE TASKS IS NOT A DRAIN *(Danny, review
+    of `61eaf4e`)*.
+
+    The first version bounded itself with `asyncio.wait(..., timeout=...)` and
+    returned — and `wait` does not cancel what it gave up on. So the one case
+    the timeout exists for is the exact case where the guarantee evaporated:
+    the slow prewarm stayed alive, holding its connection, and teardown then
+    ran `DROP SCHEMA ... CASCADE` into it. That is the deadlock the registry
+    was added to prevent, reached through the registry's own escape hatch.
+
+    A bound and a guarantee are not alternatives. The drain waits up to the
+    timeout, and whatever is still running when it expires is CANCELLED and
+    awaited to completion, so the postcondition holds unconditionally:
+
+        after `drain_speculative()` returns, no registered task is running.
+
+    ⭐ CANCELLING IS NOT A LIFECYCLE REVERSAL. The documented rule is that a
+    prewarm is never cancelled AT SETTLEMENT — it runs to completion after the
+    response. This is teardown/shutdown, and only after the task has already
+    outlived its whole budget."""
+    started = asyncio.Event()
+    finally_ran = []
+
+    async def _forever():
+        started.set()
+        try:
+            await asyncio.sleep(30)
+        finally:
+            finally_ran.append(True)
+
+    task = asyncio.ensure_future(_forever())
+    FT._IN_FLIGHT.add(task)
+    try:
+        await started.wait()
+        await FT.drain_speculative(timeout=0.05)
+
+        assert task.done(), (
+            "the drain timed out and returned while the prewarm was still "
+            "running — teardown now races the very task the registry exists "
+            "to wait for")
+        assert finally_ran, (
+            "the task was cancelled but never awaited, so its cleanup had not "
+            "run when the drain returned — a connection can still be open")
+    finally:
+        task.cancel()
+        FT._IN_FLIGHT.discard(task)
+
+
+@pytest.mark.asyncio
+async def test_the_drain_reports_what_it_could_not_finish():
+    """⭐ AND IT SAYS SO. A drain that silently cancels work is an instrument
+    that hides the condition it was built to detect: "everything drained
+    cleanly" and "I killed three writes" must not be the same return value."""
+    async def _forever():
+        await asyncio.sleep(30)
+
+    async def _quick():
+        return None
+
+    slow = asyncio.ensure_future(_forever())
+    quick = asyncio.ensure_future(_quick())
+    FT._IN_FLIGHT.update({slow, quick})
+    try:
+        result = await FT.drain_speculative(timeout=0.05)
+        assert result.drained == 2, (
+            "the drain miscounted the tasks it took responsibility for: %r"
+            % (result,))
+        assert result.cancelled == 1, (
+            "the drain cancelled a task and reported a clean drain: %r"
+            % (result,))
+    finally:
+        slow.cancel()
+        FT._IN_FLIGHT.discard(slow)
+        FT._IN_FLIGHT.discard(quick)
