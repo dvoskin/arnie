@@ -18,6 +18,7 @@ of them; see `main`. Exits non-zero unless every case is clean, so FLAKY is a
 failure here rather than a footnote.
 """
 import asyncio
+import logging
 import os
 import sys
 import json
@@ -26,6 +27,104 @@ from types import SimpleNamespace
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
 
 from core import food_turn as FT
+
+
+#: Signatures of a call that was REFUSED rather than answered. Matched against
+#: the log line `core.llm` writes when the model call fails, because that
+#: failure is swallowed there — the turn returns a null result and the case
+#: sees `got=None`, which is indistinguishable from the model declining to act.
+_INFRA_MARKERS = (
+    "credit balance is too low",
+    "authentication_error",
+    "invalid x-api-key",
+    "permission_error",
+    "rate_limit_error",
+    "overloaded_error",
+    "internal_server_error",
+    "api_error",
+)
+
+
+#: The lines `core/llm.py` writes when a safety net CAUGHT the call. They mean
+#: the model answered, so whatever failed on the way is not an outage.
+_RECOVERY_MARKERS = (
+    "model fallback ok",   # core/llm.py — the Anthropic retry succeeded
+    "openai fallback ok",  # core/llm.py — the OpenAI net succeeded
+)
+
+
+#: Where the run's verdict is written. A module constant so a test can
+#: point it somewhere harmless instead of stamping on the real one.
+RESULTS_PATH = "/tmp/eval_matrix_results.txt"
+
+
+class _InfraWatch(logging.Handler):
+    """⛔⛔ AN ABSENT ANSWER IS NOT A NEGATIVE ANSWER — AND A RECOVERED ONE IS
+    NOT ABSENT.
+
+    Measured on PR #79: the Anthropic balance ran out mid-run, both the
+    primary model and the fallback returned 400 `credit balance is too low`,
+    and the battery scored those two reps as `got=None want=ask` — reporting
+    "[FLAKY] a unit that does not fix a size is asked about (1/3)" and exiting
+    1. That reads as a behaviour that sometimes misfires. Nothing about the
+    behaviour was measured; the API refused to answer.
+
+    A billing or auth outage is an INFRASTRUCTURE failure and now says so.
+    The distinction matters because FLAKY is the battery's loudest behavioural
+    signal — the state it exists to catch — and an outage was borrowing it.
+
+    ⭐ THE SEQUENCE MATTERS, NOT THE PRESENCE OF A MARKER. `core/llm.py` logs
+    the primary failure BEFORE it retries, so the first version of this
+    handler threw away every rep a fallback had rescued — the same error it
+    exists to correct, pointing the other way. A marker is therefore PENDING
+    until the call resolves: a recovery line clears it, a second failure
+    leaves it standing.
+
+    Clearing is per-call, not per-rep. A rep makes several model calls, and an
+    early recovery must not forgive a later outage — that would score the rep
+    on a turn that never got an answer. The call boundary is the PRIMARY
+    failure line: reaching a new one means the previous call ended without
+    announcing a rescue, so its markers are banked as dead before the new
+    call's start collecting.
+
+    ⭐ "Fallback ALSO failed" is deliberately NOT treated as terminal. The
+    OpenAI net runs AFTER it (`core/llm.py`), so a call can still be answered
+    once both Anthropic models are out — and calling it dead there would
+    discard exactly the measurement the net saved."""
+
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self._pending = []
+        self._dead = []
+
+    @property
+    def hits(self):
+        """Markers no recovery accounted for. Pending ones count: a call that
+        failed and never announced a rescue did not get one."""
+        return self._dead + self._pending
+
+    def clear(self):
+        self._pending.clear()
+        self._dead.clear()
+
+    def emit(self, record):
+        try:
+            msg = record.getMessage().lower()
+        except Exception:  # noqa: BLE001 - a broken record must not kill the run
+            return
+        if any(marker in msg for marker in _RECOVERY_MARKERS):
+            self._pending.clear()          # this call was answered after all
+            return
+        for marker in _INFRA_MARKERS:
+            if marker in msg:
+                if "model call failed" in msg and self._pending:
+                    # A new call is starting and the last one never announced a
+                    # rescue. Bank it now, so THIS call's recovery cannot clear
+                    # a previous call's outage.
+                    self._dead.extend(self._pending)
+                    self._pending.clear()
+                self._pending.append(marker)
+                return
 
 
 def U(mode="strict"):
@@ -275,17 +374,36 @@ async def main():
     _preflight()
     reps = int(os.getenv("EVAL_REPS", "3"))
     lines = []
-    clean = flaky = broken = 0
+    clean = flaky = broken = unmeasured = 0
+    watch = _InfraWatch()
+    logging.getLogger().addHandler(watch)
     for c in CASES:
         runs = []
         for _ in range(reps):
+            # `watch.clear()`, NOT `watch.hits.clear()` — `hits` is a computed
+            # list, so clearing it would clear a temporary and leak every
+            # marker into the next rep, making one outage condemn the run.
+            watch.clear()
             try:
-                runs.append(await run_case(c))
+                ok, detail = await run_case(c)
             except Exception as e:  # noqa: BLE001
-                runs.append((False, f"EXC {type(e).__name__}: {e}"))
-        n = sum(1 for ok, _ in runs if ok)
-        if n == reps:
-            mark, _b = "PASS", clean
+                ok, detail = False, f"EXC {type(e).__name__}: {e}"
+            if watch.hits:
+                # `ok` here is not a verdict — the model never answered. Keep
+                # the rep, discard its score.
+                runs.append((None, f"INFRA {watch.hits[0]}"))
+            else:
+                runs.append((ok, detail))
+        scored = [(ok, d) for ok, d in runs if ok is not None]
+        infra = [d for ok, d in runs if ok is None]
+        n = sum(1 for ok, _ in scored if ok)
+        if infra:
+            # ⛔ NOT FLAKY. A case whose reps were refused was not measured, and
+            # calling it flaky would attribute an outage to the behaviour.
+            mark = "INFRA"
+            unmeasured += 1
+        elif n == reps:
+            mark = "PASS"
             clean += 1
         elif n == 0:
             mark = "FAIL"
@@ -293,18 +411,33 @@ async def main():
         else:
             mark = "FLAKY"
             flaky += 1
-        detail = "; ".join(sorted({d for ok, d in runs if not ok})) or runs[0][1]
-        line = f"[{mark}] {c['name']}  ({n}/{reps}) ({detail[:160]})"
+        detail = ("; ".join(sorted(set(infra))) if infra else
+                  "; ".join(sorted({d for ok, d in scored if not ok}))
+                  or (scored[0][1] if scored else ""))
+        shown = f"{n}/{len(scored)} scored, {len(infra)}/{reps} refused" if infra \
+            else f"{n}/{reps}"
+        line = f"[{mark}] {c['name']}  ({shown}) ({detail[:160]})"
         print(line, flush=True)
         lines.append(line)
     total = len(CASES)
     summary = (f"\n{clean}/{total} passed all {reps} reps"
-               f"  |  flaky: {flaky}  |  failed outright: {broken}")
+               f"  |  flaky: {flaky}  |  failed outright: {broken}"
+               f"  |  UNMEASURED (infrastructure): {unmeasured}")
+    if unmeasured:
+        summary += (
+            f"\n\n⛔ INFRASTRUCTURE FAILURE — {unmeasured} case(s) were never "
+            "measured because the model API refused the call (billing, auth, "
+            "or rate limit; see the INFRA lines above). This run says NOTHING "
+            "about those cases' behaviour. Restore API access and re-run "
+            "before reading this battery as a verdict.")
     print(summary, flush=True)
-    out = "/tmp/eval_matrix_results.txt"
-    with open(out, "w") as f:
+    with open(RESULTS_PATH, "w") as f:
         f.write("\n".join(lines) + summary + "\n")
-    # A flaky case is not a pass — make the exit code say so for CI.
+    # Three distinct outcomes, three distinct codes: 0 clean, 2 not measured,
+    # 1 measured and wrong. CI reds on any non-zero, but the code alone now
+    # says whether the product or the plumbing failed.
+    if unmeasured:
+        sys.exit(2)
     sys.exit(0 if clean == total else 1)
 
 

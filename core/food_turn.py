@@ -1391,6 +1391,305 @@ def _drop_unit_derived(op: dict) -> None:
         op.pop(_k, None)
 
 
+#: Unit spellings that mean the same measure. Explicit rather than derived
+#: from a factor table: `g` and `ml` share a factor of 1.0 there and are NOT
+#: the same unit, so grouping by factor would call a millilitre a gram.
+_UNIT_ALIASES = {
+    "g": "g", "gm": "g", "gr": "g", "gram": "g",
+    "kg": "kg", "kilo": "kg", "kilogram": "kg",
+    "oz": "oz", "ounce": "oz",
+    "lb": "lb", "pound": "lb",
+    "ml": "ml", "milliliter": "ml", "millilitre": "ml", "cc": "ml",
+    "l": "l", "liter": "l", "litre": "l",
+    "tbsp": "tbsp", "tablespoon": "tbsp", "tbs": "tbsp",
+    "tsp": "tsp", "teaspoon": "tsp",
+    "cup": "cup", "scoop": "scoop", "slice": "slice", "piece": "piece",
+}
+
+
+#: The units that can CONTRADICT one another. "1 tbsp" versus "100 g" is a
+#: real disagreement; "15" versus "piece" is not a disagreement at all.
+_MEASURED_UNITS = frozenset({"g", "kg", "oz", "lb", "ml", "l",
+                             "tbsp", "tsp", "cup"})
+
+
+def _canon_unit(word: str) -> str:
+    w = str(word or "").strip().lower().rstrip(".")
+    w = _UNIT_ALIASES.get(w) or _UNIT_ALIASES.get(w.rstrip("s")) or w.rstrip("s")
+    return w
+
+
+#: An indefinite article is not a count. `normalize_quantity` maps "a" and
+#: "an" to 1 in the SAME table that maps "one" and "two" — correctly, because
+#: it is answering what the phrase DENOTES. This module asks a different
+#: question, and needs the two kept apart.
+_ARTICLES = frozenset({"a", "an"})
+
+
+#: Tokeniser shared by every surface check below, so "which words are in this
+#: clause" is answered one way. Numbers (including `3/4` and `1.5`) stay whole.
+_SURFACE_TOKEN = r"\d+(?:[./]\d+)?|[^\W\d_]+"
+
+#: Words that end one food's phrase and begin the next. A count on the far
+#: side of one of these belongs to the other food. `_clause_for` already splits
+#: on comma/and/with/plus; these are the connectives it does NOT split on,
+#: which is exactly where a foreign count survives into this food's clause.
+_BINDING_BREAK = frozenset({
+    "and", "with", "plus", "after", "before", "then", "alongside", "beside",
+    "next", "but", "also", "followed", "over", "on", "from", "alongside",
+})
+
+#: How far past the number this food's own noun may sit. "15 peanut m&m" needs
+#: two; "6 chicken nuggets" needs two; nothing real has needed more.
+_BINDING_WINDOW = 4
+
+
+def _quantity_tables():
+    """The normalizer's own quantity vocabulary, or empty tables if it cannot
+    be imported. ONE source, read by every surface check here — Phase 1 spent
+    four review rounds on two mechanisms disagreeing over two vocabularies,
+    and this module is not going to grow a third."""
+    try:
+        from skills.nutrition.normalize import (_FRACTION_WORDS,
+                                                _UNICODE_FRACTIONS,
+                                                _WORD_NUMBERS)
+        return _WORD_NUMBERS, _FRACTION_WORDS, _UNICODE_FRACTIONS
+    except Exception:
+        return {}, {}, {}
+
+
+def _is_quantity_token(tok: str) -> bool:
+    words, fracs, uni = _quantity_tables()
+    return (tok.replace(".", "").replace("/", "").isdigit()
+            or tok in words or tok in fracs or tok in uni)
+
+
+def _singular(word: str) -> str:
+    """Crude, and deliberately applied to BOTH sides of every comparison, so a
+    word that singularises oddly ("fries" -> "frie") still matches itself."""
+    return word[:-1] if len(word) > 3 and word.endswith("s") else word
+
+
+def _item_nouns(it: dict) -> frozenset:
+    """The words a bare COUNT may legitimately attach to for this item: its
+    unit, and every word of its food name.
+
+    ⭐ EVERY word, not just the head noun. "Peanut M&Ms" tokenises to
+    `peanut/m/ms` and the shipped message is "15 peanut m&m" — the count binds
+    to an adjective there, and a head-noun-only rule would call a plainly
+    stated count an inference. Danny's instruction was the food's "head or
+    recognized noun", and the recognised ones are what make the real fixtures
+    work."""
+    nouns = {_singular(_canon_unit(it.get("unit") or ""))}
+    for w in re.findall(_SURFACE_TOKEN, str(it.get("food") or "").lower()):
+        nouns.add(_singular(w))
+    return frozenset(n for n in nouns if n)
+
+
+def _unit_nouns(it: dict) -> frozenset:
+    """The item's UNIT alone.
+
+    ⛔ A SEPARATE SET ON PURPOSE. The two callers ask different questions and
+    briefly shared one answer, which put the 190-calorie defect straight back:
+    for "1 scoop of peanut butter" carried as 1 tbsp, the food's own name is
+    beside the number ("peanut"), so a food-word set stood the unit veto down
+    and called a scoop a tablespoon. "Does a count belong to this food" and
+    "did the user name this unit" are not the same question."""
+    return frozenset(n for n in {_canon_unit(it.get("unit") or "")} if n)
+
+
+def _binds_nearby(text: str, nouns: frozenset) -> bool:
+    """Starting at a number, does one of `nouns` follow it closely enough to
+    own it?
+
+    ⛔⛔ THE COST OF DROPPING THE UNIT REQUIREMENT *(P17 Tranche Q, round 3)*.
+    `_literal_amount_with_unit` treats a COUNT unit as carrying no unit
+    requirement, correctly — people write "15 peanut m&m", never "15 pieces
+    of peanut m&m". But with no unit to bind to, any number in the clause
+    satisfied the match, and round 1 had just removed the `basis` veto that
+    used to stand behind it. So a neighbouring food's count could be read as
+    this food's, suppressing the quantity ask and committing an inferred
+    count.
+
+    A MEASURED unit proves its own ownership — "100 g" beside an item measured
+    in grams is that item's mass — so this applies to counts only.
+
+    Measured at abf615d: "fried eggs after 2 tacos" bound the taco count to an
+    item of 2 egg / basis="estimate". `_clause_for` splits on comma/and/with/
+    plus, so the reported "2 tacos and fried eggs" was already safe; the hole
+    is the connectives it does not split on."""
+    if not nouns:
+        return True          # nothing to bind to; the caller's checks govern
+    toks = re.findall(_SURFACE_TOKEN, (text or "").lower())
+    i = 0
+    while i < len(toks) and _is_quantity_token(toks[i]):
+        i += 1               # the count itself: "2", "two thirds", "1 1/2"
+    seen = 0
+    for tok in toks[i:]:
+        if seen >= _BINDING_WINDOW or tok in _BINDING_BREAK:
+            break
+        if _is_quantity_token(tok) and tok not in _ARTICLES:
+            break            # the next food's number; this one is not ours
+        # Canonical form too, so a unit the user spelled in full ("2
+        # tablespoons") matches an item carrying its abbreviation.
+        if _singular(tok) in nouns or _canon_unit(tok) in nouns:
+            return True
+        seen += 1
+    return False
+
+
+def _quantity_binds_to_item(text: str, it: dict) -> bool:
+    """Starting at a quantity phrase, does it belong to THIS item — food AND
+    unit?
+
+    ⛔⛔ NEARNESS IS NOT AGREEMENT *(P17 Tranche Q, round 5)*. Round 4 bound
+    `half` and a range with `_binds_nearby(..., _item_nouns(it))`, and
+    `_item_nouns` includes every word of the FOOD NAME. That is right for a
+    bare count — "15 peanut m&m" binds on "peanut" — and wrong the moment the
+    item is measured in something the phrase contradicts, because the food's
+    own name then rescues a unit that disagrees:
+
+        "half a scoop of peanut butter"  as 0.5 TBSP  -> "peanut" bound it
+        "5-6 oz grilled chicken"         as 5.5 G     -> "chicken" bound it
+
+    The first is the scoop defect for the third time; the second is a 28×
+    mass error.
+
+    ⭐ THE DIGIT PATH NEVER HAD THIS. `_literal_amount_with_unit` splits
+    measured units from counts and demands agreement for the former; round 4
+    routed two new paths AROUND that distinction instead of through it. So
+    this is where the distinction now lives for all of them:
+
+      * measured item -> the phrase must NAME a canonically compatible unit,
+        and the food's name cannot stand in for one
+      * count item    -> nothing can contradict a count noun, so nearby
+        food-or-unit binding is enough
+    """
+    if _canon_unit(it.get("unit") or "") in _MEASURED_UNITS:
+        return _binds_nearby(text, _unit_nouns(it))
+    return _binds_nearby(text, _item_nouns(it))
+
+
+def _half_binds_to_food(haystack: str, f: float, it: dict) -> bool:
+    """"Half" states an amount without writing a digit — and still has to say
+    whose amount it is.
+
+    ⛔⛔ *(P17 Tranche Q, round 4)* This rung was a bare
+    `re.search(r"\\bhalf\\b", clause)` sitting ABOVE the `basis` veto since
+    round 1, so any "half" anywhere in the clause promoted an inferred 0.5 to
+    the user's own words. `_clause_for` does not split on "after", so
+    "Greek yogurt after half a banana" classified an inferred **0.5 cup of
+    yogurt** as stated — the banana's half, relabelled.
+
+    Same question and the same helper as the digit counts: does this food's
+    own noun follow the quantity closely enough to own it? `_binds_nearby`
+    skips the quantity words themselves, so "half a cup of greek yogurt"
+    reaches "cup" and binds, while "half a banana" reaches "banana" and does
+    not."""
+    if f != 0.5:
+        return False
+    for m in re.finditer(r"\bhalf\b", (haystack or "").lower()):
+        if _quantity_binds_to_item(haystack[m.start():], it):
+            return True
+    return False
+
+
+def _clause_writes_a_quantity(clause: str) -> bool:
+    """Did the user WRITE a quantity here, or does one merely follow from an
+    article?
+
+    ⛔⛔ THE DISTINCTION THE NORMALIZER DOES NOT DRAW *(P17 Tranche Q, round
+    2)*. `normalize_quantity("a bowl of white rice")` reports
+    `user_stated_amount=1`, identically to `"1 bowl of white rice"`, because
+    it is reporting what the phrase means — and "a bowl" does mean one bowl.
+    What it is NOT reporting is whether the user counted anything.
+
+    That conflation was harmless while `basis` was vetoed above this rung.
+    Moving the veto below it (so a typed `100g` could outrank `basis`) handed
+    the article the same authority: measured at 41297ca, a bowl of rice
+    carried `basis="estimate"` all the way to "stated", and the ask that
+    settles an unfixed unit stopped opening. ⭐ A GUARD THAT MOVES MUST BE
+    JUDGED AGAINST EVERY PATH IT NOW SITS BELOW.
+
+    Reads the normalizer's OWN tables rather than respelling them, so the
+    parser and this gate cannot drift apart about which words are quantity
+    words — the failure mode that had two vocabularies disagreeing in both
+    directions at once during Phase 1."""
+    words, fracs, uni = _quantity_tables()
+    if not words:
+        # No table, no opinion: fall back to "a digit is a written number",
+        # which is the part of the answer that needs no vocabulary at all.
+        return bool(re.search(r"\d", clause or ""))
+    for tok in re.findall(_SURFACE_TOKEN, str(clause or "").lower()):
+        if tok.replace(".", "").replace("/", "").isdigit():
+            return True
+        if tok in uni or tok in fracs:
+            return True
+        if tok in words and tok not in _ARTICLES:
+            return True
+    return False
+
+
+def _literal_amount_with_unit(haystack: str, f: float, it: dict) -> bool:
+    """Did the user write THIS number, as a token, wearing a unit this item
+    can be measured in?
+
+    Replaces a raw `str(amount) in clause` substring test. That test had no
+    token boundary — `1` matched inside `100g` and inside `21` — and no unit
+    check, so a number agreeing while the units disagreed read as the user's
+    own words. Both failures are the same shape: evidence that never proved
+    what it claimed.
+
+    The number is matched with a boundary on the NUMBER (so `200g` still
+    counts, which is why a plain `\b` word-boundary test was rejected when
+    this code was first written). The unit is then taken from the token
+    immediately following it:
+
+      * item carries no unit          -> the number alone is enough; there is
+                                         nothing for a unit to contradict
+      * item's unit is a COUNT noun   -> likewise. People write "15 peanut
+                                         m&m", never "15 pieces of peanut
+                                         m&m"; demanding the unit token there
+                                         would call a plainly stated count an
+                                         inference, which is the defect this
+                                         function exists to prevent, running
+                                         backwards
+      * item's unit is MEASURED       -> the token after the number must
+                                         canonicalise to it. This is the half
+                                         that matters: every false positive
+                                         found in review had a measured unit
+                                         on the item ("1 tbsp", "1 cup") and a
+                                         different measure, or none, in the
+                                         message
+    """
+    if not haystack:
+        return False
+    want = _canon_unit(it.get("unit") or "")
+    # Only a MEASURED unit can be contradicted by another measure. A count
+    # noun ("piece", "slice", "egg", "bar") is usually left unsaid or replaced
+    # by the food itself, so it carries no contradiction to detect.
+    if want not in _MEASURED_UNITS:
+        want = ""
+    for m in re.finditer(r"(?<![\d.])(\d+(?:\.\d+)?)\s*([A-Za-z]+)?", haystack):
+        try:
+            said = float(m.group(1))
+        except (TypeError, ValueError):
+            continue
+        if abs(said - f) > max(0.02, abs(f) * 0.02):
+            continue
+        if not want:
+            # ⛔⛔ A COUNT MUST BE THIS FOOD'S COUNT *(round 3)*. With no unit
+            # to bind to, this branch accepted any number in the clause — so
+            # a neighbouring food's count read as this one's, and round 1 had
+            # already removed the `basis` veto that stood behind it.
+            if _binds_nearby(haystack[m.start(1):], _item_nouns(it)):
+                return True
+            continue
+        if _canon_unit(m.group(2) or "") == want:
+            return True
+    return False
+
+
 def _item_is_stated(it: dict, message: str) -> bool:
     """Is this item's amount the USER's own words? The interpreter's "basis"
     declaration wins when present ("stated"/"regular" vs "estimate"); when
@@ -1411,10 +1710,18 @@ def _item_is_stated(it: dict, message: str) -> bool:
     # history holding six Barebells flavours, on STRICT — whose own rule says a
     # branded product with an unstated flavour is always an ask. The flavour was
     # unstated. It just did not look unstated by the time anything could ask.
-    if b == "regular":
-        return False
-    if b == "estimate":
-        return False
+    #
+    # ⛔⛔ AND THE VETO DOES NOT LIVE HERE ANY MORE *(P17 Tranche Q)*. Both
+    # `regular` and `estimate` used to return False RIGHT HERE, before the
+    # literal proxy below had been consulted at all — so a `basis` label the
+    # interpreter chose could overrule the user's own typed number. Measured
+    # in production 2026-08-20: "I also had 100g of grilled chicken" arrived
+    # as amount=100 unit=g basis="estimate", was filed as OUR inference, and
+    # B-1 asked "How much?" and logged 170.1 g against a stated 100 g.
+    #
+    # A DECLARATION LOSES TO THE MESSAGE. The veto now sits below the strong
+    # literal checks and above the weak ones — see the marker further down,
+    # which explains why that boundary is exactly where it is.
     amt = it.get("amount")
     if amt is None:
         return False
@@ -1470,19 +1777,62 @@ def _item_is_stated(it: dict, message: str) -> bool:
             # is precisely the shipped failure: a 190-calorie assumption
             # presented as the user's own words. They said scoop; we said
             # tablespoon; that is an inference whatever the number did.
-            _said_unit = (_q.user_stated_unit or "").rstrip("s")
-            if _unit and _said_unit and _said_unit != _unit.rstrip("s"):
+            _said_unit = _canon_unit(_q.user_stated_unit or "")
+            _want_unit = _canon_unit(_unit)
+            if _want_unit and _said_unit and _said_unit != _want_unit:
+                # ⭐ UNLESS THE USER WROTE THIS ITEM'S UNIT THEMSELVES. The
+                # normalizer takes whatever word sits where a unit usually
+                # sits, and that word is sometimes an adjective: "two fried
+                # eggs" reports `fried` against an item measured in `egg`. A
+                # veto built to stop "scoop" masquerading as "tbsp" must not
+                # fire on a word that is not a unit at all — otherwise a count
+                # the user typed loses to the interpreter's `basis`, which is
+                # the whole defect this tranche is named for.
+                #
+                # The separator is the user's own clause: "eggs" is written
+                # there, "tbsp" is not. So the veto stands down only when the
+                # disagreement is with a word the user never used as the
+                # measure, and holds whenever they named a different one.
+                #
+                # ⭐ AND IT MUST BE BESIDE THE NUMBER, not merely somewhere in
+                # the clause *(round 3)*. "Anywhere" is the same hole the
+                # count branch of `_literal_amount_with_unit` had: in "fried
+                # eggs after 2 tacos" the word "eggs" IS in the clause, so a
+                # presence test stood the veto down and handed this item the
+                # tacos' count. Same question, same helper, one answer.
+                if not _binds_nearby(" ".join(_words[_skip:]), _unit_nouns(it)):
+                    break
+            # ⛔⛔ AND THE NUMBER HAS TO BE ONE THE USER WROTE. `_said` is what
+            # the phrase DENOTES, which for "a bowl" is 1 — an article, not a
+            # count. Strong evidence is what outranks `basis` here, and an
+            # article is the weakest evidence in this function, so it belongs
+            # below the veto with the rest of the weak rung, not above it.
+            if not _clause_writes_a_quantity(clause):
                 break
             return True
     except Exception:
         pass
 
     s = str(int(f)) if f.is_integer() else str(f)
-    # Plain substring for digits: "200" has no word boundary before the "g" in
-    # "200g", and requiring one dropped every mass the user actually typed.
-    if s in clause:
+    # ⛔⛔ THIS USED TO BE `if s in clause: return True` — RAW SUBSTRING *(P17
+    # Tranche Q, review of PR #79)*. No token boundary and no unit check, so
+    # `amount=1` matched the "1" inside "100g" and the "1" inside "21", and
+    # "1 scoop of peanut butter" carried as 1 tbsp matched on the number while
+    # the units disagreed — the 190-calorie defect, arriving through the one
+    # door the normalizer above had just closed on it.
+    #
+    # It was reachable before only when the interpreter volunteered no basis;
+    # moving the veto below it made it reachable for `estimate` and `regular`
+    # too. ⭐ A GUARD THAT MOVES MUST BE JUDGED ON WHAT IT NOW LETS THROUGH,
+    # not only on what it still stops.
+    #
+    # So the literal path proves the same two things the normalizer does: the
+    # number is the user's own TOKEN, and it wears a unit this item can be
+    # measured in. `200g` still matches — the boundary is on the number, not
+    # on whitespace.
+    if _literal_amount_with_unit(clause, f, it):
         return True
-    if f == 0.5 and re.search(r"\bhalf\b", clause):
+    if _half_binds_to_food(clause, f, it):
         return True
     # ── ONE FOOD CAN SPAN TWO CLAUSES ──────────────────────────────────────
     #
@@ -1502,9 +1852,10 @@ def _item_is_stated(it: dict, message: str) -> bool:
     # THIS food, never a number borrowed from the food next to it.
     _refine = _refining_clauses(message, str(it.get("food") or ""), clause)
     if _refine:
-        if s in _refine:
+        # the refining clause earns no weaker a test than the primary one
+        if _literal_amount_with_unit(_refine, f, it):
             return True
-        if f == 0.5 and re.search(r"\bhalf\b", _refine):
+        if _half_binds_to_food(_refine, f, it):
             return True
     # ── A RANGE IS A STATED AMOUNT ─────────────────────────────────────────
     #
@@ -1518,16 +1869,42 @@ def _item_is_stated(it: dict, message: str) -> bool:
     #
     # Anywhere inside the stated span counts, midpoint or endpoint, because
     # every value in it is the user's figure rather than ours.
+    #
+    # ⭐ AND THE SPAN HAS TO BE THIS FOOD'S SPAN *(round 4)*. A range is a
+    # quantity like any other, so it answers the same ownership question the
+    # digit counts do — "French fries after 5-6 chicken nuggets" states the
+    # NUGGETS' count, and reading 5.5 fries out of it hands one food's number
+    # to another under the label "the user said so".
     for _hay in (clause, _refine):
-        for _lo, _hi in re.findall(
+        for _m in re.finditer(
                 r"(\d+(?:\.\d+)?)\s*(?:-|–|—|to|or)\s*(\d+(?:\.\d+)?)",
                 _hay or ""):
             try:
-                _lo, _hi = float(_lo), float(_hi)
+                _lo, _hi = float(_m.group(1)), float(_m.group(2))
             except ValueError:
                 continue
-            if _lo <= _hi and (_lo - 0.01) <= f <= (_hi + 0.01):
+            if not (_lo <= _hi and (_lo - 0.01) <= f <= (_hi + 0.01)):
+                continue
+            if _quantity_binds_to_item((_hay or "")[_m.start():], it):
                 return True
+    # ── THE BASIS VETO, AND WHY IT SITS EXACTLY HERE ───────────────────────
+    #
+    # Everything ABOVE is a number the user actually typed: the normalizer
+    # agreeing on amount AND unit, the digits appearing in this food's clause,
+    # "half", a refining clause about the same head noun, a stated range. That
+    # is evidence, and it outranks whatever `basis` claims — Tranche Q.
+    #
+    # Everything BELOW is weaker: a spelled small number, and finally a bare
+    # indefinite article. The article is the weakest signal in this function,
+    # and the `basis` veto is precisely what stops it turning "a scoop of
+    # peanut butter" (carried as 1 tbsp) into the user's own statement — the
+    # shipped 190-calorie assumption recorded above. Widening "literal
+    # outranks basis" to cover the article would reintroduce that defect while
+    # fixing this one.
+    #
+    # So: a number they typed beats the label; an article does not.
+    if b in ("regular", "estimate"):
+        return False
     if not f.is_integer():
         return False
     _words = {1: ("one",), 2: ("two",), 3: ("three",), 4: ("four",),

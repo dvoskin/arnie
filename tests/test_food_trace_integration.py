@@ -89,8 +89,21 @@ def _structured_plan(*names):
 
 
 def _trace_lines(caplog):
+    """The TURN lines, and only those.
+
+    ⛔ `"event=food_trace" in message` is a PREFIX of
+    `event=food_trace_config`, which `core/food_trace.py` emits once per
+    process when `FOOD_TRACE_SALT` is unset. Whichever test happened to run
+    first in a shuffled session captured it as a second "trace line" and
+    failed — `expected exactly one trace line, got 2`, or `KeyError: 'user'`
+    when a field lookup then parsed the config line instead of the turn.
+
+    Order-dependent, so it passed on most seeds and on most full runs:
+    measured here on seeds 1 and 3 failing while seed 2 passed. The same
+    substring family as every other grep trap in this repo — an event NAME
+    needs its boundary, not a prefix match."""
     return [r.message for r in caplog.records
-            if "event=food_trace" in r.message]
+            if r.message.startswith("event=food_trace ")]
 
 
 def _fields(line):

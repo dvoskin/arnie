@@ -1079,6 +1079,32 @@ def quantity_field(*, operation_id: str, revision: int, item, options=(),
     from core.semantics import (ClarificationAttribute, ResponseType,
                                 UncertaintyEvidence, UnresolvedField)
 
+    options = tuple(options or ())
+    if options and _history_only_against_a_supplied_measure(item, options):
+        # ⛔⛔ AN OFFER THAT CANNOT EXPRESS THE ANSWER THEY ALREADY GAVE *(P17
+        # Tranche Q, requirement 3)*. Production 2026-08-20: the user typed
+        # "100g of grilled chicken" and was offered `6 oz (170.1 g)` and
+        # `16 oz (435 g)` — BOTH from their own history, neither the number
+        # they had just written, and no way to say it. The tap logged 170.1 g.
+        #
+        # This is a NET, not the fix. The fix is that a stated amount declines
+        # the ask (`QUANTITY_ALREADY_STATED`), and it lives in the predicate.
+        # But that detection failed once already, and when it fails again the
+        # damage is a wrong number in someone's log — so the OFFER refuses on
+        # its own evidence rather than trusting the layer above it.
+        #
+        # History chips say "what you logged before". That is the one answer
+        # that is certainly not what they meant when they just typed a
+        # different measured amount. Falling back to free text keeps the
+        # question askable while removing the wrong answers from it.
+        logger.warning(
+            "event=b1_history_only_offer_withheld food=%r supplied=%r "
+            "options=%d — the user supplied a measured amount and every "
+            "option came from history",
+            str(getattr(getattr(item, "identity", None), "canonical_name", "")),
+            _supplied_measure(item), len(options))
+        options = ()
+
     return UnresolvedField(
         operation_id=operation_id, revision=revision,
         event_id=event_id_for(item),
@@ -1087,4 +1113,72 @@ def quantity_field(*, operation_id: str, revision: int, item, options=(),
         uncertainty=uncertainty or UncertaintyEvidence(),
         response_type=(ResponseType.SINGLE_SELECT if options
                        else ResponseType.FREE_TEXT_FALLBACK),
-        options=tuple(options or ()))
+        options=tuple(options))
+
+
+def _supplied_measure(item):
+    """The amount this item carries in a MEASURED unit, or None.
+
+    Stated or inferred, deliberately: requirement 3 is the net for the case
+    where "stated" was mis-detected, so it cannot ask the question that just
+    got the wrong answer. A count or a descriptor ("1 breast", "a scoop") is
+    NOT a measured amount — those are the questions B-1 legitimately exists to
+    ask, and this guard must not silence them."""
+    from core.portions import _MASS_UNITS
+
+    q = getattr(item, "quantity", None)
+    amount = getattr(q, "amount", None)
+    unit = str(getattr(q, "unit", "") or "").strip().lower().rstrip("s")
+    if amount is None or not unit:
+        return None
+    if unit not in _MASS_UNITS and f"{unit}s" not in _MASS_UNITS:
+        return None
+    try:
+        return (float(amount), unit)
+    except (TypeError, ValueError):
+        return None
+
+
+def _history_only_against_a_supplied_measure(item, options) -> bool:
+    """Every option came from the user's own history AND none of them is the
+    measured amount the user supplied."""
+    from core.portions import _MASS_UNITS
+    from core.semantics import CandidateSource
+
+    supplied = _supplied_measure(item)
+    if supplied is None:
+        return False
+    amount, unit = supplied
+    grams = amount * float(_MASS_UNITS.get(unit, _MASS_UNITS.get(f"{unit}s", 1.0)))
+
+    sources = {getattr(o, "source", None) for o in options}
+    if sources != {CandidateSource.USER_HISTORY}:
+        return False
+
+    for o in options:
+        patch = getattr(o, "patch", None)
+        q = getattr(patch, "quantity", None)
+        if q is None:
+            continue
+        # ⛔ `grams` OR the amount in its own unit. A patch is not obliged to
+        # carry a derived gram figure, and reading only `grams` made the guard
+        # miss a chip that DID state the user's amount — withholding a
+        # legitimate offer. A guard that fires when it should not is as much a
+        # defect as one that stays silent.
+        g = getattr(q, "grams", None)
+        if g is None:
+            amt = getattr(q, "amount", None)
+            u = str(getattr(q, "unit_id", "") or "").strip().lower().rstrip("s")
+            factor = _MASS_UNITS.get(u, _MASS_UNITS.get(f"{u}s"))
+            if amt is None or factor is None:
+                continue
+            try:
+                g = float(amt) * float(factor)
+            except (TypeError, ValueError):
+                continue
+        try:
+            if abs(float(g) - grams) <= max(1.0, grams * 0.02):
+                return False          # the offer DOES contain what they said
+        except (TypeError, ValueError):
+            continue
+    return True

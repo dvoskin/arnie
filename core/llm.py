@@ -224,7 +224,15 @@ async def chat(
         if _oai and _oai.startswith("sk-"):
             logger.warning(f"Anthropic chat failed ({e}); falling back to OpenAI.")
             try:
-                return await _openai_chat(messages, system, tools, max_tokens)
+                _r = await _openai_chat(messages, system, tools, max_tokens)
+                # SAY SO WHEN THE NET CATCHES. The Anthropic retry above logs
+                # "model fallback OK"; this one returned silently, so a turn
+                # OpenAI rescued was indistinguishable in the logs from a turn
+                # that died — the last line about it is the Anthropic failure.
+                # Anything reading these logs to tell an outage from an answer
+                # (the eval battery does) had no way to see the recovery.
+                logger.warning("openai fallback OK")
+                return _r
             except Exception as e2:
                 logger.error(f"OpenAI fallback also failed: {e2}")
                 raise

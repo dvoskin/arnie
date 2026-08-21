@@ -721,3 +721,289 @@ The transition now **subscripts** (`_locked_data["locale"]`) rather than default
 5. Then restack Phase 3 (`review/p17-phase3-cf14`) on merged main.
 
 **P17g: BLOCKED** · **END-TO-END SCAN: BLOCKED** · rollout NOT re-enabled.
+
+---
+
+## TRANCHE Q — rounds 2–3 (2026-08-20, PR #79, unmerged)
+
+Ordered by Danny **ahead of Phase 3**, from the live canary that logged
+170.1 g against a stated 100 g. Round 1 (the raw-substring fix) was approved;
+rounds 2–3 are the two blockers found after it.
+
+### Round 2 — the eval battery's flake was hiding a regression
+
+The `environment: Cloud` fix made the battery genuinely run (3m 47s, 22 cases
+× 3 reps) instead of aborting at the key gate in 27 s. Result: 21/22 clean,
+0 failed outright, 1 flaky — and the flaky case's two failing reps were
+**Anthropic credit exhaustion**, not behaviour.
+
+⛔⛔ **Chasing it found a regression this branch introduced, in both
+directions.** The case is `"had a bowl of white rice and two fried eggs"`,
+expecting an ask. Measured against deployed main `76076b6`:
+
+| case | main `76076b6` | PR `41297ca` | fixed |
+|---|---|---|---|
+| `a bowl`, `basis=estimate`/`regular` | False | **True** ← regression | False |
+| `a bowl`, no `basis` | True | True | True |
+| `two fried eggs`, `basis=estimate` | False | False ← req. 1 unmet | True |
+| `100g` chicken, `basis=estimate` | False | True | True |
+| `a scoop` as `1 tbsp` | False | False | False |
+
+**Over-reach.** `normalize_quantity("a bowl of white rice")` reports
+`user_stated_amount=1`, identical to `"1 bowl"`, because it reports what a
+phrase **denotes** — not whether the user counted anything. Harmless while the
+`basis` veto sat above that rung; moving the veto below it (so a typed `100g`
+could outrank `basis`) handed the indefinite article the veto's authority.
+⭐ **A GUARD THAT MOVES MUST BE JUDGED AGAINST EVERY PATH IT NOW SITS BELOW.**
+
+The existing bare-article guard missed it because its fixture is `1 tbsp` — a
+MEASURED unit, where the unit check vetoes independently. Only a unit carrying
+no measure ("bowl") leaves the article alone with the decision. ⭐ **its single
+fixture was load-bearing in a way nothing had stated.**
+
+**Under-reach.** `"two fried eggs"` is a quantity the user typed and `basis`
+was overruling it exactly as `100g` was: the normalizer takes whatever word
+sits where a unit usually sits and reported `user_stated_unit="fried"`, so a
+veto built to stop "scoop" masquerading as "tbsp" fired on a word that is not
+a unit at all.
+
+### Round 3 — a count has to be THIS food's count (Danny's blocker)
+
+`_literal_amount_with_unit` drops the unit requirement for a COUNT unit —
+correctly; people write "15 peanut m&m", never "15 pieces of peanut m&m". The
+cost was never stated: with no unit to bind to, **any** number in the clause
+satisfied the match, and round 1 had just removed the `basis` veto behind it.
+
+⭐⭐ **THE REPORTED EXAMPLE DOES NOT REPRODUCE.** In `"I had 2 tacos and fried
+eggs"`, `_clause_for` already cuts the eggs clause to `"fried eggs"` and the
+`2` is never in scope. The defect is real but needs a connective the splitter
+does **not** cut on: `"fried eggs after 2 tacos"` → clause
+`"fried eggs after 2 tacos"` → stated **True** at `abf615d`. Both shapes are
+pinned so the guard cannot be weakened back to the one that happened to be
+safe.
+
+Fix: a count literal must bind to this food's own words — its unit or any
+recognised word of its name — inside a window that stops at a clause-breaking
+connective or at the next number. **Head-noun-only was tried and refused two
+shipped fixtures** (`Peanut M&Ms` tokenises to `peanut/m/ms`; the count
+precedes an adjective in `"15 peanut m&m"`).
+
+Two things that fix found on its own:
+
+* **the round-2 unit stand-down had the same hole** — it asked whether the
+  item's unit appeared *anywhere* in the clause, and in `"fried eggs after 2
+  tacos"` the word "eggs" is indeed there. Same question, one helper now.
+* ⛔ **sharing ONE noun set between the two callers put the 190-calorie defect
+  straight back**: for `"1 scoop of peanut butter"` carried as 1 tbsp the
+  food's own name sits beside the number, so a food-word set stood the unit
+  veto down. "Does a count belong to this food" and "did the user name this
+  unit" are different questions. Caught by the existing guard, same run.
+
+### The battery: an absent answer is not a negative answer
+
+A refused API call was scored `got=None want=ask` and reported
+`[FLAKY] … (1/3)`, exit 1 — the battery's **loudest behavioural signal**,
+borrowed by an outage. `core/llm.py` swallows the model failure deliberately
+(a dead turn must still reply), so the signature is only in the log line it
+writes; a handler now watches for it and marks the rep **unscored**.
+Three outcomes, three exit codes: **0** clean, **2** not measured, **1**
+measured and wrong. Verified without spending credit — the handler catches the
+exact billing line from the PR #79 run and an auth line, ignores ordinary and
+behavioural lines, and all four classification paths were driven end to end.
+
+### Gates
+
+* **Frozen suite** (PG-inclusive, `TEST_POSTGRES_URL` set) on `81f8605`:
+  `PYTEST_EXIT=0`, **9962 passed / 25 skipped / 17 deselected / 4 xfailed**;
+  `HEAD` and `HEAD^{tree}` identical before and after; worktree clean both
+  times. Baselines: `abf615d` 9949, `0df6a1b` 9960.
+  ⛔ **the first round-2 freeze was UNDER-INCLUSIVE** — 9851 passed / **123
+  skipped** because `TEST_POSTGRES_URL` was unset; the count is the only thing
+  that reveals it, and it was green.
+* **Mutations: 9 RED, 0 GREEN, 1 INVALID**, each `applied=1`.
+  ⛔⛔ **THE SWEEP WAS WRONG ONCE AND READ AS A FINDING.** M7 mutated
+  `_BINDING_BREAK` to `frozenset() or frozenset({...})` — an empty frozenset is
+  **falsy**, so `or` returned the full set. `applied=1`, GREEN, nothing
+  changed, and it read as "the break words are redundant". ⭐ **`applied`
+  proves the anchor matched; it does NOT prove the edit bit.** Every case now
+  also measures a behaviour witness on the mutated module and reports
+  **INVALID**, not GREEN.
+  * **Two guards were real and unproven** — found only because the sweep was
+    then honest: the binding **window** (`"2 corn tortilla chicken tinga fried
+    eggs"`) and the **next-number break** (`"2 tacos 3 fried eggs"` states
+    *three* eggs). Both flipped under mutation with no test noticing. A guard
+    nobody can fail is where a guard that isn't there is.
+  * **M5 is INVALID / EQUIVALENT — decided by Danny 2026-08-20, KEEP
+    `_canon_unit`.** Reverting it to `.rstrip("s")` at the unit comparison
+    changes no observable behaviour: the mutation is **equivalent at that
+    particular comparison**, which is not evidence the code is harmful or
+    unnecessary. Recording it as INVALID/equivalent rather than reverting to a
+    second ad-hoc unit-normalisation rule. ⭐ **an equivalent mutant is a
+    classification, not a verdict on the code** — the mutation-testing
+    literature's own category, and the reason "GREEN" needed five names before
+    it needed six.
+
+### Open, and not mine to close
+
+* **The Anthropic balance.** The battery cannot return a verdict until it is
+  topped up. That is a payment on Danny's account.
+* **Battery rerun** after the top-up — cases scored, not the check colour.
+
+**Tranche D (P0): untouched.** **P17g: BLOCKED** · **END-TO-END SCAN:
+BLOCKED** · PR #79 Draft, unmerged, awaiting approval.
+
+### Round 4 (Danny, review of `9c4195b`) — two rungs still unbound
+
+Both checks were green on `9c4195b` and the PR was still not approvable.
+
+**1. `half` and a stated RANGE never bound to their food.** Round 3 bound bare
+counts; these two rungs state a quantity *without a digit token* and were left
+behind — both bare presence tests, both above the `basis` veto since round 1,
+both reachable because `_clause_for` does not split on "after". Measured at
+`81f8605`:
+
+| message | item | classified |
+|---|---|---|
+| `Greek yogurt after half a banana` | 0.5 **cup** yogurt, `estimate` | **stated** |
+| `French fries after 5-6 chicken nuggets` | 5.5 **fries**, `estimate` | **stated** |
+
+Both now route through `_binds_nearby` with `_item_nouns` — the same helper the
+digit counts use. ⭐ **`_binds_nearby` skips the quantity words themselves**,
+which is what lets "half" work with no special case: *half a cup of greek
+yogurt* reaches `cup` and binds; *half a banana* reaches `banana` and does not.
+The truffle-fries message the range branch exists for still passes.
+
+**2. The infra watcher discarded rescued answers.** `core/llm.py` logs the
+primary failure **before** it retries, so every rep an Anthropic fallback saved
+still carried the marker and was thrown away as unmeasured. ⭐⭐ **THE SAME
+ERROR THE WATCHER EXISTS TO CORRECT, POINTING THE OTHER WAY** — v1 could not
+tell an outage from a behaviour; v2 could not tell a recovery from an outage.
+Both discard a real measurement.
+
+A marker is now **pending** until the call resolves: a recovery clears it, and
+a new PRIMARY failure banks the previous call's markers as dead first, so an
+early recovery cannot forgive a later outage. ⛔ **"fallback ALSO failed" is
+deliberately NOT terminal** — the OpenAI net runs after it, so a call can still
+be answered once both Anthropic models are out; treating it as terminal
+discarded exactly the measurement the net saved (found by the OpenAI proof
+going red). That net had **no success log at all**, so `core/llm.py` now writes
+`openai fallback OK`, symmetric with the Anthropic retry — production could not
+previously tell whether the second net had ever caught anything.
+
+⛔ **AND THE PER-REP RESET SILENTLY BROKE**: `hits` became a computed property,
+so `main`'s `watch.hits.clear()` cleared a temporary and did nothing. Every
+marker would leak into the following reps and one outage would condemn the
+whole run **while still looking like a coherent report**. Now `watch.clear()`,
+pinned by its own proof.
+
+Five end-to-end scenarios verified without spending credit: all reps refused →
+INFRA/2 · one rep refused → INFRA/2 · fallback rescued every rep → PASS/0 ·
+**rescued but behaviourally WRONG → FAIL/1** (a recovery must not launder a
+wrong answer into "unmeasured") · clean → PASS/0.
+
+### Round 5 (Danny, review of `7fae549`) — nearness is not agreement
+
+Blocker 2 (the infra watcher) **approved**. Blocker 1 was incomplete.
+
+Round 4 bound `half` and a range with `_binds_nearby(..., _item_nouns(it))`,
+and `_item_nouns` includes every word of the **food name**. That is right for a
+bare count — "15 peanut m&m" binds on "peanut" — and wrong the moment the item
+is measured in something the phrase contradicts, because the food's own name
+then rescues a unit that disagrees:
+
+| message | item | was |
+|---|---|---|
+| `half a scoop of peanut butter` | 0.5 **tbsp** | **stated** — "peanut" bound it |
+| `5-6 oz grilled chicken` | 5.5 **g** | **stated** — "chicken" bound it |
+
+⭐⭐⭐ **THE SCOOP DEFECT FOR THE THIRD TIME.** The same 190-calorie assumption —
+"they said scoop; we said tablespoon" — has now arrived through the raw
+substring fallback (round 1 review), through a shared noun set (round 3), and
+through the half rung (round 5). **It reappears at whichever door is newest**,
+because each new door re-answers "is this the user's number?" without
+re-answering "in whose unit?". The second case is a **28× mass error**.
+
+⭐ **THE DIGIT PATH NEVER HAD THIS.** `_literal_amount_with_unit` splits
+measured units from counts and demands agreement for the former; round 4 routed
+two new paths **around** that distinction instead of through it. It now lives in
+one predicate, `_quantity_binds_to_item`, and all three paths go through it:
+
+* **measured item** → the phrase must NAME a canonically compatible unit; the
+  food's name cannot stand in for one.
+* **count item** → nothing can contradict a count noun, so nearby
+  food-or-unit binding is enough.
+
+Eleven proofs: both conflicts, a foreign-food-**and**-conflicting-unit case,
+four matching-unit twins (including the unit spelled in full), four count
+twins. **Nine of the eleven were green before the fix** — the rule had to be
+proven not to cost them.
+
+**Gates.** Frozen suite on `f5ed65f`: `PYTEST_EXIT=0`, **9991 passed / 25
+skipped**, HEAD and tree identical before and after. Mutations **6 RED, 0
+GREEN, 0 INVALID**.
+
+⭐ **AND ONE WITNESS WAS MIS-CHOSEN, WHICH READS EXACTLY LIKE AN INERT EDIT.**
+R5-2 (invert the measured test) first reported `behaviour=SAME` → INVALID,
+while pytest was already RED. The witness was a MEASURED item whose unit is
+named — and `_item_nouns` is a SUPERSET of `_unit_nouns`, so that case binds
+under **both** branches. Inverting the test sends COUNT items down the
+unit-only branch, so only a count item can see it. **A behaviour witness has to
+be chosen against the mutation's actual reach, not against the defect's
+headline case** — otherwise the harness's own safeguard files a working
+mutation as invalid.
+
+### The cross-rung conflicting-unit corpus (Danny, approving `90888cf`)
+
+Approved at `90888cf` — CI green with Postgres, battery 22/22 × 3 reps, 0
+flaky/failed/infrastructure. The corpus was required before merge because it
+proves the tranche's central invariant across every path rather than at the one
+that last broke.
+
+    A quantity whose unit contradicts this item's measured unit is NOT the
+    user's statement of this item's amount — through ANY path.
+
+⛔⛔ **THE FIRST VERSION OF THE CORPUS WAS A CLAIM, NOT A PROOF.** It ran each
+pair through the whole function and labelled it with the rung it was "about".
+Instrumented, **8 of 16 compatible twins were answered by the NORMALIZER rung**
+— including *every* row labelled `digit` and most labelled `half`. Those pairs
+proved the normalizer declines a contradicted unit, three times over, and said
+nothing about the rungs they named. ⭐ **A per-rung label is a hypothesis until
+something measures which rung answered.**
+
+So each pair now runs with every rung ABOVE the one under test disabled:
+
+| rung | disabled | reached by |
+|---|---|---|
+| normalizer | — (it is first) | the whole function |
+| digit | normalizer | `_literal_amount_with_unit` |
+| half | normalizer, digit | `_half_binds_to_food` |
+| range | normalizer, digit, half | the stated-range branch |
+| refine | normalizer | the refining clause |
+
+Both halves are load-bearing: the **compatible** twin must be True (the rung was
+reached and accepts this shape) and the **conflicting** twin must be False (that
+rung's own unit check declined it). Without the first, a False proves only that
+the message was unreachable — a corpus of unparseable sentences passes by
+declining everything.
+
+**Proven to catch a regression AT EACH RUNG, causality checked:** removing the
+normalizer's unit check reddens only `normalizer` rows · making the digit rung
+treat measured units as counts reddens `digit`/`normalizer`/`refine` · collapsing
+the measured/count split in `_quantity_binds_to_item` reddens `half`/`range`.
+
+⭐ **One limit recorded in the file:** the `normalizer` rows disable nothing, so
+a True there is attributable to it and a False is **not** — the rungs below also
+ran and also declined. Every lower rung therefore has its own isolated rows.
+
+A coverage test fails if a rung has no conflicting pair, no compatible pair, or
+is absent from the corpus entirely, so the next path added is covered the day it
+is added rather than after it ships.
+
+**Also registered, NOT fixed here** (pre-existing, unchanged by Tranche Q): the
+refining-clause matcher keys on the food's HEAD NOUN, so `"some peanut butter,
+like 2 tbsp"` is not read as refining the peanut butter — `"butter"` is not
+repeated. That is the anti-bleed rule working as designed (it is what stops
+"half a banana" refining peanut butter), and widening it is a separate decision.
+
+**Gate.** Frozen suite on `a5d4a80`: `PYTEST_EXIT=0`, **10032 passed / 25
+skipped / 17 deselected / 4 xfailed**; HEAD and tree identical before and after.
