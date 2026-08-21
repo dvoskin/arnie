@@ -36,8 +36,13 @@ PER100 = {"calories": 165.0, "protein": 31.0, "carbs": 0.0, "fat": 3.6}
 
 
 def _facts(**over):
+    # ⭐ P17g: the base quantity is an exact mass, so the rung that prices it
+    # scales AUTHORITATIVELY. `has_mass=True` alone no longer decides — the
+    # predicate asks whether the SELECTED rung scales without guessing — so
+    # the base states that too, and the count-only twin below overrides it.
     base = dict(identity="Chicken breast", entity="chicken", preparation="",
                 has_identity=True, has_quantity=True, has_mass=True,
+                selected_rung_authoritative=True,
                 has_memory=False, has_artifact=False)
     base.update(over)
     return ItemFacts(**base)
@@ -425,10 +430,19 @@ def test_a11_a_count_only_quantity_is_unsupported_even_with_evidence():
 
     So the predicate must answer "can this meal be PRICED", not "does evidence
     exist". A count-only quantity is exactly where those two questions differ.
+
+    ⭐ P17g SHARPENED THE QUESTION AND KEPT THE VERDICT. The rung is unchanged
+    — a count canonical cannot price is still declined — but the test is now
+    "does the rung that would price this scale authoritatively", not "did a
+    gram mass happen to ride along". `normalize_quantity("2 eggs")` returns
+    100 g from a piece-weight TABLE, so the old question said yes to counts no
+    rung can honestly scale.
     """
-    verdict = decide(_facts(has_memory=True, has_artifact=True, has_mass=False))
+    verdict = decide(_facts(has_memory=True, has_artifact=True,
+                            has_mass=False,
+                            selected_rung_authoritative=False))
     assert isinstance(verdict, Unsupported)
-    assert "per-100g" in verdict.reason
+    assert "heuristically" in verdict.reason
 
 
 def test_a11_a_mass_bearing_quantity_is_still_supported():

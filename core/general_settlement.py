@@ -281,6 +281,15 @@ class ItemFacts:
     #: A heuristic mass does NOT count (CF4: exact nutrition x estimated mass
     #: != authoritative settlement).
     product_scales: bool = False
+    # ── P17g: the rung the PRICER would return, and whether it is authoritative ──
+    #: The rung `select_priced_rung` picks after builder -> resolver ->
+    #: defensibility. NOT "some rung that could scale": price() commits THIS
+    #: one, so this is the only rung whose authority means anything.
+    selected_rung: str = ""
+    #: Whether THAT rung's resolution was authoritative — user-stated exact
+    #: mass, a direct compatible basis, or a sourced conversion. A heuristic
+    #: normalized mass is False, which is the whole point.
+    selected_rung_authoritative: bool = False
     #: Presentation, for the ASK/REFUSE copy: what the label calls one unit.
     product_unit: str = ""
     product_label: str = ""
@@ -397,14 +406,48 @@ async def look(db, *, user_id: int, item: dict) -> ItemFacts:
             logger.warning("coverage: product snapshot %s unreadable", pid,
                            exc_info=True)
 
+    # ONE READ, TWO CONSUMERS: the selector below and `has_artifact` must
+    # agree about which artifact this item has, so it is read once.
+    artifact_ev = (evidence_for(entity, preparation)
+                   if (entity and not item.get("product_evidence_id"))
+                   else None)
+
+    # ⛔⛔⛔ P17g — THE SAME SELECTOR THE PRICER RUNS, over the same local
+    # evidence, in the same order. Not a predicate that re-derives "which rung
+    # wins": `select_priced_rung` IS that rule, and routing asks it rather than
+    # modelling it. `estimate` is deliberately absent — it is not a canonical
+    # source, and omitting it can only make this decline, never admit.
+    selected_rung, selected_authoritative = "", False
+    if quantity_text:
+        try:
+            from core.canonical_pricing import (_from_memory, _from_product,
+                                                _from_artifact, _ranker_query,
+                                                select_priced_rung)
+            _consumed = normalize_quantity(quantity_text, identity)
+            _rungs = ((memory, _from_memory),
+                      (None, _from_product),
+                      (artifact_ev, lambda e: _from_artifact(
+                          e, query=_ranker_query(entity, preparation))))
+            _sel = select_priced_rung(
+                entity=entity, preparation=preparation, consumed=_consumed,
+                rungs=_rungs, bound=False)
+            selected_rung = _sel.rung.value if _sel.rung is not None else ""
+            selected_authoritative = bool(_sel.authoritative)
+        except Exception:                              # noqa: BLE001
+            # A selector that cannot run is NOT "authoritative" — an unreadable
+            # rung declines, exactly as an unreadable product snapshot does.
+            logger.warning("coverage: rung selection unavailable for %r",
+                           entity, exc_info=True)
+
     return ItemFacts(
         identity=identity, entity=entity, preparation=preparation,
+        selected_rung=selected_rung,
+        selected_rung_authoritative=selected_authoritative,
         has_identity=bool(entity),
         has_quantity=bool(quantity_text),
         has_mass=bool(grams and float(grams) > 0),
         has_memory=memory is not None,
-        has_artifact=(bool(entity) and not item.get("product_evidence_id")
-                      and evidence_for(entity, preparation) is not None),
+        has_artifact=artifact_ev is not None,
         product_bound=product_bound, product_scales=product_scales,
         product_unit=product_unit, product_label=product_label,
         product_serving_grams=product_serving_grams,
@@ -458,10 +501,39 @@ def decide(facts: ItemFacts) -> Coverage:
     # ⚠ `PRODUCT` is the one rung that could scale a count, and `assemble()`
     # hard-codes it to None — so today there is no per-serving basis at all.
     # When PRODUCT gains a producer, this branch is where it earns its place.
-    if not facts.has_mass:
+    # ⛔⛔⛔ P17g — THE PREDICATE ASKS WHETHER THE SELECTED RUNG SCALES
+    # AUTHORITATIVELY, not whether a mass happens to be present.
+    #
+    # `has_mass` was the wrong question in BOTH directions.
+    # `normalize_quantity("2 eggs")` returns 100 g from a PIECE-WEIGHT TABLE,
+    # so `has_mass` was True for a count no rung can scale authoritatively —
+    # canonical settled it and priced from an invented mass. That is CF4's
+    # forbidden shape at the general rung: exact-looking nutrition scaled by a
+    # number nobody measured.
+    #
+    # ⭐ AND IT IS THE SELECTED RUNG, NOT ANY RUNG. `price()` walks
+    # memory -> product -> artifact -> estimate and commits the FIRST that
+    # survives builder, resolver and defensibility. An existential "some
+    # authoritative path exists" would admit a meal whose winning rung scales
+    # only heuristically — the artifact's sourced conversion would bless a
+    # commit that memory actually made. `look()` therefore runs the SAME
+    # `select_priced_rung` the pricer runs and reports ITS verdict.
+    if not facts.selected_rung_authoritative:
         return Unsupported(
-            "count-only quantity — every canonical rung is per-100g and "
-            "cannot be scaled without a mass")
+            "the rung that would price this scales only heuristically — "
+            "canonical settlement needs a user-stated exact mass, a directly "
+            "compatible basis, or a sourced conversion")
+    # ⛔⛔ AND THE VERDICT NAMES THE RUNG THAT WILL PRICE, NOT ONE RE-DERIVED
+    # FROM WHAT EXISTS *(P17g)*. This read `has_memory` then `has_artifact`,
+    # which is a SECOND opinion about which rung wins — the same divergence
+    # the selector exists to close, one line further down. With memory
+    # present but unpriceable and artifact the real winner, the verdict said
+    # "memory" while `price()` committed the artifact, so A6's provenance
+    # claim ("names the rung that actually decided") was false by
+    # construction.
+    if facts.selected_rung:
+        return Supported(facts.selected_rung,
+                         "the rung that prices this scales authoritatively")
     if facts.has_memory:
         return Supported("memory", "this user has priced this food before")
     if facts.has_artifact:

@@ -48,7 +48,7 @@ def test_a_count_that_scales_authoritatively_is_supported():
 
     Today this returns Unsupported("count-only quantity") purely because no
     gram mass rode along, which is the question the directive forbids."""
-    verdict = decide(_facts(has_mass=False, scales_authoritatively=True))
+    verdict = decide(_facts(has_mass=False, selected_rung_authoritative=True))
     assert isinstance(verdict, Supported), (
         "a count the resolver can scale from SOURCED evidence was declined "
         "because no mass happened to be present: %r" % (verdict,))
@@ -65,7 +65,7 @@ def test_a_count_with_only_a_heuristic_mass_is_still_declined():
 
     The resolver, asked `authoritative_only=True`, says no. So does the
     predicate."""
-    verdict = decide(_facts(has_mass=True, scales_authoritatively=False))
+    verdict = decide(_facts(has_mass=True, selected_rung_authoritative=False))
     assert isinstance(verdict, Unsupported), (
         "a heuristic piece-weight mass was admitted as canonical authority: %r"
         % (verdict,))
@@ -76,22 +76,22 @@ def test_the_predicate_no_longer_turns_on_mass_alone():
     not decide the verdict on its own. Both mass values agree with the
     resolver, not with each other."""
     assert isinstance(decide(_facts(has_mass=True,
-                                    scales_authoritatively=True)), Supported)
+                                    selected_rung_authoritative=True)), Supported)
     assert isinstance(decide(_facts(has_mass=False,
-                                    scales_authoritatively=True)), Supported)
+                                    selected_rung_authoritative=True)), Supported)
     assert isinstance(decide(_facts(has_mass=True,
-                                    scales_authoritatively=False)), Unsupported)
+                                    selected_rung_authoritative=False)), Unsupported)
     assert isinstance(decide(_facts(has_mass=False,
-                                    scales_authoritatively=False)), Unsupported)
+                                    selected_rung_authoritative=False)), Unsupported)
 
 
 def test_a_scaling_count_still_needs_identity_and_quantity():
     """⭐ THE LADDER ABOVE IT IS UNCHANGED. P17g widens one rung; it does not
     let a nameless or quantity-less item through underneath."""
     assert isinstance(decide(_facts(has_identity=False,
-                                    scales_authoritatively=True)), Unsupported)
+                                    selected_rung_authoritative=True)), Unsupported)
     assert isinstance(decide(_facts(has_quantity=False,
-                                    scales_authoritatively=True)), Unsupported)
+                                    selected_rung_authoritative=True)), Unsupported)
 
 
 def test_a_scaling_count_with_no_local_evidence_is_still_declined():
@@ -99,7 +99,7 @@ def test_a_scaling_count_with_no_local_evidence_is_still_declined():
     mean this food has anything to price FROM — the cliff A10 owes stays
     exactly where it was."""
     verdict = decide(_facts(has_memory=False, has_artifact=False,
-                            scales_authoritatively=True))
+                            selected_rung_authoritative=True))
     assert isinstance(verdict, Unsupported), (
         "an item with no memory and no artifact was settled because a "
         "conversion happened to exist: %r" % (verdict,))
@@ -119,7 +119,7 @@ def test_the_product_twins_decline_for_the_PRODUCER_reason_not_the_mass_reason()
     answer that would silently become stale the day the producer lands."""
     verdict = decide(_facts(identity="Barebells Salty Peanut Protein Bar",
                             entity="", has_identity=False,
-                            scales_authoritatively=False))
+                            selected_rung_authoritative=False))
     assert isinstance(verdict, Unsupported)
     assert "mass" not in verdict.reason.lower(), (
         "a product with no authoritative producer was declined for a MASS "
@@ -141,9 +141,8 @@ def test_the_predicate_describes_the_rung_that_WINS_not_the_best_available():
     not the best rung available. This test pins the shape of that fact: it is
     a statement about the selected rung, and a later authoritative rung must
     not rescue an earlier heuristic one."""
-    heuristic_first = _facts(
-        selected_rung="memory", selected_rung_authoritative=False,
-        scales_authoritatively=True)      # some OTHER rung could scale
+    heuristic_first = _facts(selected_rung="memory",
+                             selected_rung_authoritative=False)
     verdict = decide(heuristic_first)
     assert isinstance(verdict, Unsupported), (
         "canonical admitted a meal whose FIRST priceable rung scales only "
@@ -176,11 +175,8 @@ def test_the_selector_follows_the_rung_that_PRICES_not_the_first_that_scales():
     `if priced.is_defensible(): break` letting an indefensible price fall
     through. A selector that models only the resolver models a pricer that
     does not exist."""
-    facts = _facts(
-        # the rung that merely LOOKS available first
-        first_scalable_rung="memory", first_scalable_rung_authoritative=False,
-        # the rung `price()` would actually return
-        selected_rung="artifact", selected_rung_authoritative=True)
+    facts = _facts(selected_rung="artifact",
+                   selected_rung_authoritative=True)
     verdict = decide(facts)
     assert isinstance(verdict, Supported), (
         "the predicate followed the first SCALABLE rung instead of the rung "
@@ -204,6 +200,59 @@ def test_look_computes_the_fact_from_the_real_resolver():
 
     from core import general_settlement as GS
     src = inspect.getsource(GS.look)
-    assert src.count("authoritative_only=True") >= 2, (
-        "the general path does not ask the resolver the authoritative-only "
-        "question; only the scan-bound branch does")
+    assert "select_priced_rung" in src, (
+        "look() does not run the shared selector, so routing and pricing can "
+        "disagree about which rung wins")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# THE SELECTOR ITSELF — driven, not modelled
+#
+# ⛔⛔⛔ THESE CALL `select_priced_rung`, THE FUNCTION `price()` CALLS. A test
+# that recreated the selection rule would prove the contract against itself
+# and drift from the pricer on exactly the inputs nobody thought to write —
+# which is the duplication clause 4 of the contract forbids.
+# ══════════════════════════════════════════════════════════════════════════
+
+from core.canonical_pricing import (Rung, _profile,  # noqa: E402
+                                    select_priced_rung)
+from skills.nutrition.normalize import normalize_quantity  # noqa: E402
+from skills.nutrition.scaling import Per100g  # noqa: E402
+
+#: A memory rung EXACTLY as `_from_memory` builds one — the real `_profile`,
+#: a `Per100g` basis, and EMPTY measures. Hand-rolling a stand-in profile was
+#: the first attempt and it failed on `.values()`: a fake thin enough to write
+#: quickly is a fake that does not exercise the code under test.
+_PER100G = {"calories": 155.0, "protein": 13.0, "carbs": 1.1, "fat": 11.0}
+
+
+def _memory_rung():
+    def build(_ev):
+        return (_profile(_PER100G, source="memory", source_id="memory:1",
+                         confidence=1.0, estimated=False),
+                Rung.MEMORY, "memory:1", dict(_PER100G), Per100g(), ())
+    return (object(), build)
+
+
+@pytest.mark.parametrize("text,authoritative,why", [
+    ("100 g eggs", True, "a user-stated exact mass is rung 1"),
+    ("6 oz salmon", True, "an exact imperial mass is still exact"),
+    ("100 g chicken", True, "the P17h exact-mass positive"),
+    ("2 eggs", False, "piece-weight grams are rung 4 — heuristic"),
+    ("2 large eggs", False, "a size word does not make a table sourced"),
+    ("1 medium banana", False, "the ontology mass is still an estimate"),
+])
+def test_the_real_selector_calls_the_authoritative_line_where_P17h_does(
+        text, authoritative, why):
+    """⛔⛔ THE P17h POSITIVES AND THE COUNT REJECTIONS, through the SHARED
+    selector rather than through a boolean this test set itself.
+
+    `normalize_quantity("2 eggs")` returns 100 g — so a mass-based predicate
+    says yes here. The resolver, asked authoritative-only, says no, because
+    those grams came from a piece-weight table and rung 4 is never canonical
+    authority."""
+    consumed = normalize_quantity(text, "Eggs")
+    sel = select_priced_rung(entity="Eggs", preparation="", consumed=consumed,
+                             rungs=(_memory_rung(),), bound=False)
+    assert sel.authoritative is authoritative, (
+        f"{text!r}: selector said authoritative={sel.authoritative} — {why}")

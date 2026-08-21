@@ -840,7 +840,52 @@ def price(*, entity: str, preparation: str = "", consumed=None,
                  (artifact, lambda e: _from_artifact(
                      e, query=_ranker_query(entity, preparation))),
                  (estimate, _from_estimate))
+    selection = select_priced_rung(
+        entity=entity, preparation=preparation, consumed=consumed,
+        rungs=rungs, bound=bound)
+    return refuse_or_return(selection.priced, food_name=entity)
+
+
+@dataclass(frozen=True)
+class RungSelection:
+    """WHICH RUNG THE PRICER RETURNS, and whether its scaling was authoritative.
+
+    ⛔⛔⛔ ONE SELECTION RULE, CONSUMED TWICE *(P17g)*. Routing (`decide()`)
+    and pricing must agree about which rung wins, and the only way to
+    guarantee that is for both to run THIS loop. A predicate that re-derived
+    "which rung wins" would be a second implementation of the thing that
+    decides what gets committed — and the two would drift on exactly the
+    inputs nobody tested.
+
+    ⭐ AND "WINS" MEANS BUILDER -> RESOLVER -> DEFENSIBILITY, not merely
+    "scales". `price()` skips a rung when its `_from_*` builder raises or
+    yields nothing, when artifact ranking finds no winner, AND when the
+    resulting price is indefensible (a non-evidence zero). A selector that
+    modelled only the resolver would model a pricer that does not exist.
+    """
+    priced: Optional["PricedFood"]
+    rung: Optional["Rung"]
+    authoritative: bool
+
+
+def select_priced_rung(*, entity, preparation, consumed, rungs, bound):
+    """Walk the rungs exactly as `price()` does and report the winner.
+
+    Returns the first rung that survives builder, resolver and defensibility
+    — the one whose numbers would be committed — together with whether ITS
+    resolution was authoritative. Pure with respect to the database: it reads
+    the evidence it is handed and asks the one resolver. Never writes.
+    """
+    from skills.nutrition.models import MACRO_FIELDS
+    from skills.nutrition.scaling import ScalingRefused, resolve_scaling
+
+    priced = None
+    rung = None
+    selected_authoritative = False
     for ev, build in rungs:
+        # Per-iteration, so a rung that never reached the resolver cannot
+        # inherit the previous rung's verdict.
+        resolution = None
         if ev is None:
             continue
         try:
@@ -957,7 +1002,9 @@ def price(*, entity: str, preparation: str = "", consumed=None,
         # "the estimate was zero" into "try the next thing" rather than
         # "refuse the meal".
         if priced.is_defensible():
+            selected_authoritative = bool(
+                resolution.authoritative) if resolution is not None else False
             break
         priced = None
-
-    return refuse_or_return(priced, food_name=entity)
+    return RungSelection(priced=priced, rung=rung,
+                         authoritative=selected_authoritative)
