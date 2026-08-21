@@ -277,3 +277,36 @@ async def test_the_detached_task_runs_to_completion_and_is_not_cancelled(
         "the detached prewarm did not complete after the turn returned — if it "
         "is now cancelled at settlement, the single-flight cache never warms "
         "and the speculation buys nothing")
+
+
+@pytest.mark.asyncio
+async def test_the_marking_does_not_leak_into_the_launching_turn(fast_qualifier):
+    """⛔⛔ THE OTHER HALF OF ISOLATION, AND IT WAS UNTESTED.
+
+    Cross-TURN isolation says A's prewarm cannot reach turn B. This says the
+    marking cannot reach the launching turn's OWN later work: the turn goes on
+    to await real stages after firing the prewarm, and those must stay
+    critical-path.
+
+    Found by mutation, not by design. Setting `_SPECULATIVE` around
+    `ensure_future` instead of inside the coroutine leaves the prewarm
+    correctly marked — every existing assertion here still passed — while
+    quietly re-filing the turn's own `llm` as speculative. A turn would then
+    report ~0 ms of critical path and look instant.
+
+    That is why the flag is set INSIDE `_detached()`: `ensure_future` copies
+    the context at creation, so the task gets its own copy and the caller's
+    stays clean."""
+    trace = RequestTrace(turn_id="d2:noleak", channel="ios", command="turn")
+    from core.request_trace import timed as _timed
+    with _trace_active(trace):
+        _prewarm("Chicken breast")
+        with _timed("llm"):                 # the turn's OWN awaited work
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.2)
+
+    assert "llm" in trace.stage_totals(), (
+        "the turn's own awaited work was filed as speculative — the marking "
+        "escaped the detached task: critical=%r speculative=%r"
+        % (trace.stage_totals(), trace.speculative_totals()))
+    assert "llm" not in trace.speculative_totals()
