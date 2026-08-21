@@ -1251,3 +1251,111 @@ changes, which is the error this instrument's own docstring names. The 30-day
 rolling run **WITHHELD** entirely: 75 of 539 entries carry no `created` ledger
 event, so every rate would have been computed over survivors. Only the frozen
 population is comparable to 20.2%.
+
+---
+
+## ⛔⛔⛔ P17g — REVIEW ROUND 2 *(Danny, 2026-08-21, on head `61eaf4e`)*
+
+`61eaf4e` was **rejected as unchanged source**. The CI analysis attached to it
+was accepted as credible, and explicitly ruled insufficient: *"it does not
+address the source blockers"* and *"the current flaky battery can be treated as
+preexisting evidence, but it cannot make the unchanged source mergeable."*
+Battery #53 was **not** to be re-run — the head had to change anyway.
+
+⭐ **TWO OF THE FIVE WERE LIVE SOURCE DEFECTS; THREE WERE PROOFS THAT PASSED
+FOR THE WRONG REASON.** That split matters for how each was validated. A proof
+whose defect is in the TEST passes both before and after the repair, so its
+colour proves nothing — only a mutation can show it is no longer vacuous.
+
+### 1 — `price()` returned `selection.priced` without enforcing `.authoritative`
+
+The field was computed one line above the return and never read, so the promise
+`decide()` publishes had **no enforcement at the only place that writes**.
+
+They are not guaranteed to agree by construction, because they do not run over
+the same rungs: `look()` builds `(memory, None, artifact)`, `assemble()`
+supplies `(memory, product, artifact, ESTIMATE)`. Routing can admit on an
+authoritative artifact while the pricer — artifact ranking having found no
+winner under its own composed query — falls through to **ESTIMATE** and commits
+a heuristic price under an admission that promised authority.
+
+`price()` now takes `require_authoritative` **from the caller**, exactly as it
+already takes `bound`, and `GeneralSettlementOwner._price` passes it. ⭐ A
+heuristic estimate is a legitimate PRICE and simply not a canonical
+SETTLEMENT — a global rule would refuse most ordinary meals and delete the B-1
+quantity and correction paths. ⚠ Clause 4's other option (SKIP a higher-priority
+heuristic rung in favour of a later authoritative one) was **deliberately not
+taken**: it changes committed numbers on paths outside this slice, and this
+tranche is a predicate change, not a repricing. `PricingRefused` is raised
+BEFORE any write (A8), so a divergence costs a refused turn, never a wrong row.
+
+### 2 — the PRODUCT twins passed for "no canonical identity"
+
+One product, `entity=""` forced, so `decide()` returned at the **identity**
+rung and never reached the producer question. Its lone assertion (`"mass" not
+in reason`) then held trivially — and had been *fitted* to that verdict,
+because the honest rung-3 reason contains the words "a user-stated exact mass".
+⛔ **A twin that declines at a rung above the one under test proves nothing
+about the rung under test.**
+
+Now **both** twins, real identity and quantity, and the claim proven positively
+against the real selector: (1) with the rungs `look()` builds, PRODUCT's
+evidence is `None` and no rung wins; (2) the SAME identity and quantity given a
+real per-serving producer scale **authoritatively** via `direct_basis`; (3) so
+the decline is the producer's absence, and it lifts the day the producer lands.
+⭐ **An absence is only attributable when you can show the presence changing
+the answer.**
+
+### 3 — `drain_speculative()` timed out and left tasks running
+
+`asyncio.wait(..., timeout=)` **does not cancel what it gives up on**. So in the
+one case the timeout exists for, the guarantee evaporated: the prewarm stayed
+alive holding its connection, teardown proceeded, and `DROP SCHEMA … CASCADE`
+ran into it — the deadlock the registry was added to prevent, reached through
+the registry's own escape hatch. ⛔ **A bound and a guarantee are not
+alternatives.**
+
+Stragglers are now cancelled **and awaited** — `cancel()` only *requests* it,
+and a task whose `finally` has not run may still hold a connection — so the
+postcondition is unconditional: *when the drain returns, no registered task is
+running*. `DrainResult` reports `drained` vs `cancelled`, because "everything
+finished cleanly" and "I killed three writes mid-flight" must not be the same
+return value. ⭐ Cancelling here is not a lifecycle reversal: settlement still
+never cancels, this is teardown, and only after a task outlived its budget.
+
+### 4 — the data-flow proof accepted any `.authoritative` read
+
+It asserted that *some* `<name>.authoritative` appears somewhere in `look()`,
+which passes for `_ = _sel.authoritative` followed by a hard-coded constant. It
+proved a READ happened, never that the value reaches the `ItemFacts` `decide()`
+reads. ⭐ **A structural test can say the wire exists; only a driven one can say
+the current arrives.** Replaced by a sentinel selector and assertions on both
+returned fields over three selections — including a `None` rung — so no single
+frozen value survives the set.
+
+### 5 — `look()` claimed pricing was forbidden while running the pricer
+
+The docstring listed "pricing" as forbidden while the body ran
+`select_priced_rung`, which builds `PricedFood` objects with real macros for
+every candidate. ⛔ **A boundary comment that contradicts the code twenty lines
+below it is worse than no comment** — the next reader trusts the sentence.
+Restated to what the rule always protected: retrieval and mutation stay
+forbidden; pure in-memory selection is permitted. ⭐ And the honest claim is
+about what ESCAPES: every price computed here is discarded, `ItemFacts` carries
+a rung name and two booleans and never a macro. **Pricing to decide is not
+pricing to write.**
+
+### Gates on the round-2 head
+
+* Mutations **15 RED / 0 GREEN / 0 INVALID**. N5–N8 exist specifically to
+  validate the three proofs whose colour could not. ⛔ **N3 scored INVALID on
+  its first form and the harness was right**: it removed `task.cancel()` while
+  leaving the `gather`, so the drain awaited a live 30 s task and by the time
+  the witness looked the task had FINISHED — the suite went red, but the
+  witness asked "is it still running", which was False either way. *A witness
+  must observe the change the mutation makes, not the headline of the defect.*
+* **Ownership is UNCHANGED at 11.3%** — frozen population `p16b_0817`, 361 rows
+  / 232 meals, predicate commit `1fc7a21`. None of the five touched `look()`'s
+  or `decide()`'s behaviour, and that was measured rather than assumed.
+* The **40% threshold has not moved and remains unmet**, and closure still
+  requires the reviewed main deployed plus BOTH canaries.
