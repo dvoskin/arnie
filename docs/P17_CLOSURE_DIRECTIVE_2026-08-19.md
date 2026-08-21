@@ -1209,3 +1209,45 @@ False). ⛔ **The fixed 40% threshold does not move.** Update the measured
 result, never the goalpost. If coverage falls below it, P17g's correctness
 change may still merge; the **coverage/rollout gate stays unmet** until the
 producer slice restores legitimate coverage.
+
+---
+
+## P17g — MEASURED. THE GATE IS UNMET, AND THE THRESHOLD DID NOT MOVE
+
+Remeasured on the **frozen population `p16b_0817`** — 361 rows, 232 meals —
+with the predicate **EXECUTED, not modelled**, at predicate commit `2bf36a3`:
+
+```text
+                      RE-MEASURED (08-17)      P17g @ 2bf36a3
+population            362 rows · 233 meals     361 rows · 232 meals  (frozen)
+A  routing rate                 83.0%                   83.3%
+B  support rate                 24.3%                   13.5%   <- flattering
+C  OWNERSHIP RATE               20.2%                   11.3%   =  A x B
+```
+
+**25 of 185 structured-route meals supported.** Ownership roughly halves:
+**20.2% → 11.3%**.
+
+⛔ **THE 40% THRESHOLD HAS NOT MOVED, AND IS UNMET.** It was already unmet at
+20.2%; P17g moves further from it. That is the honest consequence of declining
+meals canonical cannot price authoritatively, and it is the same shape as the
+08-17 drop: ⭐ **the number did not get worse — the instrument stopped
+overstating it.** Counts were being admitted on piece-weight mass and priced
+from a number nobody measured; 11.3% is what ownership is once that stops.
+
+**P17g's correctness change may merge. The coverage/rollout gate stays UNMET**
+until the sourced-`ConversionEvidence` producer slice restores *legitimate*
+count coverage. That slice is the next separate work, and it is what turns the
+P17h count positives (`2 eggs`, `2 large eggs`, `1 medium banana`) from
+declines into admissions on evidence rather than on a table.
+
+⚠ **AND P17g CANNOT CLOSE ON THIS NUMBER ALONE.** Closure needs the reviewed
+main deployed and BOTH canaries passing; the direct canary still reads
+FAILED — MISROUTED, "RERUN after deploy", and the deployed build is `76076b6`.
+
+⭐ **A ROLLING WINDOW IS NOT THIS NUMBER.** Rolling measurements over the same
+tree gave 0.0% / 22.7% / 44.0% at 3 / 7 / 14 days — the population underneath
+changes, which is the error this instrument's own docstring names. The 30-day
+rolling run **WITHHELD** entirely: 75 of 539 entries carry no `created` ledger
+event, so every rate would have been computed over survivors. Only the frozen
+population is comparable to 20.2%.
