@@ -951,3 +951,59 @@ unit-only branch, so only a count item can see it. **A behaviour witness has to
 be chosen against the mutation's actual reach, not against the defect's
 headline case** — otherwise the harness's own safeguard files a working
 mutation as invalid.
+
+### The cross-rung conflicting-unit corpus (Danny, approving `90888cf`)
+
+Approved at `90888cf` — CI green with Postgres, battery 22/22 × 3 reps, 0
+flaky/failed/infrastructure. The corpus was required before merge because it
+proves the tranche's central invariant across every path rather than at the one
+that last broke.
+
+    A quantity whose unit contradicts this item's measured unit is NOT the
+    user's statement of this item's amount — through ANY path.
+
+⛔⛔ **THE FIRST VERSION OF THE CORPUS WAS A CLAIM, NOT A PROOF.** It ran each
+pair through the whole function and labelled it with the rung it was "about".
+Instrumented, **8 of 16 compatible twins were answered by the NORMALIZER rung**
+— including *every* row labelled `digit` and most labelled `half`. Those pairs
+proved the normalizer declines a contradicted unit, three times over, and said
+nothing about the rungs they named. ⭐ **A per-rung label is a hypothesis until
+something measures which rung answered.**
+
+So each pair now runs with every rung ABOVE the one under test disabled:
+
+| rung | disabled | reached by |
+|---|---|---|
+| normalizer | — (it is first) | the whole function |
+| digit | normalizer | `_literal_amount_with_unit` |
+| half | normalizer, digit | `_half_binds_to_food` |
+| range | normalizer, digit, half | the stated-range branch |
+| refine | normalizer | the refining clause |
+
+Both halves are load-bearing: the **compatible** twin must be True (the rung was
+reached and accepts this shape) and the **conflicting** twin must be False (that
+rung's own unit check declined it). Without the first, a False proves only that
+the message was unreachable — a corpus of unparseable sentences passes by
+declining everything.
+
+**Proven to catch a regression AT EACH RUNG, causality checked:** removing the
+normalizer's unit check reddens only `normalizer` rows · making the digit rung
+treat measured units as counts reddens `digit`/`normalizer`/`refine` · collapsing
+the measured/count split in `_quantity_binds_to_item` reddens `half`/`range`.
+
+⭐ **One limit recorded in the file:** the `normalizer` rows disable nothing, so
+a True there is attributable to it and a False is **not** — the rungs below also
+ran and also declined. Every lower rung therefore has its own isolated rows.
+
+A coverage test fails if a rung has no conflicting pair, no compatible pair, or
+is absent from the corpus entirely, so the next path added is covered the day it
+is added rather than after it ships.
+
+**Also registered, NOT fixed here** (pre-existing, unchanged by Tranche Q): the
+refining-clause matcher keys on the food's HEAD NOUN, so `"some peanut butter,
+like 2 tbsp"` is not read as refining the peanut butter — `"butter"` is not
+repeated. That is the anti-bleed rule working as designed (it is what stops
+"half a banana" refining peanut butter), and widening it is a separate decision.
+
+**Gate.** Frozen suite on `a5d4a80`: `PYTEST_EXIT=0`, **10032 passed / 25
+skipped / 17 deselected / 4 xfailed**; HEAD and tree identical before and after.
