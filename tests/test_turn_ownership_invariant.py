@@ -135,7 +135,15 @@ def test_a_turn_yields_exactly_one_result():
     which one the user saw."""
     import inspect
     from core.turns import entrypoint
-    source = inspect.getsource(entrypoint.run_turn)
+    # ⭐ THE WHOLE MODULE, NOT ONE FUNCTION *(Tranche D, D1)*. This read
+    # `getsource(entrypoint.run_turn)` until `run_turn` was split so that ONE
+    # scope owns the trace across the native-no-plan delegation — which moved
+    # the coordinator call into `_run_coordinated` and left this counting zero.
+    #
+    # Counting the module is what the invariant actually means and is strictly
+    # stronger: a second `coordinator.run(` anywhere in the entrypoint is the
+    # two-entrypoints defect regardless of which function it hides in.
+    source = inspect.getsource(entrypoint)
     # One coordinator run, one thing returned from it.
     assert source.count("await coordinator.run(") == 1
 

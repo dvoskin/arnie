@@ -5045,7 +5045,59 @@ class _SpeculativeEnrichment:
             # a generic one alike. A stray OFF candidate cannot leak into a
             # generic answer — `candidate_map` does not seat OFF on the generic
             # ladder at all.
-            task = _aio.ensure_future(_fetch_usda_off(food, True))
+            # ⛔⛔ MARKED SPECULATIVE INSIDE THE TASK *(Tranche D2)*. `timed()`
+            # records onto the AMBIENT trace, and `ensure_future` copies the
+            # context at creation — so without this the prewarm's duration is
+            # attributed to the user-visible turn even though nothing awaits
+            # it. Measured on `ios:5F861208…`: a 5379 ms qualification beside a
+            # 6601 ms llm in a turn whose total was 9523 ms. They overlap by at
+            # least 2457 ms; the turn read ~5.4 s slower than it was.
+            #
+            # Set INSIDE the coroutine, not around `ensure_future`: the flag
+            # must belong to the task's own context copy, so it can never leak
+            # into the turn that launched it or into the next one.
+            from core.request_trace import speculative as _speculative
+
+            from core.request_trace import current_trace as _cur
+            _trace = _cur()
+
+            async def _detached():
+                with _speculative():
+                    try:
+                        return await _fetch_usda_off(food, True)
+                    finally:
+                        # ⛔⛔ AND IT HAS TO REACH THE ROW *(D2 durability)*.
+                        # `persist_isolated()` writes `stages_json` when the
+                        # turn ends; finishing after that used to append the
+                        # stage to the in-memory trace and to nothing else, so
+                        # the row a reader sees never received it. That is an
+                        # UPDATE of the existing row, never an insert — one
+                        # request writing two turn_metrics rows is the D1
+                        # defect, and this must not reintroduce it.
+                        if _trace is not None:
+                            await _trace.flush_speculative()
+
+            task = _aio.ensure_future(_detached())
+            # ⭐ LIFECYCLE, STATED RATHER THAN INHERITED *(Tranche D2, item 6)*.
+            # The task RUNS TO COMPLETION after the response. It is not
+            # cancelled at settlement, and that is the decision, not an
+            # accident:
+            #
+            #   * its result lands in `_fetch_usda_off`'s single-flight cache,
+            #     so a later turn for the same food is the consumer — cancelling
+            #     at settlement would throw away the only thing it is for;
+            #   * it holds no session, no lock and no claim, so nothing waits on
+            #     it and nothing rolls back with it;
+            #   * a completion arriving after the turn's trace is persisted
+            #     FOLDS ITS STAGE BACK INTO THAT ROW (`flush_speculative`), so
+            #     the accounting D2 promises survives the normal lifecycle.
+            #     An earlier revision said such a completion was "simply
+            #     dropped" — true of the mechanism, and flatly incompatible
+            #     with the contract built on it, which is why the row is
+            #     updated instead. It still cannot touch the NEXT turn: the
+            #     speculative flag and the trace both live in this task's own
+            #     context copy, which the cross-turn isolation test proves.
+            #
             # Nothing awaits this here. Swallow its failure so a dead lookup
             # cannot surface as an unretrieved-exception warning on a turn that
             # went on to succeed without it.

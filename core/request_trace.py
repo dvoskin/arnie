@@ -67,6 +67,41 @@ def active(trace: "RequestTrace"):
             pass
 
 
+#: Set INSIDE a detached task, so work nothing awaits is accounted separately.
+#: A contextvar rather than a flag on the trace because `ensure_future` copies
+#: the context at creation: the task gets its own copy and cannot flip the
+#: setting for the turn that launched it, or for any other turn.
+_SPECULATIVE: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "_SPECULATIVE", default=False)
+
+
+@contextmanager
+def speculative():
+    """Mark everything timed inside as SPECULATIVE — launched by the turn, not
+    awaited by it.
+
+    ⛔⛔ WHY THIS EXISTS *(Tranche D2)*. `core/food_turn.py` launches a
+    fire-and-forget USDA/OFF prewarm from the interpreter's token stream, and
+    `timed()` records onto the AMBIENT trace — so a 5379 ms qualification
+    landed in the turn's `stages_json` beside a 6601 ms `llm` in a turn whose
+    `total_ms` was 9523. Those cannot both be on one critical path; they
+    overlapped by at least 2457 ms. The turn read ~5.4 s slower than the user
+    experienced, and the same stage was separately (and wrongly) treated as
+    proof of which lane settled.
+
+    ⭐ SEPARATED, NOT HIDDEN. Speculative work costs money and API budget and
+    can fail; it stays on the trace under its own names so it remains
+    auditable. What it must never do is add to the latency the user waited."""
+    token = _SPECULATIVE.set(True)
+    try:
+        yield
+    finally:
+        try:
+            _SPECULATIVE.reset(token)
+        except Exception:
+            pass
+
+
 @contextmanager
 def timed(stage: str):
     """Time a block and record it on the ambient trace as a stage, if one is
@@ -79,11 +114,16 @@ def timed(stage: str):
         yield
         return
     start = time.monotonic()
+    _spec = _SPECULATIVE.get()
     try:
         yield
     finally:
         try:
-            t.record(stage, int((time.monotonic() - start) * 1000))
+            ms = int((time.monotonic() - start) * 1000)
+            if _spec:
+                t.record_speculative(stage, ms)
+            else:
+                t.record(stage, ms)
         except Exception:
             pass
 
@@ -129,8 +169,15 @@ class RequestTrace:
         self.user_id = user_id
         self.fields: dict[str, Any] = {}
         self.stages: list[tuple[str, int]] = []
+        #: Work this turn LAUNCHED but never awaited. Kept apart from `stages`
+        #: so it can never be summed into the turn's latency.
+        self.speculative: list[tuple[str, int]] = []
         self._t0 = time.monotonic()
         self._done = False
+        #: True once `persist`/`persist_isolated` has written the row. A
+        #: speculative stage recorded after this must UPDATE that row rather
+        #: than vanish — see `flush_speculative`.
+        self._persisted = False
 
     @contextmanager
     def stage(self, name: str):
@@ -157,11 +204,41 @@ class RequestTrace:
         except Exception:
             pass
 
+    def record_speculative(self, name: str, ms: int) -> None:
+        """Record work the turn launched but did not await. Same summing rule
+        as `record`, a different list — the separation IS the point."""
+        try:
+            self.speculative.append((name, int(ms)))
+        except Exception:
+            pass
+
+    def speculative_totals(self) -> dict:
+        """Per-stage milliseconds for work nothing awaited."""
+        out: dict[str, int] = {}
+        for name, ms in self.speculative:
+            out[name] = out.get(name, 0) + ms
+        return out
+
     def stage_totals(self) -> dict:
-        """Per-stage milliseconds, duplicates summed, insertion order kept."""
+        """Per-stage milliseconds for work the turn AWAITED, duplicates summed,
+        insertion order kept. Speculative work is deliberately absent — see
+        `speculative_totals`."""
         out: dict[str, int] = {}
         for name, ms in self.stages:
             out[name] = out.get(name, 0) + ms
+        return out
+
+    def _stages_for_row(self) -> dict:
+        """What `turn_metrics.stages_json` carries.
+
+        Critical-path stages keep their names and their meaning: work the turn
+        AWAITED. Speculative work is namespaced `speculative.<stage>` so it
+        stays auditable in the same flat object without any reader mistaking it
+        for latency — the shape is unchanged, and no existing key changes
+        meaning. It is only ever ADDED to the row, never summed into it."""
+        out = dict(self.stage_totals())
+        for name, ms in self.speculative_totals().items():
+            out[f"speculative.{name}"] = ms
         return out
 
     def note(self, **fields: Any) -> None:
@@ -229,11 +306,64 @@ class RequestTrace:
                 channel=self.channel, command=self.command,
                 outcome=self.fields.get("outcome") or "ok",
                 total_ms=self.total_ms(),
-                stages_json=json.dumps(self.stage_totals()),
+                stages_json=json.dumps(self._stages_for_row()),
                 build_sha=_sha()))
             await db.commit()
+            self._persisted = True
         except Exception as e:
             logger.warning(f"turn metric not persisted turn={self.turn_id}: {e}")
+
+    async def flush_speculative(self) -> None:
+        """Fold speculative stages into a row that was ALREADY written.
+
+        ⛔⛔ WHY THIS EXISTS *(Tranche D2, durability blocker)*. D2 separates
+        speculative work from the critical path and claims it stays auditable
+        in the persisted row. D2 ALSO documents that the detached prewarm runs
+        to completion AFTER the response. Those two statements contradicted
+        each other: `persist_isolated()` writes `stages_json` when the turn
+        ends, so a prewarm finishing later appended its stage to this object
+        and to nothing else. The row a reader actually sees never received it.
+
+        ⭐ AN UPDATE, NEVER AN INSERT. One request writing two `turn_metrics`
+        rows is the D1 defect; this fix must not reintroduce it through the
+        back door, so it edits the existing row and does nothing at all when
+        there is none yet — the common fast case, where the ordinary persist
+        carries the stage anyway.
+
+        Never raises. It runs inside a detached task nobody awaits, so a
+        failure here has no one to report to and must not surface as an
+        unretrieved exception on a turn that already succeeded."""
+        if not self._persisted or not self.speculative:
+            return
+        try:
+            import json
+
+            from sqlalchemy import select
+
+            from db.database import AsyncSessionLocal
+            from db.models import TurnMetric
+            async with AsyncSessionLocal() as mdb:
+                row = (await mdb.execute(
+                    select(TurnMetric)
+                    .where(TurnMetric.turn_id == self.turn_id)
+                    .order_by(TurnMetric.id.desc()).limit(1)
+                )).scalars().first()
+                if row is None:
+                    return
+                stages = row.stages_json
+                if isinstance(stages, str):
+                    stages = json.loads(stages or "{}")
+                stages = dict(stages or {})
+                # Only the namespaced keys are touched. The critical path is
+                # what the turn measured and is never rewritten from here.
+                for name, ms in self.speculative_totals().items():
+                    stages[f"speculative.{name}"] = ms
+                row.stages_json = json.dumps(stages)
+                await mdb.commit()
+        except Exception as e:            # noqa: BLE001
+            logger.warning(
+                f"speculative stages not folded into the row "
+                f"turn={self.turn_id}: {e}")
 
     async def persist_isolated(self) -> None:
         """Persist on a FRESH session, never the caller's.

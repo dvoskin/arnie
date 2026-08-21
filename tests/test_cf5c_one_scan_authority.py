@@ -2437,12 +2437,23 @@ async def test_prod_0819_an_unscanned_empty_turn_still_delegates(monkeypatch, ca
 
 
 def test_prod_0819_the_entrypoint_consults_the_authority_before_delegating():
-    """AST: in run_turn, `scan_attached` / `require_shape` are called BEFORE
-    the LegacyExecutionStage import in the no-plan block."""
+    """AST: `scan_attached` / `require_shape` are called BEFORE the
+    LegacyExecutionStage import in the no-plan block.
+
+    ⭐ THE WHOLE MODULE, NOT ONE FUNCTION *(Tranche D2)*. This read
+    `getsource(ep.run_turn)` until `run_turn` was split so ONE scope owns the
+    trace across the delegation — which moved the no-plan block into
+    `_run_coordinated` and left BOTH lists empty, so the gate failed while the
+    ordering it protects was untouched.
+
+    The module is the right scope and is strictly stronger: `scan_attached`,
+    `require_shape` and the `LegacyExecutionStage` import each appear exactly
+    once in this file, so "the authority is consulted before the delegation" is
+    the same claim wherever the block lives."""
     import ast
     import inspect
     from core.turns import entrypoint as ep
-    tree = ast.parse(inspect.getsource(ep.run_turn).lstrip())
+    tree = ast.parse(inspect.getsource(ep))
     consult = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Call)
                and getattr(n.func, "id", None) in ("scan_attached", "require_shape")]
     legacy = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
