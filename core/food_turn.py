@@ -5058,9 +5058,24 @@ class _SpeculativeEnrichment:
             # into the turn that launched it or into the next one.
             from core.request_trace import speculative as _speculative
 
+            from core.request_trace import current_trace as _cur
+            _trace = _cur()
+
             async def _detached():
                 with _speculative():
-                    return await _fetch_usda_off(food, True)
+                    try:
+                        return await _fetch_usda_off(food, True)
+                    finally:
+                        # ⛔⛔ AND IT HAS TO REACH THE ROW *(D2 durability)*.
+                        # `persist_isolated()` writes `stages_json` when the
+                        # turn ends; finishing after that used to append the
+                        # stage to the in-memory trace and to nothing else, so
+                        # the row a reader sees never received it. That is an
+                        # UPDATE of the existing row, never an insert — one
+                        # request writing two turn_metrics rows is the D1
+                        # defect, and this must not reintroduce it.
+                        if _trace is not None:
+                            await _trace.flush_speculative()
 
             task = _aio.ensure_future(_detached())
             # ⭐ LIFECYCLE, STATED RATHER THAN INHERITED *(Tranche D2, item 6)*.
@@ -5073,11 +5088,15 @@ class _SpeculativeEnrichment:
             #     at settlement would throw away the only thing it is for;
             #   * it holds no session, no lock and no claim, so nothing waits on
             #     it and nothing rolls back with it;
-            #   * a completion arriving after the turn's trace is persisted is
-            #     simply dropped — proven by the cross-turn isolation test: it
-            #     cannot write into the NEXT turn's trace, because the
-            #     speculative flag and the trace both live in the task's own
-            #     context copy.
+            #   * a completion arriving after the turn's trace is persisted
+            #     FOLDS ITS STAGE BACK INTO THAT ROW (`flush_speculative`), so
+            #     the accounting D2 promises survives the normal lifecycle.
+            #     An earlier revision said such a completion was "simply
+            #     dropped" — true of the mechanism, and flatly incompatible
+            #     with the contract built on it, which is why the row is
+            #     updated instead. It still cannot touch the NEXT turn: the
+            #     speculative flag and the trace both live in this task's own
+            #     context copy, which the cross-turn isolation test proves.
             #
             # Nothing awaits this here. Swallow its failure so a dead lookup
             # cannot surface as an unretrieved-exception warning on a turn that

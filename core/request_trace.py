@@ -174,6 +174,10 @@ class RequestTrace:
         self.speculative: list[tuple[str, int]] = []
         self._t0 = time.monotonic()
         self._done = False
+        #: True once `persist`/`persist_isolated` has written the row. A
+        #: speculative stage recorded after this must UPDATE that row rather
+        #: than vanish — see `flush_speculative`.
+        self._persisted = False
 
     @contextmanager
     def stage(self, name: str):
@@ -305,8 +309,61 @@ class RequestTrace:
                 stages_json=json.dumps(self._stages_for_row()),
                 build_sha=_sha()))
             await db.commit()
+            self._persisted = True
         except Exception as e:
             logger.warning(f"turn metric not persisted turn={self.turn_id}: {e}")
+
+    async def flush_speculative(self) -> None:
+        """Fold speculative stages into a row that was ALREADY written.
+
+        ⛔⛔ WHY THIS EXISTS *(Tranche D2, durability blocker)*. D2 separates
+        speculative work from the critical path and claims it stays auditable
+        in the persisted row. D2 ALSO documents that the detached prewarm runs
+        to completion AFTER the response. Those two statements contradicted
+        each other: `persist_isolated()` writes `stages_json` when the turn
+        ends, so a prewarm finishing later appended its stage to this object
+        and to nothing else. The row a reader actually sees never received it.
+
+        ⭐ AN UPDATE, NEVER AN INSERT. One request writing two `turn_metrics`
+        rows is the D1 defect; this fix must not reintroduce it through the
+        back door, so it edits the existing row and does nothing at all when
+        there is none yet — the common fast case, where the ordinary persist
+        carries the stage anyway.
+
+        Never raises. It runs inside a detached task nobody awaits, so a
+        failure here has no one to report to and must not surface as an
+        unretrieved exception on a turn that already succeeded."""
+        if not self._persisted or not self.speculative:
+            return
+        try:
+            import json
+
+            from sqlalchemy import select
+
+            from db.database import AsyncSessionLocal
+            from db.models import TurnMetric
+            async with AsyncSessionLocal() as mdb:
+                row = (await mdb.execute(
+                    select(TurnMetric)
+                    .where(TurnMetric.turn_id == self.turn_id)
+                    .order_by(TurnMetric.id.desc()).limit(1)
+                )).scalars().first()
+                if row is None:
+                    return
+                stages = row.stages_json
+                if isinstance(stages, str):
+                    stages = json.loads(stages or "{}")
+                stages = dict(stages or {})
+                # Only the namespaced keys are touched. The critical path is
+                # what the turn measured and is never rewritten from here.
+                for name, ms in self.speculative_totals().items():
+                    stages[f"speculative.{name}"] = ms
+                row.stages_json = json.dumps(stages)
+                await mdb.commit()
+        except Exception as e:            # noqa: BLE001
+            logger.warning(
+                f"speculative stages not folded into the row "
+                f"turn={self.turn_id}: {e}")
 
     async def persist_isolated(self) -> None:
         """Persist on a FRESH session, never the caller's.
