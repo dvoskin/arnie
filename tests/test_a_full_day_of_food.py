@@ -332,6 +332,14 @@ async def app_db():
     try:
         yield eng
     finally:
+        # ⛔⛔ DRAIN THE DETACHED PREWARMS BEFORE THE SCHEMA MOVES. Since D2
+        # the speculative task WRITES (`flush_speculative` folds its stage back
+        # into the row), so it outlives the turn holding a connection. Racing
+        # `DROP SCHEMA ... CASCADE` produced a Postgres DEADLOCK that Postgres
+        # resolved by killing the TEARDOWN — a full-suite error that passed in
+        # isolation on every run, which is the shape hardest to trust.
+        from core.food_turn import drain_speculative
+        await drain_speculative()
         D.AsyncSessionLocal.configure(bind=original)
         # DISPOSE FIRST, THEN DROP. `DROP SCHEMA ... CASCADE` needs every other
         # connection to have let go; issuing it while this engine still holds

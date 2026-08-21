@@ -4968,6 +4968,31 @@ def _delete_call(d: dict, board_by_id: dict) -> Optional[dict]:
 _STREAMED_FOOD_RE = re.compile(r'"food"\s*:\s*"([^"]{2,60})"')
 
 
+#: Prewarm tasks that have been launched and not yet finished. A `set` of
+#: tasks, discarded on completion — see `_start` for why this exists.
+_IN_FLIGHT: set = set()
+
+
+async def drain_speculative(timeout: float = 5.0) -> int:
+    """Wait for launched-but-unfinished prewarms. Returns how many were awaited.
+
+    For anything that needs the database quiet before it changes underneath
+    them — test teardown above all. Never raises: a prewarm that fails has
+    already swallowed its own error, and draining must not invent a new way
+    for one to break its caller.
+    """
+    import asyncio as _aio
+
+    pending = [t for t in _IN_FLIGHT if not t.done()]
+    if not pending:
+        return 0
+    try:
+        await _aio.wait(pending, timeout=timeout)
+    except Exception:                                  # noqa: BLE001
+        pass
+    return len(pending)
+
+
 class _SpeculativeEnrichment:
     """Starts each food's lookup the moment its NAME appears in the stream.
 
@@ -5078,6 +5103,20 @@ class _SpeculativeEnrichment:
                             await _trace.flush_speculative()
 
             task = _aio.ensure_future(_detached())
+            # ⛔⛔ DETACHED DB WORK MUST BE DRAINABLE *(P17g freeze)*. Since D2
+            # the prewarm WRITES — `flush_speculative` folds its stage back
+            # into the row — so the task now outlives the turn holding a
+            # connection. In the suite that collided with another module's
+            # `Base.metadata.drop_all`, and Postgres chose the DDL as the
+            # deadlock victim: a full-suite error that passes in isolation
+            # every time.
+            #
+            # Registering it costs nothing and gives anything that needs the
+            # database to be QUIET — test teardown, a graceful shutdown — a way
+            # to wait rather than race. The lifecycle is unchanged: nothing
+            # here cancels it.
+            _IN_FLIGHT.add(task)
+            task.add_done_callback(_IN_FLIGHT.discard)
             # ⭐ LIFECYCLE, STATED RATHER THAN INHERITED *(Tranche D2, item 6)*.
             # The task RUNS TO COMPLETION after the response. It is not
             # cancelled at settlement, and that is the decision, not an
