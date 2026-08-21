@@ -174,10 +174,16 @@ class RequestTrace:
         self.speculative: list[tuple[str, int]] = []
         self._t0 = time.monotonic()
         self._done = False
-        #: True once `persist`/`persist_isolated` has written the row. A
-        #: speculative stage recorded after this must UPDATE that row rather
-        #: than vanish — see `flush_speculative`.
-        self._persisted = False
+        #: The id of the row THIS trace wrote, once it has written one.
+        #:
+        #: ⛔⛔ NOT THE turn_id *(post-merge remediation)*. The first version
+        #: found the row with `WHERE turn_id = … ORDER BY id DESC LIMIT 1`, and
+        #: turn_id IS NOT UNIQUE — CF19 registers exactly that: `h:`-prefixed
+        #: ids are a content hash bucketed by the hour, so separate requests
+        #: share one (a single `healthkit:h:` id covers six executions). That
+        #: query could fold one request's speculative stage into another
+        #: request's row. The row's own id is the only unambiguous handle.
+        self._row_id: Optional[int] = None
 
     @contextmanager
     def stage(self, name: str):
@@ -301,15 +307,24 @@ class RequestTrace:
             import json
 
             from db.models import TurnMetric
-            db.add(TurnMetric(
+            row = TurnMetric(
                 turn_id=self.turn_id, user_id=self.user_id,
                 channel=self.channel, command=self.command,
                 outcome=self.fields.get("outcome") or "ok",
                 total_ms=self.total_ms(),
                 stages_json=json.dumps(self._stages_for_row()),
-                build_sha=_sha()))
+                build_sha=_sha())
+            db.add(row)
             await db.commit()
-            self._persisted = True
+            self._row_id = getattr(row, "id", None)
+            # ⛔⛔ THE PERSIST-IN-FLIGHT RACE, CLOSED HERE *(post-merge
+            # remediation)*. A prewarm completing between `_stages_for_row()`
+            # and this line was dropped by BOTH paths: too late for the payload
+            # that was already built, too early for a flush that returns early
+            # while no row id exists. So the flush is re-run once ownership is
+            # recorded — it is idempotent (it rewrites the same namespaced
+            # keys) and cheap (it no-ops when nothing is pending).
+            await self.flush_speculative()
         except Exception as e:
             logger.warning(f"turn metric not persisted turn={self.turn_id}: {e}")
 
@@ -333,7 +348,7 @@ class RequestTrace:
         Never raises. It runs inside a detached task nobody awaits, so a
         failure here has no one to report to and must not surface as an
         unretrieved exception on a turn that already succeeded."""
-        if not self._persisted or not self.speculative:
+        if self._row_id is None or not self.speculative:
             return
         try:
             import json
@@ -344,9 +359,7 @@ class RequestTrace:
             from db.models import TurnMetric
             async with AsyncSessionLocal() as mdb:
                 row = (await mdb.execute(
-                    select(TurnMetric)
-                    .where(TurnMetric.turn_id == self.turn_id)
-                    .order_by(TurnMetric.id.desc()).limit(1)
+                    select(TurnMetric).where(TurnMetric.id == self._row_id)
                 )).scalars().first()
                 if row is None:
                     return
