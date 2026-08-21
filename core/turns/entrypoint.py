@@ -181,6 +181,68 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
         channel=getattr(request, "platform", "") or "",
         command="turn", user_id=getattr(request, "user_id", None))
 
+    # ⛔⛔ ONE TOP-LEVEL SCOPE, AND THE DELEGATION STAYS INSIDE IT *(Tranche D,
+    # D1)*. The trace used to be closed and persisted in the `finally` around
+    # `coordinator.run`, which sits BEFORE the native-no-plan delegation below.
+    # So a turn the native lane could not execute persisted its row, then ran
+    # the legacy pipeline, which opened a trace of its own: one request, two
+    # `turn_metrics` rows under one turn id, two LLM calls, one reply.
+    #
+    # Measured in production 2026-08-20 on turn `ios:5F861208…` — 9523 ms then
+    # 6293 ms, windows NOT overlapping (the second starts 3.9 ms after the
+    # first ends), on a service that cannot run two instances. The same
+    # -0.004 s signature appears on `ios:853B5889` and `ios:E618D57E`.
+    #
+    # ⭐ THE RULE IS NOT "ONE MODEL CALL". Delegating a turn the native lane
+    # cannot execute is CORRECT — the comment below records why — and a
+    # composer or follow-up nested in the turn is legitimate work. What must be
+    # true is that ONE scope opens the trace and closes it after ALL of that,
+    # so rescue work is measured as part of the turn instead of as a second one.
+    _outcome = "ok"
+    try:
+        with _trace_active(_rt):
+            return await _run_coordinated(request=request, **legacy_kwargs)
+    except Exception as exc:
+        _outcome = f"error:{type(exc).__name__}"
+        raise
+    finally:
+        # OURS TO CLOSE ONLY IF OURS TO OPEN. An outer trace belongs to its
+        # own owner, which will mark and persist it.
+        if _outer is None:
+            try:
+                _rt.done(outcome=_outcome)
+                await _rt.persist_isolated()
+            except Exception:            # noqa: BLE001
+                # Telemetry describing a turn must never break the turn, the
+                # same rule `record_ledger_event` and `persist` already follow.
+                logger.warning("native turn metric not persisted turn=%s",
+                               getattr(request, "turn_id", "-"), exc_info=True)
+
+
+def _note_outcome(outcome: str) -> None:
+    """Record the turn's outcome ON THE TRACE rather than in a local.
+
+    The scope that persists is now the caller's, so an outcome set down here
+    has to travel with the trace to reach it. `note(outcome=…)` deliberately
+    beats `done()`'s argument, which is what lets a graceful answer to a
+    `state.error` still be recorded as the error it came from."""
+    from core.request_trace import current_trace
+    t = current_trace()
+    if t is not None:
+        t.note(outcome=outcome)
+
+
+async def _run_coordinated(*, request, **legacy_kwargs) -> Any:
+    """The turn itself, under a trace the caller already opened.
+
+    Split out of `run_turn` so ONE scope owns the trace across the whole turn,
+    including the native-no-plan delegation at the bottom. Every `return` here
+    lands in the caller's `finally`, which is what closes and persists."""
+    from core.request_trace import current_trace
+    from core.turn_identity import CURRENT_TURN_ID
+    from core.turns.factory import build_coordinator
+    from core.turns.observe import CURRENT_ROUTE
+
     coordinator = await build_coordinator(request, **legacy_kwargs)
     # The route this turn took, published for anything downstream that would
     # otherwise compute its own. Set unconditionally — including back to None
@@ -199,12 +261,12 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     # a leaked contextvar stamps the NEXT turn's writes with this one's id.
     _token = CURRENT_ROUTE.set(getattr(coordinator.route_stage, "decision", None))
     _tid_token = CURRENT_TURN_ID.set(getattr(request, "turn_id", None))
-    _outcome = "ok"
     try:
-        # Ambient, so `timed()` leaves record themselves — the mechanism that
-        # makes `stages_json` mean anything.
-        with _trace_active(_rt):
-            state = await coordinator.run(request)
+        # The trace is already ambient — the caller opened it and holds it open
+        # across the delegation below, so `timed()` leaves record themselves
+        # for the WHOLE turn, which is the mechanism that makes `stages_json`
+        # mean anything.
+        state = await coordinator.run(request)
         # ⛔ THE COORDINATOR CATCHES A STAGE FAILURE INTO state.error AND
         # RETURNS. Measured 2026-08-18 (canary #2, ios:0EE4B6BD): the
         # correction COMMITTED, a later stage raised, the user got the
@@ -213,24 +275,13 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
         # "ok" on every failed-after-commit turn. Read the state, not the
         # exception path.
         if getattr(state, "error", None) is not None:
-            _outcome = f"error:{type(state.error).__name__}"
+            _note_outcome(f"error:{type(state.error).__name__}")
     except Exception as exc:
-        _outcome = f"error:{type(exc).__name__}"
+        _note_outcome(f"error:{type(exc).__name__}")
         raise
     finally:
         CURRENT_TURN_ID.reset(_tid_token)
         CURRENT_ROUTE.reset(_token)
-        # OURS TO CLOSE ONLY IF OURS TO OPEN. An outer trace belongs to its
-        # own owner, which will mark and persist it.
-        if _outer is None:
-            try:
-                _rt.done(outcome=_outcome)
-                await _rt.persist_isolated()
-            except Exception:            # noqa: BLE001
-                # Telemetry describing a turn must never break the turn, the
-                # same rule `record_ledger_event` and `persist` already follow.
-                logger.warning("native turn metric not persisted turn=%s",
-                               getattr(request, "turn_id", "-"), exc_info=True)
 
     # DELEGATED: `state.execution` IS the legacy TurnResult, unchanged.
     execution = state.execution

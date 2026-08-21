@@ -239,34 +239,6 @@ async def test_the_legacy_pipeline_never_begins_after_the_trace_closed(
         % (scopes["order"],))
 
 
-@pytest.mark.asyncio
-async def test_a_terminal_canonical_result_returns_without_delegating(
-        client, edges, seeded, b1_live, scopes):
-    """⭐ THE POSITIVE HALF. When the canonical lane OWNS the turn and produces
-    a terminal result, it must return there — never fall through to legacy.
-
-    Without this the fix could be "always delegate" or "never delegate"; this
-    pins the side that must keep working, so the guard cannot be satisfied by
-    disabling the lane."""
-    edges.plans.append({
-        "action": "ask",
-        "points": [{"label": "Chicken breast", "q": "How much?"}],
-        "items": [vague("Chicken breast", cal=280, amount=6, unit="oz")],
-        "ready": [],
-    })
-
-    body = (await client.post(
-        "/api/v1/chat",
-        json={"message": "I had some chicken breast"})).json()
-
-    assert body.get("interaction"), (
-        "the canonical lane produced no owned ask, so this test is not "
-        "exercising the terminal path it claims to")
-    assert "enter:conversation.run_turn" not in scopes["order"], (
-        "a terminal canonical result still fell through to the legacy "
-        "pipeline. Order: %r" % (scopes["order"],))
-
-
 # ══════════════════════════════════════════════════════════════════════════
 # THE SEQUENTIAL VARIANT — the production shape, through native_no_plan
 # ══════════════════════════════════════════════════════════════════════════
@@ -332,7 +304,15 @@ async def test_a_native_turn_that_executes_does_not_delegate_at_all(
     It proves the fixture genuinely reaches the native lane: with a plan the
     lane can execute, there is one scope and no delegation. Without this, a
     red above could mean "the lane never ran" rather than "the lane fell
-    through", and the two are opposite diagnoses."""
+    through", and the two are opposite diagnoses.
+
+    ⭐ AND IT IS THE TERMINAL-RETURN PROOF. An executed native log IS a
+    terminal canonical result, and this asserts it returns without reaching
+    legacy at all — so the fix cannot be satisfied by "always delegate". A
+    separate b1-owned-ask version of this was written and removed: `b1_live`
+    and the native-lane flags do not compose into an owned interaction in this
+    harness, and the test's own anti-vacuity guard caught it rather than
+    letting it pass on a turn that was not the terminal path it named."""
     edges.plans.append(_executable())
 
     await client.post("/api/v1/chat", json={"message": "I had a corn on the cob"})

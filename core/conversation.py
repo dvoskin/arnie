@@ -708,7 +708,8 @@ async def run_turn(*args, **kwargs) -> TurnResult:
     be a second signature to keep in step with the first.
     """
     from core import food_trace
-    from core.request_trace import RequestTrace, active as _trace_active
+    from core.request_trace import (RequestTrace, active as _trace_active,
+                                    current_trace)
     from skills.nutrition.v2_gate import for_user as _v2_for_user
 
     fields = {}
@@ -728,9 +729,23 @@ async def run_turn(*args, **kwargs) -> TurnResult:
     # the finally), made ambient so the LLM / tool / voice leaves time
     # themselves via `timed()`, and persisted on an ISOLATED session so a
     # telemetry row can never commit or roll back with the turn's own write.
-    _rt = RequestTrace(turn_id=fields.get("turn_id") or "",
-                       channel=fields.get("channel") or "",
-                       command="turn", user_id=fields.get("user_id"))
+    #
+    # ⛔⛔ AND THE GUARD WAS ONE-SIDED *(Tranche D, D1)*. `core/turns/entrypoint`
+    # asks `current_trace()` before opening one, and persists only what it
+    # opened. This did not: it constructed and persisted a trace
+    # unconditionally, so every turn the coordinator DELEGATED wrote two
+    # `turn_metrics` rows under one turn id — the inner scope's and the outer
+    # scope's. One request reading as two turns.
+    #
+    # ⭐ NESTING IS NOT THE DEFECT. The delegating lane is how this product
+    # still runs, and its work belongs to the turn that delegated it. What was
+    # wrong is that the work OPENED A SECOND TOP-LEVEL SCOPE to hold itself in.
+    # Adopting the ambient trace keeps every `timed()` leaf landing in one
+    # `stages_json`, which is strictly more informative than two partial rows.
+    _outer = current_trace()
+    _rt = _outer or RequestTrace(turn_id=fields.get("turn_id") or "",
+                                 channel=fields.get("channel") or "",
+                                 command="turn", user_id=fields.get("user_id"))
     _outcome, _result = "ok", None
     try:
         # Trace outside the budget: a turn that runs out of time is exactly the
@@ -746,9 +761,20 @@ async def run_turn(*args, **kwargs) -> TurnResult:
         try:
             _sf = getattr(_result, "skills_fired", "") or ""
             if any(t in _sf for t in ("log_food", "log_exercise", "log_weight")):
+                # Relabel even when the trace is the CALLER's: "this turn
+                # logged" is a fact about the turn, not about which scope
+                # noticed it, and the one row that survives should say so.
                 _rt.command = "turn:log"      # a logging turn, distinct from chat
-            _rt.done(outcome=_outcome)
-            await _rt.persist_isolated()
+            # OURS TO CLOSE ONLY IF OURS TO OPEN — the same rule the coordinator
+            # entrypoint follows. An outer trace is closed and persisted by its
+            # own owner, after any work we delegate back to it.
+            if _outer is None:
+                _rt.done(outcome=_outcome)
+                await _rt.persist_isolated()
+            elif _outcome != "ok":
+                # The owner cannot see an exception we re-raised past it into a
+                # handler of its own, so hand it the outcome explicitly.
+                _rt.note(outcome=_outcome)
         except Exception:
             pass
 
