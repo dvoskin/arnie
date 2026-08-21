@@ -1105,3 +1105,257 @@ a manual deploy and the rerun.
 Reminder carried forward: the scan proof must **not** use barcode `70004199` —
 it is not a product code, and the OFF record behind it carries per-bar numbers
 as per-100g. Use the wrapper's real 13-digit UPC with "I had 2 servings."
+
+---
+
+## ⛔⛔⛔ P17g — THE SHARED SELECTION CONTRACT *(Danny, 2026-08-21; written BEFORE the green side)*
+
+An existential predicate is **not** admissible. "Some authoritative local path
+exists" is a different claim from "the rung the pricer will actually choose is
+authoritative", and the gap between them commits the wrong number.
+
+### The split that makes an existential boolean wrong
+
+`price()` walks, unbound: **`memory → product → artifact → estimate`**. So:
+
+* the **artifact** rung has a sourced, authoritative egg conversion;
+* the **memory** rung exists but scales only via heuristic piece weight;
+* an existential `look()` sees "an authoritative local path" and admits;
+* `price()` selects **memory first** and commits the heuristic path.
+
+Canonical would then settle a meal on exactly the evidence class CF4 forbids,
+with the predicate's blessing. ⭐ **The predicate must describe the rung that
+WINS, not the best rung available.**
+
+### Why this is live today, not hypothetical
+
+`core/canonical_pricing.py` applies the authoritative test **only when
+`bound`**:
+
+```text
+resolution = resolve_scaling(source_basis, consumed, measures)
+except ScalingRefused -> continue          # fall to the next rung
+if bound and not resolution.authoritative: raise PricingRefused
+```
+
+For an **unbound** item a heuristic resolution is accepted and priced, and no
+later rung's sourced conversion is ever consulted. The rung order decides the
+authority, and nothing checks that it should.
+
+### The contract, in four clauses
+
+1. **CANDIDATES IN PRICING ORDER.** The eligible evidence/rung candidates are
+   built in the order `price()` walks them — the same sources, the same
+   sequence. Not a set; a list with a first element.
+2. **PER-CANDIDATE, WITH ITS OWN BASIS.** `can_scale(…, authoritative_only=True)`
+   is asked of **each candidate using that candidate's exact `source_basis` and
+   `measures`**, from that candidate's own `_from_*` builder. A basis borrowed
+   from another rung answers a question nobody asked.
+3. **THE RUNG `price()` WOULD ACTUALLY RETURN DECIDES.** ⛔⛔ **NOT "the first
+   whose `resolve_scaling` succeeds"** — that was this contract's first draft
+   and it is one step short of the pricer. `price()` also skips a rung when:
+
+   * its `_from_*` **builder** raises or yields nothing (`if not chosen:
+     continue`);
+   * **artifact ranking** produces no winner, so `_from_artifact` returns None;
+   * the resulting price is **indefensible** — `if priced.is_defensible():
+     break`, and an indefensible price such as a non-evidence zero falls
+     through to the next rung.
+
+   So the selector is: **the first evidence rung the current `price()` loop
+   would actually RETURN, after builder, resolver AND defensibility checks.**
+   `decide()` may admit **only if that selected rung's resolution is
+   authoritative**. A later authoritative rung does not rescue an earlier
+   heuristic one — and an earlier rung that merely *looks* scalable does not
+   count as the winner if it cannot produce a defensible price.
+
+   ⭐ **REQUIRED REGRESSION:** an earlier apparent candidate that cannot
+   produce a defensible price, and a later authoritative rung that can. The
+   contract must follow the real pricing winner, not the first
+   scalable-looking item — and only a case where those two DIFFER can prove
+   which one it follows.
+4. **ONE SELECTION RULE, CONSUMED TWICE.** `price()` must consume the same rule
+   — either applying the authoritative test to canonical settlement generally
+   (not only `bound`), or explicitly SKIPPING a higher-priority heuristic-only
+   rung. ⛔ **No second "close enough" predicate.** Two implementations of
+   "which rung wins" is the defect this contract exists to prevent, wearing the
+   costume of a fix.
+
+### Boundary change this requires, stated not smuggled
+
+`look()`'s docstring forbade "`assemble()` … the resolver". P17g cannot be
+built under that rule, since the predicate's question *is* a resolver question.
+The boundary is restated in the code: **retrieval and writes stay forbidden;
+reading local evidence and asking the one resolver purely is permitted.**
+Introducing the resolver while leaving that docstring intact would have left
+the contract self-contradictory.
+
+### Still explicit negatives until the producer slice lands
+
+**Barebells / Fairlife** decline because **no authoritative PRODUCT producer
+exists** for an unbound item — `assemble()` supplies a product rung only for a
+scan-BOUND item carrying `product_evidence_id`, and those return before this
+branch. They are negative twins with that reason asserted, **not** omitted
+twins, and **not** a test-only producer. They become positive twins only after
+the sourced-`ConversionEvidence` producer slice.
+
+### Measured consequence, and the gate that does not move
+
+P17g is a coverage **reduction** on today's producers: `_from_memory` declares
+`Per100g()` with **empty measures**, so a count-only item cannot scale
+authoritatively and is declined — where today it is admitted on heuristic
+piece-weight mass (`normalize_quantity("2 eggs")` → 100 g, `mass_is_exact`
+False). ⛔ **The fixed 40% threshold does not move.** Update the measured
+result, never the goalpost. If coverage falls below it, P17g's correctness
+change may still merge; the **coverage/rollout gate stays unmet** until the
+producer slice restores legitimate coverage.
+
+---
+
+## P17g — MEASURED. THE GATE IS UNMET, AND THE THRESHOLD DID NOT MOVE
+
+Remeasured on the **frozen population `p16b_0817`** — 361 rows, 232 meals —
+with the predicate **EXECUTED, not modelled**, at predicate commit `2bf36a3`:
+
+```text
+                      RE-MEASURED (08-17)      P17g @ 2bf36a3
+population            362 rows · 233 meals     361 rows · 232 meals  (frozen)
+A  routing rate                 83.0%                   83.3%
+B  support rate                 24.3%                   13.5%   <- flattering
+C  OWNERSHIP RATE               20.2%                   11.3%   =  A x B
+```
+
+**25 of 185 structured-route meals supported.** Ownership roughly halves:
+**20.2% → 11.3%**.
+
+⛔ **THE 40% THRESHOLD HAS NOT MOVED, AND IS UNMET.** It was already unmet at
+20.2%; P17g moves further from it. That is the honest consequence of declining
+meals canonical cannot price authoritatively, and it is the same shape as the
+08-17 drop: ⭐ **the number did not get worse — the instrument stopped
+overstating it.** Counts were being admitted on piece-weight mass and priced
+from a number nobody measured; 11.3% is what ownership is once that stops.
+
+**P17g's correctness change may merge. The coverage/rollout gate stays UNMET**
+until the sourced-`ConversionEvidence` producer slice restores *legitimate*
+count coverage. That slice is the next separate work, and it is what turns the
+P17h count positives (`2 eggs`, `2 large eggs`, `1 medium banana`) from
+declines into admissions on evidence rather than on a table.
+
+⚠ **AND P17g CANNOT CLOSE ON THIS NUMBER ALONE.** Closure needs the reviewed
+main deployed and BOTH canaries passing; the direct canary still reads
+FAILED — MISROUTED, "RERUN after deploy", and the deployed build is `76076b6`.
+
+⭐ **A ROLLING WINDOW IS NOT THIS NUMBER.** Rolling measurements over the same
+tree gave 0.0% / 22.7% / 44.0% at 3 / 7 / 14 days — the population underneath
+changes, which is the error this instrument's own docstring names. The 30-day
+rolling run **WITHHELD** entirely: 75 of 539 entries carry no `created` ledger
+event, so every rate would have been computed over survivors. Only the frozen
+population is comparable to 20.2%.
+
+---
+
+## ⛔⛔⛔ P17g — REVIEW ROUND 2 *(Danny, 2026-08-21, on head `61eaf4e`)*
+
+`61eaf4e` was **rejected as unchanged source**. The CI analysis attached to it
+was accepted as credible, and explicitly ruled insufficient: *"it does not
+address the source blockers"* and *"the current flaky battery can be treated as
+preexisting evidence, but it cannot make the unchanged source mergeable."*
+Battery #53 was **not** to be re-run — the head had to change anyway.
+
+⭐ **TWO OF THE FIVE WERE LIVE SOURCE DEFECTS; THREE WERE PROOFS THAT PASSED
+FOR THE WRONG REASON.** That split matters for how each was validated. A proof
+whose defect is in the TEST passes both before and after the repair, so its
+colour proves nothing — only a mutation can show it is no longer vacuous.
+
+### 1 — `price()` returned `selection.priced` without enforcing `.authoritative`
+
+The field was computed one line above the return and never read, so the promise
+`decide()` publishes had **no enforcement at the only place that writes**.
+
+They are not guaranteed to agree by construction, because they do not run over
+the same rungs: `look()` builds `(memory, None, artifact)`, `assemble()`
+supplies `(memory, product, artifact, ESTIMATE)`. Routing can admit on an
+authoritative artifact while the pricer — artifact ranking having found no
+winner under its own composed query — falls through to **ESTIMATE** and commits
+a heuristic price under an admission that promised authority.
+
+`price()` now takes `require_authoritative` **from the caller**, exactly as it
+already takes `bound`, and `GeneralSettlementOwner._price` passes it. ⭐ A
+heuristic estimate is a legitimate PRICE and simply not a canonical
+SETTLEMENT — a global rule would refuse most ordinary meals and delete the B-1
+quantity and correction paths. ⚠ Clause 4's other option (SKIP a higher-priority
+heuristic rung in favour of a later authoritative one) was **deliberately not
+taken**: it changes committed numbers on paths outside this slice, and this
+tranche is a predicate change, not a repricing. `PricingRefused` is raised
+BEFORE any write (A8), so a divergence costs a refused turn, never a wrong row.
+
+### 2 — the PRODUCT twins passed for "no canonical identity"
+
+One product, `entity=""` forced, so `decide()` returned at the **identity**
+rung and never reached the producer question. Its lone assertion (`"mass" not
+in reason`) then held trivially — and had been *fitted* to that verdict,
+because the honest rung-3 reason contains the words "a user-stated exact mass".
+⛔ **A twin that declines at a rung above the one under test proves nothing
+about the rung under test.**
+
+Now **both** twins, real identity and quantity, and the claim proven positively
+against the real selector: (1) with the rungs `look()` builds, PRODUCT's
+evidence is `None` and no rung wins; (2) the SAME identity and quantity given a
+real per-serving producer scale **authoritatively** via `direct_basis`; (3) so
+the decline is the producer's absence, and it lifts the day the producer lands.
+⭐ **An absence is only attributable when you can show the presence changing
+the answer.**
+
+### 3 — `drain_speculative()` timed out and left tasks running
+
+`asyncio.wait(..., timeout=)` **does not cancel what it gives up on**. So in the
+one case the timeout exists for, the guarantee evaporated: the prewarm stayed
+alive holding its connection, teardown proceeded, and `DROP SCHEMA … CASCADE`
+ran into it — the deadlock the registry was added to prevent, reached through
+the registry's own escape hatch. ⛔ **A bound and a guarantee are not
+alternatives.**
+
+Stragglers are now cancelled **and awaited** — `cancel()` only *requests* it,
+and a task whose `finally` has not run may still hold a connection — so the
+postcondition is unconditional: *when the drain returns, no registered task is
+running*. `DrainResult` reports `drained` vs `cancelled`, because "everything
+finished cleanly" and "I killed three writes mid-flight" must not be the same
+return value. ⭐ Cancelling here is not a lifecycle reversal: settlement still
+never cancels, this is teardown, and only after a task outlived its budget.
+
+### 4 — the data-flow proof accepted any `.authoritative` read
+
+It asserted that *some* `<name>.authoritative` appears somewhere in `look()`,
+which passes for `_ = _sel.authoritative` followed by a hard-coded constant. It
+proved a READ happened, never that the value reaches the `ItemFacts` `decide()`
+reads. ⭐ **A structural test can say the wire exists; only a driven one can say
+the current arrives.** Replaced by a sentinel selector and assertions on both
+returned fields over three selections — including a `None` rung — so no single
+frozen value survives the set.
+
+### 5 — `look()` claimed pricing was forbidden while running the pricer
+
+The docstring listed "pricing" as forbidden while the body ran
+`select_priced_rung`, which builds `PricedFood` objects with real macros for
+every candidate. ⛔ **A boundary comment that contradicts the code twenty lines
+below it is worse than no comment** — the next reader trusts the sentence.
+Restated to what the rule always protected: retrieval and mutation stay
+forbidden; pure in-memory selection is permitted. ⭐ And the honest claim is
+about what ESCAPES: every price computed here is discarded, `ItemFacts` carries
+a rung name and two booleans and never a macro. **Pricing to decide is not
+pricing to write.**
+
+### Gates on the round-2 head
+
+* Mutations **15 RED / 0 GREEN / 0 INVALID**. N5–N8 exist specifically to
+  validate the three proofs whose colour could not. ⛔ **N3 scored INVALID on
+  its first form and the harness was right**: it removed `task.cancel()` while
+  leaving the `gather`, so the drain awaited a live 30 s task and by the time
+  the witness looked the task had FINISHED — the suite went red, but the
+  witness asked "is it still running", which was False either way. *A witness
+  must observe the change the mutation makes, not the headline of the defect.*
+* **Ownership is UNCHANGED at 11.3%** — frozen population `p16b_0817`, 361 rows
+  / 232 meals, predicate commit `1fc7a21`. None of the five touched `look()`'s
+  or `decide()`'s behaviour, and that was measured rather than assumed.
+* The **40% threshold has not moved and remains unmet**, and closure still
+  requires the reviewed main deployed plus BOTH canaries.

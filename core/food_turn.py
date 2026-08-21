@@ -48,6 +48,7 @@ import logging
 import os
 import re
 from contextvars import ContextVar as _ContextVar
+from dataclasses import dataclass
 from typing import Optional
 
 from core.llm import chat
@@ -4968,6 +4969,82 @@ def _delete_call(d: dict, board_by_id: dict) -> Optional[dict]:
 _STREAMED_FOOD_RE = re.compile(r'"food"\s*:\s*"([^"]{2,60})"')
 
 
+#: Prewarm tasks that have been launched and not yet finished. A `set` of
+#: tasks, discarded on completion — see `_start` for why this exists.
+_IN_FLIGHT: set = set()
+
+
+@dataclass(frozen=True)
+class DrainResult:
+    """What the drain actually accomplished.
+
+    ⭐ TWO NUMBERS, BECAUSE "everything finished cleanly" AND "I killed three
+    writes mid-flight" MUST NOT BE THE SAME RETURN VALUE. A drain that
+    silently cancels is an instrument hiding the condition it was built to
+    detect.
+    """
+    #: Tasks this call took responsibility for — pending when it began.
+    drained: int = 0
+    #: How many of those had to be cancelled because the timeout expired.
+    cancelled: int = 0
+
+
+async def drain_speculative(timeout: float = 5.0) -> DrainResult:
+    """Wait for launched-but-unfinished prewarms. NOTHING IS STILL RUNNING AFTER.
+
+    For anything that needs the database quiet before it changes underneath
+    them — test teardown above all. Never raises: a prewarm that fails has
+    already swallowed its own error, and draining must not invent a new way
+    for one to break its caller.
+
+    ⛔⛔⛔ A BOUND AND A GUARANTEE ARE NOT ALTERNATIVES *(Danny, review of
+    `61eaf4e`)*. The first version was `await asyncio.wait(pending,
+    timeout=timeout)` and then a return — and `wait` does not cancel what it
+    gave up on. So in the ONE case the timeout exists for, the guarantee
+    evaporated: the slow prewarm stayed alive holding its connection, teardown
+    proceeded, and `DROP SCHEMA ... CASCADE` ran straight into it. That is the
+    deadlock the registry was added to prevent, reached through the registry's
+    own escape hatch.
+
+    The postcondition is therefore unconditional: **when this returns, no
+    registered task is running.** Whatever is still going when the timeout
+    expires is cancelled AND awaited to completion, so each task's `finally`
+    has run — a cancelled-but-unawaited task can still be holding a connection
+    at the moment the caller believes it is safe to proceed.
+
+    ⭐ CANCELLING HERE IS NOT A LIFECYCLE REVERSAL. The documented rule is that
+    a prewarm is never cancelled AT SETTLEMENT — it runs to completion after
+    the response, and that is still true. This is teardown/shutdown, and only
+    after a task has outlived its entire budget.
+    """
+    import asyncio as _aio
+
+    pending = [t for t in _IN_FLIGHT if not t.done()]
+    if not pending:
+        return DrainResult()
+    stragglers = ()
+    try:
+        _done, stragglers = await _aio.wait(pending, timeout=timeout)
+    except Exception:                                  # noqa: BLE001
+        logger.warning("drain: waiting on %d prewarm(s) raised", len(pending),
+                       exc_info=True)
+    if stragglers:
+        logger.warning(
+            "drain: %d of %d prewarm(s) outlived the %.1fs budget and were "
+            "cancelled — teardown must not race live database work",
+            len(stragglers), len(pending), timeout)
+        for task in stragglers:
+            task.cancel()
+        try:
+            # AWAITED, not merely cancelled: `cancel()` only REQUESTS it, and a
+            # task whose `finally` has not run may still hold a connection.
+            await _aio.gather(*stragglers, return_exceptions=True)
+        except Exception:                              # noqa: BLE001
+            logger.warning("drain: cancelled prewarm(s) did not settle",
+                           exc_info=True)
+    return DrainResult(drained=len(pending), cancelled=len(stragglers))
+
+
 class _SpeculativeEnrichment:
     """Starts each food's lookup the moment its NAME appears in the stream.
 
@@ -5078,6 +5155,20 @@ class _SpeculativeEnrichment:
                             await _trace.flush_speculative()
 
             task = _aio.ensure_future(_detached())
+            # ⛔⛔ DETACHED DB WORK MUST BE DRAINABLE *(P17g freeze)*. Since D2
+            # the prewarm WRITES — `flush_speculative` folds its stage back
+            # into the row — so the task now outlives the turn holding a
+            # connection. In the suite that collided with another module's
+            # `Base.metadata.drop_all`, and Postgres chose the DDL as the
+            # deadlock victim: a full-suite error that passes in isolation
+            # every time.
+            #
+            # Registering it costs nothing and gives anything that needs the
+            # database to be QUIET — test teardown, a graceful shutdown — a way
+            # to wait rather than race. The lifecycle is unchanged: nothing
+            # here cancels it.
+            _IN_FLIGHT.add(task)
+            task.add_done_callback(_IN_FLIGHT.discard)
             # ⭐ LIFECYCLE, STATED RATHER THAN INHERITED *(Tranche D2, item 6)*.
             # The task RUNS TO COMPLETION after the response. It is not
             # cancelled at settlement, and that is the decision, not an

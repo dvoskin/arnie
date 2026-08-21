@@ -98,19 +98,45 @@ def _facts(**over):
 #: ⭐ THE ORDER IS THE CONTRACT. Every A-gate pins ONE rung; none pinned that
 #: identity is checked before quantity, quantity before mass, mass before
 #: evidence, and memory before artifact. A predicate that asked about evidence
-#: first would return `Supported` for a count-only meal — which is exactly the
-#: production defect A11's mass branch was added to close ("I had a corn on the
-#: cob": a memory row, an estimate, no gram mass, and `PricingRefused`).
+#: first would return `Supported` for a meal no rung can price — which is
+#: exactly the production defect A11's mass branch was added to close ("I had a
+#: corn on the cob": a memory row, an estimate, no gram mass, and
+#: `PricingRefused`). P17g keeps that rung and sharpens its question.
+#: ⛔⛔⛔ RUNG 3 CHANGED IN P17g, DELIBERATELY AND IN THE SAME COMMIT.
+#:
+#: It was `has_mass=False -> "count-only quantity"`: canonical declined when no
+#: gram mass rode along. That asked the wrong question in BOTH directions —
+#: `normalize_quantity("2 eggs")` returns 100 g from a PIECE-WEIGHT TABLE, so
+#: `has_mass` was TRUE for a count no rung can scale authoritatively, and
+#: canonical settled it by scaling exact-looking nutrition with an invented
+#: mass. CF4's forbidden shape, at the general rung.
+#:
+#: It is now `selected_rung_authoritative=False`: the rung `price()` would
+#: actually return — after builder, resolver AND defensibility — must scale by
+#: a user-stated exact mass, a directly compatible basis, or a sourced
+#: conversion. ⭐ THE SELECTED rung, not any rung: an existential test would
+#: let the artifact's sourced conversion bless a commit memory actually made.
+#:
+#: ⚠ THIS IS A COVERAGE REDUCTION on today's producers, and it is intended.
+#: `_from_memory` declares `Per100g()` with EMPTY measures, so no count-only
+#: item can scale authoritatively until the sourced-`ConversionEvidence`
+#: producer slice lands. The fixed 40% threshold does NOT move — the measured
+#: result changes, never the goalpost.
 LADDER = [
-    (_facts(has_identity=False, has_memory=True, has_artifact=True),
+    (_facts(has_identity=False, has_memory=True, has_artifact=True,
+            selected_rung_authoritative=True),
      "no canonical identity"),
-    (_facts(has_quantity=False, has_memory=True, has_artifact=True),
+    (_facts(has_quantity=False, has_memory=True, has_artifact=True,
+            selected_rung_authoritative=True),
      "no stated quantity"),
-    (_facts(has_mass=False, has_memory=True, has_artifact=True),
-     "count-only quantity"),
-    (_facts(has_memory=True, has_artifact=True), "memory"),
-    (_facts(has_memory=False, has_artifact=True), "artifact"),
-    (_facts(), "no local evidence"),
+    (_facts(selected_rung_authoritative=False, has_memory=True,
+            has_artifact=True),
+     "scales only heuristically"),
+    (_facts(has_memory=True, has_artifact=True, selected_rung="memory",
+            selected_rung_authoritative=True), "memory"),
+    (_facts(has_memory=False, has_artifact=True, selected_rung="artifact",
+            selected_rung_authoritative=True), "artifact"),
+    (_facts(selected_rung_authoritative=True), "no local evidence"),
 ]
 
 
@@ -133,7 +159,9 @@ def test_memory_outranks_a_present_artifact_and_the_top_rung_is_named():
     """The one ordering that decides a PRICE rather than a route: with both
     present, MEMORY answers. `LOCALLY_EVIDENCED` states the ladder; this proves
     `decide` walks it in that order."""
-    verdict = decide(_facts(has_memory=True, has_artifact=True))
+    verdict = decide(_facts(has_memory=True, has_artifact=True,
+                            selected_rung="memory",
+                            selected_rung_authoritative=True))
     assert verdict.expected_source == LOCALLY_EVIDENCED[0] == "memory"
 
 

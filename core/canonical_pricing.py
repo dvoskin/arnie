@@ -773,7 +773,8 @@ def price(*, entity: str, preparation: str = "", consumed=None,
           product: Optional[ProductEvidence] = None,
           artifact: Optional[ArtifactEvidence] = None,
           estimate: Optional[EstimateEvidence] = None,
-          bound: bool = False) -> PricedFood:
+          bound: bool = False,
+          require_authoritative: bool = False) -> PricedFood:
     """What this food costs. SYNCHRONOUS, and deliberately so.
 
     A synchronous signature is the strongest possible statement of Gate B:
@@ -783,6 +784,38 @@ def price(*, entity: str, preparation: str = "", consumed=None,
     RUNG ORDER IS AUTHORITY ORDER — memory, product, artifact, estimate — and
     the first rung that can produce numbers wins. `refuse_or_return` is the
     single exit, so no rung can smuggle out an indefensible price.
+
+    ⛔⛔⛔ `require_authoritative` — THE OTHER HALF OF "ONE SELECTION RULE,
+    CONSUMED TWICE" *(P17g, Danny's review of `61eaf4e`)*. This function held a
+    `RungSelection` carrying `.authoritative` and returned `.priced` without
+    ever reading it, so the promise routing published had no enforcement at the
+    only place that writes.
+
+    The two are not guaranteed to agree by construction, because they do not
+    run over the same rungs: `look()` builds `(memory, None, artifact)` while
+    `assemble()` supplies `(memory, product, artifact, ESTIMATE)`. Routing can
+    therefore admit on an authoritative artifact while this function — artifact
+    ranking having found no winner under its own composed query — falls through
+    to ESTIMATE and commits a heuristic price under an admission that promised
+    authority.
+
+    ⭐ AND IT IS THE CALLER'S REQUIREMENT, NOT A GLOBAL RULE. A heuristic
+    estimate is a perfectly legitimate PRICE; it is simply not a canonical
+    SETTLEMENT. Refusing every non-authoritative rung here would refuse most
+    ordinary meals and delete the B-1 quantity and correction paths along the
+    way. So the requirement arrives from whoever is calling — exactly as
+    `bound` does — and only general settlement, the one caller that published
+    an authoritative promise, passes it.
+
+    ⚠ THE PREFERENCE OPTION WAS DELIBERATELY NOT TAKEN. Clause 4 of the
+    contract allows instead SKIPPING a higher-priority heuristic-only rung in
+    favour of a later authoritative one. That changes which numbers get
+    committed on paths outside this slice (a sourced conversion would start
+    outranking a memory row mid-ladder), and this tranche is a predicate
+    change, not a repricing. Refusing a divergence is the conservative half:
+    it cannot commit anything new, and `PricingRefused` is raised BEFORE any
+    write (A8), so the cost of a divergence is a refused turn, never a wrong
+    row.
     """
     from skills.nutrition.models import MACRO_FIELDS
     # ⭐ NO BASIS TYPES IMPORTED HERE ANY MORE, AND THAT IS THE POINT OF P17a.
@@ -840,7 +873,66 @@ def price(*, entity: str, preparation: str = "", consumed=None,
                  (artifact, lambda e: _from_artifact(
                      e, query=_ranker_query(entity, preparation))),
                  (estimate, _from_estimate))
+    selection = select_priced_rung(
+        entity=entity, preparation=preparation, consumed=consumed,
+        rungs=rungs, bound=bound)
+    # ⛔⛔ THE SELECTION IS CONSUMED, NOT MERELY RETURNED. `.authoritative` was
+    # computed and discarded here; a caller that has promised canonical
+    # authority now gets that promise enforced rather than assumed.
+    if (require_authoritative and selection.priced is not None
+            and not selection.authoritative):
+        logger.warning("event=pricing_refused food=%s reason=not_authoritative "
+                       "rung=%s", entity,
+                       selection.rung.value if selection.rung else "-")
+        raise PricingRefused(
+            f"{entity!r} was priced from the "
+            f"{selection.rung.value if selection.rung else 'unknown'} rung, "
+            f"which scales only heuristically — the caller required an "
+            f"authoritative settlement, and an exact-looking number scaled by "
+            f"a mass nobody measured is not one")
+    return refuse_or_return(selection.priced, food_name=entity)
+
+
+@dataclass(frozen=True)
+class RungSelection:
+    """WHICH RUNG THE PRICER RETURNS, and whether its scaling was authoritative.
+
+    ⛔⛔⛔ ONE SELECTION RULE, CONSUMED TWICE *(P17g)*. Routing (`decide()`)
+    and pricing must agree about which rung wins, and the only way to
+    guarantee that is for both to run THIS loop. A predicate that re-derived
+    "which rung wins" would be a second implementation of the thing that
+    decides what gets committed — and the two would drift on exactly the
+    inputs nobody tested.
+
+    ⭐ AND "WINS" MEANS BUILDER -> RESOLVER -> DEFENSIBILITY, not merely
+    "scales". `price()` skips a rung when its `_from_*` builder raises or
+    yields nothing, when artifact ranking finds no winner, AND when the
+    resulting price is indefensible (a non-evidence zero). A selector that
+    modelled only the resolver would model a pricer that does not exist.
+    """
+    priced: Optional["PricedFood"]
+    rung: Optional["Rung"]
+    authoritative: bool
+
+
+def select_priced_rung(*, entity, preparation, consumed, rungs, bound):
+    """Walk the rungs exactly as `price()` does and report the winner.
+
+    Returns the first rung that survives builder, resolver and defensibility
+    — the one whose numbers would be committed — together with whether ITS
+    resolution was authoritative. Pure with respect to the database: it reads
+    the evidence it is handed and asks the one resolver. Never writes.
+    """
+    from skills.nutrition.models import MACRO_FIELDS
+    from skills.nutrition.scaling import ScalingRefused, resolve_scaling
+
+    priced = None
+    rung = None
+    selected_authoritative = False
     for ev, build in rungs:
+        # Per-iteration, so a rung that never reached the resolver cannot
+        # inherit the previous rung's verdict.
+        resolution = None
         if ev is None:
             continue
         try:
@@ -957,7 +1049,9 @@ def price(*, entity: str, preparation: str = "", consumed=None,
         # "the estimate was zero" into "try the next thing" rather than
         # "refuse the meal".
         if priced.is_defensible():
+            selected_authoritative = bool(
+                resolution.authoritative) if resolution is not None else False
             break
         priced = None
-
-    return refuse_or_return(priced, food_name=entity)
+    return RungSelection(priced=priced, rung=rung,
+                         authoritative=selected_authoritative)
