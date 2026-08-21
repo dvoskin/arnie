@@ -294,8 +294,28 @@ async def look(db, *, user_id: int, item: dict) -> ItemFacts:
 
     Permitted (§3a.2 decision D): canonical identity eligibility, local
     artifact availability, eligible memory availability, quantity/identity
-    completeness. Forbidden: `assemble()`, USDA, web retrieval, the resolver,
-    pricing, writing state, claiming idempotency.
+    completeness. Forbidden: USDA, web retrieval, pricing, writing state,
+    claiming idempotency.
+
+    ⛔⛔ THE BOUNDARY MOVED, DELIBERATELY *(P17g)*. This line read "Forbidden:
+    `assemble()` … the resolver" — and P17g cannot be built under that rule,
+    because the predicate's question IS a resolver question: "can this
+    evidence be scaled to this quantity without retrieval, guessing or
+    unsourced conversion?" Answering it anywhere else would define scalability
+    a SECOND time, which is precisely what `can_scale` was added to prevent.
+
+    So the boundary is restated rather than quietly crossed:
+
+        forbidden   RETRIEVAL and WRITES — USDA, the web, pricing's commit,
+                    state, claims. The reasons this rule existed.
+        permitted   reading the LOCAL evidence this item already has, and
+                    asking the ONE resolver, PURELY, whether that evidence
+                    scales. No network, no writes, no side effects.
+
+    ⭐ `assemble()` is still not called here: `look()` builds the same rung
+    candidates in the same order by reading the same local sources, because
+    the contract it must honour is about WHICH RUNG WINS, not merely whether
+    some rung could scale — see the P17g selection contract below.
 
     ⚠ ASKING WHETHER EVIDENCE EXISTS IS NOT PRICING IT. `_memory` and
     `evidence_for` are the same reads `assemble` would perform, called here for

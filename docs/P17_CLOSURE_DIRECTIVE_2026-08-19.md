@@ -1105,3 +1105,107 @@ a manual deploy and the rerun.
 Reminder carried forward: the scan proof must **not** use barcode `70004199` —
 it is not a product code, and the OFF record behind it carries per-bar numbers
 as per-100g. Use the wrapper's real 13-digit UPC with "I had 2 servings."
+
+---
+
+## ⛔⛔⛔ P17g — THE SHARED SELECTION CONTRACT *(Danny, 2026-08-21; written BEFORE the green side)*
+
+An existential predicate is **not** admissible. "Some authoritative local path
+exists" is a different claim from "the rung the pricer will actually choose is
+authoritative", and the gap between them commits the wrong number.
+
+### The split that makes an existential boolean wrong
+
+`price()` walks, unbound: **`memory → product → artifact → estimate`**. So:
+
+* the **artifact** rung has a sourced, authoritative egg conversion;
+* the **memory** rung exists but scales only via heuristic piece weight;
+* an existential `look()` sees "an authoritative local path" and admits;
+* `price()` selects **memory first** and commits the heuristic path.
+
+Canonical would then settle a meal on exactly the evidence class CF4 forbids,
+with the predicate's blessing. ⭐ **The predicate must describe the rung that
+WINS, not the best rung available.**
+
+### Why this is live today, not hypothetical
+
+`core/canonical_pricing.py` applies the authoritative test **only when
+`bound`**:
+
+```text
+resolution = resolve_scaling(source_basis, consumed, measures)
+except ScalingRefused -> continue          # fall to the next rung
+if bound and not resolution.authoritative: raise PricingRefused
+```
+
+For an **unbound** item a heuristic resolution is accepted and priced, and no
+later rung's sourced conversion is ever consulted. The rung order decides the
+authority, and nothing checks that it should.
+
+### The contract, in four clauses
+
+1. **CANDIDATES IN PRICING ORDER.** The eligible evidence/rung candidates are
+   built in the order `price()` walks them — the same sources, the same
+   sequence. Not a set; a list with a first element.
+2. **PER-CANDIDATE, WITH ITS OWN BASIS.** `can_scale(…, authoritative_only=True)`
+   is asked of **each candidate using that candidate's exact `source_basis` and
+   `measures`**, from that candidate's own `_from_*` builder. A basis borrowed
+   from another rung answers a question nobody asked.
+3. **THE RUNG `price()` WOULD ACTUALLY RETURN DECIDES.** ⛔⛔ **NOT "the first
+   whose `resolve_scaling` succeeds"** — that was this contract's first draft
+   and it is one step short of the pricer. `price()` also skips a rung when:
+
+   * its `_from_*` **builder** raises or yields nothing (`if not chosen:
+     continue`);
+   * **artifact ranking** produces no winner, so `_from_artifact` returns None;
+   * the resulting price is **indefensible** — `if priced.is_defensible():
+     break`, and an indefensible price such as a non-evidence zero falls
+     through to the next rung.
+
+   So the selector is: **the first evidence rung the current `price()` loop
+   would actually RETURN, after builder, resolver AND defensibility checks.**
+   `decide()` may admit **only if that selected rung's resolution is
+   authoritative**. A later authoritative rung does not rescue an earlier
+   heuristic one — and an earlier rung that merely *looks* scalable does not
+   count as the winner if it cannot produce a defensible price.
+
+   ⭐ **REQUIRED REGRESSION:** an earlier apparent candidate that cannot
+   produce a defensible price, and a later authoritative rung that can. The
+   contract must follow the real pricing winner, not the first
+   scalable-looking item — and only a case where those two DIFFER can prove
+   which one it follows.
+4. **ONE SELECTION RULE, CONSUMED TWICE.** `price()` must consume the same rule
+   — either applying the authoritative test to canonical settlement generally
+   (not only `bound`), or explicitly SKIPPING a higher-priority heuristic-only
+   rung. ⛔ **No second "close enough" predicate.** Two implementations of
+   "which rung wins" is the defect this contract exists to prevent, wearing the
+   costume of a fix.
+
+### Boundary change this requires, stated not smuggled
+
+`look()`'s docstring forbade "`assemble()` … the resolver". P17g cannot be
+built under that rule, since the predicate's question *is* a resolver question.
+The boundary is restated in the code: **retrieval and writes stay forbidden;
+reading local evidence and asking the one resolver purely is permitted.**
+Introducing the resolver while leaving that docstring intact would have left
+the contract self-contradictory.
+
+### Still explicit negatives until the producer slice lands
+
+**Barebells / Fairlife** decline because **no authoritative PRODUCT producer
+exists** for an unbound item — `assemble()` supplies a product rung only for a
+scan-BOUND item carrying `product_evidence_id`, and those return before this
+branch. They are negative twins with that reason asserted, **not** omitted
+twins, and **not** a test-only producer. They become positive twins only after
+the sourced-`ConversionEvidence` producer slice.
+
+### Measured consequence, and the gate that does not move
+
+P17g is a coverage **reduction** on today's producers: `_from_memory` declares
+`Per100g()` with **empty measures**, so a count-only item cannot scale
+authoritatively and is declined — where today it is admitted on heuristic
+piece-weight mass (`normalize_quantity("2 eggs")` → 100 g, `mass_is_exact`
+False). ⛔ **The fixed 40% threshold does not move.** Update the measured
+result, never the goalpost. If coverage falls below it, P17g's correctness
+change may still merge; the **coverage/rollout gate stays unmet** until the
+producer slice restores legitimate coverage.
