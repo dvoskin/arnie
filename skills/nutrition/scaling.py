@@ -332,8 +332,24 @@ def _matching_measure(consumed, measures):
         # citing a record about large ones. An UNSTATED size may bind — the
         # measure is then the record's own reference portion — but a stated
         # size that conflicts is a different claim, not a loose match.
+        #
+        # ⛔⛔⛔ CF20 — AND "DIFFERENT" MEANS IDENTITY, NOT CONTAINMENT. This
+        # read `stated_size not in measure_sizes`, i.e. token MEMBERSHIP, so a
+        # stated "large" was IN `extra large (9" or longer)`'s size tokens
+        # {extra, large} and bound to it. That record sits EARLIER in the USDA
+        # portion list than the real `large (8" to 8-7/8" long)`, so the correct
+        # measure was never reached: one large banana priced at 152 g instead of
+        # 136 g, +11.8%, reported authoritative, citing a record about a
+        # different piece. `extra large` is a different size from `large` in
+        # exactly the way `medium` is.
+        #
+        # ⚠ COMPARED AS SETS BECAUSE THE STATED SIZE IS NOW A PHRASE. Since
+        # CF20's producer half, `size_descriptor` can be "extra large", and
+        # `"extra large" in {extra, large}` is False — the two halves must move
+        # together or the fix for one breaks the other.
         measure_sizes = _SIZE_TOKENS & _unit_tokens(measure.unit_text)
-        if stated_size and measure_sizes and stated_size not in measure_sizes:
+        stated_sizes = _SIZE_TOKENS & _unit_tokens(stated_size)
+        if stated_sizes and measure_sizes and stated_sizes != measure_sizes:
             continue
         return measure
     return None

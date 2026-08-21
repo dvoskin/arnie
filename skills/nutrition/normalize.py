@@ -1056,17 +1056,43 @@ def _stated_amount(low: str):
     return None
 
 
+#: The longest size in the vocabulary, in words. Derived, never written down:
+#: a hard-coded 2 would put the next three-word size back in the state CF20
+#: describes — present in the set, unreachable by the reader.
+_MAX_SIZE_WORDS = max((len(word.split()) for word in _SIZE_WORDS), default=1)
+
+
 def _size_descriptor(low: str) -> str:
-    """A size word the user typed — read from what FOLLOWS the amount.
+    """A size PHRASE the user typed — read from what FOLLOWS the amount.
 
     Scanning the whole string made "half a bagel" report a size descriptor of
     "half", which is the fraction, already consumed and already counted. A
     descriptor is a claim about the piece; the amount is a claim about how many.
+
+    ⛔⛔⛔ CF20 — A VOCABULARY ENTRY THE READER CANNOT EXPRESS IS NOT COVERAGE.
+    This compared WORDS, one at a time, against a set containing the two-word
+    entry `"extra large"` — so that entry could never be returned by ANY input,
+    and "1 extra large banana" reported size `"large"`. The set literal read as
+    support for a size the function was structurally unable to produce.
+
+    ⭐ AND IT SURFACED AS WRONG NUTRITION, NOT AS A MISSING FEATURE. Downstream,
+    `_matching_measure` then bound that "large" to USDA's `extra large
+    (9" or longer)` record — 152 g where the artifact's own `large` record says
+    136 g — and reported it authoritative. Two layers, each looking reasonable
+    alone.
+
+    ⭐ LONGEST PHRASE AT EACH POSITION, POSITION ORDER PRESERVED. Scanning all
+    two-word phrases before all one-word ones would change which size wins in a
+    string carrying two of them; taking the longest match starting at the
+    earliest position keeps the original reading-order rule and adds phrases.
     """
     _, rest = _parse_amount(low)
-    for word in rest.replace(",", " ").split():
-        if word in _SIZE_WORDS:
-            return word
+    words = rest.replace(",", " ").split()
+    for start in range(len(words)):
+        for length in range(min(_MAX_SIZE_WORDS, len(words) - start), 0, -1):
+            phrase = " ".join(words[start:start + length])
+            if phrase in _SIZE_WORDS:
+                return phrase
     return ""
 
 

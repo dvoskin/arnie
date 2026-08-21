@@ -1337,6 +1337,31 @@ CF18 `pricing.qualification` ON THE CANONICAL       Tranche D, D2        MERGED
      the durability fix that answered point 2
      introduced the persist-in-flight race and the
      "latest row by turn_id" misattribution.
+CF20 A STATED SIZE BOUND TO A DIFFERENT SIZE:       wrong nutrition      FIXED
+     `1 large banana` matched USDA's `extra large
+     (9" or longer)` -> 152 g where the artifact's
+     own `large (8" to 8-7/8" long)` says 136 g.
+     +11.8%, reported `authoritative=True`, citing a
+     record about a different piece — the exact thing
+     `_matching_measure`'s docstring forbids. TWO
+     defects: (a) `_size_descriptor` scanned ONE WORD
+     at a time against a vocabulary containing the
+     two-word "extra large", so that entry was
+     unreachable by any input and "extra large"
+     reported as "large"; (b) the guard tested token
+     MEMBERSHIP, and "large" IS in {extra, large}, so
+     the wrong record — which sits EARLIER in the USDA
+     list — won and the right one was never reached.
+     `large` and `extra large` were indistinguishable.
+     ⭐ FOUND BY ATTRIBUTING P17h, NOT BY A GATE: the
+     probe asked which blocker was worth the most
+     ownership points and the answer was neither of
+     the two I expected. ⛔ P17g makes this WORSE, not
+     better — a sourced conversion is now what lets
+     canonical OWN a meal, so an authoritative path
+     was committing a mass from the wrong record.
+     Fixed both halves together (either alone still
+     mis-prices); 6 mutations RED.
 CF19 TURN-IDENTITY HOURLY HASH COLLISIONS: `h:`     turn identity        OPEN
      ids (content hash bucketed by hour) are SHARED
      by genuinely separate requests — one

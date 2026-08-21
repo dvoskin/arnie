@@ -1359,3 +1359,96 @@ pricing to write.**
   or `decide()`'s behaviour, and that was measured rather than assumed.
 * The **40% threshold has not moved and remains unmet**, and closure still
   requires the reviewed main deployed plus BOTH canaries.
+
+---
+
+## ⛔⛔⛔ WHAT ACTUALLY BLOCKS THE P17h COUNT POSITIVES — MEASURED, AND I HAD IT WRONG
+
+*(2026-08-21, after P17g merged at `a3b6b9c`)*
+
+I stated repeatedly — in this directive, in PR #82, and to Danny — that the
+**sourced-`ConversionEvidence` producer does not exist yet**, and that landing
+it is the slice that turns `2 eggs` / `2 large eggs` / `1 medium banana` into
+admissions. ⛔ **That is false.** P17c.3b hydrated the artifact at FDC 15.3 —
+120/124 candidates, 259 portions, every measure stamped — and `_from_artifact`
+has been passing `_candidate_measures(winner)` the whole time. Probed against
+the real committed artifact:
+
+```text
+egg     'large egg' = 61.0 g   usda_fdc@15.3   as_basis_conversion() -> yes
+banana  'medium (7" to 7-7/8" long)' = 118.0 g, 'large (8" ...)' = 136.0 g, ...
+```
+
+`2 eggs` and `1 medium banana` resolve **`path=sourced_conversion`,
+`authoritative=True`** on the artifact rung *today*. The producer is not the
+blocker.
+
+### So what is? Ranked on the frozen population, read-only
+
+Two candidates, each measured as a counterfactual over `p16b_0817`
+(361 rows / 232 meals), reported at MEAL level because a meal declines if ANY
+item declines:
+
+```text
+VARIANT                          MEALS AUTHORITATIVE     of total
+BASELINE                                          28        12.1%
+A  precedence (skip a heuristic-only rung)        28        12.1%
+B  folding (artifact key is singular-only)        29        12.5%
+A+B                                               29        12.5%
+```
+
+* **A recovers ZERO meals.** Clause 4's option (b) — the one I declined in
+  round 2 as out-of-slice repricing — buys nothing on this population. That
+  decision was right for a reason I had not measured.
+* **B recovers ONE meal**, and it is `'Eggs' / '100g'` — an **exact-mass** case,
+  not a count. The artifact is keyed singular-only (`egg` 6 candidates, `eggs`
+  0; `banana` 2, `bananas` 0), which is real, but it is not where the count
+  positives live either.
+
+⭐ **RANK TRANCHES BY RECOVERABLE OWNERSHIP POINTS, NOT BY BUCKET NAME** — the
+rule this instrument already carries, applied to my own plan. Both slices I was
+about to propose are worth ~0 and ~0.4 points respectively.
+
+### And the probe found a live wrong-nutrition defect: CF20
+
+Chasing why `1 banana` fell to `heuristic:piece_weight` surfaced the ladder
+above it:
+
+```text
+"1 large banana"        -> matched 'extra large (9" or longer)'  ->  152 g
+                           artifact ALSO holds 'large (8" ...)'  =   136 g
+"1 extra large banana"  -> matched the SAME record               ->  152 g
+```
+
+**+11.8% on a log, `authoritative=True`, citing a record about a different
+piece** — and the two phrases were indistinguishable, so a user who said
+"extra large" got the identical row either way. Two defects that compound:
+
+* **PRODUCER** — `_size_descriptor` compared **one word at a time** against a
+  vocabulary containing the two-word `"extra large"`. An entry no input can
+  produce is not coverage, whatever the set literal says.
+* **CONSUMER** — the guard tested token **membership**, and `"large"` IS in
+  `{extra, large}`. The wrong record sits EARLIER in the USDA portion list, so
+  the correct one was never reached.
+
+Either fix alone still mis-prices — with the producer fixed, `"extra large"`
+fails a membership test; with the consumer fixed, `"extra large"` never
+arrives. Both landed together. Registered **CF20**; 6 mutations RED, and one of
+them scored INVALID first for the same reason P17g's N3 did: *the witness must
+observe the change the mutation makes, not the headline of the defect.*
+
+⛔ **P17g MAKES THIS CLASS WORSE, NOT BETTER**, which is why it is worth
+recording here rather than in a corner. Before P17g a sourced conversion merely
+priced; after P17g it is the thing that lets canonical **own** the meal. An
+authoritative path committing a mass from the wrong record is precisely the
+trust P17g was built to establish.
+
+### Consequence for sequencing
+
+The next slice is **not** "the producer". The honest open questions are the
+artifact's singular-only keying, the `_SIZE_TOKENS` / `_SIZE_WORDS` vocabulary
+drift (`mini`, `tiny`, `venti` are stateable but invisible to the matcher), and
+the dominant `IDENTITY:no_resolution_row` mechanism — **86 items**, far larger
+than anything quantity-shaped. None of these is authorised here; they are
+registered so the next decision is made on measured points rather than on my
+recollection.
