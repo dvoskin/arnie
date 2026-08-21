@@ -251,3 +251,29 @@ async def test_a_prewarm_cannot_leak_into_a_later_turn(fast_qualifier):
     assert not b.speculative_totals(), (
         "turn A's detached prewarm wrote into turn B's speculative record: %r"
         % (b.speculative_totals(),))
+
+
+@pytest.mark.asyncio
+async def test_the_detached_task_runs_to_completion_and_is_not_cancelled(
+        fast_qualifier):
+    """⭐ THE LIFECYCLE IS A DECISION, NOT AN ACCIDENT *(item 6)*.
+
+    The prewarm RUNS TO COMPLETION after the response rather than being
+    cancelled at settlement, because its result lands in the single-flight
+    cache and a later turn for the same food is the consumer. Cancelling would
+    discard the only thing it exists for.
+
+    Pinned so the choice cannot drift silently: if someone later cancels it at
+    settlement, that is a product decision and this test is where it gets
+    argued, not a detail that changes under a refactor."""
+    trace = RequestTrace(turn_id="d2:lifecycle", channel="ios", command="turn")
+    with _trace_active(trace):
+        _prewarm("Chicken breast")
+        await asyncio.sleep(0)
+
+    # The turn ends here; the task must still finish on its own.
+    await asyncio.sleep(0.2)
+    assert trace.speculative_totals(), (
+        "the detached prewarm did not complete after the turn returned — if it "
+        "is now cancelled at settlement, the single-flight cache never warms "
+        "and the speculation buys nothing")

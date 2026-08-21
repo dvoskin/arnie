@@ -5063,6 +5063,22 @@ class _SpeculativeEnrichment:
                     return await _fetch_usda_off(food, True)
 
             task = _aio.ensure_future(_detached())
+            # ⭐ LIFECYCLE, STATED RATHER THAN INHERITED *(Tranche D2, item 6)*.
+            # The task RUNS TO COMPLETION after the response. It is not
+            # cancelled at settlement, and that is the decision, not an
+            # accident:
+            #
+            #   * its result lands in `_fetch_usda_off`'s single-flight cache,
+            #     so a later turn for the same food is the consumer — cancelling
+            #     at settlement would throw away the only thing it is for;
+            #   * it holds no session, no lock and no claim, so nothing waits on
+            #     it and nothing rolls back with it;
+            #   * a completion arriving after the turn's trace is persisted is
+            #     simply dropped — proven by the cross-turn isolation test: it
+            #     cannot write into the NEXT turn's trace, because the
+            #     speculative flag and the trace both live in the task's own
+            #     context copy.
+            #
             # Nothing awaits this here. Swallow its failure so a dead lookup
             # cannot surface as an unretrieved-exception warning on a turn that
             # went on to succeed without it.
