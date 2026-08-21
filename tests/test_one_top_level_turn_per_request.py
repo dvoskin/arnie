@@ -24,7 +24,36 @@ llm=6140), one reply.
   * NOT a duplicated write. The turn wrote nothing: entry 3038's `created`
     event belongs to a DIFFERENT turn (`ios:92A54E10…`).
 
-⛔ THE ACTUAL SHAPE — a sequential orchestration fallthrough:
+⛔ TWO WAYS TO BREAK ONE INVARIANT, and the first canary hit the wrong one.
+
+  SEQUENTIAL (production, `ios:5F861208…`) — the canonical lane is ON, the
+  native turn produces no plan, and the delegation at `entrypoint.py:420`
+  runs AFTER the `finally` closed and persisted the first trace. Reachable
+  only with `TURN_COORDINATOR_MODE=new_execute` and the lane enabled; the
+  suite defaults to legacy-only, so a canary without those flags cannot
+  reach it. Measured order:
+
+      enter:entrypoint.run_turn
+      persist:turn                  <- ROW 1
+      enter:conversation.run_turn   <- begins after the trace closed
+      persist:turn                  <- ROW 2
+
+  NESTED (legacy-only mode) — the legacy pipeline runs INSIDE the
+  coordinator and BOTH scopes persist anyway, because the guard is
+  one-sided. Measured order:
+
+      enter:entrypoint.run_turn
+      enter:conversation.run_turn   <- nested, legitimate
+      persist:turn                  <- ROW 1, the INNER scope
+      persist:turn                  <- ROW 2, the OUTER scope
+
+⭐ THE DURATIONS TELL THEM APART. `total_ms` runs from construction to
+persist, so a nested OUTER must be longer than its inner. Production's
+second-persisted row is SHORTER (6293 < 9523) — which nesting cannot
+produce, and which is how the sequential variant was identified as the
+production one before it could be reproduced.
+
+⛔ THE SEQUENTIAL SHAPE:
 
     entrypoint.run_turn
       └─ coordinator.run(request)          under `_trace_active(_rt)`
@@ -55,6 +84,37 @@ from tests.test_a_full_day_of_food import (  # noqa: F401
 from tests.test_a_conversation_across_turns import (  # noqa: F401
     CAPABLE, b1_live, say, operations, commits, vague, B1_ELIGIBLE,
 )
+
+
+@pytest.fixture()
+def native_lane(monkeypatch):
+    """Turn the canonical lane ON, as production has it.
+
+    ⛔⛤ WITHOUT THIS THE FALLTHROUGH IS UNREACHABLE. `lane_executes_natively()`
+    requires `TURN_COORDINATOR_MODE=new_execute` and the lane enabled; the
+    suite defaults to legacy-only, so every message delegates from INSIDE the
+    coordinator and `entrypoint.py:420` never runs. A canary written without
+    these flags reproduces a different variant and reads as if it had
+    reproduced this one — which is exactly what happened on the first
+    attempt."""
+    monkeypatch.setenv("TURN_COORDINATOR_MODE", "new_execute")
+    monkeypatch.setenv("TURN_COORDINATOR_LANES", "structured_food,ledger_undo")
+    monkeypatch.setenv("TURN_COORDINATOR_ALLOWLIST", "")
+
+
+#: A plan the native lane can PARSE but cannot EXECUTE: no operation, no
+#: response. The production shape recorded at `entrypoint.py:355` — "I had a
+#: corn on the cob" reached the native lane, the interpreter produced no log
+#: operation, and there was nothing committed to narrate.
+NO_PLAN = {"action": "none", "items": [], "ready": [], "points": []}
+
+#: The control: the same lane, a plan it CAN execute — measured as one scope
+#: with no delegation. An EMPTY `log` plan is NOT this: it carries no item, so
+#: the lane produces nothing and falls through exactly like `NO_PLAN`. The
+#: control has to differ from the subject in the one way under test.
+def _executable():
+    return {"action": "log", "items": [item("Corn on the cob", cal=120)],
+            "ready": [], "points": []}
 
 
 @pytest.fixture()
@@ -124,11 +184,20 @@ def _nested(order) -> bool:
 
 @pytest.mark.asyncio
 async def test_one_request_is_one_top_level_turn(client, edges, seeded, scopes):
-    """⛔⛔ THE PRODUCTION SHAPE, over the real iOS endpoint.
+    """⛔⛔ THE NESTED VARIANT, over the real iOS endpoint — legacy-only mode,
+    which is the suite default and a real production configuration for any
+    lane not in `TURN_COORDINATOR_LANES`.
 
-    A deterministic canary: the planner returns an ASK, so the native lane
-    produces no executable plan and the fallthrough at `entrypoint.py:420`
-    is taken — the same door turn `ios:5F861208…` went through."""
+    Here the legacy pipeline runs INSIDE the coordinator and both scopes
+    persist anyway, because the nesting guard is ONE-SIDED: the entrypoint
+    takes `_outer = current_trace()` and persists only what it opened, while
+    `core/conversation.py:731` constructs and persists a trace with no such
+    check.
+
+    ⭐ This is NOT the production turn's door — that one is
+    `test_the_native_fallthrough_is_still_one_top_level_turn`. Same invariant,
+    two different ways to break it, and the first canary I wrote hit this one
+    while claiming the other."""
     edges.plans.append({
         "action": "ask",
         "points": [{"label": "Chicken breast", "q": "How much?"}],
@@ -196,6 +265,83 @@ async def test_a_terminal_canonical_result_returns_without_delegating(
     assert "enter:conversation.run_turn" not in scopes["order"], (
         "a terminal canonical result still fell through to the legacy "
         "pipeline. Order: %r" % (scopes["order"],))
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# THE SEQUENTIAL VARIANT — the production shape, through native_no_plan
+# ══════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+async def test_the_native_fallthrough_is_still_one_top_level_turn(
+        client, edges, seeded, native_lane, scopes):
+    """⛔⛔⛔ THE PRODUCTION SHAPE, REPRODUCED. Canonical lane on, a plan the
+    native lane cannot execute, so `entrypoint.py:380` is true and the
+    delegation at line 420 runs — AFTER the `finally` at 220-233 has already
+    closed and persisted the first trace.
+
+    Measured order, identical to turn `ios:5F861208…`:
+
+        enter:entrypoint.run_turn
+        persist:turn                  <- ROW 1, the entrypoint's own trace
+        enter:conversation.run_turn   <- begins after the trace closed
+        persist:turn                  <- ROW 2
+        exit:conversation.run_turn
+        exit:entrypoint.run_turn
+
+    Both rows `command='turn'`, as production had them. And the durations
+    agree: `total_ms` runs from construction to persist, so the FIRST row
+    covers the whole native attempt and the second only the legacy run —
+    which is why production's second row is SHORTER (6293 < 9523), a
+    relationship nesting cannot produce."""
+    edges.plans.append(dict(NO_PLAN))
+
+    await client.post("/api/v1/chat", json={"message": "I had a corn on the cob"})
+
+    order = scopes["order"]
+    assert len(scopes["persists"]) == 1, (
+        "the native fallthrough opened %d top-level turn scopes for one "
+        "request: %r — order was %r"
+        % (len(scopes["persists"]),
+           [p["command"] for p in scopes["persists"]], order))
+
+
+@pytest.mark.asyncio
+async def test_the_fallthrough_delegates_inside_the_scope_not_after_it(
+        client, edges, seeded, native_lane, scopes):
+    """⛔⛔ THE ORDER ITSELF, which is the defect.
+
+    Delegating is CORRECT here — `entrypoint.py:355` records why: a native
+    turn with no plan and nothing to say must not be swallowed into an empty
+    reply. The defect is only WHEN: the trace is closed and persisted in the
+    `finally` before the delegation runs, so legitimate rescue work is
+    recorded as a second top-level turn."""
+    edges.plans.append(dict(NO_PLAN))
+
+    await client.post("/api/v1/chat", json={"message": "I had a corn on the cob"})
+
+    assert _nested(scopes["order"]), (
+        "the legacy pipeline began AFTER the entrypoint persisted its trace — "
+        "one request, two top-level executions. Order: %r" % (scopes["order"],))
+
+
+@pytest.mark.asyncio
+async def test_a_native_turn_that_executes_does_not_delegate_at_all(
+        client, edges, seeded, native_lane, scopes):
+    """⭐ THE CONTROL, and it must pass BEFORE the fix as well as after.
+
+    It proves the fixture genuinely reaches the native lane: with a plan the
+    lane can execute, there is one scope and no delegation. Without this, a
+    red above could mean "the lane never ran" rather than "the lane fell
+    through", and the two are opposite diagnoses."""
+    edges.plans.append(_executable())
+
+    await client.post("/api/v1/chat", json={"message": "I had a corn on the cob"})
+
+    assert "enter:conversation.run_turn" not in scopes["order"], (
+        "a native turn that executed still delegated: %r" % (scopes["order"],))
+    assert len(scopes["persists"]) == 1, (
+        "an executing native turn wrote %d turn_metrics rows"
+        % len(scopes["persists"]))
 
 
 @pytest.mark.asyncio
