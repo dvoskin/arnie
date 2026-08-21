@@ -256,3 +256,88 @@ def test_the_real_selector_calls_the_authoritative_line_where_P17h_does(
                              rungs=(_memory_rung(),), bound=False)
     assert sel.authoritative is authoritative, (
         f"{text!r}: selector said authoritative={sel.authoritative} — {why}")
+
+
+def _indefensible_rung():
+    """A rung that SCALES but cannot PRICE: a non-evidence zero.
+
+    `is_defensible()` is `calories > 0 or evidence_backed`, so a zero-calorie
+    profile that is not evidence-backed is exactly the case `price()` skips —
+    "the estimate was zero" becomes "try the next thing", not "refuse".
+    """
+    zero = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fat": 0.0}
+
+    def build(_ev):
+        return (_profile(zero, source="estimate", source_id="",
+                         confidence=0.0, estimated=True),
+                Rung.ESTIMATE, "", dict(zero), Per100g(), ())
+    return (object(), build)
+
+
+def _exact_mass_rung():
+    """An authoritative rung: real calories, and an exact mass will scale it."""
+    def build(_ev):
+        return (_profile(_PER100G, source="artifact", source_id="a:1",
+                         confidence=1.0, estimated=False),
+                Rung.ARTIFACT, "a:1", dict(_PER100G), Per100g(), ())
+    return (object(), build)
+
+
+def test_the_selector_skips_a_rung_that_scales_but_cannot_price():
+    """⛔⛔⛔ THE REQUIRED REGRESSION, AT THE SELECTOR — an earlier candidate
+    that scales but produces no DEFENSIBLE price, and a later authoritative
+    rung that does.
+
+    This is the only shape that separates "first rung whose `resolve_scaling`
+    succeeds" from "first rung `price()` would return". The zero rung scales
+    perfectly well — an exact mass meets a Per100g basis — so a
+    resolver-only selector stops there and reports ITS verdict. `price()`
+    does not stop there: an indefensible price is a failed rung and the ladder
+    continues.
+
+    Found by mutation: making `is_defensible()` unconditional changed
+    behaviour and NOTHING failed, because the earlier version of this
+    regression asserted over hand-built `ItemFacts` instead of driving the
+    real selector. A regression that recreates the rule cannot detect the rule
+    changing."""
+    consumed = normalize_quantity("100 g eggs", "Eggs")
+    sel = select_priced_rung(
+        entity="Eggs", preparation="", consumed=consumed,
+        rungs=(_indefensible_rung(), _exact_mass_rung()), bound=False)
+
+    assert sel.rung is Rung.ARTIFACT, (
+        "the selector stopped at a rung that scales but cannot price — "
+        "price() would have continued to the artifact: got %r" % (sel.rung,))
+    assert sel.authoritative is True, (
+        "the winning rung's resolution was not reported as authoritative")
+
+
+def test_look_uses_the_selector_result_not_merely_calls_it():
+    """⛔⛔ A CALL IS NOT A CONSUMPTION *(and the first version of this test
+    only checked the call)*.
+
+    Mutation P7 replaced `selected_authoritative = bool(_sel.authoritative)`
+    with `= True`, leaving the `select_priced_rung(...)` call untouched. The
+    grep-style assertion stayed green while routing had stopped consuming the
+    pricer's verdict entirely — the exact "a function that is called is not a
+    function whose result is used" trap this repository keeps cataloguing.
+
+    So the assertion is on the DATA FLOW: the selector's result must reach the
+    fact `decide()` reads."""
+    import ast
+    import inspect
+
+    from core import general_settlement as GS
+    tree = ast.parse(inspect.getsource(GS.look).lstrip())
+
+    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+             and getattr(n.func, "id", "") == "select_priced_rung"]
+    assert calls, "look() never calls the shared selector"
+
+    # the result is bound, and that binding is what reaches the fact
+    reads = {n.value.id for n in ast.walk(tree)
+             if isinstance(n, ast.Attribute) and n.attr == "authoritative"
+             and isinstance(n.value, ast.Name)}
+    assert reads, (
+        "look() calls select_priced_rung but never reads `.authoritative` "
+        "from its result — routing is not consuming the pricer's rule")
