@@ -18,7 +18,17 @@
 > authority.
 
 >
-> **CURRENT RECONCILIATION — 2026-08-17 @ `0dcc1f8`.** §NEXT is the **only
+> **CURRENT RECONCILIATION — 2026-08-21 @ `cfb3557` (Tranche Q branch;
+> `origin/main` is `76076b6`).** P17 Phase 2 is SHIPPED AND LIVE; the P17
+> closure directive governs P17 execution and holds the phase reports. Tranche Q
+> (the live `basis`-over-literal defect, CF16) is BUILT and unmerged on PR #79.
+> Tranche D (CF17/CF18) is OPEN with D1's shape proven and NOT patched. P17g,
+> Phase 3 (CF14) and the end-to-end scan remain BLOCKED until Q and D close.
+> The 2026-08-17 reconciliation below is retained for its content, and its
+> "immediate P17 blocker" line is SUPERSEDED — source-snapshot identity landed
+> with P17-SB.
+>
+> **SUPERSEDED — 2026-08-17 @ `0dcc1f8`.** §NEXT is the **only
 > executable sequencing authority** in this file. P16/P16b measurement is closed;
 > P17 is the active coverage tranche. `P17c.2` has landed: one scaling resolver,
 > authoritative quantity precedence, canonical-eligibility separated from
@@ -1241,6 +1251,57 @@ CF10 INCOMPLETE PRODUCT RECORDS may provide serving   P17-UE — UNIT         OP
      measurement); never manufacture it from shape,
      category, name, common sense or averages. Full
      directive: §P17-UE below the P17 method.
+CF16 A `basis` LABEL OUTRANKED THE USER'S OWN      Tranche Q (PR #79) FIX
+     NUMBER: `_item_is_stated` short-circuited on   unmerged at cfb3557  BUILT
+     basis=="estimate" BEFORE the literal proxy, so
+     "100g of grilled chicken" was filed as OUR
+     inference; the ask offered history chips only
+     (6 oz / 16 oz, no free text) and logged 170.1 g
+     against a stated 100 g. Live, build 76076b6,
+     user 26, entry 3038 — corrected, ledger 2211.
+     Five review rounds: the SAME scoop/tbsp defect
+     reappeared at three doors (substring fallback,
+     shared noun set, half rung) because each new
+     path re-answered "is this the user's number?"
+     without re-answering "in whose unit?". Closed
+     by one predicate + a per-INVARIANT cross-rung
+     corpus, not per-defect tests.
+CF17 ONE REQUEST, TWO TOP-LEVEL TURN SCOPES:       Tranche D, D1        OPEN
+     turn ios:5F861208 wrote TWO turn_metrics rows  (shape proven,       SHAPE
+     (9523 ms then 6293 ms) under one turn id, two   NOT patched)        PROVEN
+     LLM calls, ONE reply, ZERO writes. NOT
+     concurrency (windows do not overlap; the second
+     starts 3.9 ms after the first ends, -0.004 s,
+     on all three real-UUID chat duplicates), NOT
+     multiple workers (one uvicorn process, no
+     `workers`; the Render service has a disk, which
+     disables scaling), NOT a missing client key.
+     TWO variants of one class: SEQUENTIAL — the
+     canonical lane is on, the native turn produces
+     no plan, and entrypoint.py:420 delegates AFTER
+     the finally persisted; NESTED — legacy-only
+     mode, legacy runs INSIDE the coordinator and
+     both persist anyway, because the guard is
+     ONE-SIDED (entrypoint takes `_outer =
+     current_trace()`, conversation.py:731 has no
+     such check). Durations tell them apart:
+     total_ms runs construction->persist, so a
+     nested OUTER must exceed its inner; production's
+     second row is SHORTER.
+CF18 LEGACY `pricing.qualification` ON THE          Tranche D, D2        OPEN
+     CANONICAL LANE: ~5.4 s (5379 ms) inside
+     execution A of the same turn. The gate must
+     prove the stage is ABSENT from a canonical
+     turn, not merely faster.
+CF19 TURN-IDENTITY HOURLY HASH COLLISIONS: `h:`     turn identity        OPEN
+     ids (content hash bucketed by hour) are SHARED
+     by genuinely separate requests — one
+     healthkit:h: id covers 6 executions over 1592 s
+     and one register_device id covers 2. Documented
+     fallback behaviour, but it makes ledger turn_id
+     ambiguous for those channels. NOT D1: these are
+     repeated requests sharing an identifier, not
+     one request executing twice. Keep separate.
 CF7  TEST_POSTGRES_URL FORM: the shared PG harness   tooling               RULE
      needs postgresql+psycopg://...; +asyncpg
      yields 174 connect() errors. Full-suite recipe:
@@ -7283,6 +7344,46 @@ them.
 
 ## Status board
 
+### ⏱ SESSION 2026-08-19/21 — P17 PHASE 2 LIVE · TRANCHE Q BUILT · TRANCHE D OPENED
+
+```text
+LOCAL       Tranche Q branch fix/p17-tranche-q @ cfb3557 (Draft PR #79)
+            Tranche D branch tranche-d/duplicate-turn @ aebcc79, off 76076b6
+ORIGIN/MAIN 76076b6 — PR #77 (71da768) then remediation PR #78; UNTOUCHED
+DEPLOYED    76076b6 — live, confirmed via /health; auto-deploy DISABLED,
+            deploys are manual. B1_QUANTITY_HALT set, verified, then removed
+            on explicit authorization; B1_QUANTITY.effective="allowlist"
+SUITE       Tranche Q head: PYTEST_EXIT=0 · 10032 passed / 25 skipped /
+            17 deselected / 4 xfailed, TEST_POSTGRES_URL set, HEAD and
+            HEAD^{tree} identical before and after
+BATTERY     22/22 cases x 3 reps · 0 flaky · 0 failed · 0 infrastructure
+P17g        BLOCKED   end-to-end scan BLOCKED   Phase 3 (CF14) queued
+```
+
+**What the live canary found (CF16).** A quantity the user typed was overruled
+by the interpreter's `basis` label: 170.1 g logged against a stated 100 g. Five
+review rounds followed, and the finding was the PATTERN rather than the
+instance — the same scoop/tbsp defect arrived at three different doors because
+each new path re-answered "is this the user's number?" without re-answering "in
+whose unit?". Closed by routing every rung through one predicate and by a
+per-INVARIANT cross-rung corpus. ⭐ Its first version proved nothing: 8 of 16
+compatible twins were answered by the normalizer, so pairs labelled `digit` and
+`half` were testing neither.
+
+**What Tranche D found (CF17/CF18).** The reported "duplicate turn" is not
+concurrency and not a duplicated write — it is one request opening two
+top-level turn scopes, in two distinct variants, with the shape proven from
+production plus a failing public-handler proof and NO patch yet.
+
+**Instrument corrections worth keeping.** A freeze can be green and
+UNDER-INCLUSIVE (9851 passed / 123 skipped with `TEST_POSTGRES_URL` unset — the
+skip count is the only tell). A mutation sweep lied three ways: `frozenset() or
+frozenset({...})` applied without biting, pytest exit 5 credited as RED after a
+selector rename, and a witness chosen against the defect's headline case rather
+than the mutation's reach. And the eval battery scored a billing outage as a
+behavioural flake, then — once fixed — discarded answers a fallback had
+rescued.
+
 ### ⏱ SESSION 2026-08-16/17 — DUPLICATE SEMANTICS CLOSED · BACKEND FROZEN
 
 ```text
@@ -7416,7 +7517,29 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-18 (7187742: P17-SB, iOS producer, P17-UA A/B/C, CF9, CF10/P17-UE registered) against the DUPLICATE-SEMANTICS SLICE AND THE BACKEND
+Last reconciled 2026-08-21 (`cfb3557`, Tranche Q branch; `origin/main`
+`76076b6`) against P17 PHASE 2 SHIPPING LIVE, TRANCHE Q, AND THE OPENING OF
+TRANCHE D. What was actually re-read and corrected, rather than date-bumped:
+the top-of-file CURRENT RECONCILIATION banner, which still read 2026-08-17 @
+`0dcc1f8` and named source-snapshot identity as "the immediate P17 blocker" —
+that landed with P17-SB, so the banner is replaced and the old one marked
+SUPERSEDED rather than deleted · a new session entry at the top of the status
+board, since the previous one was 2026-08-16/17 and reported a DEPLOYED sha
+that predates Phase 2 shipping · four new §CARRY-FORWARD entries for findings
+that would otherwise live only in a session or a PR: CF16 (the `basis` label
+outranking the user's own number, and the three-door pattern behind it), CF17
+(one request opening two top-level turn scopes, both variants, shape proven and
+NOT patched), CF18 (legacy `pricing.qualification` on the canonical lane), CF19
+(hourly turn-id hash collisions, explicitly NOT the same finding as CF17).
+
+⭐ **What this reconciliation deliberately does NOT do:** it does not move
+§NEXT. Q and D are correctness work running under the P17 closure directive,
+which is the execution authority for P17; the coverage sequence §NEXT holds is
+unchanged by either, and promoting them there would be exactly the
+feature-order engineering the one-board rule forbids. **P17g, Phase 3 (CF14)
+and the end-to-end scan stay BLOCKED** until Q and D close.
+
+Previously reconciled 2026-08-18 (7187742: P17-SB, iOS producer, P17-UA A/B/C, CF9, CF10/P17-UE registered) against the DUPLICATE-SEMANTICS SLICE AND THE BACKEND
 FREEZE. What was actually re-read and corrected, rather than date-bumped: the
 corrected-sequencing board's P12 line, which claimed the canary "has not
 started" — it has run and passed on both settlement branches · the "immediate
