@@ -1493,3 +1493,125 @@ coinciding.
 
 ⚠ The 40% gate is untouched and still unmet; closure still requires the
 reviewed main deployed and BOTH canaries.
+
+---
+
+## ⛔⛔⛔ CF21 — THE RANKING INSTRUMENT WAS DEAD, AND ITS ZEROS READ AS FINDINGS
+
+*(2026-08-22; taxonomy supplied by Danny)*
+
+Asked to measure `IDENTITY:no_resolution_row`, the answer was that it could not
+be measured. **P17g changed the predicate and the attribution instrument was
+not moved with it**, so two layers went stale at once and both failed silently:
+
+* **FLIPS.** `_COUNTERFACTUAL` flipped `has_mass` / `has_artifact` /
+  `has_memory` / `has_identity` / `has_quantity`. P17g replaced those in
+  `decide()` with `selected_rung_authoritative`. Tested directly: **every flip
+  is inert**, and the only fact that moves the predicate was not in the table.
+  That is why all eight mechanisms reported `0.0%` recoverable points.
+* **CLASSIFIER.** `_mechanism` still branched on `facts.has_mass`, so items
+  that HAD a mass and declined for the P17g reason fell through into the
+  evidence buckets. Measured: **310 of 313 declining items fired the SAME
+  predicate branch** while spread across eight differently-named buckets. The
+  taxonomy had stopped partitioning anything.
+
+⭐ **A COLUMN OF ZEROS IS NOT EVIDENCE THAT NOTHING IS RECOVERABLE** — it is the
+instrument's own silence. And my own sequencing claim ("86 items is the only
+candidate with evidence of meaningful points") had no basis: the table reported
+0.0% for that bucket exactly as for the others, and I read an item count as
+points evidence.
+
+### The repaired instrument
+
+Terminal mechanisms, **exactly one per item**, classified from the REAL
+selected-rung result; **mass is an orthogonal field, never a bucket**;
+counterfactuals rerun the real selector and are judged by the real `decide()`;
+an intervention that cannot be executed against concrete evidence reports
+**UNMEASURED**, which is neither zero nor the sole-blocked count.
+
+```text
+MECHANISM                        ITEMS  w/ mass  SOLE-BLOCKED   RECOVERED (measured)
+MEMORY_WINNER_NONAUTHORITATIVE      77       35            44   0 / 2 evaluable · 42 UNMEASURED
+NO_LOCAL_EVIDENCE                  165       65           100                      UNMEASURED
+ARTIFACT_WINNER_NONAUTHORITATIVE     3        3             1                      UNMEASURED
+ARTIFACT_PRESENT_NO_WINNER           1        1             1                      UNMEASURED
+
+MULTIPLE_BLOCKERS: 14 meals — EXCLUDED (no sole-cause attribution)
+partition holds: True (246 addressable items vs 246 declining items)
+```
+
+### ⛔ ROUND 2 — TWO INSTRUMENT DEFECTS *(Danny, review of `d8113d5`)*
+
+**THE CLASSIFIER MISLABELLED MEMORY-ONLY EVIDENCE.** `if has_memory or
+has_artifact -> ARTIFACT_PRESENT_NO_WINNER` filed a memory candidate that would
+not build as an artifact-RANKING defect, with no artifact anywhere in sight.
+⭐ **The name IS the tranche** — artifact selection and memory usability are
+different repairs, and the table would have looked well-attributed while
+pointing at the wrong one. ⛔ And my own test PINNED the wrong mapping, so it
+did not merely fail to catch the defect: it defended it. Split into
+`MEMORY_PRESENT_NO_WINNER` / `ARTIFACT_PRESENT_NO_WINNER`, plus
+`LOCAL_EVIDENCE_PRESENT_NO_WINNER` when both were present and neither won —
+the item-level analogue of MULTIPLE_BLOCKERS, because naming one repair there
+would be inventing an attribution.
+
+**THE THREE-STATE AGGREGATION WAS ORDERED WRONG.** It asked `any(unsimulatable)`
+FIRST, so a meal holding one unsimulatable item AND one simulated item that
+still declines was filed UNMEASURED — throwing away a settled answer. The
+simulated item blocks the meal on its own, whatever the other would have done.
+⭐ **A definite NO outranks an unknown.** Corrected precedence: any simulated
+item still unsupported → measured non-recovery; else any unsimulatable →
+UNMEASURED; else recovered.
+
+⭐ **AND IT MOVED THE NUMBER.** `43 unsimulatable` became **42 UNMEASURED**, with
+the evaluable denominator rising from 1 to 2 — one meal whose outcome was
+already known had been filed as unknown. The presentation is now
+`0 / 2 evaluable · 42 UNMEASURED` rather than `0 (43 unsimulatable)`, because
+"zero out of what" had two readings that differ by a factor of twenty.
+
+### ⛔ NEITHER TRANCHE IS AUTHORIZED
+
+* **memory sourced measures** — the one tranche that CAN be simulated:
+  **0 / 2 evaluable meals recovered · 42 / 44 meals UNMEASURED**. The artifact
+  holds no portions for those entities at all
+  (`Cheesecake`, `Homemade miso soup`, `Limesalt Burrito Bowl`). So the tranche
+  cannot be evaluated for the large majority of its own addressable population
+  — which points back at coverage rather than at measures.
+
+  ⚠ **THE EVALUABLE DENOMINATOR IS TWO, AND THAT IS THE POINT.** `0 / 44` and
+  `0 / 2` are different claims: the first would say the tranche was measured
+  and failed, the second says almost none of it could be measured at all. Only
+  the second is true, and only the second explains why the next question is a
+  coverage question.
+* **evidence coverage** — UNMEASURED. There is no concrete evidence to supply,
+  so recovery is unknown. Its 100 sole-blocked meals are an addressable
+  population, not a recovery.
+
+Per the standing instruction, neither is authorized: **the repaired ranking has
+not produced measured recovery for either.**
+
+⚠ The published **11.3% is untouched** — the rollup no longer derives an
+ownership-point column at all, because a second, differently-computed ownership
+number invites exactly the comparison it cannot support.
+
+### CF21 GATES — current state
+
+```text
+head                 9755b9f
+freeze               PYTEST_EXIT=0 · 10127 passed / 25 skipped / 17 deselected
+                     / 4 xfailed · tree identical before and after
+mutations            12 RED / 0 GREEN / 0 INVALID
+CI                   exact-head green
+Food eval battery    INTENTIONALLY ABSENT — no changed file matches its paths
+                     filter (core/food_*.py · core/prompts/** ·
+                     skills/nutrition/** · handlers/tool_executor.py ·
+                     scripts/eval_food_matrix.py). This branch changes a
+                     measurement instrument and nothing the app runs; the
+                     lane's standing battery evidence is #58, 22/22 x 3, zero
+                     flaky, on the tree that shipped in `aee47fc`.
+memory measures      0 / 2 evaluable meals recovered · 42 / 44 UNMEASURED
+evidence coverage    UNMEASURED (100 sole-blocked meals, addressable only)
+```
+
+⛔ **NEITHER PRODUCT TRANCHE BECOMES AUTHORIZED BY THIS MERGE.** CF21 repairs
+the instrument that ranks them; it delivers no coverage and no measures, and
+the repaired ranking has still produced measured recovery for neither.
