@@ -1337,6 +1337,31 @@ CF18 `pricing.qualification` ON THE CANONICAL       Tranche D, D2        MERGED
      the durability fix that answered point 2
      introduced the persist-in-flight race and the
      "latest row by turn_id" misattribution.
+CF20 A STATED SIZE BOUND TO A DIFFERENT SIZE:       wrong nutrition      FIXED
+     `1 large banana` matched USDA's `extra large
+     (9" or longer)` -> 152 g where the artifact's
+     own `large (8" to 8-7/8" long)` says 136 g.
+     +11.8%, reported `authoritative=True`, citing a
+     record about a different piece — the exact thing
+     `_matching_measure`'s docstring forbids. TWO
+     defects: (a) `_size_descriptor` scanned ONE WORD
+     at a time against a vocabulary containing the
+     two-word "extra large", so that entry was
+     unreachable by any input and "extra large"
+     reported as "large"; (b) the guard tested token
+     MEMBERSHIP, and "large" IS in {extra, large}, so
+     the wrong record — which sits EARLIER in the USDA
+     list — won and the right one was never reached.
+     `large` and `extra large` were indistinguishable.
+     ⭐ FOUND BY ATTRIBUTING P17h, NOT BY A GATE: the
+     probe asked which blocker was worth the most
+     ownership points and the answer was neither of
+     the two I expected. ⛔ P17g makes this WORSE, not
+     better — a sourced conversion is now what lets
+     canonical OWN a meal, so an authoritative path
+     was committing a mass from the wrong record.
+     Fixed both halves together (either alone still
+     mis-prices); 6 mutations RED.
 CF19 TURN-IDENTITY HOURLY HASH COLLISIONS: `h:`     turn identity        OPEN
      ids (content hash bucketed by hour) are SHARED
      by genuinely separate requests — one
@@ -11330,3 +11355,62 @@ Phase 1b invariants I2/I7/I8       STILL LIVE, unscheduled
 adversarial gap hunt before push   STILL LIVE, unscheduled
 ```
 
+
+### CF20 round 2 — the guard was fail-open in two directions *(Danny, review of `c9e417b`)*
+
+Round 1 fixed the case it found and left the guard open where it had no
+vocabulary. Both holes were reachable, realistic, and measured:
+
+```text
+"1 mini bar"    vs a bare `bar` panel   -> bound 60 g   (mini priced as full)
+"2 large eggs"  vs a bare `egg` = 50 g  -> bound 50 g   (silence read as
+                                                         agreement)
+                and it bound the bare record even when the real
+                `large egg` = 61 g sat directly behind it
+```
+
+* **FAIL-OPEN 1 — a size the matcher cannot REPRESENT.** `_SIZE_WORDS` (what a
+  user may state) and `_SIZE_TOKENS` (what the matcher can compare) are two
+  vocabularies, and **ten** entries live in the first only: `mini`, `tiny`,
+  `regular`, `standard`, `double`, `king`, `personal`, `grande`, `tall`,
+  `venti`. For those the stated-size set was empty and the guard never fired.
+  ⭐ **A question we cannot evaluate must not be answered YES** — now refuses,
+  which drops to the non-authoritative heuristic path: a lost admission, never
+  a wrong number.
+* **FAIL-OPEN 2 — silence read as agreement.** The guard ran only when BOTH
+  size sets were non-empty, so a record stating no size satisfied a sized
+  claim. ⭐ **The asymmetry is the rule**: an UNSTATED size may bind to a
+  record's own reference portion; once a size IS claimed, a record that cannot
+  speak to it cannot satisfy it.
+* **THE TESTS WERE CONSTRUCTED, NOT COMMITTED.** Every round-1 assertion built
+  its own `SourcedMeasure`s, which proves the matcher and nothing about the
+  data production hydrates. Now pinned against
+  `data/pricing_evidence_v1.json`: large 136 / extra large 152 / medium 118 /
+  small 101, **each asserted to cite its own portion** —
+  `173944#portion:93516` and so on. ⭐ `evidence_ids` names the FOOD
+  (`usda:173944`) and is identical for all four, so it cannot distinguish them;
+  the per-portion identity is in the conversion's `record_key`.
+
+⭐ **AND THE ARTIFACT SURVEY FOUND A THIRD, IN THE MIRROR DIRECTION.** Round 1
+was "the vocabulary holds a phrase the reader cannot express". The artifact
+holds `extra small (less than 6" long)` = 81 g, which **no user could state** —
+`_size_descriptor` read "small" and priced it from the SMALL record at 101 g, a
+24.7% overcount, authoritative, citing the wrong portion. Added from the
+EVIDENCE, not from guesswork, and a test now asserts the vocabulary against the
+artifact so the two cannot drift again. `x` is excluded and is not a size: it
+appears only as a dimension separator (`can (300 x 407)`).
+
+Full ladder against the committed artifact after round 2:
+
+```text
+extra small  81 g  #portion:93513      mini    refuses (unrepresentable)
+small       101 g  #portion:93514      jumbo   refuses (artifact holds none)
+medium      118 g  #portion:93515      banana  refuses (no bare-noun measure)
+large       136 g  #portion:93516
+extra large 152 g  #portion:93517
+```
+
+10 mutations RED / 0 GREEN / 0 INVALID. ⛔ One scored INVALID first by replacing
+a set entry with `pass` — invalid syntax, so the module stopped importing and
+the witness measured the PARSER. *A mutation has to leave the tree runnable or
+it is not measuring behaviour.*
