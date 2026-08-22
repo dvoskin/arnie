@@ -265,6 +265,19 @@ def _banana_rung():
     ("1 extra large banana", 152.0, "93517"),
     ("1 medium banana", 118.0, "93515"),
     ("1 small banana", 101.0, "93514"),
+    # ⛔⛔⛔ THE CASE THIS PARAMETERIZATION OMITTED, AND IT IS THE ONE THE ROUND-2
+    # SURVEY FOUND *(Danny, review of `11a4ff6`)*. The vocabulary sweep below
+    # proves only that "extra small" is STATEABLE — that `_size_descriptor` can
+    # return the phrase. It says nothing about which record the resolver then
+    # picks, and picking the wrong record while reading the right phrase is
+    # exactly the defect: before the fix this read "small" and priced from
+    # portion 93514 at 101 g, a 24.7% overcount, authoritative.
+    #
+    # ⭐ A DEFECT'S PROOF BELONGS WHERE THE DEFECT WAS, NOT WHERE IT IS
+    # CONVENIENT. Two adjacent tests each covering half of it leaves the join
+    # — phrase read correctly AND record selected correctly — proven by
+    # neither.
+    ("1 extra small banana", 81.0, "93513"),
 ])
 def test_the_REAL_artifact_prices_each_size_from_its_own_record(text, grams,
                                                                 portion_id):
