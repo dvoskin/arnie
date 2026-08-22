@@ -1530,15 +1530,43 @@ an intervention that cannot be executed against concrete evidence reports
 **UNMEASURED**, which is neither zero nor the sole-blocked count.
 
 ```text
-MECHANISM                        ITEMS  w/ mass  SOLE-BLOCKED  RECOVERED (measured)
-MEMORY_WINNER_NONAUTHORITATIVE      77       35            44   0  (43 unsimulatable)
-NO_LOCAL_EVIDENCE                  165       65           100            UNMEASURED
-ARTIFACT_WINNER_NONAUTHORITATIVE     3        3             1            UNMEASURED
-ARTIFACT_PRESENT_NO_WINNER           1        1             1            UNMEASURED
+MECHANISM                        ITEMS  w/ mass  SOLE-BLOCKED   RECOVERED (measured)
+MEMORY_WINNER_NONAUTHORITATIVE      77       35            44   0 / 2 evaluable · 42 UNMEASURED
+NO_LOCAL_EVIDENCE                  165       65           100                      UNMEASURED
+ARTIFACT_WINNER_NONAUTHORITATIVE     3        3             1                      UNMEASURED
+ARTIFACT_PRESENT_NO_WINNER           1        1             1                      UNMEASURED
 
 MULTIPLE_BLOCKERS: 14 meals — EXCLUDED (no sole-cause attribution)
 partition holds: True (246 addressable items vs 246 declining items)
 ```
+
+### ⛔ ROUND 2 — TWO INSTRUMENT DEFECTS *(Danny, review of `d8113d5`)*
+
+**THE CLASSIFIER MISLABELLED MEMORY-ONLY EVIDENCE.** `if has_memory or
+has_artifact -> ARTIFACT_PRESENT_NO_WINNER` filed a memory candidate that would
+not build as an artifact-RANKING defect, with no artifact anywhere in sight.
+⭐ **The name IS the tranche** — artifact selection and memory usability are
+different repairs, and the table would have looked well-attributed while
+pointing at the wrong one. ⛔ And my own test PINNED the wrong mapping, so it
+did not merely fail to catch the defect: it defended it. Split into
+`MEMORY_PRESENT_NO_WINNER` / `ARTIFACT_PRESENT_NO_WINNER`, plus
+`LOCAL_EVIDENCE_PRESENT_NO_WINNER` when both were present and neither won —
+the item-level analogue of MULTIPLE_BLOCKERS, because naming one repair there
+would be inventing an attribution.
+
+**THE THREE-STATE AGGREGATION WAS ORDERED WRONG.** It asked `any(unsimulatable)`
+FIRST, so a meal holding one unsimulatable item AND one simulated item that
+still declines was filed UNMEASURED — throwing away a settled answer. The
+simulated item blocks the meal on its own, whatever the other would have done.
+⭐ **A definite NO outranks an unknown.** Corrected precedence: any simulated
+item still unsupported → measured non-recovery; else any unsimulatable →
+UNMEASURED; else recovered.
+
+⭐ **AND IT MOVED THE NUMBER.** `43 unsimulatable` became **42 UNMEASURED**, with
+the evaluable denominator rising from 1 to 2 — one meal whose outcome was
+already known had been filed as unknown. The presentation is now
+`0 / 2 evaluable · 42 UNMEASURED` rather than `0 (43 unsimulatable)`, because
+"zero out of what" had two readings that differ by a factor of twenty.
 
 ### ⛔ NEITHER TRANCHE IS AUTHORIZED
 

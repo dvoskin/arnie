@@ -106,8 +106,20 @@ def test_every_analyzed_item_lands_in_exactly_one_declared_mechanism():
 @pytest.mark.parametrize("shape,expected", [
     ({"selected_rung": "memory"}, "MEMORY_WINNER_NONAUTHORITATIVE"),
     ({"selected_rung": "artifact"}, "ARTIFACT_WINNER_NONAUTHORITATIVE"),
-    ({"selected_rung": "", "has_memory": True}, "ARTIFACT_PRESENT_NO_WINNER"),
+    # ⛔⛔ THE FIRST VERSION OF THIS TABLE PINNED THE DEFECT *(Danny, review of
+    # `d8113d5`)*. It mapped a memory-only failure to
+    # `ARTIFACT_PRESENT_NO_WINNER`, so a memory candidate that would not build
+    # was filed as an artifact-RANKING defect and would have been ranked into
+    # the wrong tranche. A test that pins a wrong mapping does not merely fail
+    # to catch it — it defends it.
+    ({"selected_rung": "", "has_memory": True}, "MEMORY_PRESENT_NO_WINNER"),
     ({"selected_rung": "", "has_artifact": True}, "ARTIFACT_PRESENT_NO_WINNER"),
+    # ⭐ AND WHEN BOTH WERE PRESENT AND NEITHER WON, NO SINGLE REPAIR IS
+    # IMPLICATED. Naming one would be inventing an attribution; the generic
+    # leaf says what is actually known, and is the item-level analogue of
+    # MULTIPLE_BLOCKERS.
+    ({"selected_rung": "", "has_memory": True, "has_artifact": True},
+     "LOCAL_EVIDENCE_PRESENT_NO_WINNER"),
     ({"selected_rung": ""}, "NO_LOCAL_EVIDENCE"),
 ])
 def test_the_mechanism_is_read_off_the_selector_not_re_derived(shape, expected):
@@ -357,3 +369,101 @@ def test_each_UNSIMULATABLE_shape_is_reached_and_reported(food, why):
     assert got is None, (
         f"{food!r} was simulated although {why} — an absent measurement "
         f"reported as a measured non-recovery")
+
+
+def test_a_memory_only_failure_is_never_named_an_artifact_defect():
+    """⛔⛔⛔ THE NAME IS THE TRANCHE. `ARTIFACT_PRESENT_NO_WINNER` reads
+    "artifact ranking / builder / defensibility returned nothing", and its
+    repair is artifact SELECTION. A memory candidate that failed to build, with
+    no artifact anywhere in sight, is a different defect with a different fix —
+    filing it under the artifact name would send the work to the wrong place
+    while the table looked well-attributed."""
+    got = mechanism_for(_facts(selected_rung="", has_memory=True,
+                               has_artifact=False))
+    assert "ARTIFACT" not in got, (
+        f"a memory-only failure was named {got!r} — no artifact was involved")
+    assert got == "MEMORY_PRESENT_NO_WINNER"
+
+
+# ── THREE-STATE AGGREGATION, IN THE RIGHT ORDER ───────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_KNOWN_blocker_beats_an_unknown_one():
+    """⛔⛔⛔ PRECEDENCE, AND THE ONLY ORDER THAT DOES NOT LOSE INFORMATION
+    *(Danny, review of `d8113d5`)*.
+
+    A meal with one unsimulatable item AND one simulated item that definitively
+    still declines is **not** unknown: the simulated item blocks the meal on its
+    own, so the meal is a MEASURED NON-RECOVERY whatever the other item would
+    have done. Checking `any(unsimulatable)` first threw that certainty away
+    and filed a known answer as UNMEASURED — which inflates the unknown column
+    and shrinks the evaluable denominator, making the tranche look less
+    measurable than it is.
+
+    ⭐ THE RULE: a definite NO outranks an unknown. Only when nothing definite
+    says no does the unknown decide."""
+    import measure_settlement_coverage as M
+
+    def _intervention(*, item, facts, memory_per100g):
+        if item["food_name"] == "unsimulatable":
+            return None
+        return facts                          # simulated, and still declining
+
+    original = M.INTERVENTIONS["MEMORY_WINNER_NONAUTHORITATIVE"]
+    M.INTERVENTIONS["MEMORY_WINNER_NONAUTHORITATIVE"] = _intervention
+    try:
+        ranked = await M.rank_mechanisms(None, declining_meals={
+            "mixed": [
+                {"facts": _facts(selected_rung="memory", has_memory=True),
+                 "mechanism": "MEMORY_WINNER_NONAUTHORITATIVE",
+                 "item": {"food_name": "unsimulatable"},
+                 "memory_per100g": {"c": 1}},
+                {"facts": _facts(selected_rung="memory", has_memory=True),
+                 "mechanism": "MEMORY_WINNER_NONAUTHORITATIVE",
+                 "item": {"food_name": "still declines"},
+                 "memory_per100g": {"c": 1}},
+            ]})
+    finally:
+        M.INTERVENTIONS["MEMORY_WINNER_NONAUTHORITATIVE"] = original
+
+    entry = ranked["MEMORY_WINNER_NONAUTHORITATIVE"]
+    assert entry["meals_unmeasured"] == 0, (
+        "a meal with a KNOWN remaining blocker was filed as UNMEASURED — the "
+        "unsimulatable item cannot make a settled answer unsettled")
+    assert entry["evaluable_meals"] == 1, (
+        "the meal was excluded from the evaluable denominator although its "
+        "outcome is known")
+    assert entry["measured_recovered_meals"] == 0
+
+
+@pytest.mark.asyncio
+async def test_the_evaluable_denominator_is_reported_not_implied():
+    """⛔ `0 recovered (43 unsimulatable)` LEAVES THE DENOMINATOR AMBIGUOUS
+    *(Danny)*. Zero out of what — 44, or 1? The two readings differ by a factor
+    of forty and lead to opposite decisions, so the evaluable count is a
+    reported number rather than something the reader subtracts."""
+    import measure_settlement_coverage as M
+
+    def _intervention(*, item, facts, memory_per100g):
+        if item["food_name"] == "unsimulatable":
+            return None
+        return _facts(selected_rung="memory", has_memory=True,
+                      selected_rung_authoritative=True)
+
+    original = M.INTERVENTIONS["MEMORY_WINNER_NONAUTHORITATIVE"]
+    M.INTERVENTIONS["MEMORY_WINNER_NONAUTHORITATIVE"] = _intervention
+    try:
+        ranked = await M.rank_mechanisms(None, declining_meals={
+            k: [{"facts": _facts(selected_rung="memory", has_memory=True),
+                 "mechanism": "MEMORY_WINNER_NONAUTHORITATIVE",
+                 "item": {"food_name": k}, "memory_per100g": {"c": 1}}]
+            for k in ("unsimulatable", "clears")})
+    finally:
+        M.INTERVENTIONS["MEMORY_WINNER_NONAUTHORITATIVE"] = original
+
+    entry = ranked["MEMORY_WINNER_NONAUTHORITATIVE"]
+    assert entry["meals_blocked_solely"] == 2
+    assert entry["evaluable_meals"] == 1, "the evaluable denominator is missing"
+    assert entry["measured_recovered_meals"] == 1
+    assert entry["meals_unmeasured"] == 1

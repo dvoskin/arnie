@@ -698,7 +698,9 @@ MECHANISMS = (
     "NO_LOCAL_EVIDENCE",
     "MEMORY_WINNER_NONAUTHORITATIVE",
     "ARTIFACT_WINNER_NONAUTHORITATIVE",
+    "MEMORY_PRESENT_NO_WINNER",
     "ARTIFACT_PRESENT_NO_WINNER",
+    "LOCAL_EVIDENCE_PRESENT_NO_WINNER",
     "OTHER_WINNER_NONAUTHORITATIVE",
     "MULTIPLE_BLOCKERS",
 )
@@ -738,7 +740,20 @@ def mechanism_for(facts) -> str:
         # tranche is going unranked — declared so totality holds and so the
         # change is VISIBLE rather than absorbed by whichever leaf came last.
         return "OTHER_WINNER_NONAUTHORITATIVE"
-    if facts.has_memory or facts.has_artifact:
+    # ⛔⛔⛔ WHICH EVIDENCE FAILED IS THE TRANCHE *(Danny, review of `d8113d5`)*.
+    # This returned `ARTIFACT_PRESENT_NO_WINNER` for anything with evidence, so
+    # a MEMORY candidate that would not build — with no artifact anywhere in
+    # sight — was filed as an artifact-RANKING defect. The name IS the repair:
+    # artifact selection and memory usability are different work, and the table
+    # would have looked well-attributed while pointing at the wrong one.
+    if facts.has_memory and facts.has_artifact:
+        # ⭐ NEITHER WON AND BOTH WERE PRESENT, so no single repair is
+        # implicated. Naming one would be inventing an attribution; this is the
+        # item-level analogue of MULTIPLE_BLOCKERS.
+        return "LOCAL_EVIDENCE_PRESENT_NO_WINNER"
+    if facts.has_memory:
+        return "MEMORY_PRESENT_NO_WINNER"
+    if facts.has_artifact:
         return "ARTIFACT_PRESENT_NO_WINNER"
     return "NO_LOCAL_EVIDENCE"
 
@@ -828,7 +843,9 @@ INTERVENTIONS = {
     "NO_LOCAL_EVIDENCE": None,
     "MEMORY_WINNER_NONAUTHORITATIVE": memory_measures_counterfactual,
     "ARTIFACT_WINNER_NONAUTHORITATIVE": None,
+    "MEMORY_PRESENT_NO_WINNER": None,
     "ARTIFACT_PRESENT_NO_WINNER": None,
+    "LOCAL_EVIDENCE_PRESENT_NO_WINNER": None,
     "OTHER_WINNER_NONAUTHORITATIVE": None,
     "BOUND_UNPRICEABLE": None,
     "NO_CANONICAL_IDENTITY": None,
@@ -884,7 +901,7 @@ async def rank_mechanisms(db, *, declining_meals: dict) -> dict:
                 "cannot be supplied from concrete evidence, so its recovery "
                 "is unknown rather than zero")
         else:
-            recovered = unmeasurable = 0
+            recovered = not_recovered = unmeasured = 0
             for key in blocked:
                 # ⛔⛔ THE REAL PREDICATE JUDGES RECOVERY. The selector's
                 # `authoritative` flag is an INPUT to `decide()`, not a verdict:
@@ -893,12 +910,28 @@ async def rank_mechanisms(db, *, declining_meals: dict) -> dict:
                 updated = [intervention(item=r["item"], facts=r["facts"],
                                         memory_per100g=r.get("memory_per100g"))
                            for r in declining_meals[key]]
-                if any(u is None for u in updated):
-                    unmeasurable += 1
-                elif all(isinstance(decide(u), Supported) for u in updated):
+                # ⛔⛔⛔ A DEFINITE NO OUTRANKS AN UNKNOWN *(Danny, review of
+                # `d8113d5`)*. This asked `any(unsimulatable)` FIRST, so a meal
+                # holding one unsimulatable item AND one simulated item that
+                # still declines was filed UNMEASURED — throwing away a settled
+                # answer. The simulated item blocks the meal on its own,
+                # whatever the other would have done, so the outcome is KNOWN.
+                # Ordering it the other way inflates the unknown column and
+                # shrinks the evaluable denominator, making a tranche look less
+                # measurable than it is.
+                simulated = [u for u in updated if u is not None]
+                if any(not isinstance(decide(u), Supported) for u in simulated):
+                    not_recovered += 1
+                elif len(simulated) != len(updated):
+                    unmeasured += 1
+                else:
                     recovered += 1
             entry["measured_recovered_meals"] = recovered
-            entry["meals_unsimulatable"] = unmeasurable
+            # ⭐ THE DENOMINATOR IS REPORTED, NOT IMPLIED. "0 recovered
+            # (43 unsimulatable)" leaves "zero out of what" to the reader, and
+            # the two available readings differ by a factor of forty.
+            entry["evaluable_meals"] = recovered + not_recovered
+            entry["meals_unmeasured"] = unmeasured
         out[mechanism] = entry
 
     out["MULTIPLE_BLOCKERS"] = {
@@ -1195,7 +1228,7 @@ def render(report: dict) -> str:
                    f"{roll['ordinary_food_chat_meals_DENOMINATOR']} ordinary "
                    f"food-chat meals\n")
         out.append(f"      {'MECHANISM':<38}{'ITEMS':>6}{'w/ mass':>9}"
-                   f"{'SOLE-BLOCKED':>14}{'RECOVERED (measured)':>22}")
+                   f"{'SOLE-BLOCKED':>14}{'RECOVERED (measured)':>34}")
         def _key(kv):
             v = kv[1].get("measured_recovered_meals")
             return (0 if isinstance(v, int) else -1, v if isinstance(v, int) else 0)
@@ -1205,13 +1238,14 @@ def render(report: dict) -> str:
                 continue
             rec = e.get("measured_recovered_meals")
             if isinstance(rec, int):
-                un = e.get("meals_unsimulatable", 0)
-                shown = f"{rec}" + (f"  ({un} unsimulatable)" if un else "")
+                shown = (f"{rec} / {e.get('evaluable_meals', 0)} evaluable"
+                         + (f"  · {e['meals_unmeasured']} UNMEASURED"
+                            if e.get("meals_unmeasured") else ""))
             else:
                 shown = str(rec)
             out.append(f"      {mech:<38}{e['addressable_items']:>6}"
                        f"{e['items_with_mass']:>9}"
-                       f"{e['meals_blocked_solely']:>14}{shown:>22}")
+                       f"{e['meals_blocked_solely']:>14}{shown:>34}")
         mb = roll["by_mechanism"].get("MULTIPLE_BLOCKERS") or {}
         out.append(f"\n      MULTIPLE_BLOCKERS: {mb.get('meals', 0)} meals — "
                    f"EXCLUDED from ranking (no sole-cause attribution)")
