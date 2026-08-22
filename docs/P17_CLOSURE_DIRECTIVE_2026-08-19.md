@@ -1452,3 +1452,44 @@ the dominant `IDENTITY:no_resolution_row` mechanism — **86 items**, far larger
 than anything quantity-shaped. None of these is authorised here; they are
 registered so the next decision is made on measured points rather than on my
 recollection.
+
+---
+
+## CF20 ROUND 2 — OWNERSHIP RE-MEASURED ON THE FINAL HEAD *(Danny's requirement)*
+
+⛔ **11.3% COULD NOT BE CARRIED FORWARD.** Round 2 changes `_matching_measure`,
+which is the resolver P17g's selector calls — so the earlier number was
+measured on a tree that no longer exists. Re-run, not inherited:
+
+```text
+                         P17g @ 2bf36a3      CF20 r2 @ 686a607
+population          361 rows / 232 meals   361 rows / 232 meals  (frozen)
+A  routing rate                   83.3%                  83.3%
+B  support rate                   13.5%                  13.5%
+C  OWNERSHIP RATE                 11.3%                  11.3%
+   declining meals              160/222                160/222
+```
+
+⭐ **AND "UNCHANGED" IS ATTRIBUTED, NOT ASSUMED.** A number that happens to
+match is not the same claim as a number that had to match. On this population:
+
+```text
+rows stating ANY size                                      11 of 361
+   medium 4 · small 4 · regular 2 · venti 1
+rows whose stated size the matcher CANNOT represent          3
+   'Quest Chips Sweet Chili'          '1 regular bag'
+   'Starbucks Venti Iced Latte...'    '1 venti (24 fl oz)'
+   'Peanut Butter Protein Smoothie'   '1 regular (~16oz)'
+```
+
+Round 2 is **strictly stricter** — it refuses where it previously bound, and
+adds no new admission on this population (`extra small` appears in none of
+these rows, and it was already authoritative, merely from the wrong record).
+So no row can flip declining → supported, and at most those 3 could flip the
+other way. Ownership is unchanged, therefore **none of the 3 flipped a meal**:
+each already sat inside a meal that was declining for another reason. That is
+the whole argument, and it is why the two numbers agree rather than merely
+coinciding.
+
+⚠ The 40% gate is untouched and still unmet; closure still requires the
+reviewed main deployed and BOTH canaries.
