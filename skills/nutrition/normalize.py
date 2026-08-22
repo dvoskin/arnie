@@ -1022,6 +1022,16 @@ _SIZE_WORDS = {
     "large", "big", "jumbo", "extra large", "xl", "small", "mini", "tiny",
     "medium", "regular", "standard", "grande", "venti", "tall",
     "double", "king", "personal",
+    # ⛔⛔ CF20 ROUND 2 — ADDED BECAUSE THE EVIDENCE NAMES IT, not because it
+    # seemed likely. `data/pricing_evidence_v1.json` states
+    # `extra small (less than 6" long)` = 81 g for USDA 173944, and without the
+    # phrase here `_size_descriptor` reads "small" and prices an extra-small
+    # banana from the SMALL record — 101 g, a 24.7% overcount, authoritative,
+    # citing a portion about a different piece. The mirror of CF20's producer
+    # defect: there the vocabulary held a phrase the reader could not express,
+    # here the evidence held one the vocabulary did not. A test asserts this
+    # set against the artifact so the two cannot drift again.
+    "extra small",
 }
 
 #: How much to trust the mass, by how it was arrived at. An oz→g conversion is

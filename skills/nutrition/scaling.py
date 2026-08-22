@@ -323,6 +323,24 @@ def _matching_measure(consumed, measures):
         return None
     stated_size = str(getattr(consumed, "size_descriptor", "")
                       or "").strip().lower()
+    stated_sizes = _SIZE_TOKENS & _unit_tokens(stated_size)
+    # ⛔⛔⛔ CF20 ROUND 2 — FAIL CLOSED ON A SIZE WE CANNOT REPRESENT *(Danny)*.
+    # `_SIZE_WORDS` (what a user may state) and `_SIZE_TOKENS` (what this
+    # matcher can compare) are two vocabularies, and ten entries live in the
+    # first and not the second: mini, tiny, regular, standard, double, king,
+    # personal, grande, tall, venti. For those the intersection is EMPTY, the
+    # guard below never fired, and "1 mini bar" bound a full-size `bar` panel —
+    # 60 g for a mini one, reported authoritative. The size was read,
+    # understood, and then silently discarded by the layer that had to act.
+    #
+    # ⭐ A QUESTION WE CANNOT EVALUATE MUST NOT BE ANSWERED YES. Without a token
+    # for `mini` there is no way to ask "is this record about a mini bar", so
+    # no record can satisfy the claim. Refusing drops to the heuristic path,
+    # which is non-authoritative and declines canonically: a lost admission,
+    # never a wrong number. Hoisted out of the loop because this is a property
+    # of the REQUEST, not of any candidate.
+    if stated_size and not stated_sizes:
+        return None
     for measure in measures or ():
         if not unit_matches(consumed, measure.unit_text):
             continue
@@ -347,9 +365,22 @@ def _matching_measure(consumed, measures):
         # CF20's producer half, `size_descriptor` can be "extra large", and
         # `"extra large" in {extra, large}` is False — the two halves must move
         # together or the fix for one breaks the other.
+        #
+        # ⛔⛔⛔ CF20 ROUND 2 — AND SILENCE IS NOT AGREEMENT *(Danny)*. This read
+        # `if stated_sizes and measure_sizes and ...`, so a measure stating NO
+        # size skipped the comparison entirely: "2 large eggs" bound a bare
+        # `egg` = 50 g panel, and did so even when the real `large egg` = 61 g
+        # record sat right behind it in the same tuple. The user named a size,
+        # the record was silent about size, and silence was read as agreement.
+        #
+        # ⭐ THE ASYMMETRY IS THE RULE, NOT AN OVERSIGHT. An UNSTATED size may
+        # still bind — no size was claimed, so the record's own reference
+        # portion is the honest answer. The converse does not hold: once a size
+        # IS claimed, a record that cannot speak to it cannot satisfy it. So
+        # `measure_sizes` is no longer a precondition for comparing, and an
+        # empty one now FAILS the identity test rather than skipping it.
         measure_sizes = _SIZE_TOKENS & _unit_tokens(measure.unit_text)
-        stated_sizes = _SIZE_TOKENS & _unit_tokens(stated_size)
-        if stated_sizes and measure_sizes and stated_sizes != measure_sizes:
+        if stated_sizes and stated_sizes != measure_sizes:
             continue
         return measure
     return None
