@@ -1570,12 +1570,18 @@ already known had been filed as unknown. The presentation is now
 
 ### ⛔ NEITHER TRANCHE IS AUTHORIZED
 
-* **memory sourced measures** — the one tranche that CAN be simulated measures
-  **0 recovered meals**. 43 of its 44 sole-blocked meals are *unsimulatable*:
-  the artifact holds no portions for those entities at all (`Cheesecake`,
-  `Homemade miso soup`, `Limesalt Burrito Bowl`). So the tranche cannot even be
-  evaluated for 98% of its own addressable population — which points back at
-  coverage rather than at measures.
+* **memory sourced measures** — the one tranche that CAN be simulated recovers
+  **0 of 2 evaluable meals**, with **42 of its 44** sole-blocked meals
+  UNMEASURED: the artifact holds no portions for those entities at all
+  (`Cheesecake`, `Homemade miso soup`, `Limesalt Burrito Bowl`). So the tranche
+  cannot be evaluated for the large majority of its own addressable population
+  — which points back at coverage rather than at measures.
+
+  ⚠ **THE EVALUABLE DENOMINATOR IS TWO, AND THAT IS THE POINT.** `0 / 44` and
+  `0 / 2` are different claims: the first would say the tranche was measured
+  and failed, the second says almost none of it could be measured at all. Only
+  the second is true, and only the second explains why the next question is a
+  coverage question.
 * **evidence coverage** — UNMEASURED. There is no concrete evidence to supply,
   so recovery is unknown. Its 100 sole-blocked meals are an addressable
   population, not a recovery.
@@ -1586,3 +1592,26 @@ not produced measured recovery for either.**
 ⚠ The published **11.3% is untouched** — the rollup no longer derives an
 ownership-point column at all, because a second, differently-computed ownership
 number invites exactly the comparison it cannot support.
+
+### CF21 GATES — current state
+
+```text
+head                 9755b9f
+freeze               PYTEST_EXIT=0 · 10127 passed / 25 skipped / 17 deselected
+                     / 4 xfailed · tree identical before and after
+mutations            12 RED / 0 GREEN / 0 INVALID
+CI                   exact-head green
+Food eval battery    INTENTIONALLY ABSENT — no changed file matches its paths
+                     filter (core/food_*.py · core/prompts/** ·
+                     skills/nutrition/** · handlers/tool_executor.py ·
+                     scripts/eval_food_matrix.py). This branch changes a
+                     measurement instrument and nothing the app runs; the
+                     lane's standing battery evidence is #58, 22/22 x 3, zero
+                     flaky, on the tree that shipped in `aee47fc`.
+memory measures      0 / 2 evaluable meals recovered · 42 / 44 UNMEASURED
+evidence coverage    UNMEASURED (100 sole-blocked meals, addressable only)
+```
+
+⛔ **NEITHER PRODUCT TRANCHE BECOMES AUTHORIZED BY THIS MERGE.** CF21 repairs
+the instrument that ranks them; it delivers no coverage and no measures, and
+the repaired ranking has still produced measured recovery for neither.
