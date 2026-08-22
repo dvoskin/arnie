@@ -626,73 +626,6 @@ def _non_latin(text: str) -> bool:
     return any(ord(ch) > 0x24F for ch in (text or "") if ch.isalpha())
 
 
-async def _mechanism(db, *, user_id: int, item: dict, facts) -> str:
-    """The one mechanism that stopped this item, from LOCAL reads only."""
-    from core.canonical_pricing_inputs import _address_has_one_authority
-    from core.food_intelligence import memory_key
-    from db.queries import get_user_food_match
-    from skills.nutrition.entity_resolution import resolve as resolve_entity
-    from skills.nutrition.pricing_artifact import evidence_for, split_identity
-
-    identity = str(item.get("food_name") or "").strip()
-    entity, preparation = split_identity(identity)
-
-    # 1-3: the predicate's own typed declines, before any evidence question.
-    if not facts.has_identity:
-        return _TYPED["no canonical identity"]
-    if not facts.has_quantity:
-        return _TYPED["no stated quantity"]
-    if not facts.has_mass:
-        # ⛔ THE PREDICATE SAYS "no mass"; ONLY THE STRING SAYS WHY. Splitting
-        # here rather than in `decide()` is deliberate: the predicate's branch
-        # is correct as it stands — none of these can be scaled today — and the
-        # instrument's job is to say which TRANCHE would fix each one.
-        return mass_less_shape(item.get("quantity"))
-
-    # 4: the interesting bucket — priceable shape, no local evidence.
-    #
-    # ⭐ IDENTITY STATE FIRST, because a surface that never resolved cannot have
-    # a memory address worth asking about, and `product` / `distinct` are
-    # DELIBERATE refusals rather than misses.
-    try:
-        row = await resolve_entity(db, identity)
-    except Exception:                                    # noqa: BLE001
-        row = None
-    state = getattr(getattr(row, "state", None), "value", None) or (
-        str(getattr(row, "state", "")) or "")
-    if row is None:
-        return "IDENTITY:no_resolution_row"
-    if state == "unresolved":
-        return "IDENTITY:resolver_declined"
-    if state == "product":
-        return "BRANDED:product_recognised_but_non_binding"
-    if state == "distinct":
-        return "IDENTITY:distinct_refused_a_false_collapse"
-
-    # Memory: a row may EXIST and still be inadmissible. That distinction is the
-    # whole reason this phase exists — it separates "we have never seen this
-    # food" from "we have seen it and cannot trust the address".
-    key = memory_key(identity, "")
-    if not key:
-        return "IDENTITY:key_not_addressable"
-    try:
-        memory_row = await get_user_food_match(db, user_id, key)
-    except Exception:                                    # noqa: BLE001
-        memory_row = None
-    if memory_row is not None:
-        if not getattr(memory_row, "cal_100", None):
-            return "MEMORY:row_unusable_no_per100g"
-        if not await _address_has_one_authority(db, key):
-            return "CACHEABILITY:memory_quarantined_ambiguous_address"
-        return "MEMORY:present_but_predicate_declined_UNEXPECTED"
-
-    # Artifact: absent for the stated preparation, or absent entirely? The two
-    # are different tranches — a vocabulary gap versus an uncovered food.
-    if entity and evidence_for(entity, "") is not None:
-        return "QUALIFIED:preparation_vocabulary_miss"
-    return "BARE:artifact_entity_absent"
-
-
 # ══ P16b — THE MEAL-LEVEL ROLLUP ════════════════════════════════════════════
 #
 # ⛔⛔ ITEM COUNTS ARE NOT OWNERSHIP POINTS *(Danny, 2026-08-17)*. Ownership is a
@@ -730,104 +663,251 @@ async def _mechanism(db, *, user_id: int, item: dict, facts) -> str:
 #: The tranche §NEXT selected. The conditional-marginal ranking is computed
 #: RELATIVE TO THIS, because a standalone ceiling cannot rank a second tranche
 #: once meals are blocked by more than one mechanism.
-_PRIMARY = "TYPED:count_only_quantity"
 
-#: mechanism -> (what the fix literally supplies, what it might also supply).
-#: Flipping anything else would be inventing a capability the tranche does not
-#: deliver; flipping less would be denying the one it does.
-_COUNTERFACTUAL = {
-    # ── TIGHT: the deliverable IS one of decide()'s five facts ──────────────
-    "TYPED:no_canonical_identity": ({"has_identity": True},) * 2,
-    "TYPED:no_stated_quantity": ({"has_quantity": True},) * 2,
-    # The memory ROW EXISTS in both of these; the tranche makes it usable.
-    "CACHEABILITY:memory_quarantined_ambiguous_address": (
-        {"has_memory": True},) * 2,
-    "MEMORY:row_unusable_no_per100g": ({"has_memory": True},) * 2,
-    "MEMORY:present_but_predicate_declined_UNEXPECTED": (
-        {"has_memory": True},) * 2,
-    # These two ARE artifact-coverage tranches: the deliverable is the evidence.
-    "QUALIFIED:preparation_vocabulary_miss": ({"has_artifact": True},) * 2,
-    "BARE:artifact_entity_absent": ({"has_artifact": True},) * 2,
-    "IDENTITY:key_not_addressable": ({"has_memory": True},) * 2,
+# ══ MISS ATTRIBUTION, POST-P17g ═══════════════════════════════════════════
+#
+# ⛔⛔⛔ THE OLD MACHINERY WAS SILENTLY DEAD, AND ITS ZEROS READ AS FINDINGS.
+# `_COUNTERFACTUAL` flipped `has_mass`/`has_artifact`/`has_memory`, and P17g
+# replaced those in `decide()` with `selected_rung_authoritative`. Every flip
+# became INERT, so all eight mechanisms reported 0.0 recoverable points — which
+# is not "no tranche is worth anything", it is "this instrument can no longer
+# move the predicate". `_mechanism` went stale the same way: it branched on
+# `has_mass`, so 310 of 313 declining items fired ONE predicate branch while
+# being spread across eight differently-named buckets.
+#
+# ⭐ AN INSTRUMENT THAT APPROXIMATES ITS SUBJECT CANNOT DISCOVER THAT ITS
+# SUBJECT IS BROKEN. So classification now reads the REAL selected rung, and a
+# counterfactual is only reported when it can be EXECUTED against concrete
+# evidence through the real selector and the real predicate.
 
-    # ── BANDED: the fix supplies part of the answer, and evidence MAY follow ─
-    # A per-serving basis certainly supplies the MASS. Whether the count-only
-    # food also gains per-serving nutrition depends on what P17 ships.
-    "TYPED:count_only_quantity": ({"has_mass": True},
-                                  {"has_mass": True, "has_artifact": True}),
-    # ⭐ THE SAME FLIP, A COMPLETELY DIFFERENT TRANCHE. A unit-alias table gives
-    # `150 г` a real mass; a serving-basis producer gives `1 piece` one. Both
-    # satisfy `has_mass`, so their counterfactuals are identical and their COSTS
-    # are not — which is exactly why they must be counted apart.
-    "TYPED:mass_stated_but_unit_unparsed": (
-        {"has_mass": True}, {"has_mass": True, "has_artifact": True}),
-    "TYPED:mass_present_but_not_read": (
-        {"has_mass": True}, {"has_mass": True, "has_artifact": True}),
-    # An energy claim names no amount of food. Nothing in `ItemFacts` can be
-    # flipped to make "180 cal" scalable, so its LOWER bound is honestly zero
-    # and its upper bound assumes the turn re-asks for a quantity.
-    "TYPED:energy_stated_not_a_quantity": (
-        {}, {"has_mass": True, "has_artifact": True}),
-    # ⚠ RESOLUTION IS NOT EVIDENCE, AND THIS IS WHERE THAT BITES. A resolver row
-    # supplies NONE of decide()'s five facts — the item already had mass and
-    # still declined for "no local evidence". So the honest lower bound of an
-    # identity tranche is ZERO recovered meals, and its upper bound assumes
-    # resolution also lands evidence for the food it resolved.
-    "IDENTITY:no_resolution_row": ({}, {"has_artifact": True}),
-    "IDENTITY:resolver_declined": ({}, {"has_artifact": True}),
-    "IDENTITY:distinct_refused_a_false_collapse": ({}, {"has_artifact": True}),
-    "BRANDED:product_recognised_but_non_binding": ({}, {"has_artifact": True}),
+#: A recovery that could not be measured. ⛔ NOT ZERO AND NOT AN INT — zero
+#: reads "this tranche recovers nothing" and the sole-blocked count reads "it
+#: recovers everything"; both are answers, and the honest state is that there
+#: is none. Kept unsummable so it cannot be quietly aggregated or ranked.
+UNMEASURED = "UNMEASURED"
+
+#: ⛔ TERMINAL MECHANISMS — every analyzed item lands in EXACTLY ONE.
+#: Taxonomy supplied by Danny, 2026-08-22. `MULTIPLE_BLOCKERS` is a MEAL-level
+#: verdict, not an item one: it is what a meal gets when its declining items do
+#: not agree, and such meals are EXCLUDED from tranche ranking because no
+#: single tranche recovers them.
+MECHANISMS = (
+    "BOUND_UNPRICEABLE",
+    "NO_CANONICAL_IDENTITY",
+    "NO_STATED_QUANTITY",
+    "NO_LOCAL_EVIDENCE",
+    "MEMORY_WINNER_NONAUTHORITATIVE",
+    "ARTIFACT_WINNER_NONAUTHORITATIVE",
+    "ARTIFACT_PRESENT_NO_WINNER",
+    "OTHER_WINNER_NONAUTHORITATIVE",
+    "MULTIPLE_BLOCKERS",
+)
+
+
+def mechanism_for(facts) -> str:
+    """The ONE terminal mechanism that stopped this item. PURE.
+
+    ⛔⛔ IT READS THE SELECTOR'S OWN RESULT. `facts.selected_rung` is written by
+    `look()` from `select_priced_rung` — the loop `price()` runs — so this
+    reports which rung the pricer would commit rather than re-deriving it from
+    `has_memory`/`has_artifact`. A third opinion about "which rung wins" would
+    drift from the pricer on exactly the inputs nobody tested, which is the
+    defect P17g closed inside `decide()`.
+
+    ⚠ MASS IS DELIBERATELY ABSENT. Whether a mass happens to be present is a
+    FACT about the item, reported beside the mechanism and never as one. The
+    old classifier branched on it and returned mass-shaped buckets, which split
+    a single tranche into three (`count_only_quantity`,
+    `mass_stated_but_unit_unparsed`, `mass_present_but_not_read`) while every
+    one of them fired the same predicate branch.
+    """
+    if getattr(facts, "product_bound", False):
+        return "BOUND_UNPRICEABLE"
+    if not facts.has_identity:
+        return "NO_CANONICAL_IDENTITY"
+    if not facts.has_quantity:
+        return "NO_STATED_QUANTITY"
+    rung = str(getattr(facts, "selected_rung", "") or "")
+    if rung == "memory":
+        return "MEMORY_WINNER_NONAUTHORITATIVE"
+    if rung == "artifact":
+        return "ARTIFACT_WINNER_NONAUTHORITATIVE"
+    if rung:
+        # ⚠ MUST STAY EMPTY TODAY: `look()` offers the selector memory, a None
+        # product, and artifact. A count here means the rung set changed and a
+        # tranche is going unranked — declared so totality holds and so the
+        # change is VISIBLE rather than absorbed by whichever leaf came last.
+        return "OTHER_WINNER_NONAUTHORITATIVE"
+    if facts.has_memory or facts.has_artifact:
+        return "ARTIFACT_PRESENT_NO_WINNER"
+    return "NO_LOCAL_EVIDENCE"
+
+
+def memory_measures_counterfactual(*, item: dict, facts, memory_per100g):
+    """The item's facts as they would be if the MEMORY rung carried sourced
+    measures — or **None when the intervention cannot be simulated**.
+
+    ⛔⛔⛔ EXECUTABLE, AND FROM CONCRETE EVIDENCE ON BOTH SIDES. The nutrition
+    is THIS USER'S OWN memory row; the measures are the ones the COMMITTED
+    ARTIFACT already holds for the same entity. Nothing is fabricated — the
+    tranche relocates an existing fact onto the rung that lacks it, and that is
+    exactly what is simulated.
+
+    ⛔ AND THE FIRST VERSION OF THIS FUNCTION GOT IT WRONG IN A WAY WORTH
+    RECORDING. It took the per-100 g numbers from the ARTIFACT as well, which
+    silently simulates "the artifact rung wins" — a different tranche
+    altogether, and a more generous one. A counterfactual that supplies more
+    than its tranche delivers measures a capability nobody is building.
+
+    ⭐ IT RUNS THE REAL SELECTOR. `select_priced_rung` is the function `price()`
+    calls; the caller then re-decides with the real `decide()`. Neither the
+    selection rule nor the predicate is recreated here.
+
+    ⛔ None IS NOT False. A food the artifact holds no measures for, or a user
+    with no usable memory row, cannot be simulated. Reporting that as "the
+    tranche does not recover it" would be an absent answer wearing a negative
+    one — and it is the whole reason this returns three states.
+    """
+    from core.canonical_pricing import (Rung, _from_artifact, _profile,
+                                        _ranker_query, select_priced_rung)
+    from skills.nutrition.normalize import normalize_quantity
+    from skills.nutrition.pricing_artifact import evidence_for, split_identity
+    from skills.nutrition.scaling import Per100g
+
+    per100g = dict(memory_per100g or {})
+    if not per100g:
+        return None                                      # no row to carry them
+
+    identity = str(item.get("food_name") or "").strip()
+    quantity = str(item.get("quantity") or "").strip()
+    entity, preparation = split_identity(identity)
+    if not entity or not quantity:
+        return None
+
+    evidence = evidence_for(entity, preparation)
+    if evidence is None:
+        return None
+    try:
+        built = _from_artifact(evidence,
+                               query=_ranker_query(entity, preparation))
+    except Exception:                                    # noqa: BLE001
+        return None
+    if not built or not built[5]:
+        return None                                      # nothing to relocate
+    measures = built[5]
+
+    # A memory rung shaped exactly as `_from_memory` builds one, differing ONLY
+    # in the field the tranche would supply.
+    def _build(_ev):
+        return (_profile(per100g, source="memory", source_id="memory:cf",
+                         confidence=1.0, estimated=False),
+                Rung.MEMORY, "memory:cf", dict(per100g), Per100g(), measures)
+
+    try:
+        selection = select_priced_rung(
+            entity=entity, preparation=preparation,
+            consumed=normalize_quantity(quantity, identity),
+            rungs=((object(), _build),), bound=False)
+    except Exception:                                    # noqa: BLE001
+        return None
+    return dataclasses.replace(
+        facts,
+        selected_rung=(selection.rung.value if selection.rung else ""),
+        selected_rung_authoritative=bool(selection.authoritative))
+
+
+#: mechanism -> the EXECUTABLE counterfactual for its tranche, or None.
+#:
+#: ⛔ None MEANS UNMEASURED, NOT ZERO. `NO_LOCAL_EVIDENCE`'s tranche is "the
+#: artifact covers this food", and there is no concrete evidence to supply, so
+#: its recovery is unknown. Scoring it zero would read "coverage is worthless";
+#: scoring it the sole-blocked count would read "coverage recovers all of them"
+#: — an upper bound wearing a measurement's clothes. Both are answers where
+#: none exists.
+INTERVENTIONS = {
+    "NO_LOCAL_EVIDENCE": None,
+    "MEMORY_WINNER_NONAUTHORITATIVE": memory_measures_counterfactual,
+    "ARTIFACT_WINNER_NONAUTHORITATIVE": None,
+    "ARTIFACT_PRESENT_NO_WINNER": None,
+    "OTHER_WINNER_NONAUTHORITATIVE": None,
+    "BOUND_UNPRICEABLE": None,
+    "NO_CANONICAL_IDENTITY": None,
+    "NO_STATED_QUANTITY": None,
 }
 
 
-def _meals_recovered(declining_meals: dict, flips: dict) -> int:
-    """How many declining meals become Supported when EVERY mechanism in
-    `flips` is satisfied at once.
+async def rank_mechanisms(db, *, declining_meals: dict) -> dict:
+    """The three quantities, per mechanism *(Danny, 2026-08-22)*.
 
-    ⛔⛔ THIS IS WHY A STANDALONE CEILING CANNOT RANK THE SECOND TRANCHE
-    *(Danny, 2026-08-17)*. 13 meals are blocked by more than one mechanism, and
-    fixing the first one changes which of the others is still load-bearing. So
-    "identity's standalone upper is 16.7, therefore identity is second" does not
-    follow — the number that decides is the MARGINAL one:
+        addressable population        declining items carrying this mechanism
+        meals blocked solely by it    every declining item agrees on it
+        measured recovered meals      re-decided by the REAL predicate after
+                                      the REAL selector ran the intervention,
+                                      or UNMEASURED
 
-        Δ(M | P17) = ownership(P17 + M) - ownership(P17)
-
-    computed by running the REAL `decide()` with both flipped together, not by
-    subtracting two independently-measured columns.
+    ⛔ THE THIRD NUMBER IS NEVER INFERRED FROM THE SECOND. A sole-blocked count
+    is an addressable population, not a recovery: it says how many meals this
+    mechanism is the only thing standing in front of, and says nothing about
+    whether the tranche would actually clear them.
     """
     from core.general_settlement import Supported, decide
 
-    recovered = 0
-    for records in declining_meals.values():
+    items = collections.Counter()
+    with_mass = collections.Counter()             # ⭐ orthogonal, reported apart
+    solely: dict = collections.defaultdict(list)
+    multiple = 0
+
+    for key, records in declining_meals.items():
+        mechs = {r["mechanism"] for r in records}
         for record in records:
-            facts = record["facts"]
-            flip = flips.get(record["mechanism"])
-            if flip:
-                facts = dataclasses.replace(facts, **flip)
-            if not isinstance(decide(facts), Supported):
-                break
+            items[record["mechanism"]] += 1
+            if getattr(record["facts"], "has_mass", False):
+                with_mass[record["mechanism"]] += 1
+        if len(mechs) > 1:
+            multiple += 1
+            continue
+        solely[next(iter(mechs))].append(key)
+
+    out: dict = {}
+    for mechanism in items:
+        blocked = solely.get(mechanism, [])
+        intervention = INTERVENTIONS.get(mechanism)
+        entry = {
+            "addressable_items": items[mechanism],
+            "items_with_mass": with_mass[mechanism],
+            "meals_blocked_solely": len(blocked),
+        }
+        if intervention is None:
+            entry["measured_recovered_meals"] = UNMEASURED
+            entry["why_unmeasured"] = (
+                "no executable counterfactual: the tranche's deliverable "
+                "cannot be supplied from concrete evidence, so its recovery "
+                "is unknown rather than zero")
         else:
-            recovered += 1
-    return recovered
+            recovered = unmeasurable = 0
+            for key in blocked:
+                # ⛔⛔ THE REAL PREDICATE JUDGES RECOVERY. The selector's
+                # `authoritative` flag is an INPUT to `decide()`, not a verdict:
+                # treating it as one would recreate the predicate here and stop
+                # tracking it the moment another branch changed.
+                updated = [intervention(item=r["item"], facts=r["facts"],
+                                        memory_per100g=r.get("memory_per100g"))
+                           for r in declining_meals[key]]
+                if any(u is None for u in updated):
+                    unmeasurable += 1
+                elif all(isinstance(decide(u), Supported) for u in updated):
+                    recovered += 1
+            entry["measured_recovered_meals"] = recovered
+            entry["meals_unsimulatable"] = unmeasurable
+        out[mechanism] = entry
 
-
-def _meal_recovers(records: list, mechanism: str, *, flip: dict) -> bool:
-    """Would this declining meal become Supported if `mechanism` were satisfied?
-
-    ⛔ EVERY DECLINING ITEM MUST CLEAR, because one unsupported item declines
-    the meal. Items whose mechanism is something else are left EXACTLY as they
-    were — that is what makes the recoveries disjoint across mechanisms and the
-    column summable.
-    """
-    from core.general_settlement import Supported, decide
-
-    for record in records:
-        facts = record["facts"]
-        if record["mechanism"] == mechanism:
-            facts = dataclasses.replace(facts, **flip)
-        if not isinstance(decide(facts), Supported):
-            return False
-    return True
+    out["MULTIPLE_BLOCKERS"] = {
+        "meals": multiple,
+        "EXCLUDED_FROM_RANKING": "declining items disagree, so no single "
+                                 "tranche recovers the meal and no sole-cause "
+                                 "attribution is available",
+    }
+    return out
 
 
 # ══ M1 — THE MECHANISM OWNERSHIP CANNOT SEE ═══════════════════════════════
@@ -968,17 +1048,26 @@ async def audit_supported_memory(db, *, meals: dict, verdicts: dict,
 
 async def attribute_misses(db, *, meals: dict, verdicts: dict,
                            structured: list, chat_meals: int) -> dict:
-    """Every DECLINING item of every declining structured meal, by mechanism —
-    and then the same misses rolled up to MEALS and to ownership POINTS."""
+    """Every DECLINING item of every declining structured meal, by mechanism,
+    then the THREE quantities per mechanism.
+
+    ⛔⛔ THE ROLLUP NO LONGER PUBLISHES AN OWNERSHIP-POINT COLUMN. The published
+    11.3% is FROZEN historical evidence measured on `p16b_0817` at a named
+    predicate commit; deriving fresh percentages here from a recovery count
+    would produce a second, differently-computed ownership number that invites
+    exactly the comparison it cannot support. Recovered MEALS are reported as
+    meals, and the ownership rate stays where it was measured.
+    """
+    from core.canonical_pricing_inputs import _memory
     from core.general_settlement import Supported, decide, look
 
     counts: collections.Counter = collections.Counter()
     tagged: collections.Counter = collections.Counter()
     examples: dict = {}
     items_seen = 0
-    #: meal key -> the declining items of that meal, with facts and mechanism.
-    #: Built ONCE: the rollup must not re-select a population or re-ask the
-    #: predicate, or it could not be compared with the numbers above it.
+    #: meal key -> the declining items of that meal, with facts, item and
+    #: mechanism. Built ONCE: the rollup must not re-select a population or
+    #: re-ask the predicate, or it could not be compared with the numbers above.
     declining_meals: dict = {}
     for key in structured:
         if isinstance(verdicts.get(key), Supported):
@@ -990,150 +1079,59 @@ async def attribute_misses(db, *, meals: dict, verdicts: dict,
             if isinstance(decide(facts), Supported):
                 continue                       # this item was fine; another sank the meal
             items_seen += 1
-            mechanism = await _mechanism(db, user_id=int(meal["user_id"]),
-                                         item=item, facts=facts)
+            mechanism = mechanism_for(facts)
             counts[mechanism] += 1
             if _non_latin(str(item.get("food_name") or "")):
                 tagged[mechanism] += 1
             examples.setdefault(mechanism, str(item.get("food_name") or "")[:48])
-            records.append({"facts": facts, "mechanism": mechanism})
+            # ⭐ THE USER'S OWN ROW, READ ONCE HERE. The counterfactual stays
+            # PURE and database-free: a simulation that opened its own reads
+            # could disagree with the facts it is simulating against.
+            memory_per100g = None
+            if mechanism == "MEMORY_WINNER_NONAUTHORITATIVE":
+                try:
+                    row = await _memory(db, int(meal["user_id"]),
+                                        str(item.get("food_name") or ""), "")
+                    memory_per100g = dict(getattr(row, "per100g", None) or {})
+                except Exception:                        # noqa: BLE001
+                    memory_per100g = None
+            records.append({"facts": facts, "mechanism": mechanism,
+                            "item": item, "memory_per100g": memory_per100g})
         if records:
             declining_meals[key] = records
 
-    # ── the rollup ──────────────────────────────────────────────────────────
-    denominator = max(int(chat_meals), 1)
-    rollup: dict = {}
-    for mechanism in counts:
-        band = _COUNTERFACTUAL.get(mechanism)
-        if band is None:
-            # ⛔ AN UNMAPPED MECHANISM IS REPORTED, NEVER SCORED ZERO. A new
-            # leaf in `_mechanism` with no counterfactual here would otherwise
-            # silently recover nothing and read as "this tranche is worthless".
-            rollup[mechanism] = {
-                "declining_items": counts[mechanism],
-                "meals_recovered_LOWER": None,
-                "ownership_points_LOWER": None,
-                "UNMAPPED": "no counterfactual defined for this mechanism — it "
-                            "is NOT scored, and this is not a zero",
-            }
-            continue
-        lower_flip, upper_flip = band
-        containing = [k for k, r in declining_meals.items()
-                      if any(x["mechanism"] == mechanism for x in r)]
-        lower = [k for k in containing
-                 if _meal_recovers(declining_meals[k], mechanism,
-                                   flip=lower_flip)] if lower_flip else []
-        upper = [k for k in containing
-                 if _meal_recovers(declining_meals[k], mechanism,
-                                   flip=upper_flip)]
-        rollup[mechanism] = {
-            "declining_items": counts[mechanism],
-            "declining_meals_containing_it": len(containing),
-            "meals_recovered_LOWER": len(lower),
-            "ownership_points_LOWER": round(100.0 * len(lower) / denominator, 1),
-            "meals_recovered_UPPER": len(upper),
-            "ownership_points_UPPER": round(100.0 * len(upper) / denominator, 1),
-            "tight": lower_flip == upper_flip,
-            "delivers": {"lower": lower_flip or "nothing decide() can see",
-                         "upper": upper_flip},
-        }
+    ranked = await rank_mechanisms(db, declining_meals=declining_meals)
 
-    # ⭐ WHY THE COLUMNS DO NOT SUM TO THE ITEM COUNTS, STATED AS A NUMBER. A
-    # meal recovers under M only if EVERY declining item is an M, so a meal
-    # blocked by two mechanisms is recovered by NEITHER alone — and is invisible
-    # in every row of the table above.
-    # ── CONDITIONAL MARGINAL AFTER THE SELECTED TRANCHE ─────────────────────
-    #
-    # ⭐ A CONTINGENCY RANKING THAT COSTS NO ENGINEERING FOCUS. P17 is chosen and
-    # is not reopened by this; the question is only which mechanism to reach for
-    # IF measured P17 ownership lands short of the band. Answered now, while the
-    # population is frozen, rather than argued later from standalone ceilings.
-    selected = _PRIMARY
-    marginal: dict = {}
-    if selected in counts:
-        for bound_name, index in (("LOWER", 0), ("UPPER", 1)):
-            base_flip = {selected: _COUNTERFACTUAL[selected][index]}
-            base = _meals_recovered(declining_meals, base_flip)
-            for mechanism in counts:
-                if mechanism == selected or mechanism not in _COUNTERFACTUAL:
-                    continue
-                pair = dict(base_flip)
-                pair[mechanism] = _COUNTERFACTUAL[mechanism][index]
-                gain = _meals_recovered(declining_meals, pair) - base
-                entry = marginal.setdefault(mechanism, {})
-                entry[f"extra_meals_{bound_name}"] = gain
-                entry[f"extra_points_{bound_name}"] = round(
-                    100.0 * gain / denominator, 1)
-            marginal.setdefault("__base__", {})[
-                f"meals_recovered_by_{selected}_{bound_name}"] = base
-
-    blocked_by = collections.Counter(
-        len({x["mechanism"] for x in r}) for r in declining_meals.values())
-    multi = sum(c for n, c in blocked_by.items() if n > 1)
-    low = [e["ownership_points_LOWER"] for e in rollup.values()
-           if e.get("ownership_points_LOWER") is not None]
-    high = [e["ownership_points_UPPER"] for e in rollup.values()
-            if e.get("ownership_points_UPPER") is not None]
+    # ⭐ THE PARTITION CHECKS ITSELF. Every declining item carries exactly one
+    # mechanism, so the addressable populations must sum to the item count. A
+    # disagreement means a leaf was added without a home and its tranche is
+    # going unranked — the silence this repair exists to make impossible.
+    summed = sum(e["addressable_items"] for k, e in ranked.items()
+                 if k != "MULTIPLE_BLOCKERS")
+    partition_ok = (summed == items_seen)
 
     return {
         "declining_items": items_seen,
         "by_mechanism": dict(counts.most_common()),
         "non_latin_within_each_mechanism": dict(tagged.most_common()),
         "one_example_each": examples,
-        "reading": "Rank tranches by RECOVERABLE OWNERSHIP POINTS, not by "
-                   "bucket name. `non_latin_within_each_mechanism` answers "
-                   "'is this a non-English problem?' WITHOUT letting language "
-                   "become the bucket — a resolved Cyrillic surface with an "
-                   "unusable address is a cacheability defect.",
-        "P16b_meal_rollup": {
+        "reading": ("Rank tranches by MEASURED RECOVERED MEALS. An UNMEASURED "
+                    "recovery is not a zero and not the sole-blocked count — "
+                    "it is the absence of a measurement, and a tranche cannot "
+                    "be ranked on it. `non_latin_within_each_mechanism` "
+                    "answers 'is this a non-English problem?' WITHOUT letting "
+                    "language become the bucket."),
+        "meal_rollup": {
             "declining_meals": len(declining_meals),
-            "ordinary_food_chat_meals_DENOMINATOR": denominator,
-            "by_mechanism": rollup,
-            "meals_blocked_by_N_distinct_mechanisms": {
-                str(n): c for n, c in sorted(blocked_by.items())},
-            "meals_no_single_mechanism_can_recover": multi,
-            "CONDITIONAL_MARGINAL_after_" + _PRIMARY: marginal,
-            "reading_the_marginal": (
-                "Δ(M | P17) — the meals mechanism M recovers that P17 has NOT "
-                "already recovered, with both flipped together through the real "
-                "decide(). Rank a SECOND tranche on this, never on a standalone "
-                "ceiling: 13 meals carry more than one blocker, so fixing P17 "
-                "changes which mechanism is still load-bearing for them. This "
-                "does not reopen P17 — it is the contingency if measured P17 "
-                "ownership lands under the band."),
-            "total_ownership_points_recoverable_LOWER": round(sum(low), 1),
-            "total_ownership_points_recoverable_UPPER": round(sum(high), 1),
-            # ⭐⭐ THE ROLLUP CHECKS ITSELF, AND THE CHECK IS EXACT. Under the
-            # UPPER flip every mechanism supplies evidence, so a meal blocked by
-            # exactly ONE mechanism must recover under that mechanism, and a
-            # meal blocked by two must recover under NEITHER. Therefore the
-            # UPPER recoveries must sum to exactly the number of
-            # single-mechanism meals. If this disagrees, the counterfactual is
-            # double-counting meals across mechanisms and every point in the
-            # table above is wrong — which a plausible-looking table would never
-            # otherwise reveal.
-            "SELF_CHECK_upper_recoveries_equal_single_mechanism_meals": {
-                "upper_recoveries_summed": sum(
-                    e.get("meals_recovered_UPPER") or 0
-                    for e in rollup.values()),
-                "meals_blocked_by_exactly_one": blocked_by.get(1, 0),
-                "holds": sum(e.get("meals_recovered_UPPER") or 0
-                             for e in rollup.values()) == blocked_by.get(1, 0),
-            },
-            "method": "For each declining meal, the fact(s) each mechanism "
-                      "names are flipped on the items it stopped and the REAL "
-                      "decide() is re-run over every item. A meal recovers only "
-                      "if all of its declining items clear, so recoveries are "
-                      "DISJOINT across mechanisms and the points column sums.",
-            "reading_the_band": "LOWER is what the tranche literally puts into "
-                                "ItemFacts; UPPER adds the evidence that "
-                                "delivery might also bring. RANK LOWER AGAINST "
-                                "LOWER AND UPPER AGAINST UPPER — the first "
-                                "version of this table compared one mechanism's "
-                                "floor with another's ceiling and read as an "
-                                "inversion that was not there. Where `tight` is "
-                                "true the two ends coincide because the "
-                                "deliverable IS one of decide()'s facts.",
+            "ordinary_food_chat_meals_DENOMINATOR": max(int(chat_meals), 1),
+            "by_mechanism": ranked,
+            "partition_holds": partition_ok,
+            "partition_check": (
+                f"{summed} addressable items across mechanisms vs "
+                f"{items_seen} declining items"),
+            "ownership_rate": (
+                "NOT recomputed here. The published 11.3% is frozen historical "
+                "evidence on p16b_0817 at its named predicate commit."),
         },
     }
 
@@ -1190,33 +1188,38 @@ def render(report: dict) -> str:
             out.append(f"      {count:5d}  {mech:<52} "
                        f"non-latin {nl.get(mech, 0):3d}   e.g. {ex.get(mech,'')}")
         out.append(f"\n      {a.get('reading','')}")
-    roll = (a.get("P16b_meal_rollup") or {})
+    roll = (a.get("meal_rollup") or {})
     if roll.get("by_mechanism"):
-        out.append(f"\n    P16b — ROLLED UP TO MEALS, AND TO OWNERSHIP POINTS")
+        out.append("\n    RANKED BY MEASURED RECOVERED MEALS")
         out.append(f"      {roll['declining_meals']} declining meals over "
                    f"{roll['ordinary_food_chat_meals_DENOMINATOR']} ordinary "
                    f"food-chat meals\n")
-        out.append(f"      {'MECHANISM':<52}{'ITEMS':>6}"
-                   f"{'PTS LOWER':>11}{'PTS UPPER':>11}   rank LOWER vs LOWER")
-        ordered = sorted(roll["by_mechanism"].items(),
-                         key=lambda kv: -(kv[1].get("ownership_points_UPPER") or 0))
-        for mech, e in ordered:
-            if e.get("UNMAPPED"):
-                out.append(f"      {mech:<52}{e['declining_items']:>6}"
-                           f"{'   UNMAPPED':>11}")
+        out.append(f"      {'MECHANISM':<38}{'ITEMS':>6}{'w/ mass':>9}"
+                   f"{'SOLE-BLOCKED':>14}{'RECOVERED (measured)':>22}")
+        def _key(kv):
+            v = kv[1].get("measured_recovered_meals")
+            return (0 if isinstance(v, int) else -1, v if isinstance(v, int) else 0)
+        for mech, e in sorted(roll["by_mechanism"].items(),
+                              key=_key, reverse=True):
+            if mech == "MULTIPLE_BLOCKERS":
                 continue
-            tight = "  (tight)" if e.get("tight") else ""
-            out.append(f"      {mech:<52}{e['declining_items']:>6}"
-                       f"{e['ownership_points_LOWER']:>10.1f}%"
-                       f"{e['ownership_points_UPPER']:>10.1f}%{tight}")
-        out.append(f"\n      {roll['total_ownership_points_recoverable_LOWER']:.1f}"
-                   f" .. {roll['total_ownership_points_recoverable_UPPER']:.1f}"
-                   f" ownership points recoverable by single mechanisms")
-        out.append(f"      {roll['meals_no_single_mechanism_can_recover']} "
-                   f"declining meals are blocked by MORE THAN ONE mechanism "
-                   f"and no single tranche recovers them")
-        out.append(f"      blocked by N distinct mechanisms: "
-                   f"{roll['meals_blocked_by_N_distinct_mechanisms']}")
+            rec = e.get("measured_recovered_meals")
+            if isinstance(rec, int):
+                un = e.get("meals_unsimulatable", 0)
+                shown = f"{rec}" + (f"  ({un} unsimulatable)" if un else "")
+            else:
+                shown = str(rec)
+            out.append(f"      {mech:<38}{e['addressable_items']:>6}"
+                       f"{e['items_with_mass']:>9}"
+                       f"{e['meals_blocked_solely']:>14}{shown:>22}")
+        mb = roll["by_mechanism"].get("MULTIPLE_BLOCKERS") or {}
+        out.append(f"\n      MULTIPLE_BLOCKERS: {mb.get('meals', 0)} meals — "
+                   f"EXCLUDED from ranking (no sole-cause attribution)")
+        out.append(f"      partition holds: {roll.get('partition_holds')} "
+                   f"({roll.get('partition_check','')})")
+        out.append(f"      ⛔ UNMEASURED is not zero and not the sole-blocked "
+                   f"count — a tranche cannot be ranked on it")
+        out.append(f"      {roll.get('ownership_rate','')}")
     out.append("\n    LIMITS")
     for limit in report["limits"]:
         out.append(f"      · {limit}")

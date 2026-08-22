@@ -1493,3 +1493,68 @@ coinciding.
 
 ⚠ The 40% gate is untouched and still unmet; closure still requires the
 reviewed main deployed and BOTH canaries.
+
+---
+
+## ⛔⛔⛔ CF21 — THE RANKING INSTRUMENT WAS DEAD, AND ITS ZEROS READ AS FINDINGS
+
+*(2026-08-22; taxonomy supplied by Danny)*
+
+Asked to measure `IDENTITY:no_resolution_row`, the answer was that it could not
+be measured. **P17g changed the predicate and the attribution instrument was
+not moved with it**, so two layers went stale at once and both failed silently:
+
+* **FLIPS.** `_COUNTERFACTUAL` flipped `has_mass` / `has_artifact` /
+  `has_memory` / `has_identity` / `has_quantity`. P17g replaced those in
+  `decide()` with `selected_rung_authoritative`. Tested directly: **every flip
+  is inert**, and the only fact that moves the predicate was not in the table.
+  That is why all eight mechanisms reported `0.0%` recoverable points.
+* **CLASSIFIER.** `_mechanism` still branched on `facts.has_mass`, so items
+  that HAD a mass and declined for the P17g reason fell through into the
+  evidence buckets. Measured: **310 of 313 declining items fired the SAME
+  predicate branch** while spread across eight differently-named buckets. The
+  taxonomy had stopped partitioning anything.
+
+⭐ **A COLUMN OF ZEROS IS NOT EVIDENCE THAT NOTHING IS RECOVERABLE** — it is the
+instrument's own silence. And my own sequencing claim ("86 items is the only
+candidate with evidence of meaningful points") had no basis: the table reported
+0.0% for that bucket exactly as for the others, and I read an item count as
+points evidence.
+
+### The repaired instrument
+
+Terminal mechanisms, **exactly one per item**, classified from the REAL
+selected-rung result; **mass is an orthogonal field, never a bucket**;
+counterfactuals rerun the real selector and are judged by the real `decide()`;
+an intervention that cannot be executed against concrete evidence reports
+**UNMEASURED**, which is neither zero nor the sole-blocked count.
+
+```text
+MECHANISM                        ITEMS  w/ mass  SOLE-BLOCKED  RECOVERED (measured)
+MEMORY_WINNER_NONAUTHORITATIVE      77       35            44   0  (43 unsimulatable)
+NO_LOCAL_EVIDENCE                  165       65           100            UNMEASURED
+ARTIFACT_WINNER_NONAUTHORITATIVE     3        3             1            UNMEASURED
+ARTIFACT_PRESENT_NO_WINNER           1        1             1            UNMEASURED
+
+MULTIPLE_BLOCKERS: 14 meals — EXCLUDED (no sole-cause attribution)
+partition holds: True (246 addressable items vs 246 declining items)
+```
+
+### ⛔ NEITHER TRANCHE IS AUTHORIZED
+
+* **memory sourced measures** — the one tranche that CAN be simulated measures
+  **0 recovered meals**. 43 of its 44 sole-blocked meals are *unsimulatable*:
+  the artifact holds no portions for those entities at all (`Cheesecake`,
+  `Homemade miso soup`, `Limesalt Burrito Bowl`). So the tranche cannot even be
+  evaluated for 98% of its own addressable population — which points back at
+  coverage rather than at measures.
+* **evidence coverage** — UNMEASURED. There is no concrete evidence to supply,
+  so recovery is unknown. Its 100 sole-blocked meals are an addressable
+  population, not a recovery.
+
+Per the standing instruction, neither is authorized: **the repaired ranking has
+not produced measured recovery for either.**
+
+⚠ The published **11.3% is untouched** — the rollup no longer derives an
+ownership-point column at all, because a second, differently-computed ownership
+number invites exactly the comparison it cannot support.
