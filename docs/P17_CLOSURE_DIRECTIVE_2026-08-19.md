@@ -1570,9 +1570,9 @@ already known had been filed as unknown. The presentation is now
 
 ### ⛔ NEITHER TRANCHE IS AUTHORIZED
 
-* **memory sourced measures** — the one tranche that CAN be simulated recovers
-  **0 of 2 evaluable meals**, with **42 of its 44** sole-blocked meals
-  UNMEASURED: the artifact holds no portions for those entities at all
+* **memory sourced measures** — the one tranche that CAN be simulated:
+  **0 / 2 evaluable meals recovered · 42 / 44 meals UNMEASURED**. The artifact
+  holds no portions for those entities at all
   (`Cheesecake`, `Homemade miso soup`, `Limesalt Burrito Bowl`). So the tranche
   cannot be evaluated for the large majority of its own addressable population
   — which points back at coverage rather than at measures.
