@@ -1693,3 +1693,53 @@ USER_CONTEXT_UNMEASURED             53
 
 It is the ceiling **if every user supplies a mass**. It is not a projection, not
 an expectation, and must never be quoted as one.
+
+
+### CF22 — THE VOLUME BOUNDARY, PROVEN CAUSALLY *(Danny, review of PR #85)*
+
+The density asymmetry recorded as "metadata-only, out of scope" was a claim
+about CAUSALITY, and had to be demonstrated at the layer that commits — the
+same argument CF22 makes about the gram defect being invisible at the parser
+and catastrophic at the pricer.
+
+**The boundary, proven to the committed row:**
+
+```text
+г       exact MASS
+мл / л  exact VOLUME
+мл / л  NOT exact mass without an authoritative density/conversion
+```
+
+**It cannot commit wrong nutrition.** `Кефир` is absent from the density table,
+so `250 мл` carries `mass_is_exact=True` with `grams=None` and precedence rung
+1 (`user_stated_exact`) FIRES. What happens next is a refusal: `_factor` raises
+`ScalingRefused` — *"per-100g values need a mass, and this portion has none"* —
+so no mass is manufactured and rung 1's authority is never handed to an
+invented number. The known-density branch (`Kefir`, 257.5 g, heuristic) is
+refused at the authority gate instead. **Both refuse; neither commits.**
+
+⛔ **BUT IT IS NOT PURELY METADATA, AND THAT MATTERS.** Against a `Per100ml`
+basis the resolver gives the SAME FACTOR (2.500) DIFFERENT AUTHORITY:
+
+```text
+Кефир (no density)     250 мл -> user_stated_exact  authoritative=True
+Kefir (density 1.03)   250 мл -> heuristic:vessel   authoritative=False
+```
+
+The known-density food is denied authority for a conversion the per-100 ml path
+never uses.
+
+⭐ **IT CANNOT REACH SETTLEMENT, AND THE REASON IS STRUCTURAL: NOTHING
+CONSTRUCTS `Per100ml`.** `_from_memory` and `_from_artifact` declare
+`Per100g()`, `_from_product` declares `PerServing` or `Per100g`,
+`_from_estimate` declares `PerServing`. An AST sweep over `core/`, `skills/`,
+`api/` and `handlers/` finds zero emitters, and the committed artifact carries
+no per-100 ml entry.
+
+**PARKED — with a self-invalidating guard.** CF22 exists because a latent defect
+sat one rollout away from live, so this parking carries a test that fails the
+day any producer emits `Per100ml`. Verified non-vacuous: injecting a real
+emitter made it fire, naming the file and line.
+
+Cyrillic and ASCII are identical on every path measured — normalized fields,
+resolver authority, committed calories, rung and provenance.
