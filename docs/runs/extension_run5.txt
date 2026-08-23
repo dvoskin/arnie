@@ -1,0 +1,1776 @@
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'cucumber'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'cucumber'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'cucumber'
+event=artifact_candidates_present_but_ranker_returned_none query='oats' candidates=2 fdc_ids=173905,171675
+event=artifact_candidates_present_but_ranker_returned_none query='oats' candidates=2 fdc_ids=173905,171675
+USDA search failed: Event loop is closed
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Капучино на обычном молоке'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Капучино на обычном молоке'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Капучино на обычном молоке'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Творог'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Творог'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Творог'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Творог'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Творог'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Творог'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Творог'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Творог'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Творог'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Творог'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Творог'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Творог'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Кефир'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for '1% cottage cheese'
+USDA foodPortions failed for 168114: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/168114?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Limesalt Burrito Bowl, double chicken'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Рыба'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Бейгл'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Бейгл'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Бейгл'
+USDA search 400: {"error":"Bad Request","message":"Invalid request. Please try again."}
+USDA search failed: USDA search returned 400 for 'Shrimp, regular (not battered/fried)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Shrimp, regular (not battered/fried)'
+USDA search 400: {"error":"Bad Request","message":"Invalid request. Please try again."}
+USDA search failed: USDA search returned 400 for 'Shrimp, regular (not battered/fried)'
+USDA search 400: {"error":"Bad Request","message":"Invalid request. Please try again."}
+USDA search failed: USDA search returned 400 for 'Shrimp, regular (not battered/fried)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Shrimp, regular (not battered/fried)'
+USDA search 400: {"error":"Bad Request","message":"Invalid request. Please try again."}
+USDA search failed: USDA search returned 400 for 'Shrimp, regular (not battered/fried)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Shrimp, regular (not battered/fried)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Shrimp, regular (not battered/fried)'
+USDA search 400: {"error":"Bad Request","message":"Invalid request. Please try again."}
+USDA search failed: USDA search returned 400 for 'Shrimp, regular (not battered/fried)'
+USDA search 400: {"error":"Bad Request","message":"Invalid request. Please try again."}
+USDA search failed: USDA search returned 400 for 'Shrimp, regular (not battered/fried)'
+USDA search 400: {"error":"Bad Request","message":"Invalid request. Please try again."}
+USDA search failed: USDA search returned 400 for 'Shrimp, regular (not battered/fried)'
+USDA search 400: {"error":"Bad Request","message":"Invalid request. Please try again."}
+USDA search failed: USDA search returned 400 for 'Shrimp, regular (not battered/fried)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Cucumber'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Cucumber'
+USDA foodPortions failed for 2626297: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2626297?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Чай'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Говядина жареная с сыром и луком'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Сырник со сметаной'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Сырник со сметаной'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Сырник со сметаной'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Сырник со сметаной'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Сырник со сметаной'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель молодой с маслом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель молодой с маслом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель молодой с маслом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель молодой с маслом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель молодой с маслом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель молодой с маслом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель молодой с маслом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель молодой с маслом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель молодой с маслом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель молодой с маслом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель молодой с маслом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лосось жареный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лосось жареный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лосось жареный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лосось жареный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лосось жареный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лосось жареный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Салат огурец помидор сельдерей укроп петрушка'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Салат огурец помидор сельдерей укроп петрушка'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Салат огурец помидор сельдерей укроп петрушка'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Салат огурец помидор сельдерей укроп петрушка'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Шоколад'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Quest Chips Spicy Sweet Chili'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Quest Chips Spicy Sweet Chili'
+event=semantic_resolver_truncated domain=food recovered=10 chars=2139 — the unreadable tail abstains ROW-LOCALLY; verdicts already parsed are kept
+USDA foodPortions failed for 2663833: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2663833?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2593341: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2593341?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Dollar pizza slice, plain'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Dollar pizza slice, plain'
+USDA foodPortions failed for 1594587: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/1594587?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Parmesan cheese'
+USDA foodPortions failed for 2021452: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2021452?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 356507: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/356507?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2599216: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2599216?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2016364: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2016364?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2631007: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2631007?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Черника'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Сыр пармезан'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Шакшука'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Ground turkey, 94% lean, pan-cooked'
+USDA foodPortions failed for 1643429: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/1643429?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 1642855: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/1642855?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 1646802: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/1646802?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Barebells Cookies and Caramel Protein Bar'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Barebells Cookies and Caramel Protein Bar'
+USDA foodPortions failed for 2147495: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2147495?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2127179: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2127179?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2475703: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2475703?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2475701: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2475701?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2490327: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2490327?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Corn'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Corn'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Whiskey shot'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Whiskey shot'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Рис'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Помидор'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Quest Cookies & Cream Protein Bar'
+USDA foodPortions failed for 2669747: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2669747?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2551309: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2551309?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2669766: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2669766?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 496362: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/496362?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Шашлык из курятины'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Перец гриль'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Перец гриль'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Блины с мясом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Блины с мясом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Блины с мясом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Блины с мясом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Блины с мясом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Блины с мясом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Блины с мясом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Блины с мясом'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Ferrero Rocher'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Dr Pepper'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Dr Pepper'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Dr Pepper'
+USDA foodPortions failed for 545003: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/545003?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2109352: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2109352?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2109251: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2109251?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2756872: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2756872?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2756217: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2756217?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Latte with half and half, no sugar'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Latte with half and half, no sugar'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Latte with half and half, no sugar'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Yellowtail Sashimi'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Yellowtail Sashimi'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Yellowtail Sashimi'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Курица в плове'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Плов (рис с маслом, морковь, чеснок, специи)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Плов (рис с маслом, морковь, чеснок, специи)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Плов (рис с маслом, морковь, чеснок, специи)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Плов (рис с маслом, морковь, чеснок, специи)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Плов (рис с маслом, морковь, чеснок, специи)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Плов (рис с маслом, морковь, чеснок, специи)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Плов (рис с маслом, морковь, чеснок, специи)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Плов (рис с маслом, морковь, чеснок, специи)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофельное пюре'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофельное пюре'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофельное пюре'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофельное пюре'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофельное пюре'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофельное пюре'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофельное пюре'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофельное пюре'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Творог'
+USDA foodPortions failed for 2066314: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2066314?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2488703: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2488703?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 1630407: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/1630407?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Ground Beef'
+USDA foodPortions failed for 1955995: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/1955995?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2146322: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2146322?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 1597053: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/1597053?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 577699: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/577699?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Mayo'
+event=semantic_resolver_truncated domain=food recovered=10 chars=1822 — the unreadable tail abstains ROW-LOCALLY; verdicts already parsed are kept
+USDA foodPortions failed for 2663817: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2663817?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2368950: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2368950?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2365898: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2365898?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2552852: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2552852?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2629887: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2629887?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Ризотто с морепродуктами (рис, сливочный соус)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Ризотто с морепродуктами (рис, сливочный соус)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Ризотто с морепродуктами (рис, сливочный соус)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Креветки'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Креветки'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Креветки'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Креветки'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Кальмар'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Cheese pizza slice, tomato sauce, mozzarella, basil, large slice'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Кофе со сливками без сахара'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Кофе со сливками без сахара'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Кофе со сливками без сахара'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Кофе со сливками без сахара'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Кофе со сливками без сахара'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Quest Chips Buffalo Ranch'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Паштет утиный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Паштет утиный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Паштет утиный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Паштет утиный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Паштет утиный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Паштет утиный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Паштет утиный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Паштет утиный'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Хлеб'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель отварной'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель отварной'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель отварной'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель отварной'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель отварной'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Картофель отварной'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Skirt steak, grilled with a little oil'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Skirt steak, grilled with a little oil'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Sushi Go White Tuna Bowl with Rice and Tempura Flakes'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Протеиновый шейк (протеиновый порошок)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Протеиновый шейк (протеиновый порошок)'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Миндальное молоко'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Миндальное молоко'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Манго'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Манго'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Манго'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Манго'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Манго'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Манго'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Манго'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Манго'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Манго'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Манго'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Barebells Protein Bar'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Barebells Protein Bar'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Barebells Protein Bar'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Barebells Protein Bar'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Протеиновый порошок в кофе'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Куриное филе вареное'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Куриное филе вареное'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Куриное филе вареное'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Куриное филе вареное'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Куриное филе вареное'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Клубника'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Клубника'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Клубника'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Клубника'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Клубника'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Клубника'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Клубника'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Малина'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Малина'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Яблочный сок'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Ground turkey'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Ground turkey'
+USDA foodPortions failed for 1941808: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/1941808?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2033779: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2033779?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2474978: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2474978?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 549075: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/549075?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 706626: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/706626?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 722258: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/722258?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2288245: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2288245?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2164984: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2164984?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Хамон'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Хамон'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Хамон'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Хамон'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Котлеты куриные'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Листья салата'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Листья салата'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Листья салата'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Листья салата'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Chicken wings'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Eggplant'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Карбонара'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Карбонара'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Карбонара'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Карбонара'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Карбонара'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Пицца сырная'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Пицца сырная'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Home fries with peppers and onions'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Seaweed Salad'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Seaweed Salad'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Salmon, pan-cooked with oil'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Salmon, pan-cooked with oil'
+USDA foodPortions failed for 577532: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/577532?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 1663084: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/1663084?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 2057892: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/2057892?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'Сметана 5%'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'ground turkey'
+USDA search 404: <!DOCTYPE html>
+<html lang="en" data-critters-container>
+
+<head>
+	<base href="/">
+	<meta content="text/html; charset=UTF
+USDA search failed: USDA search returned 404 for 'ground turkey'
+USDA foodPortions failed for 171506: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/171506?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 171505: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/171505?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+USDA foodPortions failed for 174492: Client error '404 Not Found' for url 'https://api.nal.usda.gov/fdc/v1/food/174492?api_key=m5UfzcGYLkcIuIhY2DykTf7EQjUaY62LlghK0SDk&format=full'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+  PREFLIGHT  usda:     ok — 2 row(s) for the control query
+  PREFLIGHT  resolver: ok — disposition='qualified'
+  ⚠ artifact-extension counterfactual ARMED — this run reaches USDA and the resolver
+    ⚠ search 'Творог': no answer after 12 attempts
+    ⚠ USDA search failed for 'Творог' — UNMEASURED
+    ⚠ search 'Shrimp, regular (not battered/fried)': no answer after 12 attempts
+    ⚠ USDA search failed for 'Shrimp, regular (not battered/fried)' — UNMEASURED
+    ⚠ search 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)': no answer after 12 attempts
+    ⚠ USDA search failed for 'Лапша с говядиной и овощами (лук, морковь, стручковая фасоль)' — UNMEASURED
+
+  P11 — SETTLEMENT COVERAGE, AT MEAL LEVEL
+
+    361 rows in 232 meals over 30 days
+    predicate baa0f81   population FROZEN p16b_0817
+
+    A  routing rate     83.3%   structured-route / ORDINARY FOOD-CHAT meals
+    B  support rate     13.5%   supported / STRUCTURED   <- flattering
+    C  OWNERSHIP RATE   11.3%   supported / ORDINARY FOOD-CHAT meals  =  A x B
+
+    25 of 185 structured-route meals supported; 37 legacy-written; 10 excluded as not-a-chat-turn; 0 unrecognised writer
+    expected rung: {'memory': 13, 'artifact': 12}
+
+    WHY STRUCTURED MEALS DECLINE
+        160  the rung that would price this scales only heuristically — canonical settlement needs a user-stated exact mass, a directly compatible basis, or a sourced conversion
+
+    P16 — MISS ATTRIBUTION BY MECHANISM (246 declining items)
+        165  NO_LOCAL_EVIDENCE                                    non-latin  74   e.g. Окрошка на айране с курицей
+         77  MEMORY_WINNER_NONAUTHORITATIVE                       non-latin   0   e.g. Cheesecake
+          3  ARTIFACT_WINNER_NONAUTHORITATIVE                     non-latin   0   e.g. Rice
+          1  ARTIFACT_PRESENT_NO_WINNER                           non-latin   0   e.g. Oats
+
+      Rank tranches by MEASURED RECOVERED MEALS. An UNMEASURED recovery is not a zero and not the sole-blocked count — it is the absence of a measurement, and a tranche cannot be ranked on it. `non_latin_within_each_mechanism` answers 'is this a non-English problem?' WITHOUT letting language become the bucket.
+
+    RANKED BY MEASURED RECOVERED MEALS
+      160 declining meals over 222 ordinary food-chat meals
+
+      MECHANISM                              ITEMS  w/ mass  SOLE-BLOCKED              RECOVERED (measured)
+      NO_LOCAL_EVIDENCE                        165       65           100 10 / 97 evaluable  · 3 UNMEASURED
+      MEMORY_WINNER_NONAUTHORITATIVE            77       35            44  0 / 2 evaluable  · 42 UNMEASURED
+      ARTIFACT_WINNER_NONAUTHORITATIVE           3        3             1                        UNMEASURED
+      ARTIFACT_PRESENT_NO_WINNER                 1        1             1                        UNMEASURED
+
+      MULTIPLE_BLOCKERS: 14 meals — EXCLUDED from ranking (no sole-cause attribution)
+      partition holds: True (246 addressable items across mechanisms vs 246 declining items)
+      ⛔ UNMEASURED is not zero and not the sole-blocked count — a tranche cannot be ranked on it
+      NOT recomputed here. The published 11.3% is frozen historical evidence on p16b_0817 at its named predicate commit.
+
+    ARTIFACT EXTENSION — USDA FDC 15.3
+      population: 165 addressable items · 152 entering this counterfactual (in 100 sole-blocked meals) · 124 distinct identities
+      OUTCOME                                          N  non-latin
+      RECOVERED                                       11          0
+      no USDA match                                  116         72
+      no defensible winner                            11          0
+      no nutrition                                     0          0
+      no required portion/conversion                  11          0
+      higher-priority heuristic rung still wins        0          0
+      infrastructure UNMEASURED                        3          2
+      (of which non-Latin identities)                 74
+      (not observed: no nutrition, higher-priority heuristic rung still wins)
+      scope: existing canonical identity · real USDA candidates · real qualification · real ranker · actual sourced portions · shared selector · real decide(). No translations, restaurant estimates, recipe decomposition, OFF, aliases, or generated evidence.
+
+    LIMITS
+      · meals are grouped by ledger_events.turn_id; a row with no created event cannot be grouped and is counted as its own meal
+      · food_entries carries NO canonical_entity_id, so the predicate is asked with an empty identity — this is coverage WITHOUT identity stamping, which is what the fleet has today
+      · the predicate is EXECUTED, not modelled; memory is read per item at measurement time, which is later than settle time and can only OVERSTATE memory
+      · read-only: no writes, no model, no network beyond the database
+

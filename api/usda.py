@@ -19,6 +19,22 @@ logger = logging.getLogger(__name__)
 
 _BASE = "https://api.nal.usda.gov/fdc/v1"
 
+
+class UsdaUnavailable(RuntimeError):
+    """The provider did not answer. NOT "the food is not there".
+
+    ⛔⛔⛔ MEASURED 2026-08-22: the identical `/foods/search` request returns
+    200 or a 404 HTML ERROR PAGE roughly half the time, with rate-limit budget
+    untouched (3104 of 3600 remaining). `_search` logged that and returned `[]`,
+    so a provider flake was INDISTINGUISHABLE from "USDA has no such food".
+
+    ⭐ AN ABSENT ANSWER MUST NEVER BE REPRESENTABLE AS A NEGATIVE ONE. Callers
+    that want the old fail-soft behaviour still get it — `strict` defaults
+    False and nothing in the settle path changes. A caller MEASURING coverage
+    must be able to tell the two apart, because "no match" and "no answer"
+    point at completely different work.
+    """
+
 # FDC nutrient numbers → our keys. Macros (the first seven) land in dedicated
 # food_entries columns; everything below is a MICRONUTRIENT and is stored in
 # micronutrients_json (see _MICRO_KEYS / _MICRO_UNITS).
@@ -87,7 +103,7 @@ def _client() -> httpx.AsyncClient:
     return _http
 
 
-async def food_portions(fdc_id) -> list[dict]:
+async def food_portions(fdc_id, strict: bool = False) -> list[dict]:
     """USDA's OWN measures for one record: "1 large" = 50 g, "1 cup" = 244 g.
 
     ⛔⛔ THIS IS THE HALF `/foods/search` DOES NOT RETURN, and its absence is why
@@ -194,8 +210,13 @@ _ML_UNITS = frozenset({"ml", "mls", "milliliter", "millilitre",
 USDA_BASIS = "per_100g"
 
 
-async def _search(query: str, data_types: list[str], page_size: int) -> list[dict]:
-    """One USDA search request restricted to the given data types."""
+async def _search(query: str, data_types: list[str], page_size: int,
+                  strict: bool = False) -> list[dict]:
+    """One USDA search request restricted to the given data types.
+
+    `strict=True` raises `UsdaUnavailable` instead of returning `[]` when the
+    provider does not answer — see that class for why the distinction exists.
+    """
     try:
         resp = await _client().post(
             f"{_BASE}/foods/search",
@@ -204,6 +225,9 @@ async def _search(query: str, data_types: list[str], page_size: int) -> list[dic
         )
         if resp.status_code != 200:
             logger.warning(f"USDA search {resp.status_code}: {resp.text[:120]}")
+            if strict:
+                raise UsdaUnavailable(
+                    f"USDA search returned {resp.status_code} for {query!r}")
             return []
         out = []
         for f in resp.json().get("foods", []):
@@ -245,6 +269,13 @@ async def _search(query: str, data_types: list[str], page_size: int) -> list[dic
         return out
     except Exception as e:
         logger.warning(f"USDA search failed: {e}")
+        # ⛔ SAME DISTINCTION AS `_search`. `raise_for_status()` above turns a
+        # provider 404 into an exception, and swallowing it here made "the
+        # detail endpoint did not answer" identical to "this record states no
+        # portions" — which is how a coverage measurement concludes that USDA
+        # has no portion data for generic foods.
+        if strict:
+            raise UsdaUnavailable(f"USDA portions failed for {fdc_id}: {e}")
         return []
 
 
@@ -254,7 +285,8 @@ def _looks_branded(query: str) -> bool:
     return len(toks) >= 4 or any(t[:1].isupper() for t in toks)
 
 
-async def search_food(query: str, page_size: int = 5) -> list[dict]:
+async def search_food(query: str, page_size: int = 5,
+                      strict: bool = False) -> list[dict]:
     """
     Search USDA for a food. Two-pass: USDA's CURATED data (Foundation, SR Legacy)
     is clean and trustworthy, so it's preferred for generic foods. Branded is
@@ -273,7 +305,7 @@ async def search_food(query: str, page_size: int = 5) -> list[dict]:
         order = [curated, branded]
 
     for data_types in order:
-        res = await _search(query, data_types, page_size)
+        res = await _search(query, data_types, page_size, strict=strict)
         if res:
             return res
     return []

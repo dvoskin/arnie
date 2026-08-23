@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import collections
+import inspect
 import dataclasses
 import hashlib
 import json
@@ -831,6 +832,383 @@ def memory_measures_counterfactual(*, item: dict, facts, memory_per100g):
         selected_rung_authoritative=bool(selection.authoritative))
 
 
+# ══ THE AUTHORIZED ARTIFACT-EXTENSION COUNTERFACTUAL ══════════════════════
+#
+# ⛔⛔⛔ AUTHORIZED SCOPE, VERBATIM *(Danny, 2026-08-22)*: a READ-ONLY USDA FDC
+# 15.3 artifact-extension counterfactual over `NO_LOCAL_EVIDENCE`, using the
+# existing canonical identity, real USDA candidates, the real ranker, actual
+# sourced portions, the shared selector and the real `decide()`.
+#
+# FORBIDDEN, and none of it happens here: translations, restaurant estimates,
+# recipe decomposition, OFF, aliases, generated evidence.
+#
+# ⭐ QUALIFICATION IS INCLUDED, AND THAT IS A DECISION WORTH NAMING. The
+# artifact stores QUALIFIED candidates — `ArtifactEvidence.candidates` is the
+# subset a resolver judged admissible, and `_from_artifact` ranks over exactly
+# that. Feeding raw `/foods/search` hits to the ranker would model an artifact
+# that no builder produces and would be strictly MORE generous, so the measured
+# recovery would overstate what extending the artifact actually buys. The
+# resolver judges IDENTITY ELIGIBILITY; it generates no nutrition, so it is not
+# "generated evidence". Its outages route to INFRASTRUCTURE, never to a
+# negative verdict.
+#
+# ⛔ OFF BY DEFAULT. This is the only network in the instrument, so the routine
+# run stays pure and `NO_LOCAL_EVIDENCE` reports UNMEASURED exactly as before
+# unless `--artifact-extension` is passed.
+
+#: Why the extension failed to make an item settleable. Danny's list, and every
+#: analyzed item lands in exactly one — including recovery itself.
+EXTENSION_OUTCOMES = (
+    "RECOVERED",
+    "no USDA match",
+    "no defensible winner",
+    "no nutrition",
+    "no required portion/conversion",
+    "higher-priority heuristic rung still wins",
+    "infrastructure UNMEASURED",
+)
+
+#: identity -> (ArtifactEvidence | None, outcome). One USDA round trip per
+#: DISTINCT identity: 202 declining items carry 155 of them, and asking twice
+#: about the same food would cost twice and could answer differently.
+_EXTENSION_CACHE: dict = {}
+
+
+#: ⛔⛔⛔ A PROVIDER THAT IS DOWN FOR THE WHOLE RUN IS ONE FACT, NOT N FACTS
+#: *(Danny, 2026-08-22)*. The Anthropic account ran out of credit mid-tranche
+#: and every affected item reported `infrastructure UNMEASURED` — 80 separate
+#: rows that LOOK like eighty findings about eighty foods and are one finding
+#: about a billing state. A per-item bucket cannot represent a run-level
+#: outage, so the run itself is withheld: PUBLISHED=False, no item outcomes.
+EXTENSION_RUN_OUTAGE: dict = {"outage": None}
+
+
+async def artifact_extension_preflight() -> dict:
+    """ONE USDA search and ONE qualification, before any item work.
+
+    ⛔ FAIL FAST, BECAUSE THE ALTERNATIVE IS A TABLE OF FALSE FINDINGS. Run 3
+    spent its whole budget discovering, 152 times, that the resolver had no
+    credit — and produced a report whose dominant bucket was an account state.
+    Two calls up front answer that for the price of two calls.
+
+    ⭐ AND IT PROBES BOTH SEAMS SEPARATELY, because they fail differently and
+    need different repairs: USDA flakes transiently (retried), the resolver
+    fails deterministically on billing (not retryable at all).
+    """
+    from api import usda
+    from skills.nutrition.evidence_qualification import qualify_usda_rows
+
+    report = {"usda": "unknown", "resolver": "unknown", "ok": False,
+              "reason": ""}
+
+    try:
+        rows = await _with_retry(
+            lambda: usda.search_food("cucumber", page_size=3, strict=True),
+            what="preflight USDA search")
+    except Exception as exc:                             # noqa: BLE001
+        report["usda"] = f"UNAVAILABLE — {type(exc).__name__}"
+        report["reason"] = "USDA search did not answer after retries"
+        return report
+    if not rows:
+        report["usda"] = "answered, but returned nothing for a control query"
+        report["reason"] = ("USDA answered with no rows for 'cucumber' — the "
+                            "control food. A provider that cannot find a "
+                            "cucumber cannot measure coverage.")
+        return report
+    report["usda"] = f"ok — {len(rows)} row(s) for the control query"
+
+    try:
+        qualification = await qualify_usda_rows("Cucumber", list(rows)[:1])
+    except Exception as exc:                             # noqa: BLE001
+        report["resolver"] = f"UNAVAILABLE — {type(exc).__name__}: {exc}"
+        report["reason"] = f"qualification raised: {exc}"
+        return report
+    disposition = getattr(qualification, "disposition", "")
+    if qualification is None or disposition == "resolver_down_no_candidates":
+        report["resolver"] = f"UNAVAILABLE — disposition={disposition!r}"
+        report["reason"] = (
+            "the qualification resolver is down, so no USDA candidate can be "
+            "judged admissible. Every item would report infrastructure and the "
+            "run would describe an outage rather than the tranche.")
+        return report
+
+    report["resolver"] = f"ok — disposition={disposition!r}"
+    report["ok"] = True
+    return report
+
+
+#: ⛔⛔⛔ MEASURED 2026-08-22: the IDENTICAL USDA search returns 200 or a 404
+#: HTML error page roughly HALF the time, with rate-limit budget untouched
+#: (3104 of 3600 remaining) and even when paced at one request per second. Two
+#: full runs of this measurement disagreed wildly — 9 recovered vs 2, 132 "no
+#: USDA match" vs 99 — because every flake was silently filed as "this food is
+#: not in USDA".
+#:
+#: ⭐ SO THE FLAKE IS ABSORBED HERE, WHERE IT IS VISIBLE, rather than in a
+#: bucket where it is indistinguishable from evidence. At ~50% per attempt,
+#: five attempts leaves ~3% unanswered, and whatever remains is reported as
+#: INFRASTRUCTURE — never as a fact about the food.
+#: ⭐ PATIENCE SIZED TO THE GATE, NOT TO TASTE *(Danny: coverage is not
+#: authorized unless infrastructure UNMEASURED reaches ZERO)*. Five attempts
+#: left 20 of 152 items unanswered — 13%, against the ~3% a 50% per-attempt
+#: flake predicts, because the failure rate WORSENS under sustained traffic:
+#: the same run absorbed 197 recovered 404s. Twelve attempts with a capped
+#: backoff, plus a pace between calls to stop provoking the throttle, is what
+#: a zero-residual gate actually costs.
+#:
+#: ⛔ THIS IS NOT RETRYING UNTIL GREEN. Each attempt asks the SAME question of
+#: a server that answers non-deterministically; nothing about the measurement
+#: is re-rolled. The residual is still reported, and a non-zero one still fails
+#: the gate.
+_RETRY_ATTEMPTS = 12
+_RETRY_BACKOFF = 1.2
+_RETRY_BACKOFF_CAP = 8.0
+#: A small gap between provider calls. The flake is load-dependent, so the
+#: cheapest way to reduce it is to stop hammering.
+_PROVIDER_PACE = 0.35
+
+
+async def _with_retry(call, *, what: str):
+    """Bounded retry around one provider call. Raises if it never answers."""
+    import asyncio as _aio
+
+    last = None
+    for attempt in range(_RETRY_ATTEMPTS):
+        try:
+            if _PROVIDER_PACE:
+                await _aio.sleep(_PROVIDER_PACE)
+            return await call()
+        except Exception as exc:                         # noqa: BLE001
+            last = exc
+            if attempt + 1 < _RETRY_ATTEMPTS:
+                await _aio.sleep(min(_RETRY_BACKOFF * (attempt + 1),
+                                     _RETRY_BACKOFF_CAP))
+    print(f"    ⚠ {what}: no answer after {_RETRY_ATTEMPTS} attempts")
+    raise last if last else RuntimeError(what)
+
+
+async def _usda_extension(identity: str, entity: str, preparation: str):
+    """The artifact entry USDA FDC 15.3 would yield for this identity.
+
+    Returns `(evidence, outcome)`. `evidence` is an `ArtifactEvidence` built
+    from REAL qualified candidates carrying REAL `foodPortions`; `outcome` is
+    None when it is usable, else the bucket that stopped it.
+    """
+    from api import usda
+    from core.canonical_pricing import ArtifactEvidence
+    from skills.nutrition.evidence_qualification import qualify_usda_rows
+
+    if identity in _EXTENSION_CACHE:
+        return _EXTENSION_CACHE[identity]
+
+    async def _finish(evidence, outcome):
+        # ⛔⛔ AN OUTAGE IS NOT A PROPERTY OF THE FOOD, so it is never cached.
+        # Caching it let ONE transient 404 become a permanent verdict for that
+        # identity for the rest of the run — which is how a 50% provider flake
+        # turned into 45 "unmeasurable" items in the second run and 0 in the
+        # first, from the same inputs.
+        if outcome != "infrastructure UNMEASURED":
+            _EXTENSION_CACHE[identity] = (evidence, outcome)
+        return evidence, outcome
+
+    # 1 — REAL USDA CANDIDATES, for the identity EXACTLY AS THE USER WROTE IT.
+    # No translation: a Cyrillic surface searched as-is is what an
+    # untranslated extension would actually find, and translating here would
+    # measure a different tranche than the one authorized.
+    try:
+        rows = await _with_retry(
+            lambda: usda.search_food(identity, page_size=10, strict=True),
+            what=f"search {identity!r}")
+    except Exception:                                    # noqa: BLE001
+        print(f"    ⚠ USDA search failed for {identity!r} — UNMEASURED")
+        return await _finish(None, "infrastructure UNMEASURED")
+    if not rows:
+        return await _finish(None, "no USDA match")
+
+    # 2 — QUALIFICATION, the same seam the builder runs. An outage is
+    # INFRASTRUCTURE, never "this food has no evidence".
+    try:
+        qualified = await qualify_usda_rows(identity, rows)
+    except Exception:                                    # noqa: BLE001
+        print(f"    ⚠ qualification raised for {identity!r} — UNMEASURED")
+        return await _finish(None, "infrastructure UNMEASURED")
+    if qualified is None or (
+            getattr(qualified, "disposition", "") == "resolver_down_no_candidates"
+            and not qualified.rows):
+        # ⛔⛔ THE RESOLVER GOING DOWN IS NOT A FACT ABOUT THIS FOOD. It is the
+        # same fact for every remaining item, so it is recorded ONCE at run
+        # level and the run is withheld — rather than accumulating one
+        # indistinguishable row per item, which is what made run 3 unreadable.
+        EXTENSION_RUN_OUTAGE["outage"] = (
+            "the qualification resolver became unavailable mid-run "
+            f"(disposition={getattr(qualified, 'disposition', '')!r})")
+        return await _finish(None, "infrastructure UNMEASURED")
+    candidates = [dict(r) for r in (qualified.rows or ())]
+    if not candidates:
+        return await _finish(None, "no USDA match")
+
+    # 3 — ACTUAL SOURCED PORTIONS, stamped with the release the caller names.
+    # `enrich_artifact_measures` does exactly this at build time; a portion
+    # with no release yields no `ConversionEvidence` and is not authoritative.
+    for candidate in candidates:
+        fdc_id = candidate.get("fdc_id")
+        if not fdc_id:
+            continue
+        try:
+            measures = await _with_retry(
+                lambda: usda.food_portions(fdc_id, strict=True),
+                what=f"portions {fdc_id}")
+        except Exception:                                # noqa: BLE001
+            print(f"    ⚠ portions failed for {fdc_id} — UNMEASURED")
+            return await _finish(None, "infrastructure UNMEASURED")
+        for measure in measures or ():
+            measure["dataset_version"] = USDA_RELEASE
+        if measures:
+            candidate["measures"] = measures
+
+    return await _finish(ArtifactEvidence(candidates=tuple(candidates),
+                                          fingerprint="extension:usda15.3"),
+                         None)
+
+
+#: The FDC release the committed artifact was hydrated at (P17c.3b). Stamped,
+#: never derived — a fabricated release in a durable conversion record is the
+#: defect P17c.3a exists to prevent, and the counterfactual must not simulate
+#: evidence the real build could not produce.
+USDA_RELEASE = "15.3"
+
+
+async def artifact_extension_counterfactual(*, item: dict, facts,
+                                            memory_per100g=None):
+    """The item's facts if the artifact were extended from USDA FDC 15.3.
+
+    Returns updated `ItemFacts`, or **None when the outcome is UNMEASURED**.
+    The bucket for every item is recorded in `EXTENSION_LEDGER` so failures can
+    be reported by cause rather than as one undifferentiated zero.
+    """
+    from core.canonical_pricing import (_from_artifact, _ranker_query,
+                                        select_priced_rung)
+    from core.food_intelligence import best_candidate
+    from skills.nutrition.normalize import normalize_quantity
+    from skills.nutrition.pricing_artifact import split_identity
+
+    identity = str(item.get("food_name") or "").strip()
+    quantity = str(item.get("quantity") or "").strip()
+    entity, preparation = split_identity(identity)
+
+    def _record(outcome, updated=None):
+        EXTENSION_LEDGER.append({"identity": identity, "outcome": outcome,
+                                 "non_latin": _non_latin(identity)})
+        return updated
+
+    if not entity or not quantity:
+        return _record("no USDA match")
+
+    evidence, outcome = await _usda_extension(identity, entity, preparation)
+    if outcome == "infrastructure UNMEASURED":
+        return _record(outcome)                          # None -> UNMEASURED
+    if outcome:
+        return _record(outcome, dataclasses.replace(facts))
+
+    query = _ranker_query(entity, preparation)
+    # ⭐ THE REAL RANKER, ASKED DIRECTLY ONLY TO ATTRIBUTE. `_from_artifact`
+    # calls this same function, so there is no second ranking rule — this
+    # separates "the ranker chose nobody" from "it chose a row with no
+    # nutrition", which are different repairs and would otherwise collapse.
+    try:
+        winner, _confidence = best_candidate(query, list(evidence.candidates))
+    except Exception:                                    # noqa: BLE001
+        return _record("infrastructure UNMEASURED")
+    if not winner:
+        return _record("no defensible winner", dataclasses.replace(facts))
+    if not (winner.get("per100g") or {}):
+        return _record("no nutrition", dataclasses.replace(facts))
+
+    consumed = normalize_quantity(quantity, identity)
+    try:
+        selection = select_priced_rung(
+            entity=entity, preparation=preparation, consumed=consumed,
+            rungs=((evidence, lambda e: _from_artifact(e, query=query)),),
+            bound=False)
+    except Exception:                                    # noqa: BLE001
+        return _record("infrastructure UNMEASURED")
+
+    if selection.priced is None:
+        return _record("no defensible winner", dataclasses.replace(facts))
+    if not selection.authoritative:
+        # ⚠ THE RUNG PRICES AND THE QUANTITY STILL CANNOT BE SCALED WITHOUT
+        # GUESSING — no user-stated exact mass, no directly compatible basis,
+        # no sourced conversion matching the stated unit. Extending coverage
+        # does not answer a conversion question.
+        return _record("no required portion/conversion",
+                       dataclasses.replace(facts))
+
+    updated = dataclasses.replace(
+        facts, selected_rung=selection.rung.value if selection.rung else "",
+        selected_rung_authoritative=True, has_artifact=True)
+    return _record("RECOVERED", updated)
+
+
+#: Every extension attempt, in order, so failures report by CAUSE.
+EXTENSION_LEDGER: list = []
+
+
+def _extension_report(addressable=None, sole_blocked=None):
+    """Extension attempts by outcome, or None when it was never armed.
+
+    ⛔ NOT AN EMPTY TABLE WHEN DISARMED. Zeros in every bucket would read as
+    "the extension was tried and recovered nothing"; `None` says it was not
+    run, which is the same distinction UNMEASURED draws one level up.
+    """
+    if EXTENSION_RUN_OUTAGE.get("outage"):
+        # ⛔ WITHHELD, NOT ZEROED. Publishing buckets from a run whose provider
+        # was down would put an outage into the tranche ranking, and a reader
+        # cannot tell that table from a real one.
+        return {"PUBLISHED": False,
+                "why_withheld": EXTENSION_RUN_OUTAGE["outage"],
+                "items_attempted_before_withholding": len(EXTENSION_LEDGER)}
+    if not EXTENSION_LEDGER:
+        return None
+    by_outcome = collections.Counter(e["outcome"] for e in EXTENSION_LEDGER)
+    unreachable = [o for o in EXTENSION_OUTCOMES if o not in by_outcome]
+    return {
+        "PUBLISHED": True,
+        "release": f"USDA FDC {USDA_RELEASE}",
+        # ⭐ THE POPULATION, RECONCILED TO THE REPAIRED INSTRUMENT *(Danny)*.
+        # An earlier pre-filter figure of 202 items counted every declining
+        # NO_LOCAL_EVIDENCE item in the whole frozen set; this counterfactual
+        # only ever runs on the SOLE-BLOCKED meals, because a meal blocked by
+        # two mechanisms is recovered by neither alone. 202 is retired — it
+        # describes a population this measurement never had.
+        "addressable_items": addressable,
+        "sole_blocked_meals_entering_this_counterfactual": sole_blocked,
+        "items_attempted": len(EXTENSION_LEDGER),
+        "distinct_identities": len({e["identity"] for e in EXTENSION_LEDGER}),
+        "by_outcome": {o: by_outcome.get(o, 0) for o in EXTENSION_OUTCOMES},
+        # ⭐ LANGUAGE AS A LENS, NEVER AS A BUCKET — the rule this instrument
+        # already applies to mechanisms. "Is this a non-English problem?" is a
+        # question to ask OF each outcome; making it an outcome would let a
+        # Cyrillic surface with an ordinary coverage gap be filed as a language
+        # defect, and the repair would go to the wrong place.
+        "non_latin_within_each_outcome": {
+            o: sum(1 for e in EXTENSION_LEDGER
+                   if e["outcome"] == o and e["non_latin"])
+            for o in EXTENSION_OUTCOMES if by_outcome.get(o)},
+        "non_latin_items": sum(1 for e in EXTENSION_LEDGER if e["non_latin"]),
+        "buckets_not_observed": unreachable,
+        # The per-identity ledger, so a follow-up question does not cost
+        # another 124 provider round trips.
+        "ledger": sorted(({"identity": e["identity"], "outcome": e["outcome"]}
+                          for e in EXTENSION_LEDGER),
+                         key=lambda e: (e["outcome"], e["identity"])),
+        "scope": ("existing canonical identity · real USDA candidates · real "
+                  "qualification · real ranker · actual sourced portions · "
+                  "shared selector · real decide(). No translations, "
+                  "restaurant estimates, recipe decomposition, OFF, aliases, "
+                  "or generated evidence."),
+    }
+
+
 #: mechanism -> the EXECUTABLE counterfactual for its tranche, or None.
 #:
 #: ⛔ None MEANS UNMEASURED, NOT ZERO. `NO_LOCAL_EVIDENCE`'s tranche is "the
@@ -907,9 +1285,18 @@ async def rank_mechanisms(db, *, declining_meals: dict) -> dict:
                 # `authoritative` flag is an INPUT to `decide()`, not a verdict:
                 # treating it as one would recreate the predicate here and stop
                 # tracking it the moment another branch changed.
-                updated = [intervention(item=r["item"], facts=r["facts"],
-                                        memory_per100g=r.get("memory_per100g"))
-                           for r in declining_meals[key]]
+                # ⭐ SYNC OR ASYNC, BECAUSE THE TRANCHES DIFFER. The memory
+                # counterfactual is pure and needs no I/O; the artifact
+                # extension has to reach USDA. Awaiting only what is awaitable
+                # keeps the pure one pure rather than making every
+                # counterfactual pay for the one that needs a network.
+                updated = []
+                for r in declining_meals[key]:
+                    got = intervention(item=r["item"], facts=r["facts"],
+                                       memory_per100g=r.get("memory_per100g"))
+                    if inspect.isawaitable(got):
+                        got = await got
+                    updated.append(got)
                 # ⛔⛔⛔ A DEFINITE NO OUTRANKS AN UNKNOWN *(Danny, review of
                 # `d8113d5`)*. This asked `any(unsimulatable)` FIRST, so a meal
                 # holding one unsimulatable item AND one simulated item that
@@ -1079,6 +1466,18 @@ async def audit_supported_memory(db, *, meals: dict, verdicts: dict,
     }
 
 
+def enable_artifact_extension() -> None:
+    """Arm the ONE networked counterfactual. Explicit, and off by default.
+
+    ⛔⛔ THE ROUTINE INSTRUMENT MUST STAY PURE. Every other intervention is
+    database-free and deterministic; this one reaches USDA and a resolver, so a
+    default-on version would make the ranking depend on two providers being up
+    and would quietly change what "UNMEASURED" means between runs. Armed only
+    by `--artifact-extension`, and only for the tranche it was authorized for.
+    """
+    INTERVENTIONS["NO_LOCAL_EVIDENCE"] = artifact_extension_counterfactual
+
+
 async def attribute_misses(db, *, meals: dict, verdicts: dict,
                            structured: list, chat_meals: int) -> dict:
     """Every DECLINING item of every declining structured meal, by mechanism,
@@ -1154,6 +1553,11 @@ async def attribute_misses(db, *, meals: dict, verdicts: dict,
                     "be ranked on it. `non_latin_within_each_mechanism` "
                     "answers 'is this a non-English problem?' WITHOUT letting "
                     "language become the bucket."),
+        "artifact_extension": _extension_report(
+            addressable=ranked.get("NO_LOCAL_EVIDENCE", {}).get(
+                "addressable_items"),
+            sole_blocked=ranked.get("NO_LOCAL_EVIDENCE", {}).get(
+                "meals_blocked_solely")),
         "meal_rollup": {
             "declining_meals": len(declining_meals),
             "ordinary_food_chat_meals_DENOMINATOR": max(int(chat_meals), 1),
@@ -1254,6 +1658,32 @@ def render(report: dict) -> str:
         out.append(f"      ⛔ UNMEASURED is not zero and not the sole-blocked "
                    f"count — a tranche cannot be ranked on it")
         out.append(f"      {roll.get('ownership_rate','')}")
+    ext = (a.get("artifact_extension") or None)
+    if ext and ext.get("PUBLISHED") is False:
+        out.append("\n    ⛔ ARTIFACT EXTENSION — WITHHELD, NOT MEASURED")
+        out.append(f"      {ext['why_withheld']}")
+        out.append(f"      {ext['items_attempted_before_withholding']} item(s) "
+                   f"had been attempted when the run was withheld; no bucket "
+                   f"from this run is publishable")
+        ext = None
+    if ext:
+        out.append(f"\n    ARTIFACT EXTENSION — {ext['release']}")
+        out.append(f"      population: {ext.get('addressable_items')} "
+                   f"addressable items · "
+                   f"{ext['items_attempted']} entering this counterfactual "
+                   f"(in {ext.get('sole_blocked_meals_entering_this_counterfactual')} "
+                   f"sole-blocked meals) · "
+                   f"{ext['distinct_identities']} distinct identities")
+        nl = ext.get("non_latin_within_each_outcome") or {}
+        out.append(f"      {'OUTCOME':<44}{'N':>6}{'non-latin':>11}")
+        for outcome, n in ext["by_outcome"].items():
+            out.append(f"      {outcome:<44}{n:>6}{nl.get(outcome, 0):>11}")
+        out.append(f"      {'(of which non-Latin identities)':<44}"
+                   f"{ext.get('non_latin_items', 0):>6}")
+        if ext["buckets_not_observed"]:
+            out.append(f"      (not observed: "
+                       f"{', '.join(ext['buckets_not_observed'])})")
+        out.append(f"      scope: {ext['scope']}")
     out.append("\n    LIMITS")
     for limit in report["limits"]:
         out.append(f"      · {limit}")
@@ -1272,10 +1702,32 @@ def main() -> int:
     parser.add_argument("--freeze", metavar="NAME",
                         help="record the exact rows this run measured as a "
                              "reusable frozen population")
+    parser.add_argument("--artifact-extension", action="store_true",
+                        help="arm the READ-ONLY USDA FDC 15.3 artifact-"
+                             "extension counterfactual over NO_LOCAL_EVIDENCE "
+                             "(reaches USDA and the resolver; off by default)")
     parser.add_argument("--population", metavar="NAME",
                         help="measure EXACTLY a previously frozen population "
                              "instead of a rolling window")
     args = parser.parse_args()
+
+    if args.artifact_extension:
+        pre = asyncio.run(artifact_extension_preflight())
+        print("  PREFLIGHT  usda:     " + str(pre["usda"]))
+        print("  PREFLIGHT  resolver: " + str(pre["resolver"]))
+        if not pre["ok"]:
+            # ⛔ FAIL FAST. Spending the whole budget to discover the same
+            # outage 152 times produces a table of false findings, which is
+            # strictly worse than producing nothing.
+            EXTENSION_RUN_OUTAGE["outage"] = (
+                "PREFLIGHT FAILED — " + pre["reason"])
+            print("\n  ⛔ ARTIFACT EXTENSION WITHHELD: " + pre["reason"])
+            print("     The measurement is NOT run. No bucket from this "
+                  "invocation is publishable.\n")
+        else:
+            enable_artifact_extension()
+            print("  ⚠ artifact-extension counterfactual ARMED — this run "
+                  "reaches USDA and the resolver")
 
     frozen = None
     if args.population:
