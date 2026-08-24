@@ -1,3 +1,168 @@
+> ════════════════════════════════════════════════════════════════════════
+> ⭐⭐⭐ **PHASE CHANGE — 2026-08-24: EXIT THE HARDENING DETOUR, BUILD THE
+> PRODUCT.** *(Danny, board review)*
+>
+> **This supersedes the sequencing below.** The canonical foundation is
+> ~95% built and is no longer the primary development project. Read this
+> banner, then RULE 0, then the product sequence. Everything further down is
+> the evidence register and the history of how the foundation was built.
+>
+> **THE THREE NUMBERS, KEPT APART:**
+>
+> ```text
+> canonical foundation        ~95%   largely done — STOP TREATING AS THE PROJECT
+> canonical coverage/adoption  11.3% frozen P17g measurement — rises WITH features
+> desired food experience    ~45-55% THE NUMBER THAT MATTERS NOW
+> ```
+>
+> ⛔ **THE BIGGEST RISK IS NO LONGER A BUG.** It is treating every discovered
+> imperfection as a prerequisite for product progression. Canonical
+> development would asymptotically approach perfection while Arnie never
+> becomes Arnie.
+>
+> ⭐ **CF22 IS THE TEMPLATE FOR HOW THIS PROJECT NOW OPERATES.** `300 г`
+> becoming 300 servings is catastrophic committed nutrition and DID deserve
+> interruption. The unreachable `Per100ml` authority asymmetry found beside it
+> did NOT — it was proven unreachable, given a self-invalidating guard, parked,
+> and the work continued. **That must become normal.**
+>
+> **WHAT SUCCESS LOOKS LIKE — not 100% architecture coverage, but this
+> working:**
+>
+> ```text
+> USER   Had scrambled eggs and toast with avocado and coffee.
+> ARNIE  (four components; cooking fat may materially matter)
+>        Did you cook the eggs with butter or oil?
+> USER   Little butter
+> ARNIE  (patches ONLY the eggs composition, sources butter separately,
+>         settles the whole meal canonically)
+>        Got it 👍 Breakfast is about 520 calories with 24g protein.
+>        You're in a good spot — I'd make your next meal protein-heavy.
+> USER   Actually only ate one piece of toast
+> ARNIE  (modifies that component, recalculates meal/day EXACTLY ONCE)
+> ```
+>
+> Behind those three mundane messages sits everything this migration built:
+> canonical ownership, typed facts, evidence hierarchy, materiality,
+> clarification, composition, multi-food, atomic settlement, replay safety,
+> corrections and conversational rendering. **That is when the architecture
+> stops looking like an engineering project and starts looking like Arnie.**
+>
+> ── RULE 0 — HARD STOP ON HORIZONTAL HARDENING ───────────────────────────
+>
+> A new horizontal tranche may interrupt the product roadmap ONLY if it
+> proves one of:
+>
+> ```text
+> wrong committed nutrition          unsafe replay / undo
+> destructive data corruption        scan bound to the wrong product/item
+> duplicate mutation                 catastrophic quantity scaling
+> canonical -> legacy ownership leak schema incompatibility
+> after ownership                    production rollout safety failure
+> ```
+>
+> ⛔ **THESE DO NOT AUTHORIZE A TRANCHE.** Record them; do not branch the
+> roadmap:
+>
+> ```text
+> theoretical portability            speculative future provider shapes
+> unreachable type-union cases       better naming
+> taxonomy completeness              broader regex/vocabulary coverage
+> instrument elegance                without production evidence
+> additional preference refinement
+> ```
+>
+> ── THE TWO METRICS, FROM HERE FORWARD ───────────────────────────────────
+>
+> ```text
+> A  CANONICAL OWNERSHIP RATE     11.3% frozen   ROLLOUT / SAFETY metric
+> B  REAL-MEAL COMPLETION RATE    to be frozen   PRODUCT roadmap metric
+>    % of representative natural meal messages Arnie can correctly
+>    interpret · clarify · source · settle · respond to · correct
+> ```
+>
+> ⛔ **DO NOT OPTIMIZE A IN ISOLATION.** Coverage work must BUY product
+> completion. The question is no longer "which technical bucket is largest"
+> but **"which missing authority prevents the most REAL-MEAL CORPUS cases from
+> completing correctly"** — measured as corpus completion X/50 before, Y/50
+> after. Canonical ownership should rise AS A CONSEQUENCE.
+>
+> ⭐ **PARTIAL COVERAGE IS FINE WHILE B-2 IS BUILT.** An unsupported component
+> can refuse or trigger clarification. We do not need every food in America
+> canonically priceable before learning how a real multi-food meal works.
+>
+> ── THE SEQUENCE ─────────────────────────────────────────────────────────
+>
+> ```text
+> 1  CF22 merged                          DONE — 72d7c38
+> 2  produce ONE release SHA              72d7c38 = RELEASE_CANDIDATE
+> 3  deploy it (manual, Render)           PENDING — Danny
+> 4  close P17g with BOTH canaries        PENDING
+> 5  freeze the REAL-MEAL corpus (~50)    product-shaped, not primitives
+> 6  B-1.7a  FIVE OILS                    ADDED_FAT as a typed component
+> 7  B-1.7b  MATERIALITY                  missing != ask
+> 8  B-1.7c  COMPOSITION                  parent meal contains N components
+> 9  CLARIFICATION as product behavior    ONE highest-value question
+> 10 B-2 MULTI-FOOD                       orchestration, NOT new architecture
+> 11 VOICE in the same vertical slice     renders truth, never decides it
+> 12 coverage tranches that buy corpus completion
+> 13 scan joins the SAME pipeline
+> 14 release expansion, canaried vertically
+> ```
+>
+> ⛔ **REJECTED SEQUENCE:** P17g → coverage tranche → another attribution
+> tranche → 40% → oils → composition → multi-food. *"That is how this turns
+> into another month."*
+>
+> ── WHAT EACH PRODUCT STEP MUST NOT DO ───────────────────────────────────
+>
+> **OILS** are not five more foods. They establish `ADDED_FAT` as an
+> independent typed component, each retaining identity, amount, evidence
+> source, price basis and provenance. ⛔ No hidden calorie bump. No heuristic
+> "cooked with oil = +120 kcal".
+>
+> **MATERIALITY** answers "is this missing fact worth interrupting the user
+> for?" ⛔ `missing != ask`. Missing AND materially changes nutrition →
+> clarification candidate. Missing and immaterial → settle under declared
+> uncertainty. **This is what prevents Arnie becoming an interrogation bot.**
+>
+> **COMPOSITION** is generic: a parent meal contains N canonical components,
+> each keeping its own identity, quantity, evidence, pricing basis and
+> uncertainty. ⛔ No "composite calorie estimate" as a new authority. Meal
+> total = deterministic sum of components.
+>
+> **CLARIFICATION** is not another abstract framework. Rank unresolved facts
+> by materiality, ask ONE highest-value question, patch only the affected
+> typed component, do not reparse unrelated items.
+>
+> **B-2 MULTI-FOOD** is ORCHESTRATION, not new architecture. One turn → N
+> typed components → each through the canonical primitive → one atomic
+> settlement boundary. No half-committed meal, no duplicate component on
+> retry, no component leaking to legacy after canonical ownership.
+>
+> **VOICE** ships in the same vertical slice, not after all backend work.
+> It renders structured facts and MUST NEVER invent food facts, choose
+> evidence, change nutrition, override refusal or repair settlement.
+> `"Got it — eggs, toast and avocado are in 👍 You're at 1,180 calories and
+> 82g protein so far."` — not `"Successfully persisted 3 canonical food
+> entries."` Voice quality is part of the corpus score.
+>
+> **SCAN** is not another standalone architecture project. It supplies exact
+> identity/evidence to ONE component; the same pipeline then handles quantity,
+> composition, clarification, settlement, correction and voice.
+>
+> ── PHASE-B EXIT ─────────────────────────────────────────────────────────
+>
+> The food lane closes when representative real meals complete correctly,
+> multi-food settlement is canonical, material clarification works,
+> composition is deterministic, corrections target components correctly, scan
+> is simply another evidence input, voice renders structured truth naturally,
+> and canonical ownership clears the rollout threshold honestly. **Then delete
+> legacy food ownership.**
+>
+> ⛔ **NO MORE HORIZONTAL DETOURS WITHOUT A RELEASE-CRITICAL FAILURE.**
+> ════════════════════════════════════════════════════════════════════════
+
 > ⭐⭐⭐ **P17 EXECUTION AUTHORITY (2026-08-19 evening): `docs/P17_CLOSURE_DIRECTIVE_2026-08-19.md`** — Danny's P17 closure directive (Phases 0–8, invariants, frozen incident facts, canaries A/B/C, definition of done). It governs P17 from here; this file remains the evidence register (CF5b–CF15). Phase reports are appended to that file.
 
 # Phase B–F directive: complete clarification migration, finish conversational food, then extend the canonical backend to workouts
@@ -7593,7 +7758,7 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-21 (`ef2bf63`, merged main) against BOTH TRANCHES
+Last reconciled 2026-08-24 (`72d7c38`, merged main) — CF22 merged, phase changed to product build-out; see the banner at the TOP of this file, which supersedes the sequencing below. Prior stamp: 2026-08-21 (`ef2bf63`) against BOTH TRANCHES
 CLOSING. What was re-read and corrected rather than date-bumped: CF17 and CF18
 moved OPEN -> MERGED, POST-MERGE REMEDIATION OPEN with the merge SHAs — NOT
 closed: two D2 telemetry defects (the persist-in-flight race; "latest row by
