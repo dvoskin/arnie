@@ -49,12 +49,34 @@ def _patch(monkeypatch, snippet, chat_json):
     monkeypatch.setattr(llm, "chat", fake_chat)
 
 
-def test_confident_hit_returns_totals(monkeypatch):
+def test_even_a_confident_hit_returns_nothing_now(monkeypatch):
+    """⛔⛔⛔ CF23b — THIS CASE INVERTED, AND THE FILE ITSELF SAYS WHY.
+
+    It used to assert that a confident, in-bounds hit returns its totals. That
+    contract is withdrawn: `_web_lookup_meal_inner` selects its text with
+    `_best_matching_snippet` — TOKEN OVERLAP — which cannot prove the page
+    describes the meal being logged. Confidence is the MODEL's opinion of prose
+    it was handed, not a binding.
+
+    ⭐ AND THIS FILE ALREADY RECORDS THE SAME DEFECT ONCE. The 2026-07-21 "Anya
+    regression" above: `"3 coffee"` web-labelled into a 420-cal De'Longhi
+    cappuccino. `_worth_web_meal` was the mitigation — a NAME GATE, another
+    heuristic in front of an unbound lookup.
+
+    Counting the packaged lane's `Milk, whole` at 582 kcal/100g (2026-08-24)
+    and the cucumber address (2026-08-16), unbound web nutrition has now
+    produced wrong numbers THREE times, each answered by a new gate in front
+    of it. This time the lane is disabled instead, until something can name the
+    food it priced.
+
+    ⚠ `_worth_web_meal` and the confidence/bounds checks below are retained and
+    still tested — they guard the lane if it is ever restored."""
     _patch(monkeypatch, "CAVA steak bowl ~1010 cal, 53g protein",
            '{"calories":1010,"protein":53,"carbs":78,"fat":52,"confidence":"high"}')
     m = _run(te._web_lookup_meal("CAVA Greens and Grains bowl", "1 bowl"))
-    assert m is not None
-    assert round(m["calories"]) == 1010 and m["confidence"] == "high"
+    assert m is None, (
+        f"the meal lane returned nutrition for a snippet it cannot bind to "
+        f"the meal: {m!r}")
 
 
 def test_low_confidence_is_rejected(monkeypatch):

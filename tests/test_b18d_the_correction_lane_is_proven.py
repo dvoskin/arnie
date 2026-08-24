@@ -106,7 +106,7 @@ async def _legacy_row(db, user, *, name="Legacy toast", quantity="2 slices"):
 async def _remember(db, user, name, per100g, fdc):
     from core.food_intelligence import memory_key
     from db.models import UserFoodMatch
-    db.add(UserFoodMatch(
+    db.add(UserFoodMatch(origin_tier="canonical_settlement", 
         user_id=user.id, name_norm=memory_key(name, ""), display_name=name,
         cal_100=per100g["calories"], protein_100=per100g["protein"],
         carbs_100=per100g["carbs"], fat_100=per100g["fat"], fdc_id=fdc,

@@ -109,7 +109,7 @@ async def test_tvorog_cannot_reach_the_corn_row(memory):
     """⭐ THE PRODUCTION DEFECT, AS A FIXTURE. Same user, corn cached, cottage
     cheese looked up — and before the guard this returned the corn."""
     db, user_id = memory
-    db.add(UserFoodMatch(
+    db.add(UserFoodMatch(origin_tier="canonical_settlement", 
         user_id=user_id, name_norm=normalize_name(CORN), display_name=CORN,
         cal_100=CORN_PER_100G["calories"], protein_100=CORN_PER_100G["protein"],
         carbs_100=CORN_PER_100G["carbs"], fat_100=CORN_PER_100G["fat"],
@@ -129,7 +129,7 @@ async def test_two_different_foods_do_not_share_a_memory_identity(memory):
     """Corn and an omelette are not the same food, and normalizing both to
     `'2'` is not a reason to treat them as one."""
     db, user_id = memory
-    db.add(UserFoodMatch(
+    db.add(UserFoodMatch(origin_tier="canonical_settlement", 
         user_id=user_id, name_norm=normalize_name(CORN), display_name=CORN,
         cal_100=54.0, protein_100=3.33, confidence="exact"))
     await db.commit()
@@ -142,7 +142,7 @@ async def test_an_empty_key_is_never_a_valid_memory_key(memory):
     """`Помидор` normalizes to `''`. An empty key must not address a row —
     including a legacy row that was somehow written with one."""
     db, user_id = memory
-    db.add(UserFoodMatch(user_id=user_id, name_norm="", display_name="Помидор",
+    db.add(UserFoodMatch(origin_tier="canonical_settlement", user_id=user_id, name_norm="", display_name="Помидор",
                          cal_100=18.0, confidence="exact"))
     await db.commit()
 
@@ -155,7 +155,7 @@ async def test_an_ordinary_english_food_still_hits_its_row(memory):
     """⭐ ANTI-VACUITY AT THE DOOR, not only on the predicate. The measured
     44.6% of production that memory carries must be untouched by this."""
     db, user_id = memory
-    db.add(UserFoodMatch(user_id=user_id, name_norm=normalize_name("Chicken breast"),
+    db.add(UserFoodMatch(origin_tier="canonical_settlement", user_id=user_id, name_norm=normalize_name("Chicken breast"),
                          display_name="Chicken breast", cal_100=165.0,
                          protein_100=31.0, confidence="exact"))
     await db.commit()

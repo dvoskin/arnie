@@ -330,7 +330,7 @@ async def test_memory_that_disagrees_is_never_consulted(db, make_user, monkeypat
     # share one session — a reused label would make memory abstain and this
     # proof vacuous. Verified: with `bound` mutated off, this test goes RED.
     label = f"Barebell salty peanut u{user.id}"
-    db.add(UserFoodMatch(user_id=user.id, name_norm=memory_key(label, ""),
+    db.add(UserFoodMatch(origin_tier="canonical_settlement", user_id=user.id, name_norm=memory_key(label, ""),
                          display_name=label, cal_100=9000, protein_100=1,
                          carbs_100=1, fat_100=1, fdc_id="900001",
                          confidence="exact"))
@@ -375,7 +375,7 @@ async def test_a_bound_product_that_cannot_scale_refuses_with_no_fallback(
     # share one session — a reused label would make memory abstain and this
     # proof vacuous. Verified: with `bound` mutated off, this test goes RED.
     label = f"Barebell salty peanut u{user.id}"
-    db.add(UserFoodMatch(user_id=user.id, name_norm=memory_key(label, ""),
+    db.add(UserFoodMatch(origin_tier="canonical_settlement", user_id=user.id, name_norm=memory_key(label, ""),
                          display_name=label, cal_100=400, protein_100=30,
                          carbs_100=30, fat_100=15, fdc_id="900002",
                          confidence="exact"))
@@ -414,7 +414,7 @@ async def test_a_snapshot_binding_on_correct_identity_is_bound_by_itself(
     # share one session — a reused label would make memory abstain and this
     # proof vacuous. Verified: with `bound` mutated off, this test goes RED.
     label = f"Barebell salty peanut u{user.id}"
-    db.add(UserFoodMatch(user_id=user.id, name_norm=memory_key(label, ""),
+    db.add(UserFoodMatch(origin_tier="canonical_settlement", user_id=user.id, name_norm=memory_key(label, ""),
                          display_name=label, cal_100=9000, protein_100=1,
                          carbs_100=1, fat_100=1, fdc_id="900003",
                          confidence="exact"))
