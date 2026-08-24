@@ -97,6 +97,17 @@ async def _memory(db, user_id: int, identity: str,
                     name_norm)
         return None
 
+    # ⛔⛔⛔ CF23 — THE SHARED TRUST BOUNDARY. Identical call in the legacy
+    # pricer; one implementation, because a guard only one owner applies is
+    # what let 2026-08-16 happen (canonical declined the corrupt cucumber
+    # address, legacy priced the meal from the same row).
+    from db.queries import memory_nutrition_is_trusted
+    if not memory_nutrition_is_trusted(row):
+        logger.info("event=memory_untrusted key=%r reason=no_provenance — the "
+                    "row cannot name an authority that produced its numbers, "
+                    "so they are not evidence", name_norm)
+        return None
+
     # ⛔⛔ ADMISSIBILITY: A LEGACY SURFACE KEY MAY NOT IMPERSONATE CANONICAL
     # EVIDENCE *(Danny, 2026-08-16, after the canary)*.
     #

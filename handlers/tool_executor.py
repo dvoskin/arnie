@@ -1781,7 +1781,42 @@ async def _web_lookup_packaged(food_name: str, quantity) -> dict | None:
     or None on miss / outage. NEVER raises — Tavily already returns graceful
     empty results, and any parse failure falls through to None so the existing
     USDA → LLM cascade still runs.
+
+    ⛔⛔⛔ CF23b — DISABLED. THIS LANE CANNOT BIND IDENTITY.
+
+    Two production defect classes came out of here, and only one was a bug in
+    the arithmetic:
+
+      1. NO SERVING FOUND -> a fabricated `calories: 200.0` density, macros
+         rescaled to the fiction. 163 rows fleet-wide, 154 live to the legacy
+         pricer, 13 users. That branch is deleted below.
+      2. WRONG PRODUCT, PERFECT ARITHMETIC -> `Milk, whole` cached at 582
+         kcal/100 g against a true 61, carrying `"4 pieces (16.7 g)"`. A
+         *pieces* serving on a liquid.
+
+    ⭐ CLASS 2 IS NOT A PARSING BUG. `_best_matching_snippet` selects on TOKEN
+    OVERLAP: `"Milk, whole"` yields `milk` and `whole`, and a page about WHOLE
+    MILK CHOCOLATE contains both. The serving regex then read 16.7 g and
+    97/16.7*100 = 581. Every step was correct; the food was not.
+
+    ⛔ AND NOTHING IN THIS PATH CAN TELL THE DIFFERENCE. There is no fdc_id, no
+    barcode, no structured record — only how many of the food's words appear in
+    some prose. Snippet ranking is not an identity binding, and keeping the
+    lane alive on the strength of it would mean defending a feature with the
+    very mechanism that failed.
+
+    ⚠ SO IT RETURNS NOTHING UNTIL IT CAN NAME THE PRODUCT IT PRICED. The caller
+    already treats a None web candidate as a miss and continues down its own
+    ladder (USDA -> OFF -> estimate). The parsing below is left intact and
+    unreachable: restoring the lane is gated on an identity signal, not on
+    rewriting the reader.
     """
+    logger.info(
+        "event=web_packaged_lookup_disabled food=%r reason=no_identity_binding "
+        "— this lane selects on snippet token overlap, which cannot prove the "
+        "page describes the food being logged", food_name)
+    return None
+
     try:
         from core.search import search as _search
         q = f"{food_name} nutrition facts label calories protein carbs fat"
@@ -1835,20 +1870,36 @@ async def _web_lookup_packaged(food_name: str, quantity) -> dict | None:
                 return {"fdc_id": None, "per100g": per100, "_match": "likely",
                         "per_serving": _per_serving,
                         "serving_text": f"{grams:.0f} g"}
-        # No serving found: keep the legacy rough shape (density assumed) so
-        # fiber/sugar scaling still works; primary macros stay the parsed ones.
-        per100 = {
-            "calories": 200.0,
-            "protein": (pro / cal) * 200.0 if cal else None,
-            "carbs": (carbs / cal) * 200.0 if cal else None,
-            "fat": (fat / cal) * 200.0 if cal else None,
-            "fiber": None, "sugar": None, "sodium": None,
-        }
-        # The per-serving panel still stands even here: the label's numbers
-        # were read directly, and only the DENSITY is assumed. A count portion
-        # takes the panel and never touches the assumption.
-        return {"fdc_id": None, "per100g": per100, "_match": "likely",
-                "per_serving": _per_serving}
+        # ⛔⛔⛔ CF23b — NO SERVING BASIS MEANS NO NUTRITION RESULT.
+        #
+        # This branch used to fabricate a density and hand it back as fact:
+        #
+        #     per100 = {"calories": 200.0,
+        #               "protein": (pro / cal) * 200.0 if cal else None, ...}
+        #
+        # An assumed 200 kcal/100 g for ANY packaged food, with the macros
+        # rescaled to that fiction. Measured in production 2026-08-24: 163 rows
+        # fleet-wide carried exactly 200.0, 154 of them still live to the legacy
+        # pricer, across 13 users. `Milk, whole` cached at 582 kcal/100 g
+        # against a true 61.
+        #
+        # ⛔ AND THE READ GUARD ALONE COULD NOT CONTAIN IT. This result is
+        # returned to the CURRENT turn as the `web` candidate — the turn that
+        # mints the fabrication prices and commits from it, and only later
+        # turns see `memory_nutrition_is_trusted`. A guard that protects
+        # tomorrow while today still commits is not containment.
+        #
+        # ⭐ THE PARSED LABEL WAS REAL; THE DENSITY WAS NOT. Without a serving
+        # MASS those numbers cannot be scaled to an arbitrary quantity, and
+        # inventing the missing factor is exactly the unsourced conversion this
+        # project refuses at every other layer ("an unsourced factor is an
+        # invented density"). So the honest answer is no answer: the caller
+        # already treats a None web candidate as a miss and continues down its
+        # own ladder.
+        logger.info(
+            "event=web_lookup_no_serving_basis food=%r — label parsed but no "
+            "serving mass; refusing rather than assuming a density", food_name)
+        return None
     except Exception as e:
         logger.warning(f"web packaged lookup failed: {e}")
         return None
@@ -2297,6 +2348,30 @@ async def _web_lookup_meal(food_name: str, quantity) -> dict | None:
 
 
 async def _web_lookup_meal_inner(food_name, quantity, _re) -> dict | None:
+    """⛔⛔⛔ CF23b — DISABLED. NO IDENTITY BINDING, SAME AS THE PACKAGED LANE.
+
+    This lane picks its text with `_best_matching_snippet` — token overlap —
+    and then asks a model to read the numbers out of it. The prompt says "NOT
+    a different item" and a low confidence is discarded, which is a real
+    mitigation and still not a binding: it is a SECOND OPINION ON UNBOUND
+    TEXT. A UPC, an FDC id or a structured product record proves which food a
+    page describes; a model's self-assessment of prose it was handed does not.
+
+    ⭐ AND KEEPING IT ALIVE WOULD MEAN TRUSTING THE MECHANISM WHOSE FAILURE IS
+    THE DEFECT — the same argument that retired the packaged lane's snippet
+    ranking after it priced `Milk, whole` at 582 kcal/100 g from a page about
+    whole milk chocolate.
+
+    ⚠ Parsing left intact and unreachable; restoring the lane is gated on an
+    identity signal, not on rewriting the reader. Callers already treat None
+    as a miss.
+    """
+    logger.info(
+        "event=web_meal_lookup_disabled food=%r reason=no_identity_binding "
+        "— snippet token overlap cannot prove the page describes this meal",
+        food_name)
+    return None
+
     from core.search import search as _search
     q = str(food_name or "")
     if quantity:
@@ -2642,6 +2717,25 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
         #
         # ⚠ NO CALORIE PLAUSIBILITY, NO FOOD NAMES, NO EXCEPTIONS. The test is
         # agreement between bindings and nothing else.
+        # ⛔⛔⛔ CF23 — THE SAME TRUST TEST CANONICAL APPLIES, from the same
+        # function. `address_has_one_authority` below tests agreement BETWEEN
+        # bindings and explicitly refuses calorie plausibility — so a SOLE
+        # binding is uncontested, and uncontested is not correct. Whole milk
+        # cached at 582 kcal/100g (true 61) passes it, and 154 fabricated
+        # `200.0` rows across 13 users passed it too.
+        #
+        # ⭐ NUTRITION ONLY. `m = None` here drops through to the existing
+        # USDA/web/estimate fallback exactly as a cache miss does — the branch
+        # below already handles it. Identity matching and the usage bump are
+        # untouched.
+        if m is not None:
+            from db.queries import memory_nutrition_is_trusted
+            if not memory_nutrition_is_trusted(m):
+                logger.info(
+                    "event=legacy_memory_untrusted key=%r reason=no_provenance "
+                    "— stored nutrition cannot name the authority that produced "
+                    "it; falling through to retrieval", name_norm)
+                m = None
         if m is not None:
             from db.queries import address_has_one_authority
             if not await address_has_one_authority(db, name_norm):

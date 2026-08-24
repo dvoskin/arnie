@@ -52,7 +52,7 @@ async def _remember(db, user, name, per100g, fdc="900001"):
     """A memory row for `name` — the local evidence a rebind can land on."""
     from core.food_intelligence import memory_key   # the same key _memory reads
     from db.models import UserFoodMatch
-    row = UserFoodMatch(
+    row = UserFoodMatch(origin_tier="canonical_settlement", 
         user_id=user.id, name_norm=memory_key(name, ""),
         display_name=name, cal_100=per100g["calories"],
         protein_100=per100g["protein"], carbs_100=per100g["carbs"],

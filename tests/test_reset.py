@@ -83,7 +83,7 @@ async def _seed_full_user(db) -> int:
                           value=55.0, recorded_at=datetime.utcnow()))
     db.add(PendingQuestion(user_id=uid, kind="profile_stats", question="how tall?"))
     db.add(Feedback(user_id=uid, text="love it"))
-    db.add(UserFoodMatch(user_id=uid, name_norm="royo bagel", display_name="Royo Bagel"))
+    db.add(UserFoodMatch(origin_tier="canonical_settlement", user_id=uid, name_norm="royo bagel", display_name="Royo Bagel"))
     await db.commit()
     return uid
 

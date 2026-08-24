@@ -55,7 +55,11 @@ async def _remember(db, user, name, per100g, fdc="900001"):
                         display_name=name, cal_100=per100g["calories"],
                         protein_100=per100g["protein"],
                         carbs_100=per100g["carbs"], fat_100=per100g["fat"],
-                        fdc_id=fdc, confidence="exact")
+                        fdc_id=fdc, confidence="exact",
+                        # ⛔ CF23 — an identity repair must rebind to EVIDENCE,
+                        # and an unstamped memory row is no longer evidence.
+                        # Without this the correction correctly REFUSES.
+                        origin_tier="canonical_settlement")
     db.add(row); await db.commit()
     return row
 

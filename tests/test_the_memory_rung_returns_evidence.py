@@ -62,11 +62,21 @@ def _key(grade: str) -> str:
     return normalize_name(f"chicken {grade}")
 
 
-def _row(user_id, name_norm, grade, cal=165.0):
+def _row(user_id, name_norm, grade, cal=165.0,
+         origin_tier="canonical_settlement"):
+    """⛔ CF23 — THE FIXTURE NOW CARRIES PROVENANCE, DELIBERATELY.
+
+    This suite's subject is "a memory row that IS evidence", and after CF23
+    that is no longer any row with per-100g numbers: it is a row that can name
+    the authority which produced them. Seeding without the stamp would make
+    every case here assert the pre-CF23 contract while production rejects the
+    same row — a suite green against a rule nobody applies.
+
+    `test_an_unstamped_row_is_no_longer_evidence` below pins the other side."""
     return UserFoodMatch(user_id=user_id, name_norm=name_norm,
                          display_name=name_norm, cal_100=cal, protein_100=31.0,
                          carbs_100=0.0, fat_100=3.6, fdc_id="171077",
-                         confidence=grade)
+                         confidence=grade, origin_tier=origin_tier)
 
 
 # ── every production grade returns evidence ───────────────────────────────────
@@ -187,3 +197,29 @@ async def test_the_identity_still_selects_which_row_is_returned(store):
     assert corn.per100g["calories"] == 96.0
     # And with no identity the Russian surface reaches nothing, as it does today.
     assert await _memory(db, user_id, "Помидор") is None
+
+
+# ── CF23 — AND THE OTHER SIDE OF THE SAME CONTRACT ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_an_unstamped_row_is_no_longer_evidence(store):
+    """⛔⛔⛔ THE NEGATIVE INVARIANT FOR EVERY CASE ABOVE.
+
+    Each test in this file now seeds `origin_tier="canonical_settlement"`. If
+    that stamp were decorative — if the rung returned evidence regardless —
+    every one of them would still pass while production rejected the same row.
+    This is the test that makes the stamp load-bearing.
+
+    Measured 2026-08-24: 163 fleet rows carried a FABRICATED 200.0 kcal/100g
+    density, 154 of them live to the legacy pricer across 13 users."""
+    db, user_id = store
+    name_norm = _key("exact")
+    db.add(_row(user_id, name_norm, "exact", origin_tier="generic_exact"))
+    await db.commit()
+
+    got = await _memory(db, user_id, name_norm, "")
+
+    assert got is None, (
+        "an unstamped memory row was returned as evidence — this is the shape "
+        "of the 154 fabricated production rows")

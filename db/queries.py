@@ -3498,6 +3498,61 @@ async def get_user_food_match(db: AsyncSession, user_id: int, name_norm: str):
     return result.scalar_one_or_none()
 
 
+#: ⛔⛔⛔ CF23 — THE ONE TRUST TEST BOTH OWNERS APPLY.
+#:
+#: A memory row is a CACHE OF SOMETHING ELSE'S ANSWER. It becomes authority
+#: only if it can say whose answer it was. Measured 2026-08-24, it usually
+#: cannot:
+#:
+#:   * `_web_lookup_packaged` FABRICATES `calories: 200.0` whenever its
+#:     serving-size regex misses, then scales the macros to that fiction.
+#:     163 rows fleet-wide, 154 of them live to legacy, 13 users.
+#:   * a snippet matched to the wrong product put `"4 pieces (16.7 g)"` on
+#:     whole milk and cached it at 582 kcal/100g against a true 61.
+#:   * `upsert_user_food_match` never refreshes nutrition on an existing row,
+#:     so a wrong value is PERMANENT and cannot self-heal.
+#:
+#: ⛔ AND THE 08-16 CONTAINMENT CANNOT SEE THIS CLASS. `address_has_one_authority`
+#: tests agreement BETWEEN bindings — "NO CALORIE PLAUSIBILITY, NO FOOD NAMES,
+#: NO EXCEPTIONS". A sole binding is uncontested, and uncontested is not the
+#: same as correct. Milk at 582 passes it.
+#:
+#: ⭐ SO THE TEST IS PROVENANCE, NOT PLAUSIBILITY. No thresholds, no calorie
+#: ceilings, no food names — those would be a second guessing layer on top of
+#: a guess. A row is trusted when it can name an authority that produced it
+#: under a basis we can check, and today no historical row can.
+#:
+#: ⚠ THIS IS DELIBERATELY FAIL-CLOSED AND CURRENTLY REJECTS ESSENTIALLY ALL
+#: HISTORICAL MEMORY. A correct-looking row without provenance is rejected too.
+#: That coverage loss is preferable to continuing a known fleet-wide
+#: wrong-nutrition path — the same trade P17g made at 20.2% -> 11.3%.
+#:
+#: ⭐ IDENTITY SURVIVES. This governs the NUTRITION PAYLOAD only. The row is
+#: still found, still matched, still bumps `times_used`, still carries its
+#: display name and serving panel. Only its numbers stop being evidence.
+TRUSTED_MEMORY_TIERS = frozenset({"canonical_settlement"})
+
+
+def memory_nutrition_is_trusted(row) -> bool:
+    """May this memory row's stored nutrition be used as evidence?
+
+    ⛔ ONE IMPLEMENTATION, TWO CALLERS — canonical's `_memory` and the legacy
+    pricer. Two owner-specific copies is how 2026-08-16 happened: canonical
+    declined a corrupt cucumber address and legacy priced the meal from the
+    very same row, reproducing the exact error canonical had just prevented.
+    A guard only one owner applies is a guard with a longer fuse.
+    """
+    if row is None:
+        return False
+    tier = str(getattr(row, "origin_tier", "") or "")
+    if tier not in TRUSTED_MEMORY_TIERS:
+        return False
+    # A trusted tier still has to carry the basis its numbers were computed
+    # under. `user_confirmed` alone is NOT authority: a user confirming a
+    # number says nothing about the basis it was derived on.
+    return bool(getattr(row, "fdc_id", None))
+
+
 async def delete_user_food_match(db: AsyncSession, user_id: int, name_norm: str) -> bool:
     """Drop a user's cached match for a normalized food name. Used when a
     correction proves the cached profile wrong (material macro change on a
@@ -3577,6 +3632,23 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
     origin = (origin_tier or ("user_regular" if user_confirmed
                               else _ORIGIN_BY_CONFIDENCE.get(confidence,
                                                              "generic_exact")))
+    # ⛔⛔⛔ CF23 — THE PUBLIC DOOR CANNOT MINT AUTHORITY. A trusted tier is a
+    # CLAIM that an authoritative canonical settlement produced these numbers.
+    # This function is called after every successful lookup — web, USDA, OFF,
+    # legacy estimate, ordinary correction — and none of those can make that
+    # claim. If the string were merely a convention, the guard would be a
+    # magic word any caller could say, and the 163 fabricated rows would have
+    # been one keyword argument away from "trusted".
+    #
+    # ⭐ SANITISED, NOT REFUSED. Refusing would drop the row entirely and lose
+    # the identity/usage record that legacy still needs; downgrading keeps the
+    # cache working and removes only the authority it did not earn.
+    if origin in TRUSTED_MEMORY_TIERS:
+        logger.warning(
+            "event=memory_trust_tier_refused user=%s key=%r attempted=%r — "
+            "only an authoritative canonical settlement may stamp trust; "
+            "storing as a cache", user_id, name_norm, origin)
+        origin = "generic_exact"
     existing = await get_user_food_match(db, user_id, name_norm)
     if existing:
         existing.times_used = (existing.times_used or 1) + 1
