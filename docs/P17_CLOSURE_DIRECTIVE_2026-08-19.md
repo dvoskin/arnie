@@ -1615,3 +1615,131 @@ evidence coverage    UNMEASURED (100 sole-blocked meals, addressable only)
 ⛔ **NEITHER PRODUCT TRANCHE BECOMES AUTHORIZED BY THIS MERGE.** CF21 repairs
 the instrument that ranks them; it delivers no coverage and no measures, and
 the repaired ranking has still produced measured recovery for neither.
+
+---
+
+## ⛔⛔⛔ CF22 — THE RELEASE ORDER CHANGED. DO NOT DEPLOY `baa0f81`.
+
+*(Danny, 2026-08-23)*
+
+`baa0f81` was reviewed and ready to promote. It must **not** be promoted,
+because CF22 proves that **P17g's rollout would activate a 150x nutrition
+error**.
+
+### The defect
+
+`skills/nutrition/normalize.py` had no entry for `г` or `мл`, so a Russian
+user's stated exact mass parsed as a **count**:
+
+```text
+"300 г"  ->  count=300.0, grams=None, mass_is_exact=False
+"300 g"  ->  grams=300.0,             mass_is_exact=True
+```
+
+And a count MULTIPLIES. The ESTIMATE rung declares `PerServing(as_served=True)`
+— countable on purpose so "2 servings" scales — so `300 г` of tvorog priced at
+**60,000 kcal** against an honest 400.
+
+### It COMMITS, and it is LATENT
+
+```text
+production entries with a Cyrillic unit      399
+max calories among them                      825
+entries over 5000 kcal, ALL-TIME               0
+```
+
+Unreachable today only because canonical settlement is cohort-gated and dark.
+⛔ **Rolling P17g out is precisely what switches it on** — release-blocking for
+the rollout while invisible in current data, which is the worst combination for
+anything a canary is relied on to catch.
+
+### THE CORRECTED RELEASE SEQUENCE
+
+```text
+1. CF22 reviewed and merged            <- NOT YET DONE
+2. promote the RESULTING new main SHA  (never `baa0f81`)
+3. verify /health reports that SHA
+4. run BOTH canaries
+5. close P17g only if both pass
+```
+
+### ⛔ CF22 IS FIXED BUT **OPEN**, NOT CLOSED
+
+Fixed, proven and frozen is not the same as reviewed and merged. It stays OPEN
+until independently reviewed and merged.
+
+---
+
+## CORRECTIONS TO THE SINGLE-FOOD MEASUREMENT *(Danny, 2026-08-23)*
+
+### The 53 meals do NOT await a human label-versus-scale judgement
+
+That was my framing and it was wrong. Whether a user has a label in hand is
+**absent from the corpus** — it is not a judgement someone can supply from
+intuition either. Replacing an invented classifier with human intuition is the
+same error wearing a different hat.
+
+Recorded as:
+
+```text
+CONVERSION_EVIDENCE_ADDRESSABLE     53
+DIRECT_LOW_FRICTION_RECOVERY         0
+USER_CONTEXT_UNMEASURED             53
+```
+
+⛔ **Do not manually call bars packaged or ears weighable.**
+
+### `79/158 ~ 50%` is a MAXIMUM, not projected ownership
+
+It is the ceiling **if every user supplies a mass**. It is not a projection, not
+an expectation, and must never be quoted as one.
+
+
+### CF22 — THE VOLUME BOUNDARY, PROVEN CAUSALLY *(Danny, review of PR #85)*
+
+The density asymmetry recorded as "metadata-only, out of scope" was a claim
+about CAUSALITY, and had to be demonstrated at the layer that commits — the
+same argument CF22 makes about the gram defect being invisible at the parser
+and catastrophic at the pricer.
+
+**The boundary, proven to the committed row:**
+
+```text
+г       exact MASS
+мл / л  exact VOLUME
+мл / л  NOT exact mass without an authoritative density/conversion
+```
+
+**It cannot commit wrong nutrition.** `Кефир` is absent from the density table,
+so `250 мл` carries `mass_is_exact=True` with `grams=None` and precedence rung
+1 (`user_stated_exact`) FIRES. What happens next is a refusal: `_factor` raises
+`ScalingRefused` — *"per-100g values need a mass, and this portion has none"* —
+so no mass is manufactured and rung 1's authority is never handed to an
+invented number. The known-density branch (`Kefir`, 257.5 g, heuristic) is
+refused at the authority gate instead. **Both refuse; neither commits.**
+
+⛔ **BUT IT IS NOT PURELY METADATA, AND THAT MATTERS.** Against a `Per100ml`
+basis the resolver gives the SAME FACTOR (2.500) DIFFERENT AUTHORITY:
+
+```text
+Кефир (no density)     250 мл -> user_stated_exact  authoritative=True
+Kefir (density 1.03)   250 мл -> heuristic:vessel   authoritative=False
+```
+
+The known-density food is denied authority for a conversion the per-100 ml path
+never uses.
+
+⭐ **IT CANNOT REACH SETTLEMENT, AND THE REASON IS STRUCTURAL: NOTHING
+CONSTRUCTS `Per100ml`.** `_from_memory` and `_from_artifact` declare
+`Per100g()`, `_from_product` declares `PerServing` or `Per100g`,
+`_from_estimate` declares `PerServing`. An AST sweep over `core/`, `skills/`,
+`api/` and `handlers/` finds zero emitters, and the committed artifact carries
+no per-100 ml entry.
+
+**PARKED — with a self-invalidating guard.** CF22 exists because a latent defect
+sat one rollout away from live, so this parking carries a test that fails the
+day any producer emits `Per100ml`. Verified non-vacuous: injecting a real
+emitter made it fire, naming the file and line.
+
+Cyrillic and ASCII are identical on every path measured — normalized fields,
+resolver authority, committed calories, rung and provenance.

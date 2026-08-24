@@ -27,6 +27,17 @@ from core.units import G_PER_OZ, ML_PER_FLOZ
 #: Mass units → grams. Exact conversions; no judgement involved.
 _MASS_G = {
     "g": 1.0, "gram": 1.0, "grams": 1.0, "gm": 1.0,
+    # ⛔⛔⛔ CF22 — A CYRILLIC MASS IS A MASS. Without this, "300 г" parsed as
+    # count=300 and the ESTIMATE rung — whose basis is countable ON PURPOSE so
+    # "2 servings" scales — multiplied by it: 60,000 kcal for 300 g of tvorog
+    # against an honest 400. Latent only because canonical settlement is
+    # cohort-gated; P17g's rollout is what would switch it on.
+    #
+    # ⭐ OBSERVED FORMS ONLY. Surveyed over production's 461 Cyrillic
+    # quantities: `г` x366 is the whole mass story. `гр`, `грамм`, `кг` appear
+    # ZERO times and are not added on speculation — an entry nobody types is a
+    # claim nobody checked.
+    "г": 1.0,
     "kg": 1000.0, "kilogram": 1000.0, "kilograms": 1000.0,
     "oz": G_PER_OZ, "ounce": G_PER_OZ, "ounces": G_PER_OZ,
     "lb": 453.592, "lbs": 453.592, "pound": 453.592, "pounds": 453.592,
@@ -36,6 +47,12 @@ _MASS_G = {
 _VOL_ML = {
     "ml": 1.0, "milliliter": 1.0, "millilitre": 1.0, "milliliters": 1.0,
     "l": 1000.0, "liter": 1000.0, "litre": 1000.0, "liters": 1000.0,
+    # CF22, same reasoning: `мл` x26 observed, `л` x1. Both exact and
+    # unambiguous. ⛔ `ст`, `ч` and `ложки` are NOT here — spoon, glass and cup
+    # collide in each, and resolving one behind `mass_is_exact=True` would put
+    # an invented conversion behind the strongest claim the system can make
+    # about a quantity.
+    "мл": 1.0, "л": 1000.0,
     "cup": 236.588, "cups": 236.588,
     "tbsp": 14.787, "tablespoon": 14.787, "tablespoons": 14.787,
     "tsp": 4.929, "teaspoon": 4.929, "teaspoons": 4.929,
