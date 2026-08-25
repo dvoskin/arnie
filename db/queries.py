@@ -3615,6 +3615,54 @@ _ORIGIN_BY_CONFIDENCE = {
 }
 
 
+async def memory_nutrition_evidence(db, row, *, consumer: str,
+                                    candidate_kind: str = "",
+                                    hydration: str = "direct_read",
+                                    stage: str = "", operation_id: str = ""):
+    """THE ONE DOOR FROM A `user_food_matches` ROW TO PRICING EVIDENCE.
+
+    ⛔⛔⛔ CF24 CONTAINMENT HOLE, 2026-08-25. Entry 3050 committed 525 kcal —
+    the exact 1.2x image of row 936's per-100g, a row created 2026-08-02 that
+    the trust predicate refuses. Both known readers apply the guard, the same
+    row and item do not reproduce locally, and the tier-0 history override is
+    ruled out by data. So a consumer reached that nutrition and NO EVIDENCE
+    SAYS WHICH.
+
+    ⭐ THIS FUNCTION EXISTS TO ANSWER THAT WITHOUT ANOTHER ARCHAEOLOGY
+    SESSION. Every conversion emits one typed line naming its consumer, and
+    every conversion asks the same predicate, so the answer to "who used row
+    936" is a log line rather than a week of reading code.
+
+    Returns the per-100g mapping when the row may price, else None. It does
+    not decide anything the predicate did not already decide — an untrusted
+    row returns None here exactly as it is skipped there.
+    """
+    from core.turn_identity import current_turn_id
+
+    if row is None:
+        return None
+    trusted = await memory_nutrition_is_trusted(db, row)
+    # ⛔ BEFORE THE CANDIDATE CAN RETURN OR OVERRIDE. A line emitted after the
+    # conversion answers a question nobody can act on: the whole point is to
+    # name the consumer of a row whose nutrition then priced a meal.
+    #
+    # `hydration` separates a fresh DB read from a payload that was already in
+    # hand — the shape where a trust check runs and something downstream uses
+    # a copy made before it.
+    logger.info(
+        "event=memory_nutrition_use row_id=%s key=%r trusted=%s consumer=%s "
+        "candidate_kind=%s hydration=%s turn=%s operation=%s stage=%s",
+        getattr(row, "id", None), getattr(row, "name_norm", None), trusted,
+        consumer, candidate_kind or "-", hydration, current_turn_id() or "-",
+        operation_id or "-", stage or "-")
+    if not trusted:
+        return None
+    return {"calories": row.cal_100, "protein": row.protein_100,
+            "carbs": row.carbs_100, "fat": row.fat_100,
+            "fiber": row.fiber_100, "sugar": row.sugar_100,
+            "sodium": row.sodium_100}
+
+
 async def remember_canonical_settlement(
         db, *, user_id: int, name_norm: str, display_name: str,
         operation_id: str, per100: dict, evidence_id: str, basis: str,

@@ -184,8 +184,11 @@ def test_both_owners_call_the_SAME_function():
     from core import canonical_pricing_inputs as CPI
 
     canonical_src = inspect.getsource(CPI._memory)
-    assert "memory_nutrition_is_trusted" in canonical_src, (
-        "the canonical memory rung does not apply the shared trust guard")
+    assert "memory_nutrition_evidence" in canonical_src, (
+        "the canonical memory rung does not go through the shared door — "
+        "`memory_nutrition_evidence` is the ONE conversion from a stored row "
+        "to pricing evidence, and it is what makes the consumer of a given "
+        "row answerable from a log line")
 
 
 @pytest.mark.asyncio

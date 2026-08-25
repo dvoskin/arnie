@@ -2755,8 +2755,11 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
         # below already handles it. Identity matching and the usage bump are
         # untouched.
         if m is not None:
-            from db.queries import memory_nutrition_is_trusted
-            if not await memory_nutrition_is_trusted(db, m):
+            from db.queries import memory_nutrition_evidence
+            if await memory_nutrition_evidence(
+                    db, m, consumer="legacy.fetch_candidates",
+                    candidate_kind="legacy_memory_candidate",
+                    stage="pricing.memory") is None:
                 logger.info(
                     "event=legacy_memory_untrusted key=%r reason=no_provenance "
                     "— stored nutrition cannot name the authority that produced "

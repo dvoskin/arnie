@@ -210,3 +210,28 @@ async def test_the_OFF_LANE_ITSELF_qualifies_before_returning(monkeypatch):
     assert off is None, (
         "the OFF lane returned a product the identity boundary refused — the "
         f"qualification is not wired into the live path: {off!r}")
+
+
+# ══ THE PRODUCING TURN — DELIBERATELY ABSENT ════════════════════════════════
+#
+# ⛔⛔⛔ A VACUOUS E2E WAS WRITTEN HERE AND REMOVED. It drove `/api/v1/chat`
+# with OFF serving the cracker, asserted the committed row was under 300 kcal,
+# and PASSED WITH THE ENTIRE BOUNDARY DELETED — because `_looks_branded(
+# "Shrimp, grilled")` is False and entry 3050's item carried no
+# `is_packaged`, so the OFF lane is never consulted for this food and the row
+# was priced from the plan either way.
+#
+# ⭐⭐⭐ WHICH MEANS THE OFF LANE DID NOT PRODUCE ENTRY 3050. The proofs above
+# close a real hole — an unqualified branded lane reaching `branded_exact`
+# authority — but they are NOT the repair for the 2026-08-25 incident, and a
+# green E2E here would have asserted otherwise.
+#
+# What produced it: memory row 936, `grilled shrimp`, created 2026-08-02,
+# cal_100=437.5, whose per-100g values reproduce the committed row EXACTLY at
+# x1.2 (437.5 -> 525.0, 8.8 -> 10.56, 63.8 -> 76.56, 16.2 -> 19.44). That row
+# is `TRUSTED=False` under CF24, executed against production. The turn ran on
+# build a7549d72fbfb with CF24 live.
+#
+# The E2E belongs with the repair for THAT path, once the reader which
+# bypassed the guard is identified. Writing it against this one would be
+# proving the wrong mechanism.

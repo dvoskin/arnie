@@ -101,8 +101,11 @@ async def _memory(db, user_id: int, identity: str,
     # pricer; one implementation, because a guard only one owner applies is
     # what let 2026-08-16 happen (canonical declined the corrupt cucumber
     # address, legacy priced the meal from the same row).
-    from db.queries import memory_nutrition_is_trusted
-    if not await memory_nutrition_is_trusted(db, row):
+    from db.queries import memory_nutrition_evidence
+    if await memory_nutrition_evidence(
+            db, row, consumer="canonical._memory",
+            candidate_kind="canonical_evidence",
+            stage="pricing.memory") is None:
         logger.info("event=memory_untrusted key=%r reason=no_provenance — the "
                     "row cannot name an authority that produced its numbers, "
                     "so they are not evidence", name_norm)
