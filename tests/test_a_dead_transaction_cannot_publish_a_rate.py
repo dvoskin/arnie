@@ -119,23 +119,30 @@ async def test_the_REAL_measure_attaches_the_watch_to_its_OWN_engine():
     contains `attach` would be the M5 grep trap — the identifier survives in
     the comment above the call.
     """
-    import getpass
     import os
 
     import psycopg
+    from sqlalchemy.engine import make_url
 
     import scripts.measure_settlement_coverage as M
 
     if not os.getenv("TEST_POSTGRES_URL"):
         pytest.skip("needs TEST_POSTGRES_URL")
 
-    user, db_name = getpass.getuser(), "arnie_guard_probe"
-    admin = psycopg.connect(f"postgresql://{user}@localhost:5432/postgres",
-                            autocommit=True)
+    # ⛔ DERIVE THE CONNECTION, NEVER REBUILD IT FROM `getpass.getuser()`.
+    # The first version assumed local peer auth and died in CI with
+    # `fe_sendauth: no password supplied` — a laptop-only credential
+    # assumption that the laptop cannot see.
+    db_name = "arnie_guard_probe"
+    base = make_url(os.environ["TEST_POSTGRES_URL"])
+    admin_url = base.set(database="postgres").render_as_string(
+        hide_password=False).replace("postgresql+psycopg://", "postgresql://")
+    url = base.set(database=db_name).render_as_string(hide_password=False)
+
+    admin = psycopg.connect(admin_url, autocommit=True)
     admin.execute(f'DROP DATABASE IF EXISTS "{db_name}" WITH (FORCE)')
     admin.execute(f'CREATE DATABASE "{db_name}"')
     admin.close()
-    url = f"postgresql+psycopg://{user}@localhost:5432/{db_name}"
 
     try:
         from sqlalchemy import text as _t
@@ -166,10 +173,37 @@ async def test_the_REAL_measure_attaches_the_watch_to_its_OWN_engine():
             "attaching the watch to the engine it actually uses")
         assert any("settled_by_operation_id" in f for f in _FAULT_WATCH.faults)
     finally:
-        admin = psycopg.connect(f"postgresql://{user}@localhost:5432/postgres",
-                                autocommit=True)
+        admin = psycopg.connect(admin_url, autocommit=True)
         admin.execute(f'DROP DATABASE IF EXISTS "{db_name}" WITH (FORCE)')
         admin.close()
+
+
+def test_the_probe_connection_carries_the_credential_it_was_given():
+    """⛔⛔ THE BUG CI CAUGHT AND THE LAPTOP STRUCTURALLY COULD NOT.
+
+    The first wire test built its admin connection from `getpass.getuser()`
+    against `localhost` with no password. That works on a laptop with peer
+    auth and dies in CI with `fe_sendauth: no password supplied`. A local
+    environment cannot observe a credential assumption it happens to satisfy.
+
+    ⭐ So the derivation is pinned as a pure function against a
+    PASSWORD-BEARING url — the shape the developer machine never produces.
+    """
+    from sqlalchemy.engine import make_url
+
+    base = make_url("postgresql+psycopg://ci_user:s3cret@db.internal:6543/arnie_test")
+    admin = base.set(database="postgres").render_as_string(hide_password=False)
+    probe = base.set(database="arnie_guard_probe").render_as_string(
+        hide_password=False)
+
+    for rendered in (admin, probe):
+        assert "s3cret" in rendered, (
+            "the password was dropped deriving the probe connection — this is "
+            "the fe_sendauth failure that took CI #1555 red")
+        assert "ci_user" in rendered and "db.internal:6543" in rendered, (
+            "host/user were rebuilt rather than carried over")
+    assert admin.endswith("/postgres")
+    assert probe.endswith("/arnie_guard_probe")
 
 
 def _healthy_report() -> dict:
