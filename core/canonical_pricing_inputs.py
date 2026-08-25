@@ -102,7 +102,7 @@ async def _memory(db, user_id: int, identity: str,
     # what let 2026-08-16 happen (canonical declined the corrupt cucumber
     # address, legacy priced the meal from the same row).
     from db.queries import memory_nutrition_is_trusted
-    if not memory_nutrition_is_trusted(row):
+    if not await memory_nutrition_is_trusted(db, row):
         logger.info("event=memory_untrusted key=%r reason=no_provenance — the "
                     "row cannot name an authority that produced its numbers, "
                     "so they are not evidence", name_norm)

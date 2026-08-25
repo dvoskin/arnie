@@ -45,6 +45,7 @@ from core.food_intelligence import memory_key_is_addressable, normalize_name
 from db.models import UserFoodMatch
 from db.queries import get_user_food_match, upsert_user_food_match
 from tests.test_a_full_day_of_food import app_db, seeded  # noqa: F401
+from tests.trusted_memory_fixture import trusted  # noqa: E402
 
 
 @pytest_asyncio.fixture
@@ -109,11 +110,11 @@ async def test_tvorog_cannot_reach_the_corn_row(memory):
     """⭐ THE PRODUCTION DEFECT, AS A FIXTURE. Same user, corn cached, cottage
     cheese looked up — and before the guard this returned the corn."""
     db, user_id = memory
-    db.add(UserFoodMatch(origin_tier="canonical_settlement", 
+    db.add(trusted(db, UserFoodMatch(
         user_id=user_id, name_norm=normalize_name(CORN), display_name=CORN,
         cal_100=CORN_PER_100G["calories"], protein_100=CORN_PER_100G["protein"],
         carbs_100=CORN_PER_100G["carbs"], fat_100=CORN_PER_100G["fat"],
-        confidence="exact"))
+        confidence="exact")))
     await db.commit()
 
     found = await get_user_food_match(db, user_id, normalize_name(TVOROG))
@@ -129,9 +130,9 @@ async def test_two_different_foods_do_not_share_a_memory_identity(memory):
     """Corn and an omelette are not the same food, and normalizing both to
     `'2'` is not a reason to treat them as one."""
     db, user_id = memory
-    db.add(UserFoodMatch(origin_tier="canonical_settlement", 
+    db.add(trusted(db, UserFoodMatch(
         user_id=user_id, name_norm=normalize_name(CORN), display_name=CORN,
-        cal_100=54.0, protein_100=3.33, confidence="exact"))
+        cal_100=54.0, protein_100=3.33, confidence="exact")))
     await db.commit()
 
     assert await get_user_food_match(db, user_id, normalize_name(EGGS)) is None
@@ -142,8 +143,8 @@ async def test_an_empty_key_is_never_a_valid_memory_key(memory):
     """`Помидор` normalizes to `''`. An empty key must not address a row —
     including a legacy row that was somehow written with one."""
     db, user_id = memory
-    db.add(UserFoodMatch(origin_tier="canonical_settlement", user_id=user_id, name_norm="", display_name="Помидор",
-                         cal_100=18.0, confidence="exact"))
+    db.add(trusted(db, UserFoodMatch(user_id=user_id, name_norm="", display_name="Помидор",
+                         cal_100=18.0, confidence="exact")))
     await db.commit()
 
     assert await get_user_food_match(db, user_id, normalize_name("Помидор")) is None
@@ -155,9 +156,9 @@ async def test_an_ordinary_english_food_still_hits_its_row(memory):
     """⭐ ANTI-VACUITY AT THE DOOR, not only on the predicate. The measured
     44.6% of production that memory carries must be untouched by this."""
     db, user_id = memory
-    db.add(UserFoodMatch(origin_tier="canonical_settlement", user_id=user_id, name_norm=normalize_name("Chicken breast"),
+    db.add(trusted(db, UserFoodMatch(user_id=user_id, name_norm=normalize_name("Chicken breast"),
                          display_name="Chicken breast", cal_100=165.0,
-                         protein_100=31.0, confidence="exact"))
+                         protein_100=31.0, confidence="exact")))
     await db.commit()
 
     found = await get_user_food_match(db, user_id, normalize_name("Chicken breast"))

@@ -28,6 +28,7 @@ from sqlalchemy import select
 from core.canonical_correction import (CORRECTION_SOURCE, StaleUndo,
                                        correct_identity, correct_quantity,
                                        restore_recorded_state)
+from tests.trusted_memory_fixture import trusted  # noqa: E402
 
 _COLS = ("parsed_food_name", "quantity", "calories", "protein", "carbs",
          "fats", "fiber", "sugar", "sodium", "micronutrients_json",
@@ -64,11 +65,11 @@ async def _canonical_row(db, user, *, name, quantity="150 g", calories=200.0):
 async def _remember(db, user, name, per100g, fdc):
     from core.food_intelligence import memory_key
     from db.models import UserFoodMatch
-    db.add(UserFoodMatch(origin_tier="canonical_settlement", 
+    db.add(trusted(db, UserFoodMatch(
         user_id=user.id, name_norm=memory_key(name, ""), display_name=name,
         cal_100=per100g["calories"], protein_100=per100g["protein"],
         carbs_100=per100g["carbs"], fat_100=per100g["fat"], fdc_id=fdc,
-        confidence="exact"))
+        confidence="exact")))
     await db.commit()
 
 

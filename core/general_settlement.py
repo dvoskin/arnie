@@ -770,6 +770,23 @@ class GeneralSettlementOwner:
                 operation_id=meal.operation_id, user_id=int(user.id),
                 revision=revision),
             resolved_meal=meal, writer=write_canonical_meal)
+        # ⛔⛔⛔ CF24 — TRUSTED MEMORY IS PRODUCED HERE, AND ONLY HERE.
+        # AFTER the commit, never beside it: a stamp written before the write
+        # lands would vouch for a settlement that may not exist. Everything
+        # recorded was already decided by `price(require_authoritative=True)` —
+        # rung, evidence id, basis — so nothing is re-derived. A second opinion
+        # about which rung won is the drift the shared selector exists to
+        # prevent.
+        #
+        # ⚠ Never raises into the settle path. A cache that fails to write is a
+        # missed optimisation; a settlement that fails because its cache failed
+        # would be a real meal lost to a convenience.
+        try:
+            await self._remember(db, user=user, resolved=resolved,
+                                 operation_id=meal.operation_id)
+        except Exception:                                # noqa: BLE001
+            logger.warning("event=trusted_memory_write_failed operation=%s",
+                           meal.operation_id, exc_info=True)
         logger.info(
             "event=general_settled turn=%s user=%s items=%d rungs=%s "
             "expected=%s operation=%s revision=%d", source_turn_id, user.id,
@@ -778,6 +795,42 @@ class GeneralSettlementOwner:
             coverage.expected_source if coverage else "-",
             meal.operation_id, revision)
         return result
+
+    async def _remember(self, db, *, user, resolved, operation_id: str):
+        """Record each authoritatively-settled item as trusted memory.
+
+        ⭐ ONLY WHAT THE PRICER DECIDED. `PricedFood` already carries the rung,
+        the evidence id and the basis it priced on; this copies them. It does
+        not choose a rung, does not re-rank, does not convert.
+
+        ⛔ AND ONLY PER-100 G. The stored profile is a density, so an item whose
+        settlement produced no derivable per-100 g figure is skipped rather
+        than stored on an invented basis — which is the shape that started this
+        whole incident.
+        """
+        from core.food_intelligence import memory_key
+        from db.queries import remember_canonical_settlement
+
+        for priced in resolved:
+            analysis = getattr(priced, "analysis", None)
+            grams = getattr(getattr(priced, "quantity", None), "grams", None)
+            if analysis is None or not grams or float(grams) <= 0:
+                continue
+            factor = 100.0 / float(grams)
+            per100 = {
+                "calories": (analysis.calories or 0) * factor,
+                "protein": (analysis.protein or 0) * factor,
+                "carbs": (analysis.carbs or 0) * factor,
+                "fat": (analysis.fats or 0) * factor,
+            }
+            key = memory_key(priced.identity, str(priced.entity_id or ""))
+            if not key:
+                continue
+            await remember_canonical_settlement(
+                db, user_id=int(user.id), name_norm=key,
+                display_name=priced.identity, operation_id=operation_id,
+                per100=per100, evidence_id=str(analysis.evidence_id or ""),
+                basis=str(analysis.basis or ""))
 
     async def _price(self, db, *, user, item: dict):
         """assemble() then price(). Nothing between them retrieves."""

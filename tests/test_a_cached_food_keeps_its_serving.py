@@ -110,18 +110,31 @@ async def test_no_panel_at_all_is_not_an_error(db, make_user):
 @pytest.mark.asyncio
 async def test_a_row_cached_before_this_gains_its_panel_later(db, make_user):
     """Every row that exists today predates the column. They must not stay
-    unanswerable forever — the first lookup carrying a label fills one in."""
+    unanswerable forever — a later lookup carrying a label fills one in.
+
+    ⛔ CF24 NARROWED THIS, AND THE NARROWING IS THE POINT. Healing used to run
+    on any later lookup of the same NAME. That is how row 1029 got "Milk,
+    whole" wearing "4 pieces (16.7 g)": a name is not an identity, and a
+    serving panel scales mass, so the wrong panel is a wrong-nutrition defect
+    wearing a formatting bug's clothes. The graft now requires the incoming
+    lookup to prove it is the SAME RECORD.
+
+    So the healing case is written the way healing actually reaches a row:
+    with an identifier on both sides. The unprovable case is pinned in
+    `test_a_serving_graft_must_prove_identity.py`, which owns that rule."""
     user = await make_user(telegram_id="serving:heal")
-    await upsert_user_food_match(db, user.id, "legacy", "Legacy", None,
+    await upsert_user_food_match(db, user.id, "legacy", "Legacy", "171077",
                                  PER100, "likely")
     assert (await get_user_food_match(db, user.id, "legacy")).serving_text is None
 
-    await upsert_user_food_match(db, user.id, "legacy", "Legacy", None,
+    await upsert_user_food_match(db, user.id, "legacy", "Legacy", "171077",
                                  PER100, "likely",
                                  serving_text="about 30 chips (28 g)")
 
     healed = await get_user_food_match(db, user.id, "legacy")
-    assert healed.serving_text == "about 30 chips (28 g)"
+    assert healed.serving_text == "about 30 chips (28 g)", (
+        "a later lookup of the SAME record no longer heals the panel — "
+        "CF24 was meant to gate the graft on identity, not disable it")
 
 
 @pytest.mark.asyncio
