@@ -194,6 +194,53 @@ def _database_url() -> str:
     return url.replace("+psycopg", "").replace("+asyncpg", "")
 
 
+class _DbFaultWatch:
+    """⛔⛔⛔ A DEAD TRANSACTION MUST NOT BE ABLE TO PUBLISH A SCALAR.
+
+    2026-08-25: the first CF24 re-measure hit `UndefinedColumn` on the very
+    first memory read, because production had not yet run `memtrust001`. That
+    ABORTED the transaction, every query after it raised
+    `InFailedSqlTransaction` and returned nothing, and the process exited **0**
+    printing `C OWNERSHIP RATE 9.0%` — a number computed by a session that had
+    been dead for 52,680 lines of cascade.
+
+    ⭐⭐⭐ A ZERO FROM AN ABORTED TRANSACTION IS BYTE-IDENTICAL TO A GENUINE
+    REFUSAL, which is this project's "unknown became zero" class with the
+    instrument itself doing the converting — and its exit code agreeing.
+
+    The listener sits at the DBAPI layer ON PURPOSE. A caller with a bare
+    `except` eats the exception and returns a default; by the time the report
+    is assembled there is nothing left to see. This records the fault where it
+    is RAISED, not where it is handled.
+    """
+
+    def __init__(self) -> None:
+        self.faults: list[str] = []
+
+    def reset(self) -> "_DbFaultWatch":
+        self.faults = []
+        return self
+
+    def attach(self, engine) -> "_DbFaultWatch":
+        from sqlalchemy import event
+
+        target = getattr(engine, "sync_engine", engine)
+
+        @event.listens_for(target, "handle_error")
+        def _record(ctx):  # noqa: ANN001
+            exc = ctx.original_exception
+            self.faults.append(
+                f"{type(exc).__name__}: {str(exc).strip()[:200]}")
+
+        return self
+
+
+#: Module-level so EVERY return path of `measure()` is covered — including the
+#: WITHHELD early return. A per-return attachment is one new `return` away from
+#: being wrong again.
+_FAULT_WATCH = _DbFaultWatch()
+
+
 async def measure(*, days: int, limit: int, population: dict = None) -> dict:
     """`population` pins the EXACT rows to measure, replacing the rolling clock.
 
@@ -221,6 +268,7 @@ async def measure(*, days: int, limit: int, population: dict = None) -> dict:
 
     engine = make_engine(_database_url().replace("postgresql://",
                                                  "postgresql+psycopg://"))
+    _FAULT_WATCH.reset().attach(engine)
     meals: dict = collections.defaultdict(
         lambda: {"items": [], "sources": set(), "user_id": None,
                  "operations": set()})
@@ -1287,6 +1335,31 @@ def main() -> int:
     report = asyncio.run(measure(days=args.days, limit=args.limit,
                                  population=frozen))
     selected = report.pop("_selected_entry_ids", [])
+
+    # ⛔⛔⛔ NO RATE FROM A FAULTED RUN. `render` is not reached — not even to
+    # print a flagged number, because a flagged number still gets quoted as a
+    # number. The only honest output of a poisoned session is the fault.
+    if _FAULT_WATCH.faults:
+        seen, unique = set(), []
+        for f in _FAULT_WATCH.faults:
+            key = f.split(":")[0] + f[:80]
+            if key not in seen:
+                seen.add(key)
+                unique.append(f)
+        print("\n  P11 — SETTLEMENT COVERAGE\n\n"
+              "    ⛔⛔⛔ INSTRUMENT INVALID — NO OWNERSHIP RATE IS PUBLISHED\n\n"
+              f"    {len(_FAULT_WATCH.faults)} database fault(s) during the "
+              "run. Once a transaction aborts, every later query returns\n"
+              "    nothing, and a zero from a dead session cannot be told "
+              "apart from a genuine refusal.\n\n"
+              "    FIRST FAULT — this is the one that poisoned the "
+              "transaction; the rest are its cascade:\n"
+              f"      {unique[0]}\n"
+              + ("".join(f"      {f}\n" for f in unique[1:4])
+                 if len(unique) > 1 else ""),
+              file=sys.stderr)
+        return 2
+
     print(render(report))
 
     if args.freeze:

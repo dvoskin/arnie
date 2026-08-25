@@ -2730,7 +2730,7 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
         # untouched.
         if m is not None:
             from db.queries import memory_nutrition_is_trusted
-            if not memory_nutrition_is_trusted(m):
+            if not await memory_nutrition_is_trusted(db, m):
                 logger.info(
                     "event=legacy_memory_untrusted key=%r reason=no_provenance "
                     "— stored nutrition cannot name the authority that produced "

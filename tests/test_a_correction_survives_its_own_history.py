@@ -18,6 +18,7 @@ import pytest
 from core.canonical_correction import (CORRECTION_SOURCE, correct_identity,
                                        correct_quantity,
                                        restore_recorded_state)
+from tests.trusted_memory_fixture import trusted  # noqa: E402
 
 
 async def _canonical_row(db, user, *, name, quantity, calories=200.0,
@@ -51,15 +52,15 @@ async def _canonical_row(db, user, *, name, quantity, calories=200.0,
 async def _remember(db, user, name, per100g, fdc="900001"):
     from core.food_intelligence import memory_key
     from db.models import UserFoodMatch
-    row = UserFoodMatch(user_id=user.id, name_norm=memory_key(name, ""),
-                        display_name=name, cal_100=per100g["calories"],
-                        protein_100=per100g["protein"],
-                        carbs_100=per100g["carbs"], fat_100=per100g["fat"],
-                        fdc_id=fdc, confidence="exact",
-                        # ⛔ CF23 — an identity repair must rebind to EVIDENCE,
-                        # and an unstamped memory row is no longer evidence.
-                        # Without this the correction correctly REFUSES.
-                        origin_tier="canonical_settlement")
+    # ⛔ CF23/CF24 — an identity repair must rebind to EVIDENCE, and memory is
+    # only evidence when it LINKS to the settlement that produced it. The tier
+    # alone stopped meaning anything; `trusted` writes that settlement too.
+    row = trusted(db, UserFoodMatch(
+        user_id=user.id, name_norm=memory_key(name, ""),
+        display_name=name, cal_100=per100g["calories"],
+        protein_100=per100g["protein"],
+        carbs_100=per100g["carbs"], fat_100=per100g["fat"],
+        fdc_id=fdc, confidence="exact"))
     db.add(row); await db.commit()
     return row
 

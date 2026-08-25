@@ -3530,27 +3530,56 @@ async def get_user_food_match(db: AsyncSession, user_id: int, name_norm: str):
 #: ⭐ IDENTITY SURVIVES. This governs the NUTRITION PAYLOAD only. The row is
 #: still found, still matched, still bumps `times_used`, still carries its
 #: display name and serving panel. Only its numbers stop being evidence.
+#: Retained ONLY so the public door can refuse a caller that tries to say the
+#: word. It no longer confers anything — see `memory_nutrition_is_trusted`.
 TRUSTED_MEMORY_TIERS = frozenset({"canonical_settlement"})
 
 
-def memory_nutrition_is_trusted(row) -> bool:
+async def memory_nutrition_is_trusted(db, row) -> bool:
     """May this memory row's stored nutrition be used as evidence?
 
     ⛔ ONE IMPLEMENTATION, TWO CALLERS — canonical's `_memory` and the legacy
     pricer. Two owner-specific copies is how 2026-08-16 happened: canonical
     declined a corrupt cucumber address and legacy priced the meal from the
-    very same row, reproducing the exact error canonical had just prevented.
-    A guard only one owner applies is a guard with a longer fuse.
+    very same row, reproducing the error canonical had just prevented.
+
+    ⛔⛔⛔ TRUST IS A RESOLVED LINK, NOT A LABEL *(CF24)*. The first version
+    tested `origin_tier == "canonical_settlement"`. That column is free text and
+    every lookup path writes through the same public door, so the guard was a
+    magic word one keyword argument from useless. It now requires:
+
+        a canonical operation id that RESOLVES to a real meal_commits row
+        the basis the settlement actually priced on
+        the evidence id that basis came from
+
+    A fabricated or tampered operation id does not resolve, so it is not trust.
+    A non-settlement writer has no operation id to supply at all.
+
+    ⚠ STILL FAIL-CLOSED FOR HISTORY. All 838 existing rows carry no linkage and
+    remain untrusted. Only `remember_canonical_settlement` can create one.
     """
     if row is None:
         return False
-    tier = str(getattr(row, "origin_tier", "") or "")
-    if tier not in TRUSTED_MEMORY_TIERS:
+    operation = str(getattr(row, "settled_by_operation_id", "") or "").strip()
+    basis = str(getattr(row, "settled_basis", "") or "").strip()
+    evidence = str(getattr(row, "settled_evidence_id", "") or "").strip()
+    if not (operation and basis and evidence):
         return False
-    # A trusted tier still has to carry the basis its numbers were computed
-    # under. `user_confirmed` alone is NOT authority: a user confirming a
-    # number says nothing about the basis it was derived on.
-    return bool(getattr(row, "fdc_id", None))
+    if db is None:
+        # ⛔ CANNOT RESOLVE == NOT TRUSTED. "We could not check" must never
+        # read as "it checked out" — the silence this incident kept producing.
+        return False
+    from db.models import MealCommit
+    found = (await db.execute(
+        select(MealCommit.commit_id).where(
+            MealCommit.operation_id == operation).limit(1))).scalar_one_or_none()
+    if found is None:
+        logger.warning(
+            "event=memory_linkage_unresolved key=%r operation=%r — a stamp "
+            "pointing at no canonical settlement is not provenance",
+            getattr(row, "name_norm", None), operation)
+        return False
+    return True
 
 
 async def delete_user_food_match(db: AsyncSession, user_id: int, name_norm: str) -> bool:
@@ -3584,6 +3613,127 @@ _ORIGIN_BY_CONFIDENCE = {
     "likely": "generic_exact",
     "estimated": "estimated",
 }
+
+
+async def remember_canonical_settlement(
+        db, *, user_id: int, name_norm: str, display_name: str,
+        operation_id: str, per100: dict, evidence_id: str, basis: str,
+        fdc_id=None, serving_text: str = ""):
+    """THE ONLY WRITER THAT CAN CREATE TRUSTED MEMORY.
+
+    Called after an authoritative canonical settlement has COMMITTED — never
+    before, never beside it. At that point the pricer has already decided
+    everything this records, so nothing here is derived: a second opinion about
+    which rung won would be the drift `select_priced_rung` was extracted to
+    prevent.
+
+    ⛔⛔⛔ REPLACEMENT IS WHOLESALE, NOT A PATCH *(Danny)*. The evidence-owned
+    state moves together — macros, evidence id, basis, linkage — because
+    patching individual macros onto an untrusted row leaves HYBRID state: new
+    calories over an old basis, or a trusted stamp over numbers nobody
+    replaced. That is Defect D surviving its own repair.
+
+    ⭐ AND IT IS THE ONE PATH ALLOWED TO OVERWRITE. Ordinary lookups may not
+    rewrite nutrition (CF24-D); this may, because it arrives with the linkage
+    that makes the new numbers checkable.
+
+    ⚠ IDEMPOTENT BY OPERATION. A replay of the same settlement must not produce
+    a second conflicting trusted row — the one rung that is supposed to be
+    certain cannot be the one that disagrees with itself.
+
+    ⛔⛔⛔ AND IT MUST NOT COMMIT. THE CALLER OWNS THE TRANSACTION.
+    The first version called `await db.commit()`, which made this cache write
+    durable in the MIDDLE of a settlement — so a later `ExecutionViewMismatch`
+    could no longer take the meal, the claim and the memory row down together.
+    `test_the_general_settlement_negative_twins` caught it exactly: *"a failed
+    execution view left a durable food row or ledger event behind WITHOUT
+    anyone calling rollback."*
+
+    ⭐ A CACHE MAY NEVER DECIDE THE DURABILITY OF THE MEAL THAT PRODUCED IT.
+    `flush` makes the row visible to this transaction; whether it survives is
+    the settlement's call, which is the correct ownership.
+    """
+    from core.food_intelligence import memory_key_is_addressable
+
+    if not memory_key_is_addressable(name_norm) or not operation_id:
+        return None
+    try:
+        _cal = float((per100 or {}).get("calories") or 0)
+    except (TypeError, ValueError):
+        return None
+    # The sanity ceiling still applies — it is not an authority check, and a
+    # settlement is not licence to store something that cannot be a food.
+    if _cal <= 0 or _cal > 900:
+        logger.warning(
+            "refusing trusted memory for %r user %s: %.0f cal/100g", name_norm,
+            user_id, _cal)
+        return None
+
+    micros = _extract_micros_100(per100)
+    existing = await get_user_food_match(db, user_id, name_norm)
+    fields = dict(
+        display_name=display_name or name_norm,
+        fdc_id=str(fdc_id) if fdc_id else None,
+        cal_100=per100.get("calories"), protein_100=per100.get("protein"),
+        carbs_100=per100.get("carbs"), fat_100=per100.get("fat"),
+        fiber_100=per100.get("fiber"), sugar_100=per100.get("sugar"),
+        sodium_100=per100.get("sodium"),
+        micros_100_json=(json.dumps(micros) if micros else None),
+        serving_text=(serving_text or None),
+        confidence="canonical", origin_tier="canonical_settlement",
+        settled_by_operation_id=operation_id,
+        settled_basis=basis, settled_evidence_id=str(evidence_id or ""),
+        settled_at=datetime.utcnow(),
+    )
+    if existing is not None:
+        # ⭐ NO REPLAY SHORT-CIRCUIT. An earlier version returned early when the
+        # row already named this operation, reading as an idempotency
+        # guarantee. Mutation P5 deleted that branch and every proof stayed
+        # GREEN — because wholesale replacement is ALREADY idempotent: the
+        # fallthrough writes the same operation the same fields and leaves the
+        # same single row. A branch whose removal nothing can observe is a
+        # claim without a proof, and it invited the belief that replay is
+        # specially handled here. It is not; it simply cannot differ.
+        for key, value in fields.items():
+            setattr(existing, key, value)
+        existing.last_used = datetime.utcnow()
+        await db.flush()
+        logger.info("event=memory_trusted_replaced user=%s key=%r operation=%s",
+                    user_id, name_norm, operation_id)
+        return existing
+    row = UserFoodMatch(user_id=user_id, name_norm=name_norm,
+                        user_confirmed=False, **fields)
+    db.add(row)
+    await db.flush()
+    logger.info("event=memory_trusted_created user=%s key=%r operation=%s",
+                user_id, name_norm, operation_id)
+    return row
+
+
+def _proves_same_authority(existing, incoming_fdc_id) -> bool:
+    """May a serving panel from `incoming_fdc_id` be grafted onto `existing`?
+
+    ⛔⛔⛔ CF24-C — THE WRITER HAD ZERO REFERENCES TO `existing.fdc_id`. The row
+    is keyed by `name_norm`; the incoming serving comes from whichever
+    candidate won THAT lookup. Nothing checked they describe the same product,
+    which is how production row 1029 — `Milk, whole` — came to carry
+    `"4 pieces (16.7 g)"`, a *pieces* serving on a liquid, and would have
+    divided its label by 16.7 g forever after.
+
+    ⭐ IDENTIFIERS ONLY. No semantic-name comparison, no token overlap, no
+    calorie plausibility: those are the guesses this whole incident came from,
+    and `_best_matching_snippet` is what token overlap already cost.
+
+    ⛔ ABSENCE IS NOT AGREEMENT. If either side carries no identifier the two
+    cannot be shown to be the same product, and "we could not tell" must never
+    read as "they match" — the shape the disabled web lanes produced
+    constantly, every candidate arriving with `fdc_id=None`.
+    """
+    stored = str(getattr(existing, "fdc_id", "") or "").strip()
+    incoming = str(incoming_fdc_id or "").strip()
+    if not stored or not incoming:
+        return False
+    return stored == incoming
 
 
 async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
@@ -3632,23 +3782,17 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
     origin = (origin_tier or ("user_regular" if user_confirmed
                               else _ORIGIN_BY_CONFIDENCE.get(confidence,
                                                              "generic_exact")))
-    # ⛔⛔⛔ CF23 — THE PUBLIC DOOR CANNOT MINT AUTHORITY. A trusted tier is a
-    # CLAIM that an authoritative canonical settlement produced these numbers.
-    # This function is called after every successful lookup — web, USDA, OFF,
-    # legacy estimate, ordinary correction — and none of those can make that
-    # claim. If the string were merely a convention, the guard would be a
-    # magic word any caller could say, and the 163 fabricated rows would have
-    # been one keyword argument away from "trusted".
-    #
-    # ⭐ SANITISED, NOT REFUSED. Refusing would drop the row entirely and lose
-    # the identity/usage record that legacy still needs; downgrading keeps the
-    # cache working and removes only the authority it did not earn.
+    # ⛔⛔⛔ CF24 — THE PUBLIC DOOR HAS NO LINKAGE TO GIVE. Trust is no longer a
+    # tier string but a resolved pointer at a canonical settlement, and this
+    # function never receives one: `remember_canonical_settlement` is the only
+    # writer that can. The tier is kept purely descriptive.
     if origin in TRUSTED_MEMORY_TIERS:
         logger.warning(
-            "event=memory_trust_tier_refused user=%s key=%r attempted=%r — "
-            "only an authoritative canonical settlement may stamp trust; "
-            "storing as a cache", user_id, name_norm, origin)
+            "event=memory_trust_tier_refused user=%s key=%r attempted=%r — a "
+            "tier cannot confer authority; storing as a cache", user_id,
+            name_norm, origin)
         origin = "generic_exact"
+
     existing = await get_user_food_match(db, user_id, name_norm)
     if existing:
         existing.times_used = (existing.times_used or 1) + 1
@@ -3664,7 +3808,17 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
         # every later log of that food can divide the serving instead of
         # guessing. Never CLEARS a stored panel with an empty one.
         if serving_text and not existing.serving_text:
-            existing.serving_text = serving_text
+            # ⛔ CF24-C — only from the SAME proven authority. See
+            # `_proves_same_authority`: this is the write-side half of the
+            # CF23 incident, and the guard is identifiers or nothing.
+            if _proves_same_authority(existing, fdc_id):
+                existing.serving_text = serving_text
+            else:
+                logger.info(
+                    "event=serving_graft_refused user=%s key=%r stored_fdc=%r "
+                    "incoming_fdc=%r — a serving may not cross records",
+                    user_id, name_norm, getattr(existing, "fdc_id", None),
+                    fdc_id)
         # Upgrade to user-confirmed if the user corrected it; never downgrade.
         if user_confirmed:
             existing.user_confirmed = True

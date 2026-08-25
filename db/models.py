@@ -1167,6 +1167,15 @@ class UserFoodMatch(Base):
     display_name = Column(String)                           # what to call it
     fdc_id = Column(String)                                 # USDA FoodData Central id
     # per-100g nutrient profile from USDA (or user-confirmed)
+    # ⛔⛔⛔ CF24 — THE TRUST LINKAGE. `origin_tier` describes a row; it cannot
+    # PROVE anything, because the public writer sets it and every lookup path
+    # goes through that door. These name the canonical settlement that produced
+    # the numbers, and the predicate RESOLVES the operation rather than reading
+    # a label. A non-settlement writer has no operation id to supply.
+    settled_by_operation_id = Column(String, nullable=True)
+    settled_basis = Column(String, nullable=True)
+    settled_evidence_id = Column(String, nullable=True)
+    settled_at = Column(DateTime, nullable=True)
     cal_100 = Column(Float)
     protein_100 = Column(Float)
     carbs_100 = Column(Float)

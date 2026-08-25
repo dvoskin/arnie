@@ -62,7 +62,7 @@ def _key(grade: str) -> str:
     return normalize_name(f"chicken {grade}")
 
 
-def _row(user_id, name_norm, grade, cal=165.0,
+def _row(db, user_id, name_norm, grade, cal=165.0,
          origin_tier="canonical_settlement"):
     """⛔ CF23 — THE FIXTURE NOW CARRIES PROVENANCE, DELIBERATELY.
 
@@ -72,11 +72,19 @@ def _row(user_id, name_norm, grade, cal=165.0,
     every case here assert the pre-CF23 contract while production rejects the
     same row — a suite green against a rule nobody applies.
 
+    ⛔ CF24 — AND THE STAMP STOPPED BEING A STRING. Trust now resolves the
+    row's `settled_by_operation_id` against `meal_commits`, so the fixture has
+    to write that settlement too. `trusted` does both halves; a caller asking
+    for a different tier skips it and gets the untrusted row it asked for.
+
     `test_an_unstamped_row_is_no_longer_evidence` below pins the other side."""
-    return UserFoodMatch(user_id=user_id, name_norm=name_norm,
+    from tests.trusted_memory_fixture import trusted
+
+    row = UserFoodMatch(user_id=user_id, name_norm=name_norm,
                          display_name=name_norm, cal_100=cal, protein_100=31.0,
                          carbs_100=0.0, fat_100=3.6, fdc_id="171077",
                          confidence=grade, origin_tier=origin_tier)
+    return trusted(db, row) if origin_tier == "canonical_settlement" else row
 
 
 # ── every production grade returns evidence ───────────────────────────────────
@@ -89,7 +97,7 @@ async def test_every_production_confidence_grade_returns_evidence(
     table, each asserting a `MemoryEvidence` comes BACK with the row's macros —
     not that a lookup was attempted."""
     db, user_id = store
-    db.add(_row(user_id, _key(grade), grade))
+    db.add(_row(db, user_id, _key(grade), grade))
     await db.commit()
 
     evidence = await _memory(db, user_id, _key(grade))
@@ -137,7 +145,7 @@ async def test_a_row_with_no_calories_is_refused_with_a_reason(store, caplog):
     """A per-100g panel with no calories cannot price anything. It is not the
     same fact as "no row", and it must not spell the same."""
     db, user_id = store
-    db.add(_row(user_id, "hollow", "exact", cal=None))
+    db.add(_row(db, user_id, "hollow", "exact", cal=None))
     await db.commit()
 
     with caplog.at_level("INFO"):
@@ -152,7 +160,7 @@ async def test_an_undeclared_grade_still_yields_the_macros_but_says_so(
     evidence; what is refused is silently substituting a number, which is
     precisely what broke this rung."""
     db, user_id = store
-    db.add(_row(user_id, "odd grade", "brand-new-grade"))
+    db.add(_row(db, user_id, "odd grade", "brand-new-grade"))
     await db.commit()
 
     with caplog.at_level("WARNING"):
@@ -185,8 +193,8 @@ async def test_a_failing_lookup_is_loud_and_is_not_an_absence(store, caplog,
 async def test_the_identity_still_selects_which_row_is_returned(store):
     """The repair must not have cost the addressing this tranche just built."""
     db, user_id = store
-    db.add(_row(user_id, "tomato", "exact", cal=18.0))
-    db.add(_row(user_id, "corn", "likely", cal=96.0))
+    db.add(_row(db, user_id, "tomato", "exact", cal=18.0))
+    db.add(_row(db, user_id, "corn", "likely", cal=96.0))
     await db.commit()
 
     ru = await _memory(db, user_id, "Помидор", "tomato")
@@ -215,7 +223,7 @@ async def test_an_unstamped_row_is_no_longer_evidence(store):
     density, 154 of them live to the legacy pricer across 13 users."""
     db, user_id = store
     name_norm = _key("exact")
-    db.add(_row(user_id, name_norm, "exact", origin_tier="generic_exact"))
+    db.add(_row(db, user_id, name_norm, "exact", origin_tier="generic_exact"))
     await db.commit()
 
     got = await _memory(db, user_id, name_norm, "")

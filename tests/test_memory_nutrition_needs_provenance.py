@@ -56,86 +56,116 @@ class _Row:
         self.user_confirmed = kw.get("user_confirmed", False)
         self.serving_text = kw.get("serving_text")
         self.display_name = kw.get("display_name", "Thing")
+        # ── CF24: the columns that carry the LINK to a real settlement ──
+        self.settled_by_operation_id = kw.get("settled_by_operation_id")
+        self.settled_basis = kw.get("settled_basis")
+        self.settled_evidence_id = kw.get("settled_evidence_id")
 
 
 # ── THE TWO PRODUCTION DEFECTS, AS FIXTURES ───────────────────────────────
 
 
-def test_the_fabricated_200_placeholder_is_not_evidence():
+@pytest.mark.asyncio
+async def test_the_fabricated_200_placeholder_is_not_evidence(_session):
     """The exact shape the web branch writes: no serving parsed, no fdc_id,
     calories exactly 200.0, macros scaled to it. 154 live rows look like this."""
+    db, _uid = _session
     row = _Row(display_name="Quest Chips Sweet Chili", cal_100=200.0,
                fdc_id=None, serving_text=None, origin_tier="branded_exact")
-    assert memory_nutrition_is_trusted(row) is False
+    assert await memory_nutrition_is_trusted(db, row) is False
 
 
-def test_whole_milk_at_582_with_another_foods_serving_is_not_evidence():
+@pytest.mark.asyncio
+async def test_whole_milk_at_582_with_another_foods_serving_is_not_evidence(_session):
     """⛔ THE ROW THE 08-16 GUARD LETS THROUGH. Sole binding, fresh,
     internally consistent — and 9.5x the truth, carrying a *pieces* serving on
     a liquid. Nothing about agreement-between-bindings can see it."""
+    db, _uid = _session
     row = _Row(display_name="Milk, whole", cal_100=582.0, protein_100=9.0,
                carbs_100=49.3, fat_100=39.7, serving_text="4 pieces (16.7 g)",
                origin_tier="branded_exact")
-    assert memory_nutrition_is_trusted(row) is False
+    assert await memory_nutrition_is_trusted(db, row) is False
 
 
-def test_an_internally_consistent_but_unproven_row_is_still_not_evidence():
+@pytest.mark.asyncio
+async def test_an_internally_consistent_but_unproven_row_is_still_not_evidence(_session):
     """⭐ THE CASE THAT DEFEATS EVERY INTERNAL CHECK. When a whole row is
     scaled by one wrong factor, `4P + 4C + 9F` reconstructs the calories
     perfectly. Banana at 312, cucumber at 179, white rice at 333 are all
     self-consistent and all false. Consistency is not provenance."""
+    db, _uid = _session
     row = _Row(display_name="Banana", cal_100=312.0, protein_100=3.9,
                carbs_100=70.0, fat_100=1.2, origin_tier="generic_exact")
     recon = 4 * 3.9 + 4 * 70.0 + 9 * 1.2
     assert abs(recon - 312.0) < 30, "fixture must be self-consistent to be honest"
-    assert memory_nutrition_is_trusted(row) is False
+    assert await memory_nutrition_is_trusted(db, row) is False
 
 
 # ── WHAT DOES NOT EARN AUTHORITY ──────────────────────────────────────────
 
 
-def test_user_confirmed_alone_does_not_earn_authority():
+@pytest.mark.asyncio
+async def test_user_confirmed_alone_does_not_earn_authority(_session):
     """⛔ A user confirming a NUMBER says nothing about the BASIS it was
     derived on. 441 of 444 rows on the affected account are unconfirmed; the
     3 that are confirmed are not thereby evidence either."""
-    assert memory_nutrition_is_trusted(
-        _Row(user_confirmed=True, origin_tier="user_regular")) is False
+    db, _uid = _session
+    assert await memory_nutrition_is_trusted(db, _Row(user_confirmed=True, origin_tier="user_regular")) is False
 
 
-def test_a_tier_is_not_a_provenance_stamp():
+@pytest.mark.asyncio
+async def test_a_tier_is_not_a_provenance_stamp(_session):
     """`origin_tier` records which ladder rung answered, INFERRED at write
     time. `generic_exact` and `branded_exact` are on 114 and 49 of the
     fabricated rows respectively — the tier was never a claim about truth."""
+    db, _uid = _session
     for tier in ("generic_exact", "branded_exact", "estimated", "user_regular"):
-        assert memory_nutrition_is_trusted(_Row(origin_tier=tier)) is False
+        assert await memory_nutrition_is_trusted(db, _Row(origin_tier=tier)) is False
 
 
-def test_no_calorie_threshold_is_used_as_authority():
+@pytest.mark.asyncio
+async def test_no_calorie_threshold_is_used_as_authority(_session):
     """⛔⛔ A PLAUSIBLE NUMBER IS STILL NOT EVIDENCE. Olive oil at 800 and
     peanut butter at 594 are CORRECT — and unproven, so they are rejected too.
     Adding a plausibility band here would be a second guess on top of the
     first, and would have admitted milk at 582 while rejecting olive oil."""
+    db, _uid = _session
     for cal in (15.0, 61.0, 89.0, 200.0, 594.0, 800.0, 899.0):
-        assert memory_nutrition_is_trusted(_Row(cal_100=cal)) is False
+        assert await memory_nutrition_is_trusted(db, _Row(cal_100=cal)) is False
 
 
 # ── WHAT DOES ──────────────────────────────────────────────────────────────
 
 
-def test_a_canonically_settled_row_with_a_basis_remains_eligible():
+@pytest.mark.asyncio
+async def test_a_canonically_settled_row_with_a_basis_remains_eligible(_session):
     """⭐ THE GUARD IS NOT 'ALWAYS FALSE'. A row stamped by an authoritative
     canonical settlement, carrying the source identifier its numbers came
     from, is still evidence — which is what makes the forward path a stamp
     rather than a rewrite of this predicate."""
-    assert memory_nutrition_is_trusted(
-        _Row(origin_tier="canonical_settlement", fdc_id="171077")) is True
+    db, uid = _session
+    from tests.trusted_memory_fixture import trusted
+
+    from db.models import UserFoodMatch
+    row = trusted(db, UserFoodMatch(user_id=uid, name_norm="eligible anchor",
+                                    display_name="Eligible Anchor",
+                                    cal_100=165.0, protein_100=31.0,
+                                    carbs_100=0.0, fat_100=3.6,
+                                    fdc_id="171077"))
+    db.add(row)
+    await db.flush()
+    assert await memory_nutrition_is_trusted(db, row) is True
 
 
-def test_a_canonical_stamp_without_a_source_identifier_is_refused():
+@pytest.mark.asyncio
+async def test_a_canonical_stamp_without_a_source_identifier_is_refused(_session):
     """⛔ THE STAMP ALONE IS NOT ENOUGH — the basis has to travel with it, or
     'trusted' means only 'we wrote it'."""
-    assert memory_nutrition_is_trusted(
-        _Row(origin_tier="canonical_settlement", fdc_id=None)) is False
+    db, _uid = _session
+    assert await memory_nutrition_is_trusted(db, _Row(
+        origin_tier="canonical_settlement",
+        settled_by_operation_id="op:whatever", settled_basis="per_100g",
+        settled_evidence_id=None, fdc_id=None)) is False
 
 
 # ── ONE GUARD, BOTH OWNERS ────────────────────────────────────────────────
@@ -229,7 +259,7 @@ async def test_the_public_writer_cannot_mint_a_trusted_tier(_session):
     assert row is not None, "the row should still be cached for identity/usage"
     assert row.origin_tier != "canonical_settlement", (
         "the public writer minted a trusted tier — the guard is a magic word")
-    assert memory_nutrition_is_trusted(row) is False
+    assert await memory_nutrition_is_trusted(db, row) is False
 
 
 @pytest.mark.asyncio
@@ -256,7 +286,7 @@ async def test_an_untrusted_row_cannot_be_upgraded_by_use_or_confirmation(_sessi
         row = await get_user_food_match(db, uid, "launder")
 
     assert row.user_confirmed is True, "the confirmation itself should stick"
-    assert memory_nutrition_is_trusted(row) is False, (
+    assert await memory_nutrition_is_trusted(db, row) is False, (
         "an untrusted row was laundered into authority through usage and "
         "confirmation — neither establishes the basis its numbers came from")
 
@@ -271,3 +301,20 @@ async def _session(app_db, seeded):          # noqa: F811
     import db.database as D
     async with D.AsyncSessionLocal() as session:
         yield session, seeded
+
+
+@pytest.mark.asyncio
+async def test_a_stamp_naming_a_settlement_that_does_not_exist_is_refused(_session):
+    """⛔⛔⛔ THE CF24 CASE. A dangling link is exactly as fakeable as a magic
+    word: if the predicate reads the column without resolving it, writing
+    `settled_by_operation_id="anything"` restores the defect the tier stamp
+    had. The link has to RESOLVE, against `meal_commits`, or it is decoration.
+
+    The row below is complete in every other respect — tier, basis, evidence
+    id — and is refused solely because the operation it names never happened."""
+    db, _uid = _session
+    assert await memory_nutrition_is_trusted(db, _Row(
+        origin_tier="canonical_settlement",
+        settled_by_operation_id="op:never-happened",
+        settled_basis="per_100g", settled_evidence_id="171077",
+        fdc_id="171077")) is False

@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
+from tests.trusted_memory_fixture import trusted  # noqa: E402
 
 
 BAREBELLS = {
@@ -40,10 +41,10 @@ async def _snapshot(db):
 async def _remember(db, user, name, per100g, fdc):
     from core.food_intelligence import memory_key
     from db.models import UserFoodMatch
-    db.add(UserFoodMatch(origin_tier="canonical_settlement", user_id=user.id, name_norm=memory_key(name, ""),
+    db.add(trusted(db, UserFoodMatch(user_id=user.id, name_norm=memory_key(name, ""),
                          display_name=name, cal_100=per100g["calories"],
                          protein_100=per100g["protein"], carbs_100=per100g["carbs"],
-                         fat_100=per100g["fat"], fdc_id=fdc, confidence="exact"))
+                         fat_100=per100g["fat"], fdc_id=fdc, confidence="exact")))
     await db.commit()
 
 
