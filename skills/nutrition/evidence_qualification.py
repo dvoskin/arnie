@@ -197,6 +197,77 @@ async def classify_rows(food_name: str, rows, complete=None) -> tuple:
     return records, assessments
 
 
+async def qualify_off_product(food_name: str, best, variants=(),
+                              complete=None, context=None) -> Qualification:
+    """A branded OFF product -> eligible to price this food, or nothing.
+
+    ⛔⛔⛔ CF25, ENTRY 3050. `_enrich`'s USDA lane has run through
+    `qualify_usda_rows` since B-1.5E. The OFF lane one function below it
+    returned `_off_mod.search()` verbatim, and that product went on to earn
+    `branded_exact` authority having never been asked whether it IS the food.
+    On 2026-08-25 that admitted `Shrimp Crackers` for `Shrimp, grilled` and
+    committed 437.5 kcal/100g.
+
+    ⭐⭐⭐ WRONG IDENTITY, RIGHT SOURCE. The product is real and its numbers are
+    correct FOR A CRACKER. Nothing about magnitude or macro coherence can see
+    the error — the row reconstructs perfectly — so this asks the one question
+    that can: is the retrieved thing the requested thing?
+
+    ⭐ `from_off` was written for this and had no production caller. Its own
+    docstring already said `_match` "said 'exact' about a pizza": the
+    provider's confidence is about ITS match, never about identity.
+
+    Same contract as the USDA lane: eligibility not truth, and unqualified
+    branded evidence fails CLOSED. Evidence is here BECAUSE it needs
+    qualification, so the qualifier's absence cannot hand it authority.
+    """
+    import time as _time
+
+    products = [p for p in [best, *list(variants or ())] if p]
+    if not products:
+        return Qualification(rows=(), disposition="empty_input")
+
+    from core.evidence_context import ensure
+    from skills.nutrition.evidence_semantics import from_off
+
+    shared = ensure(context)
+    _t0 = _time.monotonic()
+    try:
+        records = from_off(products[0], products[1:])
+        assessments = await resolve(
+            DOMAIN, FoodIntent(base_identity=food_name), records,
+            complete or _default_complete)
+    except Exception:
+        logger.warning("event=off_qualification_failed food=%s — the branded "
+                       "lane contributes NO candidate this turn", food_name,
+                       exc_info=True)
+        return Qualification(rows=(), disposition="resolver_down_no_candidates",
+                             raw_count=len(products), kept_count=0,
+                             abstained=tuple(products))
+
+    if not assessments or all(a.abstained for a in assessments):
+        logger.warning("event=off_qualification_unavailable food=%s products=%d "
+                       "latency_ms=%d — no branded candidate this turn",
+                       food_name, len(products),
+                       int((_time.monotonic() - _t0) * 1000))
+        return Qualification(rows=(), disposition="resolver_down_no_candidates",
+                             raw_count=len(products), kept_count=0,
+                             abstained=tuple(products))
+
+    kept = tuple(
+        product for product, a in zip(products, assessments)
+        if a.relationship in IDENTITY_BEARING
+        and a.confidence >= MINIMUM_IDENTITY_CONFIDENCE)
+    if not kept:
+        logger.info("event=off_identity_refused food=%s products=%d "
+                    "verdicts=%s", food_name, len(products),
+                    ",".join(str(a.relationship) for a in assessments))
+    return Qualification(rows=kept, disposition="qualified",
+                         raw_count=len(products), kept_count=len(kept),
+                         abstained=tuple(p for p, a in zip(products, assessments)
+                                         if a.abstained))
+
+
 async def qualify_usda_rows(food_name: str, rows, complete=None,
                             context=None) -> Qualification:
     """USDA rows -> the subset eligible to compete for pricing.

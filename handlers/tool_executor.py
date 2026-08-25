@@ -2166,10 +2166,36 @@ async def _fetch_usda_off_uncached(food_name: str, is_packaged: bool):
         if not _branded:
             return None      # OFF is a branded/product DB; USDA owns generics
         try:
-            return await _off_mod.search(food_name)
+            best = await _off_mod.search(food_name)
         except Exception as e:
             logger.warning(f"OFF enrichment failed: {e}")
             return None
+        if not best:
+            return None
+        # ⛔⛔⛔ CF25 — IDENTITY BEFORE AUTHORITY, THE SAME SEAM `_u()` USES.
+        # This returned `best` verbatim, and the product went on to earn
+        # `branded_exact` authority having never been asked whether it IS the
+        # food. On 2026-08-25 that admitted `Shrimp Crackers` for `Shrimp,
+        # grilled` and committed 437.5 kcal/100g to entry 3050.
+        #
+        # ⭐ WRONG IDENTITY, RIGHT SOURCE: the product is real and its numbers
+        # are correct FOR A CRACKER, so the row reconstructs perfectly and no
+        # amount of magnitude or macro checking can see the error. The only
+        # question that can is whether the retrieved thing is the requested
+        # thing — which is why the repair is here and not in plausibility.
+        #
+        # `_branded` is `is_packaged or _looks_branded(food_name)`, and the
+        # interpreter capitalises every parsed name, so nearly every food
+        # reaches this lane. That is precisely why the lane has to be safe
+        # rather than narrowly addressed.
+        if _qualification_halted():
+            return best
+        from core.request_trace import timed as _off_timed
+        from skills.nutrition.evidence_qualification import (
+            qualify_off_product)
+        with _off_timed("pricing.off_qualification"):
+            q = await qualify_off_product(food_name, best)
+        return q.rows[0] if q.rows else None
 
     return await _aio.gather(_u(), _o())
 
@@ -2729,8 +2755,11 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
         # below already handles it. Identity matching and the usage bump are
         # untouched.
         if m is not None:
-            from db.queries import memory_nutrition_is_trusted
-            if not await memory_nutrition_is_trusted(db, m):
+            from db.queries import memory_nutrition_evidence
+            if await memory_nutrition_evidence(
+                    db, m, consumer="legacy.fetch_candidates",
+                    candidate_kind="legacy_memory_candidate",
+                    stage="pricing.memory") is None:
                 logger.info(
                     "event=legacy_memory_untrusted key=%r reason=no_provenance "
                     "— stored nutrition cannot name the authority that produced "
