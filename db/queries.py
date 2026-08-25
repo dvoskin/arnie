@@ -3586,6 +3586,32 @@ _ORIGIN_BY_CONFIDENCE = {
 }
 
 
+def _proves_same_authority(existing, incoming_fdc_id) -> bool:
+    """May a serving panel from `incoming_fdc_id` be grafted onto `existing`?
+
+    ⛔⛔⛔ CF24-C — THE WRITER HAD ZERO REFERENCES TO `existing.fdc_id`. The row
+    is keyed by `name_norm`; the incoming serving comes from whichever
+    candidate won THAT lookup. Nothing checked they describe the same product,
+    which is how production row 1029 — `Milk, whole` — came to carry
+    `"4 pieces (16.7 g)"`, a *pieces* serving on a liquid, and would have
+    divided its label by 16.7 g forever after.
+
+    ⭐ IDENTIFIERS ONLY. No semantic-name comparison, no token overlap, no
+    calorie plausibility: those are the guesses this whole incident came from,
+    and `_best_matching_snippet` is what token overlap already cost.
+
+    ⛔ ABSENCE IS NOT AGREEMENT. If either side carries no identifier the two
+    cannot be shown to be the same product, and "we could not tell" must never
+    read as "they match" — the shape the disabled web lanes produced
+    constantly, every candidate arriving with `fdc_id=None`.
+    """
+    stored = str(getattr(existing, "fdc_id", "") or "").strip()
+    incoming = str(incoming_fdc_id or "").strip()
+    if not stored or not incoming:
+        return False
+    return stored == incoming
+
+
 async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
                                  display_name: str, fdc_id: str, per100: dict,
                                  confidence: str, user_confirmed: bool = False,
@@ -3664,7 +3690,17 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
         # every later log of that food can divide the serving instead of
         # guessing. Never CLEARS a stored panel with an empty one.
         if serving_text and not existing.serving_text:
-            existing.serving_text = serving_text
+            # ⛔ CF24-C — only from the SAME proven authority. See
+            # `_proves_same_authority`: this is the write-side half of the
+            # CF23 incident, and the guard is identifiers or nothing.
+            if _proves_same_authority(existing, fdc_id):
+                existing.serving_text = serving_text
+            else:
+                logger.info(
+                    "event=serving_graft_refused user=%s key=%r stored_fdc=%r "
+                    "incoming_fdc=%r — a serving may not cross records",
+                    user_id, name_norm, getattr(existing, "fdc_id", None),
+                    fdc_id)
         # Upgrade to user-confirmed if the user corrected it; never downgrade.
         if user_confirmed:
             existing.user_confirmed = True
