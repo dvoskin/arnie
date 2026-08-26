@@ -1,8 +1,8 @@
 {
   "name": "real_meal_v1",
-  "frozen": false,
-  "frozen_at": null,
-  "why_unfrozen": "DRAFTED BY THE DEVELOPER FROM CORPUS INTENT, NOT YET REVIEWED. Danny, 2026-08-26: the baseline is UNPUBLISHED until these labels are reviewed and frozen. Three cases carry a REVIEW note and are where the judgement actually lives: 18 (ask about an unbranded platter), 22 (cooking fat, an OILS-phase question), 23 (homemade parfait, oversplits and drops).",
+  "frozen": true,
+  "frozen_at": "2026-08-26",
+  "why_unfrozen": null,
   "tolerance": 0.25,
   "definition": "A meal is COMPLETE when the user's turn reaches a correct durable product outcome: correct log, correct clarification, or correct refusal, with no wrong committed nutrition, missing material component, duplicate mutation, or ownership violation. (Danny, 2026-08-26)",
   "ask_rule": "ASK_CORRECT counts as COMPLETE only if the question is materially relevant AND the turn leaves a DURABLE PENDING OPERATION that can be answered. A nice-sounding question with no resumable state scores WRONG_CLARIFICATION, never success.",
@@ -473,7 +473,7 @@
         "OWNERSHIP_FAILURE",
         "NO_ACTION"
       ],
-      "label_note": "⚠ REVIEW: unbranded platter, no portion stated. Drafted ASK_CORRECT — measured 3/4 logging, 1/4 asking about plate size. If the product should estimate a takeout platter instead, change to LOG_COMPLETE."
+      "label_note": "FROZEN AS DRAFTED (Danny, 2026-08-26). ⚠ REVIEW: unbranded platter, no portion stated. Drafted ASK_CORRECT — measured 3/4 logging, 1/4 asking about plate size. If the product should estimate a takeout platter instead, change to LOG_COMPLETE."
     },
     {
       "id": 19,
@@ -556,7 +556,7 @@
     {
       "id": 22,
       "message": "3 eggs, 2 turkey sausage patties, sourdough toast, and avocado",
-      "expected_terminal": "LOG_COMPLETE",
+      "expected_terminal": "ASK_CORRECT",
       "expected_component_range": [
         4,
         4
@@ -569,15 +569,16 @@
         31,
         51
       ],
-      "expected_clarification_field": null,
+      "expected_clarification_field": "preparation",
       "forbidden_outcomes": [
-        "WRONG_NUTRITION",
-        "WRONG_IDENTITY",
         "DUPLICATE_MUTATION",
+        "LOG_COMPLETE",
+        "NO_ACTION",
         "OWNERSHIP_FAILURE",
-        "NO_ACTION"
+        "WRONG_IDENTITY",
+        "WRONG_NUTRITION"
       ],
-      "label_note": "⚠ REVIEW: the directive's OWN example asks 'butter or oil?' here. Drafted LOG_COMPLETE because it logs 4/4 correctly today and cooking-fat materiality is an OILS-phase question. Flip to ASK_CORRECT + preparation once OILS lands."
+      "label_note": "⭐ DANNY, 2026-08-26: ASK_CORRECT with `preparation`. This is the directive's own worked example — 'Did you cook the eggs with butter or oil?' — and cooking fat MATERIALLY changes the answer. The draft said LOG_COMPLETE because it logs 4/4 today; that chose 'what works now' over 'what is correct', and correct wins. LOG_COMPLETE is FORBIDDEN here: settling a meal whose fat is unknown is a confident wrong number, not a completion."
     },
     {
       "id": 23,
@@ -603,7 +604,7 @@
         "OWNERSHIP_FAILURE",
         "NO_ACTION"
       ],
-      "label_note": "⚠ REVIEW: homemade, every portion unstated. Measured [5,0,0,1] against expected 1 — it both oversplits and drops. Drafted LOG_COMPLETE (a parfait is one composite); ASK_CORRECT + portion_size is defensible."
+      "label_note": "FROZEN AS DRAFTED (Danny, 2026-08-26). ⚠ REVIEW: homemade, every portion unstated. Measured [5,0,0,1] against expected 1 — it both oversplits and drops. Drafted LOG_COMPLETE (a parfait is one composite); ASK_CORRECT + portion_size is defensible."
     },
     {
       "id": 24,
@@ -631,7 +632,7 @@
         "ASK_CORRECT",
         "WRONG_CLARIFICATION"
       ],
-      "label_note": "⛔ ASK IS WRONG HERE. Danny 2026-08-26: 'an ordinary turkey burger should simply work.' Measured 0/4 in range, asked 3/4. forbidden_outcomes pins that."
+      "label_note": "FROZEN AS DRAFTED (Danny, 2026-08-26). ⛔ ASK IS WRONG HERE. Danny 2026-08-26: 'an ordinary turkey burger should simply work.' Measured 0/4 in range, asked 3/4. forbidden_outcomes pins that."
     },
     {
       "id": 25,
@@ -659,5 +660,6 @@
       ],
       "label_note": ""
     }
-  ]
+  ],
+  "freeze_note": "REVIEWED AND FROZEN by Danny 2026-08-26. Case 22 was changed from the draft: ASK_CORRECT with `preparation`, and LOG_COMPLETE forbidden. Cases 18, 23 and 24 were frozen as drafted. These labels are the product judgement the metric rests on — changing one changes the number, so a change means a new frozen_at and a restated baseline, never a quiet edit."
 }

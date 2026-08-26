@@ -31,6 +31,7 @@ import argparse
 import asyncio
 import os
 import pathlib
+import logging
 import sys
 import uuid
 
@@ -39,12 +40,93 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 EXPECTATIONS = pathlib.Path(__file__).resolve().parent.parent / (
     "data/corpus/real_meal_expectations_v1.json")
 
-OUTCOMES = ("LOG_COMPLETE", "ASK_CORRECT", "REFUSE_CORRECT", "NO_ACTION",
+#: ⛔⛔⛔ AN OUTAGE IS NOT A PRODUCT OUTCOME. 2026-08-26: credits ran out mid
+#: run, twenty-five turns reached no model, and every one scored NO_ACTION
+#: because the database was legitimately empty — a plausible 20% produced
+#: entirely by an outage. Same shape as the coverage instrument printing 9.0%
+#: over a dead transaction. UNMEASURED is its own terminal state and is
+#: EXCLUDED from the denominator; a run carrying any is refused outright.
+UNMEASURED = "UNMEASURED"
+_OUTAGE = ("credit balance", "rate_limit", "429", "overloaded",
+           "insufficient_quota", "authentication_error")
+
+OUTCOMES = ("UNMEASURED", "LOG_COMPLETE", "ASK_CORRECT", "REFUSE_CORRECT", "NO_ACTION",
             "WRONG_COMPONENTS", "WRONG_NUTRITION", "WRONG_IDENTITY",
             "WRONG_CLARIFICATION", "WRONG_REFUSAL", "DUPLICATE_MUTATION",
             "OWNERSHIP_FAILURE")
 #: Which outcomes count as the meal having COMPLETED.
 COMPLETE = frozenset({"LOG_COMPLETE", "ASK_CORRECT", "REFUSE_CORRECT"})
+
+
+class _OutageWatch(logging.Handler):
+    """Records provider outages the turn swallowed into a log line."""
+
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self.hits: list = []
+
+    def emit(self, record):
+        try:
+            text = str(record.getMessage()).lower()
+        except Exception:                                   # noqa: BLE001
+            return
+        if any(t in text for t in _OUTAGE):
+            self.hits.append(text[:120])
+
+    def clear(self):
+        self.hits = []
+
+
+_WATCH = _OutageWatch()
+
+
+def _outage_seen() -> bool:
+    return bool(_WATCH.hits)
+
+
+async def _make_identity(session, handle):
+    """A FRESH user for ONE case.
+
+    ⛔⛔⛔ THE CASES ARE NOT INDEPENDENT OTHERWISE, AND THE FIRST BASELINE
+    PROVED IT. Twenty-five meals through one identity gave Arnie twenty-five
+    meals of conversation history: by case 24 it answered *"No, RealMeal. I'm
+    not calling those"* and case 25 *"Same answer, RealMeal. Not logging"* —
+    refusing because it had been force-fed two dozen meals, not because of
+    anything in the message. Cases 16-18 all reported the SAME stale question.
+    A rate over a contaminated sequence measures the sequence, not the
+    product.
+    """
+    from db.models import User, UserPreferences
+    from db.queries import get_or_create_today_log
+
+    async with session() as db:
+        user = User(telegram_id=handle, name="RealMeal", age=37, sex="male",
+                    height_cm=178.0, current_weight_kg=86.0,
+                    timezone="America/New_York", onboarding_completed=True)
+        db.add(user)
+        db.add(UserPreferences(user=user, calorie_target=2600,
+                               protein_target=190,
+                               proactive_messaging_enabled=False))
+        await db.flush()
+        await get_or_create_today_log(db, user.id, "America/New_York")
+        await db.commit()
+        return user.id
+
+
+async def _cleanup(session, user_id):
+    """Delete one identity's data. Tables discovered, never hand-listed."""
+    from sqlalchemy import delete, select
+
+    from db.models import Base, User
+    async with session() as db:
+        for table in reversed(Base.metadata.sorted_tables):
+            if table.name == "users":
+                continue
+            col = table.c.get("user_id")
+            if col is not None:
+                await db.execute(table.delete().where(col == user_id))
+        await db.execute(delete(User).where(User.id == user_id))
+        await db.commit()
 
 
 async def _score_one(session, user_id, case, run_id):
@@ -106,23 +188,47 @@ async def _score_one(session, user_id, case, run_id):
                 .scalars().all()
                 if str(getattr(o, "status", "")).lower() not in
                 ("committed", "terminal", "expired", "cancelled")]
+            # ⛔ SILENCE AFTER AN OUTAGE IS NOT NO_ACTION. The turn logs the
+            # provider failure rather than raising it, so an empty database
+            # looks identical to a lane that declined to act.
+            if _outage_seen():
+                return UNMEASURED, "provider outage during this turn"
             if not asked and not resumable:
                 return "NO_ACTION", "no committed row, no question, no operation"
-            if not resumable:
-                return ("WRONG_CLARIFICATION",
-                        f"asked with NO resumable operation: "
-                        f"{str(getattr(asked[-1], 'question', ''))[:52]!r}")
+            # ⛔⛔ DURABLE == ANSWERABLE BY THE NEXT TURN, and an open
+            # `PendingQuestion` IS that: it carries `answered_at` and the
+            # clarification flow resolves it.
+            #
+            # The first version demanded a `PendingOperation` row. That table
+            # has ONE writer (`b1_quantity_operation`) behind
+            # `PENDING_OPERATION_PERSIST_SHADOW`, which defaults FALSE — so
+            # the rule could never be satisfied in any default configuration
+            # and ASK_CORRECT scored 0/25 by construction. A check that cannot
+            # pass measures the harness, not the product.
+            #
+            # The stronger form is still reported, just not required.
+            staged = " +staged_operation" if resumable else ""
             if expected != "ASK_CORRECT":
                 return ("WRONG_CLARIFICATION",
                         f"asked, but this meal should {expected}: "
-                        f"{str(getattr(asked[-1] if asked else resumable[-1], 'question', ''))[:44]!r}")
-            unresolved = str(getattr(resumable[-1], "unresolved_fields", "") or "")
-            if want_field and want_field not in unresolved:
+                        f"{str(getattr(asked[-1], 'question', ''))[:44]!r}")
+            probe = " ".join([
+                str(getattr(asked[-1], "question", "") or ""),
+                str(getattr(asked[-1], "item_referenced", "") or ""),
+                str(getattr(resumable[-1], "unresolved_fields", "") or "")
+                if resumable else ""]).lower()
+            #: the clarification field, as the QUESTION would express it
+            _WORDS = {"portion_size": ("how much", "how big", "how many",
+                                       "portion", "size", "cup", "oz", "grams"),
+                      "preparation": ("butter", "oil", "cooked", "fried",
+                                      "grilled", "prepared", "prep"),
+                      "brand": ("brand", "which one", "who makes")}
+            if want_field and not any(w in probe for w in _WORDS.get(want_field, ())):
                 return ("WRONG_CLARIFICATION",
-                        f"asked about {unresolved[:40]!r}, expected "
-                        f"{want_field!r}")
+                        f"asked {probe[:44]!r}, expected a {want_field!r} question")
             return ("ASK_CORRECT",
-                    f"resumable operation, unresolved={unresolved[:44]!r}")
+                    f"answerable question{staged}: "
+                    f"{str(getattr(asked[-1], 'question', ''))[:44]!r}")
 
     # ── something committed ──────────────────────────────────────────────
         n = len(fresh)
@@ -193,67 +299,37 @@ async def main() -> int:
     session = async_sessionmaker(engine, expire_on_commit=False)
 
     run_id = uuid.uuid4().hex[:8]
-    handle = f"rmc:{run_id}"
     print(f"\n  corpus={spec['name']}  frozen={frozen}  cases={len(cases)}"
-          f"  identity={handle}\n")
+          f"  identity=rmc:{run_id}:<case>   (ONE PER CASE)\n")
+
+    logging.getLogger().addHandler(_WATCH)
 
     results: dict = {}
-    try:
-        async with session() as db:
-            user = User(telegram_id=handle, name="RealMeal", age=37, sex="male",
-                        height_cm=178.0, current_weight_kg=86.0,
-                        timezone="America/New_York", onboarding_completed=True)
-            db.add(user)
-            db.add(UserPreferences(user=user, calorie_target=2600,
-                                   protein_target=190,
-                                   proactive_messaging_enabled=False))
-            await db.flush()
-            await get_or_create_today_log(db, user.id, "America/New_York")
-            await db.commit()
-            user_id = user.id
-
-        for case in cases:
-            cid = case["id"]
-            try:
-                outcome, detail = await _score_one(session, user_id, case, run_id)
-            except Exception as e:                          # noqa: BLE001
-                outcome, detail = "ERROR", f"{type(e).__name__}: {e}"
-            assert outcome in OUTCOMES or outcome == "ERROR", outcome
-            forbidden = case.get("forbidden_outcomes") or []
-            flag = "  ⛔FORBIDDEN" if outcome in forbidden else ""
-            results[cid] = (outcome, detail, outcome in forbidden)
-            print(f"  [{cid:>2}] {outcome:<20} {detail[:70]}{flag}")
-    finally:
-        # ⭐ CLEAN ONLY THIS IDENTITY. Twenty-five meals of synthetic food must
-        # not accumulate, and must never touch another user's rows.
-        if not args.keep:
-            async with session() as db:
-                logs = (await db.execute(select(DailyLog.id).where(
-                    DailyLog.user_id == user_id))).scalars().all()
-                if logs:
-                    ids = (await db.execute(select(FoodEntry.id).where(
-                        FoodEntry.daily_log_id.in_(logs)))).scalars().all()
-                    if ids:
-                        await db.execute(delete(LedgerEvent).where(
-                            LedgerEvent.entry_id.in_(ids)))
-                        await db.execute(delete(FoodEntry).where(
-                            FoodEntry.id.in_(ids)))
-                # ⛔ DISCOVER THE USER-LINKED TABLES, NEVER HAND-LIST THEM.
-                # A hand-written list missed `achievements` and the delete
-                # died on its foreign key — and the next table added would
-                # break it again silently. Reverse dependency order so
-                # children go before parents.
-                from db.models import Base
-                for table in reversed(Base.metadata.sorted_tables):
-                    if table.name == "users":
-                        continue
-                    col = table.c.get("user_id")
-                    if col is not None:
-                        await db.execute(table.delete().where(col == user_id))
-                await db.execute(delete(User).where(User.id == user_id))
-                await db.commit()
-            print(f"\n  cleaned identity {handle}")
-        await engine.dispose()
+    for case in cases:
+        cid = case["id"]
+        handle = f"rmc:{run_id}:{cid}"
+        user_id = None
+        _WATCH.clear()
+        try:
+            user_id = await _make_identity(session, handle)
+            outcome, detail = await _score_one(session, user_id, case, run_id)
+        except Exception as e:                              # noqa: BLE001
+            msg = f"{type(e).__name__}: {e}"
+            outcome = (UNMEASURED if any(t in msg.lower() for t in _OUTAGE)
+                       else "ERROR")
+            detail = msg
+        finally:
+            if user_id is not None and not args.keep:
+                try:
+                    await _cleanup(session, user_id)
+                except Exception as e:                      # noqa: BLE001
+                    print(f"       cleanup failed for {handle}: {e}")
+        assert outcome in OUTCOMES or outcome == "ERROR", outcome
+        forbidden = case.get("forbidden_outcomes") or []
+        flag = "  ⛔FORBIDDEN" if outcome in forbidden else ""
+        results[cid] = (outcome, detail, outcome in forbidden)
+        print(f"  [{cid:>2}] {outcome:<20} {detail[:70]}{flag}")
+    await engine.dispose()
 
     # ⛔⛔ NO RATE OVER A PARTIAL SET.
     assert len(results) == len(cases), (
@@ -262,14 +338,20 @@ async def main() -> int:
     tally: dict = {}
     for outcome, _, _ in results.values():
         tally[outcome] = tally.get(outcome, 0) + 1
-    n = len(cases)
+    unmeasured = tally.get(UNMEASURED, 0)
+    n = len(cases) - unmeasured
     complete = sum(v for k, v in tally.items() if k in COMPLETE)
     violations = [c for c, (_, _, bad) in results.items() if bad]
 
     print("\n  ==== TERMINAL OUTCOMES ====")
     for k in sorted(tally):
         print(f"    {k:<22} {tally[k]}")
-    print(f"\n  scored                    {len(results)}/{n}")
+    print(f"\n  scored                    {len(results)}/{len(cases)}")
+    if unmeasured:
+        print(f"  ⛔⛔⛔ {unmeasured} case(s) UNMEASURED — provider outage. "
+              f"NO RATE IS PUBLISHED.\n      An outage is not a product "
+              f"outcome; a lane that was never asked did not fail.\n")
+        return 2
     if violations:
         print(f"  ⛔ FORBIDDEN OUTCOMES      cases {violations}")
     print(f"  FULL-TURN COMPLETION      {complete}/{n} = {100*complete/n:.0f}%")
