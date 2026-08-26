@@ -1,4 +1,146 @@
 > ════════════════════════════════════════════════════════════════════════
+> ⭐⭐⭐ **SEQUENCING AUTHORITY — 2026-08-26.** *(Danny)*
+>
+> **THIS SUPERSEDES EVERY SEQUENCE BELOW, INCLUDING THE 2026-08-24 PHASE
+> CHANGE BANNER.** That banner's *principles* still stand — Rule 0, what each
+> product step must not do, the Phase-B exit. Its *ordering* is replaced by
+> this pipeline, and its coverage number is retired (see THE NUMBERS below).
+>
+> ```text
+> CF26 exact-head CI
+>         ↓
+> MERGE 4fcb31d
+>         ↓
+> DEPLOY exact merge SHA
+>         ↓
+> TARGETED PROD PROOF
+>   • pre-settlement cache writes no nutrition
+>   • canonical settlement can create trusted memory
+>   • trusted row re-reads successfully
+>         ↓
+> CF24 FINAL CONSUMER ATTRIBUTION
+>   • keep instrumentation live
+>   • identify/close any remaining untrusted-memory consumer bypass
+>         ↓
+> CLOSE CF24 + CF26
+>         ↓
+> REAL-MEAL BASELINE
+>   • rerun frozen corpus
+>   • 9.0% stays current ownership baseline
+>   • measure real-meal completion SEPARATELY
+>         ↓
+> OILS
+>         ↓
+> MATERIALITY / PREPARATION
+>         ↓
+> COMPOSITION
+>         ↓
+> CLARIFICATION
+>         ↓
+> MULTI-FOOD
+>         ↓
+> VOICE / REFUSAL UX
+>         ↓
+> COVERAGE PRODUCERS
+>   • OFF / product
+>   • modifiers
+>   • evidence expansion
+>   • web ONLY with real identity binding
+>         ↓
+> WIDER CANARY / FLEET ADOPTION
+>         ↓
+> LEGACY FOOD RETIREMENT
+> ```
+>
+> ── ⛔ THE NUMBERS, AND ONE OF THEM IS RETIRED ────────────────────────────
+>
+> ```text
+> canonical foundation        ~95%  largely done — NOT the project
+> canonical ownership         9.0%  CURRENT COMPARABLE BASELINE
+> canonical ownership        11.3%  ⛔ RETIRED — NOT a valid before/after
+> real-meal completion         ??   measured SEPARATELY, and it is the one
+>                                   that decides whether Arnie is Arnie
+> ```
+>
+> ⛔⛔ **THE 11.3% IS RETIRED AS A BASELINE.** It predates P17g, CF20, CF21,
+> CF22, CF23 and CF24, so a delta measured against it attributes six tranches
+> to whichever one happens to be in flight. **9.0% is the current comparable
+> baseline**, established by measuring the CF23 build and the CF24 build on
+> the SAME frozen `p16b_0817` population against the SAME migrated database:
+> both 9.0%, all supported meals from the `artifact` rung, **zero from
+> memory**. CF24's ownership delta is **0.0 pp**, and that is the correct
+> result — memory contributed nothing before it, so tightening memory could
+> not cost anything. *(Danny: "Do not reopen the 11.3% comparison.")*
+>
+> ⭐ **AND DO NOT CHASE OWNERSHIP AS AN ISOLATED NUMBER.** Measure real-meal
+> completion before and after each product tranche. Build evidence producers
+> only when they unblock actual corpus meals. **The 40% rollout gate is fixed;
+> it rises through real capability, never through relaxed authority.**
+>
+> ── TRANCHE STATUS ───────────────────────────────────────────────────────
+>
+> ```text
+> CF23 containment            ✅ CLOSED, live
+> CF24 trust architecture     ✅ BUILT, merged, deployed
+> CF24 known readers          ✅ GUARDED — proven in production
+> CF24 production closure     ⛔ OPEN — entry 3050 consumer UNATTRIBUTED
+> CF25 OFF identity qual.     ✅ merged, live (`off_qualification` in traces)
+> CF24 memory instrumentation ✅ merged, live, WORKING
+> CF26 producer fix           🟡 approved at 4fcb31d, awaiting CI + merge
+> Producer poisoning class    🟡 closed BY CF26 once deployed
+> Product roadmap             ⏸ PAUSED until CF24 attribution closes
+> ```
+>
+> ── CF24 CLOSURE CONDITION — NARROW, AND IT DOES NOT WIDEN ────────────────
+>
+> 1. Identify the consumer that used row 936.
+> 2. Block that path **through the shared trust boundary**, never at the
+>    caller — another direct reader can always exist.
+> 3. Exact regression of the 3050 shape.
+> 4. Clean production replay.
+>
+> ⛔ **NO generalized memory cleanup, heuristic trust restoration, or
+> historical backfill** unless a NEW production correctness incident proves it
+> necessary. Records: `docs/CF24_STATUS_FROZEN_2026-08-25.md`,
+> `docs/CF24_CLOSURE_RECORD.md`,
+> `docs/CF25_REGISTERED_SHRIMP_CRACKER_MISMATCH.md`,
+> `docs/CF26_REGISTERED_CACHE_DISAGREES_WITH_THE_MEAL.md`.
+>
+> ── ⭐⭐⭐ THE INVARIANTS THIS WEEK ESTABLISHED ─────────────────────────────
+>
+> **TRUST IS A RESOLVED LINK, NOT A STRING.** `memory_nutrition_is_trusted`
+> resolves `settled_by_operation_id` against `meal_commits`. A dangling id is
+> exactly as forgeable as a magic word; cannot-resolve counts as not-trusted.
+>
+> **PRE-SETTLEMENT CODE MAY NOT WRITE NUTRITION — CREATE *OR* MUTATE.**
+> `fetch_candidates` runs before the meal is priced, so it cannot know what
+> was committed. `upsert_user_food_match` is identity/cache metadata only: no
+> macros, no micros, on INSERT and on UPDATE. `remember_canonical_settlement`
+> is the only nutrition producer, and it writes only with an authoritative
+> basis AND an evidence id — no authoritative mass, no per-100g row.
+>
+> **TRUSTED MEMORY IS A PROJECTION OF THE COMMITTED MEAL**, never a side
+> effect of evidence selection. It answers *"what nutrition did settlement
+> actually use?"* — not *"what richer profile won some upstream competition?"*
+>
+> **A ZERO FROM AN ABORTED TRANSACTION IS BYTE-IDENTICAL TO A REFUSAL.** The
+> coverage instrument exits non-zero and prints NO rate if any query faults;
+> `render()` is never reached. A flagged number still gets quoted as a number.
+>
+> **INTERNAL CONSISTENCY IS NOT PROVENANCE.** Entry 3050's macros
+> reconstructed its calories perfectly (`4·10.6 + 4·76.6 + 9·19.4 = 523 ≈
+> 525`) and the row was entirely false. Identity binding is the only basis.
+>
+> **PARTIAL CORRECTION OF A WRONG-IDENTITY ROW IS UNSAFE.** Repairing 3050's
+> macros left sodium at 2343 mg against a truth of 166.5, which a later edit
+> then scaled. When the whole row came from the wrong food, every field did.
+>
+> ⛔ **PROHIBITED IN ALL OF THE ABOVE:** tolerance bands, "close enough"
+> equality, calorie plausibility, rung superiority overriding the committed
+> result, and caching a candidate profile because it carries more information.
+> ════════════════════════════════════════════════════════════════════════
+
+> ════════════════════════════════════════════════════════════════════════
 > ⭐⭐⭐ **PHASE CHANGE — 2026-08-24: EXIT THE HARDENING DETOUR, BUILD THE
 > PRODUCT.** *(Danny, board review)*
 >
@@ -11,7 +153,8 @@
 >
 > ```text
 > canonical foundation        ~95%   largely done — STOP TREATING AS THE PROJECT
-> canonical coverage/adoption  11.3% frozen P17g measurement — rises WITH features
+> canonical coverage/adoption   9.0% CURRENT baseline (11.3% RETIRED 08-26,
+> canonical coverage/adoption        see the 2026-08-26 banner above)
 > desired food experience    ~45-55% THE NUMBER THAT MATTERS NOW
 > ```
 >
@@ -113,6 +256,10 @@
 > ⛔ **REJECTED SEQUENCE:** P17g → coverage tranche → another attribution
 > tranche → 40% → oils → composition → multi-food. *"That is how this turns
 > into another month."*
+>
+> ⚠ **SUPERSEDED 2026-08-26:** the ordering in this banner is replaced by the
+> pipeline at the top of this file. CF24/CF26 are a Rule-0 interruption — live
+> wrong committed nutrition — not a coverage detour, and they gate OILS.
 >
 > ── WHAT EACH PRODUCT STEP MUST NOT DO ───────────────────────────────────
 >
