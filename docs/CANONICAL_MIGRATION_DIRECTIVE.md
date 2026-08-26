@@ -56,11 +56,67 @@
 >
 > ```text
 > canonical foundation        ~95%  largely done — NOT the project
-> canonical ownership         9.0%  CURRENT COMPARABLE BASELINE
+> canonical ownership         9.0%  rollout/safety. CURRENT COMPARABLE BASELINE
 > canonical ownership        11.3%  ⛔ RETIRED — NOT a valid before/after
-> real-meal completion         ??   measured SEPARATELY, and it is the one
->                                   that decides whether Arnie is Arnie
+> pass-1 decision completion   64%  log outright · 80% reach a correct terminal
+> FULL-TURN COMPLETION         56%  ⭐ THE PRODUCT METRIC (14/25, 2026-08-26)
 > ```
+>
+> ── ⭐⭐⭐ FULL-TURN COMPLETION — THE PRODUCT METRIC *(frozen 2026-08-26)* ──
+>
+> **A meal is COMPLETE when the user's turn reaches a correct durable product
+> outcome: correct log, correct clarification, or correct refusal, with no
+> wrong committed nutrition, missing material component, duplicate mutation, or
+> ownership violation.** *(Danny)*
+>
+> `scripts/measure_real_meal_completion.py` · labels frozen in
+> `data/corpus/real_meal_expectations_v1.json` · **14/25 = 56%**, 25/25 scored,
+> 0 unmeasured.
+>
+> ```text
+> LOG_COMPLETE          13        WRONG_CLARIFICATION    7   ← the whole problem
+> ASK_CORRECT            1        WRONG_NUTRITION        2
+>                                 WRONG_COMPONENTS       1
+>                                 NO_ACTION              1
+> ```
+>
+> ⭐⭐⭐ **THE LANE'S PROBLEM IS NOT LOGGING ACCURACY — IT IS ASKING WHEN IT
+> SHOULD NOT.** Seven of eleven failures are `WRONG_CLARIFICATION`, and six of
+> those are the same sentence: *asked, but this meal should LOG_COMPLETE*. Only
+> three failures are nutrition or components. This is `missing != ask`,
+> measured: **the interrogation-bot failure is the dominant one.**
+>
+> ⭐ **CASE 24 IS THE FIRST MEASURED PRODUCT DEFECT.** An ordinary homemade
+> turkey burger asks instead of logging — *"an ordinary turkey burger should
+> simply work"* is now a scored, reproducible failure with `ASK_CORRECT`
+> forbidden on that case.
+>
+> ⭐ **CASE 22 VALIDATES THE LABEL SCHEME.** It asked, but about the wrong
+> thing — the sausage breakdown rather than the cooking fat — and scored
+> `WRONG_CLARIFICATION` on the FIELD, not on the ask. That distinction is why
+> `expected_clarification_field` exists. Case 18 is the only clean
+> `ASK_CORRECT`: platter portion, answerable question left behind.
+>
+> ⛔⛔⛔ **THREE VOID RUNS PRECEDED THIS ONE, ALL INSTRUMENT DEFECTS**, and each
+> produced a plausible number:
+>   · **48%** — all 25 cases shared ONE identity, so the model accumulated 25
+>     meals of history and began refusing (*"No, RealMeal. I'm not calling
+>     those"*). A rate over a contaminated sequence measures the sequence.
+>   · **56%** — the ask rule demanded a `PendingOperation`, whose only writer
+>     sits behind a shadow flag defaulting FALSE, so `ASK_CORRECT` was 0/25 **by
+>     construction**. A check that cannot pass measures the harness.
+>   · **20%** — credits ran out mid-run; nineteen turns reached no model and
+>     each scored `NO_ACTION` because the database was legitimately empty. The
+>     same shape as the coverage instrument printing 9.0% over a dead
+>     transaction, and the THIRD instance of that class in one day.
+>
+> All three are closed in the harness: **one identity per case**, an ask rule
+> that can actually pass, and `UNMEASURED` as its own terminal state that is
+> excluded from the denominator and **refuses the whole run** (exit 2, no rate
+> printed). *A lane that was never asked did not fail.*
+>
+> ⛔ **CHANGING A LABEL CHANGES THE NUMBER.** It takes a new `frozen_at` and a
+> restated baseline, never a quiet edit.
 >
 > ⛔⛔ **THE 11.3% IS RETIRED AS A BASELINE.** It predates P17g, CF20, CF21,
 > CF22, CF23 and CF24, so a delta measured against it attributes six tranches
@@ -90,6 +146,10 @@
 > Producer poisoning class    ✅ CLOSED — public writer stores zero nutrition
 > Targeted prod proof         ✅ ALL SIX CHECKS PASS (2026-08-26)
 > First trusted memory row    ✅ row 1033, commit 110, re-reads as evidence
+> Real-meal instrument fix    ✅ ASK != DROP; all 25 asserted scored
+> Full-turn completion        ✅ BASELINED 56% (14/25), labels frozen
+> CF27 tier-0 unit replay     🟡 registered, NOT implemented
+> Case 24 over-clarification  🟡 first measured product defect — next target
 > Product roadmap             ⏸ PAUSED until CF24 attribution closes
 > ```
 >
