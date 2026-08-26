@@ -3869,7 +3869,9 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
             name_norm, user_id, _cal100)
         return None
 
-    micros = _extract_micros_100(per100)
+    # ⛔ CF26 — `per100` is accepted and NOT EXTRACTED. A micro panel computed
+    # here would be a value whose only possible use is a write this door may
+    # not perform.
     origin = (origin_tier or ("user_regular" if user_confirmed
                               else _ORIGIN_BY_CONFIDENCE.get(confidence,
                                                              "generic_exact")))
@@ -3888,14 +3890,25 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
     if existing:
         existing.times_used = (existing.times_used or 1) + 1
         existing.last_used = datetime.utcnow()
-        # Self-heal the cache: rows created before the micro panel existed have
-        # micros_100_json=NULL. Backfill it the first time a richer profile flows
-        # through (e.g. a USDA re-lookup), so the food keeps its micros thereafter.
-        # ⛔ CF26 — and not the micro panel either. Self-healing a profile
-        # onto a row whose macros are NULL would rebuild the same claim by a
-        # slower route.
-        if micros and not existing.micros_100_json and existing.cal_100 is not None:
-            existing.micros_100_json = json.dumps(micros)
+        # ⛔⛔⛔ CF26 — NO MICRO GRAFT, NOT EVEN ONTO A ROW THAT HAS MACROS.
+        #
+        # This used to self-heal a pre-micros row from "the first richer
+        # profile that flows through". CF26's first draft merely gated it on
+        # `existing.cal_100 is not None` — WHICH MADE IT WORSE. That gate fires
+        # ONLY on rows that already carry macros, TRUSTED ONES INCLUDED, so a
+        # candidate found during gathering could staple its micronutrients onto
+        # a row whose authority was earned by a prior COMMITTED meal.
+        #
+        # The result is the hybrid this tranche exists to delete —
+        #     historical macros + today's candidate's micros
+        # a profile no single meal ever produced, wearing the older meal's
+        # authority. Pre-settlement code may not MUTATE a nutrition field for
+        # the same reason it may not CREATE one: it does not know what was
+        # committed.
+        #
+        # A pre-micros row still gains its panel: `remember_canonical_
+        # settlement` replaces the row wholesale, from the settlement that
+        # earned it rather than from a candidate that merely passed by.
         # Self-heal the serving panel the same way. Rows cached before
         # serving001 hold per-100g alone, which is what makes a counted portion
         # unanswerable; the first lookup that carries a label fills it in and

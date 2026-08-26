@@ -181,25 +181,92 @@ async def test_a_basis_without_an_evidence_id_is_still_refused(_session):
 
 
 @pytest.mark.asyncio
-async def test_a_micro_panel_is_not_grafted_onto_a_nutrition_less_row(_session):
-    """⛔⛔ MUTATION Y4. A micro panel IS nutrition. Self-healing one onto a row
-    whose macros are NULL rebuilds the same false claim by a slower route — the
-    row would then assert a micronutrient profile for a meal that never
-    produced one, while its calories stayed honestly empty."""
-    from db.queries import get_user_food_match, upsert_user_food_match
+async def test_the_public_writer_never_writes_micros_ON_ANY_ROW(_session):
+    """⛔⛔⛔ THE BLOCKER DANNY CAUGHT IN REVIEW, AND WHY THE FIRST FIX WAS WORSE
+    THAN THE BUG.
+
+    CF26's first draft kept the micro self-heal and gated it on
+    `existing.cal_100 is not None`. That gate fires ONLY on rows that already
+    carry macros — **trusted ones included** — so a candidate found during
+    gathering could staple its micronutrients onto a row whose authority was
+    earned by a prior COMMITTED meal:
+
+        historical macros  +  today's candidate's micros
+
+    A profile no single meal ever produced, wearing the older meal's
+    authority. Narrowing the graft concentrated it on exactly the rows that
+    could least afford it.
+
+    ⭐ SO THE CONTRACT IS ABSOLUTE, AND THIS TEST STATES IT THAT WAY: the
+    public writer writes ZERO nutrition fields, on INSERT and on UPDATE, to a
+    row with macros and to a row without. Not "refuses when NULL" — cannot.
+    """
+    from db.models import MealCommit, UserFoodMatch
+    from db.queries import (get_user_food_match, remember_canonical_settlement,
+                            upsert_user_food_match)
 
     db, uid = _session
-    # the extractor only recognises `api.usda.MICRO_KEYS`; a fixture using
-    # invented key names makes the branch unreachable and the test vacuous —
-    # which is exactly how mutation Y4 stayed GREEN the first time.
-    per100 = {"calories": 500.0, "protein": 5.0, "carbs": 40.0, "fat": 36.0,
-              'calcium': 1.0, 'cholesterol': 1.0, 'folate': 1.0, 'iron': 1.0}
-    for _ in range(2):
-        await upsert_user_food_match(
-            db, uid, "cf26 micros", "Micro Food", "999", per100, "likely")
-    row = await get_user_food_match(db, uid, "cf26 micros")
+    rich = {"calories": 500.0, "protein": 5.0, "carbs": 40.0, "fat": 36.0,
+            "calcium": 120.0, "iron": 2.0, "potassium": 300.0}
 
-    assert row.cal_100 is None, "precondition: the row holds no macros"
+    # ── a row WITH macros, earned by a real settlement ────────────────────
+    op = "op:cf26-micro-graft"
+    db.add(MealCommit(operation_id=op, operation_revision=0, user_id=uid,
+                      status="committed"))
+    await db.flush()
+    await remember_canonical_settlement(
+        db, user_id=uid, name_norm="cf26 earned", display_name="Earned",
+        operation_id=op, per100={"calories": 99.0, "protein": 24.0},
+        evidence_id="175180", basis="per_100g", fdc_id="175180")
+    earned = await get_user_food_match(db, uid, "cf26 earned")
+    assert earned.cal_100 == 99.0 and earned.micros_100_json is None, (
+        "precondition: a settled row carrying macros and no micro panel")
+
+    # ── candidate gathering passes by with a richer, differently-bound panel
+    await upsert_user_food_match(db, uid, "cf26 earned", "Earned", "999999",
+                                 rich, "likely")
+    row = await get_user_food_match(db, uid, "cf26 earned")
+
     assert row.micros_100_json is None, (
-        "a micro panel was grafted onto a row with no macros — the profile "
-        f"was rebuilt by a slower route: {row.micros_100_json}")
+        "a candidate's micronutrients were grafted onto a row whose macros "
+        f"were earned by a committed meal — the hybrid CF26 deletes: "
+        f"{row.micros_100_json}")
+    assert row.cal_100 == 99.0, "the earned macros must be untouched"
+    assert (row.times_used or 0) >= 2, "usage must still accrue"
+
+    # ── and equally on a row with NO macros ───────────────────────────────
+    for _ in range(2):
+        await upsert_user_food_match(db, uid, "cf26 bare", "Bare", "888",
+                                     rich, "likely")
+    bare = await get_user_food_match(db, uid, "cf26 bare")
+    assert bare.cal_100 is None and bare.micros_100_json is None, (
+        "the writer stored nutrition on a row it created")
+
+
+@pytest.mark.asyncio
+async def test_a_settlement_still_delivers_the_micro_panel(_session):
+    """⭐ THE NEGATIVE INVARIANT. Refusing the graft must not mean micros are
+    unreachable — a pre-micros row still gains its panel, from the settlement
+    that earned it rather than from a candidate that passed by."""
+    import json as _json
+
+    from db.models import MealCommit
+    from db.queries import get_user_food_match, remember_canonical_settlement
+
+    db, uid = _session
+    op = "op:cf26-micro-projection"
+    db.add(MealCommit(operation_id=op, operation_revision=0, user_id=uid,
+                      status="committed"))
+    await db.flush()
+    await remember_canonical_settlement(
+        db, user_id=uid, name_norm="cf26 panel", display_name="Panel",
+        operation_id=op,
+        per100={"calories": 99.0, "protein": 24.0, "calcium": 120.0,
+                "iron": 2.0},
+        evidence_id="175180", basis="per_100g", fdc_id="175180")
+    row = await get_user_food_match(db, uid, "cf26 panel")
+
+    assert row.micros_100_json is not None, (
+        "the settlement projection lost the micro panel — fail-closed became "
+        "fail-always and micros are now unreachable by any writer")
+    assert _json.loads(row.micros_100_json)["calcium"] == 120.0

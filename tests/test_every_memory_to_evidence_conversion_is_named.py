@@ -37,9 +37,6 @@ _SHIPPED = ("core", "handlers", "skills", "db", "api")
 KNOWN_CONVERSIONS = {
     ("db/queries.py", "memory_nutrition_evidence"):
         "THE ONE DOOR. Asks the predicate and emits the typed event.",
-    ("db/queries.py", "upsert_user_food_match"):
-        "CF26 — reads `cal_100` ONLY to refuse grafting a micro panel onto a "
-        "row with no macros. It writes no nutrition of its own.",
     ("db/queries.py", "address_has_one_authority"):
         "reads per-100g to compare BINDINGS; returns a bool, never values",
     ("core/canonical_pricing_inputs.py", "_memory"):
