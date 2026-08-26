@@ -47,26 +47,53 @@ CASES = [
 ]
 
 
-async def _log_calls(message: str):
+async def _turn(message: str):
+    """`(log_food calls, reply text, every tool name)`.
+
+    ⛔⛔ THE OLD VERSION RETURNED ONLY `log_food` AND THREW THE REPLY AWAY, so
+    a turn that ASKED a material clarification was indistinguishable from one
+    that silently did nothing — both scored `DROP(0<n)`. Case 18 measured
+    2026-08-26: "A Mediterranean chicken platter with rice, pita, and hummus"
+    answered *"What went into it and how big a plate we talking?"* and was
+    counted a failure. **An ask is progression; silence is not.**
+    """
     system = build_arnie_system("imessage")
     res = await chat([{"role": "user", "content": message}], system,
                      tools=True, max_tokens=4096, model=DEFAULT_MODEL())
-    foods = [tc for tc in (res.get("tool_calls") or []) if tc.get("name") == "log_food"]
-    return foods
+    calls = res.get("tool_calls") or []
+    foods = [tc for tc in calls if tc.get("name") == "log_food"]
+    return foods, (res.get("text") or "").strip(), [c.get("name") for c in calls]
 
 
 async def main():
+    """⛔ EVERY CASE IS SCORED, AND THE SCRIPT PROVES IT.
+
+    The old loop `continue`d on an exception, leaving the case out of
+    `n_pass` while it stayed in the denominator — an outage read as a product
+    failure. Now an error is its own terminal outcome and the assertion below
+    refuses to publish a rate over a partial set.
+    """
     print(f"model={DEFAULT_MODEL()}  cases={len(CASES)}\n")
-    n_pass = 0
+    outcomes: dict = {}
     for cid, msg, exp_cal, exp_pro, (imin, imax) in CASES:
         try:
-            foods = await _log_calls(msg)
-        except Exception as e:
-            print(f"[{cid:>2}] ERROR: {e}")
+            foods, text, names = await _turn(msg)
+        except Exception as e:                              # noqa: BLE001
+            outcomes[cid] = ("ERROR", f"{type(e).__name__}: {e}")
+            print(f"[{cid:>2}] ERROR      {type(e).__name__}: {e}")
             continue
         n = len(foods)
         cal = sum((f.get("input") or {}).get("calories") or 0 for f in foods)
         pro = sum((f.get("input") or {}).get("protein") or 0 for f in foods)
+
+        if n == 0:
+            # ⭐ ASK != DROP. A question is the lane making progress on a fact
+            # it cannot settle; silence is the lane doing nothing at all.
+            kind = "ASK" if ("?" in text) else "NO_ACTION"
+            outcomes[cid] = (kind, text[:70])
+            print(f"[{cid:>2}] {kind:<10} {text[:66]!r}")
+            continue
+
         flags = []
         if n < imin:
             flags.append(f"DROP({n}<{imin})")
@@ -74,13 +101,39 @@ async def main():
             flags.append(f"OVERSPLIT({n}>{imax})")
         if exp_cal and abs(cal - exp_cal) / exp_cal > 0.25:
             flags.append(f"CAL {cal}vs{exp_cal}")
-        ok = not flags
-        n_pass += ok
-        names = ", ".join(((f.get("input") or {}).get("food_name") or "?")[:22] for f in foods)
-        print(f"[{cid:>2}] {'PASS' if ok else 'FAIL'}  items={n}(exp {imin}-{imax}) "
-              f"cal={cal}(exp {exp_cal}) pro={pro}(exp {exp_pro})  {' '.join(flags)}")
-        print(f"     logged: {names}")
-    print(f"\n==== {n_pass}/{len(CASES)} PASS ====")
+        kind = "LOG_COMPLETE" if not flags else (
+            "WRONG_COMPONENTS" if any(f.startswith(("DROP", "OVERSPLIT"))
+                                      for f in flags) else "WRONG_NUTRITION")
+        outcomes[cid] = (kind, " ".join(flags))
+        label = ", ".join(((f.get("input") or {}).get("food_name") or "?")[:22]
+                          for f in foods)
+        print(f"[{cid:>2}] {kind:<16} items={n}(exp {imin}-{imax}) "
+              f"cal={cal}(exp {exp_cal}) pro={pro}(exp {exp_pro})  "
+              f"{' '.join(flags)}")
+        print(f"     logged: {label}")
+
+    # ⛔⛔ NO RATE OVER A PARTIAL SET. A silently dropped case makes every
+    # percentage below a measurement of the survivors.
+    assert len(outcomes) == len(CASES), (
+        f"{len(outcomes)} of {len(CASES)} cases scored — refusing to publish "
+        f"a rate over a partial set; missing "
+        f"{sorted({c[0] for c in CASES} - set(outcomes))}")
+
+    tally: dict = {}
+    for kind, _ in outcomes.values():
+        tally[kind] = tally.get(kind, 0) + 1
+    print("\n==== OUTCOMES ====")
+    for kind in sorted(tally):
+        print(f"  {kind:<18} {tally[kind]}")
+
+    n = len(CASES)
+    progressed = tally.get("LOG_COMPLETE", 0) + tally.get("ASK", 0)
+    print(f"\n  scored              {len(outcomes)}/{n}  (all cases)")
+    print(f"  LOG_COMPLETE        {tally.get('LOG_COMPLETE', 0)}/{n} = "
+          f"{100*tally.get('LOG_COMPLETE', 0)/n:.0f}%")
+    print(f"  + ASK (progression) {progressed}/{n} = {100*progressed/n:.0f}%")
+    print(f"\n  ⚠ ASK is reported SEPARATELY and always: a lane that asked "
+          f"everything\n    would score 100% progression and log nothing.\n")
 
 
 if __name__ == "__main__":

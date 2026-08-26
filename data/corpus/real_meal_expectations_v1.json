@@ -1,0 +1,663 @@
+{
+  "name": "real_meal_v1",
+  "frozen": false,
+  "frozen_at": null,
+  "why_unfrozen": "DRAFTED BY THE DEVELOPER FROM CORPUS INTENT, NOT YET REVIEWED. Danny, 2026-08-26: the baseline is UNPUBLISHED until these labels are reviewed and frozen. Three cases carry a REVIEW note and are where the judgement actually lives: 18 (ask about an unbranded platter), 22 (cooking fat, an OILS-phase question), 23 (homemade parfait, oversplits and drops).",
+  "tolerance": 0.25,
+  "definition": "A meal is COMPLETE when the user's turn reaches a correct durable product outcome: correct log, correct clarification, or correct refusal, with no wrong committed nutrition, missing material component, duplicate mutation, or ownership violation. (Danny, 2026-08-26)",
+  "ask_rule": "ASK_CORRECT counts as COMPLETE only if the question is materially relevant AND the turn leaves a DURABLE PENDING OPERATION that can be answered. A nice-sounding question with no resumable state scores WRONG_CLARIFICATION, never success.",
+  "cases": [
+    {
+      "id": 1,
+      "message": "Subway Footlong Turkey on Italian Herbs & Cheese, provolone, veggies, mayo",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        1
+      ],
+      "expected_calorie_range": [
+        735,
+        1225
+      ],
+      "expected_protein_range": [
+        40,
+        68
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 2,
+      "message": "Five Guys Little Cheeseburger and a small fries",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        2,
+        2
+      ],
+      "expected_calorie_range": [
+        795,
+        1325
+      ],
+      "expected_protein_range": [
+        29,
+        49
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 3,
+      "message": "Panda Express Bigger Plate: Orange Chicken, Teriyaki Chicken, and Super Greens",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        2,
+        3
+      ],
+      "expected_calorie_range": [
+        810,
+        1350
+      ],
+      "expected_protein_range": [
+        52,
+        86
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 4,
+      "message": "Chick-fil-A 12-count nuggets, medium fries, and Polynesian sauce",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        2,
+        3
+      ],
+      "expected_calorie_range": [
+        630,
+        1050
+      ],
+      "expected_protein_range": [
+        32,
+        54
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 5,
+      "message": "Jersey Mike's Regular #7 Turkey and Provolone, Mike's Way",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        1
+      ],
+      "expected_calorie_range": [
+        570,
+        950
+      ],
+      "expected_protein_range": [
+        32,
+        52
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 6,
+      "message": "Taco Bell Crunchwrap Supreme, a Beefy 5-Layer, and a Baja Blast Zero",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        2,
+        3
+      ],
+      "expected_calorie_range": [
+        735,
+        1225
+      ],
+      "expected_protein_range": [
+        26,
+        44
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 7,
+      "message": "Wendy's Dave's Single and a small fries",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        2,
+        2
+      ],
+      "expected_calorie_range": [
+        645,
+        1075
+      ],
+      "expected_protein_range": [
+        26,
+        44
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 8,
+      "message": "Popeyes 3-piece tenders, Cajun fries, and a Blackened Ranch",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        2,
+        3
+      ],
+      "expected_calorie_range": [
+        742,
+        1238
+      ],
+      "expected_protein_range": [
+        36,
+        60
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 9,
+      "message": "CAVA Greens and Grains bowl with steak, hummus, feta, and tzatziki",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        1
+      ],
+      "expected_calorie_range": [
+        765,
+        1275
+      ],
+      "expected_protein_range": [
+        39,
+        65
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 10,
+      "message": "Sweetgreen Chicken Pesto Parm bowl",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        1
+      ],
+      "expected_calorie_range": [
+        540,
+        900
+      ],
+      "expected_protein_range": [
+        33,
+        55
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 11,
+      "message": "Chipotle burrito with chicken, white rice, black beans, cheese, and sour cream",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        1
+      ],
+      "expected_calorie_range": [
+        952,
+        1588
+      ],
+      "expected_protein_range": [
+        46,
+        76
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 12,
+      "message": "Panera Bacon Turkey Bravo and a bag of chips",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        2,
+        2
+      ],
+      "expected_calorie_range": [
+        690,
+        1150
+      ],
+      "expected_protein_range": [
+        31,
+        51
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 13,
+      "message": "Starbucks Double-Smoked Bacon sandwich and a Venti Caramel Macchiato",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        2,
+        2
+      ],
+      "expected_calorie_range": [
+        608,
+        1012
+      ],
+      "expected_protein_range": [
+        22,
+        36
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 14,
+      "message": "Shake Shack SmokeShack and fries",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        2,
+        2
+      ],
+      "expected_calorie_range": [
+        885,
+        1475
+      ],
+      "expected_protein_range": [
+        31,
+        51
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 15,
+      "message": "A California roll, a spicy tuna roll, and miso soup",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        3,
+        3
+      ],
+      "expected_calorie_range": [
+        615,
+        1025
+      ],
+      "expected_protein_range": [
+        26,
+        44
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 16,
+      "message": "8 oz sirloin, a loaded baked potato, and a Caesar salad",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        3,
+        3
+      ],
+      "expected_calorie_range": [
+        795,
+        1325
+      ],
+      "expected_protein_range": [
+        50,
+        84
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 17,
+      "message": "A chicken Caesar wrap and an apple",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        2,
+        2
+      ],
+      "expected_calorie_range": [
+        570,
+        950
+      ],
+      "expected_protein_range": [
+        34,
+        56
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 18,
+      "message": "A Mediterranean chicken platter with rice, pita, and hummus",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        4
+      ],
+      "expected_calorie_range": [
+        1065,
+        1775
+      ],
+      "expected_protein_range": [
+        50,
+        82
+      ],
+      "expected_clarification_field": "portion_size",
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": "⚠ REVIEW: unbranded platter, no portion stated. Drafted ASK_CORRECT — measured 3/4 logging, 1/4 asking about plate size. If the product should estimate a takeout platter instead, change to LOG_COMPLETE."
+    },
+    {
+      "id": 19,
+      "message": "2 Costco pepperoni pizza slices",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        1
+      ],
+      "expected_calorie_range": [
+        1065,
+        1775
+      ],
+      "expected_protein_range": [
+        51,
+        85
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 20,
+      "message": "Trader Joe's Butter Chicken and a Garlic Naan",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        2,
+        2
+      ],
+      "expected_calorie_range": [
+        698,
+        1162
+      ],
+      "expected_protein_range": [
+        26,
+        44
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 21,
+      "message": "A Fairlife Core Power Elite, a Quest Bar, and a banana",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        3,
+        3
+      ],
+      "expected_calorie_range": [
+        428,
+        712
+      ],
+      "expected_protein_range": [
+        51,
+        85
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    },
+    {
+      "id": 22,
+      "message": "3 eggs, 2 turkey sausage patties, sourdough toast, and avocado",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        4,
+        4
+      ],
+      "expected_calorie_range": [
+        570,
+        950
+      ],
+      "expected_protein_range": [
+        31,
+        51
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": "⚠ REVIEW: the directive's OWN example asks 'butter or oil?' here. Drafted LOG_COMPLETE because it logs 4/4 correctly today and cooking-fat materiality is an OILS-phase question. Flip to ASK_CORRECT + preparation once OILS lands."
+    },
+    {
+      "id": 23,
+      "message": "A Greek yogurt parfait with granola, berries, honey, and almonds",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        1
+      ],
+      "expected_calorie_range": [
+        465,
+        775
+      ],
+      "expected_protein_range": [
+        25,
+        41
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": "⚠ REVIEW: homemade, every portion unstated. Measured [5,0,0,1] against expected 1 — it both oversplits and drops. Drafted LOG_COMPLETE (a parfait is one composite); ASK_CORRECT + portion_size is defensible."
+    },
+    {
+      "id": 24,
+      "message": "A homemade turkey burger on a brioche bun with sweet potato fries",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        2,
+        2
+      ],
+      "expected_calorie_range": [
+        682,
+        1138
+      ],
+      "expected_protein_range": [
+        35,
+        59
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION",
+        "ASK_CORRECT",
+        "WRONG_CLARIFICATION"
+      ],
+      "label_note": "⛔ ASK IS WRONG HERE. Danny 2026-08-26: 'an ordinary turkey burger should simply work.' Measured 0/4 in range, asked 3/4. forbidden_outcomes pins that."
+    },
+    {
+      "id": 25,
+      "message": "A large poke bowl with salmon, tuna, rice, edamame, avocado, and spicy mayo",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        1
+      ],
+      "expected_calorie_range": [
+        840,
+        1400
+      ],
+      "expected_protein_range": [
+        44,
+        74
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [
+        "WRONG_NUTRITION",
+        "WRONG_IDENTITY",
+        "DUPLICATE_MUTATION",
+        "OWNERSHIP_FAILURE",
+        "NO_ACTION"
+      ],
+      "label_note": ""
+    }
+  ]
+}
