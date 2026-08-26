@@ -198,4 +198,11 @@ async def test_an_addressable_food_is_still_cached(memory):
         db, user_id, normalize_name("Chicken breast"), "Chicken breast", "171077",
         {"calories": 165.0, "protein": 31.0}, "exact")
 
-    assert written is not None and written.cal_100 == 165.0
+    # ⛔ CF26 — the subject here is ADDRESSABILITY, and the public writer no
+    # longer stores nutrition: it runs before the meal is priced, so nothing
+    # reaching it is a projection of what was committed. A row is still
+    # created, still addressable, still carrying its identity — which is what
+    # this door is being tested for.
+    assert written is not None
+    assert written.name_norm == normalize_name("Chicken breast")
+    assert written.display_name == "Chicken breast" and written.fdc_id == "171077"

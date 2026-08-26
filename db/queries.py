@@ -3709,6 +3709,24 @@ async def remember_canonical_settlement(
         _cal = float((per100 or {}).get("calories") or 0)
     except (TypeError, ValueError):
         return None
+    # ⛔⛔⛔ CF26 — NO AUTHORITATIVE BASIS, NO NUTRITION ROW. A per-100g profile
+    # is only meaningful as a REVERSIBLE representation of the committed meal:
+    # 120 g committing 118.8 kcal projects to 99/100g and multiplies back. A
+    # meal that committed `1 bar -> 200 kcal` established no density at all,
+    # and writing 200/100g from it invents one wearing the settlement's
+    # authority. That is row 644's exact shape.
+    #
+    # ⭐ THIS IS WHAT STOPS "CACHE THE COMMITTED VALUES" FROM QUIETLY
+    # RECREATING INVENTED DENSITY. The basis names the normalization the
+    # projection rests on; without one there is nothing to reverse.
+    if not str(basis or "").strip() or not str(evidence_id or "").strip():
+        logger.info(
+            "event=memory_projection_refused user=%s key=%r reason=no_"
+            "authoritative_basis basis=%r evidence=%r — the committed meal "
+            "established no density to project", user_id, name_norm, basis,
+            evidence_id)
+        return None
+
     # The sanity ceiling still applies — it is not an authority check, and a
     # settlement is not licence to store something that cannot be a food.
     if _cal <= 0 or _cal > 900:
@@ -3790,6 +3808,31 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
                                  origin_tier: str = "", serving_text: str = ""):
     """Store/refresh a user's recurring food match. Bumps usage on repeat.
 
+    ⛔⛔⛔ CF26 — THIS WRITER MAY NOT STORE NUTRITION. `per100` is accepted and
+    DELIBERATELY NOT PERSISTED as nutrition.
+
+    Trusted memory is a PROJECTION OF THE COMMITTED MEAL, never a side effect
+    of evidence selection. This function is called from `fetch_candidates` —
+    the CANDIDATE GATHERING phase, which runs BEFORE the meal is priced — so
+    no value reaching it can be a projection of anything. It is not that it
+    chose the wrong number; the committed number does not exist yet.
+
+    Measured, three weeks apart:
+
+        2026-08-02  entry 2687   committed 150 kcal   cached 437.5/100g
+        2026-08-25  entry 3053   committed 590 kcal   cached 643/100g
+
+    Every poisoned row the CF24 probes hunted was made here — 936, 886, 292,
+    1029, 1031 — and since CF23 an untrusted row's nutrition can never price
+    anything, so the payload was pure liability with no consumer.
+
+    ⭐ IDENTITY, USAGE AND THE SERVING PANEL ARE STILL CACHED. None of them
+    claims to be nutrition the meal used, and legacy needs all three. Refusing
+    the nutrition must not delete the cache.
+
+    `remember_canonical_settlement` is the one writer that may store nutrition:
+    it runs AFTER the commit, from the settled result, and links to it.
+
     `origin_tier` is the authority that produced these numbers. It exists so a
     reader can tell a cache of our own lookup from something the user actually
     vouched for — those must not re-enter resolution at the same authority.
@@ -3826,7 +3869,9 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
             name_norm, user_id, _cal100)
         return None
 
-    micros = _extract_micros_100(per100)
+    # ⛔ CF26 — `per100` is accepted and NOT EXTRACTED. A micro panel computed
+    # here would be a value whose only possible use is a write this door may
+    # not perform.
     origin = (origin_tier or ("user_regular" if user_confirmed
                               else _ORIGIN_BY_CONFIDENCE.get(confidence,
                                                              "generic_exact")))
@@ -3845,11 +3890,25 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
     if existing:
         existing.times_used = (existing.times_used or 1) + 1
         existing.last_used = datetime.utcnow()
-        # Self-heal the cache: rows created before the micro panel existed have
-        # micros_100_json=NULL. Backfill it the first time a richer profile flows
-        # through (e.g. a USDA re-lookup), so the food keeps its micros thereafter.
-        if micros and not existing.micros_100_json:
-            existing.micros_100_json = json.dumps(micros)
+        # ⛔⛔⛔ CF26 — NO MICRO GRAFT, NOT EVEN ONTO A ROW THAT HAS MACROS.
+        #
+        # This used to self-heal a pre-micros row from "the first richer
+        # profile that flows through". CF26's first draft merely gated it on
+        # `existing.cal_100 is not None` — WHICH MADE IT WORSE. That gate fires
+        # ONLY on rows that already carry macros, TRUSTED ONES INCLUDED, so a
+        # candidate found during gathering could staple its micronutrients onto
+        # a row whose authority was earned by a prior COMMITTED meal.
+        #
+        # The result is the hybrid this tranche exists to delete —
+        #     historical macros + today's candidate's micros
+        # a profile no single meal ever produced, wearing the older meal's
+        # authority. Pre-settlement code may not MUTATE a nutrition field for
+        # the same reason it may not CREATE one: it does not know what was
+        # committed.
+        #
+        # A pre-micros row still gains its panel: `remember_canonical_
+        # settlement` replaces the row wholesale, from the settlement that
+        # earned it rather than from a candidate that merely passed by.
         # Self-heal the serving panel the same way. Rows cached before
         # serving001 hold per-100g alone, which is what makes a counted portion
         # unanswerable; the first lookup that carries a label fills it in and
@@ -3878,14 +3937,18 @@ async def upsert_user_food_match(db: AsyncSession, user_id: int, name_norm: str,
             existing.origin_tier = origin
         await db.commit()
         return existing
+    # ⛔⛔⛔ CF26 — NO NUTRITION. Every per-100g field stays NULL: this runs
+    # before the meal is priced, so nothing here is a projection of what was
+    # committed. `micros_100_json` goes with them — a micro panel is nutrition
+    # too, and caching one beside NULL macros would leave a row asserting a
+    # profile no meal produced.
+    #
+    # ⭐ WHAT IS KEPT IS EVERYTHING THAT DOES NOT CLAIM TO BE THE MEAL'S
+    # NUTRITION: the identity, the source id, the serving panel, the usage
+    # record. Legacy needs all four, and none of them can price anything.
     m = UserFoodMatch(
         user_id=user_id, name_norm=name_norm, display_name=display_name,
         fdc_id=str(fdc_id) if fdc_id else None,
-        cal_100=per100.get("calories"), protein_100=per100.get("protein"),
-        carbs_100=per100.get("carbs"), fat_100=per100.get("fat"),
-        fiber_100=per100.get("fiber"), sugar_100=per100.get("sugar"),
-        sodium_100=per100.get("sodium"),
-        micros_100_json=(json.dumps(micros) if micros else None),
         serving_text=(serving_text or None),
         confidence="user-confirmed" if user_confirmed else confidence,
         user_confirmed=user_confirmed,

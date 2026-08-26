@@ -44,8 +44,28 @@ _P100 = {"calories": 61.0, "protein": 3.2, "carbs": 4.8, "fat": 3.3}
 
 
 async def _seed(db, uid, key, fdc, serving=""):
-    await upsert_user_food_match(db, uid, key, "Milk, whole", fdc,
-                                 dict(_P100), "likely", serving_text=serving)
+    """⛔⛔ CF26 — NUTRITION CAN NO LONGER BE SEEDED THROUGH THE PUBLIC WRITER.
+
+    `upsert_user_food_match` runs during candidate gathering, before the meal
+    is priced, so it stores identity and never nutrition. Seeding through it
+    left every row here holding NULL macros, and the D-tests then asserted
+    immutability of a value that was never written.
+
+    ⭐ AND THAT IS THE PROOF, NOT THE INCONVENIENCE: if a test could still put
+    nutrition in through that door, so could production. The producer is the
+    only writer that may, so the fixture uses it.
+    """
+    from db.models import MealCommit
+    from db.queries import remember_canonical_settlement
+
+    operation_id = f"op:graft-seed:{key}"
+    db.add(MealCommit(operation_id=operation_id, operation_revision=0,
+                      user_id=uid, status="committed"))
+    await db.flush()
+    await remember_canonical_settlement(
+        db, user_id=uid, name_norm=key, display_name="Milk, whole",
+        operation_id=operation_id, per100=dict(_P100), evidence_id=fdc,
+        basis="per_100g", fdc_id=fdc, serving_text=serving)
     return await get_user_food_match(db, uid, key)
 
 
@@ -99,7 +119,19 @@ async def test_identity_that_cannot_be_PROVEN_does_not_graft(_session):
     must never read as "they match". This is the case the disabled web lanes
     used to produce constantly: candidates with `fdc_id=None`."""
     db, uid = _session
-    await _seed(db, uid, "milkwhole_c3", None)        # stored row: no identity
+    # ⛔ CF26 — THE PRODUCER CANNOT MAKE THIS ROW ANY MORE. A settlement
+    # projection must name what it was projected from, so a trusted row with
+    # no identifier is no longer constructible. The shape still EXISTS in
+    # production as history, though — 838 rows predate all of this — so the
+    # fixture builds it the only way it can now arise: directly, as a legacy
+    # row. That is exactly the population this guard defends.
+    from db.models import UserFoodMatch
+    db.add(UserFoodMatch(user_id=uid, name_norm="milkwhole_c3",
+                         display_name="Milk, whole", fdc_id=None,
+                         cal_100=_P100["calories"], protein_100=_P100["protein"],
+                         carbs_100=_P100["carbs"], fat_100=_P100["fat"],
+                         confidence="likely", origin_tier="generic_exact"))
+    await db.flush()
 
     await upsert_user_food_match(db, uid, "milkwhole_c3", "Milk, whole", None,
                                  dict(_P100), "likely",
