@@ -86,8 +86,10 @@
 > CF24 production closure     ⛔ OPEN — entry 3050 consumer UNATTRIBUTED
 > CF25 OFF identity qual.     ✅ merged, live (`off_qualification` in traces)
 > CF24 memory instrumentation ✅ merged, live, WORKING
-> CF26 producer fix           🟡 approved at 4fcb31d, awaiting CI + merge
-> Producer poisoning class    🟡 closed BY CF26 once deployed
+> CF26 producer fix           ✅ merged 63d926a, DEPLOYED, PROVEN in prod
+> Producer poisoning class    ✅ CLOSED — public writer stores zero nutrition
+> Targeted prod proof         ✅ ALL SIX CHECKS PASS (2026-08-26)
+> First trusted memory row    ✅ row 1033, commit 110, re-reads as evidence
 > Product roadmap             ⏸ PAUSED until CF24 attribution closes
 > ```
 >
@@ -105,6 +107,50 @@
 > `docs/CF24_CLOSURE_RECORD.md`,
 > `docs/CF25_REGISTERED_SHRIMP_CRACKER_MISMATCH.md`,
 > `docs/CF26_REGISTERED_CACHE_DISAGREES_WITH_THE_MEAL.md`.
+>
+> ── ⛔⛔⛔ THE SETTLEMENT OWNER ONLY RUNS ON iOS *(measured 2026-08-26)* ────
+>
+> **`GeneralSettlementOwner` has never settled a Telegram turn.** All 13
+> `general:` operations in the system's history — now 14 — are `ios:` turns.
+> Zero on Telegram, zero on web.
+>
+> ```text
+> meal_commits by owner prefix          canonical: ledger events by channel
+>   chat_quantity   86                    ios        89
+>   general         13  ← ALL ios:        telegram   22   ← chat_quantity /
+>   quick_log       10                                       quick_log, NOT
+>                                                            the settlement owner
+> ```
+>
+> ⛔ **THIS COST SEVEN CANARY ATTEMPTS.** Every settlement probe was run on
+> Telegram, where the owner *structurally cannot run*, so seven "settlement
+> did not happen" results were guaranteed rather than evidence. The 22
+> Telegram rows under `canonical:%` are `chat_quantity` and `quick_log` —
+> different owners — which is what made "canonical settles on Telegram" look
+> true.
+>
+> ⭐ **EVERY CANARY MUST NAME ITS CHANNEL FROM NOW ON.** A settlement canary
+> is an **iOS** canary. The proof that finally passed: `Beef, grilled 150 g`
+> from iOS, single turn, no clarification → `canonical:create`, commit 110,
+> and the first trusted memory row this system has ever produced (row 1033,
+> 208 kcal/100g, `usda:174702`, re-reads through the shared door).
+>
+> ⛔⛔ **AND `general_settlement_reachable` DOES NOT CAPTURE THIS.** It reports
+> `mode == new_execute AND structured_food in lanes AND the allowlist is
+> non-empty` — three environment facts. It says nothing about whether the
+> ENTRYPOINT this turn arrived on reaches `_canonical_route` at all, and it
+> reported `true` throughout all seven failed Telegram probes. Its own
+> docstring says it exists because "a fully-supported meal was still settled
+> by legacy" — and it still cannot answer that for Telegram.
+>
+> ⚠ **TWO SILENT DECLINES REGISTERED, NOT FIXED.** Both matter for the next
+> diagnosis and neither blocks the sequence:
+>   1. `_canonical_route` gate 2 — `if not calls or len(calls) != len(ops):
+>      return None` — declines with **no log line**, so a turn carrying any
+>      operation besides the food log is indistinguishable from one that was
+>      never eligible.
+>   2. The cohort endpoint reports sizes, never membership, so
+>      `size: 1` cannot be told from "the right user is enrolled".
 >
 > ── ⭐⭐⭐ THE INVARIANTS THIS WEEK ESTABLISHED ─────────────────────────────
 >
