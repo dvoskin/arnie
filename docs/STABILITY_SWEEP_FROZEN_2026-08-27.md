@@ -1,7 +1,47 @@
 # STABILITY SWEEP — FROZEN 2026-08-27
 
-**Tree `834924b`. 25 cases × 4 reps = 100 turns. Zero UNMEASURED.
-Turn-level pass 54/100.** Raw: `data/corpus/stability_sweep_v1_2026-08-27.jsonl`.
+> ⛔⛔⛔ **PROVISIONAL — MEASURED UNDER THE WRONG GATE CONFIGURATION. DO NOT
+> CITE THE FAMILY ASSIGNMENTS OR `54/100` AS PRODUCT FACTS.**
+>
+> Discovered 2026-08-27, hours after this file was written, by tracing case 11:
+> every turn in this sweep carried `route_owner='gate_regex'` and
+> `legacy_escape_reason='no_food_shape'`. **`FOOD_GATE_MODEL` was unset (false)
+> in the sweep environment. `render.yaml:164` declares it `true`.**
+>
+> | gate | corpus cases admitted to the structured food lane |
+> |---|---|
+> | regex only (what this sweep ran) | **2 / 25** — only cases 16 and 22 |
+> | `FOOD_GATE_MODEL=true` (declared prod) | **25 / 25** |
+>
+> **23 of 25 cases flip.** This sweep therefore measured the LEGACY
+> free-tool fallback for 23 cases — a path on which nothing constrains whether
+> the model calls `log_food` once, six times, `note_food_clarification`, or no
+> tool at all. That fallback is a plausible explanation for all of families D,
+> E and F, and it is not the path production takes.
+>
+> ⚠ **Which gate production actually runs is UNVERIFIED.** `render.yaml` carries
+> a "Reference-only file: set this in the Render dashboard for it to apply"
+> note, so the repo cannot settle it. Confirm in the Render dashboard before
+> re-running.
+>
+> **What survives:** the instrument (self-test, the two error classes, rep-major
+> interleaving, structure-not-just-terminal scoring), the corpus, the frozen
+> expectations, and the finding that the regex gate admits 2/25 real meals.
+> **What does not:** every family assignment, every per-case sequence, and the
+> `54/100` headline. Re-run under the production gate before this file is
+> treated as a baseline.
+>
+> ⭐ **THE LESSON, WHICH IS THE SAME ONE AGAIN:** this file recorded the tree
+> (`834924b`) and asserted the instrument was self-tested, but **never recorded
+> the feature-flag environment the turns ran in.** A tree SHA does not pin a
+> configuration. Any future baseline must record the resolved values of every
+> flag that can change routing — `FOOD_GATE_MODEL`, `FOOD_GATE_OPEN`,
+> `TURN_COORDINATOR_MODE`, `STRUCTURED_FOOD_*` — beside the SHA.
+
+**Tree `834924b`, `FOOD_GATE_MODEL` UNSET (⛔ prod declares `true`),
+`TURN_COORDINATOR_MODE` unset/legacy_only (prod declares `new_observe`).
+25 cases × 4 reps = 100 turns. Zero UNMEASURED. Turn-level pass 54/100 —
+⛔ under the wrong gate, see the banner.** Raw: `data/corpus/stability_sweep_v1_2026-08-27.jsonl`.
 Instrument: `scripts/sweep_case_stability.py`. Classifier:
 `scripts/classify_case_stability.py`.
 
