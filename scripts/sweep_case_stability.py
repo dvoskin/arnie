@@ -121,6 +121,18 @@ CORPUS = json.load(open("data/corpus/real_meal_expectations_v1.json"))
 CASES = CORPUS["cases"] if isinstance(CORPUS, dict) else CORPUS
 assert len(CASES) == 25, len(CASES)
 
+# ⭐ SUBSET RUNS ARE FIRST-CLASS, and still config-pinned. A confirmation pass
+# on a shortlist (e.g. the stable-ASK candidates at higher reps) must go
+# through the SAME instrument and the SAME config guard as the full sweep --
+# a shortlist measured by a hand-rolled script is a second instrument, and two
+# instruments that agree today disagree later.
+_ONLY = {int(x) for x in (os.environ.get("ONLY_CASES") or "").replace(",", " ").split() if x.strip()}
+if _ONLY:
+    CASES = [c for c in CASES if int(c["id"]) in _ONLY]
+    missing = _ONLY - {int(c["id"]) for c in CASES}
+    if missing:
+        raise SystemExit(f"ONLY_CASES names cases not in the corpus: {sorted(missing)}")
+
 CALLS = []
 _orig = TE._dispatch
 async def _spy(name, inp, *a, **k):
@@ -199,7 +211,8 @@ async def main():
     await _selftest(session)
     fh = OUT.open("w")
     fh.write(json.dumps({"_config": CONFIG, "_reps": REPS,
-                         "_corpus": "real_meal_expectations_v1"}) + "\n")
+                         "_corpus": "real_meal_expectations_v1",
+                         "_only_cases": sorted(_ONLY) or "all"}) + "\n")
     fh.flush()
     total = REPS * len(CASES); done = 0
 
