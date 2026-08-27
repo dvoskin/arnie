@@ -1,0 +1,51 @@
+{
+  "_doc": "EVERY materiality/clarification CRITERION, alive or dead. A criterion may be PROMOTED only when validated_on_corpus differs from derived_from_corpus. Four criteria have died to the same error: a rule inferred from the cases it was tested on. Enforced by tests/test_no_criterion_promoted_from_its_own_corpus.py.",
+  "_statuses": [
+    "proposed",
+    "promoted",
+    "refuted",
+    "retired"
+  ],
+  "criteria": [
+    {
+      "name": "magnitude_span_threshold",
+      "claim": "an ask is material when its calorie span exceeds a threshold",
+      "status": "retired",
+      "derived_from_corpus": "real_meal_expectations_v1",
+      "validated_on_corpus": null,
+      "note": "Disproved 2026-08-27. impact_cal overlaps almost completely across asking and logging cases. Do not resurrect: regression-by-forgetting."
+    },
+    {
+      "name": "dish_vs_vessel",
+      "claim": "a name denoting a serving VESSEL has no defensible default; a DISH does",
+      "status": "refuted",
+      "derived_from_corpus": "real_meal_expectations_v1",
+      "validated_on_corpus": null,
+      "note": "Fitted to 3 fixtures. Declared falsified on n=1 (burrito bowl logged 1/1) and the FALSIFICATION did not survive n=8 (0/8). Both the rule and its refutation were underpowered."
+    },
+    {
+      "name": "four_criterion_evidence_contract",
+      "claim": "recognized archetype + conventional serving + bounded interpretation + statable assumption",
+      "status": "retired",
+      "derived_from_corpus": "real_meal_expectations_v1",
+      "validated_on_corpus": null,
+      "note": "Drafted entirely on invalid-config behaviour (all 18 render.yaml flags unset). Superseded before it was ever tested."
+    },
+    {
+      "name": "h1_unspecified_secondary_component",
+      "claim": "the system asks when a confidently-priced PRIMARY is accompanied by an UNSPECIFIED SECONDARY component",
+      "status": "refuted",
+      "derived_from_corpus": "real_meal_expectations_v1",
+      "validated_on_corpus": "heldout_defaultability_v1",
+      "note": "REFUTED 2026-08-27 by its own preregistered falsification conditions. c110 asks with no secondary; c111 asks about the PRIMARY. Matched pairs separated 2 of 4. \u2b50 The gate WORKED: derived on one corpus, tested on another, and died there instead of in production."
+    },
+    {
+      "name": "h2_unbounded_quantity",
+      "claim": "the ask fires when a component's quantity is UNBOUNDED by the utterance; countable items ('a croissant') count as bounded",
+      "status": "proposed",
+      "derived_from_corpus": "heldout_defaultability_v1",
+      "validated_on_corpus": null,
+      "note": "12/12 in-sample, 6/8 out-of-sample against the 8 DEFAULTABILITY cases. NOT PROMOTED: derived post-hoc from the very cases that refuted H1. Needs its OWN held-out corpus."
+    }
+  ]
+}
