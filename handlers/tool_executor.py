@@ -6924,7 +6924,20 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
                     question=question, tier="casual", hook_style="question",
                 )
                 pq.item_referenced = food_item
-                # Carry kind metadata in tier? No — separate field.
+                # ⭐ THE CANONICAL ASK TYPE RIDES THE EXISTING `tier`
+                # PIGGYBACK. `core/tools.py` now sources this tool's `kind`
+                # enum from `skills/nutrition/ask_type`, so the value written
+                # here IS canonical and needs no translation.
+                #
+                # ⛔ A `payload_json` WRITE WAS TRIED HERE AND REVERTED.
+                # `test_pending_mutation_authority_does_not_spread` is a
+                # RATCHET at 30 sites whose contract is that the number goes
+                # DOWN; adding a 31st and raising the bound to fit it is
+                # precisely what the ratchet exists to stop. The tool path
+                # carries ~1 of 27 asks, so it does not justify spreading
+                # pending-mutation authority. When that authority is
+                # consolidated, this becomes a payload field like the
+                # structured lane's.
                 if inp.get("kind"):
                     pq.tier = inp["kind"]  # piggyback metadata on tier field
                 await db.commit()

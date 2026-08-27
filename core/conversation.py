@@ -2005,6 +2005,12 @@ async def _run_turn(
                          # branch builds a ClarificationQuestion; the other ask
                          # return points store empties here and behave exactly
                          # as they do today.
+                         # ⭐ THE CANONICAL ASK TYPE, decided in food_turn at
+                         # the ask site and carried here unchanged. A LIST:
+                         # asks are compound (one turn can ask about
+                         # identity, consumption and portion at once), and a
+                         # scalar would discard most of what was asked.
+                         "ask_types": list(_sft.get("ask_types") or ()),
                          "response_schema": _sft.get("response_schema") or "",
                          "question_id": _sft.get("question_id") or "",
                          "staged_item_id": _sft.get("staged_item_id") or "",

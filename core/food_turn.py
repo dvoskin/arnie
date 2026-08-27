@@ -57,6 +57,41 @@ logger = logging.getLogger(__name__)
 
 ASK_KIND = "food_structured_ask"
 
+# ── ask typing ────────────────────────────────────────────────────────────────
+#: ⛔⛔⛔ THE TYPE IS DECIDED HERE, AT THE DECISION POINT — never recovered from
+#: the rendered question. The mechanism this replaces, `_FACET_KINDS`, matched
+#: prose needles against the text the system had just generated, so a wording
+#: change silently changed the recorded type. **The renderer must be able to
+#: reword any question without changing `ask_types`.** That is the boundary.
+def _ask_types_from(data) -> tuple:
+    """Canonical ask types for this ask, from the interpreter's STRUCTURED
+    `ambiguities`, never from text.
+
+    Returns at least one canonical value: an ask whose types cannot be
+    determined records `unclassified` rather than an empty tuple, because a
+    missing type and a typed-as-nothing ask must not be the same row.
+    """
+    from skills.nutrition.ask_type import UNCLASSIFIED, classify_all
+    try:
+        out = classify_all((data or {}).get("ambiguities"),
+                           (data or {}).get("items"))
+    except Exception:
+        out = ()
+    return out or (UNCLASSIFIED,)
+
+
+def _ask_types_for_op(op) -> tuple:
+    """The unit-revalidation ask: one operation, an amount question on it."""
+    from skills.nutrition.ask_type import classify
+    try:
+        return (classify("quantity", branded=bool((op or {}).get("branded"))),)
+    except Exception:
+        from skills.nutrition.ask_type import UNCLASSIFIED
+        return (UNCLASSIFIED,)
+
+from skills.nutrition import ask_type as _AT
+
+
 # The structured interpreter is a NAMED producer, not an impersonation of
 # pass-1: every tool call it emits carries this source tag (persisted in each
 # entry's raw_input), so downstream behavior is testable per source and
@@ -1375,7 +1410,8 @@ def _revalidate_after_answer(ops, prior, message: str, mode: str = "moderate"):
         _text = question_for(change, food) or (
             f"How big were the {change.after}s of {food}?")
         return {"action": "ask", "text": _text, "points": [_text],
-                "items": [op], "kind": "clarify"}
+                "items": [op], "kind": "clarify",
+                "ask_types": _ask_types_for_op(op)}
     return None
 
 
@@ -2119,7 +2155,7 @@ def unknowns_from_decision(decision, user_message: str = "") -> tuple:
         # price still ranks by how many foods it covers, or a meal of unpriced
         # items never gets asked about at all.
         weight = g["stakes"] or float(len(g["items"]) * 200)
-        out.append({"kind": kind, "phrase": _KIND_PHRASING.get(kind, kind),
+        out.append({"kind": kind, "phrase": _RENDER_PHRASING.get(kind, kind),
                     "items": tuple(g["items"]), "asks": (),
                     "stakes": round(g["stakes"], 1), "weight": weight,
                     "options": tuple(g["options"])})
@@ -4054,7 +4090,7 @@ _FACET_KINDS = (
 )
 
 
-def _facet_kind(text: str) -> str:
+def _render_facet(text: str) -> str:
     """Name the unknown a facet is about, in the coach's words rather than the
     form's. Unrecognised shapes get "detail" — honest, and it still groups."""
     t = (text or "").strip().lower()
@@ -4066,7 +4102,16 @@ def _facet_kind(text: str) -> str:
 
 #: Plain-language names for each kind, for a renderer that has to say it out
 #: loud. "consumed_quantity" produces a sentence that reads like a form.
-_KIND_PHRASING = {
+#: ⛔⛔ PRESENTATION ONLY — NOT AN ASK TYPE, AND NEVER PERSISTED.
+#: These keys are derived from question TEXT by `_render_facet` and exist to
+#: pick wording when several unknowns are grouped into one sentence. The
+#: canonical ask type lives in `skills/nutrition/ask_type` and is decided
+#: from the interpreter's structured `ambiguities`, never from prose.
+#: ⭐ These two must NOT be merged: `portion` here cannot distinguish
+#: menu_size from continuous_portion from portion_multiplier, so promoting a
+#: text-derived key into the canonical vocabulary would reintroduce the very
+#: prose inference this tranche removed.
+_RENDER_PHRASING = {
     "portion": "how much of each there was",
     "identity": "which one it was",
     "preparation": "how it was cooked",
@@ -4361,7 +4406,7 @@ def _question_options(*, label: str, qs, found_by_label, message: str,
     for _flb, _fvs in (found_by_label or ()):
         if str(_flb or "").strip().lower() == str(label or "").strip().lower():
             return list(_fvs)[:4]
-    if any(_facet_kind(q) == "portion" for q in (qs or ())):
+    if any(_render_facet(q) == "portion" for q in (qs or ())):
         _p = _portion_options(label, message, items=items)[:4]
         if _p:
             return _p
@@ -4409,7 +4454,7 @@ def _closed_facet_options(label: str, qs) -> list:
     """Options for a facet with a known answer set, when the question named
     none. Empty whenever we have not established the set for this food."""
     try:
-        if not any(_facet_kind(q) == "preparation" for q in (qs or ())):
+        if not any(_render_facet(q) == "preparation" for q in (qs or ())):
             return []
         from skills.nutrition.portions import food_category
         return list(_PREPARATION_OPTIONS.get(
@@ -4512,7 +4557,7 @@ def group_unknowns(asks: list, user_message: str = "",
     groups = {}
     for label, facets in asks:
         for facet in facets:
-            kind = _facet_kind(facet)
+            kind = _render_facet(facet)
             g = groups.setdefault(kind, {"items": [], "asks": [],
                                          "stakes": 0.0})
             if label and label not in g["items"]:
@@ -4540,7 +4585,7 @@ def group_unknowns(asks: list, user_message: str = "",
         # says what we actually know: material to someone who wants accuracy,
         # skippable for someone who asked to be left alone.
         weight = g["stakes"] or float(len(g["items"]) * 200)
-        out.append({"kind": kind, "phrase": _KIND_PHRASING.get(kind, kind),
+        out.append({"kind": kind, "phrase": _RENDER_PHRASING.get(kind, kind),
                     "items": tuple(g["items"]), "asks": tuple(g["asks"]),
                     "stakes": round(g["stakes"], 1), "weight": weight,
                     "options": ()})
@@ -6030,6 +6075,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             except Exception:
                 pass
             return {"action": "ask", "text": text, "tool_calls": _ready_now,
+                    "ask_types": _ask_types_from(data),
                     DEFERRED_KEY: _deferred_now,
                     "questions": _questions, "options": _chip_options,
                     # ⛔ CF5c (review of fc38825, leak a) — THE TYPED FIELDS.
@@ -6118,6 +6164,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             _p2 = clarify_plan_from_points(data["points"], data.get("ready"),
                                            user_message=message)
             return {"action": "ask",
+                    "ask_types": _ask_types_from(data),
                     "text": (await _render(_ctx(_p2, user=user, messages=history,
                                                 day_state=day_line))
                              if _p2 is not None else ""),
@@ -6341,6 +6388,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 logger.warning(f"staged resolution not persisted: {_se}")
                 _staged_payload = []
             return {"action": "ask", "text": _text,
+                    "ask_types": _ask_types_from(data),
                     "tool_calls": _ready_calls,
                     # WHAT B-1 NEEDS TO JUDGE THIS TURN, carried rather than
                     # decided here. `run()` never touches a database — it is a
@@ -6426,6 +6474,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                     # fallback is the path taken when the staged pipeline is
                     # off, and it should not also be the path with no chips.
                     return {"action": "ask", "text": _txt, "points": _pts,
+                            "ask_types": _ask_types_from(data),
                             "questions": _questions_from_points(
                                 _pts, message=message,
                                 items=data.get("items"))}
@@ -6495,6 +6544,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             and "log" not in _op_kinds:
         logger.info("event=split_refused_incomplete %s", (message or "")[:60])
         return {"action": "ask",
+                "ask_types": (_AT.UNCLASSIFIED,),
                 "text": ("I can split that, but I need both halves so the "
                          "total stays right — what should each part be?"),
                 "points": ["both components of the split"]}
@@ -6531,6 +6581,7 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             # `kind="confirm"` reuses the deterministic yes-replay: a yes logs
             # THESE items through the same builder, with no second parse.
             return {"action": "ask", "kind": "confirm",
+                    "ask_types": (_AT.CONSUMPTION_COMPLETE,),
                     "text": acquisition_question(_items_a),
                     "items": _items_a,
                     "tool_calls": calls, "say": say[:400],

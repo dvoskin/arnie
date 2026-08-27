@@ -1,3 +1,14 @@
+
+from skills.nutrition.ask_type import ALL as _ASK_TYPE_ALL
+#: ⛔ The tool's `kind` USED to declare its own vocabulary
+#: (cook_method|brand|portion|ingredient|other) which disagreed with the
+#: structured lane's. It reaches a durable field, so it was a SECOND
+#: canonical enum. It is now the one vocabulary, minus `unclassified` --
+#: the model must not be offered 'I could not tell' as a choice; an
+#: unmappable ask becomes unclassified downstream, not by the model
+#: electing it.
+_ASK_TYPE_ENUM = tuple(t for t in _ASK_TYPE_ALL if t != 'unclassified')
+
 """
 Arnie tool definitions — Anthropic function-calling schema.
 
@@ -1061,7 +1072,7 @@ _CLARIFICATION_TOOLS = [
                 },
                 "kind": {
                     "type": "string",
-                    "enum": ["cook_method", "brand", "portion", "ingredient", "other"],
+                    "enum": list(_ASK_TYPE_ENUM),
                     "description": "What sort of clarification this is.",
                 },
                 "impact_cal": {

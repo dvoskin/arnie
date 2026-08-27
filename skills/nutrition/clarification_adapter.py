@@ -129,12 +129,18 @@ def _attribute_of(text: str) -> str:
     attribute at all. DELETION MILESTONE: it goes when the producers emit
     `ClarificationField` directly, and until then this type WRAPS the
     prose-parsing architecture rather than replacing it. Uses the food lane's
-    own `_facet_kind` rather than a second classifier, so at least there is one
+    own `_render_facet` rather than a second classifier, so at least there is one
     guess and not two.
     """
     try:
-        from core.food_turn import _facet_kind
-        return _facet_kind(text)
+        # ⛔ RENAMED 2026-08-27 (`_facet_kind` -> `_render_facet`) when the
+        # canonical ask-type vocabulary landed. THIS IMPORT SITS INSIDE A BARE
+        # EXCEPT: the rename broke it silently and every field fell back to
+        # "detail". Only `test_the_live_ask_produces_two_answerable_fields`
+        # noticed. A cross-module import behind `except Exception` is a
+        # rename away from being permanently dead.
+        from core.food_turn import _render_facet
+        return _render_facet(text)
     except Exception:
         return "detail"
 
