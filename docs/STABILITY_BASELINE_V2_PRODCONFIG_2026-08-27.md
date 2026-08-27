@@ -145,3 +145,49 @@ source scripts/prodenv.sh
 REPS=2 OUTJSONL=/tmp/sweep.jsonl python scripts/sweep_case_stability.py
 python scripts/classify_case_stability.py /tmp/sweep.jsonl
 ```
+
+---
+
+# CONFIRMATION PASS — 10 candidates × 6 reps = 60 turns
+
+Same instrument, same config guard, `ONLY_CASES=2,3,8,12,14,16,17,23,24,25`.
+Zero UNMEASURED. SELFTEST OK.
+Raw: `data/corpus/stability_confirm10_2026-08-27.jsonl`.
+
+| case | n=2 | n=6 | combined | verdict |
+|---:|---|---|---|---|
+| 2 | `AA` | `AAAAAA` | **8/8 ASK** | ✅ confirmed |
+| 3 | `AA` | `AAAAAA` | **8/8 ASK** | ✅ confirmed |
+| 8 | `AA` | `AAALAA` | 7/8 ASK, 1 LOG | ⛔ **flips** |
+| 12 | `AA` | `AAAAAA` | **8/8 ASK** | ✅ confirmed |
+| 14 | `AA` | `AAAAAA` | **8/8 ASK** | ✅ confirmed |
+| 16 | `AA` | `AAAAAA` | **8/8 ASK** | ✅ confirmed *(OILS-owned)* |
+| 17 | `AA` | `AAAAAA` | **8/8 ASK** | ✅ confirmed |
+| 23 | `AA` | `AAAAAA` | **8/8 ASK** | ✅ confirmed |
+| 24 | `AA` | `AAAAAA` | **8/8 ASK** | ✅ confirmed |
+| 25 | `AA` | `AAAAAA` | **8/8 ASK** | ✅ confirmed |
+
+**9 of 10 survive at 8/8.** P(8/8 one way | true coin-flip) ≈ 0.4 %, so these
+are not agreement-by-luck — the n=2 shortlist held.
+
+**Case 8 is the one that flips**, and its single LOG was structurally CORRECT
+(3 rows in `[2,3]`, 860 kcal in `[742,1238]`) — so it is genuinely borderline,
+not broken. It leaves the population and belongs with the unstable set.
+
+**Zero prose-only asks in 60 turns.** The non-durable clarification defect did
+not appear anywhere in this subset, which confirms it is narrow — confined to
+cases 1 and 11 — rather than a property of asking in general.
+
+## The certified DEFAULTABILITY population
+
+**8 cases: `2, 3, 12, 14, 17, 23, 24, 25`** (case 16 confirmed too but is
+OILS-owned). All frozen `LOG_COMPLETE`, all stably asking through the
+structured lane. By the agreed ladder — *8+ justifies a real tranche
+immediately* — **DEFAULTABILITY re-opens as a full tranche.** It was closed at
+a population of 1 on the invalid run.
+
+⛔⛔ **AND STILL NO CRITERION.** The shape these asks share — the primary item
+priced confidently, the question aimed at an unstated portion of a SECONDARY
+component (*"Fries are sitting open — regular or large?"*) — was observed on
+the corpus it would be derived from. Three criteria have now died that way.
+It earns policy status only through held-out discrimination.
