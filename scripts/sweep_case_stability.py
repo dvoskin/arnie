@@ -117,9 +117,14 @@ REPS = int(os.environ.get("REPS", "4"))
 OUT = pathlib.Path(os.environ["OUTJSONL"])
 RUN = uuid.uuid4().hex[:6]
 CONFIG = pin_config()          # ⛔ refuses to run on undeclared drift
-CORPUS = json.load(open("data/corpus/real_meal_expectations_v1.json"))
+# ⭐ THE CORPUS IS SELECTABLE, THE INSTRUMENT IS NOT. A held-out set must run
+# through this harness and this config guard -- a second script is a second
+# instrument, and two instruments that agree today disagree later.
+_CORPUS_FILE = os.environ.get("CORPUS_FILE",
+                              "data/corpus/real_meal_expectations_v1.json")
+CORPUS = json.load(open(_CORPUS_FILE))
 CASES = CORPUS["cases"] if isinstance(CORPUS, dict) else CORPUS
-assert len(CASES) == 25, len(CASES)
+assert len(CASES) >= 1, "empty corpus"
 
 # ⭐ SUBSET RUNS ARE FIRST-CLASS, and still config-pinned. A confirmation pass
 # on a shortlist (e.g. the stable-ASK candidates at higher reps) must go
@@ -211,7 +216,7 @@ async def main():
     await _selftest(session)
     fh = OUT.open("w")
     fh.write(json.dumps({"_config": CONFIG, "_reps": REPS,
-                         "_corpus": "real_meal_expectations_v1",
+                         "_corpus": _CORPUS_FILE,
                          "_only_cases": sorted(_ONLY) or "all"}) + "\n")
     fh.flush()
     total = REPS * len(CASES); done = 0

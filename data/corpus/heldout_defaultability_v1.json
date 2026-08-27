@@ -1,0 +1,254 @@
+{
+  "name": "heldout_defaultability_v1",
+  "created": "2026-08-27",
+  "frozen": true,
+  "purpose": "HELD-OUT discrimination for DEFAULTABILITY. OUT OF SAMPLE: none of these appear in real_meal_expectations_v1. H1 under test: 'the system asks when a confidently-priced PRIMARY is accompanied by an UNSPECIFIED SECONDARY component.' expected_terminal here is H1's PREDICTION, not a frozen product requirement. Calorie/protein ranges are deliberately WIDE: this corpus scores TERMINAL behaviour, and the classifier's `pass` column is NOT meaningful for it.",
+  "falsification": [
+    "A and B do not separate (both ask, or both log) -> H1 is DEAD; the rule is not about secondary specification.",
+    "109 asks -> the driver is COMPONENT COUNT, not specification.",
+    "110 asks -> the driver is ANY unspecified quantity, not secondary-ness.",
+    "112 asks -> specification is not the driver at all."
+  ],
+  "cases": [
+    {
+      "id": 101,
+      "message": "A McDonald's Big Mac and fries",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        600,
+        1300
+      ],
+      "expected_protein_range": [
+        20,
+        45
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[ARM A] A \u2014 the shape: confident primary + UNSPECIFIED secondary. H1 predicts ASK."
+    },
+    {
+      "id": 102,
+      "message": "A Chick-fil-A Spicy Chicken Sandwich and waffle fries",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        650,
+        1200
+      ],
+      "expected_protein_range": [
+        22,
+        48
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[ARM A] A \u2014 the shape: confident primary + UNSPECIFIED secondary. H1 predicts ASK."
+    },
+    {
+      "id": 103,
+      "message": "8 oz grilled salmon with a side of white rice",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        450,
+        950
+      ],
+      "expected_protein_range": [
+        38,
+        70
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[ARM A] A \u2014 the shape: confident primary + UNSPECIFIED secondary. H1 predicts ASK."
+    },
+    {
+      "id": 104,
+      "message": "A Starbucks grande caffe latte and a croissant",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        300,
+        700
+      ],
+      "expected_protein_range": [
+        10,
+        28
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[ARM A] A \u2014 the shape: confident primary + UNSPECIFIED secondary. H1 predicts ASK."
+    },
+    {
+      "id": 105,
+      "message": "A McDonald's Big Mac and a medium fries",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        700,
+        1100
+      ],
+      "expected_protein_range": [
+        22,
+        42
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[ARM B] B \u2014 matched control: identical to its pair with the SECONDARY SPECIFIED. H1 predicts LOG. Pairs with 101."
+    },
+    {
+      "id": 106,
+      "message": "A Chick-fil-A Spicy Chicken Sandwich and a medium waffle fries",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        700,
+        1100
+      ],
+      "expected_protein_range": [
+        24,
+        44
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[ARM B] B \u2014 matched control: identical to its pair with the SECONDARY SPECIFIED. H1 predicts LOG. Pairs with 102."
+    },
+    {
+      "id": 107,
+      "message": "8 oz grilled salmon with 1 cup of white rice",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        500,
+        900
+      ],
+      "expected_protein_range": [
+        40,
+        68
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[ARM B] B \u2014 matched control: identical to its pair with the SECONDARY SPECIFIED. H1 predicts LOG. Pairs with 103."
+    },
+    {
+      "id": 108,
+      "message": "A Starbucks grande caffe latte and a Starbucks butter croissant",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        330,
+        620
+      ],
+      "expected_protein_range": [
+        11,
+        26
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[ARM B] B \u2014 matched control: identical to its pair with the SECONDARY SPECIFIED. H1 predicts LOG. Pairs with 104."
+    },
+    {
+      "id": 109,
+      "message": "A homemade burrito bowl with 5 oz grilled chicken, 1 cup white rice, half a cup of black beans, 1 oz shredded cheese, and 2 tablespoons of sour cream",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        550,
+        950
+      ],
+      "expected_protein_range": [
+        45,
+        80
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[ARM C] C \u2014 proxy control. COMPONENT-COUNT proxy: 5 components, ALL specified. If it ASKS, the driver is component count, not specification."
+    },
+    {
+      "id": 110,
+      "message": "A bowl of oatmeal",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        400
+      ],
+      "expected_protein_range": [
+        3,
+        15
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[ARM C] C \u2014 proxy control. SECONDARY-NESS proxy: one item, unspecified, NO secondary. If it ASKS, the driver is any unspecified quantity, not secondary-ness."
+    },
+    {
+      "id": 111,
+      "message": "Some grilled chicken and a medium McDonald's fries",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        350,
+        800
+      ],
+      "expected_protein_range": [
+        22,
+        55
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[ARM C] C \u2014 proxy control. INVERTED: vague PRIMARY, fixed secondary. Records WHICH component is asked about."
+    },
+    {
+      "id": 112,
+      "message": "A Wendy's Baconator, a small chili, and a small Frosty",
+      "expected_terminal": "LOG_COMPLETE",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        1200,
+        1900
+      ],
+      "expected_protein_range": [
+        60,
+        105
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[ARM C] C \u2014 proxy control. BRANDED proxy: 3 named fixed items, composition-heavy. If it ASKS, specification is not the driver."
+    }
+  ]
+}
