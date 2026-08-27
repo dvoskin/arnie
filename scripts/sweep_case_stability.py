@@ -169,9 +169,21 @@ async def _observe(db, uid):
     qs = [q for q in (await db.execute(
           select(PendingQuestion).where(PendingQuestion.user_id == uid))
           ).scalars().all() if not getattr(q, "answered_at", None)]
+    # ⭐ THE DURABLE ASK TYPE, read the way a production consumer would: out of
+    # `payload_json`, never from the classifier's return value and never by
+    # reading `pq.tier` (which already means follow-up urgency).
+    ask_types = []
+    for q in qs:
+        try:
+            import json as _j
+            ask_types += list((_j.loads(getattr(q, "payload_json", None) or "{}")
+                               or {}).get("ask_types") or [])
+        except Exception:
+            pass
     out = {"rows": [{"name": r.parsed_food_name, "cal": float(r.calories or 0),
                      "protein": float(r.protein or 0)} for r in rows],
            "questions": [str(getattr(q, "question", "") or "")[:220] for q in qs],
+           "ask_types": ask_types,
            "q_kinds": [str(getattr(q, "kind", "") or "") for q in qs]}
     out["kcal"] = sum(r["cal"] for r in out["rows"])
     out["protein"] = sum(r["protein"] for r in out["rows"])
