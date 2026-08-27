@@ -2768,6 +2768,30 @@ def _proposed_ask_is_material(data, *, mode: str, user) -> bool:
             if item.get("branded"):
                 return True
 
+    # ⚠ MEAL-LEVEL MATERIALITY WAS TRIED HERE AND REVERTED, 2026-08-26.
+    #
+    # The rule intended: *materiality applies to the resulting nutrition
+    # decision, not to the number of uncertain fields*. The implementation
+    # required a field to be material against BOTH its own item AND the whole
+    # meal — an AND — and measured over the frozen 25-meal corpus that was
+    # strictly worse:
+    #
+    #   case 16 (anchor)   0/2 -> 0/2   still asks; a 200-cal span on a ~1200
+    #                                   meal cleared both views anyway
+    #   case 22 (counter)  1/2 -> 0/2   LOST the ability to ask at all
+    #
+    # ⛔⛔⛔ THE AND INVERTED THE INTENT. `is_material` already takes an item
+    # denominator so the fraction rule catches a span that DOMINATES a small
+    # item — an 80-cal swing on a 210-cal egg is most of the egg. Requiring the
+    # meal view as well suppresses exactly that case: 80 against a ~760 meal
+    # fails the meal fraction, so a genuinely material preparation question was
+    # demoted to a blind estimate. It made asking about SMALL components
+    # harder and asking about big ones no harder — the opposite of the rule.
+    #
+    # ⭐ WHAT THE NEXT ATTEMPT NEEDS: the meal view as a stricter threshold
+    # with the item fraction as a RESCUE, not a second hurdle. An OR, not an
+    # AND. Reverted rather than tuned, because a policy that fails its own
+    # counter-fixture should not ship while someone looks for a constant.
     for a in reported:
         try:
             span = float(a.get("impact_cal") or 0)

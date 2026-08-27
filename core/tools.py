@@ -1041,7 +1041,12 @@ _CLARIFICATION_TOOLS = [
             "already have the info needed to log — only when you're explicitly "
             "deferring the log on a question. The next turn's context will show "
             "this as PENDING CLARIFICATION so you don't re-ask. Auto-resolves "
-            "when log_food fires (or after 30 min)."
+            "when log_food fires (or after 30 min). "
+            "You MUST report `impact_cal`: how much the answer would actually "
+            "move the number. The question is only kept if the answer matters "
+            "enough to be worth interrupting someone for — otherwise the meal "
+            "is logged under your stated assumption, which is the better "
+            "outcome for the user."
         ),
         "input_schema": {
             "type": "object",
@@ -1059,8 +1064,32 @@ _CLARIFICATION_TOOLS = [
                     "enum": ["cook_method", "brand", "portion", "ingredient", "other"],
                     "description": "What sort of clarification this is.",
                 },
+                "impact_cal": {
+                    "type": "number",
+                    "description": (
+                        "REQUIRED. How many calories the answer could MOVE — "
+                        "the span between the plausible low and high answers "
+                        "for THIS item, not the item's total. 'Eggs plain vs "
+                        "fried in butter' is about 110 (210 to 320). 'Normal "
+                        "vs generous rice scoop' is about 100. If the answer "
+                        "barely changes the number, say so honestly with a "
+                        "small value — a small span means the meal gets "
+                        "logged instead of interrupting them, which is "
+                        "usually the better outcome."
+                    ),
+                },
+                "item_cal": {
+                    "type": "number",
+                    "description": (
+                        "Your best estimate of THIS item's calories as "
+                        "assumed. A 90-calorie span on a 120-calorie item is "
+                        "most of the item; the same span on a 900-calorie "
+                        "meal is noise. The span alone cannot tell them "
+                        "apart."
+                    ),
+                },
             },
-            "required": ["question", "food_item"],
+            "required": ["question", "food_item", "impact_cal"],
         },
     },
 ]
