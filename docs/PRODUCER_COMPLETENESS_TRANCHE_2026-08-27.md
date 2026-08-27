@@ -94,3 +94,37 @@ back **GREEN**: the guard refused it because it was UNPROVEN, so the
 unprovenness *shielded* the mutation — **two guards in series with the outer
 answering for both**, the P3 shape again. The membership is now asserted
 directly so the test stands on its own.
+
+---
+
+## EXIT CRITERIA (binding, Danny 2026-08-27)
+
+**PRODUCER-LEVEL, NOT CLASSIFIER-LEVEL.** A passing mapper is not an exit.
+
+1. The real path produces `consumption_complete`.
+2. The real path produces the other currently unproven subjects
+   (`unstated_extras`, `portion_multiplier`) **when legitimately present**.
+3. Compound questions produce **multiple structured subjects** rather than
+   collapsing into one.
+4. **No defaultability policy consumes a subject without producer proof.**
+   *(Already enforced — `tests/test_protected_types_have_proven_producers.py`.)*
+
+⛔ **DO NOT OPTIMISE PREVALENCE YET.** Rerun T1 only once 1–3 hold. Only then
+does `menu_size = X %` become a number worth acting on.
+
+## The contract failure, stated exactly
+
+The problem is no longer *"why does clarification behaviour feel wrong?"* It is:
+
+> **The semantic vocabulary is richer than the interpreter's representation.**
+
+That is a far smaller and more tractable problem than rebuilding DEFAULTABILITY
+policy — and it is the whole of what this tranche owns.
+
+## ⭐⭐⭐ THE DISTINCTION THAT CLOSES TODAY'S LOOPHOLE
+
+> **A semantic type may exist in the vocabulary without being authoritative.
+> Authority begins only when a real producer for that type has been proven.**
+
+Correct mapper · correct guard · impossible input — that combination passed
+every test today until the producer itself was measured.
