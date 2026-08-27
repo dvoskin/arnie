@@ -149,7 +149,10 @@
 > Real-meal instrument fix    ✅ ASK != DROP; all 25 asserted scored
 > Full-turn completion        ✅ BASELINED 56% (14/25), labels frozen
 > CF27 tier-0 unit replay     🟡 registered, NOT implemented
-> Case 24 over-clarification  🟡 first measured product defect — next target
+> Materiality / reachability  ✅ CLOSED — routing SHIPPED, policy REJECTED
+> Defaultability              🟡 NEXT TRANCHE (11, 23 -> LOG · 18 -> ASK)
+> OILS                        🟡 owns 16 and 22 (unstated added-fat component)
+> Case 24 silent NO_ACTION    🟡 separate deterministic defect, own trace
 > Product roadmap             ⏸ PAUSED until CF24 attribution closes
 > ```
 >
@@ -167,6 +170,44 @@
 > `docs/CF24_CLOSURE_RECORD.md`,
 > `docs/CF25_REGISTERED_SHRIMP_CRACKER_MISMATCH.md`,
 > `docs/CF26_REGISTERED_CACHE_DISAGREES_WITH_THE_MEAL.md`.
+>
+> ── ⭐⭐⭐ CLARIFICATION IS NOT A MAGNITUDE DECISION *(measured 2026-08-27)* ──
+>
+> **Clarification cannot be decided from impact magnitude alone. The missing
+> variable is whether the system has a defensible default for the unresolved
+> attribute.** Record: `docs/MATERIALITY_TRANCHE_CLOSED_2026-08-27.md`.
+>
+> Three fixture pairs, none separable on the quantity the policy reads:
+>
+> ```text
+>               span   of item   of meal   label      the pair that killed it
+> case 16        200     .417      .167    LOG    ─┐ 16 DOMINATES 22 on every
+> case 22         80     .381      .105    ASK    ─┘ axis; no monotone rule works
+>
+> case 11        300      —         —      LOG    ─┐ IDENTICAL consequence,
+> case 18        300      —         —      ASK    ─┘ OPPOSITE outcome
+> ```
+>
+> ⛔⛔ `item_cal` came back **None** on that path, so the fraction branch is not
+> merely insufficient there — it is **unavailable**.
+>
+> ⭐ **TWO ONTOLOGY CORRECTIONS, ZERO THRESHOLDS TUNED.** The first split
+> *"does the amount of a declared thing matter?"* from *"does an undeclared
+> component exist?"* — moving 16 and 22 to OILS. The second found that what
+> remains is not magnitude at all: a burrito and a parfait have conventional
+> defaults, a *Mediterranean platter* has none.
+>
+> ⛔ **A BARE `has_conventional_default` BOOLEAN IS REFUSED** — it makes the
+> model an unreviewable policy oracle. Any signal must be evidence-bearing:
+> `default_basis = conventional_serving | explicit_context | product_serving |
+> none`, with provenance, so policy consumes a TYPED FACT.
+>
+> ⭐ **WHAT DID SHIP: REACHABILITY.** 2 of 25 clarifications ever reached the
+> materiality rule; 23 came through the `note_food_clarification` tool, whose
+> handler recorded any ask with no decision at all. Both paths now cross the
+> same one, before the write. Reachability alone moved no fixture — 11 and 23
+> reach the decision and it keeps their asks — which is precisely the evidence
+> that the policy, not the plumbing, was wrong.
 >
 > ── ⛔⛔⛔ THE SETTLEMENT OWNER ONLY RUNS ON iOS *(measured 2026-08-26)* ────
 >
