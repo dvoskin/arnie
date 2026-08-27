@@ -11,7 +11,19 @@ criterion, not a proof. Case 23 alone carries n=8 from the prior run.
 """
 import json, pathlib, collections, sys
 
-recs = [json.loads(l) for l in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+_lines = [json.loads(l) for l in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+# ⭐ THE FIRST LINE IS THE RESOLVED CONFIGURATION. A run can no longer be read
+# without it — the 2026-08-27 sweep was frozen as a baseline while every
+# declared production flag was unset in its shell.
+CONFIG = next((l["_config"] for l in _lines if "_config" in l), None)
+recs = [l for l in _lines if "_config" not in l]
+if CONFIG is None:
+    print("⚠ NO CONFIG HEADER — this run predates config pinning. Its flag\n"
+          "  environment is unknown and it must not be treated as a baseline.\n")
+else:
+    _k = ("FOOD_GATE_MODEL", "NUTRITION_RESOLVER_MODE", "DEFAULT_MODEL",
+          "TURN_COORDINATOR_MODE", "FOOD_COMPOSER")
+    print("config: " + "  ".join(f"{k}={CONFIG.get(k)!r}" for k in _k) + "\n")
 corpus = json.load(open("data/corpus/real_meal_expectations_v1.json"))
 CASES = {c["id"]: c for c in (corpus["cases"] if isinstance(corpus, dict) else corpus)}
 WANT = {"LOG_COMPLETE": "LOG", "ASK_CORRECT": "ASK"}
