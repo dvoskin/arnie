@@ -1,0 +1,49 @@
+{
+  "_doc": "PRODUCER EVIDENCE per canonical ask type. A type is `proven` only when a REAL path was observed emitting it, with the run and case cited. Enforced by tests/test_protected_types_have_proven_producers.py.",
+  "_rule": "NEVER TREAT 'GUARD PASSES' AS EVIDENCE UNLESS THE PROTECTED STATE IS PROVEN REACHABLE. A mapping can be correct while its protected input never occurs -- which is how a consumption question came to be labelled menu_size while the negative-invariant test passed.",
+  "_measured": "data/corpus/t1_local_screening_2026-08-27.jsonl (50 turns, prod config)",
+  "types": {
+    "menu_size": {
+      "status": "proven",
+      "turns": 7,
+      "evidence": "t1_local_screening 2026-08-27",
+      "note": "\u26a0 PROVEN BUT CONTAMINATED \u2014 case 2 rep2 is a consumption question wearing this label. Producer exists; it is not CLEAN."
+    },
+    "continuous_portion": {
+      "status": "proven",
+      "turns": 11,
+      "evidence": "t1_local_screening 2026-08-27",
+      "note": "\u26a0 case 3 rep1 is a portion_multiplier question wearing this label."
+    },
+    "preparation_fat": {
+      "status": "proven",
+      "turns": 10,
+      "evidence": "t1_local_screening 2026-08-27",
+      "note": ""
+    },
+    "identity_variant": {
+      "status": "proven",
+      "turns": 2,
+      "evidence": "t1_local_screening 2026-08-27",
+      "note": ""
+    },
+    "consumption_complete": {
+      "status": "unproven",
+      "turns": 0,
+      "evidence": null,
+      "note": "\u26d4 ZERO producers. Observed being emitted AS menu_size (case 2). The one type with no defensible default is the one that collapses into a defaultable one."
+    },
+    "unstated_extras": {
+      "status": "unproven",
+      "turns": 0,
+      "evidence": null,
+      "note": "\u26d4 ZERO producers in 50 turns."
+    },
+    "portion_multiplier": {
+      "status": "unproven",
+      "turns": 0,
+      "evidence": null,
+      "note": "\u26d4 ZERO producers. The Panda probe called the typing helper with an EMPTY ambiguities list; case 3 emits continuous_portion instead."
+    }
+  }
+}
