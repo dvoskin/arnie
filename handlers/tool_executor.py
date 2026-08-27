@@ -6863,6 +6863,48 @@ async def _dispatch(name, inp, user, today_log, db, source_type,
         food_item = (inp.get("food_item") or "").strip()
         if not question or not food_item:
             return "Missing question or food_item"
+
+        # ⛔⛔⛔ THE SHARED MATERIALITY DECISION, AND THIS PATH USED TO SKIP IT.
+        #
+        # Measured 2026-08-26 over the frozen 25-meal corpus: only 2 of 25
+        # clarifications ever reached `_proposed_ask_is_material`. The other
+        # twenty-three came through THIS tool, which recorded whatever the
+        # model proposed and replied "just ask the question naturally" — no
+        # span, no mode, no day-share, no decision. Two clarification paths
+        # with completely different rigour, and the ungated one carried most
+        # of the traffic.
+        #
+        # ⭐ ONE DECISION, NOT A SECOND IMPLEMENTATION. This calls the SAME
+        # function the structured lane calls, shaped into the same
+        # `ambiguities` record it already scores. A second materiality rule
+        # here would be two policies disagreeing again — the exact condition
+        # `skills/nutrition/materiality` was written to end.
+        # ⭐ THE SAME MODE ACCESSOR THE STRUCTURED LANE USES. A second reading
+        # of "which mode is this user in" is a second policy by another name.
+        from core.food_turn import _mode as _food_mode
+        from core.food_turn import _proposed_ask_is_material
+        _md = _food_mode(user)
+        _proposal = {
+            "action": "ask",
+            "items": [{"food": food_item, "calories": inp.get("item_cal")}],
+            "ambiguities": [{
+                "item": food_item,
+                "field": str(inp.get("kind") or "other"),
+                "impact_cal": inp.get("impact_cal"),
+            }] if inp.get("impact_cal") is not None else [],
+        }
+        if not _proposed_ask_is_material(_proposal, mode=_md, user=user):
+            logger.info(
+                "event=clarification_demoted user=%s item=%r impact_cal=%r "
+                "mode=%s — the answer does not move the number enough to "
+                "interrupt for", user.id, food_item, inp.get("impact_cal"),
+                _md)
+            return (
+                f"Not worth asking about — the answer would only move this by "
+                f"~{inp.get('impact_cal')} calories. Log '{food_item}' now "
+                f"under your stated assumption and say what you assumed, "
+                f"briefly. Do NOT ask the question."
+            )
         try:
             from db.queries import record_pending_question, get_open_pending_question
             # Use kind="food_clarification" — invisible to reminders module

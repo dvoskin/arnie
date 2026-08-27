@@ -117,8 +117,20 @@ async def _cleanup(session, user_id):
     """Delete one identity's data. Tables discovered, never hand-listed."""
     from sqlalchemy import delete, select
 
-    from db.models import Base, User
+    from db.models import Base, DailyLog, User
     async with session() as db:
+        # ⛔ NOT EVERY CHILD IS KEYED BY `user_id`. `food_entries` hangs off
+        # `daily_log_id`, so a user_id-only sweep skips it and the
+        # `daily_logs` delete then dies on its foreign key. Delete by the
+        # day's id FIRST, then by user, then the user.
+        log_ids = (await db.execute(
+            select(DailyLog.id).where(DailyLog.user_id == user_id))
+        ).scalars().all()
+        if log_ids:
+            for table in reversed(Base.metadata.sorted_tables):
+                col = table.c.get("daily_log_id")
+                if col is not None:
+                    await db.execute(table.delete().where(col.in_(log_ids)))
         for table in reversed(Base.metadata.sorted_tables):
             if table.name == "users":
                 continue
@@ -212,11 +224,18 @@ async def _score_one(session, user_id, case, run_id):
                 return ("WRONG_CLARIFICATION",
                         f"asked, but this meal should {expected}: "
                         f"{str(getattr(asked[-1], 'question', ''))[:44]!r}")
-            probe = " ".join([
-                str(getattr(asked[-1], "question", "") or ""),
-                str(getattr(asked[-1], "item_referenced", "") or ""),
-                str(getattr(resumable[-1], "unresolved_fields", "") or "")
-                if resumable else ""]).lower()
+            # ⛔ EVERY OPEN QUESTION, NOT JUST THE LAST. A turn can leave more
+            # than one — case 23 left a `food_clarification` AND a
+            # `conversation_hook` — so reading `asked[-1]` alone can miss the
+            # question that carries the field. Case 22 scored
+            # WRONG_CLARIFICATION on exactly that: its behaviour was correct
+            # ("eggs land anywhere from 210 plain to 320 fried in butter") and
+            # the scorer was looking at the wrong row.
+            probe = " ".join(
+                [str(getattr(q, "question", "") or "") for q in asked]
+                + [str(getattr(q, "item_referenced", "") or "") for q in asked]
+                + [str(getattr(o, "unresolved_fields", "") or "")
+                   for o in resumable]).lower()
             #: the clarification field, as the QUESTION would express it
             _WORDS = {"portion_size": ("how much", "how big", "how many",
                                        "portion", "size", "cup", "oz", "grams"),
