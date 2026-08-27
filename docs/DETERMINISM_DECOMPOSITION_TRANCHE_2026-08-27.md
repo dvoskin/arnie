@@ -105,3 +105,36 @@ the cases it was tested on.** Do not write a third.
   span thresholds is regression-by-forgetting.
 - **Frozen terminal labels are unchanged** by this tranche.
 - **Case 23** remains a registered case-specific gap, not a tranche.
+
+---
+
+# ⛔ DEMOTED 2026-08-27 — TRANCHE → NARROW RESIDUAL DEFECTS
+
+**This tranche was opened on invalid-config evidence and is largely dissolved.**
+See `STABILITY_BASELINE_V2_PRODCONFIG_2026-08-27.md`.
+
+| population | as opened | under production config |
+|---|---:|---:|
+| representation instability (D) | 3 cases | **0** |
+| terminal instability (E) | 5 cases | **3** — `1, 9, 20` |
+| non-durable clarification (F) | 5 turns / 5 cases | **3 turns / 2 cases** — `1, 11` |
+
+**Family D was an artifact of the wrong gate.** The `[5,1]`, `[1,2,2]`,
+`[1,5,5]` decompositions came from the LEGACY free-tool fallback that 23 of 25
+cases dropped into when `FOOD_GATE_MODEL` was unset. Zero cases produce
+differing row counts under production config.
+
+**What survives, as registered defects rather than a tranche:**
+
+- **Durability / prose-only ask** — cases 1 and 11. Arnie asks in prose, calls
+  no tool (or calls one that leaves no row), and creates no answerable state.
+  A correctness bug regardless of frequency: the user cannot complete the
+  interaction. ⛔ **NOT caused by the materiality demotion** —
+  `_proposed_ask_is_material` returns True for the observed inputs
+  (`impact_cal=250`, `item_cal=950`) in all three modes. Cause unknown.
+  ⭐ **Zero prose-only asks in the 60-turn confirmation**, so this is narrow and
+  must not be scoped as a broad repair.
+- **Case 11** — deterministically silent (`··`), the sharpest reproduction.
+- **Case 20** — inconsistent package semantics, registered as `CF28`.
+
+The held-out work now belongs to `DEFAULTABILITY_TRANCHE_OPEN_2026-08-27.md`.
