@@ -70,7 +70,8 @@ def _spy_staged(decision, data):
     out = _orig_staged(decision, data)
     try:
         qs = []
-        for q in (getattr(decision, "questions", None) or ()):
+        _cl = getattr(decision, "clarification", None)
+        for q in (getattr(_cl, "questions", None) or ()):
             fields = tuple(str(f) for f in (getattr(q, "requested_fields", None) or ()))
             qs.append({"question_id": getattr(q, "question_id", ""),
                        "requested_fields": fields,

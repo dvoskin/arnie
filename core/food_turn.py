@@ -88,8 +88,17 @@ def _ask_types_staged(decision, data) -> tuple:
     than silently borrowing another producer's answer.
     """
     from skills.nutrition.ask_type import UNCLASSIFIED, classify_all_staged
+    # ⛔⛔ THE QUESTIONS ARE ON `.clarification`, NOT ON THE PLAN. `_decision` is
+    # the TurnPlan from `plan_turn`, which HOLDS a ClarificationDecision at
+    # `.clarification`; `.asks` is the plan's own property. A first version read
+    # `decision.questions`, always got nothing, and fell through to the
+    # interpreter — so the "authority fix" was INERT while looking correct, and
+    # a whole census reported staged types that had actually come from the
+    # fallback. Same shape as the CF23 guard that was true of rows nobody could
+    # create.
     try:
-        out = classify_all_staged(getattr(decision, "questions", None))
+        qs = getattr(getattr(decision, "clarification", None), "questions", None)
+        out = classify_all_staged(qs)
     except Exception:
         out = ()
     return out or _ask_types_from(data) or (UNCLASSIFIED,)

@@ -105,3 +105,51 @@ def test_where_the_two_STORES_share_a_field_name_they_AGREE():
             f"field {k!r} means {AT._FIELD_MAP[k]} to the interpreter but "
             f"{AT._STAGED_MAP[k]} to the staged pipeline — one word, two "
             "subjects, which is the four-tables condition again")
+
+
+# ── the test that would have caught the INERT read ───────────────────────────
+class _Q:
+    def __init__(self, fields): self.requested_fields = fields
+class _Clar:
+    def __init__(self, qs): self.questions = tuple(qs)
+class _Plan:
+    """Shaped like `core.food_pipeline.FoodTurnDecision`: the questions live on
+    `.clarification`, and `.asks` is the PLAN's property."""
+    def __init__(self, qs): self.clarification = _Clar(qs)
+    @property
+    def asks(self): return bool(self.clarification.questions)
+
+
+def test_the_staged_typing_ACTUALLY_returns_staged_types_not_the_fallback():
+    """⛔⛔ THE INERT-READ TEST. The first version of `_ask_types_staged` read
+    `decision.questions` — but `_decision` is the PLAN, which holds the
+    ClarificationDecision at `.clarification`. It always got nothing and fell
+    through to the interpreter store, so the "authority fix" was INERT while
+    looking correct, and a 50-turn census reported staged types that had
+    actually come from the fallback.
+
+    The structural test above did NOT catch it: it only asserted the site
+    CALLS `_ask_types_staged`. Same shape as the CF23 guard that was true of
+    rows nobody could create — correct, and inert.
+    """
+    from core.food_turn import _ask_types_staged
+    plan = _Plan([_Q(("consumed_quantity",))])
+    assert plan.asks
+    # interpreter data deliberately says something DIFFERENT, so a fallback is
+    # visible rather than coincidentally equal
+    data = {"ambiguities": [{"item": "x", "field": "prep"}], "items": []}
+    got = _ask_types_staged(plan, data)
+    assert got == (AT.CONSUMPTION_COMPLETE,), (
+        f"staged typing returned {got} — it fell back to the interpreter store "
+        "instead of reading the producer that raised the ask")
+    assert AT.PREPARATION_FAT not in got
+
+
+def test_the_fallback_is_still_reachable_when_the_decision_is_empty():
+    """The fallback is legitimate when there is genuinely nothing staged — but
+    it must not be how staged asks get typed."""
+    from core.food_turn import _ask_types_staged
+    data = {"ambiguities": [{"item": "x", "field": "prep"}], "items": []}
+    assert _ask_types_staged(_Plan([]), data) == (AT.PREPARATION_FAT,)
+    assert _ask_types_staged(None, data) == (AT.PREPARATION_FAT,)
+    assert _ask_types_staged(None, {}) == (AT.UNCLASSIFIED,)
