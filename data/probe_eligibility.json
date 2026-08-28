@@ -6,9 +6,9 @@
       "eligible": true,
       "asks_observed": 1,
       "turns": 1,
-      "code_sha": "0a4099d",
-      "evidence": "qualification 2026-08-27 on code 0a4099d",
-      "note": "BASELINE = corpus c2. Base rate 5/8."
+      "code_sha": "52ca405",
+      "evidence": "provenance qualification on 52ca405",
+      "note": "[SUBJECT] omits ~5/8. Expect staged provenance on the omitting turns."
     },
     "Panda Express Bigger Plate: Orange Chicken, Teriyaki Chicken, and Super Greens": {
       "eligible": true,
@@ -22,9 +22,9 @@
       "eligible": true,
       "asks_observed": 1,
       "turns": 1,
-      "code_sha": "0a4099d",
-      "evidence": "qualification 2026-08-27 on code 0a4099d",
-      "note": "CONTROL = corpus c16. 0/8 zero-record."
+      "code_sha": "52ca405",
+      "evidence": "provenance qualification on 52ca405",
+      "note": "[CONTROL] interpreter-typed, 0/8 omission. Expect NO question_id."
     },
     "I had a Bigger Plate at Panda Express with orange chicken, teriyaki chicken and super greens": {
       "eligible": false,
@@ -54,9 +54,9 @@
       "eligible": true,
       "asks_observed": 1,
       "turns": 1,
-      "code_sha": "0a4099d",
-      "evidence": "qualification 2026-08-27 on code 0a4099d",
-      "note": "TEST arm: fries size word removed."
+      "code_sha": "52ca405",
+      "evidence": "provenance qualification on 52ca405",
+      "note": "[INTERPRETER-TYPED] round-1 test arm, 0/8 omission, ask_types=menu_siz"
     },
     "Panda Express Bigger Plate: Orange Chicken, Teriyaki Chicken, Beijing Beef, Chow Mein": {
       "eligible": true,
