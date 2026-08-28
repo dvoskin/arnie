@@ -453,3 +453,79 @@ Not *"why does the interpreter forget the ambiguity record?"* but:
 That is a far more code-shaped question — a downstream composer or fallback
 renderer is generating a question the structured lane never described.
 **Not investigated here.**
+
+---
+
+# ⭐⭐⭐ CODE-PATH ATTRIBUTION — **TWO ASK STORES, ONE INSTRUMENT**
+
+Zero model turns. Static trace from one omitting turn's signature.
+
+## The seam, exactly
+
+`core/food_turn.py:6304`:
+
+```python
+if _decision is not None and _decision.asks:          # <- STAGED PIPELINE
+    _q = _decision.question
+    _text = await _render(_ctx(clarify_plan(_decision, _q, ...)))
+    ...
+    return {"action": "ask", "text": _text,
+            "ask_types": _ask_types_from(data),        # <- INTERPRETER's object
+```
+
+**The staged pipeline raises the ask from its OWN `_decision.asks`, entirely
+independent of the interpreter's `points` and `ambiguities`.** The question text
+is rendered from `_decision`. But `ask_types` is computed from `data` — a
+different object, empty on these turns — so the ask types as `unclassified`.
+
+## The structure was never missing. It is in the OTHER STORE.
+
+```
+skills/nutrition/clarify_policy.py
+  ClarificationDecision.questions      <- the asks
+  build_questions_for_item(item, ...)  <- built from StagedFoodItem.ambiguities
+  _question_id(staged_item_id, fields) <- the questions carry FIELDS
+```
+
+A staged-pipeline ask is **fully structured** — with per-item ambiguities and
+field names. It simply is not in `data["ambiguities"]`, which is the only place
+the ask-type instrumentation reads.
+
+## ⛔⛔ THIS RETRACTS THE CORRECTION I COMMITTED ONE STEP AGO
+
+> ❌ *"On an omitting turn the interpreter returns an ask carrying NO
+> structured output... the question is produced DOWNSTREAM, in prose."*
+
+Wrong again, in the opposite direction. `points=0, ambiguities=0` means **the
+INTERPRETER raised nothing** — it does NOT mean the ask is unstructured. The
+staged pipeline very likely raised it, with structure of its own.
+
+**Two retractions on the same defect in one session**, both from reading one
+store and generalising to "no structure."
+
+## What D1 probably is
+
+> **NOT "ambiguity record omission." Rather: the system has TWO ask-raising
+> stores — the interpreter's `data.ambiguities` and the staged pipeline's
+> `ClarificationDecision.questions` — and the canonical ask-type instrumentation
+> reads only the first.**
+
+If so:
+- the `unclassified` rate ≈ **the rate of pipeline-raised asks**, not a defect rate;
+- **my instrumentation types the wrong object at 1 of its 4 data-driven sites**;
+- round 1's result restates as: removing *"a small"* moved the ask from the
+  pipeline store to the interpreter store — which is a real behavioural effect,
+  but not "restoring a missing record".
+
+## ⚠ WHAT IS ESTABLISHED vs INFERRED
+
+**Established, from code:** site 6304/6391 exists, returns an ask from
+`_decision.asks`, and types it from `data`. `ClarificationDecision.questions`
+carry fields.
+
+**INFERRED, not yet verified:** that the observed omitting turns actually took
+that branch. The captures never recorded `question_id` / `staged_item_id`,
+which that site returns and `conversation.py` persists — **so one confirmation
+is needed**, and it is cheap: read those fields off a durable row.
+
+**Do not act on the two-store diagnosis until that check passes.**
