@@ -255,3 +255,54 @@ full suite green -> empirical staged-map census -> repair any mismatches
    -> rerun producer registry across both authorities -> recompute D2
    -> ONLY THEN decide whether the three zero-producer subjects truly lack producers
 ```
+
+---
+
+# ⛔⛔⛔ THE D2 GATE — TIGHTENED 2026-08-28 (Danny)
+
+An earlier form said *"every contributing type has a verified producer path."*
+**Not strong enough.** This incident showed that a real field emitted by a real
+producer can still carry the wrong semantics — a consumption question was
+observed wearing `menu_size`, and `menu_size` is in `DEFAULTABLE_CANDIDATES`.
+
+> **Every contributing classification must have an OBSERVED PRODUCER EMISSION
+> whose RAW FIELD → SEMANTIC TYPE mapping has been VALIDATED AGAINST THE
+> RENDERED QUESTION.**
+
+Three conditions, all required, none sufficient alone:
+
+```
+1. observed emission        the field actually flowed on a real path, cited by run
+2. validated mapping        raw field -> semantic type checked, not read off source
+3. rendered-question check  the question the USER SAW matches that semantic type
+```
+
+⭐ **(3) IS THE ONE THIS INCIDENT ADDED.** "Real field + real producer" is not
+enough: `preparation_fat` appeared on a wrap-SIZE question, and that mismatch is
+invisible to any check that stops at the mapping.
+
+## Sequence (binding, do not reorder)
+
+```
+1. corrected census
+2. producer × raw field × rendered-question CONFUSION TABLE   (primary artifact,
+                                                               NOT a histogram)
+3. explain / repair EVERY mismatch, individually
+4. re-run census
+5. freeze the verified producer registry
+6. recompute D2 from VERIFIED PRODUCERS ONLY
+7. re-evaluate DEFAULTABILITY
+8. only then reconsider 27983be
+```
+
+⚠ **The biggest risk now is seeing `consumed_fraction` finally appear and
+rushing back to the defaultability thesis.** The instrument may finally be
+trustworthy; that requires one clean run to demonstrate, not an inference.
+
+## Rows requiring individual explanation
+
+- `mapped_ask_type == unclassified`
+- the rendered subject conflicts with the mapped type
+- producer provenance missing
+- `menu_size` or `continuous_portion` appears *(both carry unresolved pre-fix
+  contamination)*
