@@ -31,7 +31,7 @@
       "status": "unproven",
       "turns": 0,
       "evidence": "producer census 2026-08-28, both authorities",
-      "note": "\u26d4 STILL ZERO IN BOTH STORES. `consumed_quantity` exists in AmbiguityType and never fired across 50 turns."
+      "note": "\u26d4 STILL ZERO IN BOTH STORES after the authority fix. `consumed_quantity` exists in AmbiguityType and never fired across 50 turns of census. \u26d4 AND THE PRE-FIX COLLAPSE STANDS UNRESOLVED: a consumption question was observed wearing the menu_size label (T1 screening, case 2). That is why a menu_size row is not authorization to default. NOT re-verified post-fix."
     },
     "unstated_extras": {
       "status": "unproven",
