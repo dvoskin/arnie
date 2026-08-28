@@ -316,3 +316,59 @@ violation produced either a void arm or a reversed conclusion.**
 **Per the contract: STOP ON FIRST SEPARATION.** Do not layer further variables
 into this round. The next experiment discriminates between the remaining
 explanations — starting with whether c3 shares the mechanism.
+
+---
+
+# CAUSAL ROUND 2 — **c3 IS A DIFFERENT SUBTYPE**
+
+Same `code=0a4099d`, same config, same control as round 1 — so the two rounds
+are directly comparable. 24 turns, 0 errors. Predictions frozen at `c3f8e21`
+before any turn.
+Raw: `data/corpus/d1_causal_round2_result_2026-08-27.jsonl`.
+
+```
+BASELINE  "Panda Express Bigger Plate: A, B, C, D"                 zero-record 3/8
+TEST      "Panda Express Bigger Plate, the 3-entree meal: A,B,C,D" zero-record 4/7
+CONTROL   "8 oz sirloin, a loaded baked potato, Caesar"            zero-record 0/8  ✅
+```
+
+**The baseline reproduced omission** (3/8, meets the ≥3 threshold) and **adding
+a precise structural fact did not reduce it** — 4/7, if anything higher.
+
+## Verdict
+
+> **The size-like lexical mechanism does NOT extend to c3. c3 is a DIFFERENT
+> D1 SUBTYPE and splits from the Five Guys repair.**
+
+Side by side, same code state, same control:
+
+| | baseline | test | separation |
+|---|---|---|---|
+| **round 1** — remove vague size on a SECONDARY COMPONENT | 6/7 | **0/8** | ⭐ dramatic |
+| **round 2** — add precision beside a size-like SKU | 3/8 | 4/7 | none |
+
+## ⭐⭐⭐ THE VALUE OF THIS RESULT IS THAT IT PREVENTS A MERGE
+
+Both utterances present identically at the surface: a branded chain, a
+size-like word, an omitted ambiguity record. **A repair built from round 1 and
+applied to both would have silently failed on c3**, and the failure would have
+looked like an incomplete fix rather than a wrong theory.
+
+⛔ The two mechanisms stay separate, per the frozen instruction. Round 1
+established SECONDARY-COMPONENT vague size causally. Round 2 was the test of
+whether that generalises to a size-like term on the CONTAINER. **It does not.**
+
+## What still does not follow
+
+No brand, SKU, prompt or DEFAULTABILITY conclusion. c3's actual cause remains
+**unknown** — this round rules one explanation out, it does not supply another.
+
+## D1 as now understood
+
+```
+D1a  secondary-component vague size    CAUSE ESTABLISHED (round 1)
+D1b  c3 / Bigger Plate                 CAUSE UNKNOWN — not the size-like term
+```
+
+Next work: a fresh discriminating variable for D1b. Round 1's repair may
+proceed independently for D1a; it must not be presented as fixing D1.
