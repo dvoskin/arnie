@@ -80,6 +80,21 @@ def _ask_types_from(data) -> tuple:
     return out or (UNCLASSIFIED,)
 
 
+def _ask_types_staged(decision, data) -> tuple:
+    """Ask types for a STAGED-PIPELINE ask, from `_decision.questions`.
+
+    Falls back to the interpreter's store only when the decision yields
+    nothing — and that fallback is itself recorded as `unclassified` rather
+    than silently borrowing another producer's answer.
+    """
+    from skills.nutrition.ask_type import UNCLASSIFIED, classify_all_staged
+    try:
+        out = classify_all_staged(getattr(decision, "questions", None))
+    except Exception:
+        out = ()
+    return out or _ask_types_from(data) or (UNCLASSIFIED,)
+
+
 def _ask_types_for_op(op) -> tuple:
     """The unit-revalidation ask: one operation, an amount question on it."""
     from skills.nutrition.ask_type import classify
@@ -6388,7 +6403,14 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
                 logger.warning(f"staged resolution not persisted: {_se}")
                 _staged_payload = []
             return {"action": "ask", "text": _text,
-                    "ask_types": _ask_types_from(data),
+                    # ⭐⭐⭐ TYPED FROM THE PRODUCER THAT RAISED IT. This site
+                    # returns an ask built from `_decision.asks`; typing it
+                    # from `data` read the INTERPRETER's store, which is not
+                    # this ask's authority — every such ask landed
+                    # `unclassified` while carrying full structure of its own.
+                    # Confirmed by durable-row provenance 2026-08-27: 3/3 vs
+                    # 0/10.
+                    "ask_types": _ask_types_staged(_decision, data),
                     "tool_calls": _ready_calls,
                     # WHAT B-1 NEEDS TO JUDGE THIS TURN, carried rather than
                     # decided here. `run()` never touches a database — it is a

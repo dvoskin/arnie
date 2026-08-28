@@ -1,4 +1,64 @@
 > ════════════════════════════════════════════════════════════════════════
+> ⭐⭐⭐ **SEQUENCING AUTHORITY — 2026-08-27.** *(Danny)*
+>
+> **SUPERSEDES the 2026-08-26 banner below.** Nothing is deployed. `27983be`
+> remains HELD (its approval premise measured 1 of 27, not 23 of 25).
+>
+> ## ⛔ D1 IS RETIRED AS A PRODUCT DEFECT
+>
+> D1 ("ambiguity record omission") was an **instrumentation-source bug**, not a
+> product defect. `core/food_turn.py` has TWO ask authorities — the interpreter
+> (`data["ambiguities"]`, 2 field values) and the staged clarification pipeline
+> (`ClarificationDecision.questions`, 9 `AmbiguityType`s). The staged ask site
+> returned an ask raised from `_decision.asks` and typed it from `data`, so
+> every pipeline-raised ask landed `unclassified` while carrying full structure
+> of its own.
+>
+> Confirmed by durable-row provenance: **3/3** omitting asks carried
+> `question_id` + `staged_item_id`; **0/10** interpreter-typed asks did.
+>
+> **Its old base rates, omission language and causal framing are NOT roadmap
+> authority.** Keep the history as an instrumentation incident only.
+> ~150 turns were spent characterising an instrument looking in the wrong store.
+>
+> ## THE SEQUENCE
+>
+> ```text
+> 1 ✅ fix the staged ask site to type from _decision      (done, not deployed)
+> 2 ✅ invariant: the producer that RAISES a clarification
+>      must be the source of its durable ask type          (done)
+> 3 ⏭ RERUN the producer registry across BOTH authorities
+> 4 ⏭ recompute D2 from the combined view
+> 5 ⏭ only then decide whether consumption_complete /
+>      portion_multiplier / unstated_extras truly lack producers
+> 6 ⏭ then T1 / DEFAULTABILITY
+> ```
+>
+> **No new causal experiment before step 3.** Steps 3-4 invalidate the current
+> numbers: D2's `{quantity: 18, prep: 12}` and the producer registry's three
+> "zero producer" entries were measured from the interpreter store ALONE, and
+> the staged store natively distinguishes `consumed_quantity` and
+> `component_breakdown`.
+>
+> ## ⛔⛔⛔ THE CONTRACT THIS COST
+>
+> > **Reproducibility cannot validate authority selection.** A measurement can
+> > be perfectly pinned, stable, controlled and mutation-tested while still
+> > reading the wrong canonical object.
+> >
+> > **Every durable measurement of a semantic outcome must identify the
+> > producer that owned that outcome and read from THAT producer's state.**
+>
+> Enforced at this seam by `tests/test_ask_type_reads_the_raising_producer.py`.
+> The five reproducibility guards (config pinning, criterion registry, producer
+> registry, base-rate-before-cause, probe eligibility) all held throughout and
+> **none could have caught this.**
+>
+> Board: `docs/BOARD_2026-08-27.md`. D1 incident history:
+> `docs/D1_AMBIGUITY_RECORD_OMISSION.md`.
+> ════════════════════════════════════════════════════════════════════════
+
+> ════════════════════════════════════════════════════════════════════════
 > ⭐⭐⭐ **SEQUENCING AUTHORITY — 2026-08-26.** *(Danny)*
 >
 > **THIS SUPERSEDES EVERY SEQUENCE BELOW, INCLUDING THE 2026-08-24 PHASE
@@ -8052,7 +8112,7 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-24 (`72d7c38`, merged main) — CF22 merged, phase changed to product build-out; see the banner at the TOP of this file, which supersedes the sequencing below. Prior stamp: 2026-08-21 (`ef2bf63`) against BOTH TRANCHES
+Last reconciled 2026-08-28 (working tree, undeployed) — D1 RETIRED as a product defect (instrumentation-source bug, two ask authorities); staged ask site now types from `_decision`; producer-authority invariant added. See the 2026-08-27 banner at the TOP, which supersedes the sequencing below. Prior stamp: 2026-08-24 (`72d7c38`)
 CLOSING. What was re-read and corrected rather than date-bumped: CF17 and CF18
 moved OPEN -> MERGED, POST-MERGE REMEDIATION OPEN with the merge SHAs — NOT
 closed: two D2 telemetry defects (the persist-in-flight race; "latest row by

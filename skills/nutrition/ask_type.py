@@ -136,6 +136,56 @@ def classify_all(ambiguities: Optional[Iterable[dict]],
     return tuple(t for t in ALL if t in found)
 
 
+#: ⭐⭐⭐ THE STAGED CLARIFICATION PIPELINE'S OWN VOCABULARY
+#: (`skills/nutrition/ambiguity.AmbiguityType`) → this one.
+#:
+#: ⛔⛔ THE STAGED PIPELINE IS A SECOND ASK AUTHORITY, and until 2026-08-27 the
+#: typing code read the INTERPRETER's `data["ambiguities"]` even for asks the
+#: pipeline raised. Confirmed by durable-row provenance: 3/3 `unclassified`
+#: asks carried `question_id` + `staged_item_id`; 0/10 interpreter-typed asks
+#: did. The asks were never unstructured — they were structured HERE.
+#:
+#: ⚠ AND THIS STORE IS RICHER THAN THE INTERPRETER'S. It distinguishes
+#: `consumed_quantity` and `component_breakdown` natively — two subjects
+#: recorded as having ZERO producers when only the interpreter store was read.
+_STAGED_MAP = {
+    "consumed_quantity": CONSUMPTION_COMPLETE,
+    "package_size": MENU_SIZE,
+    "preparation": PREPARATION_FAT,
+    "component_breakdown": UNSTATED_EXTRAS,
+    "product_identity": IDENTITY_VARIANT,
+    "product_line": IDENTITY_VARIANT,
+    "product_variant": IDENTITY_VARIANT,
+    "unit_interpretation": CONTINUOUS_PORTION,
+    # `serving_basis` ("what the label's numbers mean") has NO canonical
+    # subject. Left unmapped ON PURPOSE rather than folded into a portion type
+    # — that is the CF28 question, and mis-bucketing it would corrupt the
+    # denominator a defaultability policy is sized against.
+}
+
+
+def classify_staged(field: Optional[str]) -> str:
+    """One staged `AmbiguityType` / requested field → one canonical type."""
+    return _STAGED_MAP.get((field or "").strip().lower(), UNCLASSIFIED)
+
+
+def classify_all_staged(questions: Optional[Iterable]) -> tuple:
+    """Canonical types for a STAGED-PIPELINE ask, read from the producer that
+    raised it.
+
+    ⭐ THE AUTHORITY RULE: a durable measurement of a semantic outcome must
+    identify the producer that owned that outcome and read from THAT producer's
+    state. Typing a pipeline-raised ask from the interpreter's store is how ~150
+    turns were spent characterising a defect that was an instrument looking in
+    the wrong place.
+    """
+    found = set()
+    for q in (questions or ()):
+        for f in (getattr(q, "requested_fields", None) or ()):
+            found.add(classify_staged(str(f)))
+    return tuple(t for t in ALL if t in found)
+
+
 def from_legacy(kind: Optional[str]) -> str:
     """Read a historical `kind` from either retired vocabulary. Lossy for
     `portion` — see `LEGACY_MAP`."""
