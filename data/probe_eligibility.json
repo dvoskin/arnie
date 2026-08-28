@@ -6,9 +6,9 @@
       "eligible": true,
       "asks_observed": 1,
       "turns": 1,
-      "evidence": "qualification pass 2026-08-27 (PROBE_QUALIFY=1) on clean tree 63952e2",
-      "note": "corpus case 2 / BASELINE. Re-qualified on 63952e2; base rate 5/8 from 469f7e4.",
-      "code_sha": "63952e2"
+      "code_sha": "0a4099d",
+      "evidence": "qualification 2026-08-27 on code 0a4099d",
+      "note": "BASELINE = corpus c2. Base rate 5/8."
     },
     "Panda Express Bigger Plate: Orange Chicken, Teriyaki Chicken, and Super Greens": {
       "eligible": true,
@@ -22,9 +22,9 @@
       "eligible": true,
       "asks_observed": 1,
       "turns": 1,
-      "evidence": "qualification pass 2026-08-27 (PROBE_QUALIFY=1) on clean tree 63952e2",
-      "note": "corpus case 16 / CONTROL. Re-qualified on 63952e2; 0/8 zero-record on 469f7e4.",
-      "code_sha": "63952e2"
+      "code_sha": "0a4099d",
+      "evidence": "qualification 2026-08-27 on code 0a4099d",
+      "note": "CONTROL = corpus c16. 0/8 zero-record."
     },
     "I had a Bigger Plate at Panda Express with orange chicken, teriyaki chicken and super greens": {
       "eligible": false,
@@ -52,11 +52,11 @@
     },
     "Five Guys Little Cheeseburger and fries": {
       "eligible": true,
-      "asks_observed": 4,
-      "turns": 4,
-      "evidence": "qualification pass 2026-08-27 (PROBE_QUALIFY=1) on clean tree 63952e2",
-      "note": "TEST arm, one variable: fries size word removed. Qualified 3/3 + 1/1.",
-      "code_sha": "63952e2"
+      "asks_observed": 1,
+      "turns": 1,
+      "code_sha": "0a4099d",
+      "evidence": "qualification 2026-08-27 on code 0a4099d",
+      "note": "TEST arm: fries size word removed."
     }
   }
 }
