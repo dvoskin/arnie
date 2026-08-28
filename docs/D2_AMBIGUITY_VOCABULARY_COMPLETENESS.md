@@ -117,3 +117,75 @@ consistent across all 3 reps of c9. **A confirmation run is the only way to
 know**, and it is due diligence on a change I made — not an optional extra.
 
 **Status: exception NOT validated. Not reverted, not endorsed — measured.**
+
+---
+
+# ⛔ EXCEPTION REVERTED 2026-08-27 — experimental isolation, not retreat
+
+**The schema deficiency remains PROVEN. The implementation attempt was
+introduced one dependency too early.**
+
+## The confirmation run settled it
+
+```
+PRE    (2 fields)   zero-ambiguity 5/18 = 28 %   records = 30
+POST-1 (6 fields)   zero-ambiguity 8/19 = 42 %   records = 22
+POST-2 (6 fields)   zero-ambiguity 6/16 = 38 %   records = 20
+```
+
+Two independent post runs, both worse on both metrics. **Record emission fell
+~33 %.** Not noise-shaped:
+
+```
+c23  PRE ['quantity','quantity','quantity'] ×3   ->  POST ['quantity'] ×3, BOTH runs
+c9   PRE records in all 3 reps                   ->  POST none at all,     BOTH runs
+```
+
+⭐ **Offering six choices where there were effectively two made the model
+likelier to emit NOTHING than to pick.** The D2 change damaged D1.
+
+## D1 BLOCKS D2 — the sequencing was backwards
+
+```
+c2 (needs `consumed`)     5/5 of its asks emit ZERO records
+c3 (needs `multiplier`)   4/6 of its asks emit ZERO records
+```
+
+**The vocabulary could not be exercised on the cases that need it.** Naming
+`consumed` in the schema cannot help an ask that records no ambiguity at all.
+Keeping the exception would have meant holding a known regression to enable a
+measurement that cannot yet be taken.
+
+`unstated_extras` 0 → 3 (stable across both runs) is encouraging and does NOT
+justify keeping it: that is a richer vocabulary bought by degrading the
+existence of the underlying representation.
+
+## ⚠⚠ c20 — PRESERVED AS AN EXPLICIT WARNING CASE
+
+c20 **did** emit ambiguity records and **still** did not select `consumed`
+(0/1 of its asks were zero-record). So even after D1 is fixed, **D2 splits into
+two questions that must NOT be collapsed:**
+
+1. **Can the schema EXPRESS the subject?**
+2. **Does the interpreter actually EMIT the correct subject when that situation
+   occurs?**
+
+A schema that can express `consumed` while the producer never selects it is the
+same failure class as a guard whose protected input never occurs.
+
+## The corrected sequence (binding)
+
+```
+1. ✅ revert the exception to the known-better baseline
+2.    D1 — every ask-producing path with an unresolved subject emits >= 1 record
+3.    rerun the 24-turn characterisation; prove the zero-record population is
+      gone or materially reduced
+4.    reapply the vocabulary exception IN ISOLATION
+5.    rerun the same characterisation AND the ask-type measurement
+6.    accept D2 only if the new subjects appear WITHOUT reducing ambiguity
+      coverage or creating new omissions
+7.    T1 only after both are measurable
+```
+
+**Board: D1 first — representation EXISTENCE. D2 second — representation
+EXPRESSIVENESS and CORRECT SELECTION.**
