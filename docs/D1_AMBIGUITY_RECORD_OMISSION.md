@@ -529,3 +529,69 @@ which that site returns and `conversation.py` persists — **so one confirmation
 is needed**, and it is cheap: read those fields off a durable row.
 
 **Do not act on the two-store diagnosis until that check passes.**
+
+---
+
+# ⭐⭐⭐ PROVENANCE CONFIRMED — **D1 IS AN INSTRUMENTATION-SOURCE BUG**
+
+`code=52ca405`, 15 turns, 0 errors, predictions frozen before the run.
+Raw: `data/corpus/d1_provenance_result_2026-08-27.jsonl`.
+
+```
+                              n_amb  ask_types            question_id    staged_item_id
+SUBJECT  "and a small fries"    0    ['unclassified']     q_495a3ca88e   item_59b2299c1e6
+                                0    ['unclassified']     q_48c9d01d26   item_e9f759c0eaf
+                                0    ['unclassified']     q_2236c43d39   item_b6d82812000
+INTERP   "and fries"      x5    1    ['menu_size']        (none)         (none)
+CONTROL  8 oz sirloin     x5    3    ['preparation_fat']  (none)         (none)
+
+POOLED   omitting asks with staged question_id:  3/3
+         emitting asks with staged question_id:  0/10
+```
+
+**Perfect separation, no mixed cases.**
+
+## The defect, correctly stated
+
+> **Ask typing reads ONLY interpreter ambiguity state, even when the ask
+> authority is the staged clarification pipeline.**
+
+`core/food_turn.py:6390` returns an ask raised from `_decision.asks` but types
+it `_ask_types_from(data)` — and `data` is **not the authority that generated
+that ask**. The type must come from `_decision` / `ClarificationQuestion.fields`
+through the same canonical vocabulary.
+
+**The asks were never unstructured.** They carry a `question_id`, a
+`staged_item_id`, and per-item ambiguities with fields — in
+`ClarificationDecision`, a store the instrument never read.
+
+## What this invalidates
+
+- ⛔ **"D1 = ambiguity record omission" is WRONG.** Nothing was omitted.
+- ⛔ **The `unclassified` rate is the PIPELINE-RAISED RATE, not a defect rate.**
+  Every D1 base rate (c2 5/8, c3 3/5, control 0/8) measures **which producer
+  raised the ask**, not whether anything failed.
+- ⛔ **The producer registry is unsound.** `consumption_complete`,
+  `portion_multiplier` and `unstated_extras` were recorded as having ZERO
+  producers — but only the interpreter store was ever read. They may have
+  producers in the staged store.
+- ⛔ **The D2 vocabulary measurement is suspect** for the same reason: `{'quantity':18,
+  'prep':12}` counts interpreter fields only.
+
+## Round 1 and 2, restated (as authorised, only now)
+
+- **Round 1** (6/7 → 0/8): removing *"a small"* moved the ask **from the staged
+  pipeline to the interpreter** — a routing/provenance transition between two
+  LEGITIMATE producers. **Not a missing-record repair.**
+- **Round 2** (3/8 → 4/7): the Panda case **stayed on the pipeline path**;
+  added precision did not move it.
+
+Both results stand as measured. Neither is evidence of a broken producer.
+
+## The repair this implies
+
+> **No user-visible clarification may exist without a durable structured
+> subject behind it — and the subject must be read from the producer that
+> RAISED it.**
+
+Type from `_decision` at the staged site. Not started.
