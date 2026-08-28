@@ -1,0 +1,82 @@
+{
+  "name": "d1_causal_round1_v1",
+  "created": "2026-08-27",
+  "frozen": true,
+  "variable_under_test": "the SECONDARY component's vague stated size word ('a small')",
+  "manipulation": {
+    "BASELINE": "Five Guys Little Cheeseburger and a small fries",
+    "TEST": "Five Guys Little Cheeseburger and fries",
+    "held_fixed": "burger identity/SKU, chain, meal structure, item count, and nearly all wording. ONLY the fries size specification changes.",
+    "confound_avoided": "An earlier draft used 'Five Guys Cheeseburger' as the test arm. \u26d4 That is a DIFFERENT MENU ITEM - Little is one patty, Cheeseburger is two - so it would have varied product identity while being described as removing an adjective. If omission had moved, nothing could be attributed. Caught by Danny before qualification."
+  },
+  "predictions_frozen_before_run": {
+    "authority": "Danny, 2026-08-27, stated before any turn",
+    "mechanism_supported": "If a vague STATED size suppresses the structured ambiguity record, removing 'small' leaves the fries genuinely unresolved and should REDUCE zero-record asks below the c2 baseline of 5/8.",
+    "mechanism_loses_support": "If omission stays around the 5/8 baseline, the stated-size mechanism loses support.",
+    "no_brand_conclusion": "NO brand conclusion follows from either outcome. Brand is held fixed here and remains confounded in the prior data.",
+    "scope": "This tests the SECONDARY-COMPONENT size word ONLY - not the broader claim that any vague size adjective causes D1. A first causal separation should be narrow.",
+    "threshold": "Same rule-of-three cut as the base rate: >=3 of 8 asks zero-record = still omitting; <=2 = materially reduced; <4 asks = INSUFFICIENT. Run VOID if the control shows any zero-record ask."
+  },
+  "cases": [
+    {
+      "id": 501,
+      "message": "Five Guys Little Cheeseburger and a small fries",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[BASELINE] = c2 verbatim, in-run. Eligible (8/8 asks, tree 469f7e4). Base rate 5/8."
+    },
+    {
+      "id": 502,
+      "message": "Five Guys Little Cheeseburger and fries",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[TEST] one variable: the fries size word removed. NEEDS QUALIFICATION."
+    },
+    {
+      "id": 503,
+      "message": "8 oz sirloin, a loaded baked potato, and a Caesar salad",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[CONTROL] = c16. Eligible (8/8 asks). 0/8 zero-record - anchors the threshold."
+    }
+  ]
+}
