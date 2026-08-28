@@ -98,7 +98,7 @@ def _ask_types_staged(decision, data) -> tuple:
     # create.
     try:
         qs = getattr(getattr(decision, "clarification", None), "questions", None)
-        out = classify_all_staged(qs)
+        out = classify_all_staged(qs, (data or {}).get("items"))
     except Exception:
         out = ()
     return out or _ask_types_from(data) or (UNCLASSIFIED,)

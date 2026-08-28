@@ -59,15 +59,20 @@ def test_the_staged_site_types_from_the_DECISION_not_the_interpreter():
 
 
 def test_the_staged_vocabulary_reaches_subjects_the_interpreter_cannot():
-    """⭐ WHY AUTHORITY MATTERS, not just tidiness. The staged store natively
-    distinguishes subjects the interpreter never emitted — both were recorded
-    as having ZERO producers while only one store was read."""
-    assert AT.classify_staged("consumed_quantity") == AT.CONSUMPTION_COMPLETE
-    assert AT.classify_staged("component_breakdown") == AT.UNSTATED_EXTRAS
-    assert AT.classify_staged("package_size") == AT.MENU_SIZE
-    # the interpreter's store cannot produce these from its two field values
+    """⭐ WHY AUTHORITY MATTERS, not just tidiness. `consumption_complete` sat
+    at ZERO producers through six runs because nothing read this store under
+    the name it actually uses.
+    ⭐ THE FIELD NAME, NOT THE ENUM MEMBER. An earlier map keyed on
+    `AmbiguityType` values (`consumed_quantity`, `package_size`); the real
+    `requested_fields` carry `ambiguity.field_name`
+    (`quantity_clarification.py:110`: *ambiguity_type=CONSUMED_QUANTITY and
+    field_name="consumed_fraction"*). Mapping the enum made EVERY staged ask
+    type `unclassified` — worse than the fallback it replaced.
+    """
+    assert AT.classify_staged("consumed_fraction") == AT.CONSUMPTION_COMPLETE
+    # ...and the interpreter's store cannot reach that subject at all
     assert AT.classify("quantity") != AT.CONSUMPTION_COMPLETE
-    assert AT.classify("prep") != AT.UNSTATED_EXTRAS
+    assert AT.classify("consumed_fraction") != AT.CONSUMPTION_COMPLETE
 
 
 def test_an_unmapped_staged_field_stays_unclassified():
@@ -81,8 +86,13 @@ def test_an_unmapped_staged_field_stays_unclassified():
 def test_classify_all_staged_reads_requested_fields():
     class Q:
         def __init__(self, f): self.requested_fields = f
-    got = AT.classify_all_staged([Q(("consumed_quantity",)), Q(("package_size",))])
+    # observed field names, branded context supplied so `quantity` resolves
+    got = AT.classify_all_staged([Q(("consumed_fraction",)), Q(("quantity",))],
+                                 [{"food": "Five Guys fries", "branded": True}])
     assert got == (AT.MENU_SIZE, AT.CONSUMPTION_COMPLETE), got
+    # unbranded, the same quantity field means the softer subject
+    got2 = AT.classify_all_staged([Q(("quantity",))], [{"food": "rice"}])
+    assert got2 == (AT.CONTINUOUS_PORTION,), got2
     assert AT.classify_all_staged([]) == ()
     assert AT.classify_all_staged(None) == ()
 
@@ -98,13 +108,14 @@ def test_where_the_two_STORES_share_a_field_name_they_AGREE():
     the same word would resolve differently by producer and the vocabulary
     would no longer be one vocabulary.
     """
-    shared = set(AT._STAGED_MAP) & set(AT._FIELD_MAP)
-    assert shared, "expected at least `preparation` in common; check the maps"
-    for k in shared:
-        assert AT._STAGED_MAP[k] == AT._FIELD_MAP[k], (
-            f"field {k!r} means {AT._FIELD_MAP[k]} to the interpreter but "
-            f"{AT._STAGED_MAP[k]} to the staged pipeline — one word, two "
-            "subjects, which is the four-tables condition again")
+    overlap = set(AT._STAGED_FIELD_MAP) & set(AT._FIELD_MAP)
+    assert overlap == set(), (
+        f"{sorted(overlap)} are defined in BOTH maps — shared names must "
+        "DELEGATE to `classify` so one word cannot mean two subjects, not be "
+        "duplicated where the two copies can drift apart")
+    # and the shared names really do resolve through the interpreter map
+    assert AT.classify_staged("prep") == AT.classify("prep")
+    assert AT.classify_staged("quantity", branded=True) == AT.MENU_SIZE
 
 
 # ── the test that would have caught the INERT read ───────────────────────────
@@ -133,7 +144,7 @@ def test_the_staged_typing_ACTUALLY_returns_staged_types_not_the_fallback():
     rows nobody could create — correct, and inert.
     """
     from core.food_turn import _ask_types_staged
-    plan = _Plan([_Q(("consumed_quantity",))])
+    plan = _Plan([_Q(("consumed_fraction",))])
     assert plan.asks
     # interpreter data deliberately says something DIFFERENT, so a fallback is
     # visible rather than coincidentally equal

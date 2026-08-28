@@ -136,53 +136,65 @@ def classify_all(ambiguities: Optional[Iterable[dict]],
     return tuple(t for t in ALL if t in found)
 
 
-#: ⭐⭐⭐ THE STAGED CLARIFICATION PIPELINE'S OWN VOCABULARY
-#: (`skills/nutrition/ambiguity.AmbiguityType`) → this one.
+#: ⭐⭐⭐ THE STAGED PIPELINE'S FIELD NAMES → this vocabulary.
 #:
-#: ⛔⛔ THE STAGED PIPELINE IS A SECOND ASK AUTHORITY, and until 2026-08-27 the
-#: typing code read the INTERPRETER's `data["ambiguities"]` even for asks the
-#: pipeline raised. Confirmed by durable-row provenance: 3/3 `unclassified`
-#: asks carried `question_id` + `staged_item_id`; 0/10 interpreter-typed asks
-#: did. The asks were never unstructured — they were structured HERE.
+#: ⛔⛔⛔ AN EARLIER VERSION MAPPED `AmbiguityType` ENUM MEMBERS
+#: (`consumed_quantity`, `package_size`, `component_breakdown`...). That is the
+#: WRONG VOCABULARY. `ClarificationQuestion.requested_fields` carries
+#: `ambiguity.field_name`, a FIELD NAME — `quantity_clarification.py:110`
+#: records the pairing explicitly: *"ambiguity_type=CONSUMED_QUANTITY and
+#: field_name='consumed_fraction'"*. Every staged ask therefore typed
+#: `unclassified`, which is WORSE than the fallback it replaced.
 #:
-#: ⚠ AND THIS STORE IS RICHER THAN THE INTERPRETER'S. It distinguishes
-#: `consumed_quantity` and `component_breakdown` natively — two subjects
-#: recorded as having ZERO producers when only the interpreter store was read.
-_STAGED_MAP = {
-    "consumed_quantity": CONSUMPTION_COMPLETE,
-    "package_size": MENU_SIZE,
-    "preparation": PREPARATION_FAT,
-    "component_breakdown": UNSTATED_EXTRAS,
-    "product_identity": IDENTITY_VARIANT,
-    "product_line": IDENTITY_VARIANT,
-    "product_variant": IDENTITY_VARIANT,
-    "unit_interpretation": CONTINUOUS_PORTION,
-    # `serving_basis` ("what the label's numbers mean") has NO canonical
-    # subject. Left unmapped ON PURPOSE rather than folded into a portion type
-    # — that is the CF28 question, and mis-bucketing it would corrupt the
-    # denominator a defaultability policy is sized against.
+#: ⭐ ONLY OBSERVED OR DOCUMENTED NAMES ARE MAPPED HERE. The enum-comment
+#: mapping was built by reading and was wrong; this one lists what a real run
+#: emitted, cited. Anything else stays `unclassified` ON PURPOSE, so a new field
+#: surfaces as a coverage gap instead of being silently mis-bucketed.
+#:
+#:   observed, census 2026-08-28 (code 4e74ace, 50 turns, 19 staged questions):
+#:       quantity x13   prep x4   consumed_fraction x2
+#:   documented, not yet observed:
+#:       estimated_mass_g  (clarify_policy.py:471)
+_STAGED_FIELD_MAP = {
+    # ⭐ THE PRODUCER THAT WAS INVISIBLE ALL DAY. `consumption_complete` sat at
+    # zero producers through six runs because nothing was ever read from this
+    # store under this name — "did you have the whole pouch", "did you finish".
+    "consumed_fraction": CONSUMPTION_COMPLETE,
+    "estimated_mass_g": CONTINUOUS_PORTION,
+    "mass_range_g": CONTINUOUS_PORTION,
+    # ⚠ `container_count` looks like PORTION_MULTIPLIER and is NOT mapped:
+    # never observed, and guessing from a name is what produced the last map.
 }
 
 
-def classify_staged(field: Optional[str]) -> str:
-    """One staged `AmbiguityType` / requested field → one canonical type."""
-    return _STAGED_MAP.get((field or "").strip().lower(), UNCLASSIFIED)
+def classify_staged(field: Optional[str], *, branded: bool = False) -> str:
+    """One staged `requested_field` → one canonical type.
+
+    Staged-specific names first, then the SHARED vocabulary: `quantity` and
+    `prep` mean the same thing in both stores, so they delegate to `classify`
+    rather than being duplicated — one word must not mean two subjects.
+    """
+    f = (field or "").strip().lower()
+    if f in _STAGED_FIELD_MAP:
+        return _STAGED_FIELD_MAP[f]
+    return classify(f, branded=branded)
 
 
-def classify_all_staged(questions: Optional[Iterable]) -> tuple:
+def classify_all_staged(questions: Optional[Iterable],
+                        items: Optional[Sequence[dict]] = None) -> tuple:
     """Canonical types for a STAGED-PIPELINE ask, read from the producer that
     raised it.
 
     ⭐ THE AUTHORITY RULE: a durable measurement of a semantic outcome must
     identify the producer that owned that outcome and read from THAT producer's
-    state. Typing a pipeline-raised ask from the interpreter's store is how ~150
-    turns were spent characterising a defect that was an instrument looking in
-    the wrong place.
+    state.
     """
+    branded = any(bool((i or {}).get("branded")) for i in (items or ())
+                  if isinstance(i, dict))
     found = set()
     for q in (questions or ()):
         for f in (getattr(q, "requested_fields", None) or ()):
-            found.add(classify_staged(str(f)))
+            found.add(classify_staged(str(f), branded=branded))
     return tuple(t for t in ALL if t in found)
 
 
