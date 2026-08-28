@@ -258,3 +258,61 @@ semantic and chain comparisons are not weak evidence, they are no evidence.
 
 **D1 survives. The right to ask WHY is now earned, and discrimination may
 resume — from a measured base rate, on a pinned harness.**
+
+---
+
+# ⭐⭐⭐ CAUSAL ROUND 1 — **SEPARATION ACHIEVED**
+
+`code=0a4099d` · gate=true · resolver=live · model=claude-sonnet-4-6 ·
+24 turns · 0 errors. Predictions frozen at `63952e2` **before any turn**.
+Raw: `data/corpus/d1_causal_round1_result_2026-08-27.jsonl`.
+
+```
+BASELINE  "Five Guys Little Cheeseburger and a small fries"  zero-record 6/7  n_amb [0,0,1,0,0,0,0,0]
+TEST      "Five Guys Little Cheeseburger and fries"          zero-record 0/8  n_amb [1,1,1,1,1,1,1,1]
+CONTROL   "8 oz sirloin, a loaded baked potato, Caesar"      zero-record 0/8  n_amb [3,3,3,3,3,3,3,3]
+```
+
+**The baseline reproduced its defect** (6/7, consistent with the 5/8 base rate
+from `469f7e4`). **The test arm eliminated it** — a structured record on every
+one of eight asks. **The control was untouched.** One variable: two words.
+
+## The verdict, and only the verdict
+
+> **The SECONDARY component's vague stated size word is causally implicated in
+> D1 omission.**
+
+Mechanism this supports: *"a small fries"* reads to the interpreter as a size
+already STATED, so it records no quantity ambiguity — while still asking about
+it in prose, because it knows the size is not really pinned. That produces
+exactly D1's signature: a question in `points`, nothing in `ambiguities`.
+Remove the word and the size is genuinely open, so the record appears.
+
+## ⛔ WHAT DOES **NOT** FOLLOW
+
+- **No brand or SKU conclusion.** Brand was held fixed by design and remains
+  confounded in all prior data.
+- **No policy, DEFAULTABILITY or prompt conclusion.**
+- **c3 was not in this round.** Whether Panda's *"Bigger Plate"* omission has
+  the same cause is untested.
+- **Only the SECONDARY component was manipulated.** Whether a vague size word
+  on the PRIMARY behaves the same way is untested.
+- **One utterance family, one chain.** Generality is unmeasured.
+
+## Why this result is interpretable when four earlier rounds were not
+
+```
+pinned config      gate/resolver/model resolved and recorded in the output
+clean code SHA     0a4099d, no dirty marker, compared not asserted
+eligible probes    all three qualified on THAT code state before turn 1
+same-run control   clean 0/8 — proves the harness could see healthy behaviour
+one variable       "and a small fries" -> "and fries"
+frozen prediction  committed before any turn, threshold mechanical
+```
+
+⭐ **Every one of those five was violated at least once earlier today, and each
+violation produced either a void arm or a reversed conclusion.**
+
+**Per the contract: STOP ON FIRST SEPARATION.** Do not layer further variables
+into this round. The next experiment discriminates between the remaining
+explanations — starting with whether c3 shares the mechanism.
