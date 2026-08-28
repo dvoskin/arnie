@@ -71,6 +71,14 @@
     "one_reproduces": "D1 NARROWS to the reproducing case before any new criterion work.",
     "neither_reproduces": "D1 is NOT an active defect population under the current tree/config. DEMOTE it until a new occurrence appears.",
     "prior_rounds": "NO semantic, form or chain conclusions may be drawn from rounds 1-2. Their in-run baseline failed to reproduce and those runs were NOT config-pinned, so their comparisons are void - not merely weak.",
-    "material": "'Materially' means clearly above the control's 0/12. A single zero-record ask in 8 is not reproduction."
+    "material": "MECHANICAL, NOT A JUDGEMENT CALL. Derived from the control, not from the subject counts, and fixed before any count was read.",
+    "threshold_derivation": "The control emitted records on 12 of 12 asks: 0/12 zero-record. By the rule of three, the 95% upper bound on a rate observed as 0/12 is 3/12 = 25%. So an omission rate at or below 25% is INSIDE the control's plausible range and is not reproduction. Over 8 asks, 25% is 2. Hence the cut at >=3.",
+    "decision_rule": {
+      "denominator": "ASKS, never turns. A logged turn is not evidence about omission.",
+      "REPRODUCES": ">= 3 of 8 asks zero-record (> 25%, above the control's rule-of-three bound)",
+      "DOES_NOT_REPRODUCE": "<= 2 of 8 asks zero-record (within the control's bound)",
+      "INSUFFICIENT": "fewer than 4 asks in 8 turns -> UNDER-POWERED, declare insufficient rather than forcing a call. Round 2 died of exactly this: c303 asked once and c301 not at all.",
+      "CONTROL_INVALID": "if control case 403 shows ANY zero-record ask, the run is void - the threshold is derived from it"
+    }
   }
 }

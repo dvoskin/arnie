@@ -208,3 +208,53 @@ will be written without.
 2.    D1 BASE RATE — c2 / c3 verbatim + control, n=8, pinned
 3.    resume discrimination ONLY if the defect reproduces
 ```
+
+---
+
+# BASE RATE — **D1 SURVIVES**
+
+First run under a fully pinned harness. `tree=469f7e4` (clean), `gate=true`,
+`resolver=live`, `model=claude-sonnet-4-6`, config and SHA in the output header.
+Raw: `data/corpus/d1_base_rate_result_2026-08-27.jsonl`.
+
+```
+CONTROL c16      asked 8/8   zero-record 0/8   n_amb [3,3,3,3,3,3,3,3]   ✅
+c2 Five Guys     asked 8/8   zero-record 5/8   -> REPRODUCES
+c3 Panda Plate   asked 5/8   zero-record 3/5   -> REPRODUCES
+```
+
+## The rule was mechanical, not a judgement call
+
+Derived from the CONTROL, not the subjects: the control had emitted on 12/12
+asks historically, and by the **rule of three** the 95 % upper bound on a rate
+observed as 0/12 is 25 %. Over 8 asks that is 2. Hence **≥3 reproduces, ≤2 does
+not, <4 asks is under-powered**, plus a void condition if the control itself
+ever shows a zero-record ask.
+
+⚠ **Honest limit on the preregistration.** The 24 turns had finished before the
+numeric threshold was written to disk. The counts were not read — only the
+progress line — but that cannot be proved. The mitigating fact is that the
+threshold is anchored to the control's HISTORICAL 0/12 from earlier runs, not
+to anything in this run.
+
+## Round 2's non-reproduction is explained by sample size
+
+At a true rate near 60 %, three consecutive non-omissions has probability
+≈ 6 %. Uncommon, not extraordinary. **A three-ask sample was over-read as a
+failure to reproduce** — the same small-n error as the rest of the day, in the
+opposite direction. No configuration difference need be invoked.
+
+## Measured prevalence
+
+**c2 ≈ 5/8, c3 ≈ 3/5**, against a control of **0/8**. Lower than the pooled
+historical ~78 %, and unambiguously above zero.
+
+## ⛔ NOTHING FURTHER IS CLAIMED
+
+Per the frozen rule, the only legitimate output here is the verdict. **No
+cause. No policy. No minimal-pair interpretation.** Rounds 1–2 remain VOID —
+their in-run baseline failed and they were not config-pinned, so their form,
+semantic and chain comparisons are not weak evidence, they are no evidence.
+
+**D1 survives. The right to ask WHY is now earned, and discrimination may
+resume — from a measured base rate, on a pinned harness.**
