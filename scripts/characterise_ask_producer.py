@@ -25,7 +25,12 @@ from scripts.measure_real_meal_completion import _make_identity, _cleanup
 REPS = int(os.environ.get("REPS", "3"))
 OUT = pathlib.Path(os.environ["OUTJSONL"])
 CASES = [int(x) for x in (os.environ.get("ONLY_CASES") or "").replace(",", " ").split()]
-CORPUS = json.load(open("data/corpus/real_meal_expectations_v1.json"))
+# ⭐ SELECTABLE CORPUS, ONE INSTRUMENT. Hardcoding this made an entire
+# 24-turn run return KeyError on every case; the CONTROLS caught it,
+# which is why a discrimination set carries known-good emitters.
+_CORPUS_FILE = os.environ.get("CORPUS_FILE",
+                              "data/corpus/real_meal_expectations_v1.json")
+CORPUS = json.load(open(_CORPUS_FILE))
 BY_ID = {c["id"]: c for c in (CORPUS["cases"] if isinstance(CORPUS, dict) else CORPUS)}
 
 CAP = []
@@ -81,6 +86,18 @@ async def main():
                           if not getattr(q, "answered_at", None)]
                     rec["question"] = (str(getattr(qs[0], "question", "") or "")[:260]
                                        if qs else "")
+                    # ⛔⛔ THE D1 DENOMINATOR IS `food_structured_ask` ONLY.
+                    # Without this the harness counted `conversation_hook` rows
+                    # -- general conversational follow-ups, not food
+                    # clarifications -- as zero-record food asks, inflating D1
+                    # from 14 to 19. `food_clarification` (the
+                    # note_food_clarification tool path) is its OWN bucket: it
+                    # carries no ask_types by design, since that payload write
+                    # was reverted to avoid raising the pending-mutation
+                    # ratchet. Neither is an omission defect.
+                    rec["q_kinds"] = [str(getattr(q, "kind", "") or "") for q in qs]
+                    rec["is_d1_population"] = any(
+                        k == "food_structured_ask" for k in rec["q_kinds"])
                     at = []
                     for q in qs:
                         try:

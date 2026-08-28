@@ -1,0 +1,173 @@
+{
+  "name": "d1_minimal_pairs_v1",
+  "created": "2026-08-27",
+  "frozen": true,
+  "purpose": "D1 DISCRIMINATION. One question: does n_amb=0 follow the MEANING of the unknown, or the FORM of the utterance? FORM axis holds the semantic unknown fixed and varies phrasing; SEMANTIC axis holds the family fixed on held-out utterances. Controls are proven emitters (9/9). expected_terminal is nominal -- this corpus scores n_amb, not terminals.",
+  "hypotheses": [
+    "MEANING: form variants of c2/c3 still emit n_amb=0, AND held-out consumption/multiplier utterances also emit n_amb=0 -> interpreter/schema compliance failure specific to those semantics.",
+    "FORM: form variants emit ambiguities while the originals do not -> a prompt/representation-shape problem, not semantics.",
+    "NEITHER separates -> look for another shared structural feature."
+  ],
+  "cases": [
+    {
+      "id": 201,
+      "message": "I ate a Little Cheeseburger and small fries from Five Guys",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[FORM] c2 meaning, past-tense reordered. n_amb=0 follows FORM if this differs from c2."
+    },
+    {
+      "id": 202,
+      "message": "Five Guys: little cheeseburger, small fries",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[FORM] c2 meaning, bare list form."
+    },
+    {
+      "id": 203,
+      "message": "I had a Bigger Plate at Panda Express with orange chicken, teriyaki chicken and super greens",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[FORM] c3 meaning, prose form."
+    },
+    {
+      "id": 204,
+      "message": "Panda Express, bigger plate. Orange chicken. Teriyaki chicken. Super greens.",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[FORM] c3 meaning, staccato form."
+    },
+    {
+      "id": 205,
+      "message": "A Chipotle burrito bowl with steak and white rice",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[SEMANTIC] held-out MULTIPLIER (single vs double protein). Not c3."
+    },
+    {
+      "id": 206,
+      "message": "An In-N-Out cheeseburger and fries",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[SEMANTIC] held-out CONSUMPTION-prone (large portions). Not c2."
+    },
+    {
+      "id": 207,
+      "message": "8 oz sirloin, a loaded baked potato, and a Caesar salad",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[CONTROL prep] = c16. Emitted records 9/9. Must still emit."
+    },
+    {
+      "id": 208,
+      "message": "A Greek yogurt parfait with granola, berries, honey, and almonds",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[CONTROL quantity] = c23. Emitted records 9/9. Must still emit."
+    }
+  ]
+}

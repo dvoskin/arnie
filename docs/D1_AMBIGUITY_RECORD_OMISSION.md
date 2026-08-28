@@ -114,3 +114,51 @@ repair: the rule is there and is being violated deterministically by case.
 property that routes them past the rule, or whether the model treats a
 consumption/multiplier question as not-an-ambiguity by nature. That is D1's
 first real question, and it is NOT answerable from data on disk.
+
+---
+
+# MINIMAL-PAIR DISCRIMINATION — round 1: FORM implicated, SEMANTICS untested
+
+8 cases × 3 reps = 24 turns.
+Raw: `data/corpus/d1_minimal_pairs_result_2026-08-27.jsonl`.
+
+**Controls healthy** — c207 `[3,3,3]`, c208 `[2,1,3]`, both 3/3 emitting.
+
+## FORM AXIS — a real effect
+
+```
+c3  ORIGINAL   "Bigger Plate: X, Y, and Z"         zero-record 7/9
+c204 staccato  "Panda Express, bigger plate.       zero-record 0/3   n_amb [2,2,2]
+                Orange chicken. Teriyaki..."
+
+c2  ORIGINAL   "Five Guys Little Cheeseburger      zero-record 7/8
+                and a small fries"
+c201 past prose                                     zero-record 1/3   n_amb [1,1,0]
+c202 bare list                                      zero-record 2/3   n_amb [1,0,0]
+```
+
+Same meaning, different shape, and **c3's omission disappears entirely.** Form
+is implicated. It does NOT fully explain c2 — reshaping improves 7/8 to 1/3 and
+2/3 without eliminating it. And it is not "lists are bad": c202 is a list and
+mostly omits; c204 is staccato and never omits.
+
+## ⛔ THE SEMANTIC AXIS WAS NOT TESTED — DESIGN FAILURE
+
+**Both held-out semantic probes never asked.** c203 logged 0/3, c206 logged
+0/3. **A turn that logs produces no evidence about ambiguity omission**, so six
+turns returned nothing.
+
+⭐ **I selected those utterances for their SEMANTICS without verifying they
+reliably ELICIT AN ASK** — the one property the experiment required. A probe
+that cannot reach the behaviour under test is an instrument that cannot fail,
+the same class as a guard whose protected input never occurs.
+
+c205 is the single semantic datapoint: it emitted records (0/2 zero-record) but
+its fields were `prep` + `quantity`, **not `multiplier`** — consistent with c20
+for `consumed`. Records exist; the subject still is not selected.
+
+## Verdict
+
+Closest to *"neither axis separates cleanly"*, with form carrying a real signal
+and semantics **unmeasured rather than excluded**. Whether c2's residual
+omission is semantic or another structural property is still open.
