@@ -1,0 +1,84 @@
+{
+  "name": "d1_causal_round2_v1",
+  "created": "2026-08-27",
+  "frozen": true,
+  "variable_under_test": "a precise structural fact ADDED beside a size-like SKU term",
+  "manipulation": {
+    "BASELINE": "Panda Express Bigger Plate: Orange Chicken, Teriyaki Chicken, Beijing Beef, Chow Mein",
+    "TEST": "Panda Express Bigger Plate, the 3-entree meal: Orange Chicken, Teriyaki Chicken, Beijing Beef, Chow Mein",
+    "held_fixed": "chain, the 'Bigger Plate' SKU, all four components, and order. ONE addition: 'the 3-entree meal'.",
+    "confound_avoided": "\u26d4 'Bigger Plate' IS A PANDA EXPRESS PRODUCT NAME. Deleting 'Bigger' would change the menu item, exactly the Five Guys Little-Cheeseburger/Cheeseburger confound. So the SKU is PRESERVED and precision is ADDED instead of a word removed. Caught by Danny before qualification, for the second round running."
+  },
+  "predictions_frozen_before_run": {
+    "authority": "Danny, 2026-08-27, before any turn",
+    "drops": "If omission drops materially, c3 likely shares a BROADER mechanism: a size-like term is treated as already specifying quantity/portion while prose still asks, because the semantic state remains unresolved.",
+    "holds": "If omission stays near its measured base rate, c3 is a DIFFERENT D1 SUBTYPE and must split from the Five Guys repair.",
+    "control": "Same-run healthy control must stay clean, or the round is VOID.",
+    "no_conclusion": "No brand, prompt or DEFAULTABILITY conclusion either way.",
+    "\u26d4_do_not_merge": "Round 1 established SECONDARY-COMPONENT vague size causally. A Panda separation would only support a BROADER size-like lexical specification mechanism. These must NOT be merged into one defect unless both manipulations point the same direction.",
+    "threshold": "Rule-of-three cut as before: >=3 of 8 asks zero-record = still omitting; <=2 = materially reduced; <4 asks = INSUFFICIENT. VOID if the control shows any zero-record ask.",
+    "baseline_caveat": "This BASELINE is a NEW utterance, not c3 verbatim - it lists 3 entrees + 1 side, which is what a Bigger Plate actually is. c3's measured 3/5 is CONTEXT ONLY. The in-run baseline is the comparison; if it fails to reproduce omission, the round is UNDER-POWERED, not explained away."
+  },
+  "cases": [
+    {
+      "id": 601,
+      "message": "Panda Express Bigger Plate: Orange Chicken, Teriyaki Chicken, Beijing Beef, Chow Mein",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[BASELINE] new utterance, needs qualification."
+    },
+    {
+      "id": 602,
+      "message": "Panda Express Bigger Plate, the 3-entree meal: Orange Chicken, Teriyaki Chicken, Beijing Beef, Chow Mein",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[TEST] one addition: 'the 3-entree meal'. Needs qualification."
+    },
+    {
+      "id": 603,
+      "message": "8 oz sirloin, a loaded baked potato, and a Caesar salad",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[CONTROL] = c16, eligible on code 0a4099d, 0/8 zero-record."
+    }
+  ]
+}
