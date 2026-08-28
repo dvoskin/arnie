@@ -189,3 +189,69 @@ same failure class as a guard whose protected input never occurs.
 
 **Board: D1 first — representation EXISTENCE. D2 second — representation
 EXPRESSIVENESS and CORRECT SELECTION.**
+
+---
+
+# ⛔⛔⛔ FORBIDDEN INFERENCE
+
+> **"A staged enum value exists, therefore the subject has a producer."**
+
+**This inference is banned.** An enum member is **capability vocabulary, not
+producer evidence.**
+
+Proved twice, one layer apart:
+
+1. `classify("consumed") == CONSUMPTION_COMPLETE` mapped correctly while
+   **nothing ever emitted `field="consumed"`** — a consumption question arrived
+   labelled `menu_size`.
+2. `AmbiguityType.CONSUMED_QUANTITY` and `COMPONENT_BREAKDOWN` exist in the
+   staged store, and I predicted the zero-producer subjects would gain
+   producers once both authorities were read. **Neither fired in 50 turns.**
+
+**Producer evidence is an observed emission on a real path, cited by run.**
+Nothing else counts. This is the same family as *a guard whose protected input
+never occurs* — the vocabulary can express it; that says nothing about whether
+anything does.
+
+## Current evidence (census 2026-08-28, BOTH authorities, 50 turns)
+
+```
+menu_size             8   empirically real
+continuous_portion   12   empirically real
+preparation_fat       7   empirically real   ⚠ one instance semantically suspect
+identity_variant      2   empirically real
+consumption_complete  0   UNPROVEN
+unstated_extras       0   UNPROVEN
+portion_multiplier    0   UNPROVEN
+unclassified          2   not semantically classifiable from observed authority state
+```
+
+**Four subjects are empirically real. Three remain unproven. Two asks cannot be
+classified from the authority state observed.**
+
+## ⚠ THE MAPPING IS EXERCISED, NOT VALIDATED
+
+Case 17 typed `preparation_fat` on a question about wrap **SIZE**. That is
+**three different defects wearing one symptom**:
+
+1. the staged **field** is wrong;
+2. **`_STAGED_MAP`** is wrong;
+3. the **rendered question and the structured subject disagree**.
+
+The census could not distinguish them — it captured `ask_types` but not
+`requested_fields`. **A per-ask authority record is required:**
+
+```
+producer -> requested_fields -> mapped ask_type -> rendered question
+```
+
+aggregated into a confusion table. Only that shows whether `_STAGED_MAP` is
+CORRECT rather than merely EXERCISED.
+
+## Sequence (binding)
+
+```
+full suite green -> empirical staged-map census -> repair any mismatches
+   -> rerun producer registry across both authorities -> recompute D2
+   -> ONLY THEN decide whether the three zero-producer subjects truly lack producers
+```

@@ -20,6 +20,7 @@ for line in pathlib.Path("/Users/danielvoskin/Code Learn/arnie/.env").read_text(
         os.environ["ANTHROPIC_API_KEY"] = line.split("=", 1)[1].strip().strip('"')
 
 import core.food_turn as FT
+import skills.nutrition.ask_type as AT
 from scripts.config_pin import pin_config
 from scripts.probe_eligibility import assert_eligible
 from scripts.measure_real_meal_completion import _make_identity, _cleanup
@@ -58,6 +59,30 @@ if _MODE == "experiment":
     assert_eligible([BY_ID[c] for c in CASES if c in BY_ID], CONFIG)
 
 CAP = []
+# ⭐ PER-ASK AUTHORITY RECORD: producer -> requested_fields -> mapped type.
+# The 2026-08-28 census could not tell whether _STAGED_MAP was CORRECT or
+# merely EXERCISED, because it captured the mapped type without the field that
+# produced it. Case 17 typed preparation_fat on a SIZE question and the fault
+# was unattributable between three candidates.
+STAGED_CAP = []
+_orig_staged = FT._ask_types_staged
+def _spy_staged(decision, data):
+    out = _orig_staged(decision, data)
+    try:
+        qs = []
+        for q in (getattr(decision, "questions", None) or ()):
+            fields = tuple(str(f) for f in (getattr(q, "requested_fields", None) or ()))
+            qs.append({"question_id": getattr(q, "question_id", ""),
+                       "requested_fields": fields,
+                       "mapped": [AT.classify_staged(f) for f in fields],
+                       "prompt": (getattr(q, "prompt", "") or "")[:160]})
+        STAGED_CAP.append({"producer": "staged", "questions": qs,
+                           "result": list(out)})
+    except Exception as e:
+        STAGED_CAP.append({"producer": "staged", "error": str(e)[:120]})
+    return out
+FT._ask_types_staged = _spy_staged
+
 _orig = FT._ask_types_from
 def _spy(data):
     d = data or {}
@@ -99,7 +124,7 @@ async def main():
     fh.flush()
     for rep in range(1, REPS + 1):
         for cid in CASES:
-            CAP.clear(); n += 1
+            CAP.clear(); STAGED_CAP.clear(); n += 1
             uid = await _make_identity(session, f"pc:{run}:{cid}:{rep}")
             rec = {"case": cid, "rep": rep}
             try:
@@ -156,6 +181,7 @@ async def main():
                             pass
                     rec["ask_types"] = at
                 rec["captures"] = list(CAP)
+                rec["staged_authority"] = list(STAGED_CAP)
             except Exception as e:
                 rec["error"] = f"{type(e).__name__}: {e}"[:200]
             finally:
