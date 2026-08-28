@@ -372,3 +372,84 @@ D1b  c3 / Bigger Plate                 CAUSE UNKNOWN — not the size-like term
 
 Next work: a fresh discriminating variable for D1b. Round 1's repair may
 proceed independently for D1a; it must not be presented as fixing D1.
+
+---
+
+# ⛔⛔⛔ CORRECTION — D1'S SIGNATURE IS NOT WHAT THIS DOCUMENT SAID
+
+**From data already on disk. Zero model turns.**
+
+Pooled across both families, six runs, three code states:
+
+```
+omitting asks:  35
+   ...with points > 0 :   0
+   ...with points = 0 :  35     ← unanimous, no exceptions
+```
+
+Per family: c2-family **18/18**, c3-family **17/17**.
+
+## What I asserted, repeatedly, and what is true
+
+> ❌ *"the interpreter produced `action:ask` with `points` and no
+> `ambiguities`"* — written in the attribution section above, in the tranche
+> doc, and in commit messages.
+>
+> ❌ *"a question exists in `points` with no `ambiguities` entry... the prompt's
+> own ONE UNKNOWN, ONE ENTRY rule is being violated"*
+
+**Both are FALSE.** On an omitting turn **`points` is empty too.** The
+ONE-UNKNOWN-ONE-ENTRY rule is not being violated in that way — there is no
+question in `points` left dangling without a record. **There is no structured
+content at all.**
+
+## The real signature
+
+> **On an omitting turn the interpreter returns an ask carrying NO structured
+> output — neither `points` nor `ambiguities` — and the question the user sees
+> is produced DOWNSTREAM, in prose.**
+
+```
+[prod_char c2 rep1] points=0 ambiguities=0, yet the reply asks:
+   "Five Guys, nothing's on the board yet — need one thing first.|||The little
+    cheeseburger and fries, did you finish both, or leave some?"
+```
+
+⭐ This also explains the `unclassified` typing directly: `_ask_types_from`
+receives empty `ambiguities`, so it correctly returns `(UNCLASSIFIED,)`. The
+typing was never wrong; its input was empty.
+
+⚠ The coupling is not strict in the other direction either — emitting turns
+carry points only 9/13 (c2) and 4/12 (c3) of the time. `points` and
+`ambiguities` are not a matched pair in practice.
+
+## What survives, and what is retracted
+
+**SURVIVES — the facts, all measured under pinned conditions:**
+- D1 exists and reproduces; base rates measured (c2 5/8, c3 3/5).
+- **Round 1**: removing *"a small"* eliminated the omission, 6/7 → 0/8, control clean.
+- **Round 2**: adding precision beside the Panda SKU did not, 3/8 → 4/7.
+- The **D1a / D1b split**.
+
+**RETRACTED — the mechanism story built on the wrong signature:**
+- *"the model treats the size as already STATED, so it records no quantity
+  ambiguity while still asking in prose"* — this presumed a question in
+  `points`. There is none.
+- Any claim that the prompt's ONE-UNKNOWN-ONE-ENTRY instruction is being
+  violated, and the inference that "adding a rule is unlikely to help because
+  the rule is already there and ignored."
+
+⭐⭐⭐ **The round-1 RESULT stands; my EXPLANATION of it does not.** Removing
+"a small" causes the interpreter to produce a structured ask instead of a bare
+one. *Why* that word suppresses the entire structured output is now unknown.
+
+## What this reframes the question into
+
+Not *"why does the interpreter forget the ambiguity record?"* but:
+
+> **Why does the interpreter return an ask with NO structured content, and what
+> produces the question text when it does?**
+
+That is a far more code-shaped question — a downstream composer or fallback
+renderer is generating a question the structured lane never described.
+**Not investigated here.**
