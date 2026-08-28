@@ -36,11 +36,25 @@ _CORPUS_FILE = os.environ.get("CORPUS_FILE",
 CORPUS = json.load(open(_CORPUS_FILE))
 BY_ID = {c["id"]: c for c in (CORPUS["cases"] if isinstance(CORPUS, dict) else CORPUS)}
 
-# ⛔ GUARD 5 — refuse to START an experiment containing an unqualified probe.
-# Raising here costs nothing; discovering it after the run costs the whole arm.
-# Set PROBE_QUALIFY=1 for a qualification pass, whose entire purpose is to run
-# utterances that may NOT reach the behaviour under test.
-if not (os.environ.get("PROBE_QUALIFY") or "").strip():
+# ⛔ GUARD 5 — refuse to START an EXPERIMENT containing an unqualified probe.
+#
+# ⭐ MODE MATTERS, AND CONFLATING THE TWO WOULD BIAS A CENSUS. Guard 5 protects
+# CAUSAL ARMS: a probe that cannot reach the behaviour under test cannot
+# produce evidence about its cause. A CENSUS is the opposite — a distribution
+# over a corpus MUST include the cases that do NOT ask, or it pre-filters
+# itself to asking cases and measures its own selection.
+#
+#   experiment (default) : eligibility enforced
+#   census               : eligibility NOT enforced, recorded in the header
+#   qualify              : the pass that establishes eligibility
+#
+# The mode is written into the output so a census can never be read as an
+# experiment, or used to slip an unqualified probe past Guard 5.
+_MODE = (os.environ.get("MEASUREMENT_MODE") or "").strip().lower() or (
+    "qualify" if (os.environ.get("PROBE_QUALIFY") or "").strip() else "experiment")
+if _MODE not in ("experiment", "census", "qualify"):
+    raise SystemExit(f"MEASUREMENT_MODE must be experiment|census|qualify, got {_MODE!r}")
+if _MODE == "experiment":
     assert_eligible([BY_ID[c] for c in CASES if c in BY_ID], CONFIG)
 
 CAP = []
@@ -80,7 +94,8 @@ async def main():
     fh = OUT.open("w"); run = uuid.uuid4().hex[:6]; n = 0
     fh.write(json.dumps({"_config": CONFIG, "_reps": REPS,
                          "_corpus": _CORPUS_FILE,
-                         "_only_cases": CASES}) + "\n")
+                         "_only_cases": CASES,
+                         "_mode": _MODE}) + "\n")
     fh.flush()
     for rep in range(1, REPS + 1):
         for cid in CASES:
