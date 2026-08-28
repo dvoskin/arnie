@@ -1,49 +1,49 @@
 {
   "_doc": "PRODUCER EVIDENCE per canonical ask type. A type is `proven` only when a REAL path was observed emitting it, with the run and case cited. Enforced by tests/test_protected_types_have_proven_producers.py.",
   "_rule": "NEVER TREAT 'GUARD PASSES' AS EVIDENCE UNLESS THE PROTECTED STATE IS PROVEN REACHABLE. A mapping can be correct while its protected input never occurs -- which is how a consumption question came to be labelled menu_size while the negative-invariant test passed.",
-  "_measured": "data/corpus/t1_local_screening_2026-08-27.jsonl (50 turns, prod config)",
+  "_measured": "data/corpus/producer_census_both_authorities_2026-08-28.jsonl (50 turns, mode=census, BOTH authorities, code 12f9d38)",
   "types": {
     "menu_size": {
       "status": "proven",
-      "turns": 7,
-      "evidence": "t1_local_screening 2026-08-27",
-      "note": "\u26a0 PROVEN BUT CONTAMINATED \u2014 case 2 rep2 is a consumption question wearing this label. Producer exists; it is not CLEAN."
+      "turns": 8,
+      "evidence": "producer census 2026-08-28, both authorities",
+      "note": "staged 6 + interpreter 2. \u26a0 CONTAMINATION NOT RE-VERIFIED: pre-fix, a consumption question was observed wearing this label (T1 screening, case 2). The authority fix may or may not have resolved it - nobody has checked."
     },
     "continuous_portion": {
       "status": "proven",
-      "turns": 11,
-      "evidence": "t1_local_screening 2026-08-27",
-      "note": "\u26a0 case 3 rep1 is a portion_multiplier question wearing this label."
+      "turns": 12,
+      "evidence": "producer census 2026-08-28, both authorities",
+      "note": "staged 6 + interpreter 6. \u26a0 CONTAMINATION NOT RE-VERIFIED: pre-fix, a portion_multiplier question was observed wearing this label (T1 screening, case 3)."
     },
     "preparation_fat": {
       "status": "proven",
-      "turns": 10,
-      "evidence": "t1_local_screening 2026-08-27",
-      "note": ""
+      "turns": 7,
+      "evidence": "producer census 2026-08-28, both authorities",
+      "note": "staged 2 + interpreter 5. \u26a0 one staged instance (c17) typed preparation_fat on a SIZE question - mapping suspect, see below."
     },
     "identity_variant": {
       "status": "proven",
       "turns": 2,
-      "evidence": "t1_local_screening 2026-08-27",
-      "note": ""
+      "evidence": "producer census 2026-08-28, both authorities",
+      "note": "interpreter 2, staged 0."
     },
     "consumption_complete": {
       "status": "unproven",
       "turns": 0,
-      "evidence": null,
-      "note": "\u26d4 ZERO producers. Observed being emitted AS menu_size (case 2). The one type with no defensible default is the one that collapses into a defaultable one."
+      "evidence": "producer census 2026-08-28, both authorities",
+      "note": "\u26d4 STILL ZERO IN BOTH STORES. `consumed_quantity` exists in AmbiguityType and never fired across 50 turns."
     },
     "unstated_extras": {
       "status": "unproven",
       "turns": 0,
-      "evidence": null,
-      "note": "\u26d4 ZERO producers in 50 turns."
+      "evidence": "producer census 2026-08-28, both authorities",
+      "note": "\u26d4 STILL ZERO IN BOTH STORES. `component_breakdown` exists and never fired."
     },
     "portion_multiplier": {
       "status": "unproven",
       "turns": 0,
-      "evidence": null,
-      "note": "\u26d4 ZERO producers. The Panda probe called the typing helper with an EMPTY ambiguities list; case 3 emits continuous_portion instead."
+      "evidence": "producer census 2026-08-28, both authorities",
+      "note": "\u26d4 STILL ZERO. No staged type maps to it either."
     }
   }
 }
