@@ -65,6 +65,10 @@ DEFAULTABLE_CANDIDATES = (MENU_SIZE, CONTINUOUS_PORTION, UNSTATED_EXTRAS,
 #: MENU_SIZE from CONTINUOUS_PORTION, so they are handled in `classify`.
 _FIELD_MAP = {
     "consumed": CONSUMPTION_COMPLETE,
+    # ⭐ ADDED 2026-08-27 with the narrow prompt exception. `multiplier` is the
+    # one subject with no prior field: "a single or double scoop" is not a
+    # quantity question (the unit is known) and not an identity one.
+    "multiplier": PORTION_MULTIPLIER,
     "prep": PREPARATION_FAT, "preparation": PREPARATION_FAT,
     "cook_method": PREPARATION_FAT, "cooking": PREPARATION_FAT,
     "extras": UNSTATED_EXTRAS, "ingredient": UNSTATED_EXTRAS,
@@ -73,6 +77,10 @@ _FIELD_MAP = {
     "variant": IDENTITY_VARIANT, "flavor": IDENTITY_VARIANT,
     "flavour": IDENTITY_VARIANT, "type": IDENTITY_VARIANT,
 }
+#: ⚠ `servings`/`count` stay here deliberately: they are AMOUNT words. The
+#: multiplier subject has its own field so it cannot be absorbed into a
+#: quantity bucket, which is how "single or double scoop?" was typed
+#: `continuous_portion` before the vocabulary was completed.
 _QUANTITY_FIELDS = frozenset({"quantity", "amount", "portion", "size",
                               "servings", "count"})
 
