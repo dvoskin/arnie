@@ -110,6 +110,26 @@ async def main():
                     # was reverted to avoid raising the pending-mutation
                     # ratchet. Neither is an omission defect.
                     rec["q_kinds"] = [str(getattr(q, "kind", "") or "") for q in qs]
+                    # ⭐ ASK PROVENANCE. `question_id` / `staged_item_id` are
+                    # returned by EXACTLY ONE ask site — core/food_turn.py:6390,
+                    # the STAGED PIPELINE — and persisted by
+                    # core/conversation.py:2015-2016. A durable row carrying a
+                    # non-empty question_id was raised by the pipeline; one
+                    # without it was raised by the interpreter. This is the
+                    # discriminator for the two-store hypothesis, and it was
+                    # never captured, which is why four rounds could not tell
+                    # which producer they were measuring.
+                    prov = []
+                    for q in qs:
+                        try:
+                            pl = json.loads(getattr(q, "payload_json", None) or "{}") or {}
+                        except Exception:
+                            pl = {}
+                        prov.append({"question_id": pl.get("question_id") or "",
+                                     "staged_item_id": pl.get("staged_item_id") or "",
+                                     "ask_types": pl.get("ask_types") or []})
+                    rec["provenance"] = prov
+                    rec["staged_raised"] = any(p["question_id"] for p in prov)
                     rec["is_d1_population"] = any(
                         k == "food_structured_ask" for k in rec["q_kinds"])
                     at = []
