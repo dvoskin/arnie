@@ -20,6 +20,7 @@ for line in pathlib.Path("/Users/danielvoskin/Code Learn/arnie/.env").read_text(
         os.environ["ANTHROPIC_API_KEY"] = line.split("=", 1)[1].strip().strip('"')
 
 import core.food_turn as FT
+from scripts.config_pin import pin_config
 from scripts.measure_real_meal_completion import _make_identity, _cleanup
 
 REPS = int(os.environ.get("REPS", "3"))
@@ -28,6 +29,7 @@ CASES = [int(x) for x in (os.environ.get("ONLY_CASES") or "").replace(",", " ").
 # ⭐ SELECTABLE CORPUS, ONE INSTRUMENT. Hardcoding this made an entire
 # 24-turn run return KeyError on every case; the CONTROLS caught it,
 # which is why a discrimination set carries known-good emitters.
+CONFIG = pin_config()   # ⛔ refuses to run on undeclared drift
 _CORPUS_FILE = os.environ.get("CORPUS_FILE",
                               "data/corpus/real_meal_expectations_v1.json")
 CORPUS = json.load(open(_CORPUS_FILE))
@@ -68,6 +70,10 @@ async def main():
     engine = make_engine(os.environ["ARNIE_DATABASE_URL"])
     session = async_sessionmaker(engine, expire_on_commit=False)
     fh = OUT.open("w"); run = uuid.uuid4().hex[:6]; n = 0
+    fh.write(json.dumps({"_config": CONFIG, "_reps": REPS,
+                         "_corpus": _CORPUS_FILE,
+                         "_only_cases": CASES}) + "\n")
+    fh.flush()
     for rep in range(1, REPS + 1):
         for cid in CASES:
             CAP.clear(); n += 1

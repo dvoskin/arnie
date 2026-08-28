@@ -162,3 +162,49 @@ for `consumed`. Records exist; the subject still is not selected.
 Closest to *"neither axis separates cleanly"*, with form carrying a real signal
 and semantics **unmeasured rather than excluded**. Whether c2's residual
 omission is semantic or another structural property is still open.
+
+---
+
+# ROUND 2 (semantic arm) — **THE BASELINE DID NOT REPRODUCE**
+
+Raw: `data/corpus/d1_semantic_arm_result_2026-08-27.jsonl`.
+
+```
+c303  c2 VERBATIM   asked 1/3   zero-record 0/1   n_amb [1,0,0]   history 7/8
+c304  c3 VERBATIM   asked 2/3   zero-record 0/2   n_amb [0,2,2]   history 7/9
+c305  CONTROL c16   asked 3/3   zero-record 0/3   n_amb [3,3,3]   ✅
+```
+
+**The originals emitted ambiguities every time they asked.** With no signal on
+the "originals omit" side, nothing can be attributed to form or semantics —
+c302 emitting 3/3 means nothing when c304 emits too. c301 never asked (0/3):
+**probe selection failed a second time.**
+
+## ⛔⛔⛔ I RAN THREE DISCRIMINATION ROUNDS AGAINST A DEFECT WHOSE BASE RATE WAS NEVER ESTABLISHED
+
+D1's 14/19 came from three runs. A fourth shows 0/3. Three asks cannot declare
+the defect gone — but they are enough to say **the base rate was never
+measured**, and every minimal-pair comparison presumed it.
+
+## ⛔⛔ AND THE HARNESS HAD NO CONFIG PINNING
+
+`sweep_case_stability.py` refuses to run under an unpinned configuration and
+records the resolved config in its output. **`characterise_ask_producer.py` was
+written from scratch WITHOUT that guard, and four experiments ran through it.**
+
+So the baseline's failure to reproduce **cannot be attributed to variance
+rather than configuration** — no run recorded its own config.
+
+⭐ Having spent the same day proving that unpinned configuration silently
+reverses conclusions, I built a second harness without the protection. **The
+guard now lives in ONE place — `scripts/config_pin.py` — that every harness
+imports**, because a rule enforced in one harness is a rule the next harness
+will be written without.
+
+## Corrected sequence
+
+```
+1. ✅ ONE shared config guard; both harnesses pinned, config in the output
+2.    D1 BASE RATE — c2 / c3 verbatim + control, n=8, pinned
+3.    resume discrimination ONLY if the defect reproduces
+```

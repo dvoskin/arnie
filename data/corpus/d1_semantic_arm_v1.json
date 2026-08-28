@@ -1,0 +1,108 @@
+{
+  "name": "d1_semantic_arm_v1",
+  "created": "2026-08-27",
+  "frozen": true,
+  "purpose": "D1 SEMANTIC ARM, CORRECTED. Round 1's semantic probes never ASKED, so they produced no evidence. Every utterance here is drawn from a family PROVEN to ask. 301/302 hold FORM fixed and vary CONTENT -- the inverse of the form axis -- and 303/304 measure the originals IN THE SAME RUN so the comparison cannot be confounded by drift.",
+  "cases": [
+    {
+      "id": 301,
+      "message": "Shake Shack ShackBurger and a small fries",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[SEMANTIC] c2's EXACT template, different chain. Shake Shack (c14) asks reliably. If it OMITS -> the shape drives it. If it EMITS -> Five Guys / consumption semantics drive it."
+    },
+    {
+      "id": 302,
+      "message": "Chipotle Burrito Bowl: Chicken, White Rice, and Black Beans",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[SEMANTIC] c3's EXACT template ('<chain> <container>: A, B, and C'), different chain. If it OMITS -> shape. If it EMITS -> Panda / multiplier semantics."
+    },
+    {
+      "id": 303,
+      "message": "Five Guys Little Cheeseburger and a small fries",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[IN-RUN BASELINE] = c2 verbatim. Expected ~7/8 zero-record."
+    },
+    {
+      "id": 304,
+      "message": "Panda Express Bigger Plate: Orange Chicken, Teriyaki Chicken, and Super Greens",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[IN-RUN BASELINE] = c3 verbatim. Expected ~7/9 zero-record."
+    },
+    {
+      "id": 305,
+      "message": "8 oz sirloin, a loaded baked potato, and a Caesar salad",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[CONTROL] = c16. Emitted 9/9 across three runs plus 3/3 in round 1."
+    }
+  ]
+}

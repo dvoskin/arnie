@@ -1,0 +1,101 @@
+"""ONE config-pinning guard, shared by every measurement harness.
+
+⛔⛔⛔ EXTRACTED 2026-08-27 AFTER BUILDING THE SECOND HARNESS WITHOUT IT.
+`sweep_case_stability.py` refuses to run under an unpinned configuration and
+writes the resolved config as its output's first line. `characterise_ask_
+producer.py` was then written from scratch WITHOUT the guard, and four
+experiments ran through it — including one whose baseline failed to reproduce,
+which cannot now be attributed to variance rather than configuration because
+no run recorded its own config.
+
+Having spent the same day proving that unpinned configuration silently reverses
+conclusions, a second harness was built without the protection. **The guard has
+to live in ONE place that every harness imports, or the next harness will be
+written without it too.**
+"""
+
+import os
+import pathlib
+
+
+# ⛔⛔⛔ THE 2026-08-27 SWEEP WAS RUN UNDER THE WRONG CONFIGURATION AND FROZEN
+# AS A BASELINE. It recorded the tree SHA (`834924b`) and asserted a
+# self-tested reader, and both were true. It never recorded the FLAGS. All
+# EIGHTEEN behaviour flags `render.yaml` declares were unset in that shell:
+#
+#     FOOD_GATE_MODEL         prod true  -> sweep unset : the structured food
+#                                           lane admitted 2 of 25 corpus cases
+#                                           instead of 25 of 25. 23 cases FLIP.
+#     NUTRITION_RESOLVER_MODE prod live  -> sweep unset : traces recorded
+#                                           `resolver_source='off'`.
+#     DEFAULT_MODEL           prod sonnet-4-6 -> sweep unset : A DIFFERENT MODEL.
+#
+# A tree SHA does not pin a configuration. So this harness now REFUSES to run
+# when a declared flag differs without a written reason, rather than producing
+# a clean-looking number from the wrong product.
+_ALLOWED_DEVIATIONS = {
+    "PROACTIVE_MESSAGING_ENABLED":
+        "false — the harness must never emit outbound messages on behalf of "
+        "synthetic identities",
+    "TELEGRAM_BOT_USERNAME": "unused — no Telegram channel in this harness",
+    "DASHBOARD_BASE_URL": "unused — no links are rendered",
+    "TRUST_PROXY_HEADERS": "unused — no HTTP layer in this harness",
+    "DEV_AUTH_ENABLED": "unused — no auth layer in this harness",
+    "LINKING_ENABLED": "unused — no account linking in this harness",
+    "BRAIN_TAB_ENABLED": "unused — UI surface only",
+    # Danny, 2026-08-27: ~1/3 of run cost for zero measurement value here.
+    #
+    # ⭐ THE JUSTIFICATION IS A CONTRACT, NOT AN ASSUMPTION. In `new_observe`
+    # the coordinator OBSERVES and legacy EXECUTES; `deep_observing()` only
+    # controls whether the planning stages additionally run in observe mode,
+    # and those stages "never execute tools, write rows or send messages"
+    # (render.yaml, and `core/turns/observe.py`). What it buys in production is
+    # a disposition-agreement number for the promotion decision — a metric this
+    # harness does not read. What it costs is a SECOND interpreter pass on
+    # every food turn.
+    #
+    # ⚠ RESIDUAL RISK, WRITTEN DOWN RATHER THAN WAVED AWAY: this is a declared
+    # deviation from production, and the last invalid baseline came from an
+    # UNdeclared one. If a future run produces an anomaly that the product
+    # cannot explain, re-run one case with this restored to `true` before
+    # blaming the product.
+    "TURN_COORDINATOR_OBSERVE_DEEP":
+        "false — read-only second interpreter pass; cannot change the decision "
+        "(observe stages never execute tools, write rows or send messages, and "
+        "legacy executes in new_observe). Cost, not fidelity. Danny 2026-08-27",
+}
+_SECRETS = ("DATABASE_URL", "ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN",
+            "ARNIE_USERS_DIR")
+
+
+class ConfigDrift(Exception):
+    """A declared production flag differs and nobody wrote down why."""
+
+
+def pin_config() -> dict:
+    """Compare this shell against every flag `render.yaml` declares.
+
+    Returns the resolved configuration, which is written as the FIRST line of
+    the output so the run can never again be read without its config.
+    """
+    import re
+    txt = pathlib.Path("render.yaml").read_text()
+    declared = dict(re.findall(r'- key:\s*(\S+)\s*\n\s*value:\s*"?([^"\n]*)"?', txt))
+    drift = []
+    for key, want in sorted(declared.items()):
+        if key in _SECRETS:
+            continue
+        got = os.environ.get(key)
+        if (got or "") != want and key not in _ALLOWED_DEVIATIONS:
+            drift.append(f"  {key}: render.yaml={want!r} shell={got!r}")
+    if drift:
+        raise ConfigDrift(
+            "declared production flags differ with no written reason:\n"
+            + "\n".join(drift)
+            + "\n\nEither export them, or add the flag to _ALLOWED_DEVIATIONS "
+              "WITH a reason. A baseline measured under an unpinned "
+              "configuration is not a baseline.")
+    resolved = {k: os.environ.get(k) for k in declared if k not in _SECRETS}
+    resolved["_deviations"] = {k: v for k, v in _ALLOWED_DEVIATIONS.items()
+                               if k in declared}
+    return resolved

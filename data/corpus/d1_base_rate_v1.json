@@ -1,0 +1,68 @@
+{
+  "name": "d1_base_rate_v1",
+  "created": "2026-08-27",
+  "frozen": true,
+  "purpose": "D1 BASE RATE. Establish whether the omission REPRODUCES, and at what rate, before any further discrimination. Three discrimination rounds were run against a defect whose stability was never confirmed; the in-run baseline of round 2 then failed to reproduce it (0/3 zero-record against a pooled history of ~14/17). n=8 per case, first run under a PINNED config recorded in the output.",
+  "cases": [
+    {
+      "id": 401,
+      "message": "Five Guys Little Cheeseburger and a small fries",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "= corpus case 2, VERBATIM. Pooled history: 7/8 asks zero-record."
+    },
+    {
+      "id": 402,
+      "message": "Panda Express Bigger Plate: Orange Chicken, Teriyaki Chicken, and Super Greens",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "= corpus case 3, VERBATIM. Pooled history: 7/9 asks zero-record."
+    },
+    {
+      "id": 403,
+      "message": "8 oz sirloin, a loaded baked potato, and a Caesar salad",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "= corpus case 16. CONTROL: emitted records 12/12 asks across four runs."
+    }
+  ]
+}
