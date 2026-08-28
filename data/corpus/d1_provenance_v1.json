@@ -1,0 +1,74 @@
+{
+  "name": "d1_provenance_v1",
+  "created": "2026-08-27",
+  "frozen": true,
+  "question": "Do the OMITTING (unclassified) asks carry staged provenance (question_id / staged_item_id) while interpreter-typed asks do not?",
+  "discriminator": "question_id and staged_item_id are returned by EXACTLY ONE of seven ask sites - core/food_turn.py:6390, the staged pipeline - and persisted by core/conversation.py:2015-2016. Non-empty question_id on a durable row => the STAGED PIPELINE raised that ask.",
+  "predictions_frozen_before_run": {
+    "two_store_CONFIRMED": "omitting/unclassified asks carry question_id while the interpreter-typed control and test arm do not. Then D1 is an INSTRUMENTATION-SOURCE bug: _ask_types_from(data) reads a store that is not the ask's authority, and the type should come from _decision / ClarificationQuestion.fields via the same canonical vocabulary.",
+    "two_store_REFUTED": "omitting asks carry NO question_id either. Then the staged pipeline did not raise them, the two-store explanation dies, and the origin of the question text is again unknown.",
+    "do_not_reinterpret": "Round 1 is NOT to be reinterpreted until this lands. If confirmed, round 1 becomes a routing/provenance transition between two legitimate ask producers, not a missing-record repair."
+  },
+  "cases": [
+    {
+      "id": 701,
+      "message": "Five Guys Little Cheeseburger and a small fries",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[SUBJECT] omits ~5/8. Expect staged provenance on the omitting turns."
+    },
+    {
+      "id": 702,
+      "message": "Five Guys Little Cheeseburger and fries",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[INTERPRETER-TYPED] round-1 test arm, 0/8 omission, ask_types=menu_size. Expect NO question_id."
+    },
+    {
+      "id": 703,
+      "message": "8 oz sirloin, a loaded baked potato, and a Caesar salad",
+      "expected_terminal": "ASK_CORRECT",
+      "expected_component_range": [
+        1,
+        6
+      ],
+      "expected_calorie_range": [
+        100,
+        3000
+      ],
+      "expected_protein_range": [
+        1,
+        200
+      ],
+      "expected_clarification_field": null,
+      "forbidden_outcomes": [],
+      "label_note": "[CONTROL] interpreter-typed, 0/8 omission. Expect NO question_id."
+    }
+  ]
+}
