@@ -64,5 +64,13 @@
       "forbidden_outcomes": [],
       "label_note": "= corpus case 16. CONTROL: emitted records 12/12 asks across four runs."
     }
-  ]
+  ],
+  "interpretation_frozen_before_run": {
+    "authority": "Danny, 2026-08-27, stated BEFORE the run",
+    "both_reproduce": "D1 SURVIVES; discrimination resumes.",
+    "one_reproduces": "D1 NARROWS to the reproducing case before any new criterion work.",
+    "neither_reproduces": "D1 is NOT an active defect population under the current tree/config. DEMOTE it until a new occurrence appears.",
+    "prior_rounds": "NO semantic, form or chain conclusions may be drawn from rounds 1-2. Their in-run baseline failed to reproduce and those runs were NOT config-pinned, so their comparisons are void - not merely weak.",
+    "material": "'Materially' means clearly above the control's 0/12. A single zero-record ask in 8 is not reproduction."
+  }
 }

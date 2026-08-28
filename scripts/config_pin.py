@@ -98,4 +98,41 @@ def pin_config() -> dict:
     resolved = {k: os.environ.get(k) for k in declared if k not in _SECRETS}
     resolved["_deviations"] = {k: v for k, v in _ALLOWED_DEVIATIONS.items()
                                if k in declared}
+    resolved["_tree_sha"] = _tree_sha()
     return resolved
+
+
+def _tree_sha() -> str:
+    """HEAD, plus a dirty marker. ⚠ A SHA ALONE PINS NOTHING — that is the
+    2026-08-27 lesson and the reason this sits BESIDE the resolved flags rather
+    than instead of them. Both are needed: the flags say what product ran, the
+    SHA says what code."""
+    import subprocess
+    try:
+        sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, timeout=5)
+        dirty = subprocess.run(["git", "status", "--porcelain"],
+                               capture_output=True, text=True, timeout=5)
+        out = (sha.stdout or "").strip() or "unknown"
+        return out + ("-dirty" if (dirty.stdout or "").strip() else "")
+    except Exception:
+        return "unknown"
+
+
+def comparable(a: dict, b: dict) -> tuple:
+    """⛔ CROSS-RUN COMPARISON IS INVALID UNLESS CONFIG **AND** TREE MATCH.
+
+    Returns (ok, [reasons]). Three discrimination rounds were compared against
+    a baseline collected from a different tree state through an UNPINNED
+    harness; no run recorded enough to notice. Callers must refuse to compare
+    rather than quietly reporting a delta.
+    """
+    reasons = []
+    if (a or {}).get("_tree_sha") != (b or {}).get("_tree_sha"):
+        reasons.append(f"tree differs: {(a or {}).get('_tree_sha')} vs "
+                       f"{(b or {}).get('_tree_sha')}")
+    keys = (set(a or {}) | set(b or {})) - {"_deviations", "_tree_sha"}
+    for k in sorted(keys):
+        if (a or {}).get(k) != (b or {}).get(k):
+            reasons.append(f"{k}: {(a or {}).get(k)!r} vs {(b or {}).get(k)!r}")
+    return (not reasons), reasons
