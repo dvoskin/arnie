@@ -57,6 +57,22 @@
       "code_sha": "0a4099d",
       "evidence": "qualification 2026-08-27 on code 0a4099d",
       "note": "TEST arm: fries size word removed."
+    },
+    "Panda Express Bigger Plate: Orange Chicken, Teriyaki Chicken, Beijing Beef, Chow Mein": {
+      "eligible": true,
+      "asks_observed": 1,
+      "turns": 1,
+      "code_sha": "0a4099d",
+      "evidence": "qualification 2026-08-27 on code 0a4099d (round 2)",
+      "note": "round-2 BASELINE. New utterance; c3's 3/5 is context only."
+    },
+    "Panda Express Bigger Plate, the 3-entree meal: Orange Chicken, Teriyaki Chicken, Beijing Beef, Chow Mein": {
+      "eligible": true,
+      "asks_observed": 1,
+      "turns": 1,
+      "code_sha": "0a4099d",
+      "evidence": "qualification 2026-08-27 on code 0a4099d (round 2)",
+      "note": "round-2 TEST: 'the 3-entree meal' added beside the SKU."
     }
   }
 }
