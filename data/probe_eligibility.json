@@ -1,0 +1,54 @@
+{
+  "_doc": "Probe eligibility: did this EXACT utterance reach the ask path, under which tree? Enforced by scripts/probe_eligibility.assert_eligible and tests/test_probe_eligibility_is_enforced.py.",
+  "_rule": "Eligible = the exact utterance was observed reaching the behaviour under test under a matching pinned config/tree. Failed eligibility is FATAL to the arm, never recorded as '0 asks observed'.",
+  "probes": {
+    "Five Guys Little Cheeseburger and a small fries": {
+      "eligible": true,
+      "asks_observed": 8,
+      "turns": 8,
+      "tree_sha": "469f7e4",
+      "evidence": "d1_base_rate_result_2026-08-27",
+      "note": "corpus case 2"
+    },
+    "Panda Express Bigger Plate: Orange Chicken, Teriyaki Chicken, and Super Greens": {
+      "eligible": true,
+      "asks_observed": 5,
+      "turns": 8,
+      "tree_sha": "469f7e4",
+      "evidence": "d1_base_rate_result_2026-08-27",
+      "note": "corpus case 3"
+    },
+    "8 oz sirloin, a loaded baked potato, and a Caesar salad": {
+      "eligible": true,
+      "asks_observed": 8,
+      "turns": 8,
+      "tree_sha": "469f7e4",
+      "evidence": "d1_base_rate_result_2026-08-27",
+      "note": "corpus case 16 \u2014 the known-good CONTROL, 0/8 zero-record"
+    },
+    "I had a Bigger Plate at Panda Express with orange chicken, teriyaki chicken and super greens": {
+      "eligible": false,
+      "asks_observed": 0,
+      "turns": 3,
+      "tree_sha": "3c45b82",
+      "evidence": "d1_minimal_pairs_result_2026-08-27",
+      "note": "LOGGED 0/3 \u2014 never asked. Voided the round-1 form arm."
+    },
+    "An In-N-Out cheeseburger and fries": {
+      "eligible": false,
+      "asks_observed": 0,
+      "turns": 3,
+      "tree_sha": "3c45b82",
+      "evidence": "d1_minimal_pairs_result_2026-08-27",
+      "note": "LOGGED 0/3 \u2014 never asked. Voided the round-1 semantic arm."
+    },
+    "Shake Shack ShackBurger and a small fries": {
+      "eligible": false,
+      "asks_observed": 0,
+      "turns": 3,
+      "tree_sha": "3ec70f5",
+      "evidence": "d1_semantic_arm_result_2026-08-27",
+      "note": "LOGGED 0/3 \u2014 never asked. Voided the round-2 template-match arm."
+    }
+  }
+}

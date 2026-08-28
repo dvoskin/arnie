@@ -21,6 +21,7 @@ for line in pathlib.Path("/Users/danielvoskin/Code Learn/arnie/.env").read_text(
 
 import core.food_turn as FT
 from scripts.config_pin import pin_config
+from scripts.probe_eligibility import assert_eligible
 from scripts.measure_real_meal_completion import _make_identity, _cleanup
 
 REPS = int(os.environ.get("REPS", "3"))
@@ -34,6 +35,13 @@ _CORPUS_FILE = os.environ.get("CORPUS_FILE",
                               "data/corpus/real_meal_expectations_v1.json")
 CORPUS = json.load(open(_CORPUS_FILE))
 BY_ID = {c["id"]: c for c in (CORPUS["cases"] if isinstance(CORPUS, dict) else CORPUS)}
+
+# ⛔ GUARD 5 — refuse to START an experiment containing an unqualified probe.
+# Raising here costs nothing; discovering it after the run costs the whole arm.
+# Set PROBE_QUALIFY=1 for a qualification pass, whose entire purpose is to run
+# utterances that may NOT reach the behaviour under test.
+if not (os.environ.get("PROBE_QUALIFY") or "").strip():
+    assert_eligible([BY_ID[c] for c in CASES if c in BY_ID], CONFIG)
 
 CAP = []
 _orig = FT._ask_types_from
