@@ -99,7 +99,43 @@ def pin_config() -> dict:
     resolved["_deviations"] = {k: v for k, v in _ALLOWED_DEVIATIONS.items()
                                if k in declared}
     resolved["_tree_sha"] = _tree_sha()
+    resolved["_code_sha"] = _code_sha()
     return resolved
+
+
+#: Paths whose contents can change what the PRODUCT does or what the instrument
+#: observes. `data/` and `docs/` are excluded on purpose — see `_code_sha`.
+_CODE_PATHS = ("core", "skills", "handlers", "db", "scripts", "render.yaml")
+
+
+def _code_sha() -> str:
+    """The last commit touching BEHAVIOUR-RELEVANT code, plus a dirty marker
+    scoped to those paths.
+
+    ⛔⛔ WHY NOT THE FULL TREE SHA. Probe eligibility compares the tree at
+    qualification against the tree at run time. Using the whole repo made that
+    check self-defeating: **registering eligibility is a commit, which changes
+    the SHA, which invalidates the eligibility just registered.** A probe could
+    never be qualified and then used. Observed 2026-08-27 — the guard blocked
+    its own experiment twice.
+
+    ⭐ THIS IS NOT A RELAXATION. A docs or corpus commit cannot change what the
+    model does; flagging it as a behaviour change measured the wrong thing. The
+    full `_tree_sha` is still recorded for provenance — this is only what
+    eligibility COMPARES on.
+    """
+    import subprocess
+    try:
+        sha = subprocess.run(["git", "log", "-1", "--format=%h", "--",
+                              *_CODE_PATHS], capture_output=True, text=True,
+                             timeout=5)
+        dirty = subprocess.run(["git", "status", "--porcelain", "--",
+                                *_CODE_PATHS], capture_output=True, text=True,
+                               timeout=5)
+        out = (sha.stdout or "").strip() or "unknown"
+        return out + ("-dirty" if (dirty.stdout or "").strip() else "")
+    except Exception:
+        return "unknown"
 
 
 def _tree_sha() -> str:
@@ -128,10 +164,10 @@ def comparable(a: dict, b: dict) -> tuple:
     rather than quietly reporting a delta.
     """
     reasons = []
-    if (a or {}).get("_tree_sha") != (b or {}).get("_tree_sha"):
-        reasons.append(f"tree differs: {(a or {}).get('_tree_sha')} vs "
-                       f"{(b or {}).get('_tree_sha')}")
-    keys = (set(a or {}) | set(b or {})) - {"_deviations", "_tree_sha"}
+    if (a or {}).get("_code_sha") != (b or {}).get("_code_sha"):
+        reasons.append(f"code differs: {(a or {}).get('_code_sha')} vs "
+                       f"{(b or {}).get('_code_sha')}")
+    keys = (set(a or {}) | set(b or {})) - {"_deviations", "_tree_sha", "_code_sha"}
     for k in sorted(keys):
         if (a or {}).get(k) != (b or {}).get(k):
             reasons.append(f"{k}: {(a or {}).get(k)!r} vs {(b or {}).get(k)!r}")

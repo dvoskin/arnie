@@ -39,16 +39,23 @@ def test_a_probe_that_ALREADY_killed_an_arm_cannot_be_reused():
     assert "INELIGIBLE" in str(e.value)
 
 
-def test_eligibility_does_not_transfer_across_TREES():
-    """Eligibility is evidence about a specific tree, not a property of the
-    words. A qualification from another tree is not qualification."""
+def test_eligibility_does_not_transfer_across_CODE_CHANGES():
+    """Eligibility is evidence about a specific CODE state, not a property of
+    the words.
+
+    ⭐ CODE sha, not the whole tree. Comparing whole-repo SHAs made the guard
+    self-defeating: registering eligibility is a commit, which changed the SHA,
+    which invalidated the eligibility just registered. It blocked its own
+    experiment twice on 2026-08-27. Scoping to behaviour-relevant paths is not
+    a relaxation - a docs or corpus commit cannot change what the model does.
+    """
     with pytest.raises(IneligibleProbe) as e:
         assert_eligible([{"id": 4, "message": QUALIFIED}],
-                        {"_tree_sha": "deadbeef"})
-    assert "tree" in str(e.value)
-    # ...and it passes on the tree where it was actually established
-    tree = json.loads(REGISTRY.read_text())["probes"][QUALIFIED]["tree_sha"]
-    assert_eligible([{"id": 4, "message": QUALIFIED}], {"_tree_sha": tree})
+                        {"_code_sha": "deadbeef"})
+    assert "code" in str(e.value)
+    # ...and it passes on the code state where it was actually established
+    sha = json.loads(REGISTRY.read_text())["probes"][QUALIFIED]["code_sha"]
+    assert_eligible([{"id": 4, "message": QUALIFIED}], {"_code_sha": sha})
 
 
 def test_eligibility_is_NOT_power():
@@ -64,7 +71,7 @@ def test_eligibility_is_NOT_power():
 def test_every_registered_probe_cites_its_evidence():
     for utt, p in json.loads(REGISTRY.read_text())["probes"].items():
         assert "asks_observed" in p and "turns" in p, utt
-        assert p.get("tree_sha"), f"{utt} has no tree"
+        assert p.get("code_sha"), f"{utt} has no code sha"
         assert p.get("evidence"), f"{utt} claims a status with no run cited"
         if p["eligible"]:
             assert p["asks_observed"] > 0, f"{utt} eligible with 0 asks"

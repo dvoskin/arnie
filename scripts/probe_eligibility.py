@@ -60,10 +60,13 @@ def assert_eligible(cases, config: dict | None = None) -> None:
                        f"evidence for this exact utterance")
         elif not p.get("eligible"):
             bad.append(f"  case {c.get('id')}: INELIGIBLE — {p.get('note') or ''}")
-        elif config and p.get("tree_sha") and config.get("_tree_sha") \
-                and p["tree_sha"] != config["_tree_sha"]:
-            bad.append(f"  case {c.get('id')}: eligibility was established on tree "
-                       f"{p['tree_sha']}, this run is {config['_tree_sha']}")
+        elif config and p.get("code_sha") and config.get("_code_sha") \
+                and p["code_sha"] != config["_code_sha"]:
+            # ⭐ CODE sha, not the full tree: registering eligibility is itself
+            # a commit, so comparing whole-repo SHAs made the guard invalidate
+            # the very evidence it had just recorded.
+            bad.append(f"  case {c.get('id')}: eligibility was established on code "
+                       f"{p['code_sha']}, this run is {config['_code_sha']}")
     if bad:
         raise IneligibleProbe(
             "probes that have not been shown to reach the behaviour under "
