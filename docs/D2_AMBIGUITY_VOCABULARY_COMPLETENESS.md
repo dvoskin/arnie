@@ -306,3 +306,78 @@ trustworthy; that requires one clean run to demonstrate, not an inference.
 - producer provenance missing
 - `menu_size` or `continuous_portion` appears *(both carry unresolved pre-fix
   contamination)*
+
+---
+
+# CORRECTED CENSUS — PRODUCER CONFUSION TABLE
+
+`code=0b5f432`, 50 turns, 0 errors, 25 asks, 42 field-rows.
+Raw: `data/corpus/census_v3_confusion_2026-08-28.jsonl`.
+
+```
+staged       quantity           -> continuous_portion     x13
+interpreter  quantity           -> continuous_portion     x11
+interpreter  prep               -> preparation_fat         x9
+interpreter  quantity           -> menu_size               x5
+staged       consumed_fraction  -> consumption_complete    x2
+interpreter  identity           -> identity_variant        x2
+```
+
+**Every field maps coherently.** No `unclassified`. Both producers observed.
+
+⚠ **An earlier version of this table was an ANALYSIS ARTIFACT**: for interpreter
+rows it printed the turn's FIRST `ask_type` instead of mapping each field, which
+showed `prep -> continuous_portion` x6. My script, not the product.
+
+## ⭐ CONDITION 3 — AND WHY ITS PASS IS WEAK
+
+15 staged field-questions, **0 prompt-level mismatches**. But:
+
+```
+consumed_fraction  ->  "How much of the five guys little..."
+quantity           ->  "How much of the Popeyes Cajun Fries?"
+```
+
+**The staged prompts are TEMPLATED — "How much of the X?" for BOTH fields.**
+Prompt-level validation therefore has almost no discriminating power, and a
+clean pass here is close to vacuous. Recording it as such rather than as
+evidence.
+
+## ⛔⛔ THE RENDERER DIVERGES FROM THE STRUCTURED SUBJECT
+
+The USER-VISIBLE question for the same rows:
+
+```
+c20  field=quantity  prompt="How much of the Trader Joe's Butter Chicken?"
+     USER SAW: "Butter Chicken — was that the full pouch or about half?"
+
+c2   field=quantity  prompt="How much of the Five Guys Little Fries?"
+     USER SAW: "Little Cheeseburger and Little Fries, did you finish both...?"
+```
+
+**Consumption framing rendered from a `quantity` field.** This is candidate 3
+from the case-17 triage — *the rendered question and the structured subject
+disagree* — now with evidence, and it is NOT a mapping bug: the field→type
+mapping is right and the composer asks something else.
+
+⭐ Consequence: **an answer parsed against `quantity` may be answering a
+consumption question.** That is the same hazard as a consumption question
+wearing `menu_size`, one layer downstream.
+
+## ⚠ INTERPRETER ROWS CANNOT BE CONDITION-3 CHECKED AT ALL
+
+No per-field prompt is captured on that path — only the turn's rendered
+question — so a multi-question turn cannot have its fields validated
+individually. **27 of 42 rows are un-validatable for condition 3.**
+
+## Gate status
+
+```
+1 observed emission        ✅ both producers, cited by run
+2 validated mapping        ✅ every field maps coherently, no unclassified
+3 rendered-question check  ⛔ staged: passes but VACUOUSLY (templated prompts)
+                           ⛔ interpreter: NOT CHECKABLE (no per-field prompt)
+                           ⛔ renderer divergence OBSERVED on c2 and c20
+```
+
+**D2 REMAINS BLOCKED.** Condition 3 is not satisfied.
