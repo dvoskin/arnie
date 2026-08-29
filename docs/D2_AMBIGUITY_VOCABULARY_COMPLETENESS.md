@@ -451,3 +451,86 @@ That is a limit of condition 3 as posed, not a defect count.
 ```
 
 **D2 REMAINS BLOCKED.**
+
+---
+
+# STEP 1a/1b — THE THREE MISMATCH CLASSES, EXPLAINED AND CLASSIFIED
+
+Analysis only. Zero product change.
+
+## A — RENDERER DIVERGENCE → **PRODUCT DEFECT**
+
+`FoodResponsePlan` — the object handed to the composer — carries
+`clarification_question` (the TEXT) and 30-odd context fields, and **NOT ONE
+structured subject**:
+
+```
+requested_fields  ✗      field  ✗      subject  ✗      ask_type  ✗      ambiguity  ✗
+```
+
+**The layer that writes the user-visible question is never told what the
+question is ABOUT.** It receives text and free-form context. Nothing binds
+*"How much of the Trader Joe's Butter Chicken?"* to `quantity`, so rewording it
+as *"was that the full pouch or about half?"* — a consumption question — is
+unconstrained and undetectable.
+
+> **This is the direct cause of "the structural subject ≠ what the user sees",
+> and it is a genuine product defect.** An answer parsed against `quantity` may
+> be answering a consumption question.
+
+**Repair shape:** carry the subject into the plan, and verify the rendered
+question against it. Real code change; **not started.**
+
+## B — `prep` CARRYING EXTRAS → **SCHEMA GAP, not mislabelling**
+
+The interpreter's declared field vocabulary, from the prompt itself:
+
+```
+(fields: quantity, identity, brand, prep, consumed)          ← no `extras`
+```
+
+The prompt **does** discuss toppings, and gives the model **no field to name
+them with**. So *"what toppings — cheese, bacon, sour cream, butter?"* is
+emitted as `prep`. The model is not mislabelling; it is using the only field
+available.
+
+> **`unstated_extras` CANNOT have an interpreter producer. The schema has no
+> slot for it.** This is D2's own thesis, now with a mechanism rather than a
+> count.
+
+⚠ **The repair is a prompt change — the one already tried and REVERTED.** The
+D2 exception added `extras`, and was reverted because ambiguity-record emission
+dropped ~33 %. D1 is now retired as an instrumentation artifact, **but that
+drop was measured on record COUNTS and is independent of the typing bug**, so
+the revert reason still partly stands and would need re-testing before a second
+attempt.
+
+## C — COMPOUND QUESTIONS → **MINOR LIMITATION, largely dissolves**
+
+```
+staged questions by field count      : {1: 15}     ← bundling never fired
+interpreter points by question count : {1: 22, 3: 1}
+```
+
+**Staged:** every question carried exactly ONE `requested_field`. `BUNDLES`
+exists in `clarify_policy.py` but did not fire in 50 turns — so the multi-field
+case is not a live problem.
+
+**Interpreter:** 22 of 23 points carry one question; **one carries three**. The
+1:N that condition 3 cannot validate is **1 row in 23**, not systemic.
+
+> Earlier I called compound questions *"un-validatable in principle"* and
+> implied a clean pass might be unreachable. **That overstated it** — it is one
+> row in twenty-three, and it is read manually.
+
+## Verdict
+
+```
+A  renderer divergence   PRODUCT DEFECT        → the real blocker
+B  prep carries extras   SCHEMA GAP            → D2's thesis; prompt change,
+                                                 previously reverted
+C  compound questions    MINOR LIMITATION      → 1 in 23; record, do not fix
+```
+
+**Only A blocks the measurement.** B blocks `unstated_extras` from ever having
+an interpreter producer but does not corrupt what IS measured. C is noise.
