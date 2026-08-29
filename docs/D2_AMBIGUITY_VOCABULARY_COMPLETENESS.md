@@ -381,3 +381,73 @@ individually. **27 of 42 rows are un-validatable for condition 3.**
 ```
 
 **D2 REMAINS BLOCKED.** Condition 3 is not satisfied.
+
+---
+
+# INTERPRETER PATH IS NOW CONDITION-3 CHECKABLE — AND IT FAILS
+
+`points[].qs` is the interpreter's per-item question text. Joining it to
+`ambiguities` by `item ↔ label` yields the same per-field prompt the staged path
+exposes directly. **14 of 27 ambiguities join**; the harness now captures the
+join natively (`field_prompts`).
+
+```
+c   field     mapped              question                                        
+16  prep      preparation_fat     "cooked with butter/oil or dry?"                ✅
+16  prep      preparation_fat     "what toppings - cheese, bacon, sour cream?"    ⛔
+16  prep      preparation_fat     "all the usual toppings - butter, cheese..."    ⛔
+16  prep      preparation_fat     "dressing on the side or tossed, and any        ⛔
+                                   chicken added?"
+14  quantity  menu_size           "regular or large fries?"                       ✅
+22  prep      preparation_fat     "how were they cooked - fried, scrambled?"      ✅
+22  quantity  continuous_portion  "about how much - half or a whole one?"         ✅
+```
+
+## ⭐⭐⭐ `unstated_extras` HAS ZERO PRODUCERS BECAUSE `prep` CARRIES EXTRAS QUESTIONS
+
+Three unambiguous instances. *"What toppings — cheese, bacon, sour cream,
+butter?"* is not a preparation question, and it is emitted under `field="prep"`,
+so it types `preparation_fat`.
+
+**The subject is being asked about. It is labelled as something else.** Same
+shape as `consumption_complete`, which was invisible under `consumed_fraction`
+and is ALSO rendered from `quantity` on the staged path.
+
+> **Neither "missing" subject was ever missing. Both are asked about under
+> another field's name.**
+
+## ⚠⚠ THE FLAGGER IS ITSELF A PROSE HEURISTIC — DISCOUNT ACCORDINGLY
+
+The subject classifier used above is **keyword matching over question text** —
+the exact mechanism this tranche removed from production (`_FACET_KINDS`). It is
+legitimate for FLAGGING CANDIDATES FOR REVIEW and **not** for ESTABLISHING
+mismatches.
+
+Of its 7 flags on 14 rows:
+
+```
+3  prep -> extras            SOLID. Text is unambiguous.
+1  identity -> "portion"     MY CLASSIFIER'S ERROR. "what kind of chips came
+                             with it?" IS identity; typed correctly.
+1  quantity -> consumption   DEBATABLE. "whole sandwich or half?" is a Panera
+                             MENU SIZE as much as a consumption question.
+2  compound                  "what kind/brand AND what size bag", "side salad or
+                             full entree size, AND any chicken added" — two
+                             subjects in one question; no single label is right.
+```
+
+**A compound question cannot be validated against a single subject at all.**
+That is a limit of condition 3 as posed, not a defect count.
+
+## Gate status
+
+```
+1 observed emission        ✅
+2 validated mapping        ✅
+3 rendered-question check  ⛔ staged: vacuous (templated prompts)
+                           ⛔ interpreter: checkable now, 3 SOLID mismatches
+                           ⛔ renderer divergence observed (c2, c20)
+                           ⚠ compound questions are un-validatable in principle
+```
+
+**D2 REMAINS BLOCKED.**

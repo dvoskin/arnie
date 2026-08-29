@@ -89,7 +89,23 @@ def _spy(data):
     d = data or {}
     items = {str((i or {}).get("food") or "").lower(): bool((i or {}).get("branded"))
              for i in (d.get("items") or []) if isinstance(i, dict)}
+    # ⭐ PER-FIELD PROMPT ON THE INTERPRETER PATH. `points[].qs` is the
+    # interpreter's per-item question text; joining it to `ambiguities` by
+    # item<->label gives the same per-field prompt the staged path exposes
+    # directly. Without it, 27 of 42 census rows were un-validatable for
+    # condition 3 (does the rendered question match the mapped subject).
+    _by_label = {str((p or {}).get("label") or "").strip().lower(): (p or {}).get("qs")
+                 for p in (d.get("points") or []) if isinstance(p, dict)}
+    _joined = []
+    for _a in (d.get("ambiguities") or []):
+        if not isinstance(_a, dict):
+            continue
+        _k = str(_a.get("item") or "").strip().lower()
+        _joined.append({"item": _a.get("item"), "field": _a.get("field"),
+                        "qs": list(_by_label.get(_k) or []),
+                        "joined": _k in _by_label})
     CAP.append({
+        "field_prompts": _joined,
         "n_ambiguities": len(d.get("ambiguities") or []),
         "ambiguities": [{"item": a.get("item"), "field": a.get("field"),
                          "impact_cal": a.get("impact_cal")}
