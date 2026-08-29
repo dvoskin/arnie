@@ -588,3 +588,47 @@ and not to be built without an explicit decision.
 **The honest status: the licence is closed, the detector is not built.** Whether
 the repair actually changes behaviour is an EMPIRICAL question — the next census
 answers it by re-checking c2 and c20.
+
+---
+
+# STEP 2 — POST-REPAIR CENSUS: **INCONCLUSIVE**
+
+`code=4049778`, 50 turns. Raw: `data/corpus/census_v4_postrepair_2026-08-29.jsonl`.
+
+```
+BEFORE (0b5f432)  turns 50  asks 25  staged 13   quantity-only staged asks 11, consumption-reading 1
+AFTER  (4049778)  turns 50  asks 30  staged 10   quantity-only staged asks  6, consumption-reading 0
+```
+
+## ⛔ THE ZERO IS NOT EVIDENCE
+
+The single pre-repair divergence was **c20**. **c20 produced NO staged ask in
+the post-repair run.** The one case that exhibited the defect was never
+exercised, so `0/6` does not test the repair — it is the vanished-denominator
+trap, and it looks exactly like success.
+
+## The real obstacle is POWER, not the repair
+
+> **The divergence occurred ONCE IN 50 TURNS.**
+
+At that base rate a 50-turn census cannot separate *"fixed"* from *"did not
+happen to fire."* Reporting `1 → 0` as a result would be the same error as
+reading three asks as a base rate — an error already made and retracted in this
+session.
+
+⚠ And the denominator itself moved: 11 → 6 quantity-only staged asks, with
+asks 25 → 30 and staged 13 → 10. **Run-to-run drift on this corpus is larger
+than the effect being measured.**
+
+## What would actually test it
+
+A **targeted, higher-rep run on c20 and c2** in `experiment` mode — the cases
+known to reach a staged `quantity` ask — rather than a census whose sampling
+cannot guarantee the relevant row appears at all. c20 asked once in 50 turns, so
+the run must be sized on that, not on convenience.
+
+## Status
+
+**Repair A: the cause is closed, the effect is UNVERIFIED.** The composer now
+receives the subject and 4/4 mutations confirm the wiring, but no measurement
+yet shows a divergence prevented. **Do not record it as working.**
