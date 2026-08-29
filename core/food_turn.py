@@ -3900,7 +3900,8 @@ def clarify_text_from_points(points: list, ready: list | None = None, *,
 
 
 def clarify_plan_from_points(points: list, ready: list | None = None, *,
-                             user_message: str = "", items: list | None = None):
+                             user_message: str = "", items: list | None = None,
+                             ambiguities: list | None = None):
     """A clarification the INTERPRETER raised, phrased by the response layer.
 
     Every clarification goes through one renderer now, whatever noticed the
@@ -4044,11 +4045,21 @@ def clarify_plan_from_points(points: list, ready: list | None = None, *,
     # was ever allowed to ship. Every other plan builder gets this by living in
     # food_response, where the builders wrap their own returns.
     from core.food_response import apply_policy
+    # ⭐ THE STRUCTURED SUBJECT, carried to the composer. Raw interpreter field
+    # names, deduplicated in first-seen order — provenance, not a translation.
+    _subject, _seen = [], set()
+    for _a in (ambiguities or []):
+        if not isinstance(_a, dict):
+            continue
+        _f = str(_a.get("field") or "").strip()
+        if _f and _f not in _seen:
+            _seen.add(_f); _subject.append(_f)
     return apply_policy(FoodResponsePlan(
         intent=FoodResponseIntent.CLARIFY,
         resolved_items=resolved, pending_items=pending,
         unresolved_item=(pending[0] if pending else None),
         clarification_question=question,
+        clarification_subject=tuple(_subject),
         clarification_unknowns=unknowns,
         requires_answer=True, user_message=user_message))
 
@@ -5955,7 +5966,8 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
         _plan = clarify_plan_from_points(data.get("points") or [],
                                          data.get("ready"),
                                          user_message=message,
-                                         items=data.get("items"))
+                                         items=data.get("items"),
+                                         ambiguities=data.get("ambiguities"))
         # REAL VARIANTS AS THE OPTIONS, when the thing being asked about is a
         # branded product. `build_prompt` already passes `clarification_options`
         # to the composer; they were simply never populated on this path.
@@ -6186,7 +6198,8 @@ async def _run_untraced(message: str, user, prior: Optional[dict] = None,
             from core.food_response import render_plan as _render
             from core.food_response import with_context as _ctx
             _p2 = clarify_plan_from_points(data["points"], data.get("ready"),
-                                           user_message=message)
+                                           user_message=message,
+                                           ambiguities=data.get("ambiguities"))
             return {"action": "ask",
                     "ask_types": _ask_types_from(data),
                     "text": (await _render(_ctx(_p2, user=user, messages=history,

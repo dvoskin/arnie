@@ -618,6 +618,21 @@ class FoodResponsePlan:
     # Clarification.
     clarification_question: Optional[str] = None
     clarification_options: Tuple[str, ...] = ()
+    #: ⭐⭐⭐ WHAT THE QUESTION IS ABOUT, structurally — the raw field names the
+    #: producer that raised this ask actually requested.
+    #:
+    #: ⛔ THE PLAN USED TO CARRY THE QUESTION TEXT AND NOTHING ELSE. The
+    #: composer was told "rephrasing for tone is fine" and never told what the
+    #: subject WAS, so it rewrote "How much of the Trader Joe's Butter
+    #: Chicken?" (field=`quantity`) as "was that the full pouch or about half?"
+    #: — a CONSUMPTION question. Measured 2026-08-28 on cases 2 and 20. An
+    #: answer parsed against `quantity` was answering something else, and
+    #: nothing downstream could detect it.
+    #:
+    #: Raw producer field names, NOT canonical ask types: this is provenance,
+    #: and translating it here would put a second mapping between the producer
+    #: and the record.
+    clarification_subject: Tuple[str, ...] = ()
     #: The meal's unknowns, GROUPED by what is actually unknown — not one
     #: extracted point per food.
     #:
@@ -1950,8 +1965,19 @@ def build_prompt(plan: FoodResponsePlan) -> str:
         parts.append(_unknowns_brief(plan.clarification_unknowns,
                                      plan.user_mode))
     elif plan.clarification_question:
-        parts.append(f"ASK EXACTLY THIS (rephrasing for tone is fine): "
-                     f"{plan.clarification_question}")
+        # ⛔ "REPHRASING FOR TONE IS FINE" WAS THE WHOLE LICENCE. It is true and
+        # intended — but with no subject stated alongside it, a tone rephrase
+        # and a SUBJECT CHANGE are indistinguishable to the composer, and it
+        # made both. The subject is now named and pinned.
+        _subj = ", ".join(plan.clarification_subject or ())
+        parts.append(
+            f"ASK EXACTLY THIS (rephrasing for tone is fine): "
+            f"{plan.clarification_question}"
+            + (f"\nTHE SUBJECT IS FIXED: this question is about "
+               f"{_subj}. Reword it however sounds natural, but do NOT change "
+               f"WHAT is being asked — the answer is parsed against that field, "
+               f"so asking about something else silently mis-files the reply."
+               if _subj else ""))
     if plan.clarification_options:
         # THE ACTUAL SHELF. These come from the product database, so offering
         # them means the answer resolves to a real item with real numbers —
@@ -2535,6 +2561,8 @@ def plan_clarify_from_question(question, *, user_message: str = "",
         unresolved_item=(FoodItemSummary(name=unresolved_name)
                          if unresolved_name else None),
         clarification_question=question.prompt,
+        clarification_subject=tuple(str(f) for f in
+                                    (getattr(question, "requested_fields", None) or ())),
         clarification_options=tuple(o.label for o in (question.options or ())),
         assumptions=((assumption,) if assumption else ()),
         requires_answer=True, user_message=user_message, **kw))

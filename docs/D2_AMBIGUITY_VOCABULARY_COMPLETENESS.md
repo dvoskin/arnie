@@ -534,3 +534,57 @@ C  compound questions    MINOR LIMITATION      → 1 in 23; record, do not fix
 
 **Only A blocks the measurement.** B blocks `unstated_extras` from ever having
 an interpreter producer but does not corrupt what IS measured. C is noise.
+
+---
+
+# STEP 1c — DEFECT A REPAIRED
+
+Full suite **10288 passed / 0 failed**. 7 new tests, mutations **4 RED / 0 GREEN**.
+
+## The cause was a licence with no counterweight
+
+```
+"ASK EXACTLY THIS (rephrasing for tone is fine): {question}"
+```
+
+True and intended. But the plan never carried the subject, so **a tone rephrase
+and a SUBJECT CHANGE are indistinguishable to the composer** — and it made both.
+
+## The change
+
+- `FoodResponsePlan.clarification_subject` — new field
+- **staged** builder populates it from `ClarificationQuestion.requested_fields`
+- **interpreter** builder populates it from the ambiguity fields, deduplicated
+  in first-seen order
+- the composer prompt now pins it:
+
+```
+ASK EXACTLY THIS (rephrasing for tone is fine): How much of the Butter Chicken?
+THE SUBJECT IS FIXED: this question is about quantity. Reword it however sounds
+natural, but do NOT change WHAT is being asked — the answer is parsed against
+that field, so asking about something else silently mis-files the reply.
+```
+
+## Two deliberate choices, both pinned by tests
+
+**The subject is RAW PRODUCER FIELD NAMES, not canonical ask types.**
+Translating here would put a SECOND mapping between the producer and the
+record, and the record would stop saying which producer spoke.
+
+**No pin is emitted when there is no subject.** Without that negative case the
+positive test would pass against a pin that unconditionally reads *"about "* and
+names nothing — the vacuous-fixture trap that has caught this session twice.
+
+## ⚠ WHAT THIS DOES **NOT** DO
+
+It removes the CAUSE — the composer now knows the subject. **It does not VERIFY
+the rendered output against it.** A divergence that happens anyway is still
+undetected.
+
+Detecting one would mean comparing generated text to a structured subject, i.e.
+**prose inference** — the mechanism this tranche exists to remove. Not built,
+and not to be built without an explicit decision.
+
+**The honest status: the licence is closed, the detector is not built.** Whether
+the repair actually changes behaviour is an EMPIRICAL question — the next census
+answers it by re-checking c2 and c20.
