@@ -632,3 +632,74 @@ the run must be sized on that, not on convenience.
 **Repair A: the cause is closed, the effect is UNVERIFIED.** The composer now
 receives the subject and 4/4 mutations confirm the wiring, but no measurement
 yet shows a divergence prevented. **Do not record it as working.**
+
+---
+
+# CONDITION 3 — AMENDED 2026-08-30 (Danny)
+
+The absolute form — *every rendered question must be empirically re-proven after
+repair* — made a **once-in-50-turns residual the gating item for the entire
+D2 / DEFAULTABILITY program.** Replaced with:
+
+> **Every MATERIAL or RECURRING structured↔rendered mismatch must be either
+> VERIFIED FIXED or explicitly REGISTERED as an unverified residual with
+> bounded observed incidence.**
+
+This preserves the uncertainty instead of manufacturing a green.
+
+## REGISTERED RESIDUAL — R1: renderer subject divergence
+
+```
+CAUSE CLOSED          composer now receives `clarification_subject`; both
+                      producers populate it; 4/4 mutations RED
+EFFECT UNVERIFIED     the post-fix 0/6 is NOT effectiveness evidence — c20
+                      stopped reaching the staged-ask path, so the defect had
+                      no opportunity to fire
+OBSERVED INCIDENCE    1 / 50 turns pre-repair (case 20)
+STATUS                NOT BLOCKING D2 recomputation
+```
+
+### ⛔ REOPEN TRIGGER — c20 is not erased from the test plan
+
+**A SECOND INDEPENDENT OCCURRENCE MAKES THIS A BLOCKER AGAIN.** Reopen
+verification immediately if either happens:
+
+- another structured↔rendered divergence appears in any census or in production;
+- c20 naturally reproduces a staged `quantity` ask during a later run.
+
+**Two independent instances change the economics** — a rare glitch becomes a
+recurring class, and the ~150-turn verification becomes worth its price.
+
+The threshold, stated so a future reader can apply it:
+
+```
+1 rare historical instance + causally repaired wiring + no post-fix
+opportunity to exercise it        =  REGISTERED RESIDUAL
+a second independent occurrence   =  BLOCKER
+```
+
+---
+
+# ⭐⭐⭐ B IS NOW THE PRIORITY — AND THE REVERT REASON NEEDS RE-EXAMINING
+
+`prep` carrying extras is **not a one-off renderer glitch**. It is a
+semantic/schema problem that recurs and directly determines whether
+DEFAULTABILITY can know **what kind of information is missing**.
+
+The repair is the prompt change already tried and reverted. **But the evidence
+that justified the revert was read through the broken instrument.**
+
+The exception was reverted because "zero-ambiguity asks" rose 28 % → 42 %/38 %
+and records fell 30 → 22 → 20. **We now know what "zero-ambiguity ask" actually
+means: the INTERPRETER emitted nothing — which is the signature of a
+STAGED-RAISED ask.**
+
+> **So the measured "regression" may have been a shift in WHICH PRODUCER raised
+> the ask, not a loss of structure.** At the time, both looked identical,
+> because provenance was invisible.
+
+⚠ **This does NOT mean the revert was wrong.** A producer shift is itself a real
+behavioural change and might be undesirable. It means **the revert rests on a
+measurement that can now be taken properly**, with `question_id` provenance
+separating the two explanations — and it should be, before B is repaired or
+abandoned.
