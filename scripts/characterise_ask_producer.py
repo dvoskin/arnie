@@ -65,6 +65,45 @@ CAP = []
 # produced it. Case 17 typed preparation_fat on a SIZE question and the fault
 # was unattributable between three candidates.
 STAGED_CAP = []
+# ⛔⛔ CAPTURING STAGED STATE ON *EVERY* TURN, NOT ONLY WHEN STAGED WINS.
+# `_ask_types_staged` runs only when the staged site fires, so across four
+# censuses 0 of 63 interpreter-raised asks recorded ANY staged state — making
+# "could the staged pipeline have raised this?" unanswerable from disk. The
+# decision is built by `food_pipeline.plan_turn` BEFORE the branch, so spying
+# there sees it whichever authority ends up owning the turn.
+import core.food_pipeline as FP
+PLAN_CAP = []
+_orig_plan = FP.plan_turn
+def _spy_plan(*a, **kw):
+    d = _orig_plan(*a, **kw)
+    try:
+        cl = getattr(d, "clarification", None)
+        qs = []
+        for q in (getattr(cl, "questions", None) or ()):
+            qs.append({"question_id": getattr(q, "question_id", ""),
+                       "requested_fields": [str(f) for f in
+                                            (getattr(q, "requested_fields", None) or ())],
+                       "prompt": (getattr(q, "prompt", "") or "")[:140]})
+        items = []
+        for it in (getattr(d, "staged_items", None) or ()):
+            ambs = []
+            for amb in (getattr(it, "ambiguities", None) or ()):
+                ambs.append({"type": str(getattr(amb, "ambiguity_type", "")),
+                             "field_name": str(getattr(amb, "field_name", "")),
+                             "material": bool(getattr(amb, "is_material", False))})
+            items.append({"staged_item_id": getattr(it, "staged_item_id", ""),
+                          "ambiguities": ambs})
+        PLAN_CAP.append({"decision_present": d is not None,
+                         "asks": bool(getattr(d, "asks", False)),
+                         "questions": qs, "staged_items": items})
+    except Exception as e:
+        PLAN_CAP.append({"error": str(e)[:140]})
+    return d
+FP.plan_turn = _spy_plan
+# food_turn imports it lazily inside the function, so patching the module is
+# enough; if that ever changes this capture silently empties — the count of
+# PLAN_CAP entries per turn is the check.
+
 _orig_staged = FT._ask_types_staged
 def _spy_staged(decision, data):
     out = _orig_staged(decision, data)
@@ -141,7 +180,7 @@ async def main():
     fh.flush()
     for rep in range(1, REPS + 1):
         for cid in CASES:
-            CAP.clear(); STAGED_CAP.clear(); n += 1
+            CAP.clear(); STAGED_CAP.clear(); PLAN_CAP.clear(); n += 1
             uid = await _make_identity(session, f"pc:{run}:{cid}:{rep}")
             rec = {"case": cid, "rep": rep}
             try:
@@ -199,6 +238,7 @@ async def main():
                     rec["ask_types"] = at
                 rec["captures"] = list(CAP)
                 rec["staged_authority"] = list(STAGED_CAP)
+                rec["staged_state"] = list(PLAN_CAP)
             except Exception as e:
                 rec["error"] = f"{type(e).__name__}: {e}"[:200]
             finally:
