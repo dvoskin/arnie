@@ -101,3 +101,79 @@ vocabulary and work stops again.**
 - No DEFAULTABILITY or D2 work until this passes.
 - `portion_multiplier` still has **no proven producer** on either path.
 - `27983be` remains held. Nothing is deployed.
+
+---
+
+# ⛔⛔⛔ OPTION 3 COVERAGE RESULT — **0 of 28**
+
+`code=407ed03`, 50 turns, 0 errors, 30 asks, 20 interpreter-raised.
+Raw: `data/corpus/census_v8_coverage_2026-08-30.jsonl`.
+
+```
+interpreter subject     asks   staged-equiv   no staged equiv
+continuous_portion        11        0              11
+preparation_fat            9        0               9
+menu_size                  5        0               5
+identity_variant           3        0               3
+TOTAL                     28        0              28
+
+WHY:  28/28  "no staged decision at all"
+```
+
+## The reason is NEITHER candidate
+
+Not *"ambiguity present, declined to ask"* (routing) and not *"ambiguity never
+existed"* (representation gap). **The staged pipeline never executed.**
+
+```
+5960  if action == "ask" and not prior:     <- interpreter ask branch
+6113  return {"action": "ask", ...}         <- RETURNS HERE
+6203  return {"action": "ask", ...}
+6329  _decision = plan_turn(...)            <- staged pipeline, AFTER
+```
+
+> **The two authorities are SEQUENTIAL, not parallel.** The interpreter's ask
+> branch returns before `plan_turn` is ever called. The staged pipeline only
+> runs on turns where the interpreter did NOT propose an ask.
+
+`staged_state` was captured on **31 of 50 turns** — and on **none** of the
+interpreter-raised asks.
+
+## What this does to Option 3
+
+**It is not a routing change.** There is no staged alternative sitting alongside
+an interpreter ask to route to, because staged never computed one. Option 3
+would require **REORDERING the pipeline** — running `plan_turn` before or
+independently of the interpreter's ask branch — which is a far larger change
+than "own the ask", and round 1 already showed that migrating asks between
+authorities changes what the user sees.
+
+## ⭐ AND IT STILL WOULD NOT SOLVE THE BLOCKING PROBLEM
+
+Staged field names observed **anywhere** in this census:
+
+```
+quantity 17 · variant 8 · product_line 6 · prep 4 · consumed_fraction 3
+```
+
+Richer than the interpreter's — `variant` and `product_line` are staged-only.
+**But `component_breakdown` never fires**, so **`unstated_extras` has NO
+observed staged producer either.**
+
+By the frozen interpretation, third branch:
+
+> *If the DEFAULTABILITY-critical subjects — especially `unstated_extras` —
+> have no staged representation, Option 3 does not solve the blocking problem,
+> however much else it covers.*
+
+**It covers nothing here, and it would not cover the critical subject even if
+reordered.**
+
+## Option 3: CLOSED
+
+The design space narrows to **Option 1** (a second interpreter field, weakened
+by three failures of schema-naming to produce emission) and **Option 2** (derive
+in code, weakened by the signal possibly not existing outside prose).
+
+⚠ **Neither is attractive, and that is the honest state.** No option is
+currently known to work.
