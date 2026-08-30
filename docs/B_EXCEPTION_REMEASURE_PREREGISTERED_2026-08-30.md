@@ -324,3 +324,71 @@ exception adoption           NOT AUTHORIZED — and now with a reason, not just
 **The exception as written trades a real capability for suppression of material
 uncertainty.** A version that adds `extras` WITHOUT reducing asking is a
 different change and would need its own measurement.
+
+---
+
+# ⛔⛔⛔ THE DECOUPLING FAILED — AND THE REASON IS STRUCTURAL
+
+Minimal variant `cfe4d51`: **one word.** `extras` added to the existing field
+list. No closed framing, no *"never invent a field name"*, no ask-branch
+paragraph, no `multiplier`.
+
+```
+                        asks  rate   staged  totFI  extras
+BASELINE                  30  0.60      10     54      0
+EXCEPTION (2 edits)       25  0.50      12     46      6
+VARIANT  (ONE WORD)       24  0.48       6     43      7     <- suppresses MORE
+```
+
+```
+c17 wrap size   baseline 1.00 · exception 0.25 · VARIANT 0.00
+c1  mayo        baseline 1.00 · exception 0.00 · VARIANT 0.00
+```
+
+**My hypothesis — that the closed-vocabulary framing was the suppressor — is
+REFUTED.** The one-word change suppresses at least as much, and drives c17, the
+PRIMARY-ITEM SIZE question, to zero.
+
+## ⭐⭐⭐ THE MECHANISM: CAPABILITY AND SUPPRESSION ARE THE SAME THING
+
+The field list does not sit on the ask contract. It sits on the **LOG-TIME
+resolution rule**:
+
+> *"WHAT YOU DID NOT KNOW — ALWAYS, NOT ONLY WHEN YOU LOG. Every unknown you
+> resolved by JUDGEMENT is reported as `ambiguities`… (fields: quantity,
+> identity, brand, prep, consumed)"*
+
+That list enumerates **what the model may RESOLVE BY JUDGEMENT AND LOG.**
+
+> **Adding `extras` to it does not teach Arnie to ask about toppings. It gives
+> Arnie permission to ASSUME toppings and log anyway.**
+
+The capability and the behavioural cost are **the same mechanism**, not a
+side effect of it. `extras` emissions rise *because* the model now resolves
+extras-shaped uncertainty instead of raising it — and, apparently, becomes more
+willing to resolve OTHER uncertainty too.
+
+## What this does to the target
+
+> *"Keep the new semantic capability, remove the behavioural side effect."*
+
+**That target may be unreachable in this prompt shape.** The vocabulary IS the
+resolve-and-log permission list; representation and non-asking are granted by
+the same sentence. A version that adds `extras` to an ASK-ONLY vocabulary would
+need a vocabulary that does not currently exist — the prompt has one list, used
+for resolution.
+
+## Status
+
+```
+unstated_extras capability     PROVEN THREE TIMES (6, 7, 7 emissions)
+decoupling from ask cost       FAILED — one word costs Δ-6 asks
+suppressor = framing?          REFUTED
+mechanism                      the field list is a RESOLVE-AND-LOG permission
+                               list, not an ask vocabulary
+adoption                       STILL REJECTED
+```
+
+⚠ **n=1 run for the variant**, and the null (Δ1) was measured at a different
+SHA. Δ-6 is far outside it, but a variant-side null pair would be needed before
+this number carries a decision on its own.
