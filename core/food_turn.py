@@ -903,7 +903,7 @@ _SYSTEM = (
     "\"<the item it concerns>\",\"field\":\"quantity\",\"impact_cal\":250,"
     "\"impact_protein\":12,"
     "\"assumed\":\"<what you went with, in their language>\"}] "
-    "(fields: quantity, identity, brand, prep, extras, consumed). `assumed` is shown "
+    "(fields: quantity, identity, brand, prep, consumed). `assumed` is shown "
     "to the user as what you went with so they can correct it in one tap - "
     "write the CHOICE, short and concrete (\"a medium restaurant portion\", "
     "\"pan-fried in oil\"), never a hedge like \"estimated\" and never a "
