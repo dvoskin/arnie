@@ -177,3 +177,79 @@ should the exception be adopted?                     NOT DECIDED, and NOT to be
 **Next: the same-SHA null pair.** Until a measured null exists, the coverage
 question cannot be resolved in either direction — that is the whole point of the
 census contract, and this run is the first thing it has blocked.
+
+---
+
+# ⭐⭐⭐ THE NULL PAIR — AND A WITHDRAWN CLASSIFICATION
+
+Two censuses, **identical code `ede35b9`**, same corpus/config/harness. The
+first true null in this project.
+Raw: `data/corpus/census_v6_nulltwin_2026-08-30.jsonl`.
+
+```
+                    run A   run B   NULL Δ
+asks                   25      24        1
+staged-raised          12      12        0
+staged field-inst      18      18        0
+interpreter f-inst     28      27        1
+total field-inst       46      45        1
+total / ask          1.84    1.88     0.03
+```
+
+> **This census is FAR more stable than I assumed. The provisional envelope
+> (asks ±5) was roughly FIVE TIMES TOO WIDE.**
+
+## ⛔ THE "OUTCOME 4 — NO CONCLUSION" CLASSIFICATION IS WITHDRAWN
+
+It rested on an invented envelope. Against the measured null the effect
+**exceeds it on every metric**:
+
+```
+metric                   effect Δ   null Δ   verdict
+asks                        5          1     EXCEEDS
+staged-raised               2          0     EXCEEDS
+staged field-instances      5          0     EXCEEDS
+interpreter field-inst     13          1     EXCEEDS
+total field-instances       8          1     EXCEEDS
+```
+
+**The exception has a real, measurable effect.** Had I stopped at the
+provisional envelope I would have filed a genuine effect as noise — the exact
+error the census contract was written to prevent, caught by the first
+measurement it demanded.
+
+## Classification: **CATEGORY 3 — MIXED CHANGE ABOVE THE ENVELOPE**
+
+```
+producer shift      staged-raised +2, staged field-instances +5   -> toward staged
+interpreter loss    interpreter field-instances -13
+total structure     54 -> 46 absolute (DOWN 8)
+per-ask density     1.80 -> 1.84 (slightly UP)
+ASK COUNT           30 -> 25  (DOWN ~17 %)
+```
+
+Not category 1 (total structure did not simply collapse — per ask it rose) and
+not category 2 (total structure is **not** stable in absolute terms). It is
+**mixed**, and the frozen rule says:
+
+> **inspect USER-VISIBLE behaviour before any adoption decision.**
+
+## ⚠ THE FINDING THAT MATTERS MOST IS THE ONE I WAS NOT MEASURING
+
+**The exception reduces clarifications by ~17 % (30 → 25 asks), an effect 5×
+the null.** That is a PRODUCT BEHAVIOUR change, not a telemetry change: Arnie
+asks the user fewer questions.
+
+Whether that is good or bad **depends entirely on whether the dropped asks were
+material** — and nothing measured so far says which asks disappeared. A
+capability win (`extras` producer) sitting on top of an unexamined 17 % drop in
+asking is not a trade anyone has evaluated.
+
+## Status
+
+```
+unstated_extras producer   PROVEN     6 and 7 emissions across the pair
+structural cost            REAL       exceeds the measured null on every metric
+which asks were lost       UNKNOWN    <- the blocking question now
+exception adoption         NOT AUTHORIZED
+```
