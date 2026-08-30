@@ -253,3 +253,74 @@ structural cost            REAL       exceeds the measured null on every metric
 which asks were lost       UNKNOWN    <- the blocking question now
 exception adoption         NOT AUTHORIZED
 ```
+
+---
+
+# WHICH ASKS DISAPPEARED — case-by-case diff (zero new turns)
+
+Baseline `census_v4` (2 reps) vs exception `census_v5 + v6` (4 reps).
+Ask rate **0.60 → 0.49**.
+
+## The lost and reduced asks, by what they were trying to obtain
+
+| case | base | exc | what the lost question asked | material? |
+|---|---|---|---|---|
+| **1** Subway footlong | 2/2 | **0/4** | *"the mayo — a light squeeze or the full zigzag?"* | condiment quantity — **secondary** |
+| **17** Caesar wrap | 2/2 | 1/4 | *"what size — a small deli wrap or a large one?"* | ⛔ **MATERIAL** (primary item size) |
+| **9** CAVA bowl | 2/2 | 2/4 | *"single or double scoop of steak?"*, *"base, half or full portion?"* | ⛔ **MATERIAL** |
+| **8** Popeyes | 2/2 | 3/4 | *"regular Cajun fries or the large?"* | material |
+| **23** parfait | 2/2 | 3/4 | *"a small snack-cup portion or…"* | material |
+| 4 Chick-fil-A | 1/2 | 0/4 | *"the sauce: one packet or two?"* | secondary |
+| 10 Sweetgreen | 1/2 | 0/4 | *"Regular or large?"* (whole bowl) | ⛔ **MATERIAL** |
+| 11 Chipotle | 1/2 | 1/4 | *"Burrito or burrito bowl? And any guac?"* | identity + extras |
+
+And **three cases ask MORE**: 15 (0 → 0.75), 20 (0 → 0.25), 25 (0.5 → 0.75).
+
+## ⛔ THE ANSWER TO THE QUESTION POSED
+
+> *If the five lost asks are optional toppings, trivial size details, or
+> low-impact secondary components, this may be the first evidence the exception
+> makes Arnie feel smarter.*
+
+**They are not.** The exception drops **both** kinds:
+
+```
+SECONDARY, plausibly good to lose   c1 mayo squeeze · c4 sauce packet count
+MATERIAL, bad to lose               c17 wrap size (PRIMARY item)
+                                    c9  steak scoop + base portion
+                                    c10 whole-bowl regular-or-large
+```
+
+**c17 is the clearest problem**: asked 2/2 in baseline, 1/4 under the exception,
+and the question is the size of the primary item — the single largest driver of
+that meal's calories.
+
+## ⚠ STRENGTH OF EACH CALL
+
+Per-case n is **2 and 4**. Individual case verdicts are weak; only the aggregate
+rate (0.60 → 0.49, against a null of Δ1 ask) is robust.
+
+```
+STRONG   c1  2/2 -> 0/4   consistently asked, now never
+STRONG   c17 2/2 -> 1/4
+MODERATE c9  2/2 -> 2/4
+WEAK     c8, c23         (3/4 — barely reduced)
+TOO WEAK c4, c10, c11    (baseline 1/2 — a single observation)
+```
+
+⚠ **c10 — the whole-bowl size question — is the most alarming loss and rests on
+ONE baseline observation.** It should not carry the decision by itself.
+
+## Verdict for B
+
+```
+unstated_extras capability   PROVEN
+structural cost              REAL (exceeds the measured null)
+is the cost desirable?       NO — it suppresses MATERIAL asks, not just nuisance
+exception adoption           NOT AUTHORIZED — and now with a reason, not just
+                             an absence of evidence
+```
+
+**The exception as written trades a real capability for suppression of material
+uncertainty.** A version that adds `extras` WITHOUT reducing asking is a
+different change and would need its own measurement.
