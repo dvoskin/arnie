@@ -65,7 +65,6 @@ DEFAULTABLE_CANDIDATES = (MENU_SIZE, CONTINUOUS_PORTION, UNSTATED_EXTRAS,
 #: MENU_SIZE from CONTINUOUS_PORTION, so they are handled in `classify`.
 _FIELD_MAP = {
     "consumed": CONSUMPTION_COMPLETE,
-    "multiplier": PORTION_MULTIPLIER,
     "prep": PREPARATION_FAT, "preparation": PREPARATION_FAT,
     "cook_method": PREPARATION_FAT, "cooking": PREPARATION_FAT,
     "extras": UNSTATED_EXTRAS, "ingredient": UNSTATED_EXTRAS,
