@@ -54,3 +54,52 @@ edit ALONE.
   revert evidence.
 - The exception is re-applied to be MEASURED, not adopted. Adoption is a
   separate decision that this run informs.
+
+---
+
+# OUTCOME CATEGORIES — FROZEN 2026-08-30, BEFORE THE RESULT (Danny)
+
+```
+1. structure loss ABOVE the drift envelope           -> obstacle CONFIRMED;
+                                                        keep the revert rationale
+2. producer shift ABOVE the envelope, total          -> the old revert rationale
+   structure STABLE                                     DISSOLVES
+3. mixed change ABOVE the envelope                   -> inspect USER-VISIBLE
+                                                        behaviour before any
+                                                        adoption decision
+4. any effect INSIDE the drift envelope              -> NO CONCLUSION, full stop.
+                                                        No directional narrative.
+```
+
+> **Random movement must not become policy.**
+
+## ⛔⛔ AND EVEN A DECISIVE RESULT DOES NOT ADOPT THE EXCEPTION
+
+If the run strongly shows the old revert rationale was wrong, that **removes a
+false blocker**. It does not make the exception desirable. **Adoption is a
+SEPARATE decision, taken in a separate step**, on its own merits.
+
+## ⚠⚠ MY DRIFT ENVELOPE IS NOT MEASURED FROM A TRUE NULL
+
+I cited *asks 25 → 30, staged 13 → 10* as a "no-code" envelope. **That is not
+accurate.** Those two censuses were `census_v3` (`0b5f432`) and `census_v4`
+(`4049778`) — and `4049778` contains **repair A**, which edits the composer
+prompt on every clarification.
+
+**No two censuses in this project share a code SHA.** So the envelope is
+inferred from runs that also changed code, which makes it an UPPER bound on
+drift conflated with whatever those changes did.
+
+Consequences, stated rather than smoothed over:
+
+- the envelope is **conservative in the wrong direction** — it may be too WIDE
+  (absorbing real effects into "drift") or too NARROW (if repair A suppressed
+  variation);
+- **outcome 4 is therefore easier to reach than it should be**, which is the
+  safe way to be wrong;
+- a true null — two censuses at identical code — has never been run, and is the
+  cheapest thing that would make every future comparison on this corpus
+  interpretable.
+
+**Using it as a floor is defensible; treating it as a measured null is not.**
+Any conclusion drawn here inherits that limitation.
