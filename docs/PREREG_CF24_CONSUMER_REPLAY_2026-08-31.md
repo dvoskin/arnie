@@ -232,3 +232,49 @@ going red is a fix nobody has.
 Liveness was established *before* the run and held *during* it: the door
 emitted on row 936 on both 08-26 and today. A future "no event" for this row
 means the consumer did not execute.
+
+### ⭐ THE FOUR RECORDED CONCLUSIONS — stated explicitly, per Danny 2026-08-31
+
+*Appended to this amendment before any next arm was opened. Two of these were
+implicit in the prose above; implicit is not recorded.*
+
+**1. The probe is VALID / NULL. Not PASS, not FAIL.**
+It ran, it reached its target, its instrument observed, and it produced no
+conclusion about the thing it was built to find. That is a legitimate third
+verdict and must not be softened into either of the other two.
+
+**2. `legacy.fetch_candidates` is POSITIVELY EXCLUDED as the historical bypass
+— under this state.**
+Not "unlikely", not "probably not". It was observed doing the opposite of what
+a bypass does:
+
+```
+reached row 936          yes — event names row_id=936, key='grilled shrimp'
+instrument observed      yes — liveness held before and during
+trusted                  False
+shared boundary          REFUSED, reason=no_provenance
+usage counter            did NOT move (2 -> 2)
+committed nutrition      clean — 137 kcal, not 525
+```
+
+The usage counter is the load-bearing part: something at 18:28:06 moved
+`times_used`, and this consumer demonstrably does not. **They are different
+paths.** The exclusion is scoped to the state actually tested — cold,
+direct-read, no prewarm.
+
+**3. The historical incident remains UNEXPLAINED. No consumer attribution claim
+may be made from this run.**
+Entry 3050's 525 kcal is still unattributed. Nothing in this run names the path
+that produced it. Any document, commit message or board line asserting an
+attributed consumer for CF24 is wrong until a separate arm earns it.
+
+**4. New hypothesis, registered SEPARATELY and not yet tested.** Either:
+
+- **(a) missing state** — the 3050 failure required conditions absent from a
+  controlled replay: prewarm, prehydration, or a one-turn race; **or**
+- **(b) incidental removal** — the relevant bypass was removed between
+  `a7549d7` and `63d926a` by a change made for a different defect.
+
+⛔ **(a) and (b) are alternatives of equal standing here.** Naming a favourite
+commit for (b) before testing (a) would anchor the next experiment on the most
+attractive candidate rather than on the incident's own shape.
