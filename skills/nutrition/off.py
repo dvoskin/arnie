@@ -118,6 +118,14 @@ def _num(v) -> Optional[float]:
         return None
 
 
+#: Below this the panel is cross-checked against its own macros rather than
+#: trusted on size alone. Not a floor — nothing is rejected for being small.
+_LOW_CALORIE_COHERENCE_CAL = 10.0
+#: Atwater slack. 0/0/0/0 implies 0 and passes; 0 kcal with 20 g protein
+#: implies 80 and does not.
+_LOW_CALORIE_COHERENCE_TOLERANCE = 20.0
+
+
 def _per100g(nutriments: dict) -> Optional[dict]:
     """Map OFF nutriments -> the per-100g shape analyze() expects. Requires the
     four macros to be present and calories plausible, else None (noise/empty)."""
@@ -158,16 +166,43 @@ def _per100g(nutriments: dict) -> Optional[dict]:
         logger.info(
             "event=priceability_rejected reason=%s calories=%s "
             "macro_fields_present=%s n_present=%d source=off predicate=%s",
-            reason, cal, _present, len(_present), "10<=cal<=900 and 4 macros")
+                    reason, cal, _present, len(_present),
+            "4 macros present; cal<=900; low-cal must cohere with macros")
         return None
 
-    # All four macros must be present — a product missing them is unusable noise.
+    # ⭐ ABSENT IS NOT ZERO. All four macros must be PRESENT — a record missing
+    # them establishes nothing. This is the completeness test, and it is the
+    # only thing that was ever needed to reject the empty panel the old
+    # magnitude floor was aimed at.
     if None in (cal, protein, carbs, fat):
         return _refuse("PRICEABILITY_MISSING_FIELDS")
-    # Plausibility: 100g of real food is ~10-900 kcal. Reject sentinels (0, 9999).
-    if not (10 <= cal <= 900):
-        return _refuse("PRICEABILITY_LOW_CALORIE" if cal < 10
-                       else "PRICEABILITY_HIGH_CALORIE")
+    # Genuine implausibility, upper end only. No food is 9999 kcal/100g; pure
+    # fat tops out near 900. Completeness cannot replace this — a sentinel 9999
+    # arrives with all four fields populated.
+    if cal > 900:
+        return _refuse("PRICEABILITY_HIGH_CALORIE")
+    # ⛔⛔⛔ THE FLOOR IS GONE, AND THIS IS WHY. `10 <= cal` was a magnitude test
+    # standing in for a completeness test, and the two are different facts: a
+    # legitimate zero and a missing zero are indistinguishable by SIZE. It
+    # discarded Coca-Cola Zero (0.2 kcal/100g), Gatorade Zero Glacier Cherry
+    # (0.0) and every diet soda, zero-sugar sports drink, seltzer and black
+    # coffee — all with four populated macro fields. Zero IS evidence.
+    #
+    # ⭐ BUT A COMPLETE PANEL CAN STILL BE BROKEN, so coherence replaces
+    # magnitude at the low end: 0 kcal beside 20 g of protein is not a
+    # zero-calorie drink, it is a corrupt record, and a pure presence test
+    # would have admitted it. Atwater already separates them and 0/0/0/0
+    # passes trivially.
+    #
+    # ⚠ RESIDUAL RISK, NAMED RATHER THAN HIDDEN: a real food wrongly entered as
+    # 0/0/0/0 in OFF is indistinguishable from a genuine zero-calorie product
+    # on nutrition alone. Nothing in the panel can separate them — that record
+    # is simply wrong — and the identity layer remains the thing between it and
+    # a meal.
+    if cal < _LOW_CALORIE_COHERENCE_CAL:
+        implied = 4.0 * protein + 4.0 * carbs + 9.0 * fat
+        if implied - cal > _LOW_CALORIE_COHERENCE_TOLERANCE:
+            return _refuse("PRICEABILITY_INCOHERENT")
     out = {"calories": round(cal, 1), "protein": round(protein, 1),
            "carbs": round(carbs, 1), "fat": round(fat, 1)}
     fiber = _num(nutriments.get("fiber_100g"))
@@ -213,8 +248,14 @@ def _per_serving(nutriments: dict) -> Optional[dict]:
     fat = _num(nutriments.get("fat_serving"))
     if None in (cal, protein, carbs, fat):
         return None
-    if not (1 <= cal <= 2000):
+    # ⭐ SAME DEFECT, SECOND SITE. The floor of 1 rejected a published
+    # zero-calorie SERVING panel — so fixing `_per100g` alone would have moved
+    # the failure one step downstream and looked like a repair.
+    if cal > 2000:
         return None
+    if cal < _LOW_CALORIE_COHERENCE_CAL:
+        if (4.0 * protein + 4.0 * carbs + 9.0 * fat) - cal > _LOW_CALORIE_COHERENCE_TOLERANCE:
+            return None
     out = {"calories": round(cal, 1), "protein": round(protein, 1),
            "carbs": round(carbs, 1), "fat": round(fat, 1)}
     fiber = _num(nutriments.get("fiber_serving"))

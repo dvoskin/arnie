@@ -152,7 +152,12 @@ def portion_from_basis(per100: Mapping, *, calories: Optional[float]
 def rescale(per100: Mapping, grams: float) -> Optional[dict]:
     """The macros for `grams` of a per-100g row, as entry columns."""
     per_100_cal = _num((per100 or {}).get("calories"))
-    if not per_100_cal or per_100_cal <= 0 or not grams or grams <= 0:
+    # ⭐ THE SHARPEST INSTANCE OF THE SAME CONFUSION: `not per_100_cal` treats
+    # 0 and None identically because Python says so. A correction on a
+    # zero-calorie product could not rescale at all — so "actually that was
+    # 500ml" failed on every diet soda, invisibly, long after retrieval and
+    # pricing were fixed. ABSENT is not ZERO.
+    if per_100_cal is None or per_100_cal < 0 or not grams or grams <= 0:
         return None
     factor = float(grams) / 100.0
     out = {}
