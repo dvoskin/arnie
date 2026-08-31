@@ -159,3 +159,54 @@ CONSUMED. They are cache-write bookkeeping. The question "was this row's
 nutrition used to price a meal" is answered by `event=memory_nutrition_use`
 and by the settled entry's `pricing_rung` / `nutrition_evidence_id` — never by
 the counter.
+
+---
+
+# ✅ CF24 — CLOSED, 2026-08-31
+
+Closed on the terms actually available, each stated with the evidence that
+supports it and no more.
+
+| | status | evidence |
+|---|---|---|
+| **Mechanism** | CLOSED | Reproduced on `a7549d7` under production-equivalent runtime, subject 26, fresh fixture: trust returns `False`, `authority.candidate_map` seats the untrusted payload at `branded_exact`, 525 kcal commits with the whole row scaled ×1.2. Entry 3050's exact number. |
+| **Primary containment** | CLOSED / production-proven | `fetch_candidates` nulls the memory candidate after trust refusal. TWO controlled Telegram replays on user 26 (`telegram:9495` on `63d926a`, `telegram:9521` on `09b8882`) both committed **137 kcal clean**, `pricing.memory` consulted, row 936 untouched. |
+| **Boundary backstop** | CLOSED / mechanically proven | `candidate_map` refuses memory-derived nutrition without proof the trust decision accepted it. Mutation restoring the historical behaviour turns **4 regressions red** across all four food classes. |
+| **`times_used`** | CLOSED as an observability correction | One writer, `upsert_user_food_match`. Measures cache upserts, not consumption. The consumer-path inference built on it is **retracted**. |
+
+## ⛔ THE CLOSURE CRITERION THAT WAS IMPOSSIBLE, AND WHY IT WAS DROPPED
+
+I claimed `event=memory_candidate_refused` in production would be the line
+distinguishing "the new boundary refused it" from "the old null-out did the
+work". **It cannot be**, and I should have traced my own guard's reachability
+before saying so:
+
+```
+fetch_candidates:   if door(...) is None:  m = None
+                    if m is not None:  memory = {...}      ← dict built only here
+candidate_map:      if memory_match is not None and not ..._trusted_memory:  refuse
+```
+
+On the ordinary path `candidate_map` receives `None`, so the guard is **never
+reached**. Its absence from the logs is correct behaviour.
+
+⭐ **The backstop is unreachable in production unless the upstream containment
+fails** — so requiring a live backstop hit would be a closure criterion that
+can never be met while the system is working. A guard's proof is that it goes
+red when the behaviour it forbids is restored, and that proof exists.
+
+## What each layer is actually worth
+
+- **Containment** stops the defect today, and is production-proven.
+- **The backstop** stops it returning through a reader nobody has written yet —
+  which was CF24's entire cost: three weeks of not knowing *which* reader.
+- Neither is a claim about the **producer** defect (whatever wrote 437.5 on
+  2026-08-02). That stays separate, with its own live fixture, entry 3053 /
+  row 1031.
+
+## ⛔ NO FURTHER MEMORY ARCHAEOLOGY IS AUTHORIZED
+
+Row 936 stays in place at `cal_100=437.5`, untrusted and inert. No cleanup, no
+backfill, no heuristic trust restoration. What would justify reopening is a NEW
+production incident of this shape — not curiosity about which commit
+incidentally closed it first, which is explicitly abandoned.
