@@ -1,15 +1,7 @@
 {
- "name": "branded_identity_truth_v1",
- "frozen": true,
- "frozen_at": "2026-08-31",
- "purpose": "Human ground truth for whether a candidate product IS the food the user named. Labelled from product knowledge BEFORE any confidence was computed, so the distribution cannot shape the truth.",
- "labels": {
-  "TRUE_SAME_PRODUCT": "the candidate is the product the user meant; its nutrition may price the meal",
-  "TRUE_DIFFERENT_PRODUCT": "a different SKU. Accepting it commits another food's numbers",
-  "AMBIGUOUS": "a human cannot decide from the strings alone. NEITHER accepting nor rejecting is an error, so these are excluded from precision/recall and reported separately"
- },
- "why_the_hard_cases": "Easy pairs measure nothing. A threshold is only calibratable against neighbours that are genuinely close: same brand, same family, different SKU. Every DIFFERENT case below is a near neighbour, not junk.",
- "cases": [
+ "corpus": "branded_identity_truth_v1",
+ "threshold": 0.8,
+ "rows": [
   {
    "id": 1,
    "intent": "Muscle Milk Pro Series Vanilla",
@@ -21,7 +13,11 @@
     "line",
     "flavour"
    ],
-   "nutrition_relevant_difference": "no"
+   "nutrition_relevant_difference": "no",
+   "relationship": "SAME_IDENTITY",
+   "confidence": 0.9,
+   "abstained": false,
+   "qualified": true
   },
   {
    "id": 2,
@@ -34,7 +30,11 @@
     "line",
     "flavour"
    ],
-   "nutrition_relevant_difference": "yes"
+   "nutrition_relevant_difference": "yes",
+   "relationship": "DIFFERENT_IDENTITY",
+   "confidence": 0.85,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 3,
@@ -46,7 +46,11 @@
     "brand",
     "line"
    ],
-   "nutrition_relevant_difference": "yes"
+   "nutrition_relevant_difference": "yes",
+   "relationship": "DIFFERENT_IDENTITY",
+   "confidence": 0.75,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 4,
@@ -58,7 +62,11 @@
     "brand",
     "line"
    ],
-   "nutrition_relevant_difference": "unknown"
+   "nutrition_relevant_difference": "unknown",
+   "relationship": "SAME_IDENTITY",
+   "confidence": 0.55,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 5,
@@ -71,7 +79,11 @@
     "line",
     "protein_grams"
    ],
-   "nutrition_relevant_difference": "yes"
+   "nutrition_relevant_difference": "yes",
+   "relationship": "DIFFERENT_IDENTITY",
+   "confidence": 0.7,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 6,
@@ -84,7 +96,11 @@
     "line",
     "flavour"
    ],
-   "nutrition_relevant_difference": "no"
+   "nutrition_relevant_difference": "no",
+   "relationship": "SAME_IDENTITY",
+   "confidence": 0.9,
+   "abstained": false,
+   "qualified": true
   },
   {
    "id": 7,
@@ -97,7 +113,11 @@
     "line",
     "flavour"
    ],
-   "nutrition_relevant_difference": "yes"
+   "nutrition_relevant_difference": "yes",
+   "relationship": "DIFFERENT_IDENTITY",
+   "confidence": 0.9,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 8,
@@ -110,7 +130,11 @@
     "product_family",
     "flavour"
    ],
-   "nutrition_relevant_difference": "yes"
+   "nutrition_relevant_difference": "yes",
+   "relationship": "DIFFERENT_IDENTITY",
+   "confidence": 0.75,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 9,
@@ -123,7 +147,11 @@
     "line",
     "protein_grams"
    ],
-   "nutrition_relevant_difference": "yes"
+   "nutrition_relevant_difference": "yes",
+   "relationship": "DIFFERENT_IDENTITY",
+   "confidence": 0.75,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 10,
@@ -136,7 +164,11 @@
     "line",
     "flavour"
    ],
-   "nutrition_relevant_difference": "no"
+   "nutrition_relevant_difference": "no",
+   "relationship": "SAME_IDENTITY",
+   "confidence": 0.85,
+   "abstained": false,
+   "qualified": true
   },
   {
    "id": 11,
@@ -148,7 +180,11 @@
     "brand",
     "product"
    ],
-   "nutrition_relevant_difference": "no"
+   "nutrition_relevant_difference": "no",
+   "relationship": "SAME_IDENTITY",
+   "confidence": 0.9,
+   "abstained": false,
+   "qualified": true
   },
   {
    "id": 12,
@@ -160,7 +196,11 @@
     "brand",
     "product"
    ],
-   "nutrition_relevant_difference": "no"
+   "nutrition_relevant_difference": "no",
+   "relationship": "DIFFERENT_IDENTITY",
+   "confidence": 0.9,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 13,
@@ -173,7 +213,11 @@
     "product",
     "fat_level"
    ],
-   "nutrition_relevant_difference": "yes"
+   "nutrition_relevant_difference": "yes",
+   "relationship": "DIFFERENT_IDENTITY",
+   "confidence": 0.75,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 14,
@@ -186,7 +230,11 @@
     "product",
     "fat_level"
    ],
-   "nutrition_relevant_difference": "no"
+   "nutrition_relevant_difference": "no",
+   "relationship": "SAME_IDENTITY",
+   "confidence": 0.95,
+   "abstained": false,
+   "qualified": true
   },
   {
    "id": 15,
@@ -199,7 +247,11 @@
     "product",
     "variant"
    ],
-   "nutrition_relevant_difference": "yes"
+   "nutrition_relevant_difference": "yes",
+   "relationship": "COMPATIBLE_SPECIALIZATION",
+   "confidence": 0.7,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 16,
@@ -212,7 +264,11 @@
     "product",
     "package_size"
    ],
-   "nutrition_relevant_difference": "per_container_only"
+   "nutrition_relevant_difference": "per_container_only",
+   "relationship": "SAME_IDENTITY",
+   "confidence": 0.85,
+   "abstained": false,
+   "qualified": true
   },
   {
    "id": 17,
@@ -225,7 +281,11 @@
     "product",
     "flavour"
    ],
-   "nutrition_relevant_difference": "no"
+   "nutrition_relevant_difference": "no",
+   "relationship": "SAME_IDENTITY",
+   "confidence": 0.9,
+   "abstained": false,
+   "qualified": true
   },
   {
    "id": 18,
@@ -238,7 +298,11 @@
     "line",
     "flavour"
    ],
-   "nutrition_relevant_difference": "yes"
+   "nutrition_relevant_difference": "yes",
+   "relationship": "SAME_IDENTITY",
+   "confidence": 0.85,
+   "abstained": false,
+   "qualified": true
   },
   {
    "id": 19,
@@ -251,7 +315,11 @@
     "product",
     "variant"
    ],
-   "nutrition_relevant_difference": "yes"
+   "nutrition_relevant_difference": "yes",
+   "relationship": "COMPATIBLE_SPECIALIZATION",
+   "confidence": 0.7,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 20,
@@ -263,7 +331,11 @@
     "brand",
     "product"
    ],
-   "nutrition_relevant_difference": "no"
+   "nutrition_relevant_difference": "no",
+   "relationship": "SAME_IDENTITY",
+   "confidence": 0.9,
+   "abstained": false,
+   "qualified": true
   },
   {
    "id": 21,
@@ -276,7 +348,11 @@
     "line",
     "flavour"
    ],
-   "nutrition_relevant_difference": "yes"
+   "nutrition_relevant_difference": "yes",
+   "relationship": "DIFFERENT_IDENTITY",
+   "confidence": 0.75,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 22,
@@ -288,7 +364,11 @@
     "brand",
     "line"
    ],
-   "nutrition_relevant_difference": "yes"
+   "nutrition_relevant_difference": "yes",
+   "relationship": "DIFFERENT_IDENTITY",
+   "confidence": 0.75,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 23,
@@ -301,7 +381,11 @@
     "product",
     "protein_grams"
    ],
-   "nutrition_relevant_difference": "no"
+   "nutrition_relevant_difference": "no",
+   "relationship": "SAME_IDENTITY",
+   "confidence": 0.95,
+   "abstained": false,
+   "qualified": true
   },
   {
    "id": 24,
@@ -313,7 +397,11 @@
     "brand",
     "format"
    ],
-   "nutrition_relevant_difference": "yes"
+   "nutrition_relevant_difference": "yes",
+   "relationship": "DIFFERENT_IDENTITY",
+   "confidence": 0.75,
+   "abstained": false,
+   "qualified": false
   },
   {
    "id": 25,
@@ -326,7 +414,11 @@
     "product",
     "variant"
    ],
-   "nutrition_relevant_difference": "unknown"
+   "nutrition_relevant_difference": "unknown",
+   "relationship": "COMPATIBLE_SPECIALIZATION",
+   "confidence": 0.8,
+   "abstained": false,
+   "qualified": true
   },
   {
    "id": 26,
@@ -339,13 +431,11 @@
     "sub_line",
     "flavour"
    ],
-   "nutrition_relevant_difference": "no"
+   "nutrition_relevant_difference": "no",
+   "relationship": "SAME_IDENTITY",
+   "confidence": 0.85,
+   "abstained": false,
+   "qualified": true
   }
- ],
- "label_fields": {
-  "truth_label": "the human verdict",
-  "reason_for_label": "why, in one clause",
-  "identity_attributes": "the attributes that DEFINE this identity \u2014 what must match",
-  "nutrition_relevant_difference": "yes | no | per_container_only | unknown. \u2b50 Kept SEPARATE from the truth label on purpose: Coke Zero vs Diet Coke are DIFFERENT products whose nutrition is nearly identical, and Chobani nonfat vs whole are different products whose nutrition is far apart. Conflating 'different product' with 'different numbers' is how 'basically the same thing' arguments start."
- }
+ ]
 }
