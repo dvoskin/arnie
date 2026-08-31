@@ -46,7 +46,27 @@
 >
 > Generalise this before trusting any "the prompt now forbids X" repair.
 >
-> ## THE SEQUENCE
+> ## ⛔⛔⛔ C / `unstated_extras`: REJECTED — settled by measurement, not by opinion
+>
+> Arms **E1/E2/E3** at `83342c6`, 150 turns, every preregistered refusal
+> condition clear (identical `_code_sha`, comparable null pair, the arm the only
+> difference, the basis field live).
+>
+> ```text
+>   C off   22/50  and  23/50            null envelope  1
+>   C ON    30/50                        effect        +7.5   OUTSIDE it, HARM
+> ```
+>
+> **C does not reduce asking. It increases it by 15 points**, broad across 8 of
+> 25 cases. So the earlier apparent benefit was not PARTLY the denominator
+> artifact — **the artifact WAS the benefit, and it was masking an effect of the
+> opposite sign.** There is no second beneficial mechanism to rescue.
+>
+> Retained ONLY as a runnable historical causal arm, guarded by
+> `tests/test_a_rejected_arm_cannot_drift_back_on.py`. Do not re-open it as a
+> policy candidate.
+>
+> ## ✅ TRANCHE CLOSED — INVARIANT IMPACT BASIS
 >
 > ```text
 > 1 ✅ typed-state repair: `FoodAmbiguity.impact_basis_cal`. The basis is
@@ -54,19 +74,34 @@
 >      about, and `attach_ambiguities` CONSUMES it instead of rediscovering a
 >      denominator from whichever StagedFoodItem owns the ambiguity.
 >      NOT a condiment case in the scorer; NOT a blanket None; `of_day`
->      unchanged.                                        (done, not deployed)
+>      unchanged.
 > 2 ✅ mechanical exit test across the full representation grid, two-way
->      mutation-proved                                              (done)
-> 3 ✅ C demoted from a tree edit to a DECLARED CAUSAL ARM
->      (`FOOD_EXTRAS_REPORT_ONLY`, off in render.yaml; `MEASUREMENT_ARM` in
->      `scripts/config_pin.py`) so both arms share ONE `_code_sha`  (done)
-> 4 ⏭ the C re-run — D1/D2 (arm A) + D3 (arm B), preregistered
-> 5 ⏭ only then DEFAULTABILITY
+>      mutation-proved. Promoted in the registry as an
+>      `architectural_invariant` — a kind that cannot be settled by any
+>      corpus, and therefore carries a STRICTER obligation: it must name a
+>      live mechanical proof that collects, passes and holds no xfail.
+> 3 ✅ C demoted to a DECLARED CAUSAL ARM so both arms share one `_code_sha`
+> 4 ✅ the C re-run — E1/E2/E3. C REJECTED (above)
+> 5 ⏭ DEFAULTABILITY — UNBLOCKED
 > ```
 >
-> **Acceptance for step 4 is NOT the ask rate alone** (Danny): C must improve
-> the north star *without changing the materiality decision of an unresolved
-> fact merely because C re-parented it*.
+> ⚠ **The repair is behaviourally DORMANT in production as configured.** With C
+> off, 0/37 and 0/47 facts carried a NOT-ESTABLISHED basis, because nothing but
+> C emits a component-scoped field. Its effect on ask rate has been measured
+> ONLY in C's presence. **A new producer of such a field is a new measurement.**
+>
+> ## ⏭ DEFAULTABILITY — what it is now blocked BY, which is nothing structural
+>
+> It is no longer blocked by missing vocabulary, representation-dependent
+> materiality, C's artifact, or a scorer defect. It is back to the product
+> question: **which unresolved facts should Arnie ask about, and which should it
+> reasonably default?**
+>
+> Sequencing (Danny, 2026-08-31): **measure the ask population by durable
+> semantic subject + materiality FIRST.** Do not open with another
+> implementation candidate. And **record the producer/basis census beside every
+> DEFAULTABILITY measurement, not just the first** — otherwise a later coverage
+> change reads as a policy effect when it may be a producer-population change.
 >
 > ## Registered separately, and NOT prerequisites
 >

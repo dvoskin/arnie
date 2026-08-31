@@ -61,6 +61,14 @@ from __future__ import annotations
 import core.food_pipeline as FP
 from skills.nutrition import materiality as M
 
+#: ⭐ THE BACK-LINK. `data/criteria_registry.json` names this file as the
+#: mechanical proof of that criterion; this names the criterion back, so the
+#: binding is two-way and an unrelated passing file cannot be substituted for
+#: it. Enforced by
+#: `tests/test_no_criterion_promoted_from_its_own_corpus.py::
+#:  test_every_architectural_invariant_names_a_live_mechanical_proof`.
+PROVES = "materiality_is_representation_invariant"
+
 TURN = "test:representation-invariance"
 MODE = "moderate"
 

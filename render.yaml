@@ -164,18 +164,36 @@ services:
       - key: FOOD_GATE_MODEL
         value: "true"
 
-      # SHAPE C — the report-only `extras` permission class. SHIPS OFF.
+      # ⛔⛔⛔ SHAPE C — the report-only `extras` permission class.
+      # REJECTED. Not "disabled", not "not yet enabled" — FALSIFIED, and the
+      # falsification is the reason the flag still exists.
       #
-      # Rejected for adoption 2026-08-31: it improved the aggregate ask metric,
-      # but part of that improvement came from re-representing an unknown as a
-      # property of its parent, which moved the materiality denominator rather
-      # than judging the unknown. See
-      # docs/TRANCHE_INVARIANT_IMPACT_BASIS_2026-08-31.md.
+      #   REJECTED by arms E1/E2/E3 at `83342c6`, 150 turns, every
+      #   preregistered refusal condition clear:
+      #     C off  22/50 and 23/50     C ON  30/50
+      #     null envelope 1            effect +7.5   OUTSIDE it, as HARM
       #
-      # It stays in the tree as a declared CAUSAL ARM so the re-run after the
-      # invariant-basis repair can turn it on by environment alone — same
-      # commit, same `_code_sha`, one variable. Turning it on in production is
-      # a separate decision that has not been made.
+      # C does not reduce asking. It INCREASES it by 15 points, broad across 8
+      # of 25 cases. Its earlier apparent benefit was NOT partly a measurement
+      # artifact — the artifact WAS the benefit, and it was masking an effect
+      # of the opposite sign. There is no second beneficial mechanism to find.
+      #
+      # ⭐ WHY THE BRANCH IS RETAINED RATHER THAN DELETED: "extras should just
+      # be report-only" is an attractive idea that will be rediscovered. Kept
+      # as a RUNNABLE historical causal arm, anyone who reaches for it meets
+      # the falsification and can re-run it in one command. Kept as a comment
+      # alone, they would have to repeat the 150 turns to learn what is already
+      # known.
+      #
+      # Guarded by tests/test_a_rejected_arm_cannot_drift_back_on.py, which
+      # pins BOTH directions: it cannot drift on by accident, and it must still
+      # actually work when deliberately switched on — a historical arm that no
+      # longer runs is not a historical arm, it is dead code.
+      #
+      # ⚠ IF THIS EVER BECOMES A MAINTENANCE BURDEN: delete the executable
+      # branch and keep the experiment in data/criteria_registry.json
+      # (`shape_c_unstated_extras_report_only_field`). The experiment is what
+      # has value. Permanent dead production code does not.
       - key: FOOD_EXTRAS_REPORT_ONLY
         value: "false"
 

@@ -1,5 +1,5 @@
 {
-  "_doc": "EVERY materiality/clarification CRITERION, alive or dead. A criterion may be PROMOTED only when validated_on_corpus differs from derived_from_corpus. Four criteria have died to the same error: a rule inferred from the cases it was tested on. Enforced by tests/test_no_criterion_promoted_from_its_own_corpus.py.",
+  "_doc": "EVERY materiality/clarification CRITERION, alive or dead. A criterion may be PROMOTED only when validated_on_corpus differs from derived_from_corpus. Four criteria have died to the same error: a rule inferred from the cases it was tested on. Enforced by tests/test_no_criterion_promoted_from_its_own_corpus.py. \u2b50 2026-08-31: entries now declare a `kind`. A `corpus_criterion` is a claim about food and must clear the held-out gate. An `architectural_invariant` is a claim about the SYSTEM -- it is not derived from a corpus and no corpus can validate it, so it clears a DIFFERENT and stricter gate: it must name a live mechanical proof that collects, passes, and contains no xfail. The label is not an escape hatch; it swaps one obligation for a harder one.",
   "_statuses": [
     "proposed",
     "promoted",
@@ -13,7 +13,8 @@
       "status": "retired",
       "derived_from_corpus": "real_meal_expectations_v1",
       "validated_on_corpus": null,
-      "note": "Disproved 2026-08-27. impact_cal overlaps almost completely across asking and logging cases. Do not resurrect: regression-by-forgetting."
+      "note": "Disproved 2026-08-27. impact_cal overlaps almost completely across asking and logging cases. Do not resurrect: regression-by-forgetting.",
+      "kind": "corpus_criterion"
     },
     {
       "name": "dish_vs_vessel",
@@ -21,7 +22,8 @@
       "status": "refuted",
       "derived_from_corpus": "real_meal_expectations_v1",
       "validated_on_corpus": null,
-      "note": "Fitted to 3 fixtures. Declared falsified on n=1 (burrito bowl logged 1/1) and the FALSIFICATION did not survive n=8 (0/8). Both the rule and its refutation were underpowered."
+      "note": "Fitted to 3 fixtures. Declared falsified on n=1 (burrito bowl logged 1/1) and the FALSIFICATION did not survive n=8 (0/8). Both the rule and its refutation were underpowered.",
+      "kind": "corpus_criterion"
     },
     {
       "name": "four_criterion_evidence_contract",
@@ -29,7 +31,8 @@
       "status": "retired",
       "derived_from_corpus": "real_meal_expectations_v1",
       "validated_on_corpus": null,
-      "note": "Drafted entirely on invalid-config behaviour (all 18 render.yaml flags unset). Superseded before it was ever tested."
+      "note": "Drafted entirely on invalid-config behaviour (all 18 render.yaml flags unset). Superseded before it was ever tested.",
+      "kind": "corpus_criterion"
     },
     {
       "name": "h1_unspecified_secondary_component",
@@ -37,7 +40,8 @@
       "status": "refuted",
       "derived_from_corpus": "real_meal_expectations_v1",
       "validated_on_corpus": "heldout_defaultability_v1",
-      "note": "REFUTED 2026-08-27 by its own preregistered falsification conditions. c110 asks with no secondary; c111 asks about the PRIMARY. Matched pairs separated 2 of 4. \u2b50 The gate WORKED: derived on one corpus, tested on another, and died there instead of in production."
+      "note": "REFUTED 2026-08-27 by its own preregistered falsification conditions. c110 asks with no secondary; c111 asks about the PRIMARY. Matched pairs separated 2 of 4. \u2b50 The gate WORKED: derived on one corpus, tested on another, and died there instead of in production.",
+      "kind": "corpus_criterion"
     },
     {
       "name": "h2_unbounded_quantity",
@@ -45,7 +49,8 @@
       "status": "proposed",
       "derived_from_corpus": "heldout_defaultability_v1",
       "validated_on_corpus": null,
-      "note": "12/12 in-sample, 6/8 out-of-sample against the 8 DEFAULTABILITY cases. NOT PROMOTED: derived post-hoc from the very cases that refuted H1. Needs its OWN held-out corpus."
+      "note": "12/12 in-sample, 6/8 out-of-sample against the 8 DEFAULTABILITY cases. NOT PROMOTED: derived post-hoc from the very cases that refuted H1. Needs its OWN held-out corpus.",
+      "kind": "corpus_criterion"
     },
     {
       "name": "shape_c_unstated_extras_report_only_field",
@@ -53,15 +58,18 @@
       "status": "refuted",
       "derived_from_corpus": "real_meal_expectations_v1",
       "validated_on_corpus": "real_meal_expectations_v1",
-      "note": "REJECTED FOR ADOPTION 2026-08-31 by Danny. The north-star experiment PASSES and the measurement is valid \u2014 but it passed for the wrong reason. C re-represents the component (c1: `Mayo` stops being a staged row and becomes an `extras` ambiguity ON the sandwich), and `of_item` divides by the parent row, so materiality flips with NO change to the unknown. 7 of 8 captured spans flip on the denominator alone. c1's captured impact_cal=120 is MATERIAL under current policy (of_day 4.78% vs a 1% dial). And C is not uniform: c1 removed 2/2->0/4, c4 1/2->0/4, c8's Popeyes Blackened Ranch KEPT 2/2->2/4. Superseded by materiality_is_representation_invariant."
+      "note": "\u26d4 PERMANENTLY REJECTED 2026-08-31 by arms E1/E2/E3 at `83342c6` (_code_sha 26ff8f5), 150 turns, every preregistered refusal condition clear. C off 22/50 and 23/50; C ON 30/50. Null envelope 1, effect +7.5 -- OUTSIDE it, in the HARM direction. C does not reduce asking, it INCREASES it by 15 points, broad across 8 of 25 cases. \u2b50 So the original apparent benefit was not PARTLY the denominator artifact: the artifact WAS the benefit and was masking an effect of the opposite sign. There is no second beneficial mechanism to rescue. Mechanism, c1: with C off the unknown is reported as `prep` and sized against the 960-cal sandwich (15.6% < 30% dial) -> immaterial; with C on it is `extras` with NO establishable basis, so the day fraction decides alone (6.0% vs a 1% dial) -> material. Retained ONLY as a historical causal arm (`FOOD_EXTRAS_REPORT_ONLY`, false in render.yaml, guarded by tests/test_a_rejected_arm_cannot_drift_back_on.py). If the implementation ever becomes a maintenance burden, delete the executable branch and keep THIS entry -- the experiment is what has value, not the dead code.",
+      "kind": "corpus_criterion"
     },
     {
       "name": "materiality_is_representation_invariant",
       "claim": "materiality must consume an INVARIANT impact basis for the unresolved component \u2014 the same unknown gets the same decision whether it is its own staged row or an ambiguity on its parent",
-      "status": "proposed",
-      "derived_from_corpus": "real_meal_expectations_v1",
+      "status": "promoted",
+      "derived_from_corpus": null,
       "validated_on_corpus": null,
-      "note": "OPENED 2026-08-31 by Danny as the tranche that must land BEFORE DEFAULTABILITY reopens. NOT a corpus criterion \u2014 it is an ARCHITECTURAL invariant with a mechanical exit test (tests/test_materiality_is_representation_invariant.py, currently 2 strict xfails). It needs no held-out corpus to be true, but re-running C after the repair DOES need one: if C still improves the north star without deleting material asks, it can earn adoption again."
+      "note": "PROMOTED 2026-08-31. \u2b50 NOT a corpus claim and no corpus could settle it -- it was derived by characterising the policy itself and is proven mechanically: a 6-parent x 10-span representation grid, controls in both directions, and a TWO-DIRECTIONAL mutation proof (revert -> the four invariance tests red; flatten -> the anti-flattening control red), each with the failure NAME the mutation predicted. Residual: exactly ONE calorie of disagreement between encodings, pinned so it cannot widen. \u26a0 BEHAVIOURALLY DORMANT with C off -- 0/37 and 0/47 facts carried a NOT-ESTABLISHED basis in arms E1/E2, because nothing but C emits a component-scoped field. Its effect on ask rate has been measured ONLY in C's presence; a new producer of such a field is a new measurement.",
+      "kind": "architectural_invariant",
+      "mechanical_proof": "tests/test_materiality_is_representation_invariant.py"
     },
     {
       "name": "day_share_override_predicate_divergence",
@@ -69,7 +77,8 @@
       "status": "proposed",
       "derived_from_corpus": null,
       "validated_on_corpus": null,
-      "note": "REGISTERED 2026-08-31, own tranche. Measured: they disagree on 23.3% of a 12,000-cell grid; 2,793 of 2,794 disagreements are the DAY_SHARE_OVERRIDE branch (the per-question staged scorer has neither DAY_SHARE_OVERRIDE nor MIN_ITEM_SHARE). NOT causal for the condiment asks \u2014 in that region the two agree \u2014 so this is a real defect that was NOT the one being hunted."
+      "note": "REGISTERED 2026-08-31, own tranche. Measured: they disagree on 23.3% of a 12,000-cell grid; 2,793 of 2,794 disagreements are the DAY_SHARE_OVERRIDE branch (the per-question staged scorer has neither DAY_SHARE_OVERRIDE nor MIN_ITEM_SHARE). NOT causal for the condiment asks \u2014 in that region the two agree \u2014 so this is a real defect that was NOT the one being hunted.",
+      "kind": "corpus_criterion"
     },
     {
       "name": "condiment_span_truthfulness",
@@ -77,7 +86,12 @@
       "status": "proposed",
       "derived_from_corpus": null,
       "validated_on_corpus": null,
-      "note": "REGISTERED 2026-08-31, UPSTREAM of materiality and explicitly NOT a prerequisite to rejecting C (Danny). The policy consumes the model's number with no independent check. Captured condiment spans: mayo 120, ranch 100, ranch 80, spicy mayo 150 \u2014 against a MIN_ITEM_SHARE gate calibrated on honey 21, soy sauce 10, hot-sauce drizzle 20."
+      "note": "REGISTERED 2026-08-31, UPSTREAM of materiality and explicitly NOT a prerequisite to rejecting C (Danny). The policy consumes the model's number with no independent check. Captured condiment spans: mayo 120, ranch 100, ranch 80, spicy mayo 150 \u2014 against a MIN_ITEM_SHARE gate calibrated on honey 21, soy sauce 10, hot-sauce drizzle 20.",
+      "kind": "corpus_criterion"
     }
+  ],
+  "_kinds": [
+    "corpus_criterion",
+    "architectural_invariant"
   ]
 }

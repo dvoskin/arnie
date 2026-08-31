@@ -120,3 +120,56 @@ be argued with, never adjudicated.
 
 The re-run is arms **E1 / E2 / E3**, same design, same prediction, on a clean
 tree. Cost of the void attempt: 150 turns.
+
+---
+
+## AMENDMENT 2 — 2026-08-31, after the E arms landed
+
+**The prediction above is unchanged.** This classifies its outcome in the
+three-way vocabulary adopted *because of* this document's gap, and records the
+gap itself.
+
+### The gap
+
+This preregistration enumerated two outcomes:
+
+- **the effect falls inside the envelope** — predicted
+- **the effect survives in the predicted direction** (C still REDUCES asks) —
+  falsifying
+
+The result was neither. **The effect survived with its sign reversed:** C
+increased asking by +7.5 against a null envelope of 1. That outcome had no name
+in this document, so a decisive result had to be classified after it was seen —
+the ordering preregistration exists to forbid.
+
+The gap was not carelessness about this run. **Only the outcomes I could imagine
+wanting got written down**, which is the bias preregistration exists to remove,
+arriving through the document's own structure.
+
+### The outcome, in the vocabulary now required
+
+```text
+BENEFIT   not observed
+NULL      not observed
+HARM      ⛔ OBSERVED. E3 30/50 against 22/50 and 23/50; null envelope 1;
+          effect +7.5, outside it and in the opposite direction to the
+          intervention's purpose.
+```
+
+**Action bound by the HARM branch, and taken:** optimization stopped. C was not
+tuned, not re-thresholded, not re-run at another setting. The reversal was
+characterised (`docs/C_RERUN_RESULT_2026-08-31.md`) and C was permanently
+rejected. No further candidate was designed from it.
+
+### Prediction scorecard
+
+- **Clause 1 — HIT, exactly.** c1's mayo ask returned: `extras`, span 150,
+  basis `None`, score 5.976, material, 2/2 reps.
+- **Clause 2 — WRONG, and unfalsifiable as written.** "Collapses inside the
+  envelope" did not happen, and the way it failed could not be expressed by the
+  falsification conditions this document set.
+
+Recorded as partially unfalsifiable rather than as a hit.
+
+See `docs/PREREG_TEMPLATE.md` and
+`tests/test_a_preregistration_declares_all_three_outcomes.py`.
