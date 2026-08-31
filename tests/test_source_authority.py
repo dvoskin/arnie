@@ -205,12 +205,20 @@ def test_a_cached_generic_re_enters_as_a_generic_for_a_named_product():
     cache of our own answer. Seating one as a product answer is what let a
     single generic lookup for a named product keep winning forever."""
     from skills.nutrition.authority import candidate_map
-    memory = {"per100g": {"calories": 300}, "origin_tier": "generic_exact"}
+    # CF24: this fixture carries a per-100g payload to test rung placement, not to
+    # assert that UNTRUSTED memory may price. `candidate_map` now refuses
+    # any memory candidate without the trust proof, so the marker keeps
+    # this test asserting what it always meant: a TRUSTED row is seated as a generic, never as a product.
+    # The refusal itself is covered by
+    # tests/test_a_failed_trust_decision_cannot_become_pricing_authority.py
+    memory = {"per100g": {"calories": 300}, "origin_tier": "generic_exact",
+              "_trusted_memory": True}
     seated = candidate_map(food_class=FoodClass.MANUFACTURED, memory_match=memory)
     assert "usda_generic" in seated and "saved_product" not in seated
     # ...and one the user actually corrected is not demoted with it.
     corrected = candidate_map(food_class=FoodClass.MANUFACTURED,
-                              memory_match={"per100g": {}, "user_confirmed": True})
+                              memory_match={"per100g": {}, "user_confirmed": True,
+                                            "_trusted_memory": True})
     assert "user_correction" in corrected
 
 
@@ -284,8 +292,14 @@ def test_confidence_alone_cannot_seat_a_cache_at_a_branded_rung():
     row keeps suppressing the very enrichment the column was added to restore
     (alembic a1f4c7d2b8e3)."""
     from skills.nutrition.authority import candidate_map, needs_branded_lookup
+    # CF24: this fixture carries a per-100g payload to test rung placement, not to
+    # assert that UNTRUSTED memory may price. `candidate_map` now refuses
+    # any memory candidate without the trust proof, so the marker keeps
+    # this test asserting what it always meant: a TRUSTED row is placed by its origin column.
+    # The refusal itself is covered by
+    # tests/test_a_failed_trust_decision_cannot_become_pricing_authority.py
     row = {"per100g": {"calories": 300}, "confidence": "exact",
-           "origin_tier": "generic_exact"}
+           "origin_tier": "generic_exact", "_trusted_memory": True}
     seated = candidate_map(food_class=FoodClass.MANUFACTURED, memory_match=row)
     assert "saved_product" not in seated
     rung = next(iter(seated))

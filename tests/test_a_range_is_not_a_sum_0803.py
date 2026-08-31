@@ -69,7 +69,13 @@ def test_a_range_no_longer_multiplies_a_label_panel():
     demotion — so a doubled count is committed as label-grade fact.
     """
     import core.food_intelligence as FI
-    src = {"description": "Quest Bar", "_match": "exact",
+    # CF24: this fixture carries a per-100g payload to test label-panel arithmetic, not to
+    # assert that UNTRUSTED memory may price. `candidate_map` now refuses
+    # any memory candidate without the trust proof, so the marker keeps
+    # this test asserting what it always meant: a TRUSTED row is priced from its own panel.
+    # The refusal itself is covered by
+    # tests/test_a_failed_trust_decision_cannot_become_pricing_authority.py
+    src = {"description": "Quest Bar", "_match": "exact", "_trusted_memory": True,
            "per100g": {"calories": 339, "protein": 36, "carbs": 43, "fat": 11},
            "per_serving": {"calories": 190, "protein": 21, "carbs": 24,
                            "fat": 6},
