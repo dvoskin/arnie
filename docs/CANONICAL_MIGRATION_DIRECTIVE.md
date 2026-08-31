@@ -1,4 +1,89 @@
 > ════════════════════════════════════════════════════════════════════════
+> ⭐⭐⭐ **SEQUENCING AUTHORITY — 2026-08-31.** *(Danny)*
+>
+> **SUPERSEDES the 2026-08-27 banner below.** Nothing is deployed. `27983be`
+> remains HELD.
+>
+> ## THE 2026-08-27 SEQUENCE IS SPENT — here is what it produced
+>
+> ```text
+> 3 ✅ producer registry rerun across BOTH authorities
+> 5 ✅ `consumption_complete` and `unstated_extras` were NEVER MISSING —
+>      they were asked under `consumed_fraction` and `prep`.
+>      `portion_multiplier` genuinely has no producer and is OUT of scope.
+> 4 ⛔ D2 recompute — SUPERSEDED, not done. The question it was going to
+>      answer turned out to be downstream of a scorer defect (below).
+> 6 ⛔ DEFAULTABILITY — still blocked, now behind a different tranche.
+> ```
+>
+> ## ⛔ SHAPE C: REJECTED FOR ADOPTION, north-star result PRESERVED AS A PASS
+>
+> C (a REPORT-ONLY `extras` permission class) passed its frozen exit test. The
+> measurement was valid; the **attribution** was not. Measured 2026-08-31: C
+> got part of its ask-rate improvement by **re-representing an unknown as a
+> property of its parent**, and `of_item` divides by the parent —
+>
+> ```text
+> baseline c1  TWO staged items — the sandwich, and `Mayo` as its own row
+>              mayo material=True                                 -> ASK 2/2
+> under C      ONE staged item. Mayo is an `extras` fact ON the sandwich
+>              material=False                                     -> ASK 0/4
+> ```
+>
+> 7 of 8 spans flip on the denominator alone. c1's captured `impact_cal=120` is
+> MATERIAL under current policy (`of_day` 4.78% against a 1% dial). And C is
+> not uniform: it removed c1 and c4 and KEPT c8's identical condiment ask.
+>
+> ## ⭐⭐⭐ THE CONTRACT THIS COST
+>
+> > **A separation enforced at ONE layer is not enforced.**
+> >
+> > Shape C polices permission-to-default in the PROMPT, and holds that line
+> > there. It breaks the same rule in the SCORER, because naming the unknown
+> > differently changed which row it was sized against. The 2026-08-30 boundary
+> > was being watched at the layer where it was written and broke one layer
+> > below.
+>
+> Generalise this before trusting any "the prompt now forbids X" repair.
+>
+> ## THE SEQUENCE
+>
+> ```text
+> 1 ✅ typed-state repair: `FoodAmbiguity.impact_basis_cal`. The basis is
+>      state on the FACT, set by the producer that knows what the fact is
+>      about, and `attach_ambiguities` CONSUMES it instead of rediscovering a
+>      denominator from whichever StagedFoodItem owns the ambiguity.
+>      NOT a condiment case in the scorer; NOT a blanket None; `of_day`
+>      unchanged.                                        (done, not deployed)
+> 2 ✅ mechanical exit test across the full representation grid, two-way
+>      mutation-proved                                              (done)
+> 3 ✅ C demoted from a tree edit to a DECLARED CAUSAL ARM
+>      (`FOOD_EXTRAS_REPORT_ONLY`, off in render.yaml; `MEASUREMENT_ARM` in
+>      `scripts/config_pin.py`) so both arms share ONE `_code_sha`  (done)
+> 4 ⏭ the C re-run — D1/D2 (arm A) + D3 (arm B), preregistered
+> 5 ⏭ only then DEFAULTABILITY
+> ```
+>
+> **Acceptance for step 4 is NOT the ask rate alone** (Danny): C must improve
+> the north star *without changing the materiality decision of an unresolved
+> fact merely because C re-parented it*.
+>
+> ## Registered separately, and NOT prerequisites
+>
+> - `day_share_override_predicate_divergence` — the two materiality entry
+>   points disagree on 23.3% of a 12,000-cell grid, almost entirely via
+>   `DAY_SHARE_OVERRIDE`. Real; measured NOT causal for the condiment asks.
+> - `condiment_span_truthfulness` — the policy consumes the model's
+>   `impact_cal` with no independent check. Upstream of materiality.
+> - the 1-calorie residual window between the two encodings, pinned by
+>   `test_the_residual_gap_is_ONE_CALORIE_WIDE`.
+>
+> See `docs/TRANCHE_INVARIANT_IMPACT_BASIS_2026-08-31.md`,
+> `docs/CONDIMENT_MATERIALITY_2026-08-31.md`,
+> `docs/PREREG_C_RERUN_2026-08-31.md`.
+> ════════════════════════════════════════════════════════════════════════
+
+> ════════════════════════════════════════════════════════════════════════
 > ⭐⭐⭐ **SEQUENCING AUTHORITY — 2026-08-27.** *(Danny)*
 >
 > **SUPERSEDES the 2026-08-26 banner below.** Nothing is deployed. `27983be`
@@ -8112,7 +8197,7 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-28 (working tree, undeployed) — D1 RETIRED as a product defect (instrumentation-source bug, two ask authorities); staged ask site now types from `_decision`; producer-authority invariant added. See the 2026-08-27 banner at the TOP, which supersedes the sequencing below. Prior stamp: 2026-08-24 (`72d7c38`)
+Last reconciled 2026-08-31 (working tree, undeployed) — SHAPE C REJECTED FOR ADOPTION; its north-star PASS preserved as a valid measurement with a corrected attribution. Invariant-impact-basis repair landed (`FoodAmbiguity.impact_basis_cal`); C demoted to a declared causal arm so both arms share one `_code_sha`; C re-run preregistered. DEFAULTABILITY now blocked behind the invariant-basis tranche, not behind D2. See the 2026-08-31 banner at the TOP, which supersedes every sequence below it. Prior stamp: 2026-08-28 (working tree)
 CLOSING. What was re-read and corrected rather than date-bumped: CF17 and CF18
 moved OPEN -> MERGED, POST-MERGE REMEDIATION OPEN with the merge SHAs — NOT
 closed: two D2 telemetry defects (the persist-in-flight race; "latest row by
