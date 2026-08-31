@@ -1,0 +1,362 @@
+{
+ "mode": "moderate",
+ "targets": {
+  "calories": 2510.0,
+  "protein": 171.0,
+  "carbs": 308.0,
+  "fat": 66.0
+ },
+ "probe": {
+  "calorie_target": 2600,
+  "protein_target": 190
+ },
+ "dials": {
+  "day_fraction": 0.01,
+  "min_item_share": 0.02,
+  "day_share_override": 0.125,
+  "item_fraction": 0.3,
+  "min_item_share_cal": 50.2,
+  "day_fraction_cal": 25.1
+ },
+ "predicate_disagreements": [],
+ "c1": {
+  "message": "Subway Footlong Turkey on Italian Herbs & Cheese, provolone, veggies, mayo",
+  "item": "Mayo",
+  "field": "quantity",
+  "impact_cal": 120,
+  "source": "data/corpus/producer_census_both_authorities_2026-08-28.jsonl case=1 rep=1 (_code_sha 12f9d38)",
+  "staged_prompt": "How much of the Subway Mayo?",
+  "rows": [
+   {
+    "item_cal": 0,
+    "is_material": true,
+    "score": 4.781,
+    "trace": {
+     "of_day": 0.04781,
+     "of_day_dial": 0.01,
+     "gate1_day_fraction": true,
+     "ceiling_cal": 120.0,
+     "ceiling_share_of_day": 0.0478,
+     "min_item_share_dial": 0.02,
+     "gate2_min_item_share": true,
+     "day_share_override_dial": 0.125,
+     "gate3_day_share_override": false,
+     "of_item": 0.0,
+     "of_item_dial": 0.3,
+     "gate4_item_fraction": false
+    }
+   },
+   {
+    "item_cal": 50,
+    "is_material": true,
+    "score": 4.781,
+    "trace": {
+     "of_day": 0.04781,
+     "of_day_dial": 0.01,
+     "gate1_day_fraction": true,
+     "ceiling_cal": 170.0,
+     "ceiling_share_of_day": 0.0677,
+     "min_item_share_dial": 0.02,
+     "gate2_min_item_share": true,
+     "day_share_override_dial": 0.125,
+     "gate3_day_share_override": false,
+     "of_item": 2.4,
+     "of_item_dial": 0.3,
+     "gate4_item_fraction": true
+    }
+   },
+   {
+    "item_cal": 90,
+    "is_material": true,
+    "score": 4.444,
+    "trace": {
+     "of_day": 0.04781,
+     "of_day_dial": 0.01,
+     "gate1_day_fraction": true,
+     "ceiling_cal": 210.0,
+     "ceiling_share_of_day": 0.0837,
+     "min_item_share_dial": 0.02,
+     "gate2_min_item_share": true,
+     "day_share_override_dial": 0.125,
+     "gate3_day_share_override": false,
+     "of_item": 1.3333,
+     "of_item_dial": 0.3,
+     "gate4_item_fraction": true
+    }
+   },
+   {
+    "item_cal": 100,
+    "is_material": true,
+    "score": 4.0,
+    "trace": {
+     "of_day": 0.04781,
+     "of_day_dial": 0.01,
+     "gate1_day_fraction": true,
+     "ceiling_cal": 220.0,
+     "ceiling_share_of_day": 0.0876,
+     "min_item_share_dial": 0.02,
+     "gate2_min_item_share": true,
+     "day_share_override_dial": 0.125,
+     "gate3_day_share_override": false,
+     "of_item": 1.2,
+     "of_item_dial": 0.3,
+     "gate4_item_fraction": true
+    }
+   },
+   {
+    "item_cal": 110,
+    "is_material": true,
+    "score": 3.636,
+    "trace": {
+     "of_day": 0.04781,
+     "of_day_dial": 0.01,
+     "gate1_day_fraction": true,
+     "ceiling_cal": 230.0,
+     "ceiling_share_of_day": 0.0916,
+     "min_item_share_dial": 0.02,
+     "gate2_min_item_share": true,
+     "day_share_override_dial": 0.125,
+     "gate3_day_share_override": false,
+     "of_item": 1.0909,
+     "of_item_dial": 0.3,
+     "gate4_item_fraction": true
+    }
+   },
+   {
+    "item_cal": 150,
+    "is_material": true,
+    "score": 2.667,
+    "trace": {
+     "of_day": 0.04781,
+     "of_day_dial": 0.01,
+     "gate1_day_fraction": true,
+     "ceiling_cal": 270.0,
+     "ceiling_share_of_day": 0.1076,
+     "min_item_share_dial": 0.02,
+     "gate2_min_item_share": true,
+     "day_share_override_dial": 0.125,
+     "gate3_day_share_override": false,
+     "of_item": 0.8,
+     "of_item_dial": 0.3,
+     "gate4_item_fraction": true
+    }
+   },
+   {
+    "item_cal": 200,
+    "is_material": true,
+    "score": 2.0,
+    "trace": {
+     "of_day": 0.04781,
+     "of_day_dial": 0.01,
+     "gate1_day_fraction": true,
+     "ceiling_cal": 320.0,
+     "ceiling_share_of_day": 0.1275,
+     "min_item_share_dial": 0.02,
+     "gate2_min_item_share": true,
+     "day_share_override_dial": 0.125,
+     "gate3_day_share_override": false,
+     "of_item": 0.6,
+     "of_item_dial": 0.3,
+     "gate4_item_fraction": true
+    }
+   },
+   {
+    "item_cal": 300,
+    "is_material": true,
+    "score": 1.333,
+    "trace": {
+     "of_day": 0.04781,
+     "of_day_dial": 0.01,
+     "gate1_day_fraction": true,
+     "ceiling_cal": 420.0,
+     "ceiling_share_of_day": 0.1673,
+     "min_item_share_dial": 0.02,
+     "gate2_min_item_share": true,
+     "day_share_override_dial": 0.125,
+     "gate3_day_share_override": false,
+     "of_item": 0.4,
+     "of_item_dial": 0.3,
+     "gate4_item_fraction": true
+    }
+   },
+   {
+    "item_cal": 400,
+    "is_material": true,
+    "score": 1.0,
+    "trace": {
+     "of_day": 0.04781,
+     "of_day_dial": 0.01,
+     "gate1_day_fraction": true,
+     "ceiling_cal": 520.0,
+     "ceiling_share_of_day": 0.2072,
+     "min_item_share_dial": 0.02,
+     "gate2_min_item_share": true,
+     "day_share_override_dial": 0.125,
+     "gate3_day_share_override": false,
+     "of_item": 0.3,
+     "of_item_dial": 0.3,
+     "gate4_item_fraction": true
+    }
+   },
+   {
+    "item_cal": 500,
+    "is_material": false,
+    "score": 0.8,
+    "trace": {
+     "of_day": 0.04781,
+     "of_day_dial": 0.01,
+     "gate1_day_fraction": true,
+     "ceiling_cal": 620.0,
+     "ceiling_share_of_day": 0.247,
+     "min_item_share_dial": 0.02,
+     "gate2_min_item_share": true,
+     "day_share_override_dial": 0.125,
+     "gate3_day_share_override": false,
+     "of_item": 0.24,
+     "of_item_dial": 0.3,
+     "gate4_item_fraction": false
+    }
+   }
+  ]
+ },
+ "neighbours": {
+  "c8 Blackened Ranch sauce": {
+   "span": 100,
+   "rows": [
+    {
+     "item_cal": 40,
+     "is_material": true,
+     "score": 3.984
+    },
+    {
+     "item_cal": 80,
+     "is_material": true,
+     "score": 3.984
+    },
+    {
+     "item_cal": 140,
+     "is_material": true,
+     "score": 2.381
+    },
+    {
+     "item_cal": 200,
+     "is_material": true,
+     "score": 1.667
+    }
+   ]
+  },
+  "c8 Popeyes Blackened Ranch Sauce": {
+   "span": 80,
+   "rows": [
+    {
+     "item_cal": 40,
+     "is_material": true,
+     "score": 3.187
+    },
+    {
+     "item_cal": 80,
+     "is_material": true,
+     "score": 3.187
+    },
+    {
+     "item_cal": 140,
+     "is_material": true,
+     "score": 1.905
+    },
+    {
+     "item_cal": 200,
+     "is_material": true,
+     "score": 1.333
+    }
+   ]
+  },
+  "c25 Spicy mayo": {
+   "span": 150,
+   "rows": [
+    {
+     "item_cal": 40,
+     "is_material": true,
+     "score": 5.976
+    },
+    {
+     "item_cal": 80,
+     "is_material": true,
+     "score": 5.976
+    },
+    {
+     "item_cal": 140,
+     "is_material": true,
+     "score": 3.571
+    },
+    {
+     "item_cal": 200,
+     "is_material": true,
+     "score": 2.5
+    }
+   ]
+  }
+ },
+ "boundaries": {
+  "40": 26,
+  "80": 26,
+  "120": 36,
+  "200": 60,
+  "400": 120
+ },
+ "denominator_test": [
+  {
+   "span": 40,
+   "mayo as its own item": true,
+   "extras on the sandwich": false,
+   "flips": true
+  },
+  {
+   "span": 60,
+   "mayo as its own item": true,
+   "extras on the sandwich": false,
+   "flips": true
+  },
+  {
+   "span": 80,
+   "mayo as its own item": true,
+   "extras on the sandwich": false,
+   "flips": true
+  },
+  {
+   "span": 100,
+   "mayo as its own item": true,
+   "extras on the sandwich": false,
+   "flips": true
+  },
+  {
+   "span": 120,
+   "mayo as its own item": true,
+   "extras on the sandwich": false,
+   "flips": true
+  },
+  {
+   "span": 150,
+   "mayo as its own item": true,
+   "extras on the sandwich": false,
+   "flips": true
+  },
+  {
+   "span": 200,
+   "mayo as its own item": true,
+   "extras on the sandwich": false,
+   "flips": true
+  },
+  {
+   "span": 240,
+   "mayo as its own item": true,
+   "extras on the sandwich": true,
+   "flips": false
+  }
+ ],
+ "observed": [
+  "c1  Subway mayo            baseline 2/2 ASK  ->  C 0/4   REMOVED",
+  "c4  Polynesian sauce       baseline 1/2 ASK  ->  C 0/4   REMOVED (weak population: already 1/2 before C)",
+  "c8  Popeyes Blackened Ranch baseline 2/2 ASK ->  C 2/4   KEPT",
+  "    -> C is not applying a condiment policy. It removes the shape in two cases and keeps it in a third."
+ ]
+}
