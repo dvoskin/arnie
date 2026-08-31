@@ -46,6 +46,38 @@
       "derived_from_corpus": "heldout_defaultability_v1",
       "validated_on_corpus": null,
       "note": "12/12 in-sample, 6/8 out-of-sample against the 8 DEFAULTABILITY cases. NOT PROMOTED: derived post-hoc from the very cases that refuted H1. Needs its OWN held-out corpus."
+    },
+    {
+      "name": "shape_c_unstated_extras_report_only_field",
+      "claim": "a REPORT-ONLY `extras` field lets the model name an unresolved subject without gaining permission to default it, reducing asks without losing material ones",
+      "status": "refuted",
+      "derived_from_corpus": "real_meal_expectations_v1",
+      "validated_on_corpus": "real_meal_expectations_v1",
+      "note": "REJECTED FOR ADOPTION 2026-08-31 by Danny. The north-star experiment PASSES and the measurement is valid \u2014 but it passed for the wrong reason. C re-represents the component (c1: `Mayo` stops being a staged row and becomes an `extras` ambiguity ON the sandwich), and `of_item` divides by the parent row, so materiality flips with NO change to the unknown. 7 of 8 captured spans flip on the denominator alone. c1's captured impact_cal=120 is MATERIAL under current policy (of_day 4.78% vs a 1% dial). And C is not uniform: c1 removed 2/2->0/4, c4 1/2->0/4, c8's Popeyes Blackened Ranch KEPT 2/2->2/4. Superseded by materiality_is_representation_invariant."
+    },
+    {
+      "name": "materiality_is_representation_invariant",
+      "claim": "materiality must consume an INVARIANT impact basis for the unresolved component \u2014 the same unknown gets the same decision whether it is its own staged row or an ambiguity on its parent",
+      "status": "proposed",
+      "derived_from_corpus": "real_meal_expectations_v1",
+      "validated_on_corpus": null,
+      "note": "OPENED 2026-08-31 by Danny as the tranche that must land BEFORE DEFAULTABILITY reopens. NOT a corpus criterion \u2014 it is an ARCHITECTURAL invariant with a mechanical exit test (tests/test_materiality_is_representation_invariant.py, currently 2 strict xfails). It needs no held-out corpus to be true, but re-running C after the repair DOES need one: if C still improves the north star without deleting material asks, it can earn adoption again."
+    },
+    {
+      "name": "day_share_override_predicate_divergence",
+      "claim": "the two materiality entry points \u2014 materiality.is_material and ambiguity.materiality \u2014 must agree",
+      "status": "proposed",
+      "derived_from_corpus": null,
+      "validated_on_corpus": null,
+      "note": "REGISTERED 2026-08-31, own tranche. Measured: they disagree on 23.3% of a 12,000-cell grid; 2,793 of 2,794 disagreements are the DAY_SHARE_OVERRIDE branch (the per-question staged scorer has neither DAY_SHARE_OVERRIDE nor MIN_ITEM_SHARE). NOT causal for the condiment asks \u2014 in that region the two agree \u2014 so this is a real defect that was NOT the one being hunted."
+    },
+    {
+      "name": "condiment_span_truthfulness",
+      "claim": "the model's reported impact_cal for a condiment quantity unknown is a truthful span",
+      "status": "proposed",
+      "derived_from_corpus": null,
+      "validated_on_corpus": null,
+      "note": "REGISTERED 2026-08-31, UPSTREAM of materiality and explicitly NOT a prerequisite to rejecting C (Danny). The policy consumes the model's number with no independent check. Captured condiment spans: mayo 120, ranch 100, ranch 80, spicy mayo 150 \u2014 against a MIN_ITEM_SHARE gate calibrated on honey 21, soy sauce 10, hot-sauce drizzle 20."
     }
   ]
 }
