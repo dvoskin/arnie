@@ -86,3 +86,83 @@ the two failed variants.
 behaviour.** That is not proof the fifth must, and C differs from all four by
 removing permission rather than extending it — but the base rate is 4/4 and
 should temper expectation.
+
+---
+
+# RESULT — **THE FROZEN EXIT TEST PASSES**
+
+```
+run                        sha       asks  staged  extras  assumed-leak
+BASELINE                   4049778     30     10       0        0
+C SLICE run1               79ece8a     29      6      10        0
+C SLICE run2 (null twin)   79ece8a     27      7       6        0
+
+THIS SHA'S OWN NULL:  asks Δ2 · staged Δ1 · extras Δ4
+```
+
+## The exit test, as frozen
+
+```
+1. real unstated_extras observations
+   10 and 6, with ZERO `assumed` leakage across both runs        ✅ PASS
+
+2. clarification rate AND material asks inside this SHA's null
+   ask rate    effect Δ1  vs  null Δ2                            ✅ INSIDE
+   material    c17  1.00 · 1.00 · 1.00                           ✅ INTACT
+```
+
+## ⭐⭐⭐ THE CANARY THAT MATTERS
+
+```
+c17 (primary-item wrap size)   baseline 1.00 · C 1.00 · C 1.00
+      rejected exception 0.25 · rejected one-word variant 0.00
+
+c1  (mayo — SECONDARY condiment)  baseline 1.00 · C 0.00 · C 0.00
+```
+
+**Both rejected variants destroyed c17. The C slice preserves it across both
+runs while dropping only the secondary condiment question.** That is the
+discrimination the whole tranche was aiming at: representation gained,
+*material* uncertainty kept.
+
+⚠ c1's loss is consistent (0.00 twice) and is a real behaviour change. It was
+classified secondary; **that classification was mine and has not been reviewed.**
+
+## ⚠⚠ ONE OBSERVATION THAT WAS **NOT** IN THE FROZEN TEST
+
+```
+staged-raised   baseline 10 -> 6 and 7      effect Δ4  vs  null Δ1   EXCEEDS
+```
+
+**Authority migration.** Interpreter-raised went 20 → 23/20 while staged went
+10 → 6/7. Given the authorities are SEQUENTIAL — interpreter first, staged only
+if the interpreter stays silent — the mechanism is plausibly that **extras
+reporting gives the interpreter something to raise on turns it previously left
+to staged.**
+
+⛔ **I am NOT folding this into the pass/fail.** It was not in the frozen test,
+and adding a criterion after seeing the result is how a pass gets manufactured
+or destroyed to taste. It is reported as a separate finding requiring its own
+decision.
+
+⚠ Round 1 showed authority migration changes what the user sees. Total asking
+barely moved, but **which producer speaks did**, and that is exactly the class
+of change this session has repeatedly found to matter more than aggregate
+counts.
+
+## ⚠ Variance on the capability itself
+
+`extras` reports were **10 and 6** — a null Δ of 4 on the very quantity being
+established. Both non-zero and leakage-free, so condition 1 holds, but the
+capability's rate is not stable and should not be quoted as a figure.
+
+## Status
+
+```
+C slice, frozen exit test          PASS
+authority migration                OUT-OF-TEST FINDING, exceeds null, undecided
+c1 secondary-ask loss              consistent, classification unreviewed
+extras rate                        unstable (10 vs 6)
+adoption                           NOT AUTHORIZED — a passing slice is not an
+                                   adoption decision
+```
