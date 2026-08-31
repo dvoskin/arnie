@@ -40,7 +40,46 @@ ROW936 = dict(name_norm="grilled shrimp", display_name="Grilled shrimp",
 POISON = 437.5
 PROBE = "Shrimp, grilled, 120 g"
 
-OBS: dict = {"door": [], "analyze": [], "select": [], "prehydrated": []}
+OBS: dict = {"door": [], "analyze": [], "select": [], "prehydrated": [],
+             "consumption": []}
+
+#: ⭐ ORDER IS THE WHOLE ASSERTION. "A payload reached a consumer" and "a door
+#: event exists somewhere in the turn" are compatible with each other; what
+#: distinguishes a BYPASS is that the consumption happened with NO door event
+#: for that row BEFORE it. So every observation is stamped with a monotonic
+#: sequence and the gate compares positions, not mere presence.
+_SEQ = [0]
+
+
+def _seq() -> int:
+    _SEQ[0] += 1
+    return _SEQ[0]
+
+
+#: The macro fingerprint, not calories alone. A candidate carrying 437.5 by
+#: coincidence is not row 936; carrying 437.5 AND 8.8/63.8/16.2 is.
+FINGERPRINT = {"cal_100": 437.5, "protein_100": 8.8,
+               "carbs_100": 63.8, "fat_100": 16.2}
+
+
+def _is_row936(obj) -> bool:
+    """The FULL fingerprint — calories AND macros, in either shape."""
+    if obj is None:
+        return False
+    d = obj if isinstance(obj, dict) else dict(getattr(obj, "__dict__", {}) or {})
+    p = d.get("per100g") if isinstance(d.get("per100g"), dict) else None
+    def val(col, key):
+        if p is not None and key in p:
+            return p.get(key)
+        return d.get(col)
+    try:
+        return all(abs(float(val(c, k) or -1) - v) < 0.05 for (c, k), v in
+                   ((("cal_100", "calories"), 437.5),
+                    (("protein_100", "protein"), 8.8),
+                    (("carbs_100", "carbs"), 63.8),
+                    (("fat_100", "fat"), 16.2)))
+    except (TypeError, ValueError):
+        return False
 
 
 def _carries_poison(obj) -> bool:
@@ -93,7 +132,8 @@ def install_spies():
         out = await _door(db, row, consumer=consumer,
                           candidate_kind=candidate_kind, hydration=hydration,
                           stage=stage, operation_id=operation_id)
-        OBS["door"].append({"consumer": consumer, "hydration": hydration,
+        OBS["door"].append({"seq": _seq(), "consumer": consumer,
+                            "is_row936": _is_row936(row), "hydration": hydration,
                             "row_id": (row.__dict__ or {}).get("id") if not isinstance(row, dict) else row.get("id"),
                             "payload_carried_poison": pre,
                             "returned": None if out is None else "PER100G"})
@@ -106,9 +146,13 @@ def install_spies():
 
     def analyze(*a, **kw):
         mm = kw.get("memory_match")
+        if _is_row936(mm):
+            OBS["consumption"].append({"seq": _seq(), "where": "analyze.memory_match"})
         OBS["analyze"].append({
+            "seq": _SEQ[0],
             "memory_match_present": mm is not None,
             "memory_match_carries_poison": _carries_poison(mm),
+            "memory_match_is_row936": _is_row936(mm),
             "usda": kw.get("usda_candidate") is not None,
             "off": kw.get("off_candidate") is not None})
         return _analyze(*a, **kw)
@@ -118,7 +162,15 @@ def install_spies():
 
     def select(cands, food_class):
         rung, src = _select(cands, food_class)
-        OBS["select"].append({"rung": rung, "seated_carries_poison": _carries_poison(src),
+        if _is_row936(src):
+            OBS["consumption"].append({"seq": _seq(), "where": f"authority.select[{rung}]"})
+        for _r, _c in (cands or {}).items():
+            if _is_row936(_c):
+                OBS["consumption"].append(
+                    {"seq": _seq(), "where": f"candidate_map[{_r}]"})
+        OBS["select"].append({"seq": _SEQ[0], "rung": rung,
+                              "seated_carries_poison": _carries_poison(src),
+                              "seated_is_row936": _is_row936(src),
                               "rungs_offered": sorted(cands or {})})
         return rung, src
     AU.select = select
@@ -257,20 +309,39 @@ async def main() -> int:
         print("   uninterpretable. This is a harness fact, not product evidence.")
     print()
     print("=" * 72)
-    print("GATE 1 — PROOF OF PREHYDRATION")
+    print("GATE 1 — DID A ROW-936 PAYLOAD REACH A CONSUMER *WITHOUT* THE DOOR?")
     print("=" * 72)
-    for p in OBS["prehydrated"]:
-        print("   ", p)
-    if not OBS["prehydrated"]:
-        print("   NONE — no candidate carrying cal_100=437.5 was observed in hand")
-        print()
-        print("⛔ ARM B IS **VOID** (refusal condition 1).")
-        print("   The state under test never existed, so this run is an")
-        print("   instrument/harness fact and NOT product evidence about the")
-        print("   bypass. Do not read it as 'no bypass found'.")
+    # ⛔ THE OLD GATE ASKED "does 437.5 exist before the door", which the
+    # ORDINARY GUARDED READ satisfies trivially — the row is fetched and then
+    # handed to the door. It reported PROVEN on a run that showed nothing.
+    #
+    # ⭐ THE REAL ASSERTION, all three parts at once:
+    #      a payload carrying row 936's FULL fingerprint
+    #      reaches a pricing consumer
+    #      with NO door event for that row BEFORE that consumption.
+    # A door that fires and then refuses is the guard WORKING, and must make
+    # this gate FAIL — which is why the sequence numbers exist.
+    door936 = [d for d in OBS["door"] if d.get("is_row936")]
+    first_door = min((d["seq"] for d in door936), default=None)
+    bypasses = [c for c in OBS["consumption"]
+                if first_door is None or c["seq"] < first_door]
+    for c in OBS["consumption"]:
+        guarded = first_door is not None and c["seq"] > first_door
+        print(f"   consumption at seq {c['seq']:>3} {c['where']:<34} "
+              f"{'(after a door event — guarded)' if guarded else '⭐ NO PRIOR DOOR EVENT'}")
+    print(f"   door events naming row 936: {[d['seq'] for d in door936] or 'none'}")
+    if not OBS["consumption"]:
+        print("\n   NO row-936 payload reached any pricing consumer.")
+        print("⛔ ARM B IS **VOID** (refusal condition 1) — the bypass state")
+        print("   never existed on this tree. NOT 'no bypass found'.")
+        gate1 = False
+    elif not bypasses:
+        print("\n   Every consumption followed a door event for row 936.")
+        print("⛔ ARM B IS **VOID** — the guard was exercised, not bypassed.")
         gate1 = False
     else:
-        print(f"   ⭐ PROVEN — {len(OBS['prehydrated'])} observation(s)")
+        print(f"\n   ⭐⭐⭐ BYPASS REPRODUCED — {len(bypasses)} consumption(s) "
+              f"with no prior door event")
         gate1 = True
 
     print()

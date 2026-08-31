@@ -1,37 +1,47 @@
 {
- "gate1_prehydration_proven": true,
+ "gate1_prehydration_proven": false,
  "obs": {
   "door": [
    {
+    "seq": 1,
     "consumer": "legacy.fetch_candidates",
+    "is_row936": true,
     "hydration": "direct_read",
-    "row_id": 152,
+    "row_id": 153,
     "payload_carried_poison": true,
     "returned": null
    }
   ],
   "analyze": [
    {
+    "seq": 1,
     "memory_match_present": false,
     "memory_match_carries_poison": false,
+    "memory_match_is_row936": false,
     "usda": false,
     "off": false
    }
   ],
   "select": [
    {
+    "seq": 1,
     "rung": "",
     "seated_carries_poison": false,
+    "seated_is_row936": false,
     "rungs_offered": []
    },
    {
+    "seq": 1,
     "rung": "",
     "seated_carries_poison": false,
+    "seated_is_row936": false,
     "rungs_offered": []
    },
    {
+    "seq": 1,
     "rung": "",
     "seated_carries_poison": false,
+    "seated_is_row936": false,
     "rungs_offered": []
    }
   ],
@@ -42,7 +52,8 @@
     "hydration": "direct_read",
     "cal_100": 437.5
    }
-  ]
+  ],
+  "consumption": []
  },
  "state": {
   "times_used": 1,
@@ -50,12 +61,12 @@
   "entries": [
    {
     "name": "Shrimp, grilled",
-    "cal": 140.0,
-    "p": 27.0,
+    "cal": 137.0,
+    "p": 26.0,
     "c": 1.0,
     "f": 3.0,
     "sugar": null,
-    "sodium": 220.0
+    "sodium": 224.0
    }
   ]
  }
