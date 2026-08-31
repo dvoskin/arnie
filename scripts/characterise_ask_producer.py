@@ -144,6 +144,14 @@ def _spy(data):
                         "qs": list(_by_label.get(_k) or []),
                         "joined": _k in _by_label})
     CAP.append({
+        # ⭐ SHAPE C SLICE: `extras` is a REPORT-ONLY field — nameable as open,
+        # never resolvable. An entry with a non-empty `assumed` would mean the
+        # model resolved it anyway, which is the failure this slice exists to
+        # prevent, so both are recorded separately.
+        "extras_reported": [
+            {"item": a.get("item"), "assumed": (a.get("assumed") or "")}
+            for a in (d.get("ambiguities") or [])
+            if isinstance(a, dict) and str(a.get("field") or "") == "extras"],
         "field_prompts": _joined,
         "n_ambiguities": len(d.get("ambiguities") or []),
         "ambiguities": [{"item": a.get("item"), "field": a.get("field"),
