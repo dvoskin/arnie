@@ -88,6 +88,16 @@
       "validated_on_corpus": null,
       "note": "REGISTERED 2026-08-31, UPSTREAM of materiality and explicitly NOT a prerequisite to rejecting C (Danny). The policy consumes the model's number with no independent check. Captured condiment spans: mayo 120, ranch 100, ranch 80, spicy mayo 150 \u2014 against a MIN_ITEM_SHARE gate calibrated on honey 21, soy sauce 10, hot-sauce drizzle 20.",
       "kind": "corpus_criterion"
+    },
+    {
+      "name": "priceability_gate_infers_completeness_from_magnitude",
+      "kind": "architectural_invariant",
+      "claim": "nutrition validity must be established by FIELD PRESENCE and provenance, never by calorie magnitude \u2014 a legitimate zero and a missing zero are different evidence states",
+      "status": "proposed",
+      "derived_from_corpus": null,
+      "validated_on_corpus": null,
+      "mechanical_proof": "tests/test_priceability_rejection_is_named.py",
+      "note": "\u26d4 CONFIRMED DEFECT 2026-08-31, repair NOT authorized. `off._per100g` uses `10 <= kcal/100g <= 900` as a proxy for data completeness. Measured against live OFF: Coca-Cola Zero (0.2 kcal/100g), Coca-Cola Zero Caffeine Free (0.3), Gatorade Zero Glacier Cherry (0.0) and Zero Sugar Thirst Quencher (0.0) are all discarded WITH ALL FOUR MACRO FIELDS POPULATED. Affected class: diet soda, zero-sugar sports drinks, seltzer/flavoured water, black coffee. Fixture cost 2/15 branded probes \u2014 NOT production prevalence. \u2b50 The invariant to encode: absent -> not established; present as 0 -> zero IS evidence; absurd (9999) -> reject. A complete 0/0/0/0 panel is legitimate; calories=0 with null macros is a different state entirely. Census landed first (event=priceability_rejected, with reason class, calories, macro_fields_present, n_present and the predicate) so production can price the defect before anyone edits the gate. Same shape as the times_used defect the same day: a value meaning one thing, read as evidence of another."
     }
   ],
   "_kinds": [

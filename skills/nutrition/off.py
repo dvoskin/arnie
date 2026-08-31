@@ -130,12 +130,44 @@ def _per100g(nutriments: dict) -> Optional[dict]:
     protein = _num(nutriments.get("proteins_100g"))
     carbs = _num(nutriments.get("carbohydrates_100g"))
     fat = _num(nutriments.get("fat_100g"))
+    # ── CENSUS: WHY A RECORD IS REFUSED, not merely THAT it was ────────────
+    #
+    # ⛔⛔⛔ CONFIRMED DEFECT, 2026-08-31. The magnitude test below is used as a
+    # proxy for DATA COMPLETENESS, and those are different facts. A legitimate
+    # zero and a missing zero are indistinguishable by size, so complete OFF
+    # records are discarded: Coca-Cola Zero (0.2 kcal/100g, all four macros
+    # populated), Gatorade Zero Glacier Cherry (0.0, all populated). Diet soda,
+    # zero-sugar sports drinks, seltzer, black coffee — a whole product class
+    # is structurally unpriceable by this lane.
+    #
+    # ⭐ THE INVARIANT TO EVENTUALLY ENCODE (not implemented here; the repair is
+    # UNAUTHORIZED until the census says what it costs):
+    #     field absent/null        -> not established
+    #     field present as 0       -> ZERO IS EVIDENCE
+    #     field absurd (9999)      -> implausible, reject
+    # A complete panel of 0/0/0/0 is legitimate; calories=0 with null macros is
+    # a completely different evidence state, and only one of them is noise.
+    #
+    # This block CHANGES NOTHING — it names the rejection so production can say
+    # how much real traffic the defect costs before anyone edits the predicate.
+    _present = sorted(k for k, v in (("calories", cal), ("protein", protein),
+                                     ("carbs", carbs), ("fat", fat))
+                      if v is not None)
+
+    def _refuse(reason):
+        logger.info(
+            "event=priceability_rejected reason=%s calories=%s "
+            "macro_fields_present=%s n_present=%d source=off predicate=%s",
+            reason, cal, _present, len(_present), "10<=cal<=900 and 4 macros")
+        return None
+
     # All four macros must be present — a product missing them is unusable noise.
     if None in (cal, protein, carbs, fat):
-        return None
+        return _refuse("PRICEABILITY_MISSING_FIELDS")
     # Plausibility: 100g of real food is ~10-900 kcal. Reject sentinels (0, 9999).
     if not (10 <= cal <= 900):
-        return None
+        return _refuse("PRICEABILITY_LOW_CALORIE" if cal < 10
+                       else "PRICEABILITY_HIGH_CALORIE")
     out = {"calories": round(cal, 1), "protein": round(protein, 1),
            "carbs": round(carbs, 1), "fat": round(fat, 1)}
     fiber = _num(nutriments.get("fiber_100g"))
