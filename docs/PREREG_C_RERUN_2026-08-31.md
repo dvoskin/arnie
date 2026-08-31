@@ -90,3 +90,33 @@ Per case and rep, from the frozen JSONL:
 - The 1-calorie residual window between the two encodings — pinned by
   `test_the_residual_gap_is_ONE_CALORIE_WIDE`, and a consequence of the
   interpreter naming the parent rather than the component.
+
+---
+
+## AMENDMENT 1 — 2026-08-31, after the first attempt was VOIDED
+
+**The prediction above is unchanged and was not looked at against any data.**
+This section records only what happened to the first attempt.
+
+The first three arms ran and were **voided by refusal condition 1**: they
+recorded `0181534`, `0181534-dirty`, `0181534-dirty`. The cause was the
+instrument, not the product — `scripts/analyse_c_rerun.py`, untracked and
+imported by nothing, was written while arms 2 and 3 were in flight.
+`git diff 0181534 -- core skills handlers db scripts render.yaml` is empty and
+no commit touched those paths, so all three arms ran byte-identical product
+code.
+
+⛔ **That proof was NOT accepted in place of the rule.** Arguing past a
+preregistered refusal with an after-the-fact demonstration is the failure this
+document exists to prevent. No effect number was computed or read from the void
+arms; the analysis script refuses before reporting one, and it did.
+
+Outputs kept as `data/corpus/VOID_census_D*_2026-08-31.jsonl`.
+
+**Fixed so it cannot recur** (`scripts/config_pin.py`): modified TRACKED files
+still dirty `_code_sha`; UNTRACKED files are recorded by name under
+`_untracked`. A marker that says something changed without saying what can only
+be argued with, never adjudicated.
+
+The re-run is arms **E1 / E2 / E3**, same design, same prediction, on a clean
+tree. Cost of the void attempt: 150 turns.
