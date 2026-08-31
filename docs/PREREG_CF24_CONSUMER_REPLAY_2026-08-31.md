@@ -136,3 +136,99 @@ HARM      the probe REPRODUCES a poisoned commit (~525 kcal, or any per-100g
   instruction is not to modify rows, and it is inert while untrusted.
 - Anything about the deploy hold on `27983be`. The eventual hotfix is cut from
   the **deployed lineage** (`63d926a`), not from development HEAD.
+
+---
+
+## AMENDMENT 1 — 2026-08-31, two runs: one VOID, one valid NULL
+
+**The prediction and readings above are unchanged.** Nothing here edits them.
+
+### Run A — `telegram:9491`, 16:15:53 — ⛔ VOID
+
+```
+route=structured_ask   disposition=ask   stopped_at=clarify   mode=strict
+row 936   times_used 2 -> 2   last_used UNCHANGED
+memory_nutrition_use   0 events
+committed              nothing
+```
+
+**Refusal condition 7 fired**: usage did not move AND no event fired → the
+probe never reached the row. Pricing never ran; the turn stopped at
+clarification. Arnie asked *"was it just grilled plain, or was there oil or
+butter in the pan?"* — an OILS question, and its own estimate was **137**, a
+clean plain-shrimp figure, not 525.
+
+⚠ **A GAP IN MY OWN REFUSAL CONDITIONS.** Pending question **2213**
+(*"Got chicken breast so far. Grilled, baked, or fried?"*, created 08-26 17:21)
+was still OPEN when the probe arrived, and was stamped
+`answered_at = 16:15:47.401` — three milliseconds before the new question was
+created at `16:15:47.404`. The reply was correctly about shrimp, so the probe
+does not appear to have been mis-consumed as the chicken answer, but *"does not
+appear to"* is not a control.
+
+Condition 6 covered **config**. It did not cover **stale conversational
+state**, which is prior state the turn reads and mutates. Any future arm must
+require: no unanswered `pending_questions` row for the identity at probe time.
+
+### Run B — `telegram:9495`, 16:17:58 — VALID, outcome **NULL**
+
+```
+16:17:58  event=memory_nutrition_use row_id=936 key='grilled shrimp' trusted=False
+          consumer=legacy.fetch_candidates candidate_kind=legacy_memory_candidate
+          hydration=direct_read turn=telegram:9495
+16:17:58  event=legacy_memory_untrusted key='grilled shrimp' reason=no_provenance
+
+entry 3067  'Shrimp, grilled plain'  137 kcal  P29 C1 F2
+row 936     times_used 2 -> 2   last_used UNCHANGED   cal_100 still 437.5
+```
+
+2x2 → **usage did not move + event fired** = *the door ran; the incident path
+did not.*
+
+```text
+BENEFIT   not observed. A consumer is NAMED, but it is the KNOWN, instrumented,
+          correctly-refusing one. `legacy.fetch_candidates` is not what priced
+          entry 3050 — and the usage counter proves they are different paths:
+          this read left times_used at 2, while something at 18:28:06 moved it.
+NULL      ⭐ OBSERVED. Row reached, correctly refused on `no_provenance`,
+          nothing anomalous committed.
+HARM      not observed. The log is clean; no correction was required.
+```
+
+**Action bound by NULL, and taken:** no tuning, no re-wording the probe and
+retrying it as the same experiment. CF24 stays **OPEN**.
+
+### Which prescribed reading applies
+
+The fourth: *"~110-120 commits → the incident depends on speculative/prewarm
+state or a one-turn race, and the canary must be repeated under that state."*
+137 sits in that band. **That is a separate registered arm, not a retry.**
+
+### ⚠ A LEAD, EXPLICITLY NOT A FINDING
+
+Four commits between the incident build `a7549d7` and the deployed `63d926a`
+touch memory reads or pricing:
+
+```
+26af6b2  CF25: identity before authority in the branded lane
+7fd15d9  CF24 instrumentation: one door from a stored row to pricing evidence
+6de3c5d  CF26: pre-settlement cache writes may not store nutrition
+4fcb31d  CF26 review fix: the public writer may not touch micros either
+```
+
+**`26af6b2` is the obvious candidate**: row 936 is `origin_tier='branded_exact'`
+and the incident was a branded snack winning a plain-food query — exactly what
+"identity before authority in the branded lane" addresses.
+
+If so, CF24's consumer was closed incidentally by a fix made for a different
+defect, and nobody knows it. ⛔ **That is a hypothesis and must not be
+retrofitted onto this run.** It needs its own arm with its own prediction —
+and the honest test is a MUTATION: revert `26af6b2` in a local replay of entry
+3050's exact production item and see whether 525 returns. A fix nobody can show
+going red is a fix nobody has.
+
+### Instrument note
+
+Liveness was established *before* the run and held *during* it: the door
+emitted on row 936 on both 08-26 and today. A future "no event" for this row
+means the consumer did not execute.
