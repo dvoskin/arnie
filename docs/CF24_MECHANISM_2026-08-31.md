@@ -98,3 +98,64 @@ PRICING_REACHED  a candidate reached authority     -> readable
    increments it and document what it measures. Production arm A: door fired,
    counter unmoved. Local: door fired, counter moved. Instrumentation
    clarification, not a tranche.
+
+---
+
+## `times_used` — traced, and a retraction
+
+**One writer, and it is not a reader.**
+
+```
+db/queries.py:3891   upsert_user_food_match()          times_used = (times_used or 1) + 1
+db/queries.py:3892                                     last_used  = utcnow()
+db/queries.py:3765   remember_canonical_settlement()   last_used only
+```
+
+No reader increments it — not `memory_nutrition_evidence`, not the legacy
+memory rung in `fetch_candidates`, not `canonical_pricing_inputs._memory`.
+
+### What the counter actually measures
+
+**Cache-write activity on a surface key: how many times a row was upserted.**
+Not memory consumption. A row can be read and priced from repeatedly without
+moving, and can move without its nutrition ever being used — the upsert fires
+after any successful lookup.
+
+That accounts for all three observations without appeal to a hidden path:
+
+| where | door | counter | why |
+|---|---|---|---|
+| production arm A (`telegram:9495`) | fired | unmoved | the turn committed 137 from the interpreter's estimate (`pricing_rung=None`); no lookup hit, so no upsert. **Reads do not bump.** |
+| local gate 0 | fired | 0 → 1 | a lookup DID hit, so `fetch_candidates` wrote the cache |
+| the incident (18:28:06.902789) | n/a | `last_used` stamped | an **upsert** ran on that turn — not evidence that a reader touched the row |
+
+### ⛔ THE RETRACTION
+
+`docs/PREREG_CF24_CONSUMER_REPLAY_2026-08-31.md` (amendment 1, and the commit
+message of `b7b89af`) states that the unchanged counter proves the incident
+path and `legacy.fetch_candidates` are **different paths**, and calls the
+counter "the load-bearing part".
+
+**That inference is withdrawn.** The counter never tracked consumption, so an
+unchanged counter says nothing about which consumer read a row — only that no
+upsert occurred. A distinction was built on a signal that had not been traced,
+and then leaned on.
+
+⭐ **CF24's conclusion is unaffected.** The mechanism was attributed by
+REPRODUCING it on `a7549d7` — predicate returns `False`, `candidate_map` seats
+the row at `branded_exact`, 525 kcal commits with the whole payload scaled
+×1.2. That evidence stands on its own and never needed the counter.
+
+⭐ **The general lesson, which is the reason this is written down rather than
+quietly fixed:** the counter was used as a discriminator for two days before
+anyone asked what it counted. It was plausible, it correlated, and it was
+available — and none of those is provenance. *A signal is not evidence until
+its writer is known.*
+
+### Standing rule for this counter
+
+Do not cite `times_used` or `last_used` as evidence that memory nutrition was
+CONSUMED. They are cache-write bookkeeping. The question "was this row's
+nutrition used to price a meal" is answered by `event=memory_nutrition_use`
+and by the settled entry's `pricing_rung` / `nutrition_evidence_id` — never by
+the counter.
