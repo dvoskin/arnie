@@ -15,9 +15,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from scripts.config_pin import comparable, differs_only_in   # noqa: E402
 
 ARMS = {
-    "D1 (C off)":       "data/corpus/census_D1_repaired_Coff_2026-08-31.jsonl",
-    "D2 (C off, twin)": "data/corpus/census_D2_nulltwin_Coff_2026-08-31.jsonl",
-    "D3 (C ON)":        "data/corpus/census_D3_Con_2026-08-31.jsonl",
+    "E1 (C off)":       "data/corpus/census_E1_repaired_Coff_2026-08-31.jsonl",
+    "E2 (C off, twin)": "data/corpus/census_E2_nulltwin_Coff_2026-08-31.jsonl",
+    "E3 (C ON)":        "data/corpus/census_E3_Con_2026-08-31.jsonl",
 }
 CORPUS = json.load(open("data/corpus/real_meal_expectations_v1.json"))
 EXPECTED = {c["id"]: c for c in CORPUS["cases"]}
@@ -56,15 +56,15 @@ def main():
         print(f"  {n:18s} FOOD_EXTRAS_REPORT_ONLY={got!r} _arm={arm!r}")
         if got != want:
             void.append(f"{n}: flag {got!r}, expected {want!r}")
-    ok, reasons = comparable(cfg["D1 (C off)"], cfg["D2 (C off, twin)"])
-    print(f"  D1 vs D2 comparable: {ok} {reasons}")
+    ok, reasons = comparable(cfg["E1 (C off)"], cfg["E2 (C off, twin)"])
+    print(f"  E1 vs E2 comparable: {ok} {reasons}")
     if not ok:
         void.append(f"the null pair is not comparable: {reasons}")
-    only, stray = differs_only_in(cfg["D1 (C off)"], cfg["D3 (C ON)"],
+    only, stray = differs_only_in(cfg["E1 (C off)"], cfg["E3 (C ON)"],
                                  {"FOOD_EXTRAS_REPORT_ONLY"})
-    print(f"  D1 vs D3 differs ONLY in the arm: {only} {stray}")
+    print(f"  E1 vs E3 differs ONLY in the arm: {only} {stray}")
     if not only:
-        void.append(f"D1 vs D3 differ beyond the arm: {stray}")
+        void.append(f"E1 vs E3 differ beyond the arm: {stray}")
 
     # instrument liveness: the basis must be FILLED, not merely readable
     for n in ARMS:
@@ -95,11 +95,11 @@ def main():
         a, t = askrate(n)
         rate[n] = a
         print(f"  {n:18s} {a:2d}/{t}  = {100*a/t:.0f}%")
-    null = abs(rate["D1 (C off)"] - rate["D2 (C off, twin)"])
-    base = (rate["D1 (C off)"] + rate["D2 (C off, twin)"]) / 2
-    effect = rate["D3 (C ON)"] - base
-    print(f"\n  NULL ENVELOPE |D1-D2| = {null}")
-    print(f"  EFFECT  D3 - mean(D1,D2) = {effect:+.1f}")
+    null = abs(rate["E1 (C off)"] - rate["E2 (C off, twin)"])
+    base = (rate["E1 (C off)"] + rate["E2 (C off, twin)"]) / 2
+    effect = rate["E3 (C ON)"] - base
+    print(f"\n  NULL ENVELOPE |E1-E2| = {null}")
+    print(f"  EFFECT  E3 - mean(E1,E2) = {effect:+.1f}")
     verdict = ("INSIDE the envelope — no reliable effect"
                if abs(effect) <= null else
                "OUTSIDE the envelope — an effect survives")
@@ -122,7 +122,7 @@ def main():
         print("  ✓ every component-scoped fact carries NOT-ESTABLISHED, as designed")
 
     print("\n  extras facts and their outcome (arm D3 only):")
-    for r in rows["D3 (C ON)"]:
+    for r in rows["E3 (C ON)"]:
         for it, a in ambiguities(r):
             if a.get("field_name") in ("extras", "ingredient", "add_on"):
                 print(f"    c{r['case']} rep{r['rep']}  span={a.get('calorie_span')}"
