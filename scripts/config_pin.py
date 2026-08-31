@@ -123,6 +123,7 @@ def pin_config() -> dict:
                         if arm else None)
     resolved["_tree_sha"] = _tree_sha()
     resolved["_code_sha"] = _code_sha()
+    resolved["_untracked"] = _untracked_code_files()
     return resolved
 
 
@@ -146,6 +147,27 @@ def _code_sha() -> str:
     model does; flagging it as a behaviour change measured the wrong thing. The
     full `_tree_sha` is still recorded for provenance — this is only what
     eligibility COMPARES on.
+
+    ⛔⛔ 2026-08-31: THE DIRTY MARKER WAS A BOOLEAN OVER A PATH SET THAT MIXES
+    PRODUCT CODE WITH INSTRUMENTS, AND IT VOIDED A 150-TURN RUN.
+
+    Writing `scripts/analyse_c_rerun.py` — an UNTRACKED analysis script,
+    imported by nothing, that reads the output after the fact — while arms 2
+    and 3 were in flight flipped `-dirty` on for those two arms and not the
+    first. Three arms of one experiment, byte-identical product code, recorded
+    as `0181534`, `0181534-dirty`, `0181534-dirty`, and therefore incomparable.
+
+    The guard was RIGHT to refuse: it could not tell an analysis script from a
+    product edit, because "-dirty" throws away the one thing that would
+    distinguish them. **A marker that says something changed without saying
+    what cannot be adjudicated, only argued with** — and arguing past a
+    refusal condition is the failure preregistration exists to prevent.
+
+    So: MODIFIED TRACKED FILES still dirty the sha, because a tracked edit is a
+    product edit. UNTRACKED files are recorded SEPARATELY, by name, under
+    `_untracked` — present in the record, inspectable by a human, and not
+    silently fused into the identity of the code. Nothing tracked can import an
+    untracked module without a tracked edit, which would dirty the sha anyway.
     """
     import subprocess
     try:
@@ -156,9 +178,30 @@ def _code_sha() -> str:
                                 *_CODE_PATHS], capture_output=True, text=True,
                                timeout=5)
         out = (sha.stdout or "").strip() or "unknown"
-        return out + ("-dirty" if (dirty.stdout or "").strip() else "")
+        modified = [ln for ln in (dirty.stdout or "").splitlines()
+                    if ln[:2].strip() and not ln.startswith("??")]
+        return out + ("-dirty" if modified else "")
     except Exception:
         return "unknown"
+
+
+def _untracked_code_files() -> list:
+    """Untracked files sitting in the behaviour-relevant paths, BY NAME.
+
+    Recorded rather than folded into `_code_sha` — see the note there. A reader
+    comparing two runs can see exactly which extra files were present and
+    decide for themselves; what they can no longer do is mistake an analysis
+    script for a product change, or vice versa.
+    """
+    import subprocess
+    try:
+        out = subprocess.run(["git", "status", "--porcelain", "--",
+                              *_CODE_PATHS], capture_output=True, text=True,
+                             timeout=5)
+        return sorted(ln[3:].strip() for ln in (out.stdout or "").splitlines()
+                      if ln.startswith("??"))
+    except Exception:
+        return []
 
 
 def _tree_sha() -> str:
@@ -190,6 +233,9 @@ def comparable(a: dict, b: dict) -> tuple:
     if (a or {}).get("_code_sha") != (b or {}).get("_code_sha"):
         reasons.append(f"code differs: {(a or {}).get('_code_sha')} vs "
                        f"{(b or {}).get('_code_sha')}")
+    #: `_untracked` is compared, but as a NAMED difference rather than as part
+    #: of the code identity — see `_code_sha`. It is listed last so the reason
+    #: reads as what it is: extra files were present, here they are.
     keys = (set(a or {}) | set(b or {})) - {"_deviations", "_tree_sha",
                                             "_code_sha", "_arm"}
     for k in sorted(keys):
