@@ -2852,6 +2852,14 @@ async def fetch_candidates(db, user, food_name, inp) -> FoodCandidates:
                 # no mass and the model's calorie guess becomes the anchor.
                 "serving_text": getattr(m, "serving_text", None),
                 "per100g": per100g,
+                # ⭐ THE TRUST PROOF. Set here and ONLY here, on the far side of
+                # `memory_nutrition_evidence` having returned non-None — which
+                # it does only for a row whose nutrition resolves to a real
+                # settlement. `authority.candidate_map` refuses any memory
+                # candidate without it, so a future reader that forgets the
+                # door cannot seat nutrition by accident: forgetting now means
+                # the candidate is DROPPED, not silently trusted.
+                "_trusted_memory": True,
             }
             with _stage("pricing.memory"):
                 await upsert_user_food_match(

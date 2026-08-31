@@ -41,7 +41,7 @@ POISON = 437.5
 PROBE = "Shrimp, grilled, 120 g"
 
 OBS: dict = {"door": [], "analyze": [], "select": [], "prehydrated": [],
-             "consumption": []}
+             "consumption": [], "predicate": []}
 
 #: ⭐ ORDER IS THE WHOLE ASSERTION. "A payload reached a consumer" and "a door
 #: event exists somewhere in the turn" are compatible with each other; what
@@ -82,6 +82,11 @@ def _is_row936(obj) -> bool:
         return False
 
 
+def _door_exists() -> bool:
+    import db.queries as Q
+    return hasattr(Q, "memory_nutrition_evidence")
+
+
 def _carries_poison(obj) -> bool:
     """Does this object carry row-936's nutrition, in EITHER shape?
 
@@ -117,7 +122,59 @@ def install_spies():
     import core.food_intelligence as FI
     import skills.nutrition.authority as AU
 
-    _door = Q.memory_nutrition_evidence
+    # ⛔ THE DOOR DOES NOT EXIST ON EVERY TREE. `memory_nutrition_evidence`
+    # arrived with 7fd15d9, AFTER the incident, so a7549d7 has no door to wrap
+    # — and a harness that assumes one crashes before the product runs.
+    #
+    # ⭐ `memory_nutrition_is_trusted` EXISTS ON BOTH TREES, so it is the
+    # cross-tree observable: it answers "was the trust question asked at all",
+    # which is the historical analogue of the door firing.
+    _pred = getattr(Q, "memory_nutrition_is_trusted", None)
+    if _pred is not None:
+        async def pred(db, row):
+            out = await _pred(db, row)
+            OBS["predicate"].append({"seq": _seq(), "is_row936": _is_row936(row),
+                                     "trusted": bool(out)})
+            return out
+        Q.memory_nutrition_is_trusted = pred
+
+    _door = getattr(Q, "memory_nutrition_evidence", None)
+    def _rest():
+        _analyze = FI.analyze
+
+        def analyze(*a, **kw):
+            mm = kw.get("memory_match")
+            if _is_row936(mm):
+                OBS["consumption"].append({"seq": _seq(), "where": "analyze.memory_match"})
+            OBS["analyze"].append({
+                "seq": _SEQ[0],
+                "memory_match_present": mm is not None,
+                "memory_match_carries_poison": _carries_poison(mm),
+                "memory_match_is_row936": _is_row936(mm),
+                "usda": kw.get("usda_candidate") is not None,
+                "off": kw.get("off_candidate") is not None})
+            return _analyze(*a, **kw)
+        FI.analyze = analyze
+
+        _select = AU.select
+
+        def select(cands, food_class):
+            rung, src = _select(cands, food_class)
+            if _is_row936(src):
+                OBS["consumption"].append({"seq": _seq(), "where": f"authority.select[{rung}]"})
+            for _r, _c in (cands or {}).items():
+                if _is_row936(_c):
+                    OBS["consumption"].append({"seq": _seq(), "where": f"candidate_map[{_r}]"})
+            OBS["select"].append({"seq": _SEQ[0], "rung": rung,
+                                  "seated_carries_poison": _carries_poison(src),
+                                  "seated_is_row936": _is_row936(src),
+                                  "rungs_offered": sorted(cands or {})})
+            return rung, src
+        AU.select = select
+
+    if _door is None:
+        _rest()
+        return          # no door on this tree; the other spies still install
 
     async def door(db, row, *, consumer, candidate_kind="",
                    hydration="direct_read", stage="", operation_id=""):
@@ -186,6 +243,51 @@ GATE0 = ("legacy.fetch_candidates executes", "row reached",
 
 
 def check_gate0(obs, state) -> tuple:
+    """⭐ TWO ERAS, TWO SHAPES. Gate 0 asks "is the harness faithfully
+    exercising the memory path" — and what that looks like depends on whether
+    the tree HAS a shared door.
+
+    ⛔ The door-era shape is unsatisfiable before `7fd15d9`: it asserts
+    `memory_nutrition_use`, `trusted=False` and `refused`, none of which exist
+    there. Run unsplit, gate 0 failed 6/6 on the incident tree for purely
+    structural reasons and would have voided a genuine reproduction.
+
+    ⛔⛔ AND THE PRE-DOOR SHAPE MUST NOT REQUIRE A CLEAN COMMIT. On the incident
+    tree the commit is POISONED, and that is the finding under test — a control
+    that demands the outcome be clean would refuse exactly the run it exists to
+    validate. It requires only that a meal COMMITTED.
+    """
+    if not obs["door"] and not _door_exists():
+        pred936 = [x for x in obs["predicate"] if x.get("is_row936")]
+        # ⛔⛔ `any(rungs_offered)` CONFLATED TWO DIFFERENT FACTS and made a
+        # readable result unreadable. It is False both when `authority.select`
+        # was NEVER CALLED (the harness did not reach the ladder — VOID) and
+        # when it WAS called with an EMPTY ladder (the product declined to seat
+        # anything — a RESULT, and quite possibly the protection working).
+        #
+        # At `26af6b2` that scored 3/3 gate-0 failures while `row 936 reached`
+        # and `trust predicate answered` both PASSED — so the run was declared
+        # VOID for doing exactly what a fix is supposed to do.
+        #
+        # ⭐ THREE STATES, NOT TWO:
+        #     HARNESS_VOID     the ladder was never reached
+        #     SAFE_DECLINE     reached, nothing eligible seated
+        #     PRICING_REACHED  a candidate reached pricing authority
+        # Only HARNESS_VOID is a gate-0 failure. A regression must be able to
+        # tell "the protection worked" from "the test did not run".
+        checks = {
+            "pricing path reached": bool(obs["select"]),
+            "row 936 reached": bool(pred936),
+            "trust predicate answered": bool(pred936) and all(
+                x["trusted"] is False for x in pred936),
+            "a meal committed": bool(state["entries"]),
+        }
+        ladder = any(o["rungs_offered"] for o in obs["select"])
+        seated = any(o.get("seated_is_row936") for o in obs["select"])
+        checks["_state"] = ("HARNESS_VOID" if not obs["select"] else
+                            "PRICING_REACHED" if (ladder or seated) else
+                            "SAFE_DECLINE")
+        return all(v for k, v in checks.items() if not k.startswith("_")), checks
     door = obs["door"]
     mine = [d for d in door if d["consumer"] == "legacy.fetch_candidates"]
     cal = (state["entries"][0]["cal"] if state["entries"] else None)
@@ -266,7 +368,9 @@ async def main() -> int:
     # two very different reasons and this run cannot tell them apart.
     install_spies()
     import db.queries as Q
-    assert Q.memory_nutrition_evidence.__name__ == "door", "spy not installed"
+    if hasattr(Q, "memory_nutrition_evidence"):
+        assert Q.memory_nutrition_evidence.__name__ == "door", "spy not installed"
+    assert Q.memory_nutrition_is_trusted.__name__ == "pred", "predicate spy not installed"
 
     async with Session() as db:
         # ⛔ EAGER-LOAD. A User fetched bare makes `build_context` touch a
@@ -300,7 +404,10 @@ async def main() -> int:
     print("=" * 72)
     g0, checks = check_gate0(OBS, state)
     for k, v in checks.items():
-        print(f"   [{'PASS' if v else '⛔FAIL'}] {k}")
+        if k == "_state":
+            print(f"   STATE: {v}")          # not a check — the three-way verdict
+        else:
+            print(f"   [{'PASS' if v else '⛔FAIL'}] {k}")
     if not g0:
         print()
         print("⛔ GATE 0 FAILED — ARM B CANNOT START.")
@@ -321,6 +428,26 @@ async def main() -> int:
     #      with NO door event for that row BEFORE that consumption.
     # A door that fires and then refuses is the guard WORKING, and must make
     # this gate FAIL — which is why the sequence numbers exist.
+    # ⛔⛔ THE "NO PRIOR DOOR EVENT" CLAUSE IS VACUOUS ON TREES THAT PREDATE
+    # THE DOOR. `memory_nutrition_evidence` was introduced by 7fd15d9, AFTER
+    # the 2026-08-25 incident — so on a7549d7 every consumption would score as
+    # a bypass by construction, and the gate would report a guaranteed
+    # reproduction that means nothing.
+    #
+    # ⭐ SO THE PRIMARY CLAUSE IS THE INCIDENT'S OWN DEFINITION, which is
+    # tree-independent: DID POISONED NUTRITION REACH SETTLEMENT? Entry 3050
+    # committed 525 kcal on 120 g — exactly 437.5 x 1.2. That is observable
+    # whether or not a door exists, and it is what CF24 is actually about.
+    #
+    # The door clause is kept as a SECONDARY discriminator, meaningful only on
+    # trees that have a door, and reported as N/A where there is none.
+    _has_door = any(True for _ in OBS["door"]) or _door_exists()
+    _expected_poison = 437.5 * 1.2          # 525.0, entry 3050 exactly
+    _committed = [e["cal"] for e in state["entries"] if e["cal"]]
+    poisoned_commit = any(abs(c - _expected_poison) < 25 for c in _committed)
+    print(f"   committed calories: {_committed}   poisoned image = "
+          f"{_expected_poison:.0f} +/-25  -> "
+          f"{'⭐⭐⭐ POISONED COMMIT' if poisoned_commit else 'clean'}")
     door936 = [d for d in OBS["door"] if d.get("is_row936")]
     first_door = min((d["seq"] for d in door936), default=None)
     bypasses = [c for c in OBS["consumption"]
@@ -330,7 +457,13 @@ async def main() -> int:
         print(f"   consumption at seq {c['seq']:>3} {c['where']:<34} "
               f"{'(after a door event — guarded)' if guarded else '⭐ NO PRIOR DOOR EVENT'}")
     print(f"   door events naming row 936: {[d['seq'] for d in door936] or 'none'}")
-    if not OBS["consumption"]:
+    if not _has_door:
+        print("   (this tree has NO shared door — the ordering clause is N/A)")
+    if poisoned_commit:
+        print("\n   ⭐⭐⭐ INCIDENT REPRODUCED — poisoned nutrition reached "
+              "settlement.")
+        gate1 = True
+    elif not OBS["consumption"]:
         print("\n   NO row-936 payload reached any pricing consumer.")
         print("⛔ ARM B IS **VOID** (refusal condition 1) — the bypass state")
         print("   never existed on this tree. NOT 'no bypass found'.")

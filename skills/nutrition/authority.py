@@ -293,6 +293,32 @@ def candidate_map(
     """
     out: dict = {}
 
+    # ⛔⛔⛔ CF24: A FAILED TRUST DECISION MUST NOT BECOME PRICING AUTHORITY.
+    #
+    # Reproduced on `a7549d7` 2026-08-31 with production-equivalent runtime:
+    # row 936 is reached, `memory_nutrition_is_trusted` returns **False**, and
+    # this function seated its nutrition at `branded_exact` ANYWAY — committing
+    # 525 kcal, the whole payload scaled x1.2 (P10.6 C76.6 F19.4 sodium 1874).
+    # The trust decision existed and was simply not authoritative downstream.
+    #
+    # ⭐ SO THE BOUNDARY IS HERE, NOT AT THE CALLER. Guarding `fetch_candidates`
+    # protects one route; another reader can always exist, and CF24's whole
+    # cost was not knowing which one had been used. What is durable is that
+    # this map — the one thing every pricing consumer reads — will not accept
+    # memory nutrition that cannot show the trust decision that produced it.
+    #
+    # ⛔ NOT `if branded_exact`, NOT a food name, NOT "CF25 happens to reject
+    # this shape". The invariant is about PROVENANCE OF AUTHORITY, so it holds
+    # for every row, every tier and every food.
+    if memory_match is not None and not memory_match.get("_trusted_memory"):
+        import logging
+        logging.getLogger(__name__).info(
+            "event=memory_candidate_refused reason=no_trust_proof "
+            "origin=%r — memory nutrition reached the authority map without "
+            "the trust decision that authorises it; not seated",
+            (memory_match or {}).get("origin_tier"))
+        memory_match = None
+
     if memory_match is not None:
         origin = str(memory_match.get("origin_tier") or "").strip().lower()
         confirmed = bool(memory_match.get("user_confirmed")) or (
