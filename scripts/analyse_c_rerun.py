@@ -121,7 +121,7 @@ def main():
     else:
         print("  ✓ every component-scoped fact carries NOT-ESTABLISHED, as designed")
 
-    print("\n  extras facts and their outcome (arm D3 only):")
+    print("\n  extras facts and their outcome (arm E3 only):")
     for r in rows["E3 (C ON)"]:
         for it, a in ambiguities(r):
             if a.get("field_name") in ("extras", "ingredient", "add_on"):
