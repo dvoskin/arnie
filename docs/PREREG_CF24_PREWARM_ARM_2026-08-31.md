@@ -117,3 +117,105 @@ then needed.
 - The **producer** defect (whatever wrote 437.5 on Aug 2) — separate, live
   fixture entry 3053 / row 1031.
 - Anything about the `27983be` deploy hold.
+
+---
+
+## AMENDMENT 1 — 2026-08-31, first local attempt: **VOID, for two separate reasons**
+
+Frozen exactly as observed. `data/cf24_arm_b_2026-08-31.json`.
+
+```
+GATE 1   no candidate carrying cal_100=437.5 was ever observed in hand
+door     []                       ← the shared door was NEVER CALLED
+select   rungs_offered=[]  x3     ← empty candidate maps, every time
+analyze  memory_match=None, usda=False, off=False
+entry    'Shrimp' 140 kcal, clean
+row      times_used 0 -> 1, cal_100 unchanged at 437.5
+```
+
+### Reason 1 — the preregistered VOID (refusal condition 1)
+
+No candidate carrying row-936-derived nutrition existed before the guarded
+reader. The state under test never occurred. **Not** "no bypass found".
+
+### Reason 2 — CONTROL FAILURE, and this one is mine
+
+Production arm A observed `legacy.fetch_candidates` → `memory_nutrition_use`
+→ `trusted=False` → clean commit. **The local harness reproduced none of it.**
+The door never ran; no lane offered any candidate. The turn took a thinner
+route where the interpreter's estimate stands and pricing never engages.
+
+⛔ **An arm that cannot reproduce its own control cannot produce evidence about
+a variant of that control.** This preregistration has five refusal conditions
+and not one of them required the ordinary path to be running — gate 1 checks an
+exotic precondition and *assumes* the machinery beneath it. That is the same
+shape as the defects this tranche keeps finding: a guard placed where the
+interesting failure was expected, with nothing checking the machinery ran at all.
+
+### Recorded, UNINTERPRETED: `times_used 0 -> 1`
+
+Locally the counter moved while the door never fired. In production the door
+fired and the counter did **not** move — the inverse pairing, on the same
+counter arm A used to argue two paths are distinct.
+
+⚠ It may mean something; it may equally be `upsert_user_food_match` bookkeeping
+in a harness that never priced anything. **The run that produced it is void, so
+this is an observation to test, not evidence.** Its own trace target is below.
+
+### ⛔ WHAT THIS DOES NOT DO: it does not reopen arm A
+
+Arm A remains **valid production evidence** — cold/direct read, shared boundary
+invoked, untrusted memory refused, clean commit. A local harness failing to
+reproduce it says nothing against it. The NULL stands.
+
+## GATE 0 — the local control must reproduce arm A before arm B may start
+
+Added before any harness change, so it cannot be shaped by what turns out to be
+easy to fix.
+
+```text
+same relevant food/identity state
+    ↓  legacy.fetch_candidates EXECUTES
+    ↓  row 936 REACHED
+    ↓  memory_nutrition_use OBSERVED
+         consumer=legacy.fetch_candidates · trusted=False · hydration=direct_read
+    ↓  poisoned memory REFUSED
+    ↓  clean meal COMMITS
+```
+
+**If any step is absent, arm B cannot start.** Gate 0 is checked first, gate 1
+second, and neither is skippable.
+
+### If gate 0 cannot be made to pass
+
+Do not spend days coercing a synthetic harness into production behaviour. The
+result then IS the finding:
+
+> the relevant pricing state is production entrypoint / config / history
+> dependent and cannot currently be reconstructed locally
+
+and arm B moves to a production-capable controlled harness carrying the **same**
+positive prehydration proof requirement — or the historical state is
+reconstructed from an exact production snapshot.
+
+## Diagnosis task (instrumentation, NOT a causal arm)
+
+Find the **first** causal separation between the production and local paths,
+and stop there:
+
+```text
+run_chat_turn → food interpretation → tool/operation produced?
+   → fetch_candidates invoked? → authority candidates populated? → analyze()
+```
+
+⛔ Do not start at `memory_match`; that is downstream and already known. The
+question is why local produced `rungs_offered=[]` and `memory_match=None` while
+production entered `legacy.fetch_candidates`.
+
+## Separate trace target — the usage counter's semantics
+
+Establish **which writer** incremented `times_used`. If it is the public /
+pre-settlement writer, the counter cannot distinguish memory CONSUMPTION from
+lookup ACTIVITY — arm A's reasoning from an unchanged counter still holds, but
+the counter's semantics must be documented more narrowly than "the row was
+addressed". If some other path incremented it, that is more interesting.

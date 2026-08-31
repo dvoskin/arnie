@@ -1,0 +1,47 @@
+{
+ "gate1_prehydration_proven": false,
+ "obs": {
+  "door": [],
+  "analyze": [
+   {
+    "memory_match_present": false,
+    "memory_match_carries_poison": false,
+    "usda": false,
+    "off": false
+   }
+  ],
+  "select": [
+   {
+    "rung": "",
+    "seated_carries_poison": false,
+    "rungs_offered": []
+   },
+   {
+    "rung": "",
+    "seated_carries_poison": false,
+    "rungs_offered": []
+   },
+   {
+    "rung": "",
+    "seated_carries_poison": false,
+    "rungs_offered": []
+   }
+  ],
+  "prehydrated": []
+ },
+ "state": {
+  "times_used": 1,
+  "cal_100": 437.5,
+  "entries": [
+   {
+    "name": "Shrimp",
+    "cal": 140.0,
+    "p": 27.0,
+    "c": 1.0,
+    "f": 3.0,
+    "sugar": null,
+    "sodium": null
+   }
+  ]
+ }
+}
