@@ -267,7 +267,12 @@ def attach_ambiguities(items, data: Mapping, *, mode: str,
             field_name=_FIELD_NAMES.get(field_name, field_name), mode=mode,
             calorie_span=float(amb.get("impact_cal") or 0),
             protein_span=float(amb.get("impact_protein") or 0),
-            item_calories=_calories_for(raw_by_ordinal.get(target.ordinal) or {}),
+            # ⭐⭐⭐ THE FACT'S OWN BASIS, NOT THE ROW THAT WILL CARRY IT.
+            # This line used to read the matched item's calories, which is
+            # how re-parenting changed a materiality decision.
+            impact_basis_cal=_impact_basis(
+                field_name,
+                _calories_for(raw_by_ordinal.get(target.ordinal) or {})),
             targets=dict(targets) if targets else None,
             options=options))
 
@@ -275,6 +280,47 @@ def attach_ambiguities(items, data: Mapping, *, mode: str,
         item.with_ambiguities(grouped[item.ordinal])
         if item.ordinal in grouped else item
         for item in items)
+
+
+#: ⭐⭐⭐ WHAT THE FACT IS ABOUT: the WHOLE item, or a COMPONENT OF IT.
+#:
+#: This is the third fact about the interpreter's vocabulary, and it belongs
+#: here beside the other two rather than in the scorer. `materiality` must not
+#: learn that condiments are special; it takes a basis and a span and knows
+#: nothing about ownership. What IS a fact about the vocabulary is that most
+#: fields name an unknown about the item itself — how much of it, which
+#: product, how it was cooked — while `extras` names an unknown about
+#: SOMETHING ELSE THAT WAS ON IT.
+#:
+#: ⛔ THE DISTINCTION IS LOAD-BEARING BECAUSE THE PROMPT COLLAPSES IT. The
+#: interpreter is told to report `{"item": "<the item it concerns>"}`, and an
+#: unstated sauce ON a sandwich concerns the sandwich — so a fact about a
+#: component arrives addressed to its parent, with the component itself
+#: unrepresented anywhere in the record.
+#:
+#: The parent's calories are therefore NOT that fact's basis, and substituting
+#: them turns "we do not know how big the extra was" into "the extra is small
+#: relative to its host" — an absent answer wearing a negative one.
+_COMPONENT_SCOPED_FIELDS = frozenset({"extras", "ingredient", "add_on",
+                                      "component_breakdown"})
+
+
+def _impact_basis(field_name: str, owner_calories):
+    """The calorie basis OF THE UNRESOLVED FACT.
+
+    Decided once, here, by the producer that knows what the fact is about, and
+    from then on it travels with the fact. Nothing downstream re-derives it.
+
+    Returns `None` — NOT ESTABLISHED — for a component-scoped fact, because the
+    record carries no size for the component and the parent's size is not a
+    stand-in for it. `is_material` already handles an unestablished basis by
+    letting the day proportion decide alone, which is the honest reading: we
+    know what the unknown is worth against the day, and we do not know what it
+    is worth against itself.
+    """
+    if str(field_name or "").strip().lower() in _COMPONENT_SCOPED_FIELDS:
+        return None
+    return owner_calories
 
 
 #: The interpreter's vocabulary for what is uncertain → the typed enum.
@@ -390,7 +436,9 @@ def derive_variant_ambiguity(items, spreads, data=None, *, mode: str,
             ambiguity_type=AmbiguityType.PRODUCT_LINE,
             field_name="variant", mode=mode,
             calorie_span=span_cal, protein_span=span_pro,
-            item_calories=calories,
+            # a variant unknown is about the WHOLE item, so the item's own
+            # calories ARE the fact's basis.
+            impact_basis_cal=calories,
             targets=dict(targets) if targets else None, options=())
         if amb is None or not getattr(amb, "is_material", True):
             out.append(item)
@@ -553,7 +601,7 @@ def derive_assumed_identity(items, *, message: str, mode: str,
             # and still be the wrong product on their log. A prior earns the
             # question a cheaper SHAPE, never an exemption from being asked.
             identity_risk=(1.0 if (shelf_is_wide or usual) else 0.6),
-            item_calories=None,
+            impact_basis_cal=None,
             targets=dict(targets) if targets else None,
             options=tuple(options),
             prompt=prompt)
@@ -1040,7 +1088,8 @@ def derive_vague_quantities(items, data: Mapping, *, message: str,
                 staged_item_id=item.staged_item_id,
                 ambiguity_type=AmbiguityType.CONSUMED_QUANTITY,
                 field_name="consumed_fraction", mode=mode,
-                calorie_span=span, item_calories=calories, options=options,
+                # how much of THIS item was eaten — a whole-item fact.
+                calorie_span=span, impact_basis_cal=calories, options=options,
                 targets=dict(targets) if targets else None,
                 confidence=getattr(distribution, "confidence", None),
                 prompt=_vague_prompt(item.original_text, measure, labels,

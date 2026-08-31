@@ -78,12 +78,25 @@ class FoodAmbiguity:
     clarification_prompt: str = ""
     identity_risk: float = 0.0
     serving_basis_risk: float = 0.0
-    #: The item's own reading, which the span is a spread AROUND. It was already
-    #: being passed to `build_ambiguity` — to size the fraction rule — and then
-    #: dropped on the floor, which left the span a width with no position and
-    #: made `calorie_range` underivable downstream. Kept so a question can say
-    #: what the answer is worth in the units the user reads.
-    item_calories: Optional[float] = None
+    #: ⭐⭐⭐ THE UNRESOLVED FACT'S OWN IMPACT BASIS — the reading the span is a
+    #: spread AROUND, belonging to THE THING IN DOUBT.
+    #:
+    #: ⛔ IT WAS CALLED `item_calories`, AND THE NAME IS WHAT BROKE IT. A field
+    #: named after the item invites its producer to fill it from whichever
+    #: `StagedFoodItem` happens to OWN the ambiguity after composition — which
+    #: is exactly what `attach_ambiguities` did. Measured 2026-08-31: the same
+    #: unresolved `Mayo ~120 cal` scored MATERIAL as its own staged row and
+    #: IMMATERIAL as an `extras` fact re-parented onto the sandwich, because
+    #: `of_item` divided by the parent. 7 of 8 spans flipped on that alone.
+    #:
+    #: So the basis is state on the FACT. It is decided once, by the producer
+    #: that knows what the fact is about, and it TRAVELS WITH THE FACT through
+    #: any re-parenting. Nothing downstream may re-derive it from the owner.
+    #:
+    #: `None` means NOT ESTABLISHED — and means it explicitly, rather than
+    #: being quietly filled with a number that belongs to something else. An
+    #: absent basis must never be representable as a small one.
+    impact_basis_cal: Optional[float] = None
 
     @property
     def is_material(self) -> bool:
@@ -216,17 +229,23 @@ def build_ambiguity(*, staged_item_id: str, ambiguity_type: AmbiguityType,
                     calorie_span=None, protein_span=None, carb_span=None,
                     fat_span=None, identity_risk: float = 0.0,
                     serving_basis_risk: float = 0.0,
-                    item_calories=None,
+                    impact_basis_cal=None,
                     targets=None, confidence: Optional[float] = None,
                     prompt: str = "") -> FoodAmbiguity:
     """Construct an ambiguity with its materiality already scored, so nothing
-    downstream has to know the thresholds."""
+    downstream has to know the thresholds.
+
+    ⭐ `impact_basis_cal` IS REQUIRED TO BE ABOUT THE FACT, not about the row
+    that will carry it. The keyword was renamed from `item_calories` so that
+    every producer has to restate which thing it is sizing — a caller that
+    reaches for the owning item's calories now has to say so in those words.
+    """
     options = tuple(options)
     score = materiality(mode=mode, calorie_span=calorie_span,
                         protein_span=protein_span, carb_span=carb_span,
                         fat_span=fat_span, identity_risk=identity_risk,
                         serving_basis_risk=serving_basis_risk,
-                        item_calories=item_calories,
+                        item_calories=impact_basis_cal,
                         targets=targets, confidence=confidence)
     # Confidence in the LEADING option: a 0.9/0.05/0.05 split is barely
     # ambiguous, while 0.35/0.33/0.32 is a coin toss wearing three hats.
@@ -239,7 +258,8 @@ def build_ambiguity(*, staged_item_id: str, ambiguity_type: AmbiguityType,
         carb_span=carb_span, fat_span=fat_span, confidence=top,
         materiality_score=score, clarification_prompt=prompt,
         identity_risk=identity_risk, serving_basis_risk=serving_basis_risk,
-        item_calories=(float(item_calories) if item_calories else None))
+        impact_basis_cal=(float(impact_basis_cal)
+                          if impact_basis_cal else None))
 
 
 def spans_across(profiles) -> dict:

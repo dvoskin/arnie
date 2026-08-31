@@ -90,8 +90,17 @@ def _spy_plan(*a, **kw):
             for amb in (getattr(it, "ambiguities", None) or ()):
                 ambs.append({"type": str(getattr(amb, "ambiguity_type", "")),
                              "field_name": str(getattr(amb, "field_name", "")),
-                             "material": bool(getattr(amb, "is_material", False))})
+                             "material": bool(getattr(amb, "is_material", False)),
+                             # ⭐ THE DIRECT TEST OF THE 2026-08-31 REPAIR: the
+                             # fact's OWN basis, and the score it produced. An
+                             # `extras` fact must read `None` here — if it ever
+                             # reads its parent's calories again, the denominator
+                             # has started being rediscovered from the owner.
+                             "impact_basis_cal": getattr(amb, "impact_basis_cal", "MISSING"),
+                             "score": getattr(amb, "materiality_score", None),
+                             "calorie_span": getattr(amb, "calorie_span", None)})
             items.append({"staged_item_id": getattr(it, "staged_item_id", ""),
+                          "text": (getattr(it, "original_text", "") or "")[:60],
                           "ambiguities": ambs})
         PLAN_CAP.append({"decision_present": d is not None,
                          "asks": bool(getattr(d, "asks", False)),

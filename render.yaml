@@ -164,6 +164,21 @@ services:
       - key: FOOD_GATE_MODEL
         value: "true"
 
+      # SHAPE C — the report-only `extras` permission class. SHIPS OFF.
+      #
+      # Rejected for adoption 2026-08-31: it improved the aggregate ask metric,
+      # but part of that improvement came from re-representing an unknown as a
+      # property of its parent, which moved the materiality denominator rather
+      # than judging the unknown. See
+      # docs/TRANCHE_INVARIANT_IMPACT_BASIS_2026-08-31.md.
+      #
+      # It stays in the tree as a declared CAUSAL ARM so the re-run after the
+      # invariant-basis repair can turn it on by environment alone — same
+      # commit, same `_code_sha`, one variable. Turning it on in production is
+      # a separate decision that has not been made.
+      - key: FOOD_EXTRAS_REPORT_ONLY
+        value: "false"
+
       - key: ARNIE_USERS_DIR
         value: /data/users
       - key: TELEGRAM_BOT_TOKEN

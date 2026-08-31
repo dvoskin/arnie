@@ -48,7 +48,7 @@ def _material_amb(item_id):
     return build_ambiguity(
         staged_item_id=item_id, ambiguity_type=AmbiguityType.PRODUCT_LINE,
         field_name="product_line", mode="moderate", calorie_span=190,
-        item_calories=170,
+        impact_basis_cal=170,
         options=(AmbiguityOption("Core Power · 26g", 0.51, candidate_id="c1"),
                  AmbiguityOption("Elite · 42g", 0.31, candidate_id="c2")))
 

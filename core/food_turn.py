@@ -785,6 +785,18 @@ def thread_routes(text: str) -> bool:
 #: has to be bounded or the model bounds it.
 _SAY_RE = re.compile(r"\[\[SAY(.*?)SAY\]\]", re.S)
 _MUTE_RE = re.compile(r"\[\[MUTE(.*?)MUTE\]\]", re.S)
+#: ⭐ SHAPE C, THE REPORT-ONLY `extras` CLASS — a CAUSAL ARM, not a feature.
+#: Rejected for adoption 2026-08-31 because its measured benefit came from
+#: re-parenting the unknown rather than judging it, so it ships OFF and the
+#: re-run turns it on by environment ALONE. Same tree, same `_code_sha`, both
+#: arms — which is the only way an effect size means anything.
+_XTRA_RE = re.compile(r"\[\[XTRA(.*?)XTRA\]\]", re.S)
+
+
+def extras_report_only() -> bool:
+    """Shape C, off by default. See `docs/TRANCHE_INVARIANT_IMPACT_BASIS`."""
+    return (os.getenv("FOOD_EXTRAS_REPORT_ONLY", "false") or "").strip().lower() \
+        in ("true", "1", "yes", "on")
 
 _SYSTEM = (
     "You are the food LOGGER for a nutrition coach. Read the user's message and "
@@ -905,7 +917,7 @@ _SYSTEM = (
     "\"assumed\":\"<what you went with, in their language>\"}] "
     "(fields you may RESOLVE BY JUDGEMENT: quantity, identity, brand, prep, "
     "consumed).\n"
-    "  REPORT-ONLY FIELDS. Some unknowns you may NAME as open but must "
+    "[[XTRA  REPORT-ONLY FIELDS. Some unknowns you may NAME as open but must "
     "NEVER resolve or assume: `extras` - unstated toppings, sauces, "
     "dressing or add-ons on a food they did not describe. Report it the "
     "same way, with its spread, and leave `assumed` EMPTY.\n"
@@ -914,7 +926,7 @@ _SYSTEM = (
     "question gets asked - the system weighs that against their mode and "
     "targets, which you cannot see. Report it and otherwise behave "
     "EXACTLY as you would have: do not become more willing to assume, and "
-    "do not change what you would have asked about anything else.\n"
+    "do not change what you would have asked about anything else.\nXTRA]]"
     "  `assumed` is shown "
     "to the user as what you went with so they can correct it in one tap - "
     "write the CHOICE, short and concrete (\"a medium restaurant portion\", "
@@ -1173,7 +1185,8 @@ def _interpreter_system(*, narrate: bool) -> str:
     before the spans were marked — that path writes its own prose, and
     FOOD_COMPOSER=false reverts the composer and this cut together."""
     src = _SAY_RE.sub(r"\1" if narrate else "", _SYSTEM)
-    return _MUTE_RE.sub("" if narrate else r"\1", src)
+    src = _MUTE_RE.sub("" if narrate else r"\1", src)
+    return _XTRA_RE.sub(r"\1" if extras_report_only() else "", src)
 
 
 #: How recently a board row must have landed to count as "this exchange".

@@ -380,7 +380,7 @@ def _enc_ambiguity(a: FoodAmbiguity) -> dict:
         "clarification_prompt": a.clarification_prompt or None,
         "identity_risk": a.identity_risk,
         "serving_basis_risk": a.serving_basis_risk,
-        "item_calories": a.item_calories})
+        "impact_basis_cal": a.impact_basis_cal})
 
 
 def _dec_ambiguity(d) -> Optional[FoodAmbiguity]:
@@ -408,7 +408,12 @@ def _dec_ambiguity(d) -> Optional[FoodAmbiguity]:
         clarification_prompt=str(d.get("clarification_prompt") or ""),
         identity_risk=_num(d.get("identity_risk")) or 0.0,
         serving_basis_risk=_num(d.get("serving_basis_risk")) or 0.0,
-        item_calories=_num(d.get("item_calories")))
+        # ⚠ BOTH KEYS. Rows staged before 2026-08-31 carry the old name, and
+        # a decode that dropped it would silently re-materialise every
+        # in-flight ask with NO basis at all.
+        impact_basis_cal=_num(d.get("impact_basis_cal")
+                              if d.get("impact_basis_cal") is not None
+                              else d.get("item_calories")))
 
 
 # ── the item ──────────────────────────────────────────────────────────────────

@@ -40,7 +40,7 @@ def _ambiguity(*, span=150, calories=305, options=()):
     return build_ambiguity(
         staged_item_id="s1", ambiguity_type=AmbiguityType.PRODUCT_VARIANT,
         field_name="variant", mode="moderate", calorie_span=span,
-        item_calories=calories, options=options)
+        impact_basis_cal=calories, options=options)
 
 
 def _decision(*ambiguities, name="hand roll"):

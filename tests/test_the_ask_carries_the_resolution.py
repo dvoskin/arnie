@@ -64,7 +64,7 @@ def _priced_item() -> StagedFoodItem:
             AmbiguityOption(label="half a slice", confidence=0.3, payload=0.5)),
         calorie_span=190.0, protein_span=4.0, confidence=0.6,
         materiality_score=1.4, clarification_prompt="A whole slice, or half?",
-        item_calories=580.0)
+        impact_basis_cal=580.0)
     return StagedFoodItem(
         staged_item_id="stg_1", original_text="a slice of the cheesecake",
         ordinal=0, food_class=FoodClass.RESTAURANT,
@@ -184,7 +184,7 @@ def test_the_span_survives_so_a_re_ask_can_still_weigh_itself():
     back = decode_item(encode_item(_priced_item()))
     amb = back.ambiguities[0]
     assert amb.calorie_span == 190.0
-    assert amb.item_calories == 580.0
+    assert amb.impact_basis_cal == 580.0
     assert amb.is_material is True
     assert [o.label for o in amb.candidate_values] == ["a slice",
                                                        "half a slice"]

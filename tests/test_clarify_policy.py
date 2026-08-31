@@ -35,7 +35,7 @@ def _product_line_amb(item_id, mode="moderate", lead=0.51, second=0.31):
     return build_ambiguity(
         staged_item_id=item_id, ambiguity_type=AmbiguityType.PRODUCT_LINE,
         field_name="product_line", mode=mode,
-        calorie_span=190, protein_span=16, item_calories=170,
+        calorie_span=190, protein_span=16, impact_basis_cal=170,
         options=(AmbiguityOption("Core Power · 26g", lead,
                                  candidate_id="c1"),
                  AmbiguityOption("Elite · 42g", second, candidate_id="c2")))
@@ -44,7 +44,7 @@ def _product_line_amb(item_id, mode="moderate", lead=0.51, second=0.31):
 def _size_amb(item_id, mode="moderate"):
     return build_ambiguity(
         staged_item_id=item_id, ambiguity_type=AmbiguityType.PACKAGE_SIZE,
-        field_name="package_size", mode=mode, calorie_span=60, item_calories=140,
+        field_name="package_size", mode=mode, calorie_span=60, impact_basis_cal=140,
         options=(AmbiguityOption("14 oz", 0.6), AmbiguityOption("11.5 oz", 0.4)))
 
 
@@ -53,7 +53,7 @@ def _quantity_amb(item_id, mode="moderate", span=120):
         staged_item_id=item_id,
         ambiguity_type=AmbiguityType.CONSUMED_QUANTITY,
         field_name="consumed_fraction", mode=mode, calorie_span=span,
-        item_calories=200,
+        impact_basis_cal=200,
         options=(AmbiguityOption("the whole thing", 0.5, payload=1.0),
                  AmbiguityOption("about half", 0.5, payload=0.5)))
 

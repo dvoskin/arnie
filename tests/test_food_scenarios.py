@@ -104,7 +104,7 @@ def _bottle_ambiguity(item_id, candidates, mode="moderate"):
     return build_ambiguity(
         staged_item_id=item_id, ambiguity_type=AmbiguityType.PRODUCT_LINE,
         field_name="product_line", mode=mode, calorie_span=190,
-        item_calories=170,   # a Fairlife: the doubt exceeds the whole drink
+        impact_basis_cal=170,   # a Fairlife: the doubt exceeds the whole drink
         protein_span=16, options=options)
 
 
@@ -113,7 +113,7 @@ def _fraction_ambiguity(item_id, mode="moderate"):
         staged_item_id=item_id,
         ambiguity_type=AmbiguityType.CONSUMED_QUANTITY,
         field_name="consumed_fraction", mode=mode, calorie_span=115,
-        item_calories=160,   # a bowl of berries
+        impact_basis_cal=160,   # a bowl of berries
         options=(AmbiguityOption("the whole bottle", 0.5, payload=1.0),
                  AmbiguityOption("about half", 0.5, payload=0.5)))
 
@@ -230,7 +230,7 @@ def _mixed_meal(mode):
             staged_item_id=make_staged_item_id(TURN, 1, "some blueberries"),
             ambiguity_type=AmbiguityType.CONSUMED_QUANTITY,
             field_name="estimated_mass_g", mode=mode, calorie_span=98,
-            item_calories=140,
+            impact_basis_cal=140,
             options=(AmbiguityOption("about a handful", 0.5, payload=45.0),
                      AmbiguityOption("a big bowl", 0.3, payload=150.0)))])
     return sandwich, berries
@@ -402,7 +402,7 @@ def test_scenario_e_an_unrelated_request_does_not_touch_the_food():
     item = item.with_ambiguities([build_ambiguity(
         staged_item_id=item.staged_item_id,
         ambiguity_type=AmbiguityType.PRODUCT_LINE, field_name="product_line",
-        mode="moderate", calorie_span=90, item_calories=120,
+        mode="moderate", calorie_span=90, impact_basis_cal=120,
         options=(AmbiguityOption("Zero Sugar", 0.5, payload="Zero Sugar"),
                  AmbiguityOption("Complete", 0.4, payload="Complete")))])
     question = decide([item], mode="moderate").questions[0]
@@ -589,7 +589,7 @@ def test_scenario_c_quick_commits_with_the_assumption_stated():
     leader = build_ambiguity(
         staged_item_id=item.staged_item_id,
         ambiguity_type=AmbiguityType.PRODUCT_LINE, field_name="product_line",
-        mode="quick", calorie_span=190, item_calories=170,
+        mode="quick", calorie_span=190, impact_basis_cal=170,
         options=(AmbiguityOption("Core Power · 14 oz", 0.72,
                                  payload="Core Power"),
                  AmbiguityOption("Elite · 14 oz", 0.18,

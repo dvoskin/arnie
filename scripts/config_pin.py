@@ -77,16 +77,35 @@ def pin_config() -> dict:
 
     Returns the resolved configuration, which is written as the FIRST line of
     the output so the run can never again be read without its config.
+
+    ⭐ `MEASUREMENT_ARM` — THE ONE LEGITIMATE REASON TO DIFFER FROM PRODUCTION.
+    A causal experiment varies a flag ON PURPOSE, and before this the only ways
+    to run one were to edit the tree between arms (which changes `_code_sha`
+    and destroys comparability) or to add a permanent entry to
+    `_ALLOWED_DEVIATIONS` (which hides the arm inside the list of things nobody
+    is measuring). Naming the flag here declares it as the ARM: the run is
+    allowed, and the varied flag is written into the output under `_arm` so a
+    reader can never mistake an arm for a census. Everything else is still
+    pinned exactly as before.
     """
     import re
     txt = pathlib.Path("render.yaml").read_text()
     declared = dict(re.findall(r'- key:\s*(\S+)\s*\n\s*value:\s*"?([^"\n]*)"?', txt))
+    arm = {k.strip() for k in (os.getenv("MEASUREMENT_ARM") or "").split(",")
+           if k.strip()}
+    unknown = sorted(arm - set(declared))
+    if unknown:
+        raise ConfigDrift(
+            f"MEASUREMENT_ARM names flags render.yaml does not declare: "
+            f"{unknown}. An arm has to vary something production HAS, or the "
+            "experiment is not about production.")
     drift = []
     for key, want in sorted(declared.items()):
         if key in _SECRETS:
             continue
         got = os.environ.get(key)
-        if (got or "") != want and key not in _ALLOWED_DEVIATIONS:
+        if (got or "") != want and key not in _ALLOWED_DEVIATIONS \
+                and key not in arm:
             drift.append(f"  {key}: render.yaml={want!r} shell={got!r}")
     if drift:
         raise ConfigDrift(
@@ -98,6 +117,10 @@ def pin_config() -> dict:
     resolved = {k: os.environ.get(k) for k in declared if k not in _SECRETS}
     resolved["_deviations"] = {k: v for k, v in _ALLOWED_DEVIATIONS.items()
                                if k in declared}
+    #: The flags this run varies ON PURPOSE, and what they were set to. `None`
+    #: on a census, so "was this an arm?" is answerable from the output alone.
+    resolved["_arm"] = ({k: os.environ.get(k) for k in sorted(arm)}
+                        if arm else None)
     resolved["_tree_sha"] = _tree_sha()
     resolved["_code_sha"] = _code_sha()
     return resolved
@@ -167,8 +190,28 @@ def comparable(a: dict, b: dict) -> tuple:
     if (a or {}).get("_code_sha") != (b or {}).get("_code_sha"):
         reasons.append(f"code differs: {(a or {}).get('_code_sha')} vs "
                        f"{(b or {}).get('_code_sha')}")
-    keys = (set(a or {}) | set(b or {})) - {"_deviations", "_tree_sha", "_code_sha"}
+    keys = (set(a or {}) | set(b or {})) - {"_deviations", "_tree_sha",
+                                            "_code_sha", "_arm"}
     for k in sorted(keys):
         if (a or {}).get(k) != (b or {}).get(k):
             reasons.append(f"{k}: {(a or {}).get(k)!r} vs {(b or {}).get(k)!r}")
     return (not reasons), reasons
+
+
+def differs_only_in(a: dict, b: dict, keys) -> tuple:
+    """⭐ THE COMPARISON A CAUSAL PAIR NEEDS: same code, same everything, and
+    ONE named variable.
+
+    `comparable()` answers "may these be compared at all" and correctly says NO
+    for two arms of an experiment. This answers the different question an
+    experiment actually asks — *is the arm the ONLY thing that moved?* — and it
+    is deliberately not a relaxation of `comparable`: it still refuses on a
+    `_code_sha` mismatch, and it refuses on any difference outside `keys`.
+    """
+    keys = set(keys)
+    ok, reasons = comparable(a, b)
+    if ok:
+        return False, ["nothing differs — these are the same arm, not a pair"]
+    stray = [r for r in reasons
+             if not any(r.startswith(f"{k}:") for k in keys)]
+    return (not stray), stray
