@@ -1,0 +1,67 @@
+{
+ "rows": [
+  {
+   "query": "Ben & Jerry's Half Baked pint",
+   "phrases_tried": [
+    "Ben & Jerry's Half Baked",
+    "Half Baked ice cream",
+    "Ben and Jerrys Half Baked"
+   ],
+   "verdict": "NOT_FOUND_UNDER_PROBE",
+   "found": []
+  },
+  {
+   "query": "Coke Zero",
+   "phrases_tried": [
+    "Coca-Cola Zero Sugar",
+    "Coca Cola Zero",
+    "Coke Zero Sugar"
+   ],
+   "verdict": "NOT_FOUND_UNDER_PROBE",
+   "found": []
+  },
+  {
+   "query": "Gatorade Zero Glacier Cherry",
+   "phrases_tried": [
+    "Gatorade Zero Glacier Cherry",
+    "Gatorade Zero Sugar Glacier Cherry",
+    "Gatorade G Zero Glacier Cherry"
+   ],
+   "verdict": "NOT_FOUND_UNDER_PROBE",
+   "found": []
+  },
+  {
+   "query": "Kind Bar Dark Chocolate Nuts & Sea Salt",
+   "phrases_tried": [
+    "KIND Dark Chocolate Nuts & Sea Salt",
+    "KIND Nuts & Spices Dark Chocolate Nuts Sea Salt",
+    "Kind dark chocolate sea salt"
+   ],
+   "verdict": "B_RECALL_record_exists",
+   "found": [
+    {
+     "phrase": "KIND Dark Chocolate Nuts & Sea Salt",
+     "name": "Dark chocolate nuts & sea salt bar",
+     "code": "0602652270284",
+     "ov_vs_original": 1.0
+    },
+    {
+     "phrase": "Kind dark chocolate sea salt",
+     "name": "Dark chocolate nuts & sea salt bar",
+     "code": "0602652270284",
+     "ov_vs_original": 1.0
+    }
+   ]
+  },
+  {
+   "query": "Muscle Milk Pro Series 40g Vanilla",
+   "phrases_tried": [
+    "Muscle Milk Pro Series Vanilla",
+    "Muscle Milk Pro Series 40g",
+    "Pro Series Vanilla Protein Powder"
+   ],
+   "verdict": "NOT_FOUND_UNDER_PROBE",
+   "found": []
+  }
+ ]
+}

@@ -1,0 +1,1493 @@
+{
+ "reps": 4,
+ "rows": [
+  {
+   "query": "Barebells Caramel Cashew",
+   "rep": 1,
+   "backend": "legacy",
+   "ov": "1.00",
+   "breaker_open": false,
+   "latency_ms": 1122,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Caramel Cashew",
+    "code": "0850000429093",
+    "has_barcode": true,
+    "brand": "Barebells",
+    "_match": "exact",
+    "serving_text": "1 portion (55 g)",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Barebells Caramel Cashew",
+   "rep": 2,
+   "backend": "legacy",
+   "ov": "1.00",
+   "breaker_open": false,
+   "latency_ms": 1946,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Caramel Cashew",
+    "code": "0850000429093",
+    "has_barcode": true,
+    "brand": "Barebells",
+    "_match": "exact",
+    "serving_text": "1 portion (55 g)",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Barebells Caramel Cashew",
+   "rep": 3,
+   "backend": "legacy",
+   "ov": "1.00",
+   "breaker_open": false,
+   "latency_ms": 1578,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Caramel Cashew",
+    "code": "0850000429093",
+    "has_barcode": true,
+    "brand": "Barebells",
+    "_match": "exact",
+    "serving_text": "1 portion (55 g)",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Barebells Caramel Cashew",
+   "rep": 4,
+   "backend": "legacy",
+   "ov": "1.00",
+   "breaker_open": false,
+   "latency_ms": 571,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Caramel Cashew",
+    "code": "0850000429093",
+    "has_barcode": true,
+    "brand": "Barebells",
+    "_match": "exact",
+    "serving_text": "1 portion (55 g)",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Ben & Jerry's Half Baked pint",
+   "rep": 1,
+   "backend": "sal",
+   "ov": "0.80",
+   "breaker_open": false,
+   "latency_ms": 587,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Ben&Jerry's Half Baked 465ml",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Unilever norge",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Ben & Jerry's Half Baked pint",
+   "rep": 2,
+   "backend": "sal",
+   "ov": "0.80",
+   "breaker_open": false,
+   "latency_ms": 417,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Ben&Jerry's Half Baked 465ml",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Unilever norge",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Ben & Jerry's Half Baked pint",
+   "rep": 3,
+   "backend": "sal",
+   "ov": "0.80",
+   "breaker_open": false,
+   "latency_ms": 1840,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Ben&Jerry's Half Baked 465ml",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Unilever norge",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Ben & Jerry's Half Baked pint",
+   "rep": 4,
+   "backend": "sal",
+   "ov": "0.80",
+   "breaker_open": false,
+   "latency_ms": 911,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Ben&Jerry's Half Baked 465ml",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Unilever norge",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Cheerios",
+   "rep": 1,
+   "backend": "legacy",
+   "ov": "1.00",
+   "breaker_open": false,
+   "latency_ms": 528,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Cheerios Aveia",
+    "code": "5900020036988",
+    "has_barcode": true,
+    "brand": "Nestl\u00e9",
+    "_match": "exact",
+    "serving_text": "30g",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Cheerios",
+   "rep": 2,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 1688,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Cheerios",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Cheerios",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Cheerios",
+   "rep": 3,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 120,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Cheerios",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Cheerios",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Cheerios",
+   "rep": 4,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 121,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Cheerios",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Cheerios",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Chobani Greek Yogurt Plain Nonfat",
+   "rep": 1,
+   "backend": "-",
+   "ov": "",
+   "breaker_open": true,
+   "latency_ms": 135,
+   "error": "",
+   "found": false,
+   "candidate": null
+  },
+  {
+   "query": "Chobani Greek Yogurt Plain Nonfat",
+   "rep": 2,
+   "backend": "-",
+   "ov": "",
+   "breaker_open": true,
+   "latency_ms": 137,
+   "error": "",
+   "found": false,
+   "candidate": null
+  },
+  {
+   "query": "Chobani Greek Yogurt Plain Nonfat",
+   "rep": 3,
+   "backend": "-",
+   "ov": "",
+   "breaker_open": true,
+   "latency_ms": 139,
+   "error": "",
+   "found": false,
+   "candidate": null
+  },
+  {
+   "query": "Chobani Greek Yogurt Plain Nonfat",
+   "rep": 4,
+   "backend": "-",
+   "ov": "",
+   "breaker_open": true,
+   "latency_ms": 132,
+   "error": "",
+   "found": false,
+   "candidate": null
+  },
+  {
+   "query": "Coke Zero",
+   "rep": 1,
+   "backend": "-",
+   "ov": "",
+   "breaker_open": true,
+   "latency_ms": 128,
+   "error": "",
+   "found": false,
+   "candidate": null
+  },
+  {
+   "query": "Coke Zero",
+   "rep": 2,
+   "backend": "-",
+   "ov": "",
+   "breaker_open": true,
+   "latency_ms": 123,
+   "error": "",
+   "found": false,
+   "candidate": null
+  },
+  {
+   "query": "Coke Zero",
+   "rep": 3,
+   "backend": "-",
+   "ov": "",
+   "breaker_open": true,
+   "latency_ms": 121,
+   "error": "",
+   "found": false,
+   "candidate": null
+  },
+  {
+   "query": "Coke Zero",
+   "rep": 4,
+   "backend": "-",
+   "ov": "",
+   "breaker_open": true,
+   "latency_ms": 121,
+   "error": "",
+   "found": false,
+   "candidate": null
+  },
+  {
+   "query": "Fairlife Core Power Chocolate 26g",
+   "rep": 1,
+   "backend": "sal",
+   "ov": "0.80",
+   "breaker_open": true,
+   "latency_ms": 132,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Fairlife core power chocolate protein shake",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Fair life",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Fairlife Core Power Chocolate 26g",
+   "rep": 2,
+   "backend": "sal",
+   "ov": "0.80",
+   "breaker_open": true,
+   "latency_ms": 137,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Fairlife core power chocolate protein shake",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Fair life",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Fairlife Core Power Chocolate 26g",
+   "rep": 3,
+   "backend": "sal",
+   "ov": "0.80",
+   "breaker_open": true,
+   "latency_ms": 133,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Fairlife core power chocolate protein shake",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Fair life",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Fairlife Core Power Chocolate 26g",
+   "rep": 4,
+   "backend": "sal",
+   "ov": "0.80",
+   "breaker_open": true,
+   "latency_ms": 131,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Fairlife core power chocolate protein shake",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Fair life",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Gatorade Zero Glacier Cherry",
+   "rep": 1,
+   "backend": "-",
+   "ov": "",
+   "breaker_open": true,
+   "latency_ms": 129,
+   "error": "",
+   "found": false,
+   "candidate": null
+  },
+  {
+   "query": "Gatorade Zero Glacier Cherry",
+   "rep": 2,
+   "backend": "-",
+   "ov": "",
+   "breaker_open": true,
+   "latency_ms": 133,
+   "error": "",
+   "found": false,
+   "candidate": null
+  },
+  {
+   "query": "Gatorade Zero Glacier Cherry",
+   "rep": 3,
+   "backend": "-",
+   "ov": "",
+   "breaker_open": true,
+   "latency_ms": 133,
+   "error": "",
+   "found": false,
+   "candidate": null
+  },
+  {
+   "query": "Gatorade Zero Glacier Cherry",
+   "rep": 4,
+   "backend": "-",
+   "ov": "",
+   "breaker_open": true,
+   "latency_ms": 129,
+   "error": "",
+   "found": false,
+   "candidate": null
+  },
+  {
+   "query": "Kind Bar Dark Chocolate Nuts & Sea Salt",
+   "rep": 1,
+   "backend": "sal",
+   "ov": "0.86",
+   "breaker_open": true,
+   "latency_ms": 185,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Kind Bars dark chocolate nuts & sea salt",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Kind",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Kind Bar Dark Chocolate Nuts & Sea Salt",
+   "rep": 2,
+   "backend": "sal",
+   "ov": "0.86",
+   "breaker_open": true,
+   "latency_ms": 165,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Kind Bars dark chocolate nuts & sea salt",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Kind",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Kind Bar Dark Chocolate Nuts & Sea Salt",
+   "rep": 3,
+   "backend": "sal",
+   "ov": "0.86",
+   "breaker_open": true,
+   "latency_ms": 163,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Kind Bars dark chocolate nuts & sea salt",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Kind",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Kind Bar Dark Chocolate Nuts & Sea Salt",
+   "rep": 4,
+   "backend": "sal",
+   "ov": "0.86",
+   "breaker_open": true,
+   "latency_ms": 173,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Kind Bars dark chocolate nuts & sea salt",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Kind",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Muscle Milk Pro Series 40g Vanilla",
+   "rep": 1,
+   "backend": "sal",
+   "ov": "0.67",
+   "breaker_open": true,
+   "latency_ms": 140,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Muscle Milk pro series",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Muscle Milk",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Muscle Milk Pro Series 40g Vanilla",
+   "rep": 2,
+   "backend": "sal",
+   "ov": "0.67",
+   "breaker_open": true,
+   "latency_ms": 143,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Muscle Milk pro series",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Muscle Milk",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Muscle Milk Pro Series 40g Vanilla",
+   "rep": 3,
+   "backend": "sal",
+   "ov": "0.67",
+   "breaker_open": true,
+   "latency_ms": 163,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Muscle Milk pro series",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Muscle Milk",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Muscle Milk Pro Series 40g Vanilla",
+   "rep": 4,
+   "backend": "sal",
+   "ov": "0.67",
+   "breaker_open": true,
+   "latency_ms": 142,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Muscle Milk pro series",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Muscle Milk",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Muscle Milk Pro Series Vanilla",
+   "rep": 1,
+   "backend": "sal",
+   "ov": "0.80",
+   "breaker_open": true,
+   "latency_ms": 147,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Muscle Milk pro series",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Muscle Milk",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Muscle Milk Pro Series Vanilla",
+   "rep": 2,
+   "backend": "sal",
+   "ov": "0.80",
+   "breaker_open": true,
+   "latency_ms": 154,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Muscle Milk pro series",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Muscle Milk",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Muscle Milk Pro Series Vanilla",
+   "rep": 3,
+   "backend": "sal",
+   "ov": "0.80",
+   "breaker_open": true,
+   "latency_ms": 145,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Muscle Milk pro series",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Muscle Milk",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Muscle Milk Pro Series Vanilla",
+   "rep": 4,
+   "backend": "sal",
+   "ov": "0.80",
+   "breaker_open": true,
+   "latency_ms": 154,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Muscle Milk pro series",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Muscle Milk",
+    "_match": "likely",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Oreo",
+   "rep": 1,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 126,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "oreo",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Oreo",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Oreo",
+   "rep": 2,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 127,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "oreo",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Oreo",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Oreo",
+   "rep": 3,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 124,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "oreo",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Oreo",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Oreo",
+   "rep": 4,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 121,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "oreo",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Oreo",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Premier Protein Shake Chocolate",
+   "rep": 1,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 140,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Premier Protein Chocolate Shake",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Premier Protein",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Premier Protein Shake Chocolate",
+   "rep": 2,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 142,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Premier Protein Chocolate Shake",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Premier Protein",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Premier Protein Shake Chocolate",
+   "rep": 3,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 142,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Premier Protein Chocolate Shake",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Premier Protein",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Premier Protein Shake Chocolate",
+   "rep": 4,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 142,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Premier Protein Chocolate Shake",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Premier Protein",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sodium",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Quest Bar Cookies and Cream",
+   "rep": 1,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 143,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Cookies and cream quest bar",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Quest",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Quest Bar Cookies and Cream",
+   "rep": 2,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 144,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Cookies and cream quest bar",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Quest",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Quest Bar Cookies and Cream",
+   "rep": 3,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 144,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Cookies and cream quest bar",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Quest",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Quest Bar Cookies and Cream",
+   "rep": 4,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 148,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Cookies and cream quest bar",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Quest",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Skippy Peanut Butter",
+   "rep": 1,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 139,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Skippy peanut butter",
+    "code": null,
+    "has_barcode": false,
+    "brand": null,
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Skippy Peanut Butter",
+   "rep": 2,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 145,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Skippy peanut butter",
+    "code": null,
+    "has_barcode": false,
+    "brand": null,
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Skippy Peanut Butter",
+   "rep": 3,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 142,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Skippy peanut butter",
+    "code": null,
+    "has_barcode": false,
+    "brand": null,
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Skippy Peanut Butter",
+   "rep": 4,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 134,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Skippy peanut butter",
+    "code": null,
+    "has_barcode": false,
+    "brand": null,
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": true,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "fiber",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Starbucks Doubleshot Espresso",
+   "rep": 1,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 125,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Starbucks  Doubleshot Espresso - No added Sugar",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Starbucks",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Starbucks Doubleshot Espresso",
+   "rep": 2,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 124,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Starbucks  Doubleshot Espresso - No added Sugar",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Starbucks",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Starbucks Doubleshot Espresso",
+   "rep": 3,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 123,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Starbucks  Doubleshot Espresso - No added Sugar",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Starbucks",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  },
+  {
+   "query": "Starbucks Doubleshot Espresso",
+   "rep": 4,
+   "backend": "sal",
+   "ov": "1.00",
+   "breaker_open": true,
+   "latency_ms": 128,
+   "error": "",
+   "found": true,
+   "candidate": {
+    "name": "Starbucks  Doubleshot Espresso - No added Sugar",
+    "code": null,
+    "has_barcode": false,
+    "brand": "Starbucks",
+    "_match": "exact",
+    "serving_text": "",
+    "names_a_flavour": false,
+    "nutrition_keys": [
+     "calories",
+     "carbs",
+     "fat",
+     "protein",
+     "sugar"
+    ],
+    "nutrition_complete": true
+   }
+  }
+ ]
+}

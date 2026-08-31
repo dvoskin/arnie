@@ -1,0 +1,989 @@
+{
+ "rows": [
+  {
+   "query": "Barebells Caramel Cashew",
+   "backend": "legacy",
+   "pool_size": 8,
+   "winner": {
+    "name": "Caramel Cashew",
+    "code": "0850000429093",
+    "ov": 1.0,
+    "priceable": true,
+    "resolves_sku": true
+   },
+   "n_resolving": 8,
+   "best_resolving_rank": 1,
+   "bucket": "resolved",
+   "candidates": [
+    {
+     "name": "Caramel Cashew",
+     "code": "0850000429093",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Protein Bar Caramel Cashew",
+     "code": "7340001800494",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Protein Bar / Barre de Prot\u00e9ine Caramel + Cashew",
+     "code": "0850054108227",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Barebells Caramel Cashew",
+     "code": "7340001805598",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Caramel Cashew Protein Bar",
+     "code": "0850054108319",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Protein bar caramel cashew",
+     "code": "7340001802504",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Caramel cashew protein bar",
+     "code": "18566062",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Caramel Cashew Protein Bar",
+     "code": "0650000012093",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    }
+   ]
+  },
+  {
+   "query": "Ben & Jerry's Half Baked pint",
+   "backend": "sal",
+   "pool_size": 8,
+   "winner": {
+    "name": "Ben&Jerry's Half Baked 465ml",
+    "code": null,
+    "ov": 0.8,
+    "priceable": true,
+    "resolves_sku": false
+   },
+   "n_resolving": 0,
+   "best_resolving_rank": null,
+   "bucket": "B_recall_no_resolving_candidate",
+   "candidates": [
+    {
+     "name": "Ben&Jerry's Half Baked 465ml",
+     "code": null,
+     "ov": 0.8,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Ben & Jerry's",
+     "code": null,
+     "ov": 0.4,
+     "priceable": false,
+     "resolves_sku": false
+    },
+    {
+     "name": "Ben & Jerry's",
+     "code": null,
+     "ov": 0.4,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Hb vt half baked pizza",
+     "code": null,
+     "ov": 0.4,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Ben Jerry tiramisu",
+     "code": null,
+     "ov": 0.4,
+     "priceable": false,
+     "resolves_sku": false
+    },
+    {
+     "name": "Ben and Jerry\u2019s The Cone",
+     "code": null,
+     "ov": 0.4,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Ben et Jerry",
+     "code": null,
+     "ov": 0.4,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Glace Ben&Jerry\u2019s",
+     "code": null,
+     "ov": 0.4,
+     "priceable": true,
+     "resolves_sku": false
+    }
+   ]
+  },
+  {
+   "query": "Cheerios",
+   "backend": "legacy",
+   "pool_size": 8,
+   "winner": {
+    "name": "Cheerios Aveia",
+    "code": "5900020036988",
+    "ov": 1.0,
+    "priceable": true,
+    "resolves_sku": true
+   },
+   "n_resolving": 7,
+   "best_resolving_rank": 1,
+   "bucket": "resolved",
+   "candidates": [
+    {
+     "name": "Cheerios Aveia",
+     "code": "5900020036988",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "NESTLE CHEERIOS C\u00e9r\u00e9ales 375g",
+     "code": "3387390331523",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Multigrain Cheerios",
+     "code": "8445291301948",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Cheerios",
+     "code": "0016000275263",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Cheerios",
+     "code": "0016000170032",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "CHEERIOS BIO C\u00e9r\u00e9ale 375g",
+     "code": "7613036669498",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Multigrain Cheerios",
+     "code": "8445290345608",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Toasted Whole Grain Oat Cereal",
+     "code": "0016000435094",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    }
+   ]
+  },
+  {
+   "query": "Chobani Greek Yogurt Plain Nonfat",
+   "backend": "legacy",
+   "pool_size": 8,
+   "winner": {
+    "name": "Greek Yogurt Nonfat Plain",
+    "code": "0894700010137",
+    "ov": 1.0,
+    "priceable": true,
+    "resolves_sku": true
+   },
+   "n_resolving": 6,
+   "best_resolving_rank": 1,
+   "bucket": "resolved",
+   "candidates": [
+    {
+     "name": "Greek Yogurt Nonfat Plain",
+     "code": "0894700010137",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Greek Yogurt Nonfat Plain",
+     "code": "0894700010014",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Greek Yogurt Nonfat Plain",
+     "code": "0818290010469",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Greek Yogurt Nonfat Plain",
+     "code": "0818290013811",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Greek Yogurt Nonfat Plain",
+     "code": "89476017",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Greek Yogurt Nonfat Plain",
+     "code": "0892300010137",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Greek Yogurt Nonfat Plain",
+     "code": "01787113",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Greek Yogurt Nonfat Plain",
+     "code": "01912210",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    }
+   ]
+  },
+  {
+   "query": "Coke Zero",
+   "backend": "legacy",
+   "pool_size": 8,
+   "winner": null,
+   "n_resolving": 0,
+   "best_resolving_rank": null,
+   "bucket": "B_recall_no_resolving_candidate",
+   "candidates": [
+    {
+     "name": "Coke Zero",
+     "code": "5449000214799",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Cocacola zero sugar",
+     "code": "5449000133328",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "coca cola zero 1,25L",
+     "code": "5000112611762",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Cocacola mini zero sugar",
+     "code": "90357473",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Coke Zero Sugar",
+     "code": "9300675079655",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Coca Cola Lemon Zero Sucres",
+     "code": "5449000227041",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Coca-Cola Zero Sugar Zero Calorie Cola, 67.6 fl oz",
+     "code": "0049000050141",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Coke Zero",
+     "code": "54493438",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    }
+   ]
+  },
+  {
+   "query": "Fairlife Core Power Chocolate 26g",
+   "backend": "legacy",
+   "pool_size": 1,
+   "winner": {
+    "name": "Core Power 26g Chocolate",
+    "code": "0011620021958",
+    "ov": 1.0,
+    "priceable": true,
+    "resolves_sku": true
+   },
+   "n_resolving": 1,
+   "best_resolving_rank": 1,
+   "bucket": "resolved",
+   "candidates": [
+    {
+     "name": "Core Power 26g Chocolate",
+     "code": "0011620021958",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    }
+   ]
+  },
+  {
+   "query": "Gatorade Zero Glacier Cherry",
+   "backend": "legacy",
+   "pool_size": 8,
+   "winner": null,
+   "n_resolving": 0,
+   "best_resolving_rank": null,
+   "bucket": "B_recall_no_resolving_candidate",
+   "candidates": [
+    {
+     "name": "Zero Sugar Thirst Quencher Glacier Cherry",
+     "code": "0052000043570",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Glacier Cherry",
+     "code": "0052000043198",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Zero Gatorate Glacier Cherry",
+     "code": "0052000042146",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Glacier Cherry Electrolyte Beverage",
+     "code": "0057271163101",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Zero glacier cherry sports drink",
+     "code": "0052000043396",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Gatorade Zero Glacier Cherry",
+     "code": "0052000043440",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Gatorade Zero Powder Stick Glacier Cherry",
+     "code": "05207905",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "Glacier Cherry Zero Sugar Thirst Quencher Powder",
+     "code": "0052000066135",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    }
+   ]
+  },
+  {
+   "query": "Kind Bar Dark Chocolate Nuts & Sea Salt",
+   "backend": "sal",
+   "pool_size": 8,
+   "winner": {
+    "name": "Kind Bars dark chocolate nuts & sea salt",
+    "code": null,
+    "ov": 0.857,
+    "priceable": true,
+    "resolves_sku": false
+   },
+   "n_resolving": 0,
+   "best_resolving_rank": null,
+   "bucket": "B_recall_no_resolving_candidate",
+   "candidates": [
+    {
+     "name": "Kind Bars dark chocolate nuts & sea salt",
+     "code": null,
+     "ov": 0.857,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Kind Dark Chocolate Nuts and Sea salt",
+     "code": null,
+     "ov": 0.857,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Kind Dark Chocolate Nuts & Sea Salt",
+     "code": null,
+     "ov": 0.857,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Sea Salt Dark Chocolate Mini Bars",
+     "code": null,
+     "ov": 0.571,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Sea Salt Dark Lindt Excellence",
+     "code": null,
+     "ov": 0.429,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "82% Vanilla Salt Dark Chocolate",
+     "code": null,
+     "ov": 0.429,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "60% Cocoa Dark Chocolate with Oink Himalayan Salt",
+     "code": null,
+     "ov": 0.429,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Chocolate Amargo con Sal",
+     "code": null,
+     "ov": 0.143,
+     "priceable": true,
+     "resolves_sku": false
+    }
+   ]
+  },
+  {
+   "query": "Muscle Milk Pro Series 40g Vanilla",
+   "backend": "sal",
+   "pool_size": 8,
+   "winner": {
+    "name": "Muscle Milk pro series",
+    "code": null,
+    "ov": 0.667,
+    "priceable": true,
+    "resolves_sku": false
+   },
+   "n_resolving": 0,
+   "best_resolving_rank": null,
+   "bucket": "B_recall_no_resolving_candidate",
+   "candidates": [
+    {
+     "name": "Muscle Milk pro series",
+     "code": null,
+     "ov": 0.667,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Pro Series Muscle Milk",
+     "code": null,
+     "ov": 0.667,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Pro series",
+     "code": null,
+     "ov": 0.667,
+     "priceable": false,
+     "resolves_sku": false
+    },
+    {
+     "name": "Muscle Milk Pro Series Creatine Tropical Fruit",
+     "code": null,
+     "ov": 0.667,
+     "priceable": false,
+     "resolves_sku": false
+    },
+    {
+     "name": "PRO MUSCLE POWER Aliment d'appoint avec sucres et prot\u00e9ines de l",
+     "code": null,
+     "ov": 0.333,
+     "priceable": false,
+     "resolves_sku": false
+    },
+    {
+     "name": "Engadiner Bergjogurt",
+     "code": null,
+     "ov": 0.0,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "B\u00fcndner Berg Grisoni",
+     "code": null,
+     "ov": 0.0,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Mountain Butter 82% lactic fat",
+     "code": null,
+     "ov": 0.0,
+     "priceable": true,
+     "resolves_sku": false
+    }
+   ]
+  },
+  {
+   "query": "Muscle Milk Pro Series Vanilla",
+   "backend": "legacy",
+   "pool_size": 1,
+   "winner": {
+    "name": "Pro Series Vanilla Protien Powder",
+    "code": "0660016534113",
+    "ov": 1.0,
+    "priceable": true,
+    "resolves_sku": true
+   },
+   "n_resolving": 1,
+   "best_resolving_rank": 1,
+   "bucket": "resolved",
+   "candidates": [
+    {
+     "name": "Pro Series Vanilla Protien Powder",
+     "code": "0660016534113",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    }
+   ]
+  },
+  {
+   "query": "Oreo",
+   "backend": "legacy",
+   "pool_size": 8,
+   "winner": {
+    "name": "OREO ORIGINAL",
+    "code": "7622300336738",
+    "ov": 1.0,
+    "priceable": true,
+    "resolves_sku": true
+   },
+   "n_resolving": 8,
+   "best_resolving_rank": 1,
+   "bucket": "resolved",
+   "candidates": [
+    {
+     "name": "OREO ORIGINAL",
+     "code": "7622300336738",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "original  oreo",
+     "code": "6111031005576",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Oreo chocolate",
+     "code": "6111031005590",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Original Oreo",
+     "code": "7622202225512",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Oreo Double Creme",
+     "code": "7622210137258",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Milka oreo",
+     "code": "7622210834751",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Original",
+     "code": "7622300744663",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Oreo Original",
+     "code": "6111031005194",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    }
+   ]
+  },
+  {
+   "query": "Premier Protein Shake Chocolate",
+   "backend": "legacy",
+   "pool_size": 8,
+   "winner": {
+    "name": "Chocolate Shake",
+    "code": "0643843715344",
+    "ov": 1.0,
+    "priceable": true,
+    "resolves_sku": true
+   },
+   "n_resolving": 7,
+   "best_resolving_rank": 1,
+   "bucket": "resolved",
+   "candidates": [
+    {
+     "name": "Chocolate Shake",
+     "code": "0643843715344",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Chocolate Protein Shake",
+     "code": "0643843714477",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Chocolate High Protein Shake",
+     "code": "0643843717157",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Chocolate Peanut Butter Protein Shake",
+     "code": "0643843716594",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Chocolate Protein Shake",
+     "code": "0643843714811",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Winter Mint Chocolate Protein Shake",
+     "code": "0643843800057",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Chocolate Mint High Protein Shake",
+     "code": "0643843803249",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Chocolate Flavoured Shake",
+     "code": "0643843715924",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    }
+   ]
+  },
+  {
+   "query": "Quest Bar Cookies and Cream",
+   "backend": "legacy",
+   "pool_size": 8,
+   "winner": {
+    "name": "Cookies and Cream Protein Bar",
+    "code": "1240000004359",
+    "ov": 1.0,
+    "priceable": true,
+    "resolves_sku": true
+   },
+   "n_resolving": 6,
+   "best_resolving_rank": 1,
+   "bucket": "resolved",
+   "candidates": [
+    {
+     "name": "Cookies and Cream Protein Bar",
+     "code": "1240000004359",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Mini cookies and cream protein bar",
+     "code": "0888849012725",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Cookies and cream protein bar",
+     "code": "0888849064441",
+     "ov": 1.0,
+     "priceable": false,
+     "resolves_sku": true
+    },
+    {
+     "name": "quest cookies and cream protein bar",
+     "code": "0888849448845",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Cookies and Cream Protein Bar",
+     "code": "0888849444885",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Cookies and cream quest bar",
+     "code": "0868044144445",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Dipped cookies and cream protein bar",
+     "code": "0888849013777",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Crispy Cookies and Cream",
+     "code": "0888849011582",
+     "ov": 0.75,
+     "priceable": true,
+     "resolves_sku": false
+    }
+   ]
+  },
+  {
+   "query": "Skippy Peanut Butter",
+   "backend": "legacy",
+   "pool_size": 8,
+   "winner": {
+    "name": "Creamy Peanut Butter",
+    "code": "0037600106009",
+    "ov": 1.0,
+    "priceable": true,
+    "resolves_sku": true
+   },
+   "n_resolving": 6,
+   "best_resolving_rank": 1,
+   "bucket": "resolved",
+   "candidates": [
+    {
+     "name": "Creamy Peanut Butter",
+     "code": "0037600106009",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Creamy Peanut Butter",
+     "code": "0037600110754",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Creamy Peanut Butter",
+     "code": "0037600223324",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Natural Creamy Peanut Butter Spread",
+     "code": "0037600106740",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Creamy Peanut Butter",
+     "code": "0037600106252",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Peanut Butter",
+     "code": "0037600223348",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Beurre de cacahu\u00e8te",
+     "code": "0037600311052",
+     "ov": 0.333,
+     "priceable": true,
+     "resolves_sku": false
+    },
+    {
+     "name": "Extra Smooth",
+     "code": "0037600106436",
+     "ov": 0.333,
+     "priceable": true,
+     "resolves_sku": false
+    }
+   ]
+  },
+  {
+   "query": "Starbucks Doubleshot Espresso",
+   "backend": "legacy",
+   "pool_size": 8,
+   "winner": {
+    "name": "DoubleShot Espresso",
+    "code": "5711953145315",
+    "ov": 1.0,
+    "priceable": true,
+    "resolves_sku": true
+   },
+   "n_resolving": 8,
+   "best_resolving_rank": 1,
+   "bucket": "resolved",
+   "candidates": [
+    {
+     "name": "DoubleShot Espresso",
+     "code": "5711953145315",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Espresso Latte",
+     "code": "9556001299154",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Doubleshot caf\u00e9 espresso con leche",
+     "code": "5760466997188",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Fairtrade DoubleShot Espresso Premium Coffee Drink",
+     "code": "5730800623059",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "doubleshot espresso",
+     "code": "5760466997263",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "DoubleShot Espresso reduit en sucre",
+     "code": "5711953079542",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Doubleshot espresso",
+     "code": "01272903",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    },
+    {
+     "name": "Doubleshot caf\u00e9 espresso con leche sin az\u00facar a\u00f1adido",
+     "code": "5711953079504",
+     "ov": 1.0,
+     "priceable": true,
+     "resolves_sku": true
+    }
+   ]
+  }
+ ]
+}
