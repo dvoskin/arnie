@@ -197,6 +197,89 @@ async def classify_rows(food_name: str, rows, complete=None) -> tuple:
     return records, assessments
 
 
+def _identify(candidate) -> str:
+    """Enough to say WHICH candidate an assessment was about.
+
+    ⛔ A LIST OF (relationship, confidence) PAIRS IS NOT ENOUGH. Discovering
+    `SAME_IDENTITY 0.74` later and being unable to say whether that was the
+    exact product, a flavour variant, or junk is the same shape as every other
+    defect this quarter: a number with no subject. Barcode first because it is
+    the only globally unique handle; then whatever name the lane carries.
+    """
+    g = (candidate.get if isinstance(candidate, dict)
+         else lambda k, d=None: getattr(candidate, k, d))
+    for key in ("code", "gtin", "barcode", "fdc_id", "id"):
+        v = g(key)
+        if v:
+            return f"{key}:{v}"
+    for key in ("product_name", "description", "name", "food_name"):
+        v = g(key)
+        if v:
+            return str(v)[:60]
+    return "-"
+
+
+def _qualify_and_trace(candidates, assessments, *, food_name, lane):
+    """THE ONE ELIGIBILITY COMPUTATION, and the trace of every decision it makes.
+
+    ⭐ OBSERVABILITY ONLY. `kept` is computed exactly as the two inline filters
+    computed it — `relationship in IDENTITY_BEARING and confidence >=
+    threshold` — so this commit cannot change a qualification outcome. It is
+    shared by both lanes precisely so the RECORD cannot drift from the
+    DECISION, which is the failure mode that made `event=evidence_qualified`
+    unable to answer the question it was written for.
+
+    ⛔ WHY THIS EXISTS. That event emitted `raw`, `kept` and a relationship
+    histogram — the verdict distribution, never the number that did the
+    filtering. So a candidate the model AGREED was the same product, refused
+    for confidence 0.79, was indistinguishable in the logs from junk evidence
+    the model rejected outright. `off_identity_refused ... verdicts=
+    SAME_IDENTITY` reads as "identity was refused" when identity was AGREED.
+    Two different populations, one label, and the field that separates them was
+    computed, used, and thrown away.
+
+    The threshold is READ, never assumed — same lesson as the runtime config:
+    a constant recorded from the source cannot silently drift from a constant
+    quoted in a comment.
+    """
+    threshold = MINIMUM_IDENTITY_CONFIDENCE
+    kept = []
+    for candidate, a in zip(candidates, assessments):
+        rel_ok = a.relationship in IDENTITY_BEARING
+        conf_ok = a.confidence >= threshold
+        qualified = rel_ok and conf_ok
+        if qualified:
+            kept.append(candidate)
+        logger.info(
+            "event=identity_assessment lane=%s food=%r candidate=%r "
+            "relationship=%s confidence=%.3f threshold=%.2f "
+            "relationship_eligible=%s confidence_eligible=%s qualified=%s "
+            "rejection_reason=%s abstained=%s",
+            lane, food_name, _identify(candidate), a.relationship,
+            float(a.confidence or 0.0), threshold, rel_ok, conf_ok, qualified,
+            ("-" if qualified else
+             "relationship_not_identity_bearing" if not rel_ok else
+             "confidence_below_threshold"),
+            bool(getattr(a, "abstained", False)))
+    return tuple(kept), threshold
+
+
+def _confidence_buckets(assessments) -> dict:
+    """Where the confidences actually sit, in one greppable field.
+
+    Bucketed rather than listed so the aggregate line stays one line, and cut
+    at the threshold so "just under" is visible without a join: if
+    IDENTITY-BEARING candidates pile up in `0.70-0.79`, calibration is a live
+    hypothesis; if they sit at `<0.50`, it is not.
+    """
+    from collections import Counter as _C
+    def b(c):
+        c = float(c or 0.0)
+        return ("<0.50" if c < 0.50 else "0.50-0.69" if c < 0.70 else
+                "0.70-0.79" if c < 0.80 else "0.80-0.89" if c < 0.90 else ">=0.90")
+    return dict(_C(b(a.confidence) for a in assessments))
+
+
 async def qualify_off_product(food_name: str, best, variants=(),
                               complete=None, context=None) -> Qualification:
     """A branded OFF product -> eligible to price this food, or nothing.
@@ -254,14 +337,14 @@ async def qualify_off_product(food_name: str, best, variants=(),
                              raw_count=len(products), kept_count=0,
                              abstained=tuple(products))
 
-    kept = tuple(
-        product for product, a in zip(products, assessments)
-        if a.relationship in IDENTITY_BEARING
-        and a.confidence >= MINIMUM_IDENTITY_CONFIDENCE)
+    kept, _threshold = _qualify_and_trace(
+        products, assessments, food_name=food_name, lane="off")
     if not kept:
         logger.info("event=off_identity_refused food=%s products=%d "
-                    "verdicts=%s", food_name, len(products),
-                    ",".join(str(a.relationship) for a in assessments))
+                    "verdicts=%s threshold=%.2f confidence=%s",
+                    food_name, len(products),
+                    ",".join(str(a.relationship) for a in assessments),
+                    _threshold, _confidence_buckets(assessments))
     return Qualification(rows=kept, disposition="qualified",
                          raw_count=len(products), kept_count=len(kept),
                          abstained=tuple(p for p, a in zip(products, assessments)
@@ -313,10 +396,8 @@ async def qualify_usda_rows(food_name: str, rows, complete=None,
                              raw_count=len(rows), kept_count=0,
                              abstained=tuple(rows))
 
-    kept = tuple(
-        row for row, a in zip(rows, assessments)
-        if a.relationship in IDENTITY_BEARING
-        and a.confidence >= MINIMUM_IDENTITY_CONFIDENCE)
+    kept, _threshold = _qualify_and_trace(
+        rows, assessments, food_name=food_name, lane="evidence")
     # ⛔ THE PARTIAL ABSTENTION, WHICH LOOKS LIKE A COMPLETED BATCH. Only
     # ALL-abstain is treated as an outage above; a batch where SOME rows were
     # judged and others were not returns `qualified` and drops the unjudged
@@ -332,11 +413,11 @@ async def qualify_usda_rows(food_name: str, rows, complete=None,
     dispositions = _Counter(a.relationship for a in assessments)
     logger.info(
         "event=evidence_qualified food=%s raw=%d kept=%d latency_ms=%d "
-        "version=%s dispositions=%s",
+        "version=%s dispositions=%s threshold=%.2f confidence=%s",
         food_name, len(rows), len(kept),
         int((_time.monotonic() - _t0) * 1000),
         assessments[0].resolver_version,
-        dict(dispositions))
+        dict(dispositions), _threshold, _confidence_buckets(assessments))
     return Qualification(rows=kept, disposition="qualified",
                          raw_count=len(rows), kept_count=len(kept),
                          resolver_version=assessments[0].resolver_version,
