@@ -1,0 +1,40 @@
+{
+  "name": "branded_identity_truth_v1",
+  "frozen": true,
+  "frozen_at": "2026-08-31",
+  "purpose": "Human ground truth for whether a candidate product IS the food the user named. Labelled from product knowledge BEFORE any confidence was computed, so the distribution cannot shape the truth.",
+  "labels": {
+    "TRUE_SAME_PRODUCT": "the candidate is the product the user meant; its nutrition may price the meal",
+    "TRUE_DIFFERENT_PRODUCT": "a different SKU. Accepting it commits another food's numbers",
+    "AMBIGUOUS": "a human cannot decide from the strings alone. NEITHER accepting nor rejecting is an error, so these are excluded from precision/recall and reported separately"
+  },
+  "why_the_hard_cases": "Easy pairs measure nothing. A threshold is only calibratable against neighbours that are genuinely close: same brand, same family, different SKU. Every DIFFERENT case below is a near neighbour, not junk.",
+  "cases": [
+    {"id": 1,  "intent": "Muscle Milk Pro Series Vanilla", "candidate": "Muscle Milk Pro Series Protein Shake, Vanilla", "label": "TRUE_SAME_PRODUCT", "why": "same line, same flavour, name reordered"},
+    {"id": 2,  "intent": "Muscle Milk Pro Series Vanilla", "candidate": "Muscle Milk Pro Series Protein Shake, Chocolate", "label": "TRUE_DIFFERENT_PRODUCT", "why": "DIFFERENT FLAVOUR — the neighbour that must not pass"},
+    {"id": 3,  "intent": "Muscle Milk Pro Series Vanilla", "candidate": "Muscle Milk Genuine Protein Shake, Vanilla", "label": "TRUE_DIFFERENT_PRODUCT", "why": "REGULAR vs PRO — different line, different protein"},
+    {"id": 4,  "intent": "Muscle Milk Pro Series Vanilla", "candidate": "Muscle Milk pro series", "label": "AMBIGUOUS", "why": "the OFF row Arnie actually found: right line, flavour unstated"},
+    {"id": 5,  "intent": "Muscle Milk Pro Series 40g Vanilla", "candidate": "Muscle Milk Pro Series 32g Protein Shake Vanilla", "label": "TRUE_DIFFERENT_PRODUCT", "why": "DIFFERENT PROTEIN AMOUNT — same flavour, different SKU"},
+    {"id": 6,  "intent": "Quest Bar Cookies and Cream", "candidate": "Quest Protein Bar, Cookies & Cream", "label": "TRUE_SAME_PRODUCT", "why": "punctuation and word order only"},
+    {"id": 7,  "intent": "Quest Bar Cookies and Cream", "candidate": "Quest Protein Bar, Chocolate Chip Cookie Dough", "label": "TRUE_DIFFERENT_PRODUCT", "why": "different flavour in the same line"},
+    {"id": 8,  "intent": "Quest Bar Cookies and Cream", "candidate": "Quest Hero Bar, Cookies & Cream", "label": "TRUE_DIFFERENT_PRODUCT", "why": "SAME BRAND, SAME FLAVOUR, DIFFERENT PRODUCT FAMILY"},
+    {"id": 9,  "intent": "Fairlife Core Power Chocolate 26g", "candidate": "Core Power Elite Chocolate 42g", "label": "TRUE_DIFFERENT_PRODUCT", "why": "Elite is a different SKU with different protein"},
+    {"id": 10, "intent": "Fairlife Core Power Chocolate 26g", "candidate": "fairlife Core Power High Protein Milk Shake, Chocolate", "label": "TRUE_SAME_PRODUCT", "why": "the 26g standard line, fully named"},
+    {"id": 11, "intent": "Coke Zero", "candidate": "Coca-Cola Zero Sugar", "label": "TRUE_SAME_PRODUCT", "why": "rename of the same product"},
+    {"id": 12, "intent": "Coke Zero", "candidate": "Diet Coke", "label": "TRUE_DIFFERENT_PRODUCT", "why": "different product, near-identical nutrition — nutrition similarity is NOT identity"},
+    {"id": 13, "intent": "Chobani Greek Yogurt Plain Nonfat", "candidate": "Chobani Greek Yogurt, Plain, Whole Milk", "label": "TRUE_DIFFERENT_PRODUCT", "why": "fat level is most of the calorie difference"},
+    {"id": 14, "intent": "Chobani Greek Yogurt Plain Nonfat", "candidate": "Chobani Non-Fat Greek Yogurt Plain", "label": "TRUE_SAME_PRODUCT", "why": "word order"},
+    {"id": 15, "intent": "Cheerios", "candidate": "Honey Nut Cheerios", "label": "TRUE_DIFFERENT_PRODUCT", "why": "the specialization trap — sugar differs materially"},
+    {"id": 16, "intent": "Ben & Jerry's Half Baked pint", "candidate": "Ben & Jerry's Half Baked Ice Cream", "label": "AMBIGUOUS", "why": "PACKAGE SIZE unstated; per-100g identical, per-container is not"},
+    {"id": 17, "intent": "Barebells Caramel Cashew", "candidate": "Barebells Protein Bar Caramel Cashew", "label": "TRUE_SAME_PRODUCT", "why": "same bar"},
+    {"id": 18, "intent": "Barebells Caramel Cashew", "candidate": "Barebells Soft Protein Bar Caramel Cashew", "label": "TRUE_DIFFERENT_PRODUCT", "why": "Soft is a separate line with different macros"},
+    {"id": 19, "intent": "Oreo", "candidate": "Oreo Double Stuf", "label": "TRUE_DIFFERENT_PRODUCT", "why": "more filling, different per-cookie nutrition"},
+    {"id": 20, "intent": "Oreo", "candidate": "Oreo Chocolate Sandwich Cookies", "label": "TRUE_SAME_PRODUCT", "why": "the plain original, fully named"},
+    {"id": 21, "intent": "Gatorade Zero Glacier Cherry", "candidate": "Gatorade Thirst Quencher Glacier Cherry", "label": "TRUE_DIFFERENT_PRODUCT", "why": "ZERO vs sugared — same flavour name, ~80 kcal apart"},
+    {"id": 22, "intent": "Starbucks Doubleshot Espresso", "candidate": "Starbucks Doubleshot Energy Vanilla", "label": "TRUE_DIFFERENT_PRODUCT", "why": "different line within one brand family"},
+    {"id": 23, "intent": "Premier Protein Shake Chocolate", "candidate": "Premier Protein 30g Protein Shake, Chocolate", "label": "TRUE_SAME_PRODUCT", "why": "the standard 30g shake"},
+    {"id": 24, "intent": "Premier Protein Shake Chocolate", "candidate": "Premier Protein Clear Protein Drink", "label": "TRUE_DIFFERENT_PRODUCT", "why": "different format entirely"},
+    {"id": 25, "intent": "Skippy Peanut Butter", "candidate": "Skippy Natural Creamy Peanut Butter Spread", "label": "AMBIGUOUS", "why": "REFORMULATION/variant — a human cannot tell which the user meant"},
+    {"id": 26, "intent": "Kind Bar Dark Chocolate Nuts & Sea Salt", "candidate": "KIND Nuts & Spices Dark Chocolate Nuts & Sea Salt", "label": "TRUE_SAME_PRODUCT", "why": "the sub-line name is part of the same SKU"}
+  ]
+}
