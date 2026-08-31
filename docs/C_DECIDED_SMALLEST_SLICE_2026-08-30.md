@@ -166,3 +166,80 @@ extras rate                        unstable (10 vs 6)
 adoption                           NOT AUTHORIZED — a passing slice is not an
                                    adoption decision
 ```
+
+---
+
+# ⛔ CORRECTION — "AUTHORITY MIGRATION" WAS THE WRONG DIAGNOSIS
+
+I reported `staged 10 → 6/7` as authority migration, with the mechanism being
+the interpreter claiming turns it previously left to staged. **The per-case
+diff says otherwise.**
+
+```
+case  base staged  C staged/4  C interp/4  C no-ask/4   reading
+1          2           0            0          4        ⛔ ASK DISAPPEARED
+4          1           0            0          4        ⛔ ASK DISAPPEARED
+9          1           0            3          1        MIGRATED
+2,3,8      6          10            2          0        still staged
+
+MIGRATED: 1 case.   ASK-DISAPPEARED: 2 cases.
+```
+
+> **`staged 10 → 6/7` is mostly asks VANISHING, not moving.** One case migrated.
+> Two lost their ask entirely.
+
+The review question as posed — *does C change quality merely by moving asks
+staged → interpreter?* — therefore does not apply to most of the effect.
+**The right question is what the two vanished asks were.**
+
+## Both vanished asks are CONDIMENT QUANTITY
+
+```
+c1  staged prompt "How much of the Subway Mayo?"
+c4  staged prompt  sauce — "one packet or two?"
+```
+
+A consistent semantic class, removed consistently (0/4 in both C runs).
+
+## ⚠⚠ c1's MATERIALITY — MY CLASSIFICATION IS UNSUPPORTED
+
+c1's baseline asks were **staged**, and **staged questions carry no
+`impact_cal`.** The interpreter's own materiality number **does not exist** for
+this ask. I called it "secondary" from reading the words — that is prose
+judgement, the thing this tranche exists to remove from decisions.
+
+For scale, interpreter `impact_cal` on asks it DOES raise:
+
+```
+c25 quantity 300 · c17 prep 300 · c23 quantity 300 · c14 quantity 260
+c10 quantity 250 · c17 prep 250 · c24 quantity 250
+```
+
+**Mayo on a footlong is plausibly 100–200 kcal — not clearly below the range the
+system already treats as worth asking about.** The same applies to a doubled
+sauce packet.
+
+> **c1 and c4 may be MATERIAL losses. That is now an open question, not a
+> settled "secondary".**
+
+## What this does to the pass
+
+The **frozen exit test still passes** — ask rate Δ1 inside a null of Δ2, and
+c17 intact across both runs. Those measurements are unchanged.
+
+But the **composition** of the change is not what I described. C's behavioural
+effect is: *two condiment-quantity asks removed, one ask migrated, everything
+else stable.* Whether that is desirable turns entirely on the materiality of
+condiment quantity, **which nothing measured so far establishes.**
+
+## Board
+
+```
+C / unstated_extras          north-star PASS (unchanged)
+"authority migration"        RETRACTED as the diagnosis — 1 case, not the effect
+ask disappearance (c1, c4)   OPEN — both condiment quantity, materiality UNKNOWN
+c1 materiality               cannot be resolved from captured data: staged asks
+                             carry no impact_cal
+C global expansion           HOLD
+C adoption for extras        NOT FINAL — gated on the condiment-materiality question
+```
