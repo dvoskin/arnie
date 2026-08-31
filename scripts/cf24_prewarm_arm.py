@@ -124,6 +124,30 @@ def install_spies():
     AU.select = select
 
 
+#: ⭐ GATE 0 — the local control must reproduce production arm A's SHAPE.
+#: Added 2026-08-31 BEFORE any harness change, so it could not be shaped by
+#: whatever turned out to be easy to fix. An arm that cannot reproduce its own
+#: control cannot produce evidence about a variant of that control.
+GATE0 = ("legacy.fetch_candidates executes", "row reached",
+         "memory_nutrition_use observed", "trusted=False", "refused",
+         "clean commit")
+
+
+def check_gate0(obs, state) -> tuple:
+    door = obs["door"]
+    mine = [d for d in door if d["consumer"] == "legacy.fetch_candidates"]
+    cal = (state["entries"][0]["cal"] if state["entries"] else None)
+    checks = {
+        "legacy.fetch_candidates executes": bool(mine),
+        "row reached": any(d["row_id"] is not None for d in mine),
+        "memory_nutrition_use observed": bool(door),
+        "trusted=False": all(d["returned"] is None for d in mine) if mine else False,
+        "refused": all(d["returned"] is None for d in mine) if mine else False,
+        "clean commit": bool(cal) and cal < 300,
+    }
+    return all(checks.values()), checks
+
+
 async def main() -> int:
     from sqlalchemy import select as sa_select, text
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -137,7 +161,27 @@ async def main() -> int:
     engine = make_engine(url)
     Session = async_sessionmaker(engine, expire_on_commit=False)
 
+    # ⛔⛔ THE FIXTURE IS REBUILT EVERY RUN, AND THAT IS NOT TIDINESS.
+    # Reusing it made GATE 0 FAIL on the second run having PASSED on the
+    # first: `times_used`/`last_used` move and an identity gets stamped, and
+    # the next turn takes a different path. Measured 2026-08-31 — fresh
+    # fixture 4/4 pass, reused fixture 1/2. Same class as arm A's stale
+    # `pending_questions` confound: state a turn both READS and MUTATES is
+    # part of the experimental condition, so leaving it to whoever remembers
+    # to reset is how a control silently stops being one.
+    #
+    # ⭐ SUBJECT 26 LITERALLY. The cohorts enrol `26`; a synthetic id would be
+    # an undeclared eligibility deviation on the very experiment that exists
+    # because eligibility decided the outcome.
     async with Session() as db:
+        existing = (await db.execute(sa_select(User).where(User.id == 26))).scalar_one_or_none()
+    if existing is not None:
+        uid = 26
+        async with Session() as db:
+            rid = (await db.execute(sa_select(UserFoodMatch.id)
+                   .where(UserFoodMatch.user_id == 26))).scalars().first()
+    else:
+      async with Session() as db:
         u = User(telegram_id=f"cf24arm:{os.getpid()}", name="CF24Arm", age=37,
                  sex="male", height_cm=178.0, current_weight_kg=86.0,
                  timezone="America/New_York", onboarding_completed=True)
@@ -154,6 +198,15 @@ async def main() -> int:
         await db.commit()
 
     print(f"fixture: user {uid}, poisoned row {rid} @ cal_100={ROW936['cal_100']}")
+
+    # ⛔ THE RUNTIME PIN RUNS FIRST. If this shell is not the production
+    # runtime with the subject actually enrolled, nothing measured here is
+    # about the product production runs.
+    from scripts.config_pin import pin_runtime
+    runtime = pin_runtime(subject_id=uid)
+    print(f"runtime pinned: build={runtime['_runtime_snapshot_build']} "
+          f"enrolled="
+          f"{ {k: v['enrolled'] for k, v in runtime['_subject_eligibility'].items()} }")
 
     # ── SELFTEST: the spy must actually intercept ────────────────────────────
     # ⛔ A HARNESS THAT CANNOT SEE IS INDISTINGUISHABLE FROM A PRODUCT THAT DOES
@@ -189,6 +242,19 @@ async def main() -> int:
                               "sugar": e.sugar, "sodium": e.sodium}
                              for e in entries]}
 
+    print()
+    print("=" * 72)
+    print("GATE 0 — DOES THE LOCAL CONTROL REPRODUCE PRODUCTION ARM A?")
+    print("=" * 72)
+    g0, checks = check_gate0(OBS, state)
+    for k, v in checks.items():
+        print(f"   [{'PASS' if v else '⛔FAIL'}] {k}")
+    if not g0:
+        print()
+        print("⛔ GATE 0 FAILED — ARM B CANNOT START.")
+        print("   The local harness does not reproduce arm A's ordinary")
+        print("   behaviour, so any prewarm result on top of it would be")
+        print("   uninterpretable. This is a harness fact, not product evidence.")
     print()
     print("=" * 72)
     print("GATE 1 — PROOF OF PREHYDRATION")

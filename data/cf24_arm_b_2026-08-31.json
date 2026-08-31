@@ -1,7 +1,15 @@
 {
- "gate1_prehydration_proven": false,
+ "gate1_prehydration_proven": true,
  "obs": {
-  "door": [],
+  "door": [
+   {
+    "consumer": "legacy.fetch_candidates",
+    "hydration": "direct_read",
+    "row_id": 152,
+    "payload_carried_poison": true,
+    "returned": null
+   }
+  ],
   "analyze": [
    {
     "memory_match_present": false,
@@ -27,20 +35,27 @@
     "rungs_offered": []
    }
   ],
-  "prehydrated": []
+  "prehydrated": [
+   {
+    "where": "before_door",
+    "consumer": "legacy.fetch_candidates",
+    "hydration": "direct_read",
+    "cal_100": 437.5
+   }
+  ]
  },
  "state": {
   "times_used": 1,
   "cal_100": 437.5,
   "entries": [
    {
-    "name": "Shrimp",
+    "name": "Shrimp, grilled",
     "cal": 140.0,
     "p": 27.0,
     "c": 1.0,
     "f": 3.0,
     "sugar": null,
-    "sodium": null
+    "sodium": 220.0
    }
   ]
  }
