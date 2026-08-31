@@ -137,3 +137,82 @@ DEFAULTABILITY            unblocked by this result — the question it now
                           which is the product question, not the scorer's
 27983be                   still DEPLOY HOLD
 ```
+
+---
+
+## ⚠ AMENDMENT — 2026-08-31: VALID CAUSAL RESULT; PRODUCTION-EQUIVALENCE CLAIM WITHDRAWN
+
+The E arms carry **two** claims. One survives intact; the other is retracted.
+
+### Claim A — causal. **SURVIVES.**
+
+> Under the measured environment, switching C on caused asks to rise:
+> E1 44% / E2 46% → E3 60%, effect +7.5 outside a null envelope of 1.
+
+All three arms shared one `_code_sha` and one configuration, and differed in
+exactly one declared variable. The experiment still isolates C **within that
+environment**. Nothing here weakens it.
+
+### Claim B — production equivalence. **FALSE / UNPROVEN. Retracted.**
+
+The `_config` block on every E arm reads `TURN_COORDINATOR_MODE: new_observe`
+as though that were production truth. It is not:
+
+```
+                                render.yaml   E arms        PRODUCTION
+TURN_COORDINATOR_MODE           new_observe   new_observe   new_execute
+ENTITY_RESOLUTION_MODE          (absent)      (absent)      consume
+ENTITY_RESOLUTION_ALLOWLIST     (absent)      (absent)      [26]
+TURN_COORDINATOR_ALLOWLIST      (absent)      (absent)      [26]
+NUTRITION_ACCURACY_V2           (absent)      (absent)      allowlist [26]
+FOOD_COMPOSER_MODEL             (absent)      (absent)      claude-sonnet-5
+```
+
+`pin_config` could not see the last five: **they are not in the manifest it
+compares against.** It reported a clean pin over flags it had never enumerated.
+
+**The E arms therefore ran in a `new_observe`, non-consume, non-enrolled
+environment** — a legitimate executable configuration, but not the current
+production one.
+
+### What the result now says, exactly
+
+- ~~C harms production behaviour.~~ *(too strong)*
+- **C causally harms the measured configuration, and therefore failed
+  adoption. Whether the +15-point raw shift reproduces under production cohort
+  configuration is UNMEASURED.**
+
+### ⛔ C STAYS REJECTED
+
+A candidate that produced **measured harm under a legitimate executable
+configuration** is not resurrected because the environment label was too
+strong. No threshold tuning, no reversal. What changed is the breadth of the
+conclusion, not its direction.
+
+### The cheap discharge, when it matters
+
+Not a 150-turn re-run. A small preregistered **config-sensitivity control**,
+C OFF throughout:
+
+```text
+same frozen inputs · same code · C OFF
+    A = the historical E config
+    B = true production config, production-equivalent ENROLLED subject
+```
+
+Asking only: *does correcting those runtime flags materially alter the path or
+state relevant to C's mechanism?* If A ≈ B the generalisation caveat is largely
+discharged without re-running E. If A ≠ B, E is valid only for its original
+environment. **C is already rejected, so this is not on the critical path.**
+
+## Scope of the damage — classified, not panicked
+
+| class | verdict |
+|---|---|
+| **same-config causal comparisons** (the E arms, the null pair, the C effect) | **SURVIVE**, with the production-equivalence caveat above |
+| **absolute "production baseline" numbers** | need remeasurement or an equivalence proof before being quoted as production truth |
+| **experiments whose PATH ELIGIBILITY depends on these flags** | potentially VOID until eligibility is proven — a synthetic user in no allowlist does not reach the same code |
+| **CF24 production arm A** | **UNAFFECTED.** It ran in production, as user 26, through Telegram |
+
+⭐ The distinction matters: a real instrumentation defect must not trigger an
+equally bad overreaction that throws away valid causal evidence.

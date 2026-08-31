@@ -1,0 +1,97 @@
+{
+ "_doc": "EFFECTIVE PRODUCTION RUNTIME CONFIG. \u26d4 THIS, NOT render.yaml, is the authority. A deployment manifest is not the authority for runtime configuration: it omits dashboard-defined variables and can disagree with the running service. Discovered 2026-08-31 -- render.yaml said TURN_COORDINATOR_MODE=new_observe while production ran new_execute, and THREE eligibility flags were absent from the manifest entirely, so pin_config had never compared them and reported a clean pin.",
+ "_captured_at": "2026-08-31T16:40:00Z",
+ "_build": "63d926a5ef63",
+ "_source": "GET https://arnie.onrender.com/health",
+ "_provenance_doc": "`health` = read from the running service. `attested` = a human confirmed it from the dashboard; /health does not expose it. A measurement-critical key with NEITHER is a REFUSAL, never a None quietly recorded.",
+ "values": {
+  "B1_QUANTITY": {
+   "value": "allowlist",
+   "provenance": "health"
+  },
+  "CANONICAL_WRITER_SHADOW": {
+   "value": false,
+   "provenance": "health"
+  },
+  "COMMIT_COORDINATOR_ENFORCE": {
+   "value": false,
+   "provenance": "health"
+  },
+  "ENTITY_RESOLUTION_MODE": {
+   "value": "consume",
+   "provenance": "health"
+  },
+  "FOOD_COMPOSER": {
+   "value": true,
+   "provenance": "health"
+  },
+  "FOOD_COMPOSER_MODEL": {
+   "value": "claude-sonnet-5",
+   "provenance": "health"
+  },
+  "FOOD_IDENTITY_ASK": {
+   "value": false,
+   "provenance": "health"
+  },
+  "FOOD_PARTIAL_COMMIT": {
+   "value": false,
+   "provenance": "health"
+  },
+  "FOOD_PORTION_PRICING": {
+   "value": true,
+   "provenance": "health"
+  },
+  "NUTRITION_ACCURACY_V2": {
+   "value": "allowlist",
+   "provenance": "health"
+  },
+  "NUTRITION_RESOLVER_MODE": {
+   "value": "live",
+   "provenance": "health"
+  },
+  "PENDING_OPERATION_PERSIST_SHADOW": {
+   "value": false,
+   "provenance": "health"
+  },
+  "QUICK_LOG_FOOD_WRITER": {
+   "value": "canonical",
+   "provenance": "health"
+  },
+  "TURN_COORDINATOR_LANES": {
+   "value": [
+    "ledger_undo",
+    "structured_food"
+   ],
+   "provenance": "health"
+  },
+  "TURN_COORDINATOR_MODE": {
+   "value": "new_execute",
+   "provenance": "health"
+  },
+  "resolver_owns_committed_values": {
+   "value": true,
+   "provenance": "health"
+  },
+  "FOOD_GATE_MODEL": {
+   "value": "true",
+   "provenance": "attested",
+   "note": "not exposed by /health. Danny confirmed from the dashboard 2026-08-27."
+  },
+  "DEFAULT_MODEL": {
+   "value": "claude-sonnet-4-6",
+   "provenance": "attested",
+   "note": "not exposed by /health; render.yaml declares it and no dashboard override is known. \u26a0 WEAKEST provenance here -- re-attest if a model-sensitive conclusion depends on it."
+  }
+ },
+ "cohorts": {
+  "TURN_COORDINATOR_ALLOWLIST": [
+   26
+  ],
+  "ENTITY_RESOLUTION_CONSUME_ALLOWLIST": [
+   26
+  ],
+  "NUTRITION_ACCURACY_V2_allowlist": [
+   26
+  ]
+ }
+}

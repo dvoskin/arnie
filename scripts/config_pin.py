@@ -14,6 +14,7 @@ to live in ONE place that every harness imports, or the next harness will be
 written without it too.**
 """
 
+import json
 import os
 import pathlib
 
@@ -261,3 +262,168 @@ def differs_only_in(a: dict, b: dict, keys) -> tuple:
     stray = [r for r in reasons
              if not any(r.startswith(f"{k}:") for k in keys)]
     return (not stray), stray
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ⛔⛔⛔ A DEPLOYMENT MANIFEST IS NOT THE AUTHORITY FOR RUNTIME CONFIGURATION.
+#
+# Everything above compares the shell against `render.yaml`. On 2026-08-31 that
+# was shown to be structurally insufficient, not merely stale:
+#
+#     render.yaml   TURN_COORDINATOR_MODE = new_observe
+#     PRODUCTION    TURN_COORDINATOR_MODE = new_execute
+#
+#     ENTITY_RESOLUTION_MODE / ENTITY_RESOLUTION_CONSUME_ALLOWLIST /
+#     TURN_COORDINATOR_ALLOWLIST / NUTRITION_ACCURACY_V2 allowlist
+#         -> ABSENT FROM THE MANIFEST ENTIRELY, so the drift check had never
+#            compared them and reported a CLEAN PIN while they differed.
+#
+# The manifest can omit dashboard-defined variables. A guard whose key list
+# comes from that file can only ever check what someone remembered to write
+# down — so the same defect recurs under the next flag.
+#
+# ⭐ THE CONTRACT IS THEREFORE:
+#     measurement-critical registry  (frozen HERE, not derived from a file)
+#         -> expected value from a PRODUCTION SNAPSHOT (with provenance)
+#         -> actual value in this run
+#         -> and SUBJECT ELIGIBILITY, which is the part that decides behaviour
+#
+# `ENTITY_RESOLUTION_MODE=consume` is not equivalent to "this turn consumes
+# identity". `consume` + `allowlist=[26]` means user 26 does and nobody else
+# does — and that difference is exactly why a local replay of CF24 never
+# reached the memory row: the synthetic user was in no cohort, the identity
+# never resolved, the lookup key never matched, and the guarded door never ran.
+_SNAPSHOT_PATH = pathlib.Path("data/production_config_snapshot.json")
+
+#: FROZEN. Add a key when a measurement depends on it; never remove one to make
+#: a run pass.
+MEASUREMENT_CRITICAL = (
+    "TURN_COORDINATOR_MODE", "TURN_COORDINATOR_LANES",
+    "ENTITY_RESOLUTION_MODE", "NUTRITION_ACCURACY_V2",
+    "NUTRITION_RESOLVER_MODE", "FOOD_COMPOSER", "FOOD_COMPOSER_MODEL",
+    "FOOD_GATE_MODEL", "DEFAULT_MODEL", "FOOD_PORTION_PRICING",
+    "QUICK_LOG_FOOD_WRITER",
+)
+
+#: Cohort membership decides BEHAVIOUR, so it is checked as a first-class fact
+#: rather than inferred from the mode string.
+COHORT_KEYS = ("TURN_COORDINATOR_ALLOWLIST",
+               "ENTITY_RESOLUTION_CONSUME_ALLOWLIST",
+               "NUTRITION_ACCURACY_V2_allowlist")
+
+
+class RuntimeDrift(Exception):
+    """The run does not match the production runtime it claims to represent."""
+
+
+def _snapshot() -> dict:
+    if not _SNAPSHOT_PATH.exists():
+        raise RuntimeDrift(
+            f"{_SNAPSHOT_PATH} is missing. A measurement cannot claim "
+            "production equivalence with no record of what production runs. "
+            "Capture it from /health first.")
+    return json.loads(_SNAPSHOT_PATH.read_text())
+
+
+def _norm(v):
+    """One scale for shell strings and JSON types, so 'true' == True."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (list, tuple)):
+        return ",".join(str(x) for x in v)
+    return str(v).strip().lower() if v is not None else None
+
+
+def pin_runtime(*, subject_id=None, declared: dict = None) -> dict:
+    """⛔ REFUSE unless this run matches the production runtime it claims.
+
+    Five fatal conditions, per Danny 2026-08-31:
+
+        required key absent from the production snapshot -> REFUSE
+        required key absent locally                      -> REFUSE
+        value mismatch                                   -> REFUSE
+        subject eligibility mismatch                     -> REFUSE
+        undeclared experimental deviation                -> REFUSE
+
+    `declared` is the experiment's OWN deviations: `{KEY: "written reason"}`.
+    A deviation without a reason is not declared, it is merely known about.
+
+    `subject_id` is the identity the turn will run as. Omitting it is allowed
+    ONLY when the measurement does not depend on cohort behaviour, and the
+    result records `subject_eligibility: "UNCHECKED"` so a reader can see that
+    the strongest half of this guard was skipped.
+    """
+    snap = _snapshot()
+    declared = dict(declared or {})
+    values = snap.get("values") or {}
+    problems, resolved = [], {}
+
+    for key in MEASUREMENT_CRITICAL:
+        entry = values.get(key)
+        if entry is None:
+            problems.append(
+                f"  {key}: ABSENT FROM THE PRODUCTION SNAPSHOT — nothing "
+                f"establishes what production runs, so equivalence cannot be "
+                f"claimed either way")
+            continue
+        want, got = _norm(entry.get("value")), _norm(os.environ.get(key))
+        resolved[key] = {"expected": entry.get("value"),
+                         "actual": os.environ.get(key),
+                         "provenance": entry.get("provenance")}
+        if got is None:
+            problems.append(f"  {key}: ABSENT LOCALLY (production={want!r})")
+        elif got != want:
+            if key in declared:
+                resolved[key]["declared_deviation"] = declared[key]
+            else:
+                problems.append(
+                    f"  {key}: production={want!r} run={got!r} — undeclared")
+
+    # ── subject eligibility: the half that decides behaviour ────────────────
+    cohorts = snap.get("cohorts") or {}
+    if subject_id is None:
+        # ⛔ SKIPPING THE STRONGEST HALF MUST BE AN ACT, NOT AN OMISSION.
+        # Recording "UNCHECKED" in the output is not enough: a caller that
+        # simply forgets `subject_id` would get a clean pin over the one check
+        # that decides behaviour, and the record would look like a pass with a
+        # footnote. Opting out now costs a written reason, exactly like every
+        # other deviation.
+        if "subject_eligibility" not in declared:
+            problems.append(
+                "  subject eligibility: NOT CHECKED and not declared. Pass "
+                "`subject_id=`, or declare "
+                "`{'subject_eligibility': '<why this measurement does not "
+                "depend on cohort behaviour>'}`")
+        eligibility = {"checked": False,
+                       "declared_deviation": declared.get("subject_eligibility")}
+    else:
+        eligibility = {}
+        for ck in COHORT_KEYS:
+            members = cohorts.get(ck)
+            if members is None:
+                problems.append(f"  cohort {ck}: absent from the snapshot")
+                continue
+            inside = int(subject_id) in [int(m) for m in members]
+            eligibility[ck] = {"members": members, "subject": int(subject_id),
+                               "enrolled": inside}
+            if not inside and ck not in declared:
+                problems.append(
+                    f"  cohort {ck}: production enrols {members}, this run's "
+                    f"subject {subject_id} is NOT enrolled — behaviour differs "
+                    f"and no deviation was declared")
+            elif not inside:
+                eligibility[ck]["declared_deviation"] = declared[ck]
+
+    if problems:
+        raise RuntimeDrift(
+            "this run does not match the production runtime it claims:\n"
+            + "\n".join(problems)
+            + "\n\nDeclare each deviation WITH A WRITTEN REASON, or fix the "
+              "run. A measurement described as production-equivalent when it "
+              "is not is how a valid causal result acquires an invalid "
+              "generalisation.")
+    return {"_runtime_snapshot_build": snap.get("_build"),
+            "_runtime_captured_at": snap.get("_captured_at"),
+            "_runtime": resolved,
+            "_subject_eligibility": eligibility,
+            "_declared_runtime_deviations": declared}
