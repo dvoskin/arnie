@@ -81,8 +81,42 @@ def admissible_for_relevance(record) -> bool:
 #: key; a durable cross-turn cache would additionally need an EVIDENCE
 #: FINGERPRINT, since one food string retrieves different evidence on
 #: different days.
-def assessment_key(food_name: str, resolver_version: str) -> str:
-    return f"assess:{str(food_name or '').strip().lower()}:{resolver_version}"
+def assessment_key(food_name: str, resolver_version: str, rows=None) -> str:
+    """The shared-context key for one assessment.
+
+    ⛔⛔⛔ IT IS KEYED ON THE ROWS, NOT ONLY THE FOOD *(2026-09-01)*. Without
+    `rows` this key said "an assessment of chicken", and `EvidenceContext.shared`
+    is SINGLE-FLIGHT: the first caller's result is handed to every later caller
+    with the same key. `build_one` qualifies ONE identity in successive CHUNKS of
+    three rows, so inside a turn — where one ambient context spans everything —
+    chunk 2 onward received chunk 1's `Qualification`. Their rows appeared in
+    neither `judged` nor `abstained`, so they were treated as judged NEGATIVES
+    and silently declined.
+
+    ⭐ MEASURED, NOT REASONED: two calls with different rows produced exactly ONE
+    model invocation. Only the first three eligible rows of any food were ever
+    really assessed in-turn, and it bit hardest on foods with the MOST rows —
+    the common ones, already the worst served by latency.
+
+    ⭐ AND IT KEEPS THE SHARING THAT WAS ALWAYS WANTED: speculative enrichment
+    and B-1 derivation asking about the SAME rows still hash the same and still
+    share one model call. Same rows share; different rows do not. That is the
+    distinction the food-only key could not express.
+
+    ⛔ THE DIGEST IS OVER PROVIDER IDENTITY, ORDER-INDEPENDENTLY. `fdc_id` is
+    what the assessment is ABOUT; sorting means a reordered batch is the same
+    question, and a row with no id falls back to its description rather than
+    collapsing every id-less row onto one key.
+    """
+    base = f"assess:{str(food_name or '').strip().lower()}:{resolver_version}"
+    if rows is None:
+        return base
+    import hashlib
+
+    ids = sorted(str((r or {}).get("fdc_id") or (r or {}).get("description") or "")
+                 for r in rows)
+    digest = hashlib.sha256("|".join(ids).encode()).hexdigest()[:16]
+    return f"{base}:{digest}"
 
 
 @dataclass(frozen=True)
@@ -372,7 +406,7 @@ async def qualify_usda_rows(food_name: str, rows, complete=None,
     _t0 = _time.monotonic()
     try:
         records, assessments = await shared.shared(
-            assessment_key(food_name, VERSION),
+            assessment_key(food_name, VERSION, rows),
             lambda: classify_rows(food_name, rows, complete))
     except Exception:
         logger.warning("event=evidence_qualification_failed food=%s — "

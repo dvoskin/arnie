@@ -242,16 +242,19 @@ async def build_one(entity: str, preparation: str, store=None,
               f"resolver not called")
 
     kept, seen_ids = [], set()
-    for start in range(0, len(unseen), _QUALIFY_BATCH):
-        chunk = unseen[start:start + _QUALIFY_BATCH]
-        # BOUNDED RETRY, because truncation is a property of THIS reply, not
-        # of the food: the same chunk usually parses on a second attempt. The
-        # rule is unchanged — a batch that still fails after retries fails the
-        # identity rather than being written as "no evidence". Without this,
-        # 64 identities × one transient failure makes the artifact
-        # unbuildable, which would be the rule defeating its own purpose.
+
+    async def _qualify(chunk):
+        """One chunk's `Qualification`, with the bounded retry.
+
+        BOUNDED RETRY, because truncation is a property of THIS reply, not of
+        the food: the same chunk usually parses on a second attempt. The rule is
+        unchanged — a batch that still fails after retries fails the identity
+        rather than being written as "no evidence". Without this, 64 identities
+        × one transient failure makes the artifact unbuildable, which would be
+        the rule defeating its own purpose.
+        """
         q = None
-        for attempt in range(_QUALIFY_ATTEMPTS):
+        for _attempt in range(_QUALIFY_ATTEMPTS):
             try:
                 q = await qualify_usda_rows(identity, chunk)
             except Exception:
@@ -260,6 +263,36 @@ async def build_one(entity: str, preparation: str, store=None,
                     getattr(q, "disposition", "") ==
                     "resolver_down_no_candidates" and not q.rows):
                 break
+        return q
+
+    # ⭐⭐⭐ CHUNKS QUALIFY CONCURRENTLY, AND THAT WAS ONLY SAFE ONCE THE
+    # ASSESSMENT KEY WAS SCOPED TO ITS ROWS *(2026-09-01)*. `EvidenceContext`
+    # is SINGLE-FLIGHT: while the key said merely "an assessment of chicken",
+    # concurrent chunks would every one of them receive the FIRST chunk's
+    # result — the serial loop was already suffering that inside a turn, and
+    # gathering would have made it universal.
+    #
+    # ⭐ LATENCY WAS LINEAR IN ROW COUNT, WHICH PENALISED EXACTLY THE WRONG
+    # FOODS. Measured: monkfish (few rows) 2.43 s, brown rice (13 rows)
+    # 17.04 s, sweet potato (16 rows) 21.67 s — six sequential model calls.
+    # The MOST logged foods have the MOST candidate rows, so the common case
+    # was the slowest and the least likely to fit any user-facing budget.
+    # Concurrent, the cost is ~ONE chunk regardless of how many there are.
+    #
+    # ⛔ THE AWAIT IS PARALLEL; THE PROCESSING BELOW STAYS SERIAL AND ORDERED.
+    # `gather` preserves input order, and the loop that consumes these results
+    # writes annotations and appends candidates — order-dependent work that
+    # must not race. Nothing about WHICH rows are qualified, or how, changes.
+    _chunks = [unseen[i:i + _QUALIFY_BATCH]
+               for i in range(0, len(unseen), _QUALIFY_BATCH)]
+    _qualifications = await asyncio.gather(
+        *(_qualify(c) for c in _chunks), return_exceptions=True)
+
+    for chunk, q in zip(_chunks, _qualifications):
+        if isinstance(q, BaseException):
+            # An exception that escaped the retry is an UNAVAILABLE resolver,
+            # not a negative verdict — same rule the serial version obeyed.
+            q = None
 
         # ⭐ A RESOLVER OUTAGE NO LONGER FAILS THE IDENTITY. It leaves these
         # rows UNRESOLVED — preserved, recorded, revisitable — while every

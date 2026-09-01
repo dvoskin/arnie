@@ -145,10 +145,18 @@ async def test_enrichment_and_ownership_share_one_context(sessions, user,
     try:
         # 1. The real speculative enrichment caller.
         await _fetch_usda_off("chicken", False)
-        key = assessment_key("chicken", VERSION)
-        assert turn.reused(key), (
-            "enrichment did not register its classification on the turn's "
-            "context — the seam is broken and nothing downstream can reuse it")
+        # ⭐ THE KEY IS NOW ROW-SCOPED, so the test cannot precompute it: the
+        # rows come from a real fetch. Derived from the context by PREFIX
+        # instead, which proves more than the old hardcoded key did — that
+        # enrichment registered EXACTLY ONE assessment of chicken, rather than
+        # that it registered one under a name the test already knew.
+        prefix = assessment_key("chicken", VERSION)
+        keys = [k for k in turn._inflight if k.startswith(prefix)]
+        assert len(keys) == 1, (
+            f"{len(keys)} chicken assessments on the turn's context — "
+            "enrichment did not register exactly one and nothing downstream "
+            "can reuse it")
+        key = keys[0]
         started = turn._inflight[key]
 
         # 2. The real B-1 ownership caller.
@@ -198,13 +206,17 @@ async def test_a_second_turn_shares_nothing_with_the_first(sessions, user,
     from skills.nutrition.evidence_qualification import assessment_key
     from skills.nutrition.evidence_semantics import VERSION
 
-    key = assessment_key("chicken", VERSION)
+    # Row-scoped now, so matched by prefix — see the note in the seam test.
+    prefix = assessment_key("chicken", VERSION)
     first = EvidenceContext()
     token = CURRENT_EVIDENCE.set(first)
     try:
         await _fetch_usda_off("chicken", False)
     finally:
         CURRENT_EVIDENCE.reset(token)
+    keys = [k for k in first._inflight if k.startswith(prefix)]
+    assert len(keys) == 1, f"{len(keys)} chicken assessments on the first turn"
+    key = keys[0]
     assert first.reused(key)
 
     second = EvidenceContext()
@@ -212,6 +224,8 @@ async def test_a_second_turn_shares_nothing_with_the_first(sessions, user,
     try:
         assert not second.reused(key), (
             "a later turn saw the previous turn's classification")
+        assert not [k for k in second._inflight if k.startswith(prefix)], (
+            "a later turn inherited the previous turn's assessment under any key")
     finally:
         CURRENT_EVIDENCE.reset(token)
 
