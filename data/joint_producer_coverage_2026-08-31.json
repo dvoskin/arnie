@@ -1,0 +1,4719 @@
+{
+ "baseline_pct": 9.0,
+ "denominator": 222,
+ "declining_items": 480,
+ "declining_meals": 213,
+ "availability": {
+  "artifact=False": 470,
+  "memory=False": 480,
+  "product=False": 480,
+  "artifact=True": 10
+ },
+ "count_units": {
+  "piece": 34,
+  "bar": 34,
+  "bagel": 14,
+  "bowl": 11,
+  "bag": 11,
+  "\u0448\u0442": 9,
+  "wrap": 8,
+  "burger": 8,
+  "ear": 7,
+  "slice": 6,
+  "sandwich": 6,
+  "pieces": 6,
+  "chips": 5,
+  "can": 5,
+  "bite": 4,
+  "shrimp": 4,
+  "pot": 4,
+  "shot": 4,
+  "puff": 4,
+  "scoop": 4,
+  "\u043f\u043e\u0440\u0446\u0438\u044f": 3,
+  "slices": 3,
+  "serving": 3,
+  "shake": 3,
+  "egg": 2,
+  "cal": 2,
+  "salad": 2,
+  "average": 2,
+  "roll": 2,
+  "medium": 2,
+  "eggs": 2,
+  "wing": 2,
+  "bun": 2,
+  "fries": 2,
+  "cake": 2,
+  "venti": 2,
+  "taco": 2,
+  "wings": 2,
+  "spoons": 2,
+  "min": 2,
+  "donut": 2,
+  "regular": 2,
+  "\u0448\u0442\u0443\u043a\u0438": 2,
+  "handful": 2,
+  "pack": 2,
+  "pastry": 2,
+  "croissant": 1,
+  "\u044f\u0439\u0446\u0430": 1,
+  "bottle": 1,
+  "platter": 1,
+  "\u043a\u0440\u0443\u043f\u043d\u044b\u0439": 1,
+  "bags": 1,
+  "\u0431\u0435\u0439\u0433\u043b": 1,
+  "\u0430\u0432\u043e\u043a\u0430\u0434\u043e": 1,
+  "\u0447\u0430\u0448\u043a\u0430": 1,
+  "\u0441\u0442\u0430\u043d\u0434\u0430\u0440\u0442\u043d\u044b\u0439": 1,
+  "plate": 1,
+  "small": 1,
+  "avocado": 1,
+  "glass": 1,
+  "brownie": 1,
+  "pickle": 1,
+  "\u043f\u043b\u043e\u0434\u0430": 1,
+  "portion": 1,
+  "tray": 1
+ },
+ "meals": [
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "tbsp",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_EST",
+     "unit": "bite",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "\u043c\u043b",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "egg",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_EST",
+     "unit": "bowl",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "cal",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "salad",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "ear",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "average",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "average",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "croissant",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u044f\u0439\u0446\u0430",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "wrap",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "roll",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bowl",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u043f\u043e\u0440\u0446\u0438\u044f",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "shrimp",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "ear",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "medium",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "slices",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0448\u0442",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pot",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bag",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "chips",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "slice",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "chips",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_EST",
+     "unit": "bowl",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "ml",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "wrap",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bowl",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "eggs",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "wrap",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "ear",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "burger",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "wing",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_EST",
+     "unit": "shot",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "ear",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bite",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "shot",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bun",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bottle",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "sandwich",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "burger",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "fries",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "cake",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "shrimp",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "sandwich",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "can",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "venti",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bag",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "slice",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bag",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "burger",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": true,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "burger",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "tbsp",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "taco",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "can",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "wings",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "serving",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "spoons",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bag",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pot",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "wrap",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "min",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "slice",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bag",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "puff",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "donut",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_EST",
+     "unit": "scoop",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "regular",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "puff",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0448\u0442\u0443\u043a\u0438",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_EST",
+     "unit": "scoop",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "NO_QUANTITY",
+     "unit": "",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "NO_QUANTITY",
+     "unit": "",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u043f\u043e\u0440\u0446\u0438\u044f",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "NO_QUANTITY",
+     "unit": "",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "platter",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_EST",
+     "unit": "handful",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "wrap",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0448\u0442",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "\u043c\u043b",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u043a\u0440\u0443\u043f\u043d\u044b\u0439",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "slice",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bag",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "sandwich",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bags",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pack",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0448\u0442",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "serving",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": true,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": true,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "shake",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pieces",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bowl",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 1,
+   "n_declining": 1,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  },
+  {
+   "n_items": 289,
+   "n_declining": 268,
+   "items": [
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_EST",
+     "unit": "bite",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "\u043c\u043b",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "egg",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_EST",
+     "unit": "bowl",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "tablespoons",
+     "artifact": true,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "tbsp",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "cal",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "salad",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "tbsp",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "regular",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "ear",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "roll",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bowl",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u043f\u043e\u0440\u0446\u0438\u044f",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0431\u0435\u0439\u0433\u043b",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0430\u0432\u043e\u043a\u0430\u0434\u043e",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "shrimp",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "medium",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "slices",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0448\u0442",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0447\u0430\u0448\u043a\u0430",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0448\u0442",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0441\u0442\u0430\u043d\u0434\u0430\u0440\u0442\u043d\u044b\u0439",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "\u043c\u043b",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pot",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bag",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "chips",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_EST",
+     "unit": "plate",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "slice",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "chips",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_EST",
+     "unit": "bowl",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pack",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "ml",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "wrap",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": true,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "small",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "wrap",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "tsp",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "ear",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "burger",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "wing",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "shake",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pastry",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_EST",
+     "unit": "shot",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "ear",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bite",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "shot",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bun",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "sandwich",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "burger",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "\u043c\u043b",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "avocado",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "tbsp",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "fries",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "cake",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "shrimp",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_EST",
+     "unit": "bowl",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_EST",
+     "unit": "glass",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "sandwich",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pieces",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pieces",
+     "artifact": true,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pieces",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "can",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "venti",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bag",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pieces",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "slice",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bag",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "burger",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": true,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "burger",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pastry",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "slices",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_EST",
+     "unit": "handful",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "tbsp",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "taco",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "brownie",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "chips",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "can",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "wings",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "spoons",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pickle",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bag",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "can",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pot",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "tbsp",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0448\u0442",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "wrap",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "tbsp",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "min",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bag",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "puff",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "donut",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_EST",
+     "unit": "scoop",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "ml",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u043f\u043b\u043e\u0434\u0430",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "puff",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0448\u0442\u0443\u043a\u0438",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_EST",
+     "unit": "scoop",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0448\u0442",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0448\u0442",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "\u043c\u043b",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "sandwich",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "\u0448\u0442",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "\u043c\u043b",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "portion",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "serving",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bagel",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bar",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": true,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": true,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": true,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "shake",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "pieces",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "eggs",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "HEURISTIC",
+     "unit": "cup",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bowl",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "tray",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "bowl",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "COUNT_COMPAT",
+     "unit": "piece",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    },
+    {
+     "class": "EXACT_MASS",
+     "unit": "g",
+     "artifact": false,
+     "memory": false,
+     "product": false
+    }
+   ]
+  }
+ ]
+}
