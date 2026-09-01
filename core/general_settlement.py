@@ -613,6 +613,118 @@ def settlement_cohort(user_id=None) -> bool:
         return False
 
 
+def acquisition_cohort(user_id=None) -> bool:
+    """May THIS user's turn RETRIEVE evidence for a food canonical has never
+    seen? FAIL CLOSED, and its OWN DIAL.
+
+    ⛔⛔ SEPARATE FROM `settlement_cohort` DELIBERATELY, for the reason
+    `identity_is_consumable` was written to encode: neither rollout may
+    implicitly widen the other. Being settled canonically and being willing to
+    make a PROVIDER CALL inside the user's turn are different consents — this
+    one costs seconds of that user's latency, so enabling settlement must not
+    silently enable retrieval.
+    """
+    raw = os.getenv("CANONICAL_ACQUISITION_ALLOWLIST", "") or ""
+    allowed = frozenset(int(part) for part in raw.replace(",", " ").split()
+                        if part.strip().isdigit())
+    if not allowed or user_id is None:
+        return False
+    try:
+        return int(user_id) in allowed
+    except (TypeError, ValueError):
+        return False
+
+
+def acquirable(facts) -> bool:
+    """Could acquiring nutrition evidence CHANGE this item's verdict?
+
+    ⭐⭐⭐ THE GATE IS "WOULD IT HELP", NOT "IS IT MISSING". The blocker
+    partition was measured on the frozen corpus and the populations are nearly
+    disjoint: 68 meals are evidence-blocked, 116 are purely COUNT-blocked, 1 is
+    genuinely mixed. Spending a provider call and twelve seconds of the user's
+    turn on a count-blocked item buys NOTHING — no amount of composition
+    evidence prices "2 bowls" — so those are refused here rather than
+    discovered downstream.
+
+    ⛔ A BOUND ITEM NEVER ACQUIRES. A scan CONSTRAINS the evidence universe to
+    one snapshot; retrieving a generic composition record for a food the user
+    scanned would reintroduce exactly the rung the binding exists to exclude.
+
+    ⛔ AND AN ITEM THAT ALREADY HAS ITS RUNG NEVER ACQUIRES. `has_artifact` or
+    `has_memory` with no `selected_rung` means the evidence EXISTS and does not
+    SCALE — a scaling problem, which more evidence of the same class cannot fix.
+    Acquiring there would be a call whose result is already known to lose.
+
+    ⚠ `has_mass` IS NOT "THE MASS IS EXACT" — a vessel heuristic produces grams
+    too, and those items may acquire and still decline at `resolve_scaling`.
+    That is correct: this is a pre-filter on whether to SPEND the call, not a
+    second definition of what may be priced. The row still lands and makes the
+    NEXT encounter free, which is why over-acquiring costs latency rather than
+    authority.
+    """
+    if getattr(facts, "product_bound", False):
+        return False
+    if not facts.has_identity:
+        return False
+    if not facts.has_mass:
+        return False
+    if facts.selected_rung or facts.has_artifact or facts.has_memory:
+        return False
+    return True
+
+
+async def acquire_for_miss(db, *, user_id: int, items, budget_s: float = 12.0):
+    """Establish evidence for the items a miss could be REPAIRED by. Returns
+    how many were established.
+
+    ⛔⛔⛔ IT RETURNS A COUNT, NOT A VERDICT, AND THE CALLER RE-DECIDES. The
+    only honest way to learn whether acquisition changed the outcome is to run
+    `coverage_for` again over the same items — patching the verdict here would
+    be `decide()` with a second entrance, which is the whole failure this
+    architecture is shaped to prevent.
+
+    ⛔ ONE BUDGET FOR THE MEAL, NOT PER ITEM. Four uncovered foods must not cost
+    four deadlines; the user is waiting on the TURN. Sequential rather than
+    concurrent because `remember()` writes through the shared AsyncSession, and
+    a session is not concurrency-safe — the retrieval could overlap, the writes
+    cannot, and the simpler shape is the one whose failure mode is obvious.
+    """
+    import time
+
+    from skills.nutrition.acquisition import AcquisitionRefused, acquire
+
+    established, started = 0, time.monotonic()
+    for item in items or ():
+        remaining = budget_s - (time.monotonic() - started)
+        if remaining <= 0.5:
+            logger.info("event=acquire_budget_exhausted user=%s", user_id)
+            break
+        try:
+            facts = await look(db, user_id=user_id, item=item)
+        except Exception:                              # noqa: BLE001
+            logger.warning("acquire: look failed", exc_info=True)
+            continue
+        if not acquirable(facts):
+            continue
+        try:
+            await acquire(db, identity=facts.identity, item=item,
+                          deadline_s=remaining)
+            established += 1
+        except AcquisitionRefused as refused:
+            # ⭐ NAMED AND COUNTED. This log IS the next tranche's work order:
+            # it says which adapter is missing, per identity, from real traffic
+            # — which is the open-world answer to "what should we build" and
+            # the reason the frozen corpus never has to be the backlog.
+            logger.info("event=acquire_refused user=%s identity=%r reason=%s",
+                        user_id, facts.identity, refused.reason)
+        except Exception:                              # noqa: BLE001
+            # An acquisition failure is NEVER a settlement failure. The turn
+            # falls to legacy exactly as it does today.
+            logger.warning("acquire raised for %r", facts.identity,
+                           exc_info=True)
+    return established
+
+
 # ══ A1 — THE OWNER ══════════════════════════════════════════════════════════
 
 

@@ -581,7 +581,9 @@ class NativeExecutionStage:
         only the decision.
         """
         from core.general_settlement import (GeneralSettlementOwner, Supported,
-                                             coverage_for, settlement_cohort)
+                                             acquire_for_miss,
+                                             acquisition_cohort, coverage_for,
+                                             settlement_cohort)
 
         if not settlement_cohort(getattr(user, "id", None)):
             return None
@@ -602,6 +604,41 @@ class NativeExecutionStage:
             logger.warning("coverage predicate failed; routing to legacy",
                            exc_info=True)
             return None
+        # ⭐⭐⭐ OPEN-WORLD ACQUISITION — the miss is not necessarily final.
+        # Before this, `look()` asked "do I ALREADY hold admissible local
+        # evidence" and a NO was permanent, because the artifact rung reads a
+        # committed file that production cannot write. A food Arnie had never
+        # seen fell to legacy forever, however many users logged it.
+        #
+        # ⛔⛔ AND THE RESULT IS RE-DECIDED, NEVER PATCHED. `acquire_for_miss`
+        # returns a COUNT; the verdict comes from running `coverage_for` again
+        # over the same items, through the same gates. Adjusting `coverage`
+        # here would be `decide()` with a second entrance — the exact failure
+        # the whole acquisition architecture is shaped to prevent, and the one
+        # the producer-faithful counterfactual already committed once.
+        if not isinstance(coverage, Supported) and \
+                acquisition_cohort(getattr(user, "id", None)):
+            try:
+                established = await acquire_for_miss(
+                    db, user_id=int(user.id), items=calls)
+            except Exception:                          # noqa: BLE001
+                # An acquisition failure is NEVER a settlement failure: the
+                # turn falls to legacy exactly as it did before this existed.
+                logger.warning("acquisition failed; routing to legacy",
+                               exc_info=True)
+                established = 0
+            if established:
+                try:
+                    coverage = await coverage_for(db, user_id=int(user.id),
+                                                  items=calls)
+                except Exception:                      # noqa: BLE001
+                    logger.warning("re-decide failed; routing to legacy",
+                                   exc_info=True)
+                    return None
+                logger.info("event=settlement_reroute user=%s established=%d "
+                            "decision=%s", user.id, established,
+                            type(coverage).__name__)
+
         logger.info("event=settlement_route user=%s decision=%s reason=%s",
                     user.id, type(coverage).__name__,
                     getattr(coverage, "reason", ""))
