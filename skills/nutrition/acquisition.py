@@ -181,18 +181,37 @@ class AcquiredEvidence:
             raise AcquisitionRefused(IDENTITY_UNQUALIFIED, "no qualified candidate")
 
 
-#: ⛔⛔ A BOUNDED WAIT, BECAUSE THE USER IS SITTING THERE. `build_one` issues
-#: several provider searches AND a resolver model call; unbounded, that is a
-#: turn that appears to hang. On expiry the turn falls back to legacy exactly as
-#: it does today and NOTHING is written — a second encounter tries again. The
-#: alternative (finish in the background so the next turn is fast) needs a task
-#: whose lifetime outlives the request, and a half-written cache is a worse
-#: failure than a slow first log.
-ACQUIRE_DEADLINE_S = 12.0
+#: ⛔⛔⛔ TWO BUDGETS, BECAUSE TWO CALLERS WAIT DIFFERENTLY *(Danny,
+#: 2026-09-01)*. The first version used one 12 s deadline for both and shipped
+#: the user's turn blocked on it: "Twelve seconds on a food log is too
+#: expensive." Keeping acquisition outside SYNCHRONOUS SETTLEMENT was necessary
+#: and not sufficient — the remaining question was whether the TURN should block
+#: on it, and the answer is: only briefly.
+#:
+#:     canonical miss
+#:         -> fast attempt, ~2 s          success -> canonical owns THIS turn
+#:                                        expiry  -> legacy completes the turn
+#:                                                   + DURABLE job
+#:                                                   -> next encounter is canonical
+#:
+#: So an easy provider hit improves the meal in front of the user, and a slow
+#: one never makes Arnie feel broken.
+ACQUIRE_FAST_BUDGET_S = 2.0
+
+#: The background budget. Nobody is waiting, so this one may be generous — and
+#: it is the budget under which most identities actually resolve.
+ACQUIRE_JOB_BUDGET_S = 45.0
+
+#: ⭐ WHICH REFUSALS A RETRY COULD FIX. Only these become durable jobs. Queuing
+#: `IDENTITY_UNQUALIFIED` would fill the queue with foods the provider will
+#: never hold — half the frozen corpus's tail is Russian and no USDA English
+#: description will ever match `окрошка на айране с курицей`. Retrying that
+#: forever is not persistence, it is a busy loop wearing the costume of one.
+RETRYABLE_REFUSALS = frozenset({"ACQUIRE_PROVIDER_UNAVAILABLE"})
 
 
 async def acquire(db, *, identity: str, item=None,
-                  deadline_s: float = ACQUIRE_DEADLINE_S):
+                  deadline_s: float = ACQUIRE_FAST_BUDGET_S):
     """Establish canonical evidence for a food Arnie has never seen. Or refuse.
 
     ⛔⛔⛔ THIS RUNS BEFORE SETTLEMENT, NEVER INSIDE IT. `price()` is

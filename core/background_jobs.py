@@ -113,6 +113,42 @@ def schedule_post_turn_jobs(user_id: int, user_text: str, bubbles: list[str]) ->
         asyncio.create_task(run_reflection(user_id, user_text, response_text))
 
 
+async def run_acquire_evidence(identity: str) -> None:
+    """Establish canonical evidence for one identity, off the user's turn.
+
+    ⭐⭐⭐ THE DURABLE HALF OF OPEN-WORLD ACQUISITION. The turn gets a ~2 s
+    attempt; when that expires the turn completes on legacy exactly as it does
+    today and this row is what makes the NEXT encounter canonical.
+
+    ⛔⛔ IT HAD TO BE A ROW, NOT `asyncio.create_task`. Render instances are
+    ephemeral, so an in-process continuation dies with the instance — which is
+    the SAME failure this whole tranche exists to fix: established evidence with
+    nowhere durable to go. A fire-and-forget task would have rebuilt the root
+    cause one layer up.
+
+    Opens its OWN session: the request-scoped one is closed by the time a swept
+    job runs, and this may run days later on a different deploy entirely.
+    """
+    from skills.nutrition.acquisition import (ACQUIRE_JOB_BUDGET_S,
+                                              AcquisitionRefused, acquire)
+    async with AsyncSessionLocal() as db:
+        try:
+            await acquire(db, identity=identity,
+                          deadline_s=ACQUIRE_JOB_BUDGET_S)
+            await db.commit()
+            logger.info("event=acquire_job_established identity=%r", identity)
+        except AcquisitionRefused as refused:
+            # A refusal is a RESULT, not a failure — the job is done and must
+            # not retry. Only the sweep's own exception path retries, which is
+            # why `PROVIDER_UNAVAILABLE` is re-raised below and nothing else is.
+            await db.rollback()
+            logger.info("event=acquire_job_refused identity=%r reason=%s",
+                        identity, refused.reason)
+            from skills.nutrition.acquisition import RETRYABLE_REFUSALS
+            if refused.reason in RETRYABLE_REFUSALS:
+                raise
+
+
 async def sweep_background_jobs(limit: int = 20) -> int:
     """Run any durable job left pending — the safety net for tasks lost to a
     deploy, crash or shutdown. Called on the scheduler tick. Returns how many
@@ -137,6 +173,8 @@ async def sweep_background_jobs(limit: int = 20) -> int:
                         await run_reflection(job.user_id,
                                              payload.get("user_text", ""),
                                              payload.get("response_text", ""))
+                    elif job.kind == "acquire_evidence":
+                        await run_acquire_evidence(payload.get("identity", ""))
                     else:
                         ok = False
                         err = f"unknown job kind {job.kind!r}"

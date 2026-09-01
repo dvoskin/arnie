@@ -673,32 +673,68 @@ def acquirable(facts) -> bool:
     return True
 
 
-async def acquire_for_miss(db, *, user_id: int, items, budget_s: float = 12.0):
+async def acquire_for_miss(db, *, user_id: int, items, budget_s: float = None):
     """Establish evidence for the items a miss could be REPAIRED by. Returns
-    how many were established.
+    how many were established SYNCHRONOUSLY.
 
-    ⛔⛔⛔ IT RETURNS A COUNT, NOT A VERDICT, AND THE CALLER RE-DECIDES. The
-    only honest way to learn whether acquisition changed the outcome is to run
-    `coverage_for` again over the same items — patching the verdict here would
-    be `decide()` with a second entrance, which is the whole failure this
-    architecture is shaped to prevent.
+    ⛔⛔⛔ IT RETURNS A COUNT, NOT A VERDICT, AND THE CALLER RE-DECIDES. The only
+    honest way to learn whether acquisition changed the outcome is to run
+    `coverage_for` again over the same items. Patching the verdict here would be
+    `decide()` with a second entrance — the exact failure this architecture is
+    shaped to prevent, and the one the producer-faithful counterfactual already
+    committed once, in a script, producing two published wrong conclusions.
 
-    ⛔ ONE BUDGET FOR THE MEAL, NOT PER ITEM. Four uncovered foods must not cost
-    four deadlines; the user is waiting on the TURN. Sequential rather than
-    concurrent because `remember()` writes through the shared AsyncSession, and
-    a session is not concurrency-safe — the retrieval could overlap, the writes
-    cannot, and the simpler shape is the one whose failure mode is obvious.
+    ⭐⭐⭐ FAST ATTEMPT, DURABLE CONTINUATION. ~2 s of the user's turn buys the
+    easy provider hits; anything slower expires, the turn completes on legacy
+    exactly as it does today, and a DURABLE JOB makes the next encounter
+    canonical:
+
+        miss -> ~2 s attempt   hit     -> canonical owns THIS turn
+                               expiry  -> legacy finishes the turn
+                                          + background_jobs row
+                                          -> next encounter is canonical
+
+    ⛔⛔ THE CONTINUATION IS A ROW, NEVER `asyncio.create_task`. Render instances
+    are ephemeral, so an in-process task dies with the instance — the SAME
+    failure this tranche exists to fix: established evidence with nowhere
+    durable to go. Enqueued with `commit=False` so it rides the caller's
+    transaction rather than committing their half-finished work.
+
+    ⛔ ONE BUDGET FOR THE MEAL, NOT PER ITEM — the user waits on the TURN, not on
+    an item. Sequential rather than concurrent because `remember()` writes
+    through the shared AsyncSession and a session is not concurrency-safe.
     """
     import time
 
-    from skills.nutrition.acquisition import AcquisitionRefused, acquire
+    from skills.nutrition.acquisition import (ACQUIRE_FAST_BUDGET_S,
+                                              RETRYABLE_REFUSALS,
+                                              AcquisitionRefused, acquire)
 
+    budget = ACQUIRE_FAST_BUDGET_S if budget_s is None else budget_s
     established, started = 0, time.monotonic()
+
+    async def _continue_later(identity: str) -> None:
+        """Hand this identity to the durable sweep. Never raises: a queue that
+        is unavailable must not fail the food turn that asked for it."""
+        try:
+            from db.queries import enqueue_background_job
+
+            await enqueue_background_job(
+                db, user_id, "acquire_evidence",
+                payload={"identity": identity},
+                # ⭐ DEDUPED ON THE FOOD, NOT THE USER. Twenty people logging
+                # `гречка` this hour queue ONE acquisition; the evidence is a
+                # global fact and re-fetching it per user would be twenty
+                # provider calls for one answer.
+                dedup_key=f"acquire:{identity}", commit=False)
+            logger.info("event=acquire_deferred user=%s identity=%r",
+                        user_id, identity)
+        except Exception:                              # noqa: BLE001
+            logger.warning("could not defer acquisition for %r", identity,
+                           exc_info=True)
+
     for item in items or ():
-        remaining = budget_s - (time.monotonic() - started)
-        if remaining <= 0.5:
-            logger.info("event=acquire_budget_exhausted user=%s", user_id)
-            break
+        remaining = budget - (time.monotonic() - started)
         try:
             facts = await look(db, user_id=user_id, item=item)
         except Exception:                              # noqa: BLE001
@@ -706,22 +742,36 @@ async def acquire_for_miss(db, *, user_id: int, items, budget_s: float = 12.0):
             continue
         if not acquirable(facts):
             continue
+        if remaining <= 0.25:
+            # ⭐ THE BUDGET IS SPENT, THE WORK IS NOT LOST. Every remaining
+            # eligible item still becomes a durable job — otherwise a meal's
+            # LAST food would be permanently unlearnable purely because it was
+            # listed last.
+            await _continue_later(facts.identity)
+            continue
         try:
             await acquire(db, identity=facts.identity, item=item,
                           deadline_s=remaining)
             established += 1
         except AcquisitionRefused as refused:
-            # ⭐ NAMED AND COUNTED. This log IS the next tranche's work order:
-            # it says which adapter is missing, per identity, from real traffic
-            # — which is the open-world answer to "what should we build" and
-            # the reason the frozen corpus never has to be the backlog.
+            # ⭐ NAMED AND COUNTED. This log IS the next tranche's work order —
+            # it says which adapter is missing, per identity, from REAL traffic,
+            # which is the open-world answer to "what should we build" and the
+            # reason the frozen corpus never has to be the backlog.
             logger.info("event=acquire_refused user=%s identity=%r reason=%s",
                         user_id, facts.identity, refused.reason)
+            # ⛔ ONLY A REFUSAL A RETRY COULD FIX BECOMES A JOB. Queuing
+            # `IDENTITY_UNQUALIFIED` would fill the sweep with foods the
+            # provider will never hold — retrying that forever is a busy loop
+            # wearing the costume of persistence.
+            if refused.reason in RETRYABLE_REFUSALS:
+                await _continue_later(facts.identity)
         except Exception:                              # noqa: BLE001
-            # An acquisition failure is NEVER a settlement failure. The turn
-            # falls to legacy exactly as it does today.
+            # An acquisition failure is NEVER a settlement failure: the turn
+            # falls to legacy exactly as it did before this existed.
             logger.warning("acquire raised for %r", facts.identity,
                            exc_info=True)
+            await _continue_later(facts.identity)
     return established
 
 
