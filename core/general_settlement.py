@@ -706,11 +706,11 @@ async def acquire_for_miss(db, *, user_id: int, items, budget_s: float = None):
     """
     import time
 
-    from skills.nutrition.acquisition import (ACQUIRE_FAST_BUDGET_S,
+    from skills.nutrition.acquisition import (ACQUIRE_TURN_BUDGET_S,
                                               RETRYABLE_REFUSALS,
                                               AcquisitionRefused, acquire)
 
-    budget = ACQUIRE_FAST_BUDGET_S if budget_s is None else budget_s
+    budget = ACQUIRE_TURN_BUDGET_S if budget_s is None else budget_s
     established, started = 0, time.monotonic()
 
     async def _continue_later(identity: str) -> None:

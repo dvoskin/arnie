@@ -2596,15 +2596,32 @@ def start_scheduler():
     # Durable background-job sweep (P0.7): post-turn profile/memory work that
     # a deploy or crash dropped mid-task is still queued as a row — this tick
     # finishes it. Runs regardless of PROACTIVE_MESSAGING_ENABLED: it is data
-    # integrity, not outbound messaging. Offset to :10/:40 so it never lands
-    # in the same minute as the nudge or hook jobs.
+    # integrity, not outbound messaging.
+    #
+    # ⭐⭐ EVERY MINUTE, NOT :10/:40 *(Danny, 2026-09-01)*. The half-hour cadence
+    # was fine while the only kinds were profile synthesis and reflection, where
+    # nobody is waiting. `acquire_evidence` changed that: a deferred acquisition
+    # is a food the user just logged, and leaving it for up to thirty minutes
+    # means the SECOND encounter is usually still legacy too — the flywheel
+    # stalls before it starts turning.
+    #
+    # ⛔ ONE QUEUE, NOT TWO. A second sweeper filtered by kind would be a second
+    # consumer to reason about, deploy and monitor; the claim already makes
+    # concurrent sweeps safe (`max_instances=1`, `coalesce=True`, and
+    # `claim_due_background_jobs` claims rather than selects). The cost of the
+    # tick is one indexed SELECT against `ix_background_jobs_due`.
+    #
+    # ⚠ SIDE EFFECT, STATED: `profile_update` and `reflection` now run within a
+    # minute of being queued instead of within thirty. Both are internally
+    # throttled (profile synthesis ~3h), so this makes them timelier, not more
+    # frequent — but it IS a behaviour change to work that predates this lane.
     async def _sweep_bg_jobs():
         from core.background_jobs import sweep_background_jobs
         await sweep_background_jobs()
 
     _scheduler.add_job(
         _sweep_bg_jobs,
-        CronTrigger(minute="10,40"),
+        CronTrigger(minute="*"),
         id="background_job_sweep",
         replace_existing=True,
         max_instances=1,

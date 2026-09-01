@@ -181,22 +181,27 @@ class AcquiredEvidence:
             raise AcquisitionRefused(IDENTITY_UNQUALIFIED, "no qualified candidate")
 
 
-#: ⛔⛔⛔ TWO BUDGETS, BECAUSE TWO CALLERS WAIT DIFFERENTLY *(Danny,
-#: 2026-09-01)*. The first version used one 12 s deadline for both and shipped
-#: the user's turn blocked on it: "Twelve seconds on a food log is too
-#: expensive." Keeping acquisition outside SYNCHRONOUS SETTLEMENT was necessary
-#: and not sufficient — the remaining question was whether the TURN should block
-#: on it, and the answer is: only briefly.
+#: ⛔⛔⛔ TWO BUDGETS, AND THE TURN-FACING ONE IS SET FROM MEASUREMENT, NOT
+#: FROM TASTE. The first version guessed 12 s; the second guessed 2 s. Both were
+#: guesses, and the 2 s one was WORSE THAN USELESS — measured against the real
+#: producer it could not succeed even once, so it added two seconds to every
+#: canonical miss and bought nothing:
 #:
-#:     canonical miss
-#:         -> fast attempt, ~2 s          success -> canonical owns THIS turn
-#:                                        expiry  -> legacy completes the turn
-#:                                                   + DURABLE job
-#:                                                   -> next encounter is canonical
+#:     cod             search 1.58s   qualify 6.04s   ->  11.05s end to end
+#:     chicken breast  search 0.74s   qualify 6.16s   ->   6.89s
 #:
-#: So an easy provider hit improves the meal in front of the user, and a slow
-#: one never makes Arnie feel broken.
-ACQUIRE_FAST_BUDGET_S = 2.0
+#: ⭐ AND THE SPLIT IS THE WHOLE POINT: retrieval fits in two seconds; IDENTITY
+#: QUALIFICATION — a model call — is 80-90% of the cost. That call is what stops
+#: a Barebells-style false positive becoming canonical, so it cannot be dropped
+#: to buy latency. There is no cheap version of "is this row actually this food".
+#:
+#: So the turn pays it ONCE, for a food nobody has established yet, and every
+#: later encounter is a local read:
+#:
+#:     already held      -> instant, no call at all
+#:     unknown           -> ~12 s ONCE, and canonical owns THIS turn
+#:     timeout / failure -> legacy finishes the turn + durable job (the EXCEPTION)
+ACQUIRE_TURN_BUDGET_S = 12.0
 
 #: The background budget. Nobody is waiting, so this one may be generous — and
 #: it is the budget under which most identities actually resolve.
@@ -211,7 +216,7 @@ RETRYABLE_REFUSALS = frozenset({"ACQUIRE_PROVIDER_UNAVAILABLE"})
 
 
 async def acquire(db, *, identity: str, item=None,
-                  deadline_s: float = ACQUIRE_FAST_BUDGET_S):
+                  deadline_s: float = ACQUIRE_TURN_BUDGET_S):
     """Establish canonical evidence for a food Arnie has never seen. Or refuse.
 
     ⛔⛔⛔ THIS RUNS BEFORE SETTLEMENT, NEVER INSIDE IT. `price()` is
