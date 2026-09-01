@@ -45,6 +45,27 @@ QUERY_SHAPES = ("{identity}", "{identity} cooked")
 
 #: Curated only. Branded rows are crowdsourced product names and are the
 #: PRODUCT rung's business, reached by exact identifier, not by string match.
+#: ⭐⭐ SURVEY (FNDDS) ADDED 2026-09-01, from a measurement not a hunch. The
+#: preload probe found `apple juice` retrieving *"Babyfood, juice, apple"* and
+#: nothing else — qualification correctly refused it, so the identity guard was
+#: working and RETRIEVAL was the gap. `Apple juice, 100%` lives in Survey, where
+#: many common consumer foods do.
+#:
+#: ⛔⛔ AND IT MOVES `retrieval_fingerprint`, WHICH IS NOT A SIDE EFFECT — it is
+#: the staleness contract doing its job. Every acquired row and the COMMITTED
+#: artifact are keyed on it, so this change requires rebuilding
+#: `pricing_evidence_v1.json` in the same commit. Without that rebuild `load()`
+#: raises Stale, `_artifact()` caches the failure, and the artifact rung goes
+#: dark for the whole process — the 27 seeded foods would lose canonical
+#: coverage and ownership would fall BELOW 9%.
+#: ⚠ SURVEY (FNDDS) WAS ADDED AND REVERTED 2026-09-01 — measured cost, held
+#: pending a decision. It fixes a real retrieval gap (`apple juice` retrieves
+#: only *"Babyfood, juice, apple"* without it) but DETERMINISTICALLY BLOCKS THE
+#: ARTIFACT REBUILD: FNDDS surfaces rows for preparation variants that the
+#: resolver leaves UNRESOLVED, and "rows present but unannotated" is `failed`
+#: where "no rows at all" was a clean `no_evidence`. 8 of 84 identities fail,
+#: the build refuses to write, and without a rebuild the fingerprint mismatch
+#: takes the whole catalog dark. See docs/REGISTERED_SURVEY_FNDDS_BLOCKER.md
 DATA_TYPES = ("Foundation", "SR Legacy")
 
 ROWS_PER_SHAPE = 8

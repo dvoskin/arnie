@@ -103,6 +103,11 @@ IDENTITY_UNQUALIFIED = "ACQUIRE_IDENTITY_UNQUALIFIED"   # rows found, none IS th
 GRADE_INADMISSIBLE = "ACQUIRE_GRADE_INADMISSIBLE"   # source is not an authority class
 BASIS_UNUSABLE = "ACQUIRE_BASIS_UNUSABLE"           # numbers exist on no stateable basis
 PROVIDER_UNAVAILABLE = "ACQUIRE_PROVIDER_UNAVAILABLE"   # network/quota — NOT an absence
+#: ⭐ ALREADY HELD IS A SUCCESS WEARING A REFUSAL'S CLOTHES. It used to raise
+#: NO_SOURCE_RECORD, so a food the catalog ALREADY covers counted against the
+#: acquisition rate — the preload probe reported 64% while `beef` was simply
+#: already known. Coverage measured as failure, and it gets worse at scale.
+ALREADY_SUPPORTED = "ACQUIRE_ALREADY_SUPPORTED"
 
 
 @dataclass(frozen=True)
@@ -253,7 +258,7 @@ async def acquire(db, *, identity: str, item=None,
 
     if art.evidence_for(entity, preparation) is not None or \
             await _acquired_for(db, entity, preparation) is not None:
-        raise AcquisitionRefused(NO_SOURCE_RECORD, f"{key} is already held")
+        raise AcquisitionRefused(ALREADY_SUPPORTED, f"{key} is already held")
 
     from scripts.build_pricing_artifact import (FAILED, MATERIAL,
                                                 build_one)
@@ -304,6 +309,15 @@ async def acquire(db, *, identity: str, item=None,
             {"mass"} | ({"serving"} if (candidates[0] or {}).get("measures")
                         else set())),
         provenance={"dataset_id": "usda_fdc",
+                    # ⭐ SUBTYPE KEPT, AUTHORITY ORDER UNCHANGED. FNDDS arrives
+                    # through the SAME artifact/acquired-evidence rung as
+                    # Foundation and SR Legacy — widening the source universe
+                    # must not create a fourth rung. But the datasets have
+                    # different update models and different provenance weight,
+                    # so later analysis has to be able to tell them apart
+                    # without that distinction ever reordering authority.
+                    "dataset_subtype": str(
+                        (candidates[0] or {}).get("data_type") or ""),
                     "resolver_version": art.resolver_version(),
                     "retrieval_fingerprint": art.retrieval_fingerprint(),
                     "source_fingerprint": art.candidate_evidence_id(
