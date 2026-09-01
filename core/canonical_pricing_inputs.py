@@ -167,8 +167,24 @@ async def _memory(db, user_id: int, identity: str,
     return MemoryEvidence(**evidence)
 
 
+async def _artifact_evidence(db, entity: str, preparation: str):
+    """The artifact rung, BOTH HALVES. A local read; never a fetch.
+
+    ⭐ The committed file is the 27 foods Arnie was BUILT to know; the acquired
+    store is evidence Arnie has since ESTABLISHED, at first encounter, driven by
+    demand. Same rung, same shape, same key — the catalog answers first and its
+    answer is final, so a seeded identity can never be repriced by acquisition.
+    """
+    ev = _artifact(entity, preparation)
+    if ev is not None:
+        return ev
+    from core.acquired_evidence_store import evidence_for
+
+    return await evidence_for(db, entity, preparation)
+
+
 def _artifact(entity: str, preparation: str):
-    """Qualified structured evidence, or None. A file read; never a fetch."""
+    """Qualified structured evidence from the COMMITTED file, or None."""
     try:
         from skills.nutrition import pricing_artifact
 
@@ -231,7 +247,7 @@ async def assemble(db, *, user_id: int, entity: str, preparation: str,
         # missing snapshot is a declined rung, never a provider call. Dark
         # today: no producer writes the reference until the P17f.5 wire.
         "product": await _product(db, item.get("product_evidence_id")),
-        "artifact": _artifact(entity, preparation),
+        "artifact": await _artifact_evidence(db, entity, preparation),
         "estimate": _estimate(item, basis_grams),
     }
 

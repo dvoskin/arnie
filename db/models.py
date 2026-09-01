@@ -2042,3 +2042,90 @@ class ProductUnitEvidence(Base):
     source_reference_json = Column(Text, nullable=False)
     source_fingerprint = Column(String, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class AcquiredEvidenceRecord(Base):
+    """⭐⭐⭐ CANONICAL EVIDENCE ARNIE ESTABLISHED AT FIRST ENCOUNTER *(Danny,
+    open-world sequencing directive, 2026-08-31)*.
+
+    ⛔⛔ THE ARTIFACT RUNG WAS STRUCTURALLY A CATALOG, AND THAT WAS THE 9%.
+    `evidence_for()` says it plainly — "Generation happens outside the turn, by
+    the script, or not at all this turn" — and `_artifact()` is "a file read;
+    never a fetch". A committed JSON file cannot grow from production demand:
+    the process that learns a new food has nowhere to put it, and on Render the
+    filesystem is ephemeral and per-instance besides. So the catalog held 27
+    foods seeded from a list whose own generator admits "seems likely someone
+    will log this" is NOT a criterion, and every food outside it fell to legacy
+    forever, no matter how many users logged it.
+
+        catalog   foods Arnie was BUILT to know
+        cache     evidence Arnie has ALREADY ESTABLISHED   <- this table
+
+    ⭐ IT IS THE SAME RUNG, NOT A NEW ONE. Deliberately: the directive is
+    explicit that acquisition sources "do not become arbitrary extra pricing
+    rungs inside look()". Rows here are read into the SAME `ArtifactEvidence`
+    shape, under the SAME key (`pricing_artifact.key`), and ranked by the SAME
+    `select_priced_rung`. Seeded and acquired evidence are indistinguishable
+    downstream, which is the only way the rung ladder keeps meaning one thing.
+
+    ⛔⛔ AND IT OBEYS THE SEEDED EVIDENCE'S STALENESS CONTRACT. `resolver_version`
+    and `retrieval_fingerprint` are stored and MATCHED ON READ, and `acquired_at`
+    is aged against the same `MAX_ARTIFACT_AGE_DAYS` the file artifact answers
+    to. Without that the cache becomes the way to EVADE the freshness rule: a
+    row written once would outlive the vocabulary that qualified it and keep
+    pricing meals under a resolver nobody runs any more.
+
+    APPEND-ONLY. A re-acquisition under a new fingerprint is a new row, and the
+    old one stays readable — "what evidence priced this entry, at the time"
+    must remain answerable after the instrument moves.
+    """
+    __tablename__ = "acquired_evidence_records"
+    __table_args__ = (
+        # The read path's key: identity first, then the instrument that must
+        # match. A stale-resolver row must never be SERVED, but it must remain
+        # STORED, so the filter lives in the query and not in a delete.
+        Index("ix_acquired_evidence_identity", "canonical_identity",
+              "resolver_version", "retrieval_fingerprint"),
+        # ⭐ IDEMPOTENCE ON THE FACT, NOT ON THE FETCH. Two turns racing to
+        # acquire the same food under the same instrument must produce ONE row;
+        # a second acquisition that returns byte-identical evidence is a
+        # duplicate write, not a new fact.
+        UniqueConstraint("canonical_identity", "resolver_version",
+                         "retrieval_fingerprint", "source_fingerprint",
+                         name="uq_acquired_evidence_fact"),
+    )
+
+    id = Column(Integer, primary_key=True)
+
+    #: `pricing_artifact.key(entity, preparation)` — "cod|", "chicken|fried".
+    canonical_identity = Column(String, nullable=False)
+
+    source_type = Column(String, nullable=False)          # usda | off | manufacturer
+    source_identifier = Column(String, nullable=False, default="")
+    #: A member of `acquisition.ADMISSIBLE_GRADES`. `estimate` is not one, so a
+    #: laundered legacy guess cannot be represented in this column at all.
+    authority_grade = Column(String, nullable=False)
+    #: STATED, never inferred — the OFF probe found `nutrition_data_per='100ml'`
+    #: poisoning the `_100g` keys, and an assumed basis is how per-bar numbers
+    #: became per-100 g.
+    nutrition_basis = Column(String, nullable=False, default="per_100g")
+
+    #: Qualified candidates in the artifact's own shape. NOT a chosen winner:
+    #: `best_candidate` still picks, deterministically, downstream.
+    candidates = Column(JSON, nullable=False)
+    #: The qualification trace — WHY this record is this food. Kept because
+    #: "how did a wrong food become canonical" must be answerable from the
+    #: durable row; the Barebells false positive is exactly that case.
+    identity_evidence = Column(JSON, nullable=False, default=dict)
+    serving_basis = Column(JSON, nullable=False, default=list)
+    quantity_compatibility = Column(JSON, nullable=False, default=list)
+    provenance = Column(JSON, nullable=False, default=dict)
+
+    #: Content identity of the evidence committed — not an address. `fdc_id +
+    #: usda` does not describe WHAT ARNIE SAW when the upstream row can move.
+    source_fingerprint = Column(String, nullable=False, default="")
+    resolver_version = Column(String, nullable=False, default="")
+    retrieval_fingerprint = Column(String, nullable=False, default="")
+
+    acquired_at = Column(DateTime(timezone=True), nullable=False,
+                         server_default=func.now())

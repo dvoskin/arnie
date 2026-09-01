@@ -416,9 +416,22 @@ async def look(db, *, user_id: int, item: dict) -> ItemFacts:
 
     # ONE READ, TWO CONSUMERS: the selector below and `has_artifact` must
     # agree about which artifact this item has, so it is read once.
-    artifact_ev = (evidence_for(entity, preparation)
-                   if (entity and not item.get("product_evidence_id"))
-                   else None)
+    #
+    # ⭐ TWO HALVES OF ONE RUNG. The committed file holds the 27 foods Arnie was
+    # BUILT to know; `acquired_evidence_store` holds evidence Arnie has since
+    # ESTABLISHED. Both come back as `ArtifactEvidence` and neither is a new
+    # rung — a durable read, exactly as local as `_memory` above, because a
+    # committed JSON file cannot grow from production demand and that ceiling
+    # IS the 9%. The catalog is consulted first and its answer is final: a
+    # seeded identity must never be repriced by acquisition, or the frozen
+    # baseline moves underneath the instrument measuring it.
+    artifact_ev = None
+    if entity and not item.get("product_evidence_id"):
+        artifact_ev = evidence_for(entity, preparation)
+        if artifact_ev is None:
+            from core.acquired_evidence_store import evidence_for as _acquired
+
+            artifact_ev = await _acquired(db, entity, preparation)
 
     # ⛔⛔⛔ P17g — THE SAME SELECTOR THE PRICER RUNS, over the same local
     # evidence, in the same order. Not a predicate that re-derives "which rung

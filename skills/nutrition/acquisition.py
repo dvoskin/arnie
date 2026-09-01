@@ -179,3 +179,116 @@ class AcquiredEvidence:
             # prices nothing — `evidence_for` already guards this on the read
             # side; guarding the write side too means the bad row never exists.
             raise AcquisitionRefused(IDENTITY_UNQUALIFIED, "no qualified candidate")
+
+
+#: ⛔⛔ A BOUNDED WAIT, BECAUSE THE USER IS SITTING THERE. `build_one` issues
+#: several provider searches AND a resolver model call; unbounded, that is a
+#: turn that appears to hang. On expiry the turn falls back to legacy exactly as
+#: it does today and NOTHING is written — a second encounter tries again. The
+#: alternative (finish in the background so the next turn is fast) needs a task
+#: whose lifetime outlives the request, and a half-written cache is a worse
+#: failure than a slow first log.
+ACQUIRE_DEADLINE_S = 12.0
+
+
+async def acquire(db, *, identity: str, item=None,
+                  deadline_s: float = ACQUIRE_DEADLINE_S):
+    """Establish canonical evidence for a food Arnie has never seen. Or refuse.
+
+    ⛔⛔⛔ THIS RUNS BEFORE SETTLEMENT, NEVER INSIDE IT. `price()` is
+    SYNCHRONOUS by contract — "there is no `await` here, so no provider or model
+    call can hide in the normal settle path" — and that guarantee is worth more
+    than this feature. So acquisition is a separate, earlier step whose ONLY
+    output is a persisted evidence row; `assemble()` then reads it with the same
+    local read it already performs, and the whole rung ladder runs unchanged and
+    still synchronous.
+
+    Returns the `AcquiredEvidence` that was persisted, or raises
+    `AcquisitionRefused` with a NAMED reason. It never returns a verdict, a
+    price, or a boolean — see the module docstring.
+    """
+    import asyncio
+
+    from skills.nutrition import pricing_artifact as art
+
+    # ⛔ A BOUND ITEM NEVER ACQUIRES. A scan CONSTRAINS the evidence universe to
+    # one snapshot: retrieving a generic composition record for a food the user
+    # scanned would reintroduce exactly the rung the binding exists to exclude.
+    if item is not None and item.get("product_evidence_id"):
+        raise AcquisitionRefused(NO_IDENTITY, "item is bound to a snapshot")
+
+    entity, preparation = art.split_identity(str(identity or "").strip())
+    if not entity:
+        raise AcquisitionRefused(NO_IDENTITY, repr(identity))
+
+    key = art.key(entity, preparation)
+    # ⭐ NEVER RE-ACQUIRE WHAT IS ALREADY HELD — including the 27 seeded foods.
+    # This is the cache half of the flywheel: first encounter pays, every later
+    # encounter is a local read. It is also why the catalog stays untouched.
+    from core.acquired_evidence_store import evidence_for as _acquired_for
+
+    if art.evidence_for(entity, preparation) is not None or \
+            await _acquired_for(db, entity, preparation) is not None:
+        raise AcquisitionRefused(NO_SOURCE_RECORD, f"{key} is already held")
+
+    from scripts.build_pricing_artifact import (FAILED, MATERIAL,
+                                                build_one)
+
+    try:
+        result = await asyncio.wait_for(
+            build_one(entity, preparation, identity_key=key), deadline_s)
+    except asyncio.TimeoutError:
+        logger.info("event=acquire_refused reason=%s identity=%r deadline=%.1f",
+                    PROVIDER_UNAVAILABLE, key, deadline_s)
+        raise AcquisitionRefused(PROVIDER_UNAVAILABLE,
+                                 f"no evidence within {deadline_s}s")
+    except Exception as exc:                             # noqa: BLE001
+        # ⛔ AN UNAVAILABLE PROVIDER IS NOT AN ABSENCE OF EVIDENCE. Routing the
+        # two to the same outcome is how an outage becomes "this food does not
+        # exist" — the rule `look()`'s memory read already obeys.
+        logger.warning("acquire failed for %r", key, exc_info=True)
+        raise AcquisitionRefused(PROVIDER_UNAVAILABLE, str(exc))
+
+    status = result.get("status")
+    if status == FAILED:
+        raise AcquisitionRefused(PROVIDER_UNAVAILABLE,
+                                 str(result.get("reason") or ""))
+    if status != MATERIAL:
+        # EMPTY — the provider answered and held nothing for this food. A real,
+        # countable outcome, and the one that tells the next tranche which
+        # adapter is missing (half the frozen corpus's tail is Russian, and no
+        # USDA English description will ever match `окрошка на айране`).
+        raise AcquisitionRefused(IDENTITY_UNQUALIFIED,
+                                 str(result.get("reason") or "no candidates"))
+
+    candidates = tuple(result.get("candidates") or ())
+    acquired = AcquiredEvidence(
+        canonical_identity=key,
+        identity_evidence={"raw_rows": result.get("raw"),
+                           "unresolved": list(result.get("unresolved") or ()),
+                           "mechanically_refused":
+                               result.get("mechanically_refused") or []},
+        nutrition_evidence=candidates,
+        source_type="usda",
+        source_identifier=str((candidates[0] or {}).get("fdc_id") or ""),
+        authority_grade=SOURCED_COMPOSITION,
+        nutrition_basis="per_100g",
+        serving_basis=tuple((candidates[0] or {}).get("measures") or ()),
+        # A FACT ABOUT THE RECORD, NOT A PERMISSION. `resolve_scaling` still
+        # decides; this only says what the evidence could support.
+        quantity_compatibility=frozenset(
+            {"mass"} | ({"serving"} if (candidates[0] or {}).get("measures")
+                        else set())),
+        provenance={"dataset_id": "usda_fdc",
+                    "resolver_version": art.resolver_version(),
+                    "retrieval_fingerprint": art.retrieval_fingerprint(),
+                    "source_fingerprint": art.candidate_evidence_id(
+                        candidates[0]) if candidates else ""},
+    )
+
+    from core.acquired_evidence_store import remember
+
+    await remember(db, acquired)
+    logger.info("event=acquire_established identity=%r candidates=%d",
+                key, len(candidates))
+    return acquired
