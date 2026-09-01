@@ -1,0 +1,133 @@
+{
+ "baseline_pct": 9.0,
+ "denominator": 222,
+ "supported_now": 20,
+ "declining_items": 480,
+ "arms": {
+  "A_artifact": {
+   "USER_STATED_EXACT_MASS": {
+    "eligible": 174,
+    "selector_failed": 174
+   },
+   "HEURISTIC_MASS": {
+    "eligible": 40,
+    "selector_failed": 40
+   },
+   "COUNT_ESTIMATE": {
+    "eligible": 17,
+    "selector_failed": 17
+   },
+   "COUNT_SERVING_COMPATIBLE": {
+    "eligible": 246,
+    "selector_failed": 246
+   },
+   "NO_QUANTITY": {
+    "eligible": 3,
+    "no_quantity": 3
+   },
+   "_MEALS": {
+    "recovered_meals": 44
+   }
+  },
+  "B_trusted_memory": {
+   "USER_STATED_EXACT_MASS": {
+    "eligible": 174,
+    "selector_failed": 174
+   },
+   "HEURISTIC_MASS": {
+    "eligible": 40,
+    "selector_failed": 40
+   },
+   "COUNT_ESTIMATE": {
+    "eligible": 17,
+    "selector_failed": 17
+   },
+   "COUNT_SERVING_COMPATIBLE": {
+    "eligible": 246,
+    "selector_failed": 246
+   },
+   "NO_QUANTITY": {
+    "eligible": 3,
+    "no_quantity": 3
+   },
+   "_MEALS": {
+    "recovered_meals": 65
+   }
+  },
+  "D_sourced_count_conversion": {
+   "USER_STATED_EXACT_MASS": {
+    "eligible": 174,
+    "selector_failed": 174
+   },
+   "HEURISTIC_MASS": {
+    "eligible": 40,
+    "selector_failed": 40
+   },
+   "COUNT_ESTIMATE": {
+    "eligible": 17,
+    "selector_failed": 17
+   },
+   "COUNT_SERVING_COMPATIBLE": {
+    "eligible": 246,
+    "selector_failed": 246
+   },
+   "NO_QUANTITY": {
+    "eligible": 3,
+    "no_quantity": 3
+   },
+   "_MEALS": {
+    "recovered_meals": 0
+   }
+  },
+  "E_memory_PLUS_conversion": {
+   "USER_STATED_EXACT_MASS": {
+    "eligible": 174,
+    "selector_failed": 174
+   },
+   "HEURISTIC_MASS": {
+    "eligible": 40,
+    "selector_failed": 40
+   },
+   "COUNT_ESTIMATE": {
+    "eligible": 17,
+    "selector_failed": 17
+   },
+   "COUNT_SERVING_COMPATIBLE": {
+    "eligible": 246,
+    "selector_failed": 246
+   },
+   "NO_QUANTITY": {
+    "eligible": 3,
+    "no_quantity": 3
+   },
+   "_MEALS": {
+    "recovered_meals": 163
+   }
+  },
+  "C_product_scan": {
+   "USER_STATED_EXACT_MASS": {
+    "eligible": 174,
+    "selector_failed": 174
+   },
+   "HEURISTIC_MASS": {
+    "eligible": 40,
+    "selector_failed": 40
+   },
+   "COUNT_ESTIMATE": {
+    "eligible": 17,
+    "selector_failed": 17
+   },
+   "COUNT_SERVING_COMPATIBLE": {
+    "eligible": 246,
+    "selector_failed": 246
+   },
+   "NO_QUANTITY": {
+    "eligible": 3,
+    "no_quantity": 3
+   },
+   "_MEALS": {
+    "recovered_meals": 67
+   }
+  }
+ }
+}

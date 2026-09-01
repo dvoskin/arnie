@@ -1,0 +1,57 @@
+{
+ "baseline_ownership_pct": 9.0,
+ "denominator_meals": 222,
+ "supported_now": 20,
+ "declining_meals": 213,
+ "arms": {
+  "artifact_evidence_only": {
+   "recovered_meals": 0,
+   "recovered_items": 0,
+   "theoretical_ownership_pct": 9.0,
+   "still_blocked": {
+    "the rung that would price this scales only heuristically \u2014": 477,
+    "no stated quantity": 3
+   }
+  },
+  "memory_evidence_only": {
+   "recovered_meals": 0,
+   "recovered_items": 0,
+   "theoretical_ownership_pct": 9.0,
+   "still_blocked": {
+    "the rung that would price this scales only heuristically \u2014": 477,
+    "no stated quantity": 3
+   }
+  },
+  "product_bound_only": {
+   "recovered_meals": 0,
+   "recovered_items": 0,
+   "theoretical_ownership_pct": 9.0,
+   "still_blocked": {
+    "scan-bound but the stated quantity only scales by a heuris": 477,
+    "scan-bound with no stated quantity": 3
+   }
+  },
+  "artifact_PLUS_authoritative_scaling": {
+   "recovered_meals": 210,
+   "recovered_items": 477,
+   "theoretical_ownership_pct": 103.6,
+   "still_blocked": {
+    "no stated quantity": 3
+   }
+  },
+  "memory_PLUS_authoritative_scaling": {
+   "recovered_meals": 210,
+   "recovered_items": 477,
+   "theoretical_ownership_pct": 103.6,
+   "still_blocked": {
+    "no stated quantity": 3
+   }
+  },
+  "product_bound_AND_scales": {
+   "recovered_meals": 213,
+   "recovered_items": 480,
+   "theoretical_ownership_pct": 105.0,
+   "still_blocked": {}
+  }
+ }
+}

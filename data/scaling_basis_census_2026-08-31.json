@@ -1,0 +1,19 @@
+{
+ "baseline_pct": 9.0,
+ "declining_items": 480,
+ "buckets": {
+  "1_USER_STATED_EXACT_MASS": 174,
+  "4_HEURISTIC_MASS_only_needs_a_sourced_replacement": 40,
+  "3_COUNT_estimate_basis_needs_SOURCED_conversion": 17,
+  "2_COUNT_serving_compatible_needs_LABEL_or_SOURCED_basis": 246,
+  "NO_QUANTITY_AT_ALL": 3
+ },
+ "already_authoritative": {},
+ "examples": {
+  "1_USER_STATED_EXACT_MASS": "300 \u0433 \u041e\u043a\u0440\u043e\u0448\u043a\u0430 \u043d\u0430 \u0430\u0439\u0440\u0430\u043d\u0435 \u0441 \u043a\u0443\u0440\u0438\u0446\u0435\u0439",
+  "4_HEURISTIC_MASS_only_needs_a_sourced_replacement": "5 tbsp dry (~1/3 cup) Oatmeal, plain",
+  "3_COUNT_estimate_basis_needs_SOURCED_conversion": "2.5 bites Cheesecake",
+  "2_COUNT_serving_compatible_needs_LABEL_or_SOURCED_basis": "1 egg Boiled egg",
+  "NO_QUANTITY_AT_ALL": "Chicken breast"
+ }
+}
