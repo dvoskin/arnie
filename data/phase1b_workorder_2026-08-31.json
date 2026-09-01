@@ -1,0 +1,495 @@
+{
+ "baseline_pct": 9.0,
+ "denominator": 222,
+ "supported_now": 20,
+ "exact_mass_meals": 68,
+ "distinct_identities": 54,
+ "work_order": [
+  {
+   "identity": "ground turkey, 94% lean, pan-cooked|",
+   "meals_unlocked_marginal": 5,
+   "meals_cumulative": 5,
+   "ownership_pct": 11.3,
+   "items": 5,
+   "artifact_now": false,
+   "example": "Ground turkey, 94% lean, pan-cooked"
+  },
+  {
+   "identity": "parmesan cheese|",
+   "meals_unlocked_marginal": 3,
+   "meals_cumulative": 8,
+   "ownership_pct": 12.6,
+   "items": 3,
+   "artifact_now": false,
+   "example": "Parmesan cheese"
+  },
+  {
+   "identity": "chicken breast|",
+   "meals_unlocked_marginal": 3,
+   "meals_cumulative": 11,
+   "ownership_pct": 14.0,
+   "items": 3,
+   "artifact_now": false,
+   "example": "Chicken breast"
+  },
+  {
+   "identity": "\u0441\u043c\u0435\u0442\u0430\u043d\u0430 5%|",
+   "meals_unlocked_marginal": 3,
+   "meals_cumulative": 14,
+   "ownership_pct": 15.3,
+   "items": 3,
+   "artifact_now": false,
+   "example": "\u0421\u043c\u0435\u0442\u0430\u043d\u0430 5%"
+  },
+  {
+   "identity": "\u0442\u0432\u043e\u0440\u043e\u0433|",
+   "meals_unlocked_marginal": 2,
+   "meals_cumulative": 16,
+   "ownership_pct": 16.2,
+   "items": 2,
+   "artifact_now": false,
+   "example": "\u0422\u0432\u043e\u0440\u043e\u0433"
+  },
+  {
+   "identity": "skirt steak pan|fried",
+   "meals_unlocked_marginal": 2,
+   "meals_cumulative": 18,
+   "ownership_pct": 17.1,
+   "items": 2,
+   "artifact_now": false,
+   "example": "Skirt steak, pan fried"
+  },
+  {
+   "identity": "ground turkey, 96% lean, pan-cooked|",
+   "meals_unlocked_marginal": 2,
+   "meals_cumulative": 20,
+   "ownership_pct": 18.0,
+   "items": 2,
+   "artifact_now": false,
+   "example": "Ground turkey, 96% lean, pan-cooked"
+  },
+  {
+   "identity": "ground turkey|",
+   "meals_unlocked_marginal": 2,
+   "meals_cumulative": 22,
+   "ownership_pct": 18.9,
+   "items": 2,
+   "artifact_now": false,
+   "example": "Ground turkey"
+  },
+  {
+   "identity": "\u043e\u043a\u0440\u043e\u0448\u043a\u0430 \u043d\u0430 \u0430\u0439\u0440\u0430\u043d\u0435 \u0441 \u043a\u0443\u0440\u0438\u0446\u0435\u0439|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 23,
+   "ownership_pct": 19.4,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u041e\u043a\u0440\u043e\u0448\u043a\u0430 \u043d\u0430 \u0430\u0439\u0440\u0430\u043d\u0435 \u0441 \u043a\u0443\u0440\u0438\u0446\u0435\u0439"
+  },
+  {
+   "identity": "\u043a\u0435\u0444\u0438\u0440|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 24,
+   "ownership_pct": 19.8,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u041a\u0435\u0444\u0438\u0440"
+  },
+  {
+   "identity": "\u0440\u0438\u0441 \u043e\u0442\u0432\u0430\u0440\u043d\u043e\u0439|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 25,
+   "ownership_pct": 20.3,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u0420\u0438\u0441 \u043e\u0442\u0432\u0430\u0440\u043d\u043e\u0439"
+  },
+  {
+   "identity": "\u0433\u043e\u0432\u044f\u0434\u0438\u043d\u0430 \u0436\u0430\u0440\u0435\u043d\u0430\u044f \u0441 \u0441\u044b\u0440\u043e\u043c \u0438 \u043b\u0443\u043a\u043e\u043c|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 26,
+   "ownership_pct": 20.7,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u0413\u043e\u0432\u044f\u0434\u0438\u043d\u0430 \u0436\u0430\u0440\u0435\u043d\u0430\u044f \u0441 \u0441\u044b\u0440\u043e\u043c \u0438 \u043b\u0443\u043a\u043e\u043c"
+  },
+  {
+   "identity": "\u043a\u0430\u0440\u0442\u043e\u0444\u0435\u043b\u044c \u043c\u043e\u043b\u043e\u0434\u043e\u0439 \u0441 \u043c\u0430\u0441\u043b\u043e\u043c|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 27,
+   "ownership_pct": 21.2,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u041a\u0430\u0440\u0442\u043e\u0444\u0435\u043b\u044c \u043c\u043e\u043b\u043e\u0434\u043e\u0439 \u0441 \u043c\u0430\u0441\u043b\u043e\u043c"
+  },
+  {
+   "identity": "\u043e\u0432\u043e\u0449\u043d\u043e\u0435 \u0440\u0430\u0433\u0443 (\u043a\u0430\u0440\u0442\u043e\u0444\u0435\u043b\u044c, \u043a\u0443\u0440\u044f\u0442\u0438\u043d\u0430, \u043f\u0435\u0440\u0435\u0446, \u043c\u043e\u0440\u043a\u043e\u0432\u044c, \u043b\u0443\u043a, \u043a\u0430\u0431\u0430\u0447\u043e\u043a)|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 28,
+   "ownership_pct": 21.6,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u041e\u0432\u043e\u0449\u043d\u043e\u0435 \u0440\u0430\u0433\u0443 (\u043a\u0430\u0440\u0442\u043e\u0444\u0435\u043b\u044c, \u043a\u0443\u0440\u044f\u0442\u0438\u043d\u0430, \u043f\u0435\u0440\u0435\u0446, \u043c\u043e\u0440\u043a\u043e\u0432\u044c, \u043b"
+  },
+  {
+   "identity": "core power strawberry banana shake, 26g protein|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 29,
+   "ownership_pct": 22.1,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Core Power Strawberry Banana Shake, 26g Protein"
+  },
+  {
+   "identity": "\u0447\u0435\u0440\u043d\u0438\u043a\u0430|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 30,
+   "ownership_pct": 22.5,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u0427\u0435\u0440\u043d\u0438\u043a\u0430"
+  },
+  {
+   "identity": "\u0448\u0430\u043a\u0448\u0443\u043a\u0430|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 31,
+   "ownership_pct": 23.0,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u0428\u0430\u043a\u0448\u0443\u043a\u0430"
+  },
+  {
+   "identity": "\u043e\u043d\u0438\u0433\u0438\u0440\u0438 \u0441 \u043b\u043e\u0441\u043e\u0441\u0435\u043c \u0441\u043b\u0430\u0431\u043e\u0441\u043e\u043b\u0435\u043d\u044b\u043c|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 32,
+   "ownership_pct": 23.4,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u041e\u043d\u0438\u0433\u0438\u0440\u0438 \u0441 \u043b\u043e\u0441\u043e\u0441\u0435\u043c \u0441\u043b\u0430\u0431\u043e\u0441\u043e\u043b\u0435\u043d\u044b\u043c"
+  },
+  {
+   "identity": "\u043b\u0430\u043f\u0448\u0430 \u0441 \u0433\u043e\u0432\u044f\u0434\u0438\u043d\u043e\u0439 \u0438 \u043e\u0432\u043e\u0449\u0430\u043c\u0438 (\u043b\u0443\u043a, \u043c\u043e\u0440\u043a\u043e\u0432\u044c, \u0441\u0442\u0440\u0443\u0447\u043a\u043e\u0432\u0430\u044f \u0444\u0430\u0441\u043e\u043b\u044c)|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 33,
+   "ownership_pct": 23.9,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u041b\u0430\u043f\u0448\u0430 \u0441 \u0433\u043e\u0432\u044f\u0434\u0438\u043d\u043e\u0439 \u0438 \u043e\u0432\u043e\u0449\u0430\u043c\u0438 (\u043b\u0443\u043a, \u043c\u043e\u0440\u043a\u043e\u0432\u044c, \u0441\u0442\u0440\u0443\u0447\u043a\u043e\u0432\u0430"
+  },
+  {
+   "identity": "skirt steak with butter|grilled",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 34,
+   "ownership_pct": 24.3,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Skirt steak, grilled with butter"
+  },
+  {
+   "identity": "\u0440\u0438\u0441|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 35,
+   "ownership_pct": 24.8,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u0420\u0438\u0441"
+  },
+  {
+   "identity": "\u0448\u0430\u0448\u043b\u044b\u043a \u0438\u0437 \u043a\u0443\u0440\u044f\u0442\u0438\u043d\u044b|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 36,
+   "ownership_pct": 25.2,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u0428\u0430\u0448\u043b\u044b\u043a \u0438\u0437 \u043a\u0443\u0440\u044f\u0442\u0438\u043d\u044b"
+  },
+  {
+   "identity": "daisy cottage cheese|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 37,
+   "ownership_pct": 25.7,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Daisy Cottage Cheese"
+  },
+  {
+   "identity": "latte with half and half, no sugar|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 38,
+   "ownership_pct": 26.1,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Latte with half and half, no sugar"
+  },
+  {
+   "identity": "\u043a\u0443\u0440\u0438\u0446\u0430 \u0432 \u043f\u043b\u043e\u0432\u0435|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 39,
+   "ownership_pct": 26.6,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u041a\u0443\u0440\u0438\u0446\u0430 \u0432 \u043f\u043b\u043e\u0432\u0435"
+  },
+  {
+   "identity": "\u043f\u043b\u043e\u0432 (\u0440\u0438\u0441 \u0441 \u043c\u0430\u0441\u043b\u043e\u043c, \u043c\u043e\u0440\u043a\u043e\u0432\u044c, \u0447\u0435\u0441\u043d\u043e\u043a, \u0441\u043f\u0435\u0446\u0438\u0438)|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 40,
+   "ownership_pct": 27.0,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u041f\u043b\u043e\u0432 (\u0440\u0438\u0441 \u0441 \u043c\u0430\u0441\u043b\u043e\u043c, \u043c\u043e\u0440\u043a\u043e\u0432\u044c, \u0447\u0435\u0441\u043d\u043e\u043a, \u0441\u043f\u0435\u0446\u0438\u0438)"
+  },
+  {
+   "identity": "mayo|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 41,
+   "ownership_pct": 27.5,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Mayo"
+  },
+  {
+   "identity": "skirt steak|grilled",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 42,
+   "ownership_pct": 27.9,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Skirt steak, grilled"
+  },
+  {
+   "identity": "\u0441\u0430\u043b\u044f\u043c\u0438|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 43,
+   "ownership_pct": 28.4,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u0421\u0430\u043b\u044f\u043c\u0438"
+  },
+  {
+   "identity": "salmon steak pan|fried",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 44,
+   "ownership_pct": 28.8,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Salmon steak, pan fried"
+  },
+  {
+   "identity": "\u0440\u0438\u0437\u043e\u0442\u0442\u043e \u0441 \u043c\u043e\u0440\u0435\u043f\u0440\u043e\u0434\u0443\u043a\u0442\u0430\u043c\u0438 (\u0440\u0438\u0441, \u0441\u043b\u0438\u0432\u043e\u0447\u043d\u044b\u0439 \u0441\u043e\u0443\u0441)|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 45,
+   "ownership_pct": 29.3,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u0420\u0438\u0437\u043e\u0442\u0442\u043e \u0441 \u043c\u043e\u0440\u0435\u043f\u0440\u043e\u0434\u0443\u043a\u0442\u0430\u043c\u0438 (\u0440\u0438\u0441, \u0441\u043b\u0438\u0432\u043e\u0447\u043d\u044b\u0439 \u0441\u043e\u0443\u0441)"
+  },
+  {
+   "identity": "\u0442\u0432\u043e\u0440\u043e\u0433 2%|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 46,
+   "ownership_pct": 29.7,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u0422\u0432\u043e\u0440\u043e\u0433 2%"
+  },
+  {
+   "identity": "\u043f\u0430\u0448\u0442\u0435\u0442 \u0443\u0442\u0438\u043d\u044b\u0439|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 47,
+   "ownership_pct": 30.2,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u041f\u0430\u0448\u0442\u0435\u0442 \u0443\u0442\u0438\u043d\u044b\u0439"
+  },
+  {
+   "identity": "skirt steak with a little oil|grilled",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 48,
+   "ownership_pct": 30.6,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Skirt steak, grilled with a little oil"
+  },
+  {
+   "identity": "sushi go white tuna bowl with rice and tempura flakes|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 49,
+   "ownership_pct": 31.1,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Sushi Go White Tuna Bowl with Rice and Tempura Flake"
+  },
+  {
+   "identity": "ground turkey, 94% lean, pan-cooked with oil|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 50,
+   "ownership_pct": 31.5,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Ground turkey, 94% lean, pan-cooked with oil"
+  },
+  {
+   "identity": "\u0442\u0432\u043e\u0440\u043e\u0433 \u0434\u043e\u043c\u0430\u0448\u043d\u0435\u0433\u043e \u043f\u0440\u0438\u0433\u043e\u0442\u043e\u0432\u043b\u0435\u043d\u0438\u044f|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 51,
+   "ownership_pct": 32.0,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u0422\u0432\u043e\u0440\u043e\u0433 \u0434\u043e\u043c\u0430\u0448\u043d\u0435\u0433\u043e \u043f\u0440\u0438\u0433\u043e\u0442\u043e\u0432\u043b\u0435\u043d\u0438\u044f"
+  },
+  {
+   "identity": "greek yogurt|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 52,
+   "ownership_pct": 32.4,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Greek yogurt"
+  },
+  {
+   "identity": "smoke test chicken|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 53,
+   "ownership_pct": 32.9,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Smoke test chicken"
+  },
+  {
+   "identity": "\u044f\u0431\u043b\u043e\u0447\u043d\u044b\u0439 \u0441\u043e\u043a|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 54,
+   "ownership_pct": 33.3,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u042f\u0431\u043b\u043e\u0447\u043d\u044b\u0439 \u0441\u043e\u043a"
+  },
+  {
+   "identity": "doritos protein chips|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 55,
+   "ownership_pct": 33.8,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Doritos Protein Chips"
+  },
+  {
+   "identity": "ground chicken, assumed lean, 96% fat-free|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 56,
+   "ownership_pct": 34.2,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Ground chicken, assumed lean, 96% fat-free"
+  },
+  {
+   "identity": "chicken breast|grilled",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 57,
+   "ownership_pct": 34.7,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Chicken breast, grilled"
+  },
+  {
+   "identity": "\u043c\u0430\u043a\u0430\u0440\u043e\u043d\u044b \u0441 \u0442\u043e\u043c\u0430\u0442\u043e\u043c|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 58,
+   "ownership_pct": 35.1,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u041c\u0430\u043a\u0430\u0440\u043e\u043d\u044b \u0441 \u0442\u043e\u043c\u0430\u0442\u043e\u043c"
+  },
+  {
+   "identity": "chicken wings|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 59,
+   "ownership_pct": 35.6,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Chicken wings"
+  },
+  {
+   "identity": "french fries|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 60,
+   "ownership_pct": 36.0,
+   "items": 1,
+   "artifact_now": false,
+   "example": "French fries"
+  },
+  {
+   "identity": "eggplant|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 61,
+   "ownership_pct": 36.5,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Eggplant"
+  },
+  {
+   "identity": "halibut|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 62,
+   "ownership_pct": 36.9,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Halibut"
+  },
+  {
+   "identity": "\u043a\u0430\u0440\u0431\u043e\u043d\u0430\u0440\u0430|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 63,
+   "ownership_pct": 37.4,
+   "items": 1,
+   "artifact_now": false,
+   "example": "\u041a\u0430\u0440\u0431\u043e\u043d\u0430\u0440\u0430"
+  },
+  {
+   "identity": "oats|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 64,
+   "ownership_pct": 37.8,
+   "items": 1,
+   "artifact_now": true,
+   "example": "Oats"
+  },
+  {
+   "identity": "salmon, pan-cooked with oil|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 65,
+   "ownership_pct": 38.3,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Salmon, pan-cooked with oil"
+  },
+  {
+   "identity": "eggs|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 66,
+   "ownership_pct": 38.7,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Eggs"
+  },
+  {
+   "identity": "cucumber|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 67,
+   "ownership_pct": 39.2,
+   "items": 1,
+   "artifact_now": false,
+   "example": "Cucumber"
+  },
+  {
+   "identity": "white rice|",
+   "meals_unlocked_marginal": 1,
+   "meals_cumulative": 68,
+   "ownership_pct": 39.6,
+   "items": 1,
+   "artifact_now": false,
+   "example": "white rice"
+  }
+ ]
+}
