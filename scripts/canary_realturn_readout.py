@@ -102,7 +102,17 @@ def main(user_id, since):
         logged = entry_at.get(identity.strip().lower())
         if logged is None:
             return False          # no entry to tie it to — cannot claim in-turn
-        gap = abs((v[5] - logged).total_seconds())
+        # ⛔ ONE CLOCK. `acquired_at` is timestamptz (aware); `food_entries.
+        # timestamp` is naive. Both are UTC in fact, so the naive side is
+        # LABELLED rather than converted — converting would silently shift it.
+        import datetime as _dt
+
+        a, b = v[5], logged
+        if a.tzinfo is None:
+            a = a.replace(tzinfo=_dt.timezone.utc)
+        if b.tzinfo is None:
+            b = b.replace(tzinfo=_dt.timezone.utc)
+        gap = abs((a - b).total_seconds())
         return gap <= 60          # comfortably outside any turn budget
 
     same_turn = [v for v in evidence if _same_turn(v)]
