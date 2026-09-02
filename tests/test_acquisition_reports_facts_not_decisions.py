@@ -153,9 +153,21 @@ def test_every_refusal_reason_is_named_and_countable():
     """⭐ A refusal you can COUNT is how the next tranche learns which adapter
     to build. `return None` produces a miss indistinguishable from never trying.
     """
-    reasons = {acq.NO_IDENTITY, acq.NO_SOURCE_RECORD, acq.IDENTITY_UNQUALIFIED,
-               acq.GRADE_INADMISSIBLE, acq.BASIS_UNUSABLE,
-               acq.PROVIDER_UNAVAILABLE}
-    assert len(reasons) == 6, "reasons collided — a count would merge outcomes"
+    # ⭐ REFLECTIVE, NOT A HARDCODED LIST. The first version enumerated six
+    # names, so `ACQUIRE_ALREADY_SUPPORTED` — added later — was covered by
+    # nothing: a seventh reason colliding with an existing one would have passed
+    # unnoticed. The same too-narrow-test-set class as the `has_` clause, and it
+    # recurred within a day of being named.
+    reasons = {v for k, v in vars(acq).items()
+               if isinstance(v, str) and v.startswith("ACQUIRE_") and k.isupper()}
+    assert len(reasons) >= 7, f"expected the full vocabulary, found {reasons}"
+    names = [k for k, v in vars(acq).items()
+             if isinstance(v, str) and v.startswith("ACQUIRE_") and k.isupper()]
+    assert len(reasons) == len(names), (
+        f"{len(names)} constants collapsed onto {len(reasons)} values — a count "
+        "would merge outcomes that must stay distinguishable")
+    # ⛔ ALREADY-SUPPORTED IS NOT A FAILURE, and must never be confused with one.
+    assert acq.ALREADY_SUPPORTED in reasons
+    assert acq.ALREADY_SUPPORTED != acq.NO_SOURCE_RECORD
     for r in reasons:
         assert r.startswith("ACQUIRE_") and r.isupper()

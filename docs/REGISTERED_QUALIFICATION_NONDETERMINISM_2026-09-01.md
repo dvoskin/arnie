@@ -52,3 +52,49 @@ number, and must be stated alongside them.
 Phase 2A proceeds. This is registered, not deferred silently — the preload's
 reported coverage carries an unmeasured reproducibility error bar until the
 above is run.
+
+---
+
+## CONFIRMED 2026-09-01 — genuine resolver nondeterminism
+
+The batch-vs-standalone comparison could not have proved this: those may be
+different questions. So the test was the same question, repeated.
+
+```
+FIXED POPULATION 'american cheese': 9 rows, all reaching the resolver
+fresh EvidenceContext per run
+
+run 1  qualified=[]          run 3  qualified=['747429']
+run 2  qualified=[]          run 4  qualified=[]
+        -> 2 distinct outcomes across 4 repetitions
+```
+
+⛔ **Same identity, same rows, same order, same code, same config.** The
+variance is in the resolver itself — not partitioning, not context reuse, not
+provider row drift. The concurrency suspect from `f623fb0` is ELIMINATED.
+
+⭐ **AUTHORITY IS SAFE; REPRODUCIBILITY IS NOT.** Both outcomes are defensible —
+qualifying a valid row, or qualifying nothing — so no wrong nutrition can enter
+this way. But the same identity population can yield materially different
+coverage on consecutive runs, and no diff explains why.
+
+**CONSEQUENCE FOR PHASE 2A — STATED PRECISELY.** The correct claim is:
+
+    Resolver nondeterminism is CONFIRMED on at least one borderline identity.
+    Prevalence and probability remain UNMEASURED.
+
+⛔ NOT "a ~1-in-4 error rate". One alternate result across four repetitions on
+ONE identity is evidence of EXISTENCE, not a population rate — the sample is a
+single hand-picked borderline case, chosen precisely because it had already
+behaved oddly, and four draws bound nothing. Carrying "1 in 4" into the
+ownership result would overstate what this experiment established, which is the
+same class of error as every instrument defect this project has found: a number
+right about its arithmetic and wrong about its subject.
+
+So a re-run of the same 328 must not be read as regression or improvement
+without a MEASURED bound — and that measurement (one population, twice,
+diffed) has not been run.
+
+**NOT BLOCKING.** The 328 preload proceeds. Fixing this means making a
+borderline qualification decision stable, which is a producer-design question,
+not a bug with a patch.

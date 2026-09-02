@@ -62,3 +62,43 @@ successful rebuild to compare against. It remains open under option A.
 Nothing shipped. `DATA_TYPES` is back to `("Foundation", "SR Legacy")`, the
 committed artifact verifies, and the 24 acquired rows remain readable under the
 original fingerprint.
+
+---
+
+## RESOLVED 2026-09-01 — the unresolved row is LEGITIMATE. Option B taken.
+
+The bounded causal investigation ran on a frozen fixed population, with a
+**fresh `EvidenceContext` per trial** (a shared one is single-flight and would
+have handed trial 2 trial 1's answer, manufacturing perfect determinism).
+
+```
+FIXED POPULATION for 'potato, grilled': 16 retrieved -> 2 reach the resolver
+   2710790  Survey (FNDDS)  Potato, cooked, as ingredient
+   2710794  Survey (FNDDS)  Sweet potato, cooked, as ingredient
+
+A. same rows, same order, x3   identical every time    abstained=['2710790']
+B. same rows, reversed          identical               abstained=['2710790']
+C. 2710790 alone                abstained
+   2710794 alone                clean, nothing abstained
+```
+
+⭐ **NOT model nondeterminism. NOT order sensitivity. NOT partition dependence.**
+`2710790` abstains in every configuration.
+
+⭐⭐ **AND THE ABSTENTION IS CORRECT.** *"Potato, cooked, as ingredient"* is
+cooked by an UNSPECIFIED method, so against the identity "potato, grilled" it is
+genuinely unsettleable. Abstaining is the honest answer — an absent answer must
+never be representable as a negative one — and `build_one` is right to treat
+rows-present-none-annotated as `failed` rather than an authoritative negative.
+
+Every layer behaved as designed. FNDDS simply supplies rows that a
+preparation-variant identity cannot settle, and no repair is warranted:
+weakening the builder to admit them would trade a real guard for coverage.
+
+**DECISION: option B.** `DATA_TYPES` stays `("Foundation", "SR Legacy")`. The
+328 preload proceeds without FNDDS. Whether Survey deserves a Phase 2B design is
+a question for the measured decline population after the frozen 222 is opened —
+not a guess made now.
+
+⚠ The 27-food reprice question stays permanently unanswered for this change,
+because no rebuild was ever written. It is moot unless FNDDS returns.
