@@ -232,6 +232,31 @@ async def build_one(food_name: str) -> dict:
             "reason": "" if material else "space is not materially separated"}
 
 
+def assemble_document(results, *, now=None) -> dict:
+    """The artifact document, from build results. Pure, so the assembly has its
+    own proof (tests/test_the_materiality_builder_assembles_what_the_reader_verifies.py).
+
+    ⛔ THE ASSEMBLY THIS WRITE NEEDED (found 2026-09-03): `document` was never
+    built — a refactor kept the write and dropped the assembly, so every run
+    gathered evidence for minutes and died on a NameError at the end.
+    Stamped with the LIVE resolver (what this build actually used); the reader
+    verifies against its certified pin, so a build under a newer resolver is
+    refused until someone certifies and bumps the pin. Only MATERIAL foods get
+    an entry — the reader treats "no entry" as "no material preparations".
+    """
+    from datetime import datetime, timezone
+    from skills.nutrition import preparation_artifact as art
+    return {
+        "generated_at": (now or datetime.now(timezone.utc)).isoformat(),
+        "resolver_version": art.live_resolver_version(),
+        "vocabulary_fingerprint": art.vocabulary_fingerprint(),
+        "retrieval_fingerprint": art.retrieval_fingerprint(),
+        "entries": {r["food"]: {"space": r["space"], "evidence_ids": r["evidence_ids"],
+                                "material": r["material"]}
+                    for r in results if r["status"] == MATERIAL},
+    }
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("identities", nargs="*", default=None)
@@ -296,24 +321,7 @@ async def main() -> int:
     if args.dry_run:
         print("--dry-run: nothing written")
         return 0
-    # ⛔ THE ASSEMBLY THIS WRITE NEEDED (found 2026-09-03): `document` was never
-    # built — a refactor kept the write and dropped the assembly, so every run
-    # since gathered evidence for minutes and died on a NameError at the end.
-    # Same stamps the reader verifies (core.materiality_artifact.verify), same
-    # entry shape the committed file carries: space · evidence_ids · material.
-    from datetime import datetime, timezone
-    document = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "resolver_version": art.resolver_version(),
-        "vocabulary_fingerprint": art.vocabulary_fingerprint(),
-        "retrieval_fingerprint": art.retrieval_fingerprint(),
-        "entries": {r["food"]: {"space": r["space"], "evidence_ids": r["evidence_ids"],
-                                "material": r["material"]}
-                    # only MATERIAL foods get an entry: the reader treats "no entry" as
-                    # "no material preparations", so an immaterial entry would be a
-                    # second way of saying the same thing (and the registry test rejects it)
-                    for r in results if r["status"] == MATERIAL},
-    }
+    document = assemble_document(results)
     art.ARTIFACT_PATH.parent.mkdir(parents=True, exist_ok=True)
     art.ARTIFACT_PATH.write_text(json.dumps(document, indent=2,
                                             sort_keys=False) + "\n",

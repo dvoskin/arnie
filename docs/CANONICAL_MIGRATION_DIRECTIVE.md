@@ -1,3 +1,59 @@
+> ══════════════════════════════════════════════════════════════════════
+> ⭐⭐⭐ **SEQUENCING AUTHORITY — 2026-09-03.** *(Danny)*
+>
+> **SUPERSEDES the 2026-08-31 banner below.** Nothing is deployed. Nothing is
+> pushed. `origin/main` is `71807fe`.
+>
+> ## IDENTITY REACHABILITY: CERTIFIED, PUBLICATION HELD, MATERIALITY DECOUPLED
+>
+> ```text
+> IR code tranche   c0b7bb7 on tranche/determinism-decomposition — CERTIFIED
+>                   (PG suite, CF7 recipe: 10476 passed / 14 failed ALL pre-existing
+>                   on a6ce062 / 5 xfailed / 20 skipped / 17 deselected; tree unchanged)
+> artifact          pricing_evidence_v1 sha256 1c595166… · de0432a2 · 37 entries ·
+>                   84 signed · 5 reviewed pins · gate 27/0/0/10 in BOTH modes ·
+>                   V2 on 37/37 · V2 off cannot reach exactly six (oats|,
+>                   mackerel|roasted, tilapia|roasted, salmon|grilled,
+>                   salmon|roasted, shrimp|fried)
+> decision          HOLD (Danny): the IR mechanism has earned publication; c0b7bb7
+>                   also bundled a clarification-policy change — the materiality
+>                   artifact regenerated under v2 made potato + mushrooms IMMATERIAL
+>                   (turns stop asking the preparation question), unprotected by
+>                   any flag and outside the IR proposition. DECOUPLED in the next
+>                   commit: shipped materiality decision restored under an explicit
+>                   CERTIFIED_RESOLVER_VERSION pin (v1); the v2 regeneration waits
+>                   for its own certification.
+> IR                ~98% — development done; remaining = publication isolation +
+>                   production canary evidence. DO NOT modify IR further.
+> ```
+>
+> ## THE NEXT SEQUENCE (after credential rotation — Render keys, bot token, USDA key)
+>
+> ```text
+> 1 narrow re-certification of the decoupling (no second full suite): artifact
+>   identity unchanged · family A · two-mode gate 27/0/0/10 · poisoned replay +
+>   reachability (37/37, same six) · preparation/materiality seam set ·
+>   write-tree provenance (tested tree == committed tree)
+> 2 push branch → merge/publish IR to main → deploy V2 OFF → production baseline
+> 3 enable V2 for a TINY canary. Kill on any of: a previously authoritative
+>   identity changes winner · a reviewed pin is bypassed · a canonical
+>   settlement uses a candidate that is not the artifact's seated winner · any
+>   increase in wrong consumed-form admission vs V2 off. Measure: reachability
+>   conversion among turns that would miss under V2 off · canonical-settlement
+>   conversion from those identities · clarification/error rate around the six
+>   V2-off misses and the consumed-form tail.
+> 4 holdout stays SEALED until the production mechanism survives the canary.
+> ```
+>
+> **Three findings this session, all recorded below (§ 2026-09-03):** the human
+> annotation layer (84 signed rows under `meta.annotations`) was dropped by every
+> rebuild through a loader/writer layout mismatch — "v2 is stricter on preparation"
+> is RETRACTED; a reviewer-signed UNRESOLVED was reinstated by retention
+> (`mayonnaise|`); the publication gate ranked prep entries by entity alone. Each
+> fixed with its red-then-green proof. Registered, not fixed: the Cyrillic ranker
+> gap (19/20), consumed-form runtime exposure 2/20, `interpret()` truncation at 12.
+> ══════════════════════════════════════════════════════════════════════
+
 > ════════════════════════════════════════════════════════════════════════
 > ⭐⭐⭐ **SEQUENCING AUTHORITY — 2026-08-31.** *(Danny)*
 >
@@ -8059,6 +8115,27 @@ them.
 
 ## Status board
 
+### ⏱ SESSION 2026-09-03 — IR-PUBLISH CERTIFIED · PUBLICATION HELD · MATERIALITY DECOUPLED
+
+```text
+LOCAL       tranche/determinism-decomposition @ c0b7bb7 (IR code tranche, certified)
+            + the decoupling commit (this reconciliation is part of it)
+ORIGIN/MAIN 71807fe — UNTOUCHED (branch 4 ahead, 0 behind)
+DEPLOYED    unchanged by this session; nothing pushed
+SUITE       run #3 (certifying, CF7 recipe, no extra -q): PYTEST_EXIT=1 ·
+            10476 passed / 14 failed (ALL fail identically on a clean export of
+            a6ce062) / 5 xfailed / 20 skipped / 17 deselected / 0 errors ·
+            12 min · tree unchanged. Runs #1–#2 were UNDER-INCLUSIVE
+            (TEST_POSTGRES_URL unset → 65 PG tests skipped; extra -q → -qq)
+ARTIFACT    1c595166… · de0432a2 · 37 entries · 84 signed · 5 pins ·
+            gate 27/0/0/10 both modes · V2 on 37/37 · V2 off: six, named
+MATERIALITY shipped decision (chicken · mushrooms · potato) RESTORED under
+            CERTIFIED_RESOLVER_VERSION = food_evidence_semantics_v1; the v2
+            regeneration (potato, mushrooms immaterial) HELD for its own tranche
+PROVENANCE  rule adopted: record git write-tree before/after a certifying run;
+            commit tree must equal it (the decoupling commit carries tree ids)
+```
+
 ### ⏱ SESSION 2026-08-19/21 — P17 PHASE 2 LIVE · TRANCHE Q BUILT · TRANCHE D OPENED
 
 ```text
@@ -8232,7 +8309,7 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-08-31 (working tree, undeployed) — SHAPE C REJECTED FOR ADOPTION; its north-star PASS preserved as a valid measurement with a corrected attribution. Invariant-impact-basis repair landed (`FoodAmbiguity.impact_basis_cal`); C demoted to a declared causal arm so both arms share one `_code_sha`; C re-run preregistered. DEFAULTABILITY now blocked behind the invariant-basis tranche, not behind D2. See the 2026-08-31 banner at the TOP, which supersedes every sequence below it. Prior stamp: 2026-08-28 (working tree)
+Last reconciled 2026-09-03 (working tree, undeployed) — IR-PUBLISH CERTIFIED at `c0b7bb7` and HELD by Danny for materiality decoupling; the decoupling (certified-resolver pin, shipped artifact restored) is the working tree this stamp describes. See the 2026-09-03 banner at the TOP, which supersedes every sequence below it. Prior stamp: 2026-08-31 (working tree, undeployed) — SHAPE C REJECTED FOR ADOPTION; its north-star PASS preserved as a valid measurement with a corrected attribution. Invariant-impact-basis repair landed (`FoodAmbiguity.impact_basis_cal`); C demoted to a declared causal arm so both arms share one `_code_sha`; C re-run preregistered. DEFAULTABILITY now blocked behind the invariant-basis tranche, not behind D2.
 CLOSING. What was re-read and corrected rather than date-bumped: CF17 and CF18
 moved OPEN -> MERGED, POST-MERGE REMEDIATION OPEN with the merge SHAs — NOT
 closed: two D2 telemetry defects (the persist-in-flight race; "latest row by
@@ -12095,3 +12172,32 @@ preparation question in the turn. Reported, not absorbed; the publish decision s
 **Next (Danny's calls, per the directive):** publish to main + controlled deploy → production canaries →
 sealed holdout ONCE → recalculate ownership → Branded/SKU. Open tranches surfaced here: preparation
 compatibility review under v2 for unsigned rows; consumed-form authority; ranker language.
+
+### 2026-09-03, later — IR-PUBLISH HELD, materiality decoupled, narrow re-certification (Danny)
+
+**Decision (Danny):** the IR mechanism has earned publication; the commit `c0b7bb7` had bundled a clarification-policy
+change with it — regenerating `preparation_materiality_v1.json` under resolver v2 made `potato` and `mushrooms`
+immaterial, so those turns would stop asking the preparation question — and no flag protects that. **Decoupled:**
+the shipped materiality artifact (chicken · mushrooms · potato, their v1 spaces, stamped `food_evidence_semantics_v1`)
+is restored, and the reader now verifies against an explicit `CERTIFIED_RESOLVER_VERSION` pin
+(`skills/nutrition/preparation_artifact.py`) instead of the live pricing resolver. The builder keeps its fixed
+assembly (`assemble_document`, now a pure function with tests) and stamps new builds with the LIVE resolver, so a v2
+regeneration is refused by the reader until someone certifies the behaviour change and bumps the pin. That
+certification is its own tranche.
+
+**Certification provenance rule (Danny):** record the working-tree object id (`git write-tree` over a temporary
+index that includes untracked files) before and after a certifying suite, and require the eventual commit's tree
+(`git rev-parse HEAD^{tree}`) to equal it — cryptographically identical, not narratively. The certifying full suite of
+IR-PUBLISH ran on `a6ce062` + a dirty tree that became `c0b7bb7` with the tree reported clean immediately after;
+recorded here as narrative provenance. The narrow re-certification of the decoupling records tree ids.
+
+**Narrow re-certification surface (no second full suite):** IR artifact identity unchanged; family A; two-mode gate
+27 / 0 / 0 / 10 in both modes; poisoned replay + reachability (37/37 V2 on, the same six V2 off); the turn/materiality
+seam tests proving the restored artifact restores pre-IR clarification behaviour.
+
+**Then (Danny's call, after credential rotation):** push branch → merge IR to main → deploy V2 OFF first → production
+baseline → enable V2 for a tiny canary with four kill conditions (a previously authoritative identity changes winner;
+a reviewed pin is bypassed; a canonical settlement uses a candidate that is not the artifact's seated winner; any
+increase in wrong consumed-form admission vs V2 off) and three success measurements (reachability conversion among
+turns that would miss under V2 off; canonical-settlement conversion from those identities; clarification/error rate
+around the six known V2-off misses and the consumed-form tail). Holdout stays sealed until the canary survives.

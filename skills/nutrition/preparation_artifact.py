@@ -100,10 +100,29 @@ def retrieval_fingerprint() -> str:
     return _digest(*QUERY_SHAPES, *DATA_TYPES, str(ROWS_PER_SHAPE))
 
 
-def resolver_version() -> str:
+#: ⛔ THE MATERIALITY DECISION IS CERTIFIED SEPARATELY FROM THE PRICING RESOLVER
+#: (Danny, 2026-09-03). The shipped artifact — chicken · mushrooms · potato material,
+#: their v1 spaces — was certified under `food_evidence_semantics_v1`. When the
+#: pricing resolver moved to v2 (IR-PUBLISH), regenerating this artifact under v2
+#: declared potato and mushrooms IMMATERIAL: a user-facing clarification change
+#: that no flag protects and that the IR publication proposition does not cover.
+#: So the reader verifies against THIS pin, not the live resolver. Bumping it is
+#: the act of publishing a new materiality decision, and needs its own measured
+#: certification; the builder keeps stamping new builds with the LIVE resolver,
+#: so a fresh build is refused here until the pin moves.
+CERTIFIED_RESOLVER_VERSION = "food_evidence_semantics_v1"
+
+
+def live_resolver_version() -> str:
+    """What a build made NOW is made with — the builder's stamp."""
     from skills.nutrition import evidence_semantics as food
 
     return food.VERSION
+
+
+def resolver_version() -> str:
+    """What the reader requires: the version the shipped decision was certified under."""
+    return CERTIFIED_RESOLVER_VERSION
 
 
 def normalize(food_name: str) -> str:
