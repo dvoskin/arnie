@@ -95,7 +95,13 @@ def vocabulary_fingerprint() -> str:
 
 
 def retrieval_fingerprint() -> str:
-    return _digest(*QUERY_SHAPES, *DATA_TYPES, str(ROWS_PER_SHAPE))
+    # ⭐ EXPANSION PARTICIPATES: different queries reach different rows, so
+    # evidence found under a different expansion was found by a different
+    # instrument. This deliberately stales the artifact and every acquired row.
+    from skills.nutrition.retrieval_intent import EXPANSION_VERSION
+
+    return _digest(*QUERY_SHAPES, *DATA_TYPES, str(ROWS_PER_SHAPE),
+                   EXPANSION_VERSION)
 
 
 def normalize(text: str) -> str:

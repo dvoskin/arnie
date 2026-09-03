@@ -62,6 +62,13 @@ async def capture() -> dict:
 
     document = json.loads(art.ARTIFACT_PATH.read_text())
     identities = sorted(document.get("entries") or {})
+    stored_expansions = bp._stored_expansions(document)
+    missing = [i for i in identities if not stored_expansions.get(i)]
+    if missing:
+        raise RetrievalContractMoved(
+            f"{len(missing)} committed identit(ies) have no stored expansion under the "
+            f"current EXPANSION_VERSION (e.g. {missing[:3]}); a capture taken on a "
+            f"re-rolled expansion would not describe the committed artifact")
 
     recorded: dict = {}
     original_search, original_qualify = usda._search, eq.qualify_usda_rows
@@ -91,7 +98,13 @@ async def capture() -> dict:
             for identity in identities:
                 _current[0] = identity
                 entity, _, preparation = identity.partition("|")
-                await bp.build_one(entity, preparation)
+                # ⭐ THE CAPTURE MUST ISSUE THE QUERIES THE ARTIFACT WAS BUILT WITH.
+                # Expansion is a model call; a re-rolled expansion retrieves a
+                # different pool and the capture comes out "thinner than the
+                # artifact" for a reason that is not a decision. Stored
+                # expansions are reused; an artifact without them is refused.
+                await bp.build_one(entity, preparation,
+                                   expansion=stored_expansions[identity])
     finally:
         usda._search, eq.qualify_usda_rows = original_search, original_qualify
 

@@ -52,8 +52,16 @@ RETRIEVAL_COVERAGE = "no better representative was retrieved for this identity"
 #: that could not unblock it. A hold whose stated cause cannot resolve it is
 #: indistinguishable from a hold nobody understands.
 SPECIALTY_BEATS_GENERIC_CAUSE = "a specialty variant outranks the generic form"
+#: ⚠ ADDED 2026-09-03 (IR-PUBLISH). Ten identities entered the artifact after
+#: the Phase 0 review (query expansion + the restored human annotation layer).
+#: Their seated winners are recorded so the freeze can bind them; NOBODY HAS
+#: LOOKED, and a hold whose cause is "unreviewed" says exactly that rather than
+#: borrowing a policy gap it does not have. Resolves when a reviewer signs or
+#: files the real cause.
+UNREVIEWED_NEW_IDENTITY = "entered the artifact after the Phase 0 review; seated winner recorded, not reviewed"
 BLOCKING_CAUSES = frozenset({COOKING_YIELD_COVERAGE, AS_EATEN_REWORK,
-                             RETRIEVAL_COVERAGE, SPECIALTY_BEATS_GENERIC_CAUSE})
+                             RETRIEVAL_COVERAGE, SPECIALTY_BEATS_GENERIC_CAUSE,
+                             UNREVIEWED_NEW_IDENTITY})
 
 #: Ranking defects, filed rather than fixed by admission. Each names a row
 #: that is legitimately the requested food and is still the wrong
@@ -328,6 +336,27 @@ def _rows():
     # contradiction until the artifact is rebuilt without it. That failure is
     # a true statement about the current artifact, not a gap in this review.
 
+    # ── HELD — entered after the Phase 0 review (IR-PUBLISH 2026-09-03) ────
+    hold("butter|", "usda:173410", UNREVIEWED_NEW_IDENTITY,
+         "IR-PUBLISH 2026-09-03: seated under rank_v2 as Butter, salted 717 kcal; not reviewed")
+    hold("chicken|", "usda:172395", UNREVIEWED_NEW_IDENTITY,
+         "IR-PUBLISH 2026-09-03: seated under rank_v2 as Chicken, roasting, meat only, cooked, roasted 167 kcal; not reviewed")
+    hold("coconut oil|", "usda:171412", UNREVIEWED_NEW_IDENTITY,
+         "IR-PUBLISH 2026-09-03: seated under rank_v2 as Oil, coconut 892 kcal; not reviewed")
+    hold("mayonnaise|", "usda:171009", UNREVIEWED_NEW_IDENTITY,
+         "IR-PUBLISH 2026-09-03: seated under rank_v2 as Salad dressing, mayonnaise, regular 680 kcal; not reviewed")
+    hold("mushrooms|fried", "usda:169253", UNREVIEWED_NEW_IDENTITY,
+         "IR-PUBLISH 2026-09-03: seated under rank_v2 as Mushrooms, white, stir-fried 26 kcal; not reviewed")
+    hold("olive oil|", "usda:171413", UNREVIEWED_NEW_IDENTITY,
+         "IR-PUBLISH 2026-09-03: seated under rank_v2 as Oil, olive, salad or cooking 884 kcal; not reviewed")
+    hold("salmon|grilled", "usda:171999", UNREVIEWED_NEW_IDENTITY,
+         "IR-PUBLISH 2026-09-03: seated under rank_v2 as Fish, salmon, chinook, cooked, dry heat 231 kcal; not reviewed")
+    hold("salmon|roasted", "usda:171999", UNREVIEWED_NEW_IDENTITY,
+         "IR-PUBLISH 2026-09-03: seated under rank_v2 as Fish, salmon, chinook, cooked, dry heat 231 kcal; not reviewed")
+    hold("shrimp|fried", "usda:171970", UNREVIEWED_NEW_IDENTITY,
+         "IR-PUBLISH 2026-09-03: seated under rank_v2 as Crustaceans, shrimp, mixed species, cooked, breaded 242 kcal; not reviewed")
+    hold("vegetable oil|", "usda:172370", UNREVIEWED_NEW_IDENTITY,
+         "IR-PUBLISH 2026-09-03: seated under rank_v2 as Oil, vegetable, soybean, refined 884 kcal; not reviewed")
     return tuple(out)
 
 

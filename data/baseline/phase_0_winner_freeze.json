@@ -8,8 +8,8 @@
    "reason": "cooking_yield_has_no_entry_for_this_food",
    "note": "a raw row wins on an UNDECIDED cooked axis (1 raw / 4 cooked); cooking_yield states nothing for this food, and the table already carries 'fish' \u2014 the query simply never contains it",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "7a1b0bf56c24c26e",
-   "candidate_count": 8
+   "candidate_universe_fingerprint": "b128ac7200616e98",
+   "candidate_count": 9
   },
   {
    "identity_key": "banana|",
@@ -18,8 +18,8 @@
    "reason": "raw; the only alternative on the ladder is overripe",
    "note": "raw; the only alternative on the ladder is overripe",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "02360b6a7db378f3",
-   "candidate_count": 2
+   "candidate_universe_fingerprint": "c1d36bf5db9c3686",
+   "candidate_count": 3
   },
   {
    "identity_key": "beef|",
@@ -38,8 +38,8 @@
    "reason": "no better representative was retrieved for this identity",
    "note": "New Zealand knuckle 178 on a ladder that is ENTIRELY New Zealand imported; no domestic beef row was retrieved at all",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "fa88a6d6d4d32112",
-   "candidate_count": 5
+   "candidate_universe_fingerprint": "2862dc6f995b84bf",
+   "candidate_count": 3
   },
   {
    "identity_key": "beef|grilled",
@@ -48,8 +48,8 @@
    "reason": "no better representative was retrieved for this identity",
    "note": "ribeye filet 'separable lean only, trimmed to 0\" fat' 208 \u2014 and NO comparable as-eaten ribeye was retrieved, so no preference can fix it; the ladder's lean-and-fat rows are a different CUT",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "c0468bbecfe69fa7",
-   "candidate_count": 5
+   "candidate_universe_fingerprint": "2343db394ac8e2cd",
+   "candidate_count": 7
   },
   {
    "identity_key": "beef|roasted",
@@ -58,8 +58,8 @@
    "reason": "NZ 'ribs prepared, cooked, fast roasted' 197; semantically signed by hand, and stable under both the canonical-safe and reworked regimes",
    "note": "NZ 'ribs prepared, cooked, fast roasted' 197; semantically signed by hand, and stable under both the canonical-safe and reworked regimes",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "ca6520abbe639a53",
-   "candidate_count": 7
+   "candidate_universe_fingerprint": "64c5d7666a32b8a9",
+   "candidate_count": 11
   },
   {
    "identity_key": "broccoli|",
@@ -68,8 +68,18 @@
    "reason": "cooking_yield_has_no_entry_for_this_food",
    "note": "a raw row wins on an UNDECIDED cooked axis (4 raw / 6 cooked); cooking_yield states nothing for this food, and the table already carries 'fish' \u2014 the query simply never contains it",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "4e4dee0b0f970d43",
+   "candidate_universe_fingerprint": "78ba80823fe6203b",
    "candidate_count": 10
+  },
+  {
+   "identity_key": "butter|",
+   "winner_evidence_id": "usda:173410",
+   "winner_status": "held",
+   "reason": "entered the artifact after the Phase 0 review; seated winner recorded, not reviewed",
+   "note": "IR-PUBLISH 2026-09-03: seated under rank_v2 as Butter, salted 717 kcal; not reviewed",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "5104d0ddc5e72747",
+   "candidate_count": 3
   },
   {
    "identity_key": "cauliflower|",
@@ -82,14 +92,24 @@
    "candidate_count": 9
   },
   {
+   "identity_key": "chicken|",
+   "winner_evidence_id": "usda:172395",
+   "winner_status": "held",
+   "reason": "entered the artifact after the Phase 0 review; seated winner recorded, not reviewed",
+   "note": "IR-PUBLISH 2026-09-03: seated under rank_v2 as Chicken, roasting, meat only, cooked, roasted 167 kcal; not reviewed",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "412fe8720a9e8806",
+   "candidate_count": 15
+  },
+  {
    "identity_key": "chicken|fried",
    "winner_evidence_id": "usda:171053",
    "winner_status": "held",
    "reason": "no better representative was retrieved for this identity",
    "note": "'meat only' 219 \u2014 the only as-eaten sibling is BATTERED, which is a different coating and correctly not comparable",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "3ebaa20ea2dccfde",
-   "candidate_count": 6
+   "candidate_universe_fingerprint": "fce577077aa0d98a",
+   "candidate_count": 13
   },
   {
    "identity_key": "chicken|grilled",
@@ -108,8 +128,18 @@
    "reason": "as_eaten_preference_awaiting_cut_and_coating_controls",
    "note": "'meat only' 167; the reworked preference DOES move this to meat and skin 223 \u2014 it is held only because the preference is off in the regime Phase 0 freezes against, so it clears with that canary",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "a05c59451ccfb7eb",
-   "candidate_count": 5
+   "candidate_universe_fingerprint": "9334be4487e9f1a0",
+   "candidate_count": 9
+  },
+  {
+   "identity_key": "coconut oil|",
+   "winner_evidence_id": "usda:171412",
+   "winner_status": "held",
+   "reason": "entered the artifact after the Phase 0 review; seated winner recorded, not reviewed",
+   "note": "IR-PUBLISH 2026-09-03: seated under rank_v2 as Oil, coconut 892 kcal; not reviewed",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "ba00901725baae5e",
+   "candidate_count": 2
   },
   {
    "identity_key": "egg|",
@@ -138,7 +168,7 @@
    "reason": "a specialty variant outranks the generic form",
    "note": "salted 305 kcal is seated; raw 205 is the better generic baseline \u2014 salting materially changes sodium and water state and is a narrower form. 49% OVERSTATEMENT. Admission unchanged: salting is preservation, not a different food",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "0b04a0830eafe017",
+   "candidate_universe_fingerprint": "ce3157c32b2b9fcd",
    "candidate_count": 9
   },
   {
@@ -152,6 +182,16 @@
    "candidate_count": 4
   },
   {
+   "identity_key": "mayonnaise|",
+   "winner_evidence_id": "usda:171009",
+   "winner_status": "held",
+   "reason": "entered the artifact after the Phase 0 review; seated winner recorded, not reviewed",
+   "note": "IR-PUBLISH 2026-09-03: seated under rank_v2 as Salad dressing, mayonnaise, regular 680 kcal; not reviewed",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "4c8aa3c871765eb6",
+   "candidate_count": 1
+  },
+  {
    "identity_key": "mushrooms|",
    "winner_evidence_id": "usda:170097",
    "winner_status": "held",
@@ -160,6 +200,16 @@
    "ranking_policy_version": "rank_v2",
    "candidate_universe_fingerprint": "7555ea528a29bdf3",
    "candidate_count": 4
+  },
+  {
+   "identity_key": "mushrooms|fried",
+   "winner_evidence_id": "usda:169253",
+   "winner_status": "held",
+   "reason": "entered the artifact after the Phase 0 review; seated winner recorded, not reviewed",
+   "note": "IR-PUBLISH 2026-09-03: seated under rank_v2 as Mushrooms, white, stir-fried 26 kcal; not reviewed",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "4a33fe34c79e7bac",
+   "candidate_count": 1
   },
   {
    "identity_key": "mushrooms|grilled",
@@ -178,8 +228,18 @@
    "reason": "oats cooked with water is what oats are eaten as",
    "note": "oats cooked with water is what oats are eaten as",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "9792bd138bb755fb",
-   "candidate_count": 2
+   "candidate_universe_fingerprint": "c7ef13f469f9cb37",
+   "candidate_count": 3
+  },
+  {
+   "identity_key": "olive oil|",
+   "winner_evidence_id": "usda:171413",
+   "winner_status": "held",
+   "reason": "entered the artifact after the Phase 0 review; seated winner recorded, not reviewed",
+   "note": "IR-PUBLISH 2026-09-03: seated under rank_v2 as Oil, olive, salad or cooking 884 kcal; not reviewed",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "b4feacd2301862e0",
+   "candidate_count": 1
   },
   {
    "identity_key": "potato|",
@@ -208,8 +268,8 @@
    "reason": "a specialty variant outranks the generic form",
    "note": "white GLUTINOUS 97 kcal wins; three medium/short-grain rows at 130 are on the same ladder and are what plain cooked white rice is",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "c37bad9e6ead1225",
-   "candidate_count": 5
+   "candidate_universe_fingerprint": "7a0077b01d431d10",
+   "candidate_count": 14
   },
   {
    "identity_key": "salmon|",
@@ -218,8 +278,28 @@
    "reason": "a specialty variant outranks the generic form",
    "note": "chinook \u2014 the fattiest salmon \u2014 231 kcal wins; Atlantic farmed cooked 206 is on the same ladder and is the salmon most people eat",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "4afaec51789f1d68",
-   "candidate_count": 14
+   "candidate_universe_fingerprint": "e6756fc4664df58e",
+   "candidate_count": 19
+  },
+  {
+   "identity_key": "salmon|grilled",
+   "winner_evidence_id": "usda:171999",
+   "winner_status": "held",
+   "reason": "entered the artifact after the Phase 0 review; seated winner recorded, not reviewed",
+   "note": "IR-PUBLISH 2026-09-03: seated under rank_v2 as Fish, salmon, chinook, cooked, dry heat 231 kcal; not reviewed",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "9001874f4c4e6ba6",
+   "candidate_count": 1
+  },
+  {
+   "identity_key": "salmon|roasted",
+   "winner_evidence_id": "usda:171999",
+   "winner_status": "held",
+   "reason": "entered the artifact after the Phase 0 review; seated winner recorded, not reviewed",
+   "note": "IR-PUBLISH 2026-09-03: seated under rank_v2 as Fish, salmon, chinook, cooked, dry heat 231 kcal; not reviewed",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "92b727f05015b021",
+   "candidate_count": 7
   },
   {
    "identity_key": "shrimp|",
@@ -228,8 +308,18 @@
    "reason": "shrimp cooked",
    "note": "shrimp cooked",
    "ranking_policy_version": "rank_v2",
-   "candidate_universe_fingerprint": "18d2d26472141cca",
-   "candidate_count": 4
+   "candidate_universe_fingerprint": "a6bd4926d05ad70b",
+   "candidate_count": 5
+  },
+  {
+   "identity_key": "shrimp|fried",
+   "winner_evidence_id": "usda:171970",
+   "winner_status": "held",
+   "reason": "entered the artifact after the Phase 0 review; seated winner recorded, not reviewed",
+   "note": "IR-PUBLISH 2026-09-03: seated under rank_v2 as Crustaceans, shrimp, mixed species, cooked, breaded 242 kcal; not reviewed",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "853e4aa6aa392658",
+   "candidate_count": 1
   },
   {
    "identity_key": "tilapia|",
@@ -270,6 +360,16 @@
    "ranking_policy_version": "rank_v2",
    "candidate_universe_fingerprint": "461237484d91d387",
    "candidate_count": 2
+  },
+  {
+   "identity_key": "vegetable oil|",
+   "winner_evidence_id": "usda:172370",
+   "winner_status": "held",
+   "reason": "entered the artifact after the Phase 0 review; seated winner recorded, not reviewed",
+   "note": "IR-PUBLISH 2026-09-03: seated under rank_v2 as Oil, vegetable, soybean, refined 884 kcal; not reviewed",
+   "ranking_policy_version": "rank_v2",
+   "candidate_universe_fingerprint": "6494d6669e0c431e",
+   "candidate_count": 4
   }
  ]
 }

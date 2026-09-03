@@ -53,6 +53,10 @@ _QUALIFY_BATCH = 3
 #: Attempts per batch. Truncation is per-reply, so a retry usually
 #: parses; a batch that fails all attempts fails the identity.
 _QUALIFY_ATTEMPTS = 3
+#: Retrieval rounds per identity when a provider query gives NO answer
+#: (timeout / non-200). Provider-only: a semantic abstention is never retried.
+_PROVIDER_ATTEMPTS = 3
+_PROVIDER_BACKOFF_S = 1.5
 
 MATERIAL, EMPTY, FAILED = "ok", "no_evidence", "failed"
 
@@ -106,7 +110,17 @@ def _row_fingerprint(row: dict) -> str:
     return "sha256:" + hashlib.sha256(material.encode()).hexdigest()[:16]
 
 
-async def build_one(entity: str, preparation: str, store=None,
+def retrieval_queries(identity: str, expanded) -> list:
+    """THE ONE PLACE the retrieval query list is spelled: the (stored or fresh)
+    expansion first, then every fixed shape not already in it. The capture gate
+    calls this too, so it can never drift into a second implementation."""
+    from skills.nutrition import pricing_artifact as art
+    expanded = [str(q) for q in (expanded or ())]
+    return expanded + [s.format(identity=identity) for s in art.QUERY_SHAPES
+                       if s.format(identity=identity) not in expanded]
+
+
+async def build_one(entity: str, preparation: str, store=None, expansion=None, expansions_out=None,
                     identity_key: str = "") -> dict:
     """The qualified candidate set for one (entity, preparation)."""
     import api.usda as usda
@@ -116,22 +130,61 @@ async def build_one(entity: str, preparation: str, store=None,
 
     identity = prep_onto.name_with(entity, preparation) if preparation \
         else entity
-    queries = [s.format(identity=identity) for s in art.QUERY_SHAPES]
 
-    counter = _CountUsdaFailures()
-    usda.logger.addHandler(counter)
-    try:
-        batches = await asyncio.gather(
-            *(usda._search(q, list(art.DATA_TYPES), art.ROWS_PER_SHAPE)
-              for q in queries), return_exceptions=True)
-    finally:
-        usda.logger.removeHandler(counter)
+    # ⭐⭐⭐ QUERY EXPANSION — RECALL ONLY, AUTHORITY UNTOUCHED. Proven
+    # 2026-09-01 on the 86-item dev census: 20 identities recovered, 0
+    # qualification regressions, 16 of the 20 non-Latin. It returns QUERIES
+    # and nothing else; every candidate it surfaces still faces the unchanged
+    # `qualify_usda_rows`. It fails OPEN to the two fixed shapes below, so a
+    # model outage degrades recall to exactly today's, never to nothing.
+    #
+    # IR-PUBLISH (2026-09-03): re-applied for publication. No new retrieval
+    # ideas — this is the mechanism as measured.
+    from skills.nutrition.retrieval_intent import expand
 
-    failed = counter.failures
+    # ⭐ EXPANSION IS MEMOIZED IN THE ARTIFACT (2026-09-03), like annotations.
+    # `expand()` is a model call: rebuilds #2→#3→#4 of identical code moved the
+    # retrieved pool of 3 of 9 pinned seeds and made beef|grilled reprice under
+    # V2 off on the 4th build. A publication gate cannot be stably green over a
+    # re-rolled retrieval. Stored queries are reused under the same
+    # EXPANSION_VERSION; a version bump re-rolls everything, deliberately.
+    if expansion:
+        expanded = [str(q) for q in expansion]
+    else:
+        intent = await expand(identity)
+        expanded = list(intent.queries)
+    if expansions_out is not None:
+        expansions_out[identity_key or art.key(entity, preparation)] = list(expanded)
+    queries = retrieval_queries(identity, expanded)
+
+    # ⛔ A PROVIDER BLIP IS RETRIED HERE, BOUNDED, AND NOTHING ELSE IS. One
+    # timed-out shape query out of five failed `egg|fried`, and because the
+    # build refuses to write on ANY failure, 83 identities' qualification
+    # (annotations live in the written artifact) was discarded with it —
+    # 10.5 minutes to learn one HTTP call had timed out. Retrying a query
+    # that gave NO ANSWER asks the same question again; the semantic path
+    # below never re-enters this loop (a judge that answered is not re-asked).
+    attempt, failed, batches = 0, 0, ()
+    for attempt in range(1, _PROVIDER_ATTEMPTS + 1):
+        counter = _CountUsdaFailures()
+        usda.logger.addHandler(counter)
+        try:
+            batches = await asyncio.gather(
+                *(usda._search(q, list(art.DATA_TYPES), art.ROWS_PER_SHAPE)
+                  for q in queries), return_exceptions=True)
+        finally:
+            usda.logger.removeHandler(counter)
+        failed = counter.failures + sum(isinstance(b, Exception) for b in batches)
+        if not failed:
+            if attempt > 1:
+                print(f"    {identity:28} provider recovered on attempt {attempt}")
+            break
+        if attempt < _PROVIDER_ATTEMPTS:
+            await asyncio.sleep(_PROVIDER_BACKOFF_S * attempt)
+
     rows, seen = [], set()
     for batch in batches:
         if isinstance(batch, Exception):
-            failed += 1
             continue
         for row in batch or ():
             fid = str(row.get("fdc_id") or row.get("description"))
@@ -140,9 +193,24 @@ async def build_one(entity: str, preparation: str, store=None,
             seen.add(fid)
             rows.append(row)
 
+    import hashlib as _hl
+
+    def _population_fp(rs):
+        """What the judgement was ABOUT: sorted provider ids of the retrieved
+        pool. A review bound to this expires the moment retrieval changes."""
+        return "sha256:" + _hl.sha256(",".join(sorted(
+            str(r.get("fdc_id") or r.get("description") or "") for r in rs
+        )).encode()).hexdigest()[:16]
+
     if failed:
+        # ⛔ RETRYABLE, and ONLY this is. The query returned NO ANSWER — retrying
+        # asks the same question again. A semantic abstention is a judge that
+        # DID answer; re-asking it until it agrees is sampling, not retrying.
         return {"identity": identity, "status": FAILED,
-                "reason": f"{failed}/{len(queries)} provider queries failed"}
+                "failure_class": "RETRYABLE_PROVIDER",
+                "reason": f"{failed}/{len(queries)} provider queries failed "
+                          f"after {attempt} attempt(s)",
+                "provider_attempts": attempt}
     if not rows:
         return {"identity": identity, "status": EMPTY,
                 "reason": "no curated rows"}
@@ -426,27 +494,51 @@ async def build_one(entity: str, preparation: str, store=None,
             # and rows still outstanding. A caller counting outstanding work
             # would undercount precisely where it mattered most.
             return {"identity": identity, "status": FAILED,
+                    "failure_class": "SEMANTIC_UNRESOLVED",
                     "reason": f"{len(unresolved)} of {len(rows)} rows "
                               f"unresolved; none annotated as priceable",
-                    "unresolved": tuple(unresolved)}
+                    "unresolved": tuple(unresolved),
+                    "candidate_fingerprint": _population_fp(rows)}
         return {"identity": identity, "status": EMPTY,
-                "reason": f"0 of {len(rows)} rows priceable by policy"}
+                "reason": f"0 of {len(rows)} rows priceable by policy",
+                "candidate_fingerprint": _population_fp(rows)}
+    # ⭐ WHAT THIS JUDGEMENT WAS ABOUT. A reviewed pin or decline is a
+    # statement about a SPECIFIC candidate population; it must expire when the
+    # population moves, or an old review silently suppresses new evidence.
     result = {"identity": identity, "status": MATERIAL, "candidates": kept,
-              "raw": len(rows), "unresolved": tuple(unresolved)}
+              "raw": len(rows), "unresolved": tuple(unresolved),
+              "candidate_fingerprint": _population_fp(rows)}
     if refused:
         # ATTRIBUTABLE: a row that left before the model saw it still says why
         result["mechanically_refused"] = refused
     return result
 
 
-def _retain_unexplained(entries: dict) -> int:
+def _retain_unexplained(entries: dict, store=None) -> int:
     """Carry forward committed candidates this build cannot account for.
 
     Returns how many were retained, so the caller can report it rather than
     absorb it. THE REPORT IS THE POINT: silent retention would hide a real
     upstream removal just as surely as silent dropping hides a flaky one.
+
+    ⛔⛔ THE CODE NOW MATCHES THE CONTRACT *(IR-PUBLISH, 2026-09-03)*. This
+    docstring always said "unless something can attribute its removal", and the
+    loop below retained UNCONDITIONALLY — every prior candidate absent from the
+    new build came back, explained or not. That is how a safety net becomes a
+    liability: it cannot tell "a flaky build lost this row" from "a corrected
+    rule deliberately rejected it", and it will silently reinstate the second.
+    It nearly re-admitted the potato SKIN rows the whole-vs-part rule had just
+    learned to refuse.
+
+    ATTRIBUTION IS NOW READ FROM THIS BUILD'S OWN ANNOTATIONS: a prior candidate
+    that this build judged — any RESOLVED relationship, positive or negative,
+    or a policy drop after a positive one — is EXPLAINED and stays out. Only a
+    candidate this build never reached a judgement on (no annotation, or
+    UNRESOLVED) is unexplained and is retained. Absence of a judgement is the
+    only thing retention may repair.
     """
     from skills.nutrition import pricing_artifact as art
+    from skills.nutrition import semantic_annotations as sa
 
     if not art.ARTIFACT_PATH.exists():
         return 0
@@ -457,6 +549,16 @@ def _retain_unexplained(entries: dict) -> int:
               file=sys.stderr)
         return 0
 
+    # ⭐ A SIGNED NON-DECISION IS A DECISION (2026-09-03). `mayonnaise|` carried
+    # usda:173594 — a row a reviewer signed UNRESOLVED ("declined to rule") —
+    # because this predicate read every UNRESOLVED as "nobody looked" and
+    # retained the loss. `sa.reviewed()` makes the person's refusal attributable.
+    def _explained(key: str, cand: dict) -> bool:
+        if store is None:
+            return False                                  # no judgements to consult
+        ann = store.get(key, str(cand.get("evidence_id") or ""))
+        return ann is not None and (ann.relationship != sa.UNRESOLVED or sa.reviewed(ann))
+
     retained = 0
     for key, before in prior.items():
         old_c = list(before.get("candidates") or ())
@@ -465,6 +567,12 @@ def _retain_unexplained(entries: dict) -> int:
         now = entries.get(key)
         have = {str(c.get("fdc_id")) for c in (now or {}).get("candidates") or ()}
         missing = [c for c in old_c if str(c.get("fdc_id")) not in have]
+        explained = [c for c in missing if _explained(key, c)]
+        if explained:
+            print(f"  ATTRIBUTED {len(explained)} removal(s) on {key} to this "
+                  f"build's own judgement — NOT retained: "
+                  f"{[c.get('fdc_id') for c in explained]}")
+        missing = [c for c in missing if not _explained(key, c)]
         if not missing:
             continue
         entries.setdefault(key, {"candidates": []})
@@ -474,6 +582,84 @@ def _retain_unexplained(entries: dict) -> int:
         print(f"  RETAINED {len(missing)} unexplained candidate(s) on {key}: "
               f"{[c.get('fdc_id') for c in missing]}")
     return retained
+
+
+def _apply_reviewed_pins(_by_key, entries, pins):
+    """Hold reviewed seeds on their v1 candidate set. Pure over its inputs so the
+    contract has its negative cases (tests/test_a_pin_holds_under_its_instrument_and_expires_with_it.py):
+    a pin under another resolver/retrieval instrument does NOT apply and says so;
+    expansion pool drift does NOT expire it; empty candidates never pin."""
+    from skills.nutrition import pricing_artifact as art
+    pinned_doc = {}
+    for key, pin in pins.items():
+        r = _by_key.get(key)
+        want = pin.get("expanded_candidate_fingerprint")
+        got = (r or {}).get("candidate_fingerprint")
+        # ⭐ A PIN IS BOUND TO THE INSTRUMENT, NOT TO ONE EXPANSION'S POOL
+        # (2026-09-03). beef| and oats| populations moved between rebuilds #2
+        # and #3 with nothing but expansion nondeterminism in between; a hold
+        # that expires on a coin flip is not a hold. The reviewed conclusion —
+        # "v1's candidates are this seed's evidence under this resolver and
+        # this retrieval instrument" — does not depend on which extra rows the
+        # pool happened to contain. Resolver/retrieval change -> re-review.
+        # Pool drift -> noted, applied. (Declines stay pool-bound: their
+        # conclusion IS about the pool.)
+        if (pin.get("resolver_version") != art.resolver_version()
+                or pin.get("retrieval_fingerprint") != art.retrieval_fingerprint()):
+            print(f"  PIN DOES NOT APPLY to {key}: reviewed under {pin.get('resolver_version')} / "
+                  f"{str(pin.get('retrieval_fingerprint'))[:18]} — re-review before publishing")
+            continue
+        if not pin.get("candidates"):
+            print(f"  PIN DOES NOT APPLY to {key}: no reviewed candidates")
+            continue
+        if want and got and want != got:
+            print(f"  PIN NOTE {key}: population moved {want} -> {got} since review (expansion drift); held")
+        entries[key] = {"candidates": list(pin["candidates"])}
+        pinned_doc[key] = {k: v for k, v in pin.items() if k != "candidates"}
+        pinned_doc[key]["observed_candidate_fingerprint"] = got
+        pinned_doc[key]["pinned_evidence_ids"] = [c.get("evidence_id") for c in pin["candidates"]]
+        print(f"  PINNED {key}: held on reviewed candidate set ({pin.get('reason')})")
+    return pinned_doc
+
+
+def _stored_annotations(doc) -> dict:
+    """Every annotation the committed artifact carries, from BOTH layouts.
+
+    ⛔⛔ THE HUMAN LAYER WAS SILENTLY DROPPED BY EVERY REBUILD SINCE THE LAYOUT
+    MOVED (found 2026-09-03). The committed artifact stores annotations under
+    `meta.annotations` — 272 rows, 84 of them `baseline_reviewed` (a person
+    ADMITTED omelet/scrambled for `egg|`, microwaved potato, all four cooked
+    mackerel rows for `mackerel|roasted`, …). The producer read and wrote
+    `annotations` at the TOP LEVEL, so `loaded 0 existing semantic annotation(s)`
+    was true on every build, the model re-rolled the 84 signed pairs, labelled
+    them DIFFERENT_IDENTITY, and attribution-aware retention correctly refused to
+    reinstate a "judged" rejection. Two implementations of one notion — the
+    failure family this migration keeps finding. Where the same pair appears in
+    both layouts, a REVIEWED row wins; otherwise the newer (top-level) row wins.
+    """
+    from skills.nutrition import semantic_annotations as sa
+    doc = doc or {}
+    legacy = ((doc.get("meta") or {}).get("annotations")) or {}
+    current = doc.get("annotations") or {}
+    merged = dict(legacy)
+    for k, v in current.items():
+        old = merged.get(k)
+        if old and isinstance(old, dict) and old.get("review_status") == sa.BASELINE_REVIEWED \
+                and not (isinstance(v, dict) and v.get("review_status") == sa.BASELINE_REVIEWED):
+            continue                                   # a person's decision outranks a model's
+        merged[k] = v
+    return merged
+
+
+def _stored_expansions(doc) -> dict:
+    """Expansion queries the committed artifact was built with, reusable ONLY
+    under the same EXPANSION_VERSION. Anything else is a different instrument
+    and re-rolls (tests/test_expansion_is_memoized_in_the_artifact.py)."""
+    from skills.nutrition.retrieval_intent import EXPANSION_VERSION
+    stored = (doc or {}).get("expansions") or {}
+    if stored.get("version") != EXPANSION_VERSION:
+        return {}
+    return {k: [str(q) for q in v] for k, v in (stored.get("queries") or {}).items() if v}
 
 
 async def main() -> int:
@@ -504,34 +690,82 @@ async def main() -> int:
     # sample: every pair judged before is read, not re-asked.
     from skills.nutrition import semantic_annotations as sa
 
-    prior = {}
+    prior, prior_doc = {}, {}
     if art.ARTIFACT_PATH.exists():
         try:
-            prior = json.loads(art.ARTIFACT_PATH.read_text()).get(
-                "annotations") or {}
+            prior_doc = json.loads(art.ARTIFACT_PATH.read_text())
+            prior = _stored_annotations(prior_doc)
         except Exception:
-            prior = {}
+            prior, prior_doc = {}, {}
     store = sa.Store.from_payload(prior)
     print(f"loaded {len(store.by_key)} existing semantic annotation(s)")
+    from skills.nutrition.retrieval_intent import EXPANSION_VERSION
+    prior_expansions = _stored_expansions(prior_doc)
+    expansions_out = {}
+    print(f"loaded {len(prior_expansions)} stored expansion(s) under {EXPANSION_VERSION}")
 
     results, entries = [], {}
     for entity in entities:
         for preparation in preparations:
             r = await build_one(entity, preparation, store=store,
+                                expansion=prior_expansions.get(art.key(entity, preparation)),
+                                expansions_out=expansions_out,
                                 identity_key=art.key(entity, preparation))
             r["key"] = art.key(entity, preparation)
             results.append(r)
             if r["status"] == MATERIAL:
                 entries[r["key"]] = {"candidates": r["candidates"]}
 
-    print(f"\n{'key':34} {'status':12} candidates")
-    print("-" * 70)
+    print(f"\n{'key':34} {'status':12} {'cands':>5}  population_fp")
+    print("-" * 78)
     for r in results:
         n = len(r.get("candidates") or ())
-        print(f"{r['key']:34} {r['status']:12} "
-              f"{n if n else r.get('reason','')}")
+        print(f"{r['key']:34} {r['status']:12} {n if n else '-':>5}  "
+              f"{r.get('candidate_fingerprint') or ''}  {r.get('reason','') if not n else ''}")
 
-    failed = [r for r in results if r["status"] == FAILED]
+    # ⭐⭐ REVIEWED DECLINES — a seed that is NOT authoritatively buildable, for
+    # a reason a human checked, bound to the exact subject that was checked.
+    # ⛔ NOT a quota; ⛔ NOT permanent; ⛔ ONLY for a BLOCKING failure. An
+    # EMPTY never refused a write and needs no permission. And a missing
+    # fingerprint means the review DOES NOT APPLY — the build refuses, prints
+    # what it saw, and the pin is filled deliberately. The `None`-matches-
+    # anything placeholder let a stale review apply to a moved population once;
+    # it is not repeated.
+    REVIEWED_DECLINES = {
+        # `egg|roasted`: the unresolved row is a whole egg with NO preparation
+        # stated, genuinely unsettleable against "roasted" — INSUFFICIENT_EVIDENCE
+        # is correct. Absent from the v1 artifact; zero coverage cost.
+        # Fill `candidate_fingerprint` from a single-identity build_one run.
+        "egg|roasted": {"reason": "IDENTITY_UNRESOLVED",
+                        "resolver_version": "food_evidence_semantics_v2",
+                        "retrieval_fingerprint": art.retrieval_fingerprint(),
+                        # observed 2026-09-03 via a single-identity build_one:
+                        # 15 rows retrieved under expansion, 1 unresolved =
+                        # usda:748967 "Eggs, Grade A, Large, egg whole".
+                        "candidate_fingerprint": "sha256:a33a5128be741225"},
+    }
+    _declined_doc = {}
+    _declined_keys = set()
+    for r in results:
+        if r["status"] != FAILED or r.get("failure_class") != "SEMANTIC_UNRESOLVED":
+            continue
+        rev = REVIEWED_DECLINES.get(r["key"])
+        if not rev:
+            continue
+        got = r.get("candidate_fingerprint")
+        applies = (rev.get("candidate_fingerprint") and rev["candidate_fingerprint"] == got
+                   and rev["resolver_version"] == art.resolver_version()
+                   and rev["retrieval_fingerprint"] == art.retrieval_fingerprint())
+        if not applies:
+            print(f"  REVIEW DOES NOT APPLY to {r['key']}: observed population {got} "
+                  f"(reviewed {rev.get('candidate_fingerprint')}) — re-review before pinning")
+            continue
+        _declined_keys.add(r["key"])
+        _declined_doc[r["key"]] = {**rev, "observed_candidate_fingerprint": got,
+                                    "detail": str(r.get("reason", ""))}
+        print(f"  DECLINED {r['key']}: {rev['reason']} (reviewed, subject-bound)")
+
+    failed = [r for r in results if r["status"] == FAILED and r["key"] not in _declined_keys]
     if failed:
         print(f"\n{len(failed)}/{len(results)} identities FAILED — refusing to "
               f"write. A failure is not an authoritative negative:",
@@ -562,7 +796,38 @@ async def main() -> int:
 
     raw_keys = {k: [c.get("fdc_id") for c in v.get("candidates") or ()]
                 for k, v in entries.items()}
-    retained = _retain_unexplained(entries)
+    retained = _retain_unexplained(entries, store)
+
+    # ⭐⭐ REVIEWED PINS — IR-PUBLISH containment, NOT consumed-form authority.
+    # Query expansion surfaced raw/dry base forms for these seeds and the ranker
+    # had no reason to demote them (`oats|` cooked -> DRY, +434%). The general
+    # fix is a registered blocker (docs/REGISTERED_CONSUMED_FORM_AUTHORITY.md);
+    # publication does not wait for it. Each pin keeps the seed on the candidate
+    # set the frozen 222 was measured against, and is bound to the INSTRUMENT
+    # (resolver_version + retrieval_fingerprint) so it expires the moment the
+    # resolver or the retrieval contract changes — but NOT on expansion's pool
+    # drift between otherwise identical builds (see the PIN NOTE below).
+    #
+    # ⛔ FAIL CLOSED. A pin with no fingerprint does NOT apply — the build then
+    # publishes the expanded set, the gate catches the reprice, and the
+    # fingerprint gets filled in DELIBERATELY. The `None`-matches-anything
+    # placeholder is how a stale review silently applied to a moved population
+    # last time; it is not repeated here.
+    # ⛔ A PIN CARRIES ITS OWN CANDIDATE LIST. The first draft looked the
+    # prior set up from the artifact ON DISK — but by the build that applies a
+    # pin, that file is the previous EXPANDED build, not v1. The pin would have
+    # pinned to the thing it exists to hold off. So each pin is self-contained:
+    # the reviewed candidates travel with the review, are visible in the diff,
+    # and cannot drift with whatever happens to be on disk.
+    # ⭐ PINS LIVE IN A COMMITTED, SELF-CONTAINED FILE (2026-09-03). Eight seeds
+    # were held after the publication gate blocked v2's first expanded build:
+    # each carries its v1 candidate dicts and is bound to the population
+    # fingerprint it was reviewed against, so it expires the moment retrieval
+    # or the resolver moves. See docs/REVIEWED_SEED_DECLINES.md.
+    _pins_path = pathlib.Path("data/reviewed_seed_pins.json")
+    REVIEWED_PINS = (json.loads(_pins_path.read_text()).get("pins") or {}) if _pins_path.exists() else {}
+    _by_key = {r["key"]: r for r in results}
+    _pinned_doc = _apply_reviewed_pins(_by_key, entries, REVIEWED_PINS)
 
     # ⭐ RAW vs FINAL, REPORTED EVERY BUILD. Two truths, stated separately, so
     # "stable because generation is stable" can never be confused with "stable
@@ -594,7 +859,23 @@ async def main() -> int:
         # The durable semantic facts, versioned and reviewable. Their presence
         # here is what lets the NEXT build reuse rather than re-roll.
         "semantic_policy_version": sa.SEMANTIC_POLICY_VERSION,
-        "annotations": store.to_payload(),
+        # A reader can tell a REVIEWED hold from an identity nobody looked at.
+        "pinned_seed_identities": _pinned_doc,
+        "declined_seed_identities": _declined_doc,
+        # ⭐ THE POPULATION EACH ENTRY WAS RANKED OVER, per identity, so a pin's
+        # expiry condition is verifiable FROM THE FILE. Kept as a sibling map,
+        # not inside `entries[key]`: `evidence_for()` and every other consumer
+        # read `entry["candidates"]` and must not meet a new field there.
+        "candidate_fingerprints": {r["key"]: r.get("candidate_fingerprint")
+                                   for r in results if r.get("candidate_fingerprint")},
+        # ⭐ ONE LOCATION. `meta.annotations` is where the committed artifact, the
+        # human review round (scripts/human_review_round.py) and the review-seam
+        # tests keep annotations. The top-level copy this producer wrote was the
+        # second implementation of one notion, and it cost the human layer.
+        "meta": {"annotations": store.to_payload(),
+                 "store_writer": "scripts/build_pricing_artifact.py"},
+        "expansions": {"version": EXPANSION_VERSION,
+                       "queries": dict(sorted(expansions_out.items()))},
     }
     print(f"\n{len(entries)}/{len(results)} identities carry qualified evidence")
     print(f"semantic annotations: {len(store.by_key)} stored, "

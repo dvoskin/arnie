@@ -43,7 +43,7 @@ def test_the_spine_reproduces_itself_with_the_resolver_poisoned(proof):
     assert proof["failures"] == []
     assert proof["poison_bites"] is True
     assert proof["resolved_this_build"] == [0] * proof["runs"]
-    assert proof["identities"] == 27
+    assert proof["identities"] == 37   # re-frozen 2026-09-03 (IR-PUBLISH)
 
 
 def test_the_poison_would_actually_raise():
@@ -122,7 +122,7 @@ def test_held_is_never_silently_upgraded_to_signed():
     upgrade it, the distinction would be decorative."""
     frozen = json.loads(fz.FREEZE_PATH.read_text())
     held = [r for r in frozen["rows"] if r["winner_status"] == wr.HELD]
-    assert len(held) == 15
+    assert len(held) == 25
     for row in held:
         assert row["reason"] in wr.BLOCKING_CAUSES, row["identity_key"]
 

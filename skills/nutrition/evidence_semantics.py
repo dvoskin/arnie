@@ -29,7 +29,14 @@ from core.semantic_evidence import (ABSTAIN, EvidenceRecord, SemanticDomain,
                                     qualified)
 
 #: The policy identity: model + prompt + schema, one versioned unit.
-VERSION = "food_evidence_semantics_v1"
+#: ⭐⭐ v2 — THE PROMPT CHANGED, SO THE INSTRUMENT CHANGED. Two additions,
+#: both proven on fixed candidate populations (2026-09-01): the classifier
+#: may read an intent in ANY language, and a PART record is not the WHOLE
+#: food. `resolver_version` is a hand-written string, so the prompt could have
+#: moved silently — and then evidence qualified by two different instruments
+#: would share one label. The bump deliberately stales the artifact and every
+#: acquired row: rows judged under v1 were judged by a different gate.
+VERSION = "food_evidence_semantics_v2"
 
 #: CALIBRATED, NOT CHOSEN (2026-08-07, scripts/eval_semantic_evidence.py over
 #: the captured corpus, n=41 human-labelled records):
@@ -119,7 +126,30 @@ DOMAIN = SemanticDomain(
         "it shares with the intent — lexical overlap is the trap "
         "(a chicken frankfurter is not chicken; chicken fat is not chicken; "
         "a dish containing the food is not the food). Provider-reported match "
-        "grades are unreliable and must be ignored. For `preparation`, "
+        "grades are unreliable and must be ignored. "
+        # ⛔⛔⛔ A PART IS NOT THE WHOLE. Measured: generic `potato` admitted
+        # `Potatoes, raw, skin` and it WON at 58 kcal/100g against boiled flesh
+        # at 87 — a 33% error on an identity inside the frozen corpus,
+        # reproduced under BOTH v1 and v2 guidance on a fixed population. The
+        # rule is symmetric: `egg white` still prices from egg-white rows.
+        "A record covering only a COMPONENT or PART of a food (skin, peel, "
+        "rind, yolk, white, leaves, greens, fat, bone) is NOT the same "
+        "identity as the whole generic food, unless the intended item names "
+        "that component itself: `potato` is not potato skin and `chicken` is "
+        "not chicken skin, while `potato skin` and `egg white` ARE those "
+        "records. "
+        # ⭐⭐⭐ THE INTENT MAY BE IN ANY LANGUAGE; THE RECORDS ARE ENGLISH.
+        # Measured: `Творог` against cottage-cheese rows kept 0, while
+        # `cottage cheese` against THE SAME ROWS kept 1. The gate could not
+        # read the question. Teaching it to read keeps the judgement here —
+        # handing it a translation would smuggle an identity mapping past the
+        # only thing with authority to make one.
+        "The intended item may be written in ANY language while the records "
+        "are in English; judge the FOOD, translating the intent as needed, and "
+        "never treat a language difference as evidence of a different food. "
+        "Translation must not lose a qualifier: preparation, fat level and "
+        "form are part of the identity in every language "
+        "(`вареные яйца` is boiled eggs, not eggs). For `preparation`, "
         "normalize wording to one of: grilled, roasted, fried — otherwise "
         "omit it rather than inventing a nearby value. Extract "
         "`kcal_per_100g` ONLY when the record states energy per 100 g for "

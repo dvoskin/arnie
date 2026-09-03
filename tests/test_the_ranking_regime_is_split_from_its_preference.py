@@ -174,7 +174,12 @@ def test_the_structural_half_alone_reaches_every_committed_identity():
         winners = _winners(fi)
     unreachable = sorted(k for k, w in winners.items() if w is None)
     assert unreachable == [], unreachable
-    assert len(winners) == 27
+    # ⭐ RE-MEASURED 2026-09-03 (IR-PUBLISH): 37 committed identities now, and the
+    # structural half still reaches EVERY one. The reworked preference moves the
+    # same trim comparison as before — meat only (167) -> meat and skin (223) —
+    # on `chicken|roasted` AND on the NEW bare `chicken|`, which did not exist in
+    # the 27-identity artifact and seats the same roasting-chicken pair.
+    assert len(winners) == 37
 
 
 def test_the_structural_half_is_unaffected_by_the_preference_flag():
@@ -196,7 +201,7 @@ def test_the_structural_half_is_unaffected_by_the_preference_flag():
 
     moved = {k for k in safe
              if (safe[k] or {}).get("fdc_id") != (full[k] or {}).get("fdc_id")}
-    assert moved == {"chicken|roasted"}, moved
+    assert moved == {"chicken|", "chicken|roasted"}, moved   # re-measured 2026-09-03, see above
 
 
 def test_cooked_by_default_is_structural_and_survives_the_split():
@@ -293,7 +298,7 @@ def test_the_reworked_preference_moves_one_winner_not_five():
 
     moved = {k for k in safe
              if (safe[k] or {}).get("fdc_id") != (reworked[k] or {}).get("fdc_id")}
-    assert moved == {"chicken|roasted"}, moved
+    assert moved == {"chicken|", "chicken|roasted"}, moved   # re-measured 2026-09-03, see above
     assert float(_kcal(reworked["chicken|roasted"])) == 223.0
     assert "meat and skin" in str(
         reworked["chicken|roasted"].get("description", "")).lower()

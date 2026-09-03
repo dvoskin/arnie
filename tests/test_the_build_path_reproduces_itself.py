@@ -127,11 +127,12 @@ def test_resolved_zero_alone_does_not_mean_the_resolver_was_unreachable():
     result = asyncio.run(pbr.prove(runs=1))
 
     assert result["resolved_this_build"] == [0]
-    if result["resolver_calls"]:
-        assert result["closure_condition_met"] is False, (
-            "the resolver was called, so closure must not be reported met")
-    else:
-        assert result["closure_condition_met"] is True
+    # ⭐ TIGHTENED 2026-09-03: the store is populated across the seam (the human
+    # layer restored, expansions memoized, capture re-taken), the resolver is
+    # not called, and reviewed pins are an explicit override — so closure is
+    # asserted, not tolerated. `failures` names the reason if it ever is not.
+    assert result["resolver_calls"] == 0, result["resolver_calls"]
+    assert result["closure_condition_met"] is True, result["failures"]
 
 
 # ── the schema seam that actually broke ───────────────────────────────────

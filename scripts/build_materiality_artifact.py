@@ -296,6 +296,24 @@ async def main() -> int:
     if args.dry_run:
         print("--dry-run: nothing written")
         return 0
+    # ⛔ THE ASSEMBLY THIS WRITE NEEDED (found 2026-09-03): `document` was never
+    # built — a refactor kept the write and dropped the assembly, so every run
+    # since gathered evidence for minutes and died on a NameError at the end.
+    # Same stamps the reader verifies (core.materiality_artifact.verify), same
+    # entry shape the committed file carries: space · evidence_ids · material.
+    from datetime import datetime, timezone
+    document = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "resolver_version": art.resolver_version(),
+        "vocabulary_fingerprint": art.vocabulary_fingerprint(),
+        "retrieval_fingerprint": art.retrieval_fingerprint(),
+        "entries": {r["food"]: {"space": r["space"], "evidence_ids": r["evidence_ids"],
+                                "material": r["material"]}
+                    # only MATERIAL foods get an entry: the reader treats "no entry" as
+                    # "no material preparations", so an immaterial entry would be a
+                    # second way of saying the same thing (and the registry test rejects it)
+                    for r in results if r["status"] == MATERIAL},
+    }
     art.ARTIFACT_PATH.parent.mkdir(parents=True, exist_ok=True)
     art.ARTIFACT_PATH.write_text(json.dumps(document, indent=2,
                                             sort_keys=False) + "\n",

@@ -65,7 +65,12 @@ from skills.nutrition import pricing_artifact as art
 #: Measured 2026-08-13 against the committed artifact, per flag mode. Never
 #: guessed, and never stated without its mode — the mode IS the finding.
 #: Re-measured 2026-08-13 AFTER morphological folding landed.
-UNREACHABLE_V2_OFF = {"oats|", "mackerel|roasted", "tilapia|roasted"}
+#: Re-measured 2026-09-03 AFTER Identity Reachability publication (expansion memoized in
+#: the artifact, v2 semantics, the human annotation layer restored, 5 reviewed pins): the v1
+#: length-lever class (oats|, mackerel|roasted, tilapia|roasted) plus three NEW entries whose
+#: single long-description row the legacy scorer rejects (salmon|grilled,
+#: salmon|roasted, shrimp|fried); potato|roasted is reachable. V2 on reaches every committed identity.
+UNREACHABLE_V2_OFF = {'mackerel|roasted', 'oats|', 'salmon|grilled', 'salmon|roasted', 'shrimp|fried', 'tilapia|roasted'}
 UNREACHABLE_V2_ON = frozenset()
 
 #: Now EMPTY. The singular/plural defect was the only one reaching every

@@ -36,3 +36,6 @@ nohup.out
 
 # Local per-user memory/profile data (persists on /data in prod, never commit)
 users/
+
+# per-build raw-generation snapshot (diagnostic; compared in-build, never read by tests)
+data/pricing_evidence_v1.raw.json

@@ -156,7 +156,7 @@ async def food_portions(fdc_id) -> list[dict]:
             })
         return out
     except Exception as e:
-        logger.warning(f"USDA foodPortions failed for {fdc_id}: {e}")
+        logger.warning(f"USDA foodPortions failed for {fdc_id}: {type(e).__name__}: {_redact(e)}")
         return []
 
 
@@ -192,6 +192,14 @@ _ML_UNITS = frozenset({"ml", "mls", "milliliter", "millilitre",
 #: editing the layer whose job is ranking, and the gold set drifted to a
 #: different answer entirely because nothing connected the two.
 USDA_BASIS = "per_100g"
+
+
+def _redact(exc) -> str:
+    """The message without the request's query string. httpx puts the full URL —
+    `?api_key=…` included — into HTTPStatusError's text, and that text was
+    landing in build logs (2026-09-03)."""
+    import re as _re
+    return _re.sub(r"\?api_key=[^'\s]*", "?api_key=<redacted>", str(exc))
 
 
 async def _search(query: str, data_types: list[str], page_size: int) -> list[dict]:
@@ -244,7 +252,9 @@ async def _search(query: str, data_types: list[str], page_size: int) -> list[dic
             })
         return out
     except Exception as e:
-        logger.warning(f"USDA search failed: {e}")
+        # Name the class: a timeout's str() is EMPTY, and "USDA search failed: "
+        # is a blank the build cannot act on.
+        logger.warning(f"USDA search failed: {type(e).__name__}: {_redact(e)}")
         return []
 
 

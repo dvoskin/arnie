@@ -101,6 +101,20 @@ async def prove(runs: int = 3) -> dict:
     queries = capture["queries"]
 
     document = json.loads(art.ARTIFACT_PATH.read_text())
+
+    # ⭐ REPLAY MUST ISSUE THE QUERIES THE ARTIFACT WAS BUILT WITH. Without this the
+
+    # 'deterministic replay' made LIVE model calls to re-roll the expansion (21 min,
+
+    # three sockets) and its queries could never match the capture.
+
+    _stored_expansions_for_proof = bp._stored_expansions(document)
+
+    _missing = [i for i in (document.get('entries') or {}) if not _stored_expansions_for_proof.get(i)]
+
+    if _missing:
+
+        raise cr.RetrievalContractMoved(f'{len(_missing)} identit(ies) have no stored expansion; replay would re-roll')
     stored = (document.get("meta") or {}).get("annotations") or {}
     if not stored:
         raise SystemExit("the semantic store is empty — populate first")
@@ -215,7 +229,7 @@ async def prove(runs: int = 3) -> dict:
                     usda._search = _replay
                     result = await bp.build_one(entity, preparation,
                                                 store=store,
-                                                identity_key=identity)
+                                                identity_key=identity, expansion=_stored_expansions_for_proof[identity])
                     results[identity] = {
                         "status": result.get("status"),
                         "candidates": [art.candidate_evidence_id(c)
@@ -269,7 +283,18 @@ async def prove(runs: int = 3) -> dict:
         identity: [art.candidate_evidence_id(c)
                    for c in (entry.get("candidates") or ())]
         for identity, entry in (document.get("entries") or {}).items()}
+    # ⭐ A REVIEWED PIN IS AN EXPLICIT OVERRIDE OF GENERATION (2026-09-03). The
+    # artifact records which seeds are held and on which rows; for those the
+    # claim is "the artifact honours the pin", for every other identity it is
+    # "the artifact IS the derivation".
+    pinned = document.get("pinned_seed_identities") or {}
     for identity, derived in first["results"].items():
+        if identity in pinned:
+            held = list(pinned[identity].get("pinned_evidence_ids") or [])
+            if committed.get(identity) != held:
+                failures.append(f"{identity}: pinned on {len(held)} rows but the artifact commits "
+                                f"{len(committed.get(identity) or [])}")
+            continue
         if derived["candidates"] != committed.get(identity):
             failures.append(
                 f"{identity}: build derived {len(derived['candidates'])} "
@@ -318,6 +343,7 @@ async def prove(runs: int = 3) -> dict:
             # is zero right now while the resolver is being called 333 times
             # and refused every time. "It could not have asked" requires BOTH
             # that nothing resolved AND that nothing asked.
+            "pinned_identities": sorted(pinned),
             "closure_condition_met": (
                 poison_bites
                 and all(s["resolved_this_build"] == 0 for s in snapshots)

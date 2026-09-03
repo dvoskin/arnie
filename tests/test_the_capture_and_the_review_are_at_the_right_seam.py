@@ -20,6 +20,7 @@ import json
 
 import pytest
 
+from scripts import build_pricing_artifact as bp
 from scripts import capture_retrieval as cap
 from scripts import human_review_round as hr
 from scripts import winner_review as wr
@@ -56,6 +57,7 @@ def test_the_capture_was_taken_at_the_seam_not_reconstructed(capture):
     """The recorded queries must be the ones the CONTRACT produces — this
     module knows nothing about query shapes, and that is the point."""
     meta = capture["meta"]
+    stored_expansions = bp._stored_expansions(json.loads(art.ARTIFACT_PATH.read_text()))
     assert meta["captured_at_the_seam"] is True
     assert meta["query_shapes"] == list(art.QUERY_SHAPES)
     assert meta["data_types"] == list(art.DATA_TYPES)
@@ -71,7 +73,9 @@ def test_the_capture_was_taken_at_the_seam_not_reconstructed(capture):
         entity, _, preparation = identity.partition("|")
         name = prep_onto.name_with(entity, preparation) if preparation \
             else entity
-        expected = {shape.format(identity=name) for shape in art.QUERY_SHAPES}
+        # ⭐ SINCE 2026-09-03 RETRIEVAL = STORED EXPANSION + SHAPES, and the producer
+        # spells that list in exactly one place. Asking it, not restating it.
+        expected = set(bp.retrieval_queries(name, stored_expansions.get(identity)))
 
         # ⛔ THE ASSERTION THIS GATE WAS MISSING. `expected` was computed and
         # then never compared against anything. The docstring promised "the
@@ -81,7 +85,7 @@ def test_the_capture_was_taken_at_the_seam_not_reconstructed(capture):
         # is exactly the capture this gate was written to reject.
         assert {record["query"] for record in records} == expected, identity
 
-        assert len(records) == len(art.QUERY_SHAPES), identity
+        assert len(records) == len(expected), identity
         for record in records:
             assert record["data_types"] == list(art.DATA_TYPES)
             assert record["rows_per_shape"] == art.ROWS_PER_SHAPE

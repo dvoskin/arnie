@@ -105,3 +105,57 @@ the expansion appeared to WIN — and it was only reachable with the flag on.
 
 This must become a permanent gate, not a one-off fixture: any future artifact
 built under a flag has to be checked with the flag off.
+
+---
+
+## ⭐ THE EXPOSURE PREDATES EXPANSION — measured 2026-09-03
+
+Validating the reachability/conflict instrument against the **v1 artifact**
+(the one the frozen 222 was measured against) found **4 raw winners with a
+cooked row present in the same pool**, before query expansion existed:
+
+```
+asparagus|     Asparagus, raw       4 cooked alternatives
+broccoli|      Broccoli, raw        6
+cauliflower|   Cauliflower, raw     6
+tilapia|       Fish, tilapia, raw   1    ← the documented UNDECIDED-axis case
+```
+
+So the correct statement is not *"expansion introduced a consumed-form
+problem"* but *"expansion widened a pre-existing one"* — the ranker never had a
+consumed-form preference for foods outside the cooking-yield table, and the
+narrow v1 pools simply contained fewer raw forms to expose it. The 9.0% and
+13.1% baselines were measured WITH these four in place.
+
+Publication consequence: the gate compares against v1, so these four are
+UNCHANGED and not a block. Only seeds that expansion moved are in scope for
+pins. The general fix remains registered and out of scope.
+
+## 2026-09-03 — IR-PUBLISH: the 3/20 are quantified at runtime, and NOT containable at zero wrong admissions
+
+Three instruments on the 20 recovered dev identities (post rebuild #2/#3, USDA quiet):
+
+| ranking query | hit (of 3 known-wrong) | false positive | missed |
+|---|---|---|---|
+| expansion *retrieval* query (says "raw") — the original census instrument | 3 | 2 | 0 |
+| same query with form words stripped | 3 | 1 | 0 |
+| stripped + "cooked-preferred" sharpener | 1 | 0 | 2 |
+| **canonical id the entity resolver actually emits** (`squid`, `scallop`, `tomato`, …) | **2** | **2** | **1** |
+| canonical id + sharpener | 0 | 0 | 3 |
+
+**What runtime actually does.** `entity_resolver.interpret()` emits form-neutral ids (18/20 resolved).
+`Рыба` resolves to nothing ("unspecified type of fish") and never reaches the ranker — exposure 0.
+`squid` and `scallop` seat `Mollusks, …, mixed species, raw` although a cooked sibling is qualified: the v2
+ranker's cooked preference is three-valued and both are `yield_unknown_for_this_food`, so nothing prefers
+cooked and the shorter raw description wins by 0.02/token. **Real runtime exposure on this population: 2/20,
+both seafood.** The two false positives (`bell pepper` → "Peppers, sweet, green, raw"; `tomato` → "Tomatoes,
+green, raw") are correctly raw foods that a conflict-based abstention would decline.
+
+**Decision.** No available rule reaches "hits the 3 with 0 false positives"; the sharpener that would be
+precise (`COOKED_PREFERRED`) is undecided for every one of the six. Abstention is therefore NOT shipped.
+The defect stays registered as CONSUMED-FORM AUTHORITY with its runtime exposure quantified; resolving it
+needs a form authority (the yield/cooked-preference table knowing seafood is eaten cooked), which is a
+new authority and out of this tranche by rule. Two side observations: the original 3/20 census ranked
+with the expansion's retrieval query, which itself injects "raw" (see
+`docs/REGISTERED_LEXICAL_RANKER_LANGUAGE_GAP.md`); and `mango` finds no winner against "Mangos, raw"
+(irregular plural — a lexical instance, not a form one).

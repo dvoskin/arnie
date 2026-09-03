@@ -44,7 +44,7 @@ from skills.nutrition.v2_gate import PHASE_0_REGIME, ranking_regime
 FREEZE_PATH = (pathlib.Path(__file__).resolve().parents[1]
                / "data" / "baseline" / "phase_0_winner_freeze.json")
 
-EXPECTED = {"identities": 27, "signed": 12, "held": 15}
+EXPECTED = {"identities": 37, "signed": 12, "held": 25}
 
 #: ⭐ THE DELTA, RECONCILED ROW BY ROW RATHER THAN NARRATED.
 #:
@@ -53,27 +53,52 @@ EXPECTED = {"identities": 27, "signed": 12, "held": 15}
 #: a SEMANTIC decision can be mistaken for a BOOKKEEPING one, so the movements
 #: are enumerated and the arithmetic is checked — a delta nobody can reconstruct
 #: is a delta that gets normalised.
-PRIOR = {"identities": 27, "signed": 13, "held": 14}
+#: 2026-09-03 (IR-PUBLISH): the freeze before this one read 12 SIGNED / 15 HELD
+#: over 27. Ten identities entered the artifact (query expansion + the restored
+#: human annotation layer); every prior winner still seats the row its review
+#: covers (checked in build()), so the ten are the whole delta.
+PRIOR = {"identities": 27, "signed": 12, "held": 15}
 
 MOVEMENTS = (
+    ("butter|", None, "held",
+     "NEW under IR-PUBLISH 2026-09-03. Seats usda:173410 (Butter, salted 717 kcal) under rank_v2; no reviewer has looked, held as UNREVIEWED_NEW_IDENTITY."),
+    ("chicken|", None, "held",
+     "NEW under IR-PUBLISH 2026-09-03. Seats usda:172395 (Chicken, roasting, meat only, cooked, roasted 167 kcal) under rank_v2; no reviewer has looked, held as UNREVIEWED_NEW_IDENTITY."),
+    ("coconut oil|", None, "held",
+     "NEW under IR-PUBLISH 2026-09-03. Seats usda:171412 (Oil, coconut 892 kcal) under rank_v2; no reviewer has looked, held as UNREVIEWED_NEW_IDENTITY."),
+    ("mayonnaise|", None, "held",
+     "NEW under IR-PUBLISH 2026-09-03. Seats usda:171009 (Salad dressing, mayonnaise, regular 680 kcal) under rank_v2; no reviewer has looked, held as UNREVIEWED_NEW_IDENTITY."),
+    ("mushrooms|fried", None, "held",
+     "NEW under IR-PUBLISH 2026-09-03. Seats usda:169253 (Mushrooms, white, stir-fried 26 kcal) under rank_v2; no reviewer has looked, held as UNREVIEWED_NEW_IDENTITY."),
+    ("olive oil|", None, "held",
+     "NEW under IR-PUBLISH 2026-09-03. Seats usda:171413 (Oil, olive, salad or cooking 884 kcal) under rank_v2; no reviewer has looked, held as UNREVIEWED_NEW_IDENTITY."),
+    ("salmon|grilled", None, "held",
+     "NEW under IR-PUBLISH 2026-09-03. Seats usda:171999 (Fish, salmon, chinook, cooked, dry heat 231 kcal) under rank_v2; no reviewer has looked, held as UNREVIEWED_NEW_IDENTITY."),
+    ("salmon|roasted", None, "held",
+     "NEW under IR-PUBLISH 2026-09-03. Seats usda:171999 (Fish, salmon, chinook, cooked, dry heat 231 kcal) under rank_v2; no reviewer has looked, held as UNREVIEWED_NEW_IDENTITY."),
+    ("shrimp|fried", None, "held",
+     "NEW under IR-PUBLISH 2026-09-03. Seats usda:171970 (Crustaceans, shrimp, mixed species, cooked, breaded 242 kcal) under rank_v2; no reviewer has looked, held as UNREVIEWED_NEW_IDENTITY."),
+    ("vegetable oil|", None, "held",
+     "NEW under IR-PUBLISH 2026-09-03. Seats usda:172370 (Oil, vegetable, soybean, refined 884 kcal) under rank_v2; no reviewer has looked, held as UNREVIEWED_NEW_IDENTITY."),
     # ⭐ THE POST-REBUILD RE-FREEZE. The seam-capture rebuild grew six ladders
     # and moved two winners; the reviewer kept both old representatives, and
     # the RANKER SEATS NEITHER. The freeze records what production does — a
     # signature naming a row production never seats would be the split-brain
     # authority this phase removed — so the reviewer's preference is carried
     # as the HOLD'S REASON instead.
-    ("egg|", "signed", "held",
-     "SIGNED -> HELD. The rebuild added a candidate and the ranker moved from "
-     "poached 143 to omelet 154. The reviewer kept poached as the cleaner "
-     "generic for a preparation-unspecified egg — omelet is more transformed "
-     "and can imply added fat or milk — so the seated winner is recorded and "
-     "held for representativeness. Admission unchanged: an omelet is an egg."),
+    # (the 2026-08 egg| SIGNED->HELD movement is already inside PRIOR)
 )
 
 #: ⭐⭐ RE-STAMPED, NOT RE-DECIDED. Their ladders grew, so every signature
 #: expired as UNVERIFIED — and the winner did not move, so the decision itself
 #: still stands and is simply re-asserted over the fuller universe.
-RESTAMPED = ("cauliflower|", "chicken|roasted", "shrimp|", "salmon|")
+#: 2026-09-03 (IR-PUBLISH): thirteen prior ladders grew under query expansion and
+#: the restored human annotation layer — and NOT ONE winner moved (the two-mode
+#: publication gate and build() both check it), so all thirteen are re-asserted
+#: over the fuller universe. Measured, not narrated.
+RESTAMPED = ("asparagus|", "banana|", "beef|fried", "beef|grilled", "beef|roasted",
+             "broccoli|", "chicken|fried", "chicken|roasted", "mackerel|", "oats|",
+             "rice|", "salmon|", "shrimp|")
 
 #: ⛔ AND ONE HOLD CHANGED ITS CAUSE WITHOUT CHANGING ITS COUNT. `mackerel|`
 #: was held because `cooking_yield` says nothing about mackerel, so a raw row
@@ -254,11 +279,11 @@ if __name__ == "__main__":
     counts = {"signed": 0, "held": 0}
     for row in frozen["rows"]:
         counts[row["winner_status"]] += 1
-    print(f"  ✅ {len(frozen['rows'])}/27 · {counts['signed']} SIGNED · "
+    print(f"  ✅ {len(frozen['rows'])}/{EXPECTED['identities']} · {counts['signed']} SIGNED · "
           f"{counts['held']} HELD · 0 failures")
     print(f"  every row binds identity · source-qualified evidence · status ·")
     print(f"  reason · ranking_policy_version · candidate_universe_fingerprint")
-    print(f"\n  DELTA FROM 15 SIGNED / 11 HELD / 26, reconciled:")
+    print(f"\n  DELTA FROM {PRIOR['signed']} SIGNED / {PRIOR['held']} HELD / {PRIOR['identities']}, reconciled:")
     for identity, was, now, why in MOVEMENTS:
         print(f"    {identity:<14} {str(was or 'absent'):>7} -> {now:<7} "
               f"{why.split('.')[0]}")

@@ -12053,3 +12053,45 @@ extra large 152 g  #portion:93517
 a set entry with `pass` — invalid syntax, so the module stopped importing and
 the witness measured the PARSER. *A mutation has to leave the tree runnable or
 it is not measuring behaviour.*
+
+---
+
+## STATUS 2026-09-03 — IR-PUBLISH (Identity Reachability published behind reviewed pins)
+
+**Delivered on the branch (commit pending the exact-tree suite):** query expansion (`retrieval_intent_v1`)
+wired into the producer and into `retrieval_fingerprint`; evidence semantics v2 as resolver; artifact rebuilt
+under `sha256:de0432a2` (37 entries; 84 identities' expansions memoized in the artifact; 1255 annotations,
+84 human-signed); publication gate green in BOTH flag modes; five reviewed pins hold baseline seeds
+(`data/reviewed_seed_pins.json`); retrieval capture re-taken under the new contract.
+
+**Root cause found — and a claim withdrawn.** Every rebuild since the annotation layout moved dropped the 84
+human-signed annotations (`meta.annotations` in the committed artifact; the producer read/wrote the top
+level). "v2 is stricter on preparation" was wrong: the model's baseline opinion returned because the
+reviewer's overrides were never loaded. Loader reads both layouts (signed wins), writer emits only
+`meta.annotations`. `docs/REVIEWED_SEED_DECLINES.md` has the causal table per seed.
+
+**Contracts added:** in-build bounded provider retry (semantic abstention never retried); expansion memoized
+and reused under the same `EXPANSION_VERSION` (pools drifted between identical builds before);
+attribution-aware retention; instrument-bound pins with loud non-apply; two-mode gate ranking with
+production's own `_ranker_query`; replay proof and capture reuse stored expansions (the proof was making live
+model calls).
+
+**Registered with numbers, not fixed (out of tranche by rule):** lexical ranker language gap (19/20 Cyrillic
+dev items price once given an English identity; strict xfail pins it); consumed-form authority — runtime
+exposure 2/20 (`squid`, `scallop` seat raw; generic fish never reaches the ranker; no abstention rule reaches
+zero wrong admissions); `entity_resolver.interpret()` silently truncates at 12 (task chip filed).
+
+**Reachability (re-measured):** V2 off cannot reach `{mackerel|roasted, oats|, salmon|grilled,
+salmon|roasted, shrimp|fried, tilapia|roasted}` — the v1 length-lever three (oats|, mackerel|roasted, tilapia|roasted) plus three NEW single-row
+entries (salmon|grilled, salmon|roasted, shrimp|fried); V2 on reaches every committed identity.
+
+**Side effect to decide on (surfaced by certification):** the preparation-materiality artifact is stamped
+with the shared resolver version, so it had to be regenerated under v2 (its builder had also lost its document
+assembly — pre-existing NameError at the write, fixed). Under v2 + expansion it keeps `chicken` material
+(space identical to v1) but declares `potato` and `mushrooms` immaterial — potato's "fried" representative
+moved 260 → 148 kcal and mushrooms' spread collapsed to 3 kcal — so those two foods stop opening the
+preparation question in the turn. Reported, not absorbed; the publish decision should weigh it.
+
+**Next (Danny's calls, per the directive):** publish to main + controlled deploy → production canaries →
+sealed holdout ONCE → recalculate ownership → Branded/SKU. Open tranches surfaced here: preparation
+compatibility review under v2 for unsigned rows; consumed-form authority; ranker language.

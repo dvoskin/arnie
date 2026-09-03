@@ -1,11 +1,13 @@
 """RETRIEVAL INTENT — how to FIND evidence, never what evidence MEANS.
 
-⚠ UNWIRED. Nothing imports this. It was wired into `build_one` on 2026-09-01,
-measured (20 identities recovered, 0 qualification regressions, 16 of 20
-non-Latin), and then UNWIRED with the blocked v2 artifact chain — the artifact
-it produced failed the reachability contract suite and carried consumed-form
-ranking errors. The mechanism is PROVEN; its publication is deferred. Wiring it
-again means re-opening that chain, not just adding an import.
+⭐ WIRED into `scripts/build_pricing_artifact.build_one` (IR-PUBLISH,
+2026-09-03). History, because it matters: wired 2026-09-01, measured (20
+identities recovered, 0 qualification regressions, 16 of 20 non-Latin), then
+UNWIRED with the blocked v2 artifact chain when the artifact it produced failed
+the reachability contract suite and carried consumed-form ranking errors. It is
+re-wired for PUBLICATION ONLY — the mechanism is unchanged from what was
+measured; the containment lives in the builder (reviewed pins) and the
+publication gate, not here.
 
 ⭐⭐⭐ THE MEASURED PROBLEM *(dev-half census, 2026-09-01)*. Of 86 generic
 no-evidence items, only ONE was a true source gap. 72% retrieved rows and had

@@ -66,15 +66,21 @@ def _snapshot(document, store) -> dict:
                  sa.disposition(store.get(identity, e)),
                  sa.eligible(store.get(identity, e)))
                 for e in evidence_ids]
-            eligible = [c for c in candidates
-                        if sa.eligible(store.get(
-                            identity, art.candidate_evidence_id(c)))]
+            # ⭐ A REVIEWED PIN IS AN EXPLICIT OVERRIDE (2026-09-03). The
+            # artifact records which seeds are held on a reviewed candidate
+            # set; for those the store's eligibility is not the authority —
+            # the hold is, and it says so in `pinned_seed_identities`.
+            pinned_here = identity in (document.get("pinned_seed_identities") or {})
+            eligible = candidates if pinned_here else [
+                c for c in candidates
+                if sa.eligible(store.get(identity, art.candidate_evidence_id(c)))]
             entity, _, preparation = identity.partition("|")
             winner, conf = fi.best_candidate(
                 _ranker_query(entity, preparation), eligible or candidates)
             per100g = (winner or {}).get("per100g") or {}
             rows.append({
                 "identity_key": identity,
+                "pinned": pinned_here,
                 "evidence_ids": evidence_ids,
                 "annotations": annotations,
                 "winner_evidence_id":

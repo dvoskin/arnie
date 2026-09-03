@@ -137,7 +137,8 @@ def test_the_review_covers_the_regime_phase_zero_freezes_against():
     # the ranker produces carries a winner state, and no rejected row holds
     # one. THIS IS THE FREEZE CONDITION.
     assert wr.accounting(winners) == (), wr.accounting(winners)
-    assert len(winners) == 27 == len(wr.by_identity())
+    # 37 since 2026-09-03 (IR-PUBLISH): ten identities entered, each with a ledger row
+    assert len(winners) == 37 == len(wr.by_identity())
 
 
 def test_a_moved_winner_is_caught_rather_than_absorbed():
@@ -212,12 +213,29 @@ def test_the_undecided_cooked_axis_is_derived_not_hand_listed():
     # undecided cooked axis — it is a specialty variant outranking the generic
     # form, a 49% overstatement. Filing it under the old cause would leave it
     # waiting on a `cooking_yield` fix that cannot reach it.
+    # ⭐ `rice|` ENTERED THIS SET UNDER IR-PUBLISH (2026-09-03) WITHOUT ITS HOLD
+
+    # CHANGING CAUSE. Query expansion retrieved a RAW rice row, so the ladder now
+
+    # carries both states — but the winner it seats is still the specialty
+
+    # variant outranking the generic form (recorded 2026-08), and an undecided-axis
+
+    # policy cannot reach that. Same treatment as `mackerel|`: derived here,
+
+    # excluded from the cooking-yield holds, cause left as it was.
+
     assert consequential == {"asparagus|", "broccoli|", "cauliflower|",
-                             "mackerel|", "tilapia|"}, consequential
+
+                             "mackerel|", "rice|", "tilapia|"}, consequential
 
     held = {identity for identity, _e, cause in wr.held()
+
             if cause == wr.COOKING_YIELD_COVERAGE}
-    assert held == consequential - {"mackerel|"}, held
+
+    assert held == consequential - {"mackerel|", "rice|"}, held
+
+    assert wr.by_identity()["rice|"][2] == wr.SPECIALTY_BEATS_GENERIC_CAUSE
     assert wr.by_identity()["mackerel|"][2] == wr.SPECIALTY_BEATS_GENERIC_CAUSE
     assert wr.by_identity()["potato|"][1] == wr.HELD
     assert (wr.by_identity()["potato|"][2]
@@ -226,9 +244,10 @@ def test_the_undecided_cooked_axis_is_derived_not_hand_listed():
 
 def test_an_undecided_axis_with_one_state_available_is_not_held():
     """The rule is not "undecided => hold". `banana|`, `egg|`, `mushrooms|`,
-    `oats|`, `rice|` and `tofu|` are all undecided and carry ONE state on the
-    ladder, so the missing policy had nothing to decide between. Holding them
-    would make the signal mean nothing."""
+    `oats|` and `tofu|` are undecided and carry ONE state on the
+    ladder, so the missing policy had nothing to decide between; `rice|` gained a
+    raw row under IR-PUBLISH (2026-09-03) but stays held for its specialty blocker.
+    Holding any of them for the axis would make the signal mean nothing."""
     held = {identity for identity, _e, cause in wr.held()
             if cause == wr.COOKING_YIELD_COVERAGE}
     for identity in ("banana|", "egg|", "mushrooms|", "oats|", "rice|", "tofu|"):
@@ -265,4 +284,4 @@ def test_the_signed_winners_are_the_only_ones_that_may_freeze():
     held = {identity for identity, _e, _c in wr.held()}
     assert not (set(signed) & held), "an identity is both signed and held"
     assert len(signed) + len(held) == len(wr.by_identity())
-    assert len(signed) == 12 and len(held) == 15
+    assert len(signed) == 12 and len(held) == 25   # 25 since 2026-09-03: ten new identities HELD as unreviewed

@@ -17,6 +17,30 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 PRIOR = pathlib.Path("/tmp/artifact_pre_v2.json")
+
+
+def _mode(active: bool):
+    """Rank under one flag mode, asserting the flag took effect. Production runs
+    BOTH modes at once via the allowlist; a reprice in either moves someone's
+    baseline. The gate ran V2-off only until 2026-09-03 and reported beef| and
+    tofu| repriced while V2-on held the v1 winner — it would equally have
+    passed a V2-on-only reprice."""
+    import contextlib, os
+    from core.food_intelligence import _nutrition_accuracy_v2
+
+    @contextlib.contextmanager
+    def _cm():
+        prev = os.environ.get("NUTRITION_ACCURACY_V2")
+        os.environ["NUTRITION_ACCURACY_V2"] = "1" if active else ""
+        try:
+            assert _nutrition_accuracy_v2() is active, "flag did not take effect"
+            yield
+        finally:
+            if prev is None:
+                os.environ.pop("NUTRITION_ACCURACY_V2", None)
+            else:
+                os.environ["NUTRITION_ACCURACY_V2"] = prev
+    return _cm()
 NOW = pathlib.Path("data/pricing_evidence_v1.json")
 
 
@@ -36,7 +60,11 @@ def winner(entry, key=""):
     cs = entry.get("candidates") or []
     if not cs:
         return None, None
-    query = (key or "").split("|")[0] or (key or "")
+    # ⭐ PRODUCTION'S OWN QUERY. Ranking `beef|grilled` by "beef" gated prep
+    # entries with a query the turn never issues (2026-09-03).
+    from core.canonical_pricing import _ranker_query
+    entity, _, preparation = (key or "").partition("|")
+    query = _ranker_query(entity, preparation) if preparation else (entity or key)
     w, _conf = best_candidate(query, cs)
     if not w:
         return None, None
@@ -58,33 +86,46 @@ def main():
     print(f"\n=== declined seed identities ({len(dec)}) ===")
     for k, v in dec.items():
         print(f"  {k}: {v.get('reason')} | pop={v.get('observed_candidate_fingerprint')}")
+    pins = new.get("pinned_seed_identities") or {}
+    print(f"\n=== pinned seed identities ({len(pins)}) — held on prior candidate set ===")
+    for k, v in pins.items():
+        print(f"  {k}: {v.get('reason')} | pop={v.get('observed_candidate_fingerprint')}")
 
-    buckets = {"UNCHANGED": [], "CHANGED_CANDIDATE_SAME_NUTRITION": [],
-               "CHANGED_CANDIDATE_CHANGED_NUTRITION": [], "MISSING": [], "NEW": []}
-    for k in sorted(set(oe) | set(ne)):
-        if k not in ne:
-            buckets["MISSING"].append((k, *winner(oe[k], k), None, None)); continue
-        if k not in oe:
-            buckets["NEW"].append((k, None, None, *winner(ne[k], k))); continue
-        oid, ocal = winner(oe[k], k); nid, ncal = winner(ne[k], k)
-        if oid == nid and ocal == ncal:
-            buckets["UNCHANGED"].append((k, oid, ocal, nid, ncal))
-        elif ocal == ncal:
-            buckets["CHANGED_CANDIDATE_SAME_NUTRITION"].append((k, oid, ocal, nid, ncal))
-        else:
-            buckets["CHANGED_CANDIDATE_CHANGED_NUTRITION"].append((k, oid, ocal, nid, ncal))
+    def _classify():
+        buckets = {"UNCHANGED": [], "CHANGED_CANDIDATE_SAME_NUTRITION": [],
+                   "CHANGED_CANDIDATE_CHANGED_NUTRITION": [], "MISSING": [], "NEW": []}
+        for k in sorted(set(oe) | set(ne)):
+            if k not in ne:
+                buckets["MISSING"].append((k, *winner(oe[k], k), None, None)); continue
+            if k not in oe:
+                buckets["NEW"].append((k, None, None, *winner(ne[k], k))); continue
+            oid, ocal = winner(oe[k], k); nid, ncal = winner(ne[k], k)
+            if oid == nid and ocal == ncal:
+                buckets["UNCHANGED"].append((k, oid, ocal, nid, ncal))
+            elif ocal == ncal:
+                buckets["CHANGED_CANDIDATE_SAME_NUTRITION"].append((k, oid, ocal, nid, ncal))
+            else:
+                buckets["CHANGED_CANDIDATE_CHANGED_NUTRITION"].append((k, oid, ocal, nid, ncal))
+        return buckets
 
-    print("\n=== reprice diff over prior authoritative entries ===")
-    for b, rows in buckets.items():
-        print(f"  {b:38} {len(rows)}")
-        for k, oid, ocal, nid, ncal in rows[:8]:
-            if b != "UNCHANGED":
-                print(f"      {k:26} {oid} {ocal} -> {nid} {ncal}")
+    # ⭐ BOTH MODES. A number without its mode is a wrong number.
+    block = []
+    for mode in (False, True):
+        with _mode(mode):
+            buckets = _classify()
+        print(f"\n=== reprice diff over prior authoritative entries — V2 {'on' if mode else 'off'} ===")
+        for b, rows in buckets.items():
+            print(f"  {b:38} {len(rows)}")
+            for k, oid, ocal, nid, ncal in rows[:8]:
+                if b != "UNCHANGED":
+                    print(f"      {k:26} {oid} {ocal} -> {nid} {ncal}")
+        block += [("on" if mode else "off", *row) for row in
+                  buckets["CHANGED_CANDIDATE_CHANGED_NUTRITION"] + buckets["MISSING"]]
 
-    block = buckets["CHANGED_CANDIDATE_CHANGED_NUTRITION"] + buckets["MISSING"]
     print("\n" + "=" * 62)
     if block:
-        print(f"⛔ BLOCKED — {len(block)} entr(ies) changed nutrition or vanished.")
+        print(f"⛔ BLOCKED — {len(block)} entry/mode pair(s) changed nutrition or vanished: "
+              + ", ".join(f"{k}(V2 {m})" for m, k, *_ in block))
         print("   A changed nutrition value on an existing authoritative seed is a")
         print("   STOP CONDITION until causally explained: those seeds are inside")
         print("   the frozen 222 and a silent reprice moves the baseline.")
