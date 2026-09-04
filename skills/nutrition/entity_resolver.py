@@ -217,8 +217,49 @@ async def _ask_the_model(names: list) -> list:
     return _readable_text(reply)
 
 
+def _chunked(items: list, size: int) -> list:
+    """Consecutive runs of at most `size`, covering EVERY item, in order.
+
+    ⭐ A PARTITION, NOT A PREFIX. The cap enters this module only here, as a
+    size. A subscript bounded by the cap can only ever keep the first `size`
+    items and discard the rest, which is the exact shape of the defect
+    `interpret` carried until 2026-09-03.
+    """
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
 async def interpret(surfaces: Iterable[str]) -> list:
-    """One batch, one call. `[]` on ANY failure — never a partial verdict."""
+    """Every surface is asked. Chunks of `_MAX_BATCH`, one call per chunk.
+
+    ⛔ THE CAP USED TO BE A SLICE — `list(asked.values())[:_MAX_BATCH]` — and
+    on 2026-09-03 that put twenty surfaces in and twelve results out with no
+    log line. The eight past the cap were never asked, and nothing downstream
+    could tell that from "asked, and absent": the turn's `absent=` count
+    carried both. That is the system-wide invariant broken one layer up — AN
+    ABSENT ANSWER MUST NEVER BE REPRESENTABLE AS A NEGATIVE ANSWER — with a
+    never-asked surface representable as an absent verdict.
+
+    So the cap is a CHUNK SIZE now, never a limit, and chunks are asked
+    SEQUENTIALLY: this runs once per turn where a model call is already being
+    paid for, more than one chunk is rare, and ordering the calls keeps the
+    output order stable and the retry path exactly as it was.
+
+    ⭐ THE WHOLE-REPLY RULE HOLDS PER CHUNK; CHUNKS ARE INDEPENDENT. Within a
+    chunk it is `[]` on ANY failure — never a partial verdict — because one
+    reply is one unit and a partial parse of it is silence dressed as an
+    answer. ACROSS chunks a failed chunk does not discard the others. Decided
+    against "one failure fails the whole call" on purpose: the other chunks'
+    replies are complete, readable answers to the foods they asked about;
+    discarding them lowers reachability for no correctness gain; and
+    `ensure_resolved` stores per row, so a chunk that landed stays landed and
+    only the failed chunk's surfaces are re-asked next turn. The failed
+    surfaces are ABSENT — no row, the state this module already reserves for
+    a transport failure — and every failure path names them at WARNING, so
+    the absence is explicit rather than silent.
+
+    ⚠ EACH CHUNK PARSES AGAINST WHAT IT ASKED. A verdict on a surface from
+    another chunk is an echo, not an answer, and is discarded as unasked.
+    """
     asked = {}
     for surface in surfaces:
         key = surface_key(surface)
@@ -226,8 +267,21 @@ async def interpret(surfaces: Iterable[str]) -> list:
             asked[key] = str(surface).strip()
     if not asked:
         return []
-    names = list(asked.values())[:_MAX_BATCH]
 
+    chunks = _chunked(list(asked), _MAX_BATCH)
+    if len(chunks) > 1:
+        logger.info("event=entity_resolution_chunked foods=%d chunks=%d "
+                    "size=%d", len(asked), len(chunks), _MAX_BATCH)
+    out = []
+    for index, keys in enumerate(chunks, start=1):
+        out.extend(await _interpret_chunk({key: asked[key] for key in keys},
+                                          index, len(chunks)))
+    return out
+
+
+async def _interpret_chunk(asked: dict, index: int, total: int) -> list:
+    """One chunk, one call. `[]` on ANY failure — never a partial verdict."""
+    names = list(asked.values())
     try:
         text = await _ask_the_model(names)
     except UnusableReply as unusable:
@@ -243,22 +297,31 @@ async def interpret(surfaces: Iterable[str]) -> list:
         #
         # ⚠ AND ONLY WHEN THERE IS SOMETHING TO SPLIT. Re-asking a single food
         # identically is not a retry, it is the same call again.
-        logger.warning("event=entity_resolution_unusable foods=%d reason=%s",
-                       len(names), unusable)
+        logger.warning("event=entity_resolution_unusable foods=%d chunk=%d/%d "
+                       "reason=%s surfaces=%r", len(names), index, total,
+                       unusable, _named(names))
         if len(names) == 1:
             return []
         return await _retry_one_at_a_time(names, asked)
     except Exception as exc:
-        logger.warning("event=entity_resolution_unavailable foods=%d err=%s — "
-                       "no resolution recorded, identity keeps today's "
-                       "behaviour", len(names), exc)
+        logger.warning("event=entity_resolution_unavailable foods=%d "
+                       "chunk=%d/%d err=%s surfaces=%r — no resolution "
+                       "recorded, identity keeps today's behaviour",
+                       len(names), index, total, exc, _named(names))
         return []
 
     try:
         return _parse(text, asked)
     except Exception as exc:
-        logger.warning("event=entity_resolution_unparseable err=%s", exc)
+        logger.warning("event=entity_resolution_unparseable chunk=%d/%d "
+                       "err=%s surfaces=%r — no resolution recorded",
+                       index, total, exc, _named(names))
         return []
+
+
+def _named(names: list) -> list:
+    """The surfaces a failure is about, so the line that reports it names them."""
+    return [str(name)[:40] for name in names]
 
 
 async def _retry_one_at_a_time(names: list, asked: dict) -> list:
