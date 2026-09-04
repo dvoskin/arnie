@@ -622,6 +622,87 @@ def _apply_reviewed_pins(_by_key, entries, pins):
     return pinned_doc
 
 
+def _candidate_ids(entries: dict) -> dict:
+    """fdc_id lists per key — the shape the raw-vs-final report compares.
+
+    A SNAPSHOT, not a view: `_retain_unexplained` and `_apply_reviewed_pins`
+    both rewrite `entries` in place, so a snapshot taken before a stage runs is
+    the only record of what that stage started from."""
+    return {k: [c.get("fdc_id") for c in (v or {}).get("candidates") or ()]
+            for k, v in entries.items()}
+
+
+def _attribute_alterations(raw_ids: dict, after_retention_ids: dict,
+                           final_ids: dict, pinned_doc: dict,
+                           declined_doc: dict) -> dict:
+    """Charge every altered key to the mechanism that altered it. Pure.
+
+    ⛔ ONE DIFF WAS CARRYING THREE MECHANISMS (2026-09-03, rebuild #8). The
+    report diffed the raw snapshot against `entries` AFTER pins had run and
+    printed "RETENTION ALTERED 5 existing key(s)" on a build where retention
+    printed no RETAINED line at all: the five were the pinned seeds, held by
+    `_apply_reviewed_pins`. That is the safety-net tally absorbing a reviewed
+    hold — stating the WEAKER claim ("the net acted") on a build where the
+    stronger one was true (generation stood on its own; a person held five
+    seeds on purpose). tests/test_a_pin_is_not_charged_to_retention.py
+
+      retention     raw snapshot -> snapshot taken after `_retain_unexplained`
+                    and BEFORE pins
+      pins          that snapshot -> final, on the keys `pinned_doc` names
+      declines      never touch `entries` (a declined seed is FAILED and was
+                    never generated); counted from their own doc
+      unattributed  a key that moved after retention and is in no pin doc —
+                    a mechanism this report does not know. Named, never absorbed.
+    """
+    retention_changed = [k for k, ids in raw_ids.items()
+                         if ids != (after_retention_ids.get(k) or [])]
+    retention_restored = sorted(set(after_retention_ids) - set(raw_ids))
+    pinned = sorted(pinned_doc or ())
+    moved_after_retention = [
+        k for k in sorted(set(after_retention_ids) | set(final_ids))
+        if (after_retention_ids.get(k) or []) != (final_ids.get(k) or [])]
+    return {
+        "retention_changed": retention_changed,
+        "retention_restored": retention_restored,
+        "pinned": pinned,
+        "pinned_altered": [k for k in moved_after_retention if k in pinned],
+        "declined": sorted(declined_doc or ()),
+        "unattributed": [k for k in moved_after_retention if k not in pinned],
+    }
+
+
+def _report_raw_vs_final(raw_ids: dict, after_retention_ids: dict,
+                         final_ids: dict, pinned_doc: dict,
+                         declined_doc: dict) -> dict:
+    """Two truths, stated separately, so "stable because generation is stable"
+    can never be confused with "stable because retention repaired instability".
+    The second is a safety net working; only the first is reproducibility. A
+    reviewed pin is neither — it is a person's decision, and is reported as one.
+    Returns the attribution so a test can assert on the numbers it printed."""
+    a = _attribute_alterations(raw_ids, after_retention_ids, final_ids,
+                               pinned_doc, declined_doc)
+    changed, restored = a["retention_changed"], a["retention_restored"]
+    print(f"\nRAW GENERATION      {len(raw_ids)} identities")
+    print(f"AFTER RETENTION     {len(after_retention_ids)} identities")
+    if changed or restored:
+        print(f"RETENTION ALTERED   {len(changed)} existing key(s), "
+              f"restored {len(restored)} whole key(s): {restored or '-'}")
+        if changed:
+            print(f"  altered: {changed}")
+        print("  -> raw generation is NOT independently reproducible against "
+              "the committed baseline; the artifact is production-safe "
+              "because the safety net acted, which is a WEAKER claim")
+    else:
+        print("RETENTION ALTERED   nothing — generation stood on its own")
+    print(f"PINNED (held on reviewed set) {len(a['pinned'])} key(s), "
+          f"{len(a['pinned_altered'])} differ from generation: {a['pinned'] or '-'}")
+    print(f"DECLINED            {len(a['declined'])} key(s): {a['declined'] or '-'}")
+    if a["unattributed"]:
+        print(f"UNATTRIBUTED        {len(a['unattributed'])} key(s) moved after "
+              f"retention by no mechanism this report knows: {a['unattributed']}")
+    return a
+
+
 def _stored_annotations(doc) -> dict:
     """Every annotation the committed artifact carries, from BOTH layouts.
 
@@ -794,9 +875,12 @@ async def main() -> int:
                             encoding="utf-8")
         print(f"raw generation snapshot -> {raw_path}")
 
-    raw_keys = {k: [c.get("fdc_id") for c in v.get("candidates") or ()]
-                for k, v in entries.items()}
+    raw_keys = _candidate_ids(entries)
     retained = _retain_unexplained(entries, store)
+    # ⭐ SNAPSHOT BETWEEN THE TWO MECHANISMS. Retention and pins both rewrite
+    # `entries` in place; the report charges each key to the stage that moved
+    # it, so retention's delta is measured HERE, before a pin can touch a key.
+    after_retention = _candidate_ids(entries)
 
     # ⭐⭐ REVIEWED PINS — IR-PUBLISH containment, NOT consumed-form authority.
     # Query expansion surfaced raw/dry base forms for these seeds and the ranker
@@ -829,25 +913,10 @@ async def main() -> int:
     _by_key = {r["key"]: r for r in results}
     _pinned_doc = _apply_reviewed_pins(_by_key, entries, REVIEWED_PINS)
 
-    # ⭐ RAW vs FINAL, REPORTED EVERY BUILD. Two truths, stated separately, so
-    # "stable because generation is stable" can never be confused with "stable
-    # because retention repaired instability". The second is a safety net
-    # working; only the first is reproducibility.
-    changed = [k for k, ids in raw_keys.items()
-               if ids != [c.get("fdc_id") for c in
-                          (entries.get(k) or {}).get("candidates") or ()]]
-    added_by_retention = sorted(set(entries) - set(raw_keys))
-    print(f"\nRAW GENERATION      {len(raw_keys)} identities")
-    print(f"AFTER RETENTION     {len(entries)} identities")
-    if changed or added_by_retention:
-        print(f"RETENTION ALTERED   {len(changed)} existing key(s), "
-              f"restored {len(added_by_retention)} whole key(s): "
-              f"{added_by_retention or '-'}")
-        print("  -> raw generation is NOT independently reproducible against "
-              "the committed baseline; the artifact is production-safe "
-              "because the safety net acted, which is a WEAKER claim")
-    else:
-        print("RETENTION ALTERED   nothing — generation stood on its own")
+    # ⭐ RAW vs FINAL, REPORTED EVERY BUILD, each altered key charged to the
+    # mechanism that moved it — see _report_raw_vs_final.
+    _report_raw_vs_final(raw_keys, after_retention, _candidate_ids(entries),
+                         _pinned_doc, _declined_doc)
 
     document = {
         "resolver_version": art.resolver_version(),
