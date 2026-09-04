@@ -12201,3 +12201,14 @@ a reviewed pin is bypassed; a canonical settlement uses a candidate that is not 
 increase in wrong consumed-form admission vs V2 off) and three success measurements (reachability conversion among
 turns that would miss under V2 off; canonical-settlement conversion from those identities; clarification/error rate
 around the six known V2-off misses and the consumed-form tail). Holdout stays sealed until the canary survives.
+
+### 2026-09-04T16:39:17Z — PUBLICATION EXECUTED; credential rotation WAIVED by Danny
+
+Danny: "Proceed without rotating." The exposed credentials (both Render API keys, one of which is the key in
+`../arnie/.env`; the Telegram bot token; the USDA key that appeared in a log URL) were still accepted by their
+providers at 2026-09-04T16:39:17Z. The exposure therefore persists through the IR canary; rotation remains owed before the next
+deployment. Published: `main` fast-forwarded to `b0dca58` EXACTLY — the two post-certification chip commits
+on this branch (`c4634e6` report labelling, `874f195` resolver batch cap) are deliberately NOT merged until the
+canary has survived. Both services deployed with V2 OFF (`NUTRITION_ACCURACY_V2_ALLOWLIST` emptied on `arnie`;
+`arnie-ios-branch` carries none); the production baseline window opens at the moment both `/health` endpoints
+report `b0dca58`.
