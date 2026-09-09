@@ -152,11 +152,13 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
             _PreCoordinatorRefusal(request,
                                    _refusal_copy(_scan_claim_failure)),
             legacy_kwargs)
+    from core import food_trace
     from core.request_trace import RequestTrace, active as _trace_active
     from core.request_trace import current_trace
     from core.turn_identity import CURRENT_TURN_ID
     from core.turns.factory import build_coordinator
     from core.turns.observe import CURRENT_ROUTE
+    from skills.nutrition.v2_gate import for_user as _v2_for_user
 
     # ⛔⛔ A NATIVE TURN WAS UNMEASURED. The RequestTrace lifecycle lives ONLY in
     # `core/conversation.py` (~731-751), so a turn the coordinator DELEGATES
@@ -198,9 +200,47 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     # composer or follow-up nested in the turn is legitimate work. What must be
     # true is that ONE scope opens the trace and closes it after ALL of that,
     # so rescue work is measured as part of the turn instead of as a second one.
+    # ⛔⛔ AND THE GATE THE CANARY IS MEASURED BY WAS NEVER BOUND HERE EITHER —
+    # THE THIRD INSTANCE OF THIS EXACT OMISSION. `skills/nutrition/v2_gate`
+    # scopes NUTRITION_ACCURACY_V2 to the ambient turn user and says in its own
+    # docstring that "`run_turn` binds the user for the turn's duration via
+    # `for_user`". That was true of `core/conversation.run_turn` and false of
+    # this one — the entrypoint every iOS turn goes through. So `v2_active()`
+    # returned False inside the coordinator for everyone, whatever the allowlist
+    # held, and the settlement decision runs inside the coordinator.
+    #
+    # ⛔⛔ THE PER-USER CANARY WAS THEREFORE INERT, AND REPORTED HEALTHY.
+    # Production, user 26, allowlisted on both services 2026-09-04 18:38Z →
+    # 2026-09-08 22:19Z: `decision=Unsupported reason=the rung that would price
+    # this scales only heuristically` on `salmon|grilled` and `oats|` — two of
+    # the six identities the artifact cannot reach under V2-OFF. Four days of
+    # production evidence measured V2-OFF behaviour while the flag was correctly
+    # set at the infrastructure layer.
+    #
+    # ⭐ AND THE FOOD TRACE HAD THE SAME HOLE, WHICH IS HOW IT HID. Nothing on
+    # this path opened `food_trace.span`, so the trace was owned by the span
+    # `food_turn.run()` opens far downstream — which knows the mode and the
+    # resolver cohort but not the channel, and starts after the route and the
+    # settlement decision are already made. `channel=-` on a line that carries a
+    # real user hash is the signature of that late owner, and it reads exactly
+    # like a bound turn. Opening the span here makes this scope the owner; the
+    # downstream spans already defer to an outer one by design, and `finish`
+    # still emits nothing for a turn that recorded no stages, so non-food turns
+    # stay silent.
+    #
+    # ⚠ THE BUDGET IS DELIBERATELY NOT CARRIED OVER from the legacy wrapper's
+    # equivalent line. A turn deadline on the native path is a behaviour change
+    # with its own proof to do; this repairs the two ambient bindings that were
+    # missing, and nothing else.
+    _v2_uid = getattr(request, "user_id", None) or None
+    _food_fields = dict(turn_id=getattr(request, "turn_id", "") or "",
+                        user_id=_v2_uid,
+                        channel=str(getattr(request, "platform", "") or ""))
+
     _outcome = "ok"
     try:
-        with _trace_active(_rt):
+        with food_trace.span(**_food_fields), _trace_active(_rt), \
+                _v2_for_user(_v2_uid):
             return await _run_coordinated(request=request, **legacy_kwargs)
     except Exception as exc:
         _outcome = f"error:{type(exc).__name__}"

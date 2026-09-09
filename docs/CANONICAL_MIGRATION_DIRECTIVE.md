@@ -1,4 +1,92 @@
 > ══════════════════════════════════════════════════════════════════════
+> ⭐⭐⭐ **SEQUENCING AUTHORITY — 2026-09-09.** *(Danny)*
+>
+> **SUPERSEDES the 2026-09-03 banner below**, which described an undeployed
+> working tree and is now wrong in its first line: IR IS PUBLISHED AND
+> DEPLOYED. `origin/main` is `b0dca58`; both Render services serve it.
+>
+> ## IR: PUBLISHED · CANARY RUN AND KILLED · THE CANARY WAS INERT ON iOS
+>
+> ```text
+> published    main b0dca58 (2026-09-04), credential rotation WAIVED by Danny
+>              and STILL OWED. Deployed V2 OFF, then one normal-day baseline.
+> canary       V2 allowlist = user 26 on BOTH services, 09-04 18:38Z →
+>              09-08 22:19Z. KILLED 09-08. Positive control 0/2: the artifact
+>              answers salmon|grilled and oats| offline under V2 ON, and
+>              production committed model estimates with no evidence.
+> root cause   core/turns/entrypoint.run_turn — the coordinator, and the
+>              entrypoint every iOS turn goes through — bound NEITHER the V2
+>              ambient user NOR the food trace, while core/conversation.run_turn
+>              (the legacy wrapper) binds both. So v2_active() was False inside
+>              the coordinator for everyone, whatever the allowlist held, and
+>              the settlement decision runs inside the coordinator.
+>              ⇒ the four kill conditions were structurally unreachable: all
+>              four require a settlement, and no settlement could occur.
+> ```
+>
+> **⚠ THE CANARY'S INERTNESS IS SCOPED TO iOS. The three channels do not share
+> an entry point, and only one of them is coordinator-routed:**
+>
+> ```text
+> iOS       api/chat.py → chat_service.run_chat_turn → turns/entrypoint.run_turn
+>           (the coordinator)                          — binding ABSENT ⇒ V2 OFF
+> Telegram  bot/telegram_handler.py:_run_pipeline → core.conversation.run_turn
+>           (never reaches the coordinator at all)      — binds ⇒ V2 genuinely ON
+> Web       api/app.py:2082 → core.conversation.run_turn
+>                                                       — binds ⇒ V2 ON
+> ```
+>
+> Both canary control turns were iOS, which is why they read as V2-off.
+> `chat_service.py`'s "THROUGH THE COORDINATOR, ALWAYS" is true only of the
+> surfaces chat_service serves. **Any re-measurement must be PER CHANNEL** — a
+> pooled rate mixes a bound cohort with an unbound one.
+>
+> **THE FIX (this commit).** `core/turns/entrypoint.run_turn` now opens
+> `food_trace.span(**fields), _trace_active(_rt), _v2_for_user(uid)` around the
+> coordinated turn. Five assertions in
+> `tests/test_the_coordinator_binds_the_user_the_gate_reads.py`, every one
+> mutation-proven — including the two that passed vacuously before the fix.
+> This is the THIRD ambient binding the native path was built without
+> (`CURRENT_TURN_ID` and `RequestTrace` were the first two, both found in
+> production, both recorded in that file's own comments).
+> ⚠ `deadline.budget()` deliberately NOT carried over: a turn deadline on the
+> native path is a behaviour change with its own proof to do.
+> ⭐ The food trace had the same hole, which is how the defect hid: with no span
+> open at the top of the turn, the trace was owned by the late one
+> `food_turn.run()` opens — which knows mode and resolver cohort but not the
+> channel — so a coordinator turn emitted `channel=- route_owner=-` beside a
+> real user hash, reading exactly like a bound turn.
+>
+> ## THE NEXT SEQUENCE
+>
+> ```text
+> 1 push + deploy this fix. INERT ON ARRIVAL: the allowlist is absent on both
+>   services since the kill, so v2_active() stays False for everyone until one
+>   is set again. What changes on deploy is the TRACE SHAPE (channel populated,
+>   route claims no longer dropped) — which is what makes a re-run readable.
+> 2 re-run the canary PER CHANNEL. iOS is the newly-bound cohort; Telegram is a
+>   positive control that has ALREADY run bound since 09-04 and can be read
+>   retrospectively. Kill conditions and measurements unchanged from the
+>   2026-09-03 banner — they are now reachable for the first time.
+> 3 holdout data/corpus/population_p16b_holdout_0901.json stays SEALED.
+> 4 credential rotation (Render keys, Telegram bot token, USDA key) still owed.
+> ```
+>
+> **Registered, NOT fixed** (unchanged, plus one new): the Cyrillic ranker gap
+> (19/20) · consumed-form runtime exposure 2/20 · `interpret()` truncation at 12 ·
+> the `oats|` reviewed pin would under-count a DRY-weighed log ~5× (artifact
+> cooked 71 kcal/100 g vs 375 logged) · **NEW:** `LegacyTurnAdapter` re-binds
+> `for_user` from `legacy_kwargs["user"]`, so a caller reaching the coordinator
+> WITHOUT `user=` and then delegating would bind `for_user(None)` and clobber the
+> outer binding; `chat_service` always passes it, so only tests hit it today.
+>
+> **Deliberately unmerged on `tranche/determinism-decomposition`:** `c4634e6`
+> (build-report attribution) · `874f195` (entity-resolver batch cap) · `94e9839`
+> (directive note). This commit was CHERRY-PICKED onto `b0dca58` so none of the
+> three ride along, and re-certified on that exact tree.
+> ══════════════════════════════════════════════════════════════════════
+
+> ══════════════════════════════════════════════════════════════════════
 > ⭐⭐⭐ **SEQUENCING AUTHORITY — 2026-09-03.** *(Danny)*
 >
 > **SUPERSEDES the 2026-08-31 banner below.** Nothing is deployed. Nothing is
@@ -8309,7 +8397,7 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-09-03 (working tree, undeployed) — IR-PUBLISH CERTIFIED at `c0b7bb7` and HELD by Danny for materiality decoupling; the decoupling (certified-resolver pin, shipped artifact restored) is the working tree this stamp describes. See the 2026-09-03 banner at the TOP, which supersedes every sequence below it. Prior stamp: 2026-08-31 (working tree, undeployed) — SHAPE C REJECTED FOR ADOPTION; its north-star PASS preserved as a valid measurement with a corrected attribution. Invariant-impact-basis repair landed (`FoodAmbiguity.impact_basis_cal`); C demoted to a declared causal arm so both arms share one `_code_sha`; C re-run preregistered. DEFAULTABILITY now blocked behind the invariant-basis tranche, not behind D2.
+Last reconciled 2026-09-09 (main b0dca58 DEPLOYED; this commit cherry-picked onto it) — reconciled against the publication and the turn-path tranche: IR is published and live, the 09-04→09-08 V2 canary was INERT ON iOS (the coordinator entrypoint bound neither the V2 ambient user nor the food trace) and is scoped — Telegram and web call the legacy wrapper directly and DID bind; the binding is fixed in this commit with five mutation-proven assertions; the four kill conditions were structurally unreachable and are reachable for the first time now. See the 2026-09-09 banner at the TOP, which supersedes every sequence below it. Prior stamp: 2026-09-03 (working tree, undeployed) — IR-PUBLISH CERTIFIED at `c0b7bb7` and HELD by Danny for materiality decoupling; the decoupling (certified-resolver pin, shipped artifact restored) is the working tree this stamp describes. See the 2026-09-03 banner at the TOP, which supersedes every sequence below it. Prior stamp: 2026-08-31 (working tree, undeployed) — SHAPE C REJECTED FOR ADOPTION; its north-star PASS preserved as a valid measurement with a corrected attribution. Invariant-impact-basis repair landed (`FoodAmbiguity.impact_basis_cal`); C demoted to a declared causal arm so both arms share one `_code_sha`; C re-run preregistered. DEFAULTABILITY now blocked behind the invariant-basis tranche, not behind D2.
 CLOSING. What was re-read and corrected rather than date-bumped: CF17 and CF18
 moved OPEN -> MERGED, POST-MERGE REMEDIATION OPEN with the merge SHAs — NOT
 closed: two D2 telemetry defects (the persist-in-flight race; "latest row by
