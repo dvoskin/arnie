@@ -188,6 +188,23 @@ class FoodTurnTrace:
     resolver_source: str = ""
     promoted: Optional[bool] = None
     cohort: str = ""
+    #: WHICH RANKING POLICY PRODUCED THIS TURN'S WINNER — `rank_v1`,
+    #: `rank_v2`, `rank_v2+as_eaten` (`v2_gate.ranking_policy_version`).
+    #:
+    #: ⛔⛔ NOT `cohort`, AND NOT `resolver_cohort`. Both of those answer
+    #: questions about the RESOLVER rollout, and they share a vocabulary with
+    #: this one (`allowlist`, `off`) — the same collision `log_line` already
+    #: carries a warning about. So a line could say `resolver_cohort=live`
+    #: while nothing on it said whether NUTRITION_ACCURACY_V2 was on, and the
+    #: only way to answer "which policy chose this winner" was to read the
+    #: deploy's environment. Measured 2026-09-10 on a live web control turn:
+    #: the V2 canary's own evidence could not distinguish V2 from V2-off.
+    #:
+    #: ⭐ A CANARY THAT INFERS ITS TREATMENT FROM CONFIGURATION IS NOT A
+    #: MEASUREMENT. The 09-04 canary set the flag correctly and measured
+    #: V2-off for four days; nothing in the durable record contradicted it,
+    #: because nothing in the durable record mentioned V2 at all.
+    ranking_policy: str = ""
     error: str = ""
 
     # ── who decided, and what it cost ─────────────────────────────────────────
@@ -460,6 +477,10 @@ class FoodTurnTrace:
             # swept in allowlist-only canonical turns. That is the evidence
             # class the migration directive forbids mixing.
             f"resolver_cohort={self.cohort or '-'} "
+            # …and the RANKING policy, which is a different rollout entirely.
+            # Reading one as the other is how a canary measured its control
+            # arm for four days and called it treatment.
+            f"ranking_policy={self.ranking_policy or '-'} "
             f"stopped_at={self.stopped_at or '-'} total_ms={self.total_ms:.0f} "
             f"interpreted={self.items_interpreted} "
             f"staged={self.items_staged} ready={self.items_ready} "
@@ -517,7 +538,7 @@ def tracing_enabled() -> bool:
 
 # ── the ambient API ───────────────────────────────────────────────────────────
 def begin(*, turn_id: str = "", user_id=None, mode: str = "",
-          channel: str = "", cohort: str = "",
+          channel: str = "", cohort: str = "", ranking_policy: str = "",
           operation_id: str = "") -> Optional[FoodTurnTrace]:
     """Start a trace for this turn and make it ambient. Returns None when
     tracing is off, which every caller must tolerate.
@@ -533,6 +554,7 @@ def begin(*, turn_id: str = "", user_id=None, mode: str = "",
         trace = FoodTurnTrace(turn_id=turn_id or "", user_id=user_id,
                               mode=mode or "", channel=channel or "",
                               cohort=cohort or "",
+                              ranking_policy=ranking_policy or "",
                               operation_id=operation_id or "")
         trace._token = CURRENT_TRACE.set(trace)
         return trace

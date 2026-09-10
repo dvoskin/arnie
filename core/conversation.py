@@ -711,6 +711,7 @@ async def run_turn(*args, **kwargs) -> TurnResult:
     from core.request_trace import (RequestTrace, active as _trace_active,
                                     current_trace)
     from skills.nutrition.v2_gate import for_user as _v2_for_user
+    from skills.nutrition.v2_gate import ranking_policy_version
 
     fields = {}
     try:
@@ -750,8 +751,14 @@ async def run_turn(*args, **kwargs) -> TurnResult:
     try:
         # Trace outside the budget: a turn that runs out of time is exactly the
         # turn whose trace has to survive to say so.
-        with food_trace.span(**fields), deadline.budget(), _trace_active(_rt), \
-                _v2_for_user(fields.get("user_id")):
+        # ⭐ V2 BINDING OUTERMOST — see the same reordering in
+        # `core/turns/entrypoint.run_turn`. Telegram and web reach the food
+        # path through HERE, so without this their traces would also be unable
+        # to say which ranking policy produced the turn.
+        with _v2_for_user(fields.get("user_id")), \
+                food_trace.span(**fields,
+                                ranking_policy=ranking_policy_version()), \
+                deadline.budget(), _trace_active(_rt):
             _result = await _run_turn(*args, **kwargs)
         return _result
     except Exception as e:

@@ -2083,6 +2083,13 @@ async def post_chat(token: str, body: ChatBody):
                     user, db, messages, system, platform="web",
                     in_onboarding=False, was_onboarding=False,
                     today_log=today_log, source_type="web",
+                    # ⛔ AND IT HAS TO BE HANDED OVER, NOT ONLY BOUND. The
+                    # contextvar above fixes the LEDGER stamp; the food trace
+                    # and the RequestTrace are built from `kwargs["turn_id"]`
+                    # and read no contextvar, so without this a web turn still
+                    # emitted `turn=-` and wrote a turn_metrics row keyed on ''
+                    # — the channel attributable, the turn not.
+                    turn_id=_turn_id,
                 )
             except Exception as e:
                 logging.getLogger(__name__).error(f"web chat run_turn failed: {e}", exc_info=True)

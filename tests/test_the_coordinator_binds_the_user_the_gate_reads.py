@@ -212,3 +212,72 @@ async def test_the_trace_a_coordinator_turn_emits_knows_its_channel(monkeypatch)
         f"the turn's trace does not know its channel: {lines[0][:160]!r} — the "
         "span is being opened downstream of the transport again")
     assert "turn=ios:V2E" in lines[0]
+
+
+# ══ the trace must say WHICH RANKING POLICY produced the turn ════════════════
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("uid,expected", [(26, "rank_v2"), (99, "rank_v1")])
+async def test_the_trace_says_which_ranking_policy_priced_the_turn(
+        monkeypatch, uid, expected):
+    """⛔⛔ V2 STATE WAS UNREADABLE FROM DURABLE EVIDENCE.
+
+    Measured against production 2026-09-10, one web control turn:
+
+        event=food_trace turn=- … channel=web resolver_cohort=live stopped_at=clarify
+
+    `resolver_cohort` is `skills/nutrition/canary` — the RESOLVER rollout,
+    answering "does the resolver own this user's committed values". It is NOT
+    `NUTRITION_ACCURACY_V2`, and the two have overlapping vocabularies
+    (`allowlist`, `off`), which is precisely the confusion `log_line` already
+    warns about for `cohort` vs `resolver_cohort`. So nothing on the line said
+    which RANKING policy chose the winner, and the only way to answer "was V2
+    on for this settlement" was to read the deploy's environment — inference
+    from configuration, which is exactly what a canary may not do.
+
+    ⭐ THE FUNCTION ALREADY EXISTED AND NOTHING EMITTED IT.
+    `v2_gate.ranking_policy_version()` was written for this question — "the
+    ranking regime a winner was produced under. Recorded rather than assumed,
+    because 'which policy picked this row' is exactly the question the
+    mode-divergence finding showed nobody could answer." It was never put on
+    the trace. This puts it there.
+
+    Both rows matter: a field that said `rank_v2` for everyone would satisfy a
+    single positive case and be a fleet rollout wearing a canary's name.
+    """
+    import types
+
+    import core.turns.factory as F
+    from core import food_trace
+
+    monkeypatch.delenv("NUTRITION_ACCURACY_V2", raising=False)
+    monkeypatch.delenv("NUTRITION_AS_EATEN_PREFERENCE", raising=False)
+    monkeypatch.setenv("NUTRITION_ACCURACY_V2_ALLOWLIST", "26")
+    monkeypatch.setenv("FOOD_TRACE", "1")
+    monkeypatch.setenv("FOOD_TRACE_SALT", "test")
+
+    lines = []
+
+    class _Coordinator:
+        route_stage = types.SimpleNamespace(decision=None)
+
+        async def run(self, req):
+            with food_trace.stage(food_trace.Stage.INTERPRET):
+                pass
+            lines.append(food_trace.current().log_line())
+            return types.SimpleNamespace(
+                error=None, execution=types.SimpleNamespace(response="ok"),
+                response=None, request=req, health_flags=(), snapshot=None,
+                validation=None)
+
+    async def _build(req, **kwargs):
+        return _Coordinator()
+
+    monkeypatch.setattr(F, "build_coordinator", _build)
+    await EP.run_turn(request=_request(uid, f"ios:POLICY{uid}"))
+
+    assert lines, "the coordinator turn opened no food trace at all"
+    assert f"ranking_policy={expected}" in lines[0], (
+        f"user {uid} should have priced under {expected}; the trace says: "
+        f"{lines[0][:200]!r} — V2 state is not readable from durable evidence, "
+        "so a canary cannot prove which policy produced a settlement")

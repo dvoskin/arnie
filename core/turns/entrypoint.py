@@ -159,6 +159,7 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
     from core.turns.factory import build_coordinator
     from core.turns.observe import CURRENT_ROUTE
     from skills.nutrition.v2_gate import for_user as _v2_for_user
+    from skills.nutrition.v2_gate import ranking_policy_version
 
     # ⛔⛔ A NATIVE TURN WAS UNMEASURED. The RequestTrace lifecycle lives ONLY in
     # `core/conversation.py` (~731-751), so a turn the coordinator DELEGATES
@@ -239,8 +240,16 @@ async def run_turn(*, request, **legacy_kwargs) -> Any:
 
     _outcome = "ok"
     try:
-        with food_trace.span(**_food_fields), _trace_active(_rt), \
-                _v2_for_user(_v2_uid):
+        # ⭐ THE V2 BINDING IS OUTERMOST, AND THE ORDER IS LOAD-BEARING.
+        # `with A(), B():` evaluates and enters A before B's expression runs,
+        # so `ranking_policy_version()` below reads the gate INSIDE the
+        # binding — and the span's `finish`, which emits the line, still runs
+        # inside it too. Opening the span first would stamp every turn
+        # `rank_v1`, which is worse than no field: a confident wrong answer.
+        with _v2_for_user(_v2_uid), \
+                food_trace.span(**_food_fields,
+                                ranking_policy=ranking_policy_version()), \
+                _trace_active(_rt):
             return await _run_coordinated(request=request, **legacy_kwargs)
     except Exception as exc:
         _outcome = f"error:{type(exc).__name__}"
