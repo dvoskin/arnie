@@ -642,16 +642,60 @@ async def chat_voice(req: VoiceChatRequest, identity: str = Depends(current_iden
     # payload size so a 422 from here is debuggable (matches what client sent).
     logger.info(f"chat/voice: identity={identity} bytes={len(audio)} filename={req.filename!r}")
 
-    from multimodal.voice_handler import process_voice
-    transcript = await process_voice(audio, req.filename or "voice.m4a")
+    # Three distinct outcomes, three distinct answers. They used to collapse
+    # into one 422 "empty_transcript": a missing OPENAI_API_KEY, a Whisper
+    # error (bad container, network, quota) and a genuinely silent clip all
+    # read the same, the app said "I didn't catch that", and the real cause
+    # lived only in the server log. Now the app can say the right thing and
+    # the log line names the cause.
+    from multimodal.voice_handler import TranscriptionFailed
+    try:
+        transcript = await _transcribe_native_voice(audio, req.filename or "voice.m4a")
+    except TranscriptionFailed as e:
+        logger.error(f"chat/voice: transcription failed for identity={identity}: {e}")
+        raise HTTPException(status_code=502, detail="transcription_failed")
     if not transcript:
-        # 422 = the audio was decoded fine but Whisper couldn't make sense of it
-        # (silence, noise, missing API key, etc). Give the client a structured
-        # detail so the chat UI can show "didn't catch that" instead of "Server
-        # returned 422".
+        # Without OPENAI_API_KEY, Whisper is never called and the transcript
+        # comes back "" — that is a server misconfiguration (503), not a clip
+        # the user can re-record.
+        from core.llm import OPENAI_API_KEY
+        if not OPENAI_API_KEY():
+            logger.error("chat/voice: OPENAI_API_KEY not set — transcription unavailable")
+            raise HTTPException(status_code=503, detail="transcription_unavailable")
+        # 422 = Whisper ran fine and heard nothing (silence, noise, a clip
+        # cut too short). The one outcome the user fixes by re-recording.
+        logger.warning(f"chat/voice: empty transcript for identity={identity} bytes={len(audio)}")
         raise HTTPException(status_code=422, detail="empty_transcript")
 
     return await _coached_reply(identity, f"[Voice note]: {transcript}", source_type="voice")
+
+
+async def _transcribe_native_voice(audio: bytes, filename: str) -> str:
+    """Transcribe an iOS voice note the way the iMessage path already does:
+    transcode to 16 kHz mono WAV with ffmpeg first, then Whisper; fall back to
+    the raw bytes when ffmpeg is unavailable or rejects the file.
+
+    Why transcode a format Whisper already accepts: the device's .m4a is
+    whatever AVAudioRecorder wrote, and a container Whisper can't decode came
+    back as an EMPTY transcript, indistinguishable from silence. ffmpeg
+    normalises the audio and, when it can't, says why in the log (a truncated
+    file, a wrong extension) — a real cause instead of "no speech".
+
+    Raises `TranscriptionFailed` when Whisper errors; returns "" only when
+    Whisper ran and heard nothing."""
+    from multimodal.audio import transcode_to_wav
+    from multimodal.voice_handler import process_voice
+
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ".m4a"
+    wav = await transcode_to_wav(audio, ext)
+    if wav:
+        text = (await process_voice(wav, "audio.wav", strict=True)).strip()
+        if text:
+            return text
+        logger.warning("chat/voice: Whisper returned empty for the transcoded WAV; trying the raw bytes")
+    else:
+        logger.warning(f"chat/voice: ffmpeg transcode unavailable or failed for {filename!r}; sending raw bytes")
+    return (await process_voice(audio, filename, strict=True)).strip()
 
 
 # ── History ──────────────────────────────────────────────────────────────────

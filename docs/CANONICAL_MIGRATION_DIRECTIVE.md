@@ -8203,6 +8203,30 @@ them.
 
 ## Status board
 
+### ⏱ SESSION 2026-09-26 — iOS VOICE-NOTE TRANSPORT REPAIR · OUT OF LANE · SEQUENCING UNCHANGED
+
+```text
+LOCAL       claude/coach-feed-audio-button-0kaznb (PR #94), off main 044a1cc
+ORIGIN/MAIN 044a1cc — UNTOUCHED
+DEPLOYED    unchanged by this session; nothing pushed to main
+SCOPE       api/chat.py `/chat/voice` + multimodal/voice_handler.py ONLY. A voice
+            note from the iOS app failed as 422 "empty_transcript" WHATEVER the
+            cause — a missing OPENAI_API_KEY, a Whisper error and a silent clip
+            all read the same, and process_voice swallowed the exception into "".
+            The route now transcodes to 16 kHz WAV first (the iMessage recipe,
+            multimodal/audio.transcode_to_wav) and answers BY CAUSE:
+            502 transcription_failed · 503 transcription_unavailable ·
+            422 empty_transcript only when Whisper ran and heard nothing.
+            The companion app change is arnie-ios PR #5.
+LANE        no food-settlement, interpretation, pricing or coordinator code
+            touched. The transcript still enters the turn as
+            "[Voice note]: <text>" with source_type "voice", unchanged.
+            §NEXT and the 2026-09-09 banner at the TOP stand as written.
+SUITE       tests/test_chat_voice_route.py (6, Whisper + ffmpeg stubbed) +
+            every test matching voice/transcription: 318 passed locally
+            (SQLite). CI is the Postgres run.
+```
+
 ### ⏱ SESSION 2026-09-03 — IR-PUBLISH CERTIFIED · PUBLICATION HELD · MATERIALITY DECOUPLED
 
 ```text
@@ -8397,7 +8421,7 @@ above are the detail. **Everything open lives here** — a finding recorded only
 in a session, a commit message or a side document is a finding that gets lost,
 which is how this board came to read "B-1 NEXT" while B-1 was production-proven.
 
-Last reconciled 2026-09-09 (main b0dca58 DEPLOYED; this commit cherry-picked onto it) — reconciled against the publication and the turn-path tranche: IR is published and live, the 09-04→09-08 V2 canary was INERT ON iOS (the coordinator entrypoint bound neither the V2 ambient user nor the food trace) and is scoped — Telegram and web call the legacy wrapper directly and DID bind; the binding is fixed in this commit with five mutation-proven assertions; the four kill conditions were structurally unreachable and are reachable for the first time now. See the 2026-09-09 banner at the TOP, which supersedes every sequence below it. Prior stamp: 2026-09-03 (working tree, undeployed) — IR-PUBLISH CERTIFIED at `c0b7bb7` and HELD by Danny for materiality decoupling; the decoupling (certified-resolver pin, shipped artifact restored) is the working tree this stamp describes. See the 2026-09-03 banner at the TOP, which supersedes every sequence below it. Prior stamp: 2026-08-31 (working tree, undeployed) — SHAPE C REJECTED FOR ADOPTION; its north-star PASS preserved as a valid measurement with a corrected attribution. Invariant-impact-basis repair landed (`FoodAmbiguity.impact_basis_cal`); C demoted to a declared causal arm so both arms share one `_code_sha`; C re-run preregistered. DEFAULTABILITY now blocked behind the invariant-basis tranche, not behind D2.
+Last reconciled 2026-09-26 (branch claude/coach-feed-audio-button-0kaznb, PR #94, off main 044a1cc; nothing deployed) — reconciled against the iOS voice-note transport repair ONLY: `/chat/voice` transcodes to WAV before Whisper and answers 502 / 503 / 422 by cause instead of one 422; no food-lane code touched, the transcript enters the turn unchanged, and the 2026-09-09 banner at the TOP still governs sequencing. Re-read for this stamp: the board's head (a session entry added above), §NEXT (untouched by this tranche), and the iOS channel row of the 09-09 banner (still accurate: the voice route reaches the coordinator through chat_service.run_chat_turn exactly as before). Prior stamp: 2026-09-09 (main b0dca58 DEPLOYED; that commit cherry-picked onto it) — reconciled against the publication and the turn-path tranche: IR is published and live, the 09-04→09-08 V2 canary was INERT ON iOS (the coordinator entrypoint bound neither the V2 ambient user nor the food trace) and is scoped — Telegram and web call the legacy wrapper directly and DID bind; the binding is fixed in this commit with five mutation-proven assertions; the four kill conditions were structurally unreachable and are reachable for the first time now. See the 2026-09-09 banner at the TOP, which supersedes every sequence below it. Prior stamp: 2026-09-03 (working tree, undeployed) — IR-PUBLISH CERTIFIED at `c0b7bb7` and HELD by Danny for materiality decoupling; the decoupling (certified-resolver pin, shipped artifact restored) is the working tree this stamp describes. See the 2026-09-03 banner at the TOP, which supersedes every sequence below it. Prior stamp: 2026-08-31 (working tree, undeployed) — SHAPE C REJECTED FOR ADOPTION; its north-star PASS preserved as a valid measurement with a corrected attribution. Invariant-impact-basis repair landed (`FoodAmbiguity.impact_basis_cal`); C demoted to a declared causal arm so both arms share one `_code_sha`; C re-run preregistered. DEFAULTABILITY now blocked behind the invariant-basis tranche, not behind D2.
 CLOSING. What was re-read and corrected rather than date-bumped: CF17 and CF18
 moved OPEN -> MERGED, POST-MERGE REMEDIATION OPEN with the merge SHAs — NOT
 closed: two D2 telemetry defects (the persist-in-flight race; "latest row by
