@@ -1,0 +1,214 @@
+<!--
+  FILM PROP — FICTIONAL. OZARIUM™ and all people/handles/claims herein are
+  invented for a movie's "scam supplement funnel" storyline. Not marketing
+  material. Do not use to promote any real product.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PROP — Ozarium Phone Feed (Fictional)</title>
+<style>
+  :root{
+    --bg:#0e1013; --card:#16191e; --line:#242830; --txt:#e8eaed; --dim:#9aa3ad;
+    --accent:#22b8a0; --like:#ff5c7a; --blue:#4d9fff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#1c1f24;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--txt);display:flex;justify-content:center;padding:24px 8px;min-height:100vh}
+  /* ------- phone frame ------- */
+  .phone{width:393px;height:852px;background:var(--bg);border-radius:54px;border:10px solid #000;box-shadow:0 24px 80px rgba(0,0,0,.6);overflow:hidden;position:relative;display:flex;flex-direction:column}
+  .notch{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:120px;height:34px;background:#000;border-radius:20px;z-index:30}
+  .statusbar{height:54px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 28px 6px;font-size:14px;font-weight:600;flex:0 0 auto}
+  .appbar{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:8px 16px 10px;border-bottom:1px solid var(--line)}
+  .appbar .logo{font-weight:800;font-size:22px;letter-spacing:-.5px}
+  .appbar .logo em{color:var(--accent);font-style:normal}
+  .icons{display:flex;gap:16px;font-size:18px;color:var(--dim)}
+  .feed{flex:1;overflow-y:auto}
+  .tabbar{flex:0 0 auto;display:flex;justify-content:space-around;padding:10px 0 26px;border-top:1px solid var(--line);font-size:20px;color:var(--dim)}
+  .tabbar span.on{color:var(--txt)}
+  /* ------- posts ------- */
+  .post{border-bottom:8px solid #0a0c0e;background:var(--card);padding:14px 14px 10px}
+  .head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .av{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:#fff;flex:0 0 auto}
+  .who{flex:1;min-width:0}
+  .who b{display:block;font-size:14.5px}
+  .who small{color:var(--dim);font-size:12px}
+  .dots{color:var(--dim)}
+  .body{font-size:14.5px;line-height:1.45;margin-bottom:10px;white-space:pre-line}
+  .tag{color:var(--blue)}
+  .media{border-radius:14px;overflow:hidden;margin-bottom:10px}
+  .actions{display:flex;gap:22px;color:var(--dim);font-size:13px;padding:4px 2px 8px}
+  .actions .liked{color:var(--like)}
+  .sponsored{font-size:11px;color:var(--dim);letter-spacing:.4px;text-transform:uppercase}
+  .cta{display:block;background:var(--accent);color:#04231e;text-align:center;font-weight:700;border-radius:10px;padding:11px;font-size:14px;margin-bottom:10px;text-decoration:none}
+  /* ------- comments ------- */
+  .comments{border-top:1px solid var(--line);padding-top:8px}
+  .cm{display:flex;gap:8px;padding:6px 0}
+  .cm .av{width:30px;height:30px;font-size:11px}
+  .cm .bubble{background:#1e2229;border-radius:12px;padding:8px 11px;font-size:13px;line-height:1.4;max-width:290px}
+  .cm .bubble b{font-size:12.5px;display:block;margin-bottom:1px}
+  .cm .meta{font-size:11px;color:var(--dim);margin:3px 0 0 12px;display:flex;gap:14px}
+  .reply{margin-left:38px}
+  .viewmore{color:var(--dim);font-size:12.5px;padding:6px 0 2px}
+  /* ------- fake product imagery (pure CSS) ------- */
+  .scene{height:230px;display:flex;align-items:flex-end;justify-content:center;gap:18px;padding-bottom:26px}
+  .scene.gold{background:radial-gradient(circle at 30% 20%,#f7e3b0,#d9a441 60%,#8a5a14)}
+  .scene.teal{background:radial-gradient(circle at 70% 15%,#bff2e8,#2ea18d 60%,#0c4f43)}
+  .scene.rose{background:radial-gradient(circle at 45% 20%,#ffd9e2,#e786a0 60%,#7d2f47)}
+  .scene.slate{background:radial-gradient(circle at 60% 25%,#dfe7f2,#8fa3bd 60%,#3c4a5e)}
+  .bottle{width:64px;height:150px;background:linear-gradient(180deg,#2b1c07,#5c3d10);border-radius:10px 10px 14px 14px;position:relative;box-shadow:0 12px 24px rgba(0,0,0,.35)}
+  .bottle:before{content:"";position:absolute;top:-26px;left:20px;width:24px;height:28px;background:#111;border-radius:4px 4px 2px 2px}
+  .bottle:after{content:"OZARIUM™\A OZONATED\A OIL ELIXIR";white-space:pre;position:absolute;inset:38px 6px 18px;background:#f3ead6;border-radius:4px;color:#3a2a10;font-size:8.5px;font-weight:800;text-align:center;padding-top:16px;letter-spacing:.4px;line-height:1.6}
+  .jar{width:92px;height:74px;background:linear-gradient(180deg,#fdfdfb,#d8d3c6);border-radius:10px;position:relative;box-shadow:0 12px 24px rgba(0,0,0,.35)}
+  .jar:before{content:"";position:absolute;top:-16px;left:4px;right:4px;height:18px;background:#caa64a;border-radius:8px 8px 2px 2px}
+  .jar:after{content:"OZARIUM™\A OZONATED FACE CREAM";white-space:pre;position:absolute;inset:12px 6px 10px;color:#4a3c1c;font-size:8px;font-weight:800;text-align:center;line-height:1.7;letter-spacing:.3px}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="notch"></div>
+  <div class="statusbar"><span>9:41</span><span>􀙇 􀋦 􀛨</span></div>
+  <div class="appbar">
+    <div class="logo">buzz<em>feed</em>ly</div>
+    <div class="icons"><span>♡</span><span>✉</span></div>
+  </div>
+
+  <div class="feed">
+
+    <!-- POST 1 — sponsored ad -->
+    <div class="post">
+      <div class="head">
+        <div class="av" style="background:#0c6e5e">OZ</div>
+        <div class="who"><b>Ozarium Wellness Labs</b><small class="sponsored">Sponsored · 🌐</small></div>
+        <div class="dots">⋯</div>
+      </div>
+      <div class="body">Big Pharma doesn't want you to know what ONE drop of activated oxygen can do. 😱 Our Ozonated Oil Elixir sold out 3x last month. This is your sign. ⚡ <span class="tag">#ozone #o3family #wellness</span></div>
+      <div class="media"><div class="scene gold"><div class="bottle"></div><div class="jar"></div></div></div>
+      <a class="cta" href="#">CLAIM 70% OFF — ONLY 7 LEFT ➤</a>
+      <div class="actions"><span class="liked">♥ 4,213</span><span>💬 388</span><span>↗ 1,092</span></div>
+      <div class="comments">
+        <div class="cm"><div class="av" style="background:#8a4baf">BK</div><div><div class="bubble"><b>Brandee Kessler-Vann</b>Ordered 6 bottles for the whole family. My sister-in-law is a nurse and she said she's "never seen anything like it" 🙏</div><div class="meta"><span>2h</span><span>Like</span><span>Reply</span><span class="liked">♥ 214</span></div></div></div>
+        <div class="cm reply"><div class="av" style="background:#0c6e5e">OZ</div><div><div class="bubble"><b>Ozarium Wellness Labs</b>Brandee we LOVE our O3 Family!! 💚 Check your DMs for a lil surprise 😉</div><div class="meta"><span>2h</span><span>Like</span><span>Reply</span><span>♥ 88</span></div></div></div>
+        <div class="cm"><div class="av" style="background:#b3592c">CM</div><div><div class="bubble"><b>Chip Marlowe</b>Is this FDA approved?</div><div class="meta"><span>1h</span><span>Like</span><span>Reply</span><span>♥ 9</span></div></div></div>
+        <div class="cm reply"><div class="av" style="background:#0c6e5e">OZ</div><div><div class="bubble"><b>Ozarium Wellness Labs</b>Chip — the FDA doesn't "approve" nature 🌿 Our lab is certified by the International Ozone Purity Council (IOPC)!</div><div class="meta"><span>1h</span><span>Like</span><span>Reply</span><span>♥ 156</span></div></div></div>
+        <div class="viewmore">View 384 more comments</div>
+      </div>
+    </div>
+
+    <!-- POST 2 — testimonial influencer -->
+    <div class="post">
+      <div class="head">
+        <div class="av" style="background:#c2416b">TF</div>
+        <div class="who"><b>Tawny Fairweather ✨</b><small>@ozonemama_tawny · 5h</small></div>
+        <div class="dots">⋯</div>
+      </div>
+      <div class="body">Day 30 of the OZARIUM™ elixir and I literally cannot recognize my own energy levels?? My "chronic everything" is just… gone bestie 😭💚 Not sponsored (link in bio tho) <span class="tag">#ozarium #oxygenglow</span></div>
+      <div class="media"><div class="scene rose"><div class="bottle"></div></div></div>
+      <div class="actions"><span class="liked">♥ 2,871</span><span>💬 240</span><span>↗ 512</span></div>
+      <div class="comments">
+        <div class="cm"><div class="av" style="background:#3f7f4f">DG</div><div><div class="bubble"><b>Darla Grubbs</b>Tawny you look 10 years younger!! Is it the cream or the drops??</div><div class="meta"><span>4h</span><span>Like</span><span>Reply</span><span>♥ 45</span></div></div></div>
+        <div class="cm reply"><div class="av" style="background:#c2416b">TF</div><div><div class="bubble"><b>Tawny Fairweather ✨</b>BOTH babe. The Duo Stack. Use code TAWNY20 💚</div><div class="meta"><span>4h</span><span>Like</span><span>Reply</span><span>♥ 63</span></div></div></div>
+        <div class="cm"><div class="av" style="background:#555f9e">RP</div><div><div class="bubble"><b>Reggie Pomfret</b>My cousin bought this and said it smells like a tire fire? 🤔</div><div class="meta"><span>3h</span><span>Like</span><span>Reply</span><span>♥ 12</span></div></div></div>
+        <div class="cm reply"><div class="av" style="background:#c2416b">TF</div><div><div class="bubble"><b>Tawny Fairweather ✨</b>Reggie that's how you KNOW the ozone is activated 🙄</div><div class="meta"><span>3h</span><span>Like</span><span>Reply</span><span>♥ 201</span></div></div></div>
+        <div class="viewmore">View 236 more comments</div>
+      </div>
+    </div>
+
+    <!-- POST 3 — fake doctor -->
+    <div class="post">
+      <div class="head">
+        <div class="av" style="background:#2e6e9e">TO</div>
+        <div class="who"><b>Dr. Trent Ozwell, N.D.</b><small>@drozwell_official · 9h</small></div>
+        <div class="dots">⋯</div>
+      </div>
+      <div class="body">As a board-adjacent naturopathic consultant, I recommend OZARIUM™ to 100% of my followers. Modern medicine treats symptoms. Activated oxygen treats EVERYTHING.*
+
+*statement not evaluated by anyone</div>
+      <div class="actions"><span class="liked">♥ 1,502</span><span>💬 97</span><span>↗ 340</span></div>
+      <div class="comments">
+        <div class="cm"><div class="av" style="background:#7a5230">MV</div><div><div class="bubble"><b>Maribel Vasquez-Odom</b>Doctor Ozwell changed my life. I threw out my whole medicine cabinet 🙌</div><div class="meta"><span>8h</span><span>Like</span><span>Reply</span><span>♥ 77</span></div></div></div>
+        <div class="cm reply"><div class="av" style="background:#9e3a3a">FL</div><div><div class="bubble"><b>Frank Lubbock</b>Maribel please do not do that</div><div class="meta"><span>7h</span><span>Like</span><span>Reply</span><span>♥ 8</span></div></div></div>
+        <div class="viewmore">View 95 more comments</div>
+      </div>
+    </div>
+
+    <!-- POST 4 — urgency ad -->
+    <div class="post">
+      <div class="head">
+        <div class="av" style="background:#0c6e5e">OZ</div>
+        <div class="who"><b>Ozarium Wellness Labs</b><small class="sponsored">Sponsored · 🌐</small></div>
+        <div class="dots">⋯</div>
+      </div>
+      <div class="body">🚨 WAREHOUSE FLOOD SALE 🚨 (the warehouse is FLOODED with savings) Face Cream + Elixir Duo for the price of ONE. When the timer hits zero, prices go back up FOREVER. ⏰ 00:14:32</div>
+      <div class="media"><div class="scene teal"><div class="jar"></div><div class="bottle"></div></div></div>
+      <a class="cta" href="#">YES! I WANT THE DUO ➤</a>
+      <div class="actions"><span class="liked">♥ 3,118</span><span>💬 205</span><span>↗ 764</span></div>
+      <div class="comments">
+        <div class="cm"><div class="av" style="background:#4f7a3f">HP</div><div><div class="bubble"><b>Hollis Pruett</b>The timer was also at 14 minutes yesterday…and last week</div><div class="meta"><span>5h</span><span>Like</span><span>Reply</span><span>♥ 340</span></div></div></div>
+        <div class="cm reply"><div class="av" style="background:#0c6e5e">OZ</div><div><div class="bubble"><b>Ozarium Wellness Labs</b>Hollis — time is a construct, wellness is forever 💚⏰</div><div class="meta"><span>5h</span><span>Like</span><span>Reply</span><span>♥ 29</span></div></div></div>
+        <div class="cm"><div class="av" style="background:#8a4baf">BK</div><div><div class="bubble"><b>Brandee Kessler-Vann</b>Bought the duo AGAIN. That's 11 jars this month. My skin has never been this confused (in a good way)</div><div class="meta"><span>4h</span><span>Like</span><span>Reply</span><span>♥ 96</span></div></div></div>
+        <div class="viewmore">View 202 more comments</div>
+      </div>
+    </div>
+
+    <!-- POST 5 — before/after -->
+    <div class="post">
+      <div class="head">
+        <div class="av" style="background:#96662e">GS</div>
+        <div class="who"><b>Gaylene Stubblefield</b><small>@gaylenes_glowup · 12h</small></div>
+        <div class="dots">⋯</div>
+      </div>
+      <div class="body">BEFORE vs AFTER — 2 weeks of OZARIUM™ Face Cream. Same lighting. Same filter. Different WOMAN. 💁‍♀️ <span class="tag">#glowup #ozoniceverything</span></div>
+      <div class="media"><div class="scene slate" style="display:grid;grid-template-columns:1fr 1fr;padding:0;height:200px;align-items:stretch">
+        <div style="display:flex;align-items:center;justify-content:center;background:#5a6676;color:#cfd6df;font-weight:800;font-size:20px;letter-spacing:2px">BEFORE</div>
+        <div style="display:flex;align-items:center;justify-content:center;background:radial-gradient(circle,#ffe9b8,#e2a94e);color:#5c3d0a;font-weight:800;font-size:20px;letter-spacing:2px">AFTER ✨</div>
+      </div></div>
+      <div class="actions"><span class="liked">♥ 5,904</span><span>💬 431</span><span>↗ 1,377</span></div>
+      <div class="comments">
+        <div class="cm"><div class="av" style="background:#c2416b">TF</div><div><div class="bubble"><b>Tawny Fairweather ✨</b>GAYLENE. The GLOW. 😭💚</div><div class="meta"><span>11h</span><span>Like</span><span>Reply</span><span>♥ 130</span></div></div></div>
+        <div class="cm"><div class="av" style="background:#555f9e">RP</div><div><div class="bubble"><b>Reggie Pomfret</b>the "after" is just a brighter photo??</div><div class="meta"><span>10h</span><span>Like</span><span>Reply</span><span>♥ 501</span></div></div></div>
+        <div class="cm reply"><div class="av" style="background:#96662e">GS</div><div><div class="bubble"><b>Gaylene Stubblefield</b>Reggie the brightness comes from WITHIN and also the cream</div><div class="meta"><span>10h</span><span>Like</span><span>Reply</span><span>♥ 74</span></div></div></div>
+        <div class="viewmore">View 428 more comments</div>
+      </div>
+    </div>
+
+    <!-- POST 6 — MLM-style recruit -->
+    <div class="post">
+      <div class="head">
+        <div class="av" style="background:#6e4b9e">KD</div>
+        <div class="who"><b>Kandi Dupler-Ostrand</b><small>@bossbabe_kandi_o3 · 18h</small></div>
+        <div class="dots">⋯</div>
+      </div>
+      <div class="body">6 months ago I was skeptical. Today I'm an OZARIUM™ Platinum Oxygen Ambassador with a team of 43 amazing women. Ask me about the car program 🚗💨 DM "BREATHE" to join my team!!</div>
+      <div class="actions"><span class="liked">♥ 987</span><span>💬 164</span><span>↗ 88</span></div>
+      <div class="comments">
+        <div class="cm"><div class="av" style="background:#3f7f4f">DG</div><div><div class="bubble"><b>Darla Grubbs</b>BREATHE</div><div class="meta"><span>17h</span><span>Like</span><span>Reply</span><span>♥ 6</span></div></div></div>
+        <div class="cm"><div class="av" style="background:#9e3a3a">FL</div><div><div class="bubble"><b>Frank Lubbock</b>Kandi is the "car program" a picture of a car</div><div class="meta"><span>16h</span><span>Like</span><span>Reply</span><span>♥ 118</span></div></div></div>
+        <div class="cm reply"><div class="av" style="background:#6e4b9e">KD</div><div><div class="bubble"><b>Kandi Dupler-Ostrand</b>Frank it's a LEASE CREDIT and it's teal 💚</div><div class="meta"><span>16h</span><span>Like</span><span>Reply</span><span>♥ 41</span></div></div></div>
+        <div class="viewmore">View 161 more comments</div>
+      </div>
+    </div>
+
+    <!-- POST 7 — retargeting ad -->
+    <div class="post">
+      <div class="head">
+        <div class="av" style="background:#0c6e5e">OZ</div>
+        <div class="who"><b>Ozarium Wellness Labs</b><small class="sponsored">Sponsored · 🌐</small></div>
+        <div class="dots">⋯</div>
+      </div>
+      <div class="body">👀 Still thinking about it? Your cart misses you. Your cells miss you MORE. Complete your order in the next 10 minutes and we'll throw in our $89 Ozone Gratitude Journal FREE.</div>
+      <a class="cta" href="#">FINISH MY TRANSFORMATION ➤</a>
+      <div class="actions"><span class="liked">♥ 764</span><span>💬 51</span><span>↗ 130</span></div>
+      <div class="comments">
+        <div class="cm"><div class="av" style="background:#b3592c">CM</div><div><div class="bubble"><b>Chip Marlowe</b>how do you know about my cart</div><div class="meta"><span>1h</span><span>Like</span><span>Reply</span><span>♥ 267</span></div></div></div>
+        <div class="viewmore">View 49 more comments</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="tabbar"><span class="on">⌂</span><span>🔍</span><span>＋</span><span>▶</span><span>◯</span></div>
+</div>
+</body>
+</html>

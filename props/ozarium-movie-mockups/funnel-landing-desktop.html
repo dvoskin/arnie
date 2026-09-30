@@ -1,0 +1,223 @@
+<!--
+  FILM PROP — FICTIONAL. OZARIUM™ and every claim, review, badge, and
+  "doctor" on this page are invented for a movie's "scam supplement funnel"
+  storyline. Intentionally deceptive-looking as parody. Not marketing
+  material. Do not use to promote any real product.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROP — Ozarium Funnel Desktop (Fictional)</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0a0b0d;font-family:Georgia,"Times New Roman",serif;color:#222}
+  .browser{max-width:1440px;margin:24px auto;border-radius:12px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.6);border:1px solid #2a2e36}
+  .chrome{background:#1d2127;padding:10px 14px;display:flex;align-items:center;gap:12px;font-family:-apple-system,"Segoe UI",sans-serif}
+  .dots span{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px}
+  .urlbar{flex:1;background:#0e1013;border-radius:8px;padding:7px 14px;font-size:13px;color:#9aa3ad}
+  .urlbar b{color:#e8eaed;font-weight:500}
+  .site{background:#fdfaf3}
+  .sans{font-family:-apple-system,"Segoe UI",Arial,sans-serif}
+
+  .alertbar{background:#c0281c;color:#fff;text-align:center;padding:10px;font-weight:700;font-size:15px;letter-spacing:.3px}
+  .alertbar span{background:#fff;color:#c0281c;border-radius:4px;padding:2px 8px;font-family:monospace;font-size:16px}
+  .header{display:flex;justify-content:space-between;align-items:center;padding:16px 60px;border-bottom:1px solid #e7dfc9}
+  .brand{font-weight:800;font-size:26px;letter-spacing:1px;color:#0c6e5e}
+  .brand small{display:block;font-size:11px;letter-spacing:3px;color:#a08d55;font-weight:600}
+  .phone800{font-size:15px;color:#555}
+
+  .hero{display:grid;grid-template-columns:1.15fr .85fr;gap:50px;padding:56px 60px 40px;align-items:center}
+  .kicker{color:#c0281c;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;font-size:14px;margin-bottom:14px}
+  h1{font-size:44px;line-height:1.15;margin-bottom:18px}
+  h1 em{color:#0c6e5e;font-style:italic}
+  .sub{font-size:19px;line-height:1.55;color:#444;margin-bottom:22px}
+  .sub b{background:#fff3b8}
+  .bullets{list-style:none;margin-bottom:26px}
+  .bullets li{padding:7px 0 7px 34px;position:relative;font-size:17px}
+  .bullets li:before{content:"✓";position:absolute;left:0;top:6px;width:24px;height:24px;background:#0c6e5e;color:#fff;border-radius:50%;text-align:center;line-height:24px;font-size:14px;font-weight:700}
+  .cta{display:inline-block;background:linear-gradient(180deg,#ffb52e,#f28f00);color:#3a2400;font-weight:800;font-size:21px;padding:20px 44px;border-radius:12px;text-decoration:none;box-shadow:0 8px 0 #b56a00,0 16px 30px rgba(0,0,0,.2);text-transform:uppercase;letter-spacing:.5px}
+  .cta small{display:block;font-size:12px;font-weight:600;text-transform:none;letter-spacing:0;margin-top:4px}
+  .risk{font-size:13px;color:#777;margin-top:16px}
+
+  .shot{background:radial-gradient(circle at 40% 20%,#f7e3b0,#d9a441 60%,#7a4f10);border-radius:20px;height:460px;display:flex;align-items:flex-end;justify-content:center;gap:30px;padding-bottom:44px;position:relative}
+  .burst{position:absolute;top:22px;right:22px;width:110px;height:110px;background:#c0281c;color:#fff;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;transform:rotate(12deg);box-shadow:0 6px 18px rgba(0,0,0,.3)}
+  .burst b{font-size:30px}
+  .bottle{width:92px;height:220px;background:linear-gradient(180deg,#2b1c07,#5c3d10);border-radius:14px 14px 18px 18px;position:relative;box-shadow:0 20px 36px rgba(0,0,0,.35)}
+  .bottle:before{content:"";position:absolute;top:-34px;left:31px;width:30px;height:36px;background:#111;border-radius:5px}
+  .bottle:after{content:"OZARIUM™\A OZONATED\A OIL ELIXIR";white-space:pre;position:absolute;inset:56px 10px 26px;background:#f3ead6;border-radius:6px;color:#3a2a10;font-size:12px;font-weight:800;text-align:center;padding-top:28px;letter-spacing:.5px;line-height:1.8;font-family:Arial,sans-serif}
+  .jar{width:132px;height:106px;background:linear-gradient(180deg,#fdfdfb,#d8d3c6);border-radius:14px;position:relative;box-shadow:0 20px 36px rgba(0,0,0,.35)}
+  .jar:before{content:"";position:absolute;top:-22px;left:6px;right:6px;height:26px;background:#caa64a;border-radius:10px 10px 2px 2px}
+  .jar:after{content:"OZARIUM™\A OZONATED FACE CREAM";white-space:pre;position:absolute;inset:20px 10px 14px;color:#4a3c1c;font-size:11px;font-weight:800;text-align:center;line-height:1.9;letter-spacing:.3px;font-family:Arial,sans-serif}
+
+  .badges{display:flex;justify-content:center;gap:46px;padding:26px 60px;background:#f4eeda;border-top:1px solid #e7dfc9;border-bottom:1px solid #e7dfc9;font-size:13.5px;color:#6b5d33;font-weight:700;text-transform:uppercase;letter-spacing:1px}
+  .badges span:before{content:"◉ ";color:#0c6e5e}
+
+  .section{padding:56px 60px;max-width:1000px;margin:0 auto}
+  h2{font-size:32px;text-align:center;margin-bottom:10px}
+  .h2sub{text-align:center;color:#777;font-size:16px;margin-bottom:36px;font-style:italic}
+
+  .doctor{display:grid;grid-template-columns:130px 1fr;gap:26px;background:#fff;border:1px solid #e7dfc9;border-radius:16px;padding:28px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.05)}
+  .docface{width:130px;height:130px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#e8f4ff,#7fa8c9);display:flex;align-items:center;justify-content:center;font-size:44px}
+  .doctor blockquote{font-size:19px;line-height:1.6;font-style:italic;margin-bottom:10px}
+  .doctor cite{font-style:normal;font-weight:700;color:#0c6e5e}
+  .doctor .fine{font-size:11px;color:#999}
+
+  .reviews{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .rev{background:#fff;border:1px solid #e7dfc9;border-radius:14px;padding:22px;font-size:14.5px;line-height:1.55}
+  .stars{color:#f2a900;letter-spacing:2px;margin-bottom:8px;font-size:16px}
+  .rev b{display:block;margin-bottom:6px;font-size:15px}
+  .rev .vb{display:inline-block;background:#e8f5e0;color:#3c7a1e;font-size:11px;font-weight:700;border-radius:4px;padding:2px 7px;margin-top:10px;font-family:Arial,sans-serif}
+
+  .stack{background:#0c3f36;color:#fdfaf3;padding:60px}
+  .stack h2{color:#fff}
+  .tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:26px;max-width:1050px;margin:36px auto 0}
+  .tier{background:#fff;color:#222;border-radius:16px;padding:28px 24px;text-align:center;position:relative}
+  .tier.best{transform:scale(1.07);border:4px solid #ffb52e;z-index:2}
+  .ribbon{position:absolute;top:-16px;left:50%;transform:translateX(-50%);background:#c0281c;color:#fff;font-weight:800;font-size:12px;letter-spacing:1px;padding:7px 18px;border-radius:20px;white-space:nowrap;font-family:Arial,sans-serif}
+  .tier h3{font-size:19px;margin-bottom:4px}
+  .tier .qty{color:#777;font-size:13.5px;margin-bottom:14px}
+  .was{color:#999;text-decoration:line-through;font-size:17px}
+  .now{font-size:42px;font-weight:800;color:#0c6e5e}
+  .now sup{font-size:18px}
+  .per{font-size:12.5px;color:#777;margin-bottom:16px}
+  .minicta{display:block;background:#f28f00;color:#3a2400;font-weight:800;border-radius:10px;padding:13px;text-decoration:none;text-transform:uppercase;font-size:14.5px;font-family:Arial,sans-serif}
+  .tier ul{list-style:none;text-align:left;font-size:13px;margin-top:16px;color:#555}
+  .tier ul li{padding:4px 0 4px 20px;position:relative}
+  .tier ul li:before{content:"+";position:absolute;left:2px;color:#0c6e5e;font-weight:800}
+
+  .guarantee{display:flex;gap:26px;align-items:center;background:#fff;border:2px dashed #caa64a;border-radius:16px;padding:28px;max-width:820px;margin:0 auto}
+  .seal{flex:0 0 120px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,#f5d77a,#caa64a);display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;color:#5c430a;text-align:center;font-size:13px;border:4px double #8a6a1c}
+  .seal b{font-size:26px}
+  .guarantee p{font-size:15.5px;line-height:1.6}
+  .guarantee .fine{font-size:11px;color:#999;margin-top:8px}
+
+  .faq{max-width:820px;margin:0 auto}
+  .q{background:#fff;border:1px solid #e7dfc9;border-radius:12px;padding:18px 22px;margin-bottom:12px}
+  .q b{display:block;font-size:16.5px;margin-bottom:6px}
+  .q p{font-size:14.5px;color:#555;line-height:1.55}
+
+  .footer{background:#111;color:#888;text-align:center;padding:34px 60px;font-size:11px;line-height:1.8;font-family:Arial,sans-serif}
+  .sticky{position:sticky;bottom:0;background:#c0281c;color:#fff;display:flex;justify-content:center;gap:26px;align-items:center;padding:13px;font-weight:700;font-size:15px;font-family:Arial,sans-serif}
+  .sticky a{background:#ffb52e;color:#3a2400;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:800}
+</style>
+</head>
+<body>
+<div class="browser">
+  <div class="chrome">
+    <div class="dots"><span style="background:#ff5f57"></span><span style="background:#febc2e"></span><span style="background:#28c840"></span></div>
+    <div class="urlbar">🔒 <b>get-ozarium-now.example</b>/secret-oxygen-offer?aff=tawny20&src=fb</div>
+    <div style="color:#9aa3ad">⟳ ⭐ ⋮</div>
+  </div>
+  <div class="site">
+
+    <div class="alertbar sans">⚠️ HIGH DEMAND: 214 people are viewing this page · Your reserved discount expires in <span>13:47</span></div>
+
+    <header class="header">
+      <div class="brand">OZARIUM™<small>WELLNESS LABS</small></div>
+      <div class="phone800 sans">Questions? Call 1-800-555-0₃99</div>
+    </header>
+
+    <section class="hero">
+      <div>
+        <div class="kicker sans">As NOT seen on TV · The secret "they" banned twice</div>
+        <h1>One Drop of <em>Activated Oxygen</em> Before Bed Changed Everything For 47,000+ Skeptics</h1>
+        <p class="sub">Scientists* are calling it "interesting."** Discover why moms, veterans, and one regional golf champion swear by the <b>OZARIUM™ Ozonated Oil Elixir</b> — and why the wellness industry wants this page TAKEN DOWN.</p>
+        <ul class="bullets sans">
+          <li>Feels like something is definitely happening</li>
+          <li>3,000-year-old secret (discovered in 2024)</li>
+          <li>Pairs perfectly with our Ozonated Face Cream</li>
+          <li>NOT available in stores (stores said no)</li>
+        </ul>
+        <a class="cta sans" href="#">Yes! Send My Elixir →<small>Rush my order before the timer hits zero</small></a>
+        <p class="risk sans">🔒 60-Day "Vibes-Based" Guarantee · Free shipping on 3+ bottles</p>
+      </div>
+      <div class="shot">
+        <div class="burst sans"><span>SAVE</span><b>70%</b><span>TODAY</span></div>
+        <div class="bottle"></div><div class="jar"></div>
+      </div>
+    </section>
+
+    <div class="badges sans">
+      <span>Lab Adjacent</span><span>Small Batch</span><span>IOPC "Certified"</span><span>Gluten Aware</span><span>Made With Air</span>
+    </div>
+
+    <section class="section">
+      <h2>"I Was Skeptical. I'm A Doctor.*"</h2>
+      <p class="h2sub">*of naturopathic-adjacent consulting</p>
+      <div class="doctor">
+        <div class="docface">👨‍⚕️</div>
+        <div>
+          <blockquote>"In my 22 years of recommending things, I have never seen a molecule quite like oxygen — but with one MORE oxygen attached. That third oxygen is where the magic lives. I take it, my wife takes it, my pool guy takes it."</blockquote>
+          <cite>— Dr. Trent Ozwell, N.D., Chief Wellness Visionary, Ozarium Wellness Labs</cite>
+          <div class="fine sans">Dr. Ozwell is a paid founder of the company whose product he is reviewing.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>12,882 Five-Star* Reviews</h2>
+      <p class="h2sub">*we only count the five-star ones</p>
+      <div class="reviews sans">
+        <div class="rev"><div class="stars">★★★★★</div><b>Brandee K.</b>"I've bought 11 jars this month. My skin, my marriage, my WiFi — everything is better. Coincidence? I don't believe in those anymore."<span class="vb">✓ VERIFIED-ISH BUYER</span></div>
+        <div class="rev"><div class="stars">★★★★★</div><b>Gaylene S.</b>"My before/after photos went viral. The after was taken outdoors at golden hour but the GLOW came from within (the jar)."<span class="vb">✓ VERIFIED-ISH BUYER</span></div>
+        <div class="rev"><div class="stars">★★★★★</div><b>Chip M.</b>"Asked if it was FDA approved and they explained the FDA doesn't approve nature. Honestly? Checkmate. Bought the Duo."<span class="vb">✓ VERIFIED-ISH BUYER</span></div>
+      </div>
+    </section>
+
+    <section class="stack">
+      <h2>Choose Your Transformation Level</h2>
+      <div class="tiers sans">
+        <div class="tier">
+          <h3>Curious</h3><div class="qty">1 Elixir</div>
+          <div class="was">$189</div><div class="now"><sup>$</sup>79</div><div class="per">per bottle + $14.95 "handling"</div>
+          <a class="minicta" href="#">Add To Cart</a>
+          <ul><li>Standard oxygen</li><li>Shipping in 6–9 weeks</li></ul>
+        </div>
+        <div class="tier best">
+          <div class="ribbon">★ MOST TRANSFORMED ★</div>
+          <h3>Committed</h3><div class="qty">3 Elixirs + 1 Face Cream</div>
+          <div class="was">$567</div><div class="now"><sup>$</sup>57</div><div class="per">per bottle · "FREE" shipping</div>
+          <a class="minicta" href="#">Add To Cart</a>
+          <ul><li>Premium-er oxygen</li><li>FREE Ozone Gratitude Journal ($89 "value")</li><li>Auto-enrolls in monthly O3 Club™</li></ul>
+        </div>
+        <div class="tier">
+          <h3>Ascended</h3><div class="qty">6 Elixirs + 3 Creams</div>
+          <div class="was">$1,134</div><div class="now"><sup>$</sup>49</div><div class="per">per bottle · priority vibes</div>
+          <a class="minicta" href="#">Add To Cart</a>
+          <ul><li>Founder-blessed batch</li><li>Certificate of Molecular Bravery</li><li>Kandi personally texts you</li></ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="guarantee">
+        <div class="seal sans"><b>60</b>DAY<br>VIBES-BASED<br>GUARANTEE</div>
+        <div>
+          <p><b>If you don't FEEL different in 60 days, we'll refund every penny.</b> Simply mail all empty AND unopened bottles to our Reno facility, include a 400-word essay on why wellness "didn't work for you," and allow 10–16 business months for processing.</p>
+          <p class="fine sans">Refund requests judged by our Vibes Committee. Committee has never convened.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Questions Skeptics Ask</h2>
+      <div class="faq">
+        <div class="q"><b>Is this FDA approved?</b><p>The FDA does not "approve" nature, and frankly nature has never approved of the FDA either. We are proudly certified by the International Ozone Purity Council, an organization we are proud to have founded.</p></div>
+        <div class="q"><b>Why does it smell like that?</b><p>That smell is the ozone ACTIVATING. If it didn't smell like a tire fire, you'd be right to ask for a refund (see refund policy, allow 10–16 business months).</p></div>
+        <div class="q"><b>What's in it?</b><p>Oil. Oxygen. Intention. Our proprietary O3-Lumina Matrix™ is a trade secret protected by the fact that we haven't written it down.</p></div>
+        <div class="q"><b>Can I cancel the O3 Club™ monthly subscription?</b><p>Great question! 💚</p></div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      OZARIUM™ WELLNESS LABS · SUITE B (THE UPS STORE), RENO NV — A FICTIONAL COMPANY<br>
+      These statements have not been evaluated by anyone who returned our calls. This product is not intended to diagnose, treat, cure, prevent, or acknowledge any disease.<br>
+      Results not typical. Results not atypical. Results not measured. · PROP — FOR FILM USE ONLY
+    </footer>
+
+    <div class="sticky">⏰ Your 70% discount is reserved for <span style="font-family:monospace">13:47</span><a href="#">CLAIM IT NOW</a></div>
+  </div>
+</div>
+</body>
+</html>
